@@ -91,7 +91,7 @@ packages/: server(NestJS) | web(Vue) | shared | plugin-sdk | plugins
 
 ## Git Commit
 
-格式：`<type>(<scope>): <subject>`
+格式：`<type>: <subject>`（当前不使用 scope）
 type: feat/fix/docs/style/refactor/test/chore
 
 - `subject` 必须使用中文，简洁描述本次改动，不要写英文提交说明
