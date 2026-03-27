@@ -20,6 +20,10 @@ describe('ChatMessageService', () => {
     getModelConfig: jest.fn(),
   };
 
+  const personaService = {
+    getCurrentPersona: jest.fn(),
+  };
+
   const pluginRuntime = {
     listTools: jest.fn(),
     executeTool: jest.fn(),
@@ -48,10 +52,18 @@ describe('ChatMessageService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    personaService.getCurrentPersona.mockResolvedValue({
+      source: 'default',
+      personaId: 'builtin.default-assistant',
+      name: 'Default Assistant',
+      prompt: '你是 Garlic Claw',
+      isDefault: true,
+    });
     service = new ChatMessageService(
       prisma as never,
       chatService as never,
       aiProvider as never,
+      personaService as never,
       pluginRuntime as never,
       automationService as never,
       modelInvocation as never,
@@ -118,6 +130,13 @@ describe('ChatMessageService', () => {
     aiProvider.getModelConfig
       .mockReturnValueOnce(modelConfig)
       .mockReturnValueOnce(routedModelConfig);
+    personaService.getCurrentPersona.mockResolvedValue({
+      source: 'default',
+      personaId: 'builtin.default-assistant',
+      name: 'Default Assistant',
+      prompt: '你是 Garlic Claw',
+      isDefault: true,
+    });
     prisma.message.create
       .mockResolvedValueOnce(userMessage)
       .mockResolvedValueOnce(assistantMessage);
@@ -223,6 +242,7 @@ describe('ChatMessageService', () => {
         conversationId: 'conversation-1',
         activeProviderId: 'openai',
         activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
       },
       payload: {
         context: {
@@ -231,11 +251,12 @@ describe('ChatMessageService', () => {
           conversationId: 'conversation-1',
           activeProviderId: 'openai',
           activeModelId: 'gpt-5.2',
+          activePersonaId: 'builtin.default-assistant',
         },
         request: expect.objectContaining({
           providerId: 'openai',
           modelId: 'gpt-5.2',
-          systemPrompt: expect.any(String),
+          systemPrompt: '你是 Garlic Claw',
           messages: [
             {
               role: 'user',
@@ -283,6 +304,7 @@ describe('ChatMessageService', () => {
       conversationId: 'conversation-1',
       activeProviderId: 'anthropic',
       activeModelId: 'claude-3-7-sonnet',
+      activePersonaId: 'builtin.default-assistant',
     });
 
     expect(Object.keys(modelInvocation.streamPrepared.mock.calls[0][0].tools)).toEqual([
@@ -305,6 +327,7 @@ describe('ChatMessageService', () => {
         conversationId: 'conversation-1',
         activeProviderId: 'anthropic',
         activeModelId: 'claude-3-7-sonnet',
+        activePersonaId: 'builtin.default-assistant',
       },
     });
 
@@ -375,6 +398,13 @@ describe('ChatMessageService', () => {
       messages: [],
     });
     aiProvider.getModelConfig.mockReturnValue(modelConfig);
+    personaService.getCurrentPersona.mockResolvedValue({
+      source: 'default',
+      personaId: 'builtin.default-assistant',
+      name: 'Default Assistant',
+      prompt: '你是 Garlic Claw',
+      isDefault: true,
+    });
     prisma.message.create
       .mockResolvedValueOnce(userMessage)
       .mockResolvedValueOnce(assistantMessage);
@@ -437,6 +467,7 @@ describe('ChatMessageService', () => {
         conversationId: 'conversation-1',
         activeProviderId: 'anthropic',
         activeModelId: 'claude-3-7-sonnet',
+        activePersonaId: 'builtin.default-assistant',
       },
       payload: {
         providerId: 'anthropic',
@@ -494,6 +525,13 @@ describe('ChatMessageService', () => {
       messages: [],
     });
     aiProvider.getModelConfig.mockReturnValue(modelConfig);
+    personaService.getCurrentPersona.mockResolvedValue({
+      source: 'default',
+      personaId: 'builtin.default-assistant',
+      name: 'Default Assistant',
+      prompt: '你是 Garlic Claw',
+      isDefault: true,
+    });
     prisma.message.create
       .mockResolvedValueOnce(userMessage)
       .mockResolvedValueOnce(assistantMessage);
@@ -551,6 +589,7 @@ describe('ChatMessageService', () => {
         conversationId: 'conversation-1',
         activeProviderId: 'openai',
         activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
       },
       payload: {
         providerId: 'openai',

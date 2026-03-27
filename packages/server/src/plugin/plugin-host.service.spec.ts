@@ -3,6 +3,13 @@ import { PluginHostService } from './plugin-host.service';
 import { PluginStateService } from './plugin-state.service';
 
 describe('PluginHostService', () => {
+  const personaService = {
+    getCurrentPersona: jest.fn(),
+    listPersonas: jest.fn(),
+    getPersona: jest.fn(),
+    activateConversationPersona: jest.fn(),
+  };
+
   const memoryService = {
     searchMemories: jest.fn(),
     saveMemory: jest.fn(),
@@ -57,6 +64,7 @@ describe('PluginHostService', () => {
       ...args: unknown[]
     ) => PluginHostService)(
       memoryService as never,
+      personaService as never,
       prisma as never,
       stateService,
       pluginService as never,
@@ -64,6 +72,169 @@ describe('PluginHostService', () => {
       aiProviderService as never,
       aiManagementService as never,
       modelRegistryService as never,
+    );
+  });
+
+  it('returns the current persona context through persona.current.get', async () => {
+    personaService.getCurrentPersona.mockResolvedValue({
+      source: 'conversation',
+      personaId: 'persona-writer',
+      name: 'Writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+      description: '更偏文学润色',
+      isDefault: false,
+    });
+
+    await expect(
+      service.call({
+        pluginId: 'builtin.persona-router',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activePersonaId: 'persona-writer',
+        } as never,
+        method: 'persona.current.get' as never,
+        params: {},
+      }),
+    ).resolves.toEqual({
+      source: 'conversation',
+      personaId: 'persona-writer',
+      name: 'Writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+      description: '更偏文学润色',
+      isDefault: false,
+    });
+
+    expect(personaService.getCurrentPersona).toHaveBeenCalledWith({
+      conversationId: 'conversation-1',
+      activePersonaId: 'persona-writer',
+    });
+  });
+
+  it('lists, reads and activates personas through persona host api', async () => {
+    personaService.listPersonas.mockResolvedValue([
+      {
+        id: 'builtin.default-assistant',
+        name: 'Default Assistant',
+        prompt: '你是 Garlic Claw',
+        description: '默认通用助手',
+        isDefault: true,
+        createdAt: '2026-03-27T14:00:00.000Z',
+        updatedAt: '2026-03-27T14:00:00.000Z',
+      },
+      {
+        id: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+        createdAt: '2026-03-27T14:01:00.000Z',
+        updatedAt: '2026-03-27T14:01:00.000Z',
+      },
+    ]);
+    personaService.getPersona.mockResolvedValue({
+      id: 'persona-writer',
+      name: 'Writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+      description: '更偏文学润色',
+      isDefault: false,
+      createdAt: '2026-03-27T14:01:00.000Z',
+      updatedAt: '2026-03-27T14:01:00.000Z',
+    });
+    prisma.conversation.findUnique.mockResolvedValue({
+      id: 'conversation-1',
+      title: 'New Chat',
+      userId: 'user-1',
+      createdAt: new Date('2026-03-27T08:00:00.000Z'),
+      updatedAt: new Date('2026-03-27T08:05:00.000Z'),
+    });
+    personaService.activateConversationPersona.mockResolvedValue({
+      source: 'conversation',
+      personaId: 'persona-writer',
+      name: 'Writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+      description: '更偏文学润色',
+      isDefault: false,
+    });
+
+    await expect(
+      service.call({
+        pluginId: 'builtin.persona-router',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'persona.list' as never,
+        params: {},
+      }),
+    ).resolves.toEqual([
+      {
+        id: 'builtin.default-assistant',
+        name: 'Default Assistant',
+        prompt: '你是 Garlic Claw',
+        description: '默认通用助手',
+        isDefault: true,
+        createdAt: '2026-03-27T14:00:00.000Z',
+        updatedAt: '2026-03-27T14:00:00.000Z',
+      },
+      {
+        id: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+        createdAt: '2026-03-27T14:01:00.000Z',
+        updatedAt: '2026-03-27T14:01:00.000Z',
+      },
+    ]);
+    await expect(
+      service.call({
+        pluginId: 'builtin.persona-router',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'persona.get' as never,
+        params: {
+          personaId: 'persona-writer',
+        },
+      }),
+    ).resolves.toEqual({
+      id: 'persona-writer',
+      name: 'Writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+      description: '更偏文学润色',
+      isDefault: false,
+      createdAt: '2026-03-27T14:01:00.000Z',
+      updatedAt: '2026-03-27T14:01:00.000Z',
+    });
+    await expect(
+      service.call({
+        pluginId: 'builtin.persona-router',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'persona.activate' as never,
+        params: {
+          personaId: 'persona-writer',
+        },
+      }),
+    ).resolves.toEqual({
+      source: 'conversation',
+      personaId: 'persona-writer',
+      name: 'Writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+      description: '更偏文学润色',
+      isDefault: false,
+    });
+
+    expect(personaService.getPersona).toHaveBeenCalledWith('persona-writer');
+    expect(personaService.activateConversationPersona).toHaveBeenCalledWith(
+      'conversation-1',
+      'persona-writer',
     );
   });
 

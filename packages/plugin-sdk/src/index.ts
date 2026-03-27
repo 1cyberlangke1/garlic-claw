@@ -16,6 +16,8 @@ import {
   type PluginLlmGenerateParams,
   type PluginLlmGenerateResult,
   type PluginManifest,
+  type PluginPersonaCurrentInfo,
+  type PluginPersonaSummary,
   type PluginProviderCurrentInfo,
   type PluginProviderModelSummary,
   type PluginProviderSummary,
@@ -121,6 +123,32 @@ export interface PluginHostFacade {
    * @returns 会话摘要
    */
   getConversation(): Promise<JsonValue>;
+
+  /**
+   * 读取当前 persona 上下文。
+   * @returns 当前 persona 摘要
+   */
+  getCurrentPersona(): Promise<PluginPersonaCurrentInfo>;
+
+  /**
+   * 列出宿主当前可用的 persona。
+   * @returns persona 摘要列表
+   */
+  listPersonas(): Promise<PluginPersonaSummary[]>;
+
+  /**
+   * 读取单个 persona 摘要。
+   * @param personaId persona ID
+   * @returns persona 摘要
+   */
+  getPersona(personaId: string): Promise<PluginPersonaSummary>;
+
+  /**
+   * 为当前会话激活一个 persona。
+   * @param personaId persona ID
+   * @returns 激活后的当前 persona 摘要
+   */
+  activatePersona(personaId: string): Promise<PluginPersonaCurrentInfo>;
 
   /**
    * 注册或更新当前插件的 host cron job。
@@ -678,6 +706,30 @@ export class PluginClient {
           this.sendHostCall('memory.search', { query, limit }, context),
         getConversation: () =>
           this.sendHostCall('conversation.get', {}, context),
+        getCurrentPersona: () =>
+          this.sendHostCall(
+            'persona.current.get',
+            {},
+            context,
+          ) as unknown as Promise<PluginPersonaCurrentInfo>,
+        listPersonas: () =>
+          this.sendHostCall(
+            'persona.list',
+            {},
+            context,
+          ) as unknown as Promise<PluginPersonaSummary[]>,
+        getPersona: (personaId) =>
+          this.sendHostCall(
+            'persona.get',
+            { personaId },
+            context,
+          ) as unknown as Promise<PluginPersonaSummary>,
+        activatePersona: (personaId) =>
+          this.sendHostCall(
+            'persona.activate',
+            { personaId },
+            context,
+          ) as unknown as Promise<PluginPersonaCurrentInfo>,
         registerCron: (descriptor) =>
           this.sendHostCall(
             'cron.register',

@@ -4,6 +4,7 @@ import { AiProviderService } from '../ai/ai-provider.service';
 import { createStepLimit } from '../ai/sdk-adapter';
 import type { ModelConfig } from '../ai/types/provider.types';
 import { AutomationService } from '../automation/automation.service';
+import { PersonaService } from '../persona/persona.service';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -63,6 +64,7 @@ export class ChatMessageService {
     private readonly prisma: PrismaService,
     private readonly chatService: ChatService,
     private readonly aiProvider: AiProviderService,
+    private readonly personaService: PersonaService,
     private readonly pluginRuntime: PluginRuntimeService,
     private readonly automationService: AutomationService,
     private readonly modelInvocation: ChatModelInvocationService,
@@ -104,13 +106,17 @@ export class ChatMessageService {
     await this.touchConversation(conversationId);
 
     try {
-      const systemPrompt = await this.buildSystemPrompt();
+      const resolvedPersona = await this.buildSystemPrompt(conversationId);
       const beforeModelResult = await this.applyChatBeforeModelHooks({
         userId,
         conversationId,
-        systemPrompt,
+        activePersonaId: resolvedPersona.activePersonaId,
+        systemPrompt: resolvedPersona.systemPrompt,
         modelConfig,
         messages: payload.modelMessages,
+      });
+      const activePersona = await this.personaService.getCurrentPersona({
+        conversationId,
       });
       if (beforeModelResult.action === 'short-circuit') {
         const completedAssistantMessage = await this.completeShortCircuitedAssistant({
@@ -119,6 +125,7 @@ export class ChatMessageService {
           conversationId,
           providerId: beforeModelResult.providerId,
           modelId: beforeModelResult.modelId,
+          activePersonaId: activePersona.personaId,
           assistantContent: beforeModelResult.assistantContent,
         });
         return {
@@ -145,12 +152,14 @@ export class ChatMessageService {
           preparedInvocation,
           activeProviderId: beforeModelResult.modelConfig.providerId,
           activeModelId: beforeModelResult.modelConfig.id,
+          activePersonaId: activePersona.personaId,
           supportsToolCall: beforeModelResult.modelConfig.capabilities.toolCall,
         }),
         onComplete: (result) =>
           this.applyChatAfterModelHooks({
             userId,
             conversationId,
+            activePersonaId: activePersona.personaId,
             result,
           }),
       });
@@ -226,13 +235,17 @@ export class ChatMessageService {
 
     try {
       const runtimeMessages = toRuntimeMessages(historyMessages);
-      const systemPrompt = await this.buildSystemPrompt();
+      const resolvedPersona = await this.buildSystemPrompt(conversationId);
       const beforeModelResult = await this.applyChatBeforeModelHooks({
         userId,
         conversationId,
-        systemPrompt,
+        activePersonaId: resolvedPersona.activePersonaId,
+        systemPrompt: resolvedPersona.systemPrompt,
         modelConfig,
         messages: runtimeMessages,
+      });
+      const activePersona = await this.personaService.getCurrentPersona({
+        conversationId,
       });
       if (beforeModelResult.action === 'short-circuit') {
         return this.completeShortCircuitedAssistant({
@@ -241,6 +254,7 @@ export class ChatMessageService {
           conversationId,
           providerId: beforeModelResult.providerId,
           modelId: beforeModelResult.modelId,
+          activePersonaId: activePersona.personaId,
           assistantContent: beforeModelResult.assistantContent,
         });
       }
@@ -263,12 +277,14 @@ export class ChatMessageService {
           preparedInvocation,
           activeProviderId: beforeModelResult.modelConfig.providerId,
           activeModelId: beforeModelResult.modelConfig.id,
+          activePersonaId: activePersona.personaId,
           supportsToolCall: beforeModelResult.modelConfig.capabilities.toolCall,
         }),
         onComplete: (result) =>
           this.applyChatAfterModelHooks({
             userId,
             conversationId,
+            activePersonaId: activePersona.personaId,
             result,
           }),
       });
@@ -339,9 +355,20 @@ export class ChatMessageService {
     return { conversation, message };
   }
 
-  /** 构建基础系统提示词。 */
-  private async buildSystemPrompt() {
-    return CHAT_SYSTEM_PROMPT;
+  /**
+   * 构建当前会话的人设系统提示词。
+   * @param conversationId 当前会话 ID
+   * @returns 当前 persona 的系统提示词与 persona ID
+   */
+  private async buildSystemPrompt(conversationId: string) {
+    const currentPersona = await this.personaService.getCurrentPersona({
+      conversationId,
+    });
+
+    return {
+      systemPrompt: currentPersona.prompt || CHAT_SYSTEM_PROMPT,
+      activePersonaId: currentPersona.personaId,
+    };
   }
 
   /** 触发会话更新时间，保证列表排序能跟上最新消息状态。 */
@@ -362,6 +389,7 @@ export class ChatMessageService {
     preparedInvocation: PreparedChatModelInvocation;
     activeProviderId: string;
     activeModelId: string;
+    activePersonaId: string;
     supportsToolCall: boolean;
   }) {
     return (abortSignal: AbortSignal) =>
@@ -376,6 +404,7 @@ export class ChatMessageService {
           conversationId: input.conversationId,
           activeProviderId: input.activeProviderId,
           activeModelId: input.activeModelId,
+          activePersonaId: input.activePersonaId,
           allowedToolNames: input.request.availableTools.map(
             (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
           ),
@@ -397,6 +426,7 @@ export class ChatMessageService {
   private async applyChatBeforeModelHooks(input: {
     userId: string;
     conversationId: string;
+    activePersonaId: string;
     systemPrompt: string;
     modelConfig: { providerId: string; id: string };
     messages: ChatRuntimeMessage[];
@@ -407,6 +437,7 @@ export class ChatMessageService {
       conversationId: input.conversationId,
       activeProviderId: input.modelConfig.providerId,
       activeModelId: input.modelConfig.id,
+      activePersonaId: input.activePersonaId,
     };
     const hookResult = await this.pluginRuntime.runChatBeforeModelHooks({
       context: hookContext,
@@ -423,6 +454,7 @@ export class ChatMessageService {
             conversationId: input.conversationId,
             activeProviderId: input.modelConfig.providerId,
             activeModelId: input.modelConfig.id,
+            activePersonaId: input.activePersonaId,
           }),
         },
       },
@@ -457,6 +489,7 @@ export class ChatMessageService {
   private async applyChatAfterModelHooks(input: {
     userId: string;
     conversationId: string;
+    activePersonaId: string;
     result: CompletedChatTaskResult;
   }): Promise<void> {
     await this.pluginRuntime.runChatAfterModelHooks({
@@ -466,6 +499,7 @@ export class ChatMessageService {
         conversationId: input.conversationId,
         activeProviderId: input.result.providerId,
         activeModelId: input.result.modelId,
+        activePersonaId: input.activePersonaId,
       },
       payload: {
         providerId: input.result.providerId,
@@ -489,6 +523,7 @@ export class ChatMessageService {
     conversationId: string;
     providerId: string;
     modelId: string;
+    activePersonaId: string;
     assistantContent: string;
   }) {
     const assistantMessage = await this.prisma.message.update({
@@ -507,6 +542,7 @@ export class ChatMessageService {
     await this.applyChatAfterModelHooks({
       userId: input.userId,
       conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
       result: {
         assistantMessageId: input.assistantMessageId,
         conversationId: input.conversationId,

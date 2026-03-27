@@ -22,8 +22,10 @@ export type PluginPermission =
   | 'config:read'
   | 'llm:generate'
   | 'memory:read'
-  | 'provider:read'
   | 'memory:write'
+  | 'persona:read'
+  | 'persona:write'
+  | 'provider:read'
   | 'storage:read'
   | 'storage:write'
   | 'state:read'
@@ -270,7 +272,29 @@ export interface PluginCallContext {
   cronJobId?: string;
   activeProviderId?: string;
   activeModelId?: string;
+  activePersonaId?: string;
   metadata?: JsonObject;
+}
+
+/** 插件可见的人设安全摘要。 */
+export interface PluginPersonaSummary {
+  id: string;
+  name: string;
+  prompt: string;
+  description?: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 插件可见的当前人设上下文摘要。 */
+export interface PluginPersonaCurrentInfo {
+  source: 'context' | 'conversation' | 'default';
+  personaId: string;
+  name: string;
+  prompt: string;
+  description?: string;
+  isDefault: boolean;
 }
 
 /** 插件可见的当前 provider 上下文摘要。 */
@@ -470,6 +494,10 @@ export type PluginHostMethod =
   | 'llm.generate-text'
   | 'memory.search'
   | 'memory.save'
+  | 'persona.activate'
+  | 'persona.current.get'
+  | 'persona.get'
+  | 'persona.list'
   | 'plugin.self.get'
   | 'provider.current.get'
   | 'provider.get'

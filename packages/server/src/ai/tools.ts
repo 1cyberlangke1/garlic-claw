@@ -191,6 +191,7 @@ export function getPluginTools(
     conversationId: string;
     activeProviderId: string;
     activeModelId: string;
+    activePersonaId?: string;
   },
 ) {
   const toolEntries = runtime.listTools({
@@ -199,6 +200,7 @@ export function getPluginTools(
     conversationId: context.conversationId,
     activeProviderId: context.activeProviderId,
     activeModelId: context.activeModelId,
+    activePersonaId: context.activePersonaId,
   });
   const tools: Record<string, Tool> = {};
 
@@ -223,6 +225,7 @@ export function getPluginTools(
               conversationId: context.conversationId,
               activeProviderId: context.activeProviderId,
               activeModelId: context.activeModelId,
+              activePersonaId: context.activePersonaId,
             },
           });
         } catch (err) {
@@ -248,6 +251,7 @@ export function getPluginToolSummaries(
     conversationId: string;
     activeProviderId: string;
     activeModelId: string;
+    activePersonaId?: string;
   },
 ): PluginAvailableToolSummary[] {
   return runtime.listTools({
@@ -256,6 +260,7 @@ export function getPluginToolSummaries(
     conversationId: context.conversationId,
     activeProviderId: context.activeProviderId,
     activeModelId: context.activeModelId,
+    activePersonaId: context.activePersonaId,
   }).map((entry) => ({
     name: entry.runtimeKind === 'builtin'
       ? entry.tool.name

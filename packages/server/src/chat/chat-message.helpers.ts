@@ -13,14 +13,9 @@ import {
   restoreModelMessageContent,
   type UserMessageInput,
 } from './message-parts';
+import { DEFAULT_PERSONA_PROMPT } from '../persona/default-persona';
 
-export const CHAT_SYSTEM_PROMPT = `你是一个乐于助人的 AI 助手，名为 Garlic Claw（蒜蓉龙虾）。你可以帮助用户完成各种任务。
-你可以使用工具来获取信息和执行操作。
-一些工具让你可以控制连接的设备（PC、手机、IoT）。设备工具以设备名称为前缀。
-你可以使用 save_memory 将重要信息保存到长期记忆中，并使用 recall_memory 回忆过去的信息。
-你可以使用 create_automation 创建自动化任务（支持计划间隔如 "5m"、"1h"）。
-当用户分享个人偏好或重要事实时，主动将它们保存到记忆中。
-始终保持乐于助人、简洁和友好的态度。使用用户使用的语言回复。`;
+export const CHAT_SYSTEM_PROMPT = DEFAULT_PERSONA_PROMPT;
 
 /**
  * 将 DTO 中的文本/图片输入映射为领域层消息输入。
@@ -118,6 +113,7 @@ export function buildChatToolSet(params: {
   conversationId: string;
   activeProviderId: string;
   activeModelId: string;
+  activePersonaId?: string;
   allowedToolNames?: string[];
 }) {
   if (!params.supportsToolCall) {
@@ -130,6 +126,7 @@ export function buildChatToolSet(params: {
       conversationId: params.conversationId,
       activeProviderId: params.activeProviderId,
       activeModelId: params.activeModelId,
+      activePersonaId: params.activePersonaId,
     }),
     ...getAutomationTools(params.automationService, params.userId),
   }, params.allowedToolNames);
@@ -150,6 +147,7 @@ export function listChatAvailableTools(params: {
   conversationId: string;
   activeProviderId: string;
   activeModelId: string;
+  activePersonaId?: string;
 }) {
   return [
     ...getPluginToolSummaries(params.pluginRuntime, {
@@ -157,6 +155,7 @@ export function listChatAvailableTools(params: {
       conversationId: params.conversationId,
       activeProviderId: params.activeProviderId,
       activeModelId: params.activeModelId,
+      activePersonaId: params.activePersonaId,
     }),
     ...getAutomationToolSummaries(),
   ];

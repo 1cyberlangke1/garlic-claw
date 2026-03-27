@@ -4,6 +4,8 @@ import type {
   PluginCallContext,
   PluginLlmGenerateParams,
   PluginLlmGenerateResult,
+  PluginPersonaCurrentInfo,
+  PluginPersonaSummary,
   PluginLlmMessage,
   PluginProviderCurrentInfo,
   PluginProviderModelSummary,
@@ -23,6 +25,7 @@ import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { deserializeMessageParts } from '../chat/message-parts';
 import { toJsonValue } from '../common/utils/json-value';
 import { MemoryService } from '../memory/memory.service';
+import { PersonaService } from '../persona/persona.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PluginStateService } from './plugin-state.service';
 import { PluginService } from './plugin.service';
@@ -47,6 +50,7 @@ import { PluginService } from './plugin.service';
 export class PluginHostService {
   constructor(
     private readonly memoryService: MemoryService,
+    private readonly personaService: PersonaService,
     private readonly prisma: PrismaService,
     private readonly stateService: PluginStateService,
     private readonly pluginService: PluginService,
@@ -72,6 +76,14 @@ export class PluginHostService {
         return this.getConfig(input.pluginId, input.params);
       case 'conversation.get':
         return this.getConversation(input.context, input.params);
+      case 'persona.current.get':
+        return this.getCurrentPersona(input.context);
+      case 'persona.list':
+        return this.listPersonas();
+      case 'persona.get':
+        return this.getPersona(input.params);
+      case 'persona.activate':
+        return this.activatePersona(input.context, input.params);
       case 'provider.current.get':
         return this.getCurrentProvider(input.context);
       case 'provider.get':
@@ -153,6 +165,65 @@ export class PluginHostService {
       createdAt: conversation.createdAt.toISOString(),
       updatedAt: conversation.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * 读取当前调用可见的 persona 上下文。
+   * @param context 插件调用上下文
+   * @returns 当前 persona 摘要
+   */
+  private async getCurrentPersona(
+    context: PluginCallContext,
+  ): Promise<JsonValue> {
+    const result: PluginPersonaCurrentInfo = await this.personaService.getCurrentPersona({
+      conversationId: context.conversationId,
+      activePersonaId: context.activePersonaId,
+    });
+
+    return toJsonValue(result);
+  }
+
+  /**
+   * 列出宿主当前可用的 persona 摘要。
+   * @returns persona 摘要列表
+   */
+  private async listPersonas(): Promise<JsonValue> {
+    const personas: PluginPersonaSummary[] = await this.personaService.listPersonas();
+    return toJsonValue(personas);
+  }
+
+  /**
+   * 读取单个 persona 摘要。
+   * @param params 查询参数
+   * @returns persona 摘要
+   */
+  private async getPersona(params: JsonObject): Promise<JsonValue> {
+    const personaId = this.requireString(params, 'personaId');
+    const persona = await this.personaService.getPersona(personaId);
+    return toJsonValue(persona);
+  }
+
+  /**
+   * 为当前会话激活一个 persona。
+   * @param context 插件调用上下文
+   * @param params 激活参数
+   * @returns 激活后的当前 persona 摘要
+   */
+  private async activatePersona(
+    context: PluginCallContext,
+    params: JsonObject,
+  ): Promise<JsonValue> {
+    const conversation = await this.requireConversationRecord(
+      context,
+      'persona.activate',
+    );
+    const personaId = this.requireString(params, 'personaId');
+    const result = await this.personaService.activateConversationPersona(
+      conversation.id,
+      personaId,
+    );
+
+    return toJsonValue(result);
   }
 
   /**

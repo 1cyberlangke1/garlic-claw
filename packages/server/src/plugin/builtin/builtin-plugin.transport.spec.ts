@@ -1042,4 +1042,191 @@ describe('BuiltinPluginTransport', () => {
       deleted: true,
     });
   });
+
+  it('exposes persona helpers through the host facade', async () => {
+    hostService.call
+      .mockResolvedValueOnce({
+        source: 'conversation',
+        personaId: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+      })
+      .mockResolvedValueOnce([
+        {
+          id: 'builtin.default-assistant',
+          name: 'Default Assistant',
+          prompt: '你是 Garlic Claw',
+          description: '默认通用助手',
+          isDefault: true,
+          createdAt: '2026-03-27T14:00:00.000Z',
+          updatedAt: '2026-03-27T14:00:00.000Z',
+        },
+        {
+          id: 'persona-writer',
+          name: 'Writer',
+          prompt: '你是一个偏文学表达的写作助手。',
+          description: '更偏文学润色',
+          isDefault: false,
+          createdAt: '2026-03-27T14:01:00.000Z',
+          updatedAt: '2026-03-27T14:01:00.000Z',
+        },
+      ])
+      .mockResolvedValueOnce({
+        id: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+        createdAt: '2026-03-27T14:01:00.000Z',
+        updatedAt: '2026-03-27T14:01:00.000Z',
+      })
+      .mockResolvedValueOnce({
+        source: 'conversation',
+        personaId: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+      });
+
+    const definition: BuiltinPluginDefinition = {
+      manifest: {
+        id: 'builtin.persona-router',
+        name: 'Persona Router',
+        version: '1.0.0',
+        runtime: 'builtin',
+        permissions: ['persona:read', 'persona:write'],
+        tools: [
+          {
+            name: 'inspect_persona',
+            description: '读取并切换当前 persona',
+            parameters: {},
+          },
+        ],
+      },
+      tools: {
+        inspect_persona: async (_params, { host }) =>
+          ({
+            current: await host.getCurrentPersona(),
+            personas: await host.listPersonas(),
+            selected: await host.getPersona('persona-writer'),
+            activated: await host.activatePersona('persona-writer'),
+          }) as never,
+      },
+    };
+
+    const transport = new BuiltinPluginTransport(
+      definition,
+      hostService as never,
+    );
+
+    const result = await transport.executeTool({
+      toolName: 'inspect_persona',
+      params: {},
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+    });
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.current.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.list',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(3, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.get',
+      params: {
+        personaId: 'persona-writer',
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(4, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.activate',
+      params: {
+        personaId: 'persona-writer',
+      },
+    });
+    expect(result).toEqual({
+      current: {
+        source: 'conversation',
+        personaId: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+      },
+      personas: [
+        {
+          id: 'builtin.default-assistant',
+          name: 'Default Assistant',
+          prompt: '你是 Garlic Claw',
+          description: '默认通用助手',
+          isDefault: true,
+          createdAt: '2026-03-27T14:00:00.000Z',
+          updatedAt: '2026-03-27T14:00:00.000Z',
+        },
+        {
+          id: 'persona-writer',
+          name: 'Writer',
+          prompt: '你是一个偏文学表达的写作助手。',
+          description: '更偏文学润色',
+          isDefault: false,
+          createdAt: '2026-03-27T14:01:00.000Z',
+          updatedAt: '2026-03-27T14:01:00.000Z',
+        },
+      ],
+      selected: {
+        id: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+        createdAt: '2026-03-27T14:01:00.000Z',
+        updatedAt: '2026-03-27T14:01:00.000Z',
+      },
+      activated: {
+        source: 'conversation',
+        personaId: 'persona-writer',
+        name: 'Writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+        description: '更偏文学润色',
+        isDefault: false,
+      },
+    });
+  });
 });

@@ -265,6 +265,12 @@ function pluginHighlights(plugin: PluginInfo): string[] {
   if (permissions.has('provider:read')) {
     highlights.push('可读取 Provider 上下文')
   }
+  if (permissions.has('persona:read')) {
+    highlights.push('可读取 Persona 上下文')
+  }
+  if (permissions.has('persona:write')) {
+    highlights.push('可切换当前 Persona')
+  }
   if (permissions.has('llm:generate')) {
     highlights.push('可二次调用模型')
   }

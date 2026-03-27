@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { PersonaModule } from '../persona/persona.module';
 import { BuiltinPluginLoader } from './builtin/builtin-plugin.loader';
 import { PluginAdminService } from './plugin-admin.service';
 import { PluginCronService } from './plugin-cron.service';
@@ -12,7 +13,7 @@ import { PluginStateService } from './plugin-state.service';
 import { PluginService } from './plugin.service';
 
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [JwtModule.register({}), PersonaModule],
   providers: [
     PluginService,
     PluginGateway,

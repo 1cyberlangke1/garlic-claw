@@ -7,6 +7,7 @@ import { createCoreToolsPlugin } from './core-tools.plugin';
 import { createCronHeartbeatPlugin } from './cron-heartbeat.plugin';
 import { createMemoryContextPlugin } from './memory-context.plugin';
 import { createMemoryToolsPlugin } from './memory-tools.plugin';
+import { createPersonaRouterPlugin } from './persona-router.plugin';
 import { createProviderRouterPlugin } from './provider-router.plugin';
 import { createRouteInspectorPlugin } from './route-inspector.plugin';
 
@@ -40,6 +41,7 @@ export class BuiltinPluginLoader implements OnModuleInit {
       createMemoryContextPlugin(),
       createConversationTitlePlugin(),
       createProviderRouterPlugin(),
+      createPersonaRouterPlugin(),
       createCronHeartbeatPlugin(),
       createRouteInspectorPlugin(),
     ];

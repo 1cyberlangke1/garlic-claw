@@ -911,6 +911,76 @@ describe('PluginRuntimeService', () => {
     ).rejects.toThrow('插件 builtin.provider-router 缺少权限 provider:read');
   });
 
+  it('enforces persona permissions before persona host calls', async () => {
+    const manifest: PluginManifest = {
+      ...builtinManifest,
+      id: 'builtin.persona-router',
+      permissions: ['persona:read'],
+      tools: [],
+      hooks: [],
+    };
+
+    await service.registerPlugin({
+      manifest,
+      runtimeKind: 'builtin',
+      transport: createTransport(),
+    });
+
+    hostService.call.mockResolvedValue({
+      source: 'default',
+      personaId: 'builtin.default-assistant',
+      name: 'Default Assistant',
+      prompt: '你是 Garlic Claw',
+      isDefault: true,
+    });
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.persona-router',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activePersonaId: 'builtin.default-assistant',
+        } as never,
+        method: 'persona.current.get' as never,
+        params: {},
+      }),
+    ).resolves.toEqual({
+      source: 'default',
+      personaId: 'builtin.default-assistant',
+      name: 'Default Assistant',
+      prompt: '你是 Garlic Claw',
+      isDefault: true,
+    });
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.persona-router',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        } as never,
+        method: 'persona.activate' as never,
+        params: {
+          personaId: 'persona-writer',
+        },
+      }),
+    ).rejects.toThrow('插件 builtin.persona-router 缺少权限 persona:write');
+
+    expect(hostService.call).toHaveBeenCalledWith({
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.current.get',
+      params: {},
+    });
+  });
+
   it('enforces cron permissions and delegates cron host calls', async () => {
     const manifest: PluginManifest = {
       ...builtinManifest,
