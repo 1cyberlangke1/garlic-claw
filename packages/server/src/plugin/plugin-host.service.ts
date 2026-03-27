@@ -1,6 +1,8 @@
 import type {
   ChatMessagePart,
   HostCallPayload,
+  PluginKbEntryDetail,
+  PluginKbEntrySummary,
   PluginCallContext,
   PluginLlmGenerateParams,
   PluginLlmGenerateResult,
@@ -24,6 +26,7 @@ import { ModelRegistryService } from '../ai/registry/model-registry.service';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { deserializeMessageParts } from '../chat/message-parts';
 import { toJsonValue } from '../common/utils/json-value';
+import { KbService } from '../kb/kb.service';
 import { MemoryService } from '../memory/memory.service';
 import { PersonaService } from '../persona/persona.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -50,6 +53,7 @@ import { PluginService } from './plugin.service';
 export class PluginHostService {
   constructor(
     private readonly memoryService: MemoryService,
+    private readonly kbService: KbService,
     private readonly personaService: PersonaService,
     private readonly prisma: PrismaService,
     private readonly stateService: PluginStateService,
@@ -76,6 +80,12 @@ export class PluginHostService {
         return this.getConfig(input.pluginId, input.params);
       case 'conversation.get':
         return this.getConversation(input.context, input.params);
+      case 'kb.list':
+        return this.listKbEntries(input.params);
+      case 'kb.search':
+        return this.searchKbEntries(input.params);
+      case 'kb.get':
+        return this.getKbEntry(input.params);
       case 'persona.current.get':
         return this.getCurrentPersona(input.context);
       case 'persona.list':
@@ -165,6 +175,43 @@ export class PluginHostService {
       createdAt: conversation.createdAt.toISOString(),
       updatedAt: conversation.updatedAt.toISOString(),
     };
+  }
+
+  /**
+   * 列出宿主当前可见的 KB 条目摘要。
+   * @param params 查询参数
+   * @returns KB 摘要列表
+   */
+  private async listKbEntries(params: JsonObject): Promise<JsonValue> {
+    const limit = this.readNumber(params, 'limit') ?? 20;
+    const entries: PluginKbEntrySummary[] = await this.kbService.listEntries(limit);
+    return toJsonValue(entries);
+  }
+
+  /**
+   * 搜索宿主知识库条目。
+   * @param params 搜索参数
+   * @returns KB 条目详情列表
+   */
+  private async searchKbEntries(params: JsonObject): Promise<JsonValue> {
+    const query = this.requireString(params, 'query');
+    const limit = this.readNumber(params, 'limit') ?? 5;
+    const entries: PluginKbEntryDetail[] = await this.kbService.searchEntries(
+      query,
+      limit,
+    );
+    return toJsonValue(entries);
+  }
+
+  /**
+   * 读取单个 KB 条目详情。
+   * @param params 查询参数
+   * @returns KB 条目详情
+   */
+  private async getKbEntry(params: JsonObject): Promise<JsonValue> {
+    const entryId = this.requireString(params, 'entryId');
+    const entry: PluginKbEntryDetail = await this.kbService.getEntry(entryId);
+    return toJsonValue(entry);
   }
 
   /**

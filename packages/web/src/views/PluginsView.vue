@@ -265,6 +265,9 @@ function pluginHighlights(plugin: PluginInfo): string[] {
   if (permissions.has('provider:read')) {
     highlights.push('可读取 Provider 上下文')
   }
+  if (permissions.has('kb:read')) {
+    highlights.push('可读取系统知识库')
+  }
   if (permissions.has('persona:read')) {
     highlights.push('可读取 Persona 上下文')
   }

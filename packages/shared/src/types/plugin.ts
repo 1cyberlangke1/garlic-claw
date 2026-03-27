@@ -20,6 +20,7 @@ export type PluginPermission =
   | 'conversation:read'
   | 'conversation:write'
   | 'config:read'
+  | 'kb:read'
   | 'llm:generate'
   | 'memory:read'
   | 'memory:write'
@@ -297,6 +298,21 @@ export interface PluginPersonaCurrentInfo {
   isDefault: boolean;
 }
 
+/** 插件可见的知识库条目摘要。 */
+export interface PluginKbEntrySummary {
+  id: string;
+  title: string;
+  excerpt: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 插件可见的知识库条目详情。 */
+export interface PluginKbEntryDetail extends PluginKbEntrySummary {
+  content: string;
+}
+
 /** 插件可见的当前 provider 上下文摘要。 */
 export interface PluginProviderCurrentInfo {
   source: 'context' | 'default';
@@ -490,6 +506,9 @@ export type PluginHostMethod =
   | 'conversation.get'
   | 'conversation.messages.list'
   | 'conversation.title.set'
+  | 'kb.get'
+  | 'kb.list'
+  | 'kb.search'
   | 'llm.generate'
   | 'llm.generate-text'
   | 'memory.search'

@@ -53,6 +53,18 @@ model Persona {
   @@map("personas")
 }
 
+model KnowledgeBaseEntry {
+  id        String   @id
+  title     String
+  content   String
+  tags      String?
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("knowledge_base_entries")
+}
+
 model Message {
   id             String       @id @default(uuid())
   conversationId String       @map("conversation_id")

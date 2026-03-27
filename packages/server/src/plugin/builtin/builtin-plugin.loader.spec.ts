@@ -17,7 +17,7 @@ describe('BuiltinPluginLoader', () => {
   it('registers the default builtin plugins on module init', async () => {
     await loader.onModuleInit();
 
-    expect(runtime.registerPlugin).toHaveBeenCalledTimes(8);
+    expect(runtime.registerPlugin).toHaveBeenCalledTimes(9);
     expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -52,7 +52,7 @@ describe('BuiltinPluginLoader', () => {
       4,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.conversation-title',
+          id: 'builtin.kb-context',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -62,7 +62,7 @@ describe('BuiltinPluginLoader', () => {
       5,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.provider-router',
+          id: 'builtin.conversation-title',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -72,7 +72,7 @@ describe('BuiltinPluginLoader', () => {
       6,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.persona-router',
+          id: 'builtin.provider-router',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -82,7 +82,7 @@ describe('BuiltinPluginLoader', () => {
       7,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.cron-heartbeat',
+          id: 'builtin.persona-router',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -90,6 +90,16 @@ describe('BuiltinPluginLoader', () => {
     );
     expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
       8,
+      expect.objectContaining({
+        manifest: expect.objectContaining({
+          id: 'builtin.cron-heartbeat',
+          runtime: 'builtin',
+        }),
+        runtimeKind: 'builtin',
+      }),
+    );
+    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+      9,
       expect.objectContaining({
         manifest: expect.objectContaining({
           id: 'builtin.route-inspector',

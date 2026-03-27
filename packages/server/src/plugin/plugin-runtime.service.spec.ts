@@ -911,6 +911,97 @@ describe('PluginRuntimeService', () => {
     ).rejects.toThrow('插件 builtin.provider-router 缺少权限 provider:read');
   });
 
+  it('enforces kb read permission before kb host calls', async () => {
+    const manifest: PluginManifest = {
+      ...builtinManifest,
+      id: 'builtin.kb-context',
+      permissions: ['config:read'],
+      tools: [],
+      hooks: [
+        {
+          name: 'chat:before-model',
+        },
+      ],
+    };
+
+    await service.registerPlugin({
+      manifest,
+      runtimeKind: 'builtin',
+      transport: createTransport(),
+    });
+
+    hostService.call.mockResolvedValue([
+      {
+        id: 'kb-plugin-runtime',
+        title: '统一插件运行时',
+        excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        tags: ['plugin', 'runtime'],
+        createdAt: '2026-03-28T02:00:00.000Z',
+        updatedAt: '2026-03-28T02:00:00.000Z',
+      },
+    ]);
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.kb-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'kb.list' as never,
+        params: {
+          limit: 3,
+        },
+      }),
+    ).rejects.toThrow('插件 builtin.kb-context 缺少权限 kb:read');
+
+    manifest.permissions = ['config:read', 'kb:read'];
+    await service.unregisterPlugin('builtin.kb-context');
+    await service.registerPlugin({
+      manifest,
+      runtimeKind: 'builtin',
+      transport: createTransport(),
+    });
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.kb-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'kb.list' as never,
+        params: {
+          limit: 3,
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        id: 'kb-plugin-runtime',
+        title: '统一插件运行时',
+        excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        tags: ['plugin', 'runtime'],
+        createdAt: '2026-03-28T02:00:00.000Z',
+        updatedAt: '2026-03-28T02:00:00.000Z',
+      },
+    ]);
+
+    expect(hostService.call).toHaveBeenCalledWith({
+      pluginId: 'builtin.kb-context',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'kb.list',
+      params: {
+        limit: 3,
+      },
+    });
+  });
+
   it('enforces persona permissions before persona host calls', async () => {
     const manifest: PluginManifest = {
       ...builtinManifest,

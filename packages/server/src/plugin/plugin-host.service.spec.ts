@@ -3,6 +3,12 @@ import { PluginHostService } from './plugin-host.service';
 import { PluginStateService } from './plugin-state.service';
 
 describe('PluginHostService', () => {
+  const kbService = {
+    listEntries: jest.fn(),
+    searchEntries: jest.fn(),
+    getEntry: jest.fn(),
+  };
+
   const personaService = {
     getCurrentPersona: jest.fn(),
     listPersonas: jest.fn(),
@@ -64,6 +70,7 @@ describe('PluginHostService', () => {
       ...args: unknown[]
     ) => PluginHostService)(
       memoryService as never,
+      kbService as never,
       personaService as never,
       prisma as never,
       stateService,
@@ -73,6 +80,114 @@ describe('PluginHostService', () => {
       aiManagementService as never,
       modelRegistryService as never,
     );
+  });
+
+  it('lists, searches and reads knowledge base entries through kb host api', async () => {
+    kbService.listEntries.mockResolvedValue([
+      {
+        id: 'kb-plugin-runtime',
+        title: '统一插件运行时',
+        excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        tags: ['plugin', 'runtime'],
+        createdAt: '2026-03-28T02:00:00.000Z',
+        updatedAt: '2026-03-28T02:00:00.000Z',
+      },
+    ]);
+    kbService.searchEntries.mockResolvedValue([
+      {
+        id: 'kb-plugin-runtime',
+        title: '统一插件运行时',
+        excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        content: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        tags: ['plugin', 'runtime'],
+        createdAt: '2026-03-28T02:00:00.000Z',
+        updatedAt: '2026-03-28T02:00:00.000Z',
+      },
+    ]);
+    kbService.getEntry.mockResolvedValue({
+      id: 'kb-plugin-runtime',
+      title: '统一插件运行时',
+      excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+      content: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+      tags: ['plugin', 'runtime'],
+      createdAt: '2026-03-28T02:00:00.000Z',
+      updatedAt: '2026-03-28T02:00:00.000Z',
+    });
+
+    await expect(
+      service.call({
+        pluginId: 'builtin.kb-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'kb.list' as never,
+        params: {
+          limit: 5,
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        id: 'kb-plugin-runtime',
+        title: '统一插件运行时',
+        excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        tags: ['plugin', 'runtime'],
+        createdAt: '2026-03-28T02:00:00.000Z',
+        updatedAt: '2026-03-28T02:00:00.000Z',
+      },
+    ]);
+    await expect(
+      service.call({
+        pluginId: 'builtin.kb-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'kb.search' as never,
+        params: {
+          query: '插件运行时',
+          limit: 3,
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        id: 'kb-plugin-runtime',
+        title: '统一插件运行时',
+        excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        content: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+        tags: ['plugin', 'runtime'],
+        createdAt: '2026-03-28T02:00:00.000Z',
+        updatedAt: '2026-03-28T02:00:00.000Z',
+      },
+    ]);
+    await expect(
+      service.call({
+        pluginId: 'builtin.kb-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'kb.get' as never,
+        params: {
+          entryId: 'kb-plugin-runtime',
+        },
+      }),
+    ).resolves.toEqual({
+      id: 'kb-plugin-runtime',
+      title: '统一插件运行时',
+      excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+      content: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+      tags: ['plugin', 'runtime'],
+      createdAt: '2026-03-28T02:00:00.000Z',
+      updatedAt: '2026-03-28T02:00:00.000Z',
+    });
+
+    expect(kbService.listEntries).toHaveBeenCalledWith(5);
+    expect(kbService.searchEntries).toHaveBeenCalledWith('插件运行时', 3);
+    expect(kbService.getEntry).toHaveBeenCalledWith('kb-plugin-runtime');
   });
 
   it('returns the current persona context through persona.current.get', async () => {

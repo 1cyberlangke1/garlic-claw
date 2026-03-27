@@ -3,6 +3,7 @@ import type {
   ChatBeforeModelHookPayload,
 } from '@garlic-claw/shared';
 import { createConversationTitlePlugin } from './conversation-title.plugin';
+import { createKbContextPlugin } from './kb-context.plugin';
 import { createMemoryContextPlugin } from './memory-context.plugin';
 import { createMemoryToolsPlugin } from './memory-tools.plugin';
 import { createProviderRouterPlugin } from './provider-router.plugin';
@@ -182,6 +183,86 @@ describe('BuiltinPluginTransport', () => {
     });
     expect(result).toEqual({
       appendSystemPrompt: '已知用户记忆：\n- [preference] 用户喜欢咖啡',
+    });
+  });
+
+  it('invokes kb search through the same host api facade', async () => {
+    hostService.call
+      .mockResolvedValueOnce({
+        limit: 2,
+        promptPrefix: '与当前问题相关的系统知识',
+      })
+      .mockResolvedValueOnce([
+        {
+          id: 'kb-plugin-runtime',
+          title: '统一插件运行时',
+          excerpt: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+          content: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
+          tags: ['plugin', 'runtime'],
+          createdAt: '2026-03-28T02:00:00.000Z',
+          updatedAt: '2026-03-28T02:00:00.000Z',
+        },
+      ]);
+
+    const transport = new BuiltinPluginTransport(
+      createKbContextPlugin(),
+      hostService as never,
+    );
+
+    const result = await transport.invokeHook({
+      hookName: 'chat:before-model',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        request: {
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          systemPrompt: '你是 Garlic Claw',
+          messages: [
+            {
+              role: 'user',
+              content: '插件系统是怎么统一的？',
+            },
+          ],
+          availableTools: [],
+        },
+      } satisfies ChatBeforeModelHookPayload,
+    });
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.kb-context',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'config.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.kb-context',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'kb.search',
+      params: {
+        query: '插件系统是怎么统一的？',
+        limit: 2,
+      },
+    });
+    expect(result).toEqual({
+      appendSystemPrompt:
+        '与当前问题相关的系统知识：\n- [统一插件运行时] Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
     });
   });
 

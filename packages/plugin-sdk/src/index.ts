@@ -9,6 +9,8 @@ import {
   type JsonObject,
   type JsonValue,
   type PluginCallContext,
+  type PluginKbEntryDetail,
+  type PluginKbEntrySummary,
   type PluginCapability,
   type PluginCronDescriptor,
   type PluginCronJobSummary,
@@ -123,6 +125,31 @@ export interface PluginHostFacade {
    * @returns 会话摘要
    */
   getConversation(): Promise<JsonValue>;
+
+  /**
+   * 列出宿主当前可见的知识库条目摘要。
+   * @param limit 可选返回上限
+   * @returns KB 摘要列表
+   */
+  listKnowledgeBaseEntries(limit?: number): Promise<PluginKbEntrySummary[]>;
+
+  /**
+   * 搜索宿主知识库。
+   * @param query 搜索词
+   * @param limit 可选返回上限
+   * @returns KB 条目详情列表
+   */
+  searchKnowledgeBase(
+    query: string,
+    limit?: number,
+  ): Promise<PluginKbEntryDetail[]>;
+
+  /**
+   * 读取单个知识库条目详情。
+   * @param entryId 条目 ID
+   * @returns KB 条目详情
+   */
+  getKnowledgeBaseEntry(entryId: string): Promise<PluginKbEntryDetail>;
 
   /**
    * 读取当前 persona 上下文。
@@ -706,6 +733,24 @@ export class PluginClient {
           this.sendHostCall('memory.search', { query, limit }, context),
         getConversation: () =>
           this.sendHostCall('conversation.get', {}, context),
+        listKnowledgeBaseEntries: (limit) =>
+          this.sendHostCall(
+            'kb.list',
+            typeof limit === 'number' ? { limit } : {},
+            context,
+          ) as unknown as Promise<PluginKbEntrySummary[]>,
+        searchKnowledgeBase: (query, limit = 5) =>
+          this.sendHostCall(
+            'kb.search',
+            { query, limit },
+            context,
+          ) as unknown as Promise<PluginKbEntryDetail[]>,
+        getKnowledgeBaseEntry: (entryId) =>
+          this.sendHostCall(
+            'kb.get',
+            { entryId },
+            context,
+          ) as unknown as Promise<PluginKbEntryDetail>,
         getCurrentPersona: () =>
           this.sendHostCall(
             'persona.current.get',
