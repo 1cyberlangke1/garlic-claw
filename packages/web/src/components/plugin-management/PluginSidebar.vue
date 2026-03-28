@@ -1,11 +1,27 @@
 <template>
   <section class="plugin-sidebar">
     <div class="sidebar-header">
-      <div>
+      <div class="sidebar-header-copy">
+        <span class="sidebar-kicker">Plugin Index</span>
         <h2>插件</h2>
         <p>统一查看内建插件与远程插件。</p>
       </div>
       <button type="button" class="ghost-button" @click="$emit('refresh')">刷新</button>
+    </div>
+
+    <div v-if="!loading && plugins.length > 0" class="sidebar-overview">
+      <div class="sidebar-stat">
+        <span>总数</span>
+        <strong>{{ plugins.length }}</strong>
+      </div>
+      <div class="sidebar-stat">
+        <span>在线</span>
+        <strong>{{ onlineCount }}</strong>
+      </div>
+      <div class="sidebar-stat attention">
+        <span>需关注</span>
+        <strong>{{ issueCount }}</strong>
+      </div>
     </div>
 
     <p v-if="error" class="sidebar-error">{{ error }}</p>
@@ -25,12 +41,14 @@
       >
         <div class="plugin-item-top">
           <strong>{{ plugin.displayName ?? plugin.name }}</strong>
-          <span class="runtime-badge">{{ plugin.runtimeKind ?? 'remote' }}</span>
+          <span class="runtime-badge">{{ runtimeKindLabel(plugin) }}</span>
         </div>
         <div class="plugin-item-meta">
-          <span class="health-dot" :class="healthClass(plugin)" />
-          <span>{{ healthLabel(plugin) }}</span>
-          <span>{{ plugin.connected ? '在线' : '离线' }}</span>
+          <span class="meta-chip">
+            <span class="health-dot" :class="healthClass(plugin)" />
+            {{ healthLabel(plugin) }}
+          </span>
+          <span class="meta-chip">{{ plugin.connected ? '在线' : '离线' }}</span>
           <span
             v-if="runtimePressureLabel(plugin)"
             class="pressure-badge"
@@ -47,6 +65,9 @@
           {{ pluginIssueSummary(plugin) }}
         </p>
         <p class="plugin-item-desc">{{ plugin.description ?? '未填写描述' }}</p>
+        <div class="plugin-item-footer">
+          <span>{{ pluginSurfaceSummary(plugin) }}</span>
+        </div>
       </button>
     </div>
   </section>
@@ -77,6 +98,12 @@ const orderedPlugins = computed(() =>
 
     return (left.displayName ?? left.name).localeCompare(right.displayName ?? right.name)
   }),
+)
+const onlineCount = computed(() =>
+  props.plugins.filter((plugin) => plugin.connected).length,
+)
+const issueCount = computed(() =>
+  props.plugins.filter((plugin) => hasPluginIssue(plugin)).length,
 )
 
 /**
@@ -109,6 +136,15 @@ function healthClass(plugin: PluginInfo): string {
 }
 
 /**
+ * 生成插件运行形态的简短文案。
+ * @param plugin 插件摘要
+ * @returns `内建` 或 `远程`
+ */
+function runtimeKindLabel(plugin: PluginInfo): string {
+  return (plugin.runtimeKind ?? 'remote') === 'builtin' ? '内建' : '远程'
+}
+
+/**
  * 生成插件运行时压力展示文案。
  * @param plugin 插件摘要
  * @returns 压力文本；缺失时返回 null
@@ -130,6 +166,15 @@ function runtimePressureLabel(plugin: PluginInfo): string | null {
 function isPluginBusy(plugin: PluginInfo): boolean {
   const pressure = plugin.health?.runtimePressure
   return !!pressure && pressure.activeExecutions >= pressure.maxConcurrentExecutions
+}
+
+/**
+ * 判断插件是否处于需要被优先关注的状态。
+ * @param plugin 插件摘要
+ * @returns 是否需要关注
+ */
+function hasPluginIssue(plugin: PluginInfo): boolean {
+  return isPluginBusy(plugin) || plugin.health?.status === 'error' || plugin.health?.status === 'degraded'
 }
 
 /**
@@ -189,6 +234,15 @@ function pluginSortWeight(plugin: PluginInfo): number {
 }
 
 /**
+ * 生成插件扩展面的简短摘要，提升侧栏扫描效率。
+ * @param plugin 插件摘要
+ * @returns 扩展摘要
+ */
+function pluginSurfaceSummary(plugin: PluginInfo): string {
+  return `${plugin.capabilities.length} 工具 · ${plugin.hooks?.length ?? 0} Hook · ${plugin.routes?.length ?? 0} Route`
+}
+
+/**
  * 截断侧栏中的长文本，避免问题摘要撑爆布局。
  * @param value 原始文本
  * @param maxLength 最大长度
@@ -203,154 +257,4 @@ function truncateText(value: string, maxLength: number): string {
 }
 </script>
 
-<style scoped>
-.plugin-sidebar {
-  display: grid;
-  gap: 14px;
-  padding: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  min-height: 0;
-}
-
-.sidebar-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.sidebar-header h2 {
-  font-size: 1.1rem;
-}
-
-.sidebar-header p {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-.ghost-button {
-  background: transparent;
-  border: 1px solid var(--border);
-}
-
-.sidebar-error {
-  color: var(--danger);
-  font-size: 0.85rem;
-}
-
-.sidebar-state {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.plugin-list {
-  display: grid;
-  gap: 10px;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.plugin-item {
-  display: grid;
-  gap: 8px;
-  text-align: left;
-  padding: 0.9rem;
-  background: var(--bg);
-  border: 1px solid transparent;
-}
-
-.plugin-item.active {
-  border-color: var(--accent);
-  background: rgba(124, 106, 246, 0.14);
-}
-
-.plugin-item-top,
-.plugin-item-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.plugin-item-top strong {
-  font-size: 0.95rem;
-  overflow-wrap: anywhere;
-}
-
-.runtime-badge {
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: var(--bg-input);
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-}
-
-.plugin-item-meta {
-  justify-content: flex-start;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-}
-
-.plugin-item-desc {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.plugin-item-issue {
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: #f0b24b;
-  overflow-wrap: anywhere;
-}
-
-.plugin-item-issue.busy,
-.plugin-item-issue.error {
-  color: var(--danger);
-}
-
-.pressure-badge {
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  background: rgba(124, 106, 246, 0.14);
-  color: var(--accent);
-  font-size: 0.72rem;
-}
-
-.pressure-badge.busy {
-  background: rgba(217, 83, 79, 0.12);
-  color: var(--danger);
-}
-
-.health-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-
-.health-dot.healthy {
-  background: var(--success);
-}
-
-.health-dot.degraded {
-  background: #f0b24b;
-}
-
-.health-dot.error {
-  background: var(--danger);
-}
-
-.health-dot.offline {
-  background: #697093;
-}
-
-@media (max-width: 960px) {
-  .plugin-sidebar {
-    order: 2;
-  }
-}
-</style>
+<style scoped src="./plugin-sidebar.css"></style>

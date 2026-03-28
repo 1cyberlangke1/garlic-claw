@@ -1,12 +1,10 @@
 <template>
   <div class="plugins-page">
-    <header class="page-header">
-      <div>
-        <h1>插件管理</h1>
-        <p>统一管理内建插件与远程插件的配置、作用域、健康和治理动作。</p>
-      </div>
-      <button type="button" @click="refreshAll">刷新全部</button>
-    </header>
+    <PluginPageHero
+      :headline="heroHeadline"
+      :cards="overviewCards"
+      @refresh="refreshAll"
+    />
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
     <p v-else-if="notice" class="page-banner success">{{ notice }}</p>
@@ -22,108 +20,20 @@
       />
 
       <section v-if="selectedPlugin" class="plugin-detail">
-        <div class="detail-header">
-          <div>
-            <div class="eyebrow">{{ selectedPlugin.runtimeKind ?? 'remote' }}</div>
-            <h2>{{ selectedPlugin.displayName ?? selectedPlugin.name }}</h2>
-            <p>{{ selectedPlugin.description ?? '当前插件没有额外描述。' }}</p>
-          </div>
-          <div class="detail-actions">
-            <button
-              type="button"
-              class="ghost-button"
-              :disabled="detailLoading"
-              @click="refreshSelectedDetails()"
-            >
-              {{ detailLoading ? '同步中...' : '刷新详情' }}
-            </button>
-            <button
-              v-for="action in selectedPluginActions"
-              :key="action.name"
-              type="button"
-              class="ghost-button"
-              :disabled="runningAction !== null"
-              @click="runAction(action.name)"
-            >
-              {{ runningAction === action.name ? action.pendingLabel : action.label }}
-            </button>
-            <button
-              type="button"
-              class="ghost-button danger-button"
-              :disabled="deleting || !canDeleteSelected"
-              @click="deleteSelectedPlugin"
-            >
-              {{ deleting ? '删除中...' : '删除记录' }}
-            </button>
-          </div>
-        </div>
-
-        <div class="summary-grid">
-          <article class="summary-card">
-            <span class="summary-label">连接状态</span>
-            <strong>{{ selectedPlugin.connected ? '在线' : '离线' }}</strong>
-            <p>最后活跃：{{ formatTime(selectedPlugin.lastSeenAt) }}</p>
-          </article>
-          <article class="summary-card">
-            <span class="summary-label">健康状态</span>
-            <strong>{{ healthText(healthSnapshot ?? selectedPlugin.health) }}</strong>
-            <p>最后成功：{{ formatTime((healthSnapshot ?? selectedPlugin.health)?.lastSuccessAt ?? null) }}</p>
-            <p>最后检查：{{ formatTime((healthSnapshot ?? selectedPlugin.health)?.lastCheckedAt ?? null) }}</p>
-            <p>并发占用：{{ formatRuntimePressure(healthSnapshot ?? selectedPlugin.health) }}</p>
-          </article>
-          <article class="summary-card">
-            <span class="summary-label">失败统计</span>
-            <strong>{{ (healthSnapshot ?? selectedPlugin.health)?.failureCount ?? 0 }}</strong>
-            <p>连续失败：{{ (healthSnapshot ?? selectedPlugin.health)?.consecutiveFailures ?? 0 }}</p>
-          </article>
-          <article class="summary-card">
-            <span class="summary-label">能力概览</span>
-            <strong>{{ selectedPlugin.capabilities.length }} 个能力</strong>
-            <p>
-              {{ selectedPlugin.hooks?.length ?? 0 }} 个 Hook，
-              {{ selectedCronJobs.length }} 个 Cron，
-              {{ selectedPlugin.routes?.length ?? 0 }} 个 Route，
-              {{ selectedPlugin.permissions?.length ?? 0 }} 个权限
-            </p>
-          </article>
-        </div>
-
-        <div class="tag-panel">
-          <div class="tag-group">
-            <span class="tag-label">权限</span>
-            <span v-for="permission in selectedPlugin.permissions ?? []" :key="permission" class="token">
-              {{ permission }}
-            </span>
-            <span v-if="!(selectedPlugin.permissions?.length)" class="token muted-token">无</span>
-          </div>
-          <div class="tag-group">
-            <span class="tag-label">Hook</span>
-            <span v-for="hook in selectedPlugin.hooks ?? []" :key="hook.name" class="token">
-              {{ hook.name }}
-            </span>
-            <span v-if="!(selectedPlugin.hooks?.length)" class="token muted-token">无</span>
-          </div>
-          <div class="tag-group">
-            <span class="tag-label">扩展面</span>
-            <span v-for="highlight in selectedPluginHighlights" :key="highlight" class="token accent-token">
-              {{ highlight }}
-            </span>
-            <span v-if="selectedPluginHighlights.length === 0" class="token muted-token">基础工具插件</span>
-          </div>
-          <div class="tag-group">
-            <span class="tag-label">工具</span>
-            <span v-for="tool in selectedPlugin.capabilities" :key="tool.name" class="token">
-              {{ tool.name }}
-            </span>
-            <span v-if="selectedPlugin.capabilities.length === 0" class="token muted-token">无</span>
-          </div>
-        </div>
-
-        <div v-if="(healthSnapshot ?? selectedPlugin.health)?.lastError" class="error-card">
-          <strong>最近错误</strong>
-          <p>{{ (healthSnapshot ?? selectedPlugin.health)?.lastError }}</p>
-          <p>最后错误时间：{{ formatTime((healthSnapshot ?? selectedPlugin.health)?.lastErrorAt ?? null) }}</p>
-        </div>
+        <PluginDetailOverview
+          :plugin="selectedPlugin"
+          :health="selectedPluginHealth"
+          :actions="selectedPluginActions"
+          :running-action="runningAction"
+          :detail-loading="detailLoading"
+          :deleting="deleting"
+          :can-delete="canDeleteSelected"
+          :cron-count="selectedCronJobs.length"
+          :highlights="selectedPluginHighlights"
+          @refresh-details="refreshSelectedDetails()"
+          @run-action="runAction"
+          @delete-selected="deleteSelectedPlugin"
+        />
 
         <div class="detail-grid">
           <PluginConfigForm
@@ -171,8 +81,9 @@
       </section>
 
       <section v-else class="plugin-empty">
+        <span class="empty-kicker">等待插件接入</span>
         <h2>暂无插件</h2>
-        <p>启动内建插件或远程插件后，就可以在这里统一管理它们。</p>
+        <p>启动内建插件或远程插件后，就可以在这里统一查看扩展面、健康快照和治理动作。</p>
       </section>
     </div>
   </div>
@@ -183,7 +94,9 @@ import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic
 import { computed } from 'vue'
 import PluginConfigForm from '../components/plugin-management/PluginConfigForm.vue'
 import PluginCronList from '../components/plugin-management/PluginCronList.vue'
+import PluginDetailOverview from '../components/plugin-management/PluginDetailOverview.vue'
 import PluginEventLog from '../components/plugin-management/PluginEventLog.vue'
+import PluginPageHero from '../components/plugin-management/PluginPageHero.vue'
 import PluginRouteList from '../components/plugin-management/PluginRouteList.vue'
 import PluginScopeEditor from '../components/plugin-management/PluginScopeEditor.vue'
 import PluginSidebar from '../components/plugin-management/PluginSidebar.vue'
@@ -234,12 +147,81 @@ const {
 const selectedPluginHighlights = computed(() =>
   selectedPlugin.value ? pluginHighlights(selectedPlugin.value) : [],
 )
+const selectedPluginHealth = computed<PluginHealthSnapshot | null>(() =>
+  healthSnapshot.value ?? selectedPlugin.value?.health ?? null,
+)
 const selectedPluginActions = computed(() =>
   selectedPlugin.value ? pluginActions(selectedPlugin.value) : [],
 )
 const selectedCronJobs = computed(() =>
   cronJobs.value.length > 0 ? cronJobs.value : selectedPlugin.value?.crons ?? [],
 )
+const onlinePluginCount = computed(() =>
+  plugins.value.filter((plugin) => plugin.connected).length,
+)
+const builtinPluginCount = computed(() =>
+  plugins.value.filter((plugin) => (plugin.runtimeKind ?? 'remote') === 'builtin').length,
+)
+const remotePluginCount = computed(() =>
+  Math.max(plugins.value.length - builtinPluginCount.value, 0),
+)
+const attentionPluginCount = computed(() =>
+  plugins.value.filter((plugin) => needsAttention(plugin)).length,
+)
+const heroHeadline = computed(() => {
+  const total = plugins.value.length
+  const online = onlinePluginCount.value
+  if (total === 0) {
+    return '等待首个插件接入'
+  }
+  if (online === total) {
+    return `${online} / ${total} 在线`
+  }
+
+  return `${online} / ${total} 在线，${total - online} 个离线`
+})
+const overviewCards = computed(() => {
+  const total = plugins.value.length
+
+  return [
+    {
+      label: '已接入插件',
+      value: String(total),
+      note: total > 0
+        ? `内建 ${builtinPluginCount.value} · 远程 ${remotePluginCount.value}`
+        : '内建与远程插件都会汇聚到这里',
+      tone: 'accent',
+    },
+    {
+      label: '在线插件',
+      value: String(onlinePluginCount.value),
+      note: total === 0
+        ? '当前还没有建立运行中的插件连接'
+        : onlinePluginCount.value === total
+          ? '当前全部在线'
+          : `${total - onlinePluginCount.value} 个离线`,
+      tone: 'neutral',
+    },
+    {
+      label: '需关注',
+      value: String(attentionPluginCount.value),
+      note: attentionPluginCount.value > 0
+        ? '存在异常、降级或满并发插件'
+        : '当前没有高优先级告警',
+      tone: attentionPluginCount.value > 0 ? 'warning' : 'neutral',
+    },
+    {
+      label: '当前焦点',
+      value: selectedPlugin.value
+        ? selectedPlugin.value.displayName ?? selectedPlugin.value.name
+        : '未选择插件',
+      note: selectedPlugin.value
+        ? `${runtimeKindLabel(selectedPlugin.value)} · ${healthText(selectedPluginHealth.value)}`
+        : '从左侧选择插件进入详情',
+      tone: 'spotlight',
+    },
+  ]
+})
 
 const ACTION_LABELS: Record<PluginActionName, {
   label: string
@@ -257,19 +239,6 @@ const ACTION_LABELS: Record<PluginActionName, {
     label: '请求重连',
     pendingLabel: '重连中...',
   },
-}
-
-/**
- * 把 ISO 时间转成人类可读文案。
- * @param value 时间字符串
- * @returns 展示文案
- */
-function formatTime(value: string | null): string {
-  if (!value) {
-    return '暂无'
-  }
-
-  return new Date(value).toLocaleString()
 }
 
 /**
@@ -293,17 +262,31 @@ function healthText(health: PluginHealthSnapshot | null | undefined): string {
 }
 
 /**
- * 把运行时并发压力格式化为易读文本。
- * @param health 插件健康快照
- * @returns `active / max` 或占位文本
+ * 根据运行形态生成更适合页面展示的文案。
+ * @param plugin 当前插件
+ * @returns 运行形态标签
  */
-function formatRuntimePressure(health: PluginHealthSnapshot | null | undefined): string {
-  const pressure = health?.runtimePressure
-  if (!pressure) {
-    return '--'
-  }
+function runtimeKindLabel(plugin: PluginInfo): string {
+  return (plugin.runtimeKind ?? 'remote') === 'builtin' ? '内建插件' : '远程插件'
+}
 
-  return `${pressure.activeExecutions} / ${pressure.maxConcurrentExecutions}`
+/**
+ * 判断当前插件是否处于满并发繁忙态。
+ * @param health 插件健康快照
+ * @returns 是否繁忙
+ */
+function isRuntimeBusy(health: PluginHealthSnapshot | null | undefined): boolean {
+  const pressure = health?.runtimePressure
+  return !!pressure && pressure.activeExecutions >= pressure.maxConcurrentExecutions
+}
+
+/**
+ * 判断插件是否需要在总览里被视为“需关注”。
+ * @param plugin 插件摘要
+ * @returns 是否需要关注
+ */
+function needsAttention(plugin: PluginInfo): boolean {
+  return isRuntimeBusy(plugin.health) || plugin.health?.status === 'error' || plugin.health?.status === 'degraded'
 }
 
 /**
@@ -401,237 +384,4 @@ function pluginActions(plugin: PluginInfo): Array<{
 }
 </script>
 
-<style scoped>
-.plugins-page {
-  display: grid;
-  gap: 18px;
-  padding: 1.5rem 2rem;
-  height: 100%;
-  min-width: 0;
-  overflow-y: auto;
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.page-header h1 {
-  font-size: 1.45rem;
-}
-
-.page-header p {
-  color: var(--text-muted);
-  max-width: 720px;
-}
-
-.page-banner {
-  padding: 0.8rem 1rem;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-}
-
-.page-banner.error {
-  color: #ffb4b4;
-  background: rgba(224, 85, 85, 0.15);
-}
-
-.page-banner.success {
-  color: #b6ffd3;
-  background: rgba(68, 204, 136, 0.15);
-}
-
-.plugins-layout {
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 18px;
-  min-height: 0;
-}
-
-.plugin-detail,
-.plugin-empty {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-
-.plugin-empty {
-  align-content: start;
-  padding: 2rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.plugin-empty p {
-  color: var(--text-muted);
-}
-
-.detail-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 1rem 1.1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.eyebrow {
-  display: inline-flex;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(124, 106, 246, 0.16);
-  color: var(--accent-hover);
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  margin-bottom: 0.45rem;
-}
-
-.detail-header h2 {
-  font-size: 1.35rem;
-}
-
-.detail-header p {
-  color: var(--text-muted);
-}
-
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.ghost-button {
-  background: transparent;
-  border: 1px solid var(--border);
-}
-
-.danger-button {
-  color: var(--danger);
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.summary-card {
-  display: grid;
-  gap: 8px;
-  padding: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.summary-card strong {
-  font-size: 1.2rem;
-}
-
-.summary-card p,
-.summary-label {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.tag-panel {
-  display: grid;
-  gap: 12px;
-  padding: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.tag-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.tag-label {
-  width: 52px;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  padding-top: 0.2rem;
-}
-
-.token {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.22rem 0.55rem;
-  border-radius: 999px;
-  background: var(--bg-input);
-  font-size: 0.82rem;
-}
-
-.muted-token {
-  color: var(--text-muted);
-}
-
-.accent-token {
-  background: rgba(102, 197, 138, 0.18);
-  color: #cbffd7;
-  border: 1px solid rgba(102, 197, 138, 0.24);
-}
-
-.error-card {
-  display: grid;
-  gap: 8px;
-  padding: 1rem;
-  background: rgba(224, 85, 85, 0.12);
-  border: 1px solid rgba(224, 85, 85, 0.24);
-  border-radius: 12px;
-  color: #ffd5d5;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.detail-span {
-  grid-column: 1 / -1;
-}
-
-@media (max-width: 1200px) {
-  .summary-grid,
-  .detail-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 960px) {
-  .plugins-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 720px) {
-  .plugins-page {
-    padding: 1rem;
-  }
-
-  .page-header,
-  .detail-header {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .summary-grid,
-  .detail-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .detail-actions {
-    justify-content: flex-start;
-  }
-}
-</style>
+<style scoped src="./plugins-view.css"></style>
