@@ -315,6 +315,9 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
 
       case WS_TYPE.HEARTBEAT:
         if (msg.action === WS_ACTION.PING) {
+          if (conn.manifest) {
+            await this.pluginRuntime.touchPluginHeartbeat(conn.pluginName);
+          }
           this.send(ws, WS_TYPE.HEARTBEAT, WS_ACTION.PONG, {});
         }
         return;
@@ -544,6 +547,9 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
           },
           this.readTimeoutMs(context, 15000),
         ) as unknown as Promise<PluginRouteResponse>,
+      reload: () => this.disconnectPlugin(conn.pluginName),
+      reconnect: () => this.disconnectPlugin(conn.pluginName),
+      checkHealth: () => this.checkPluginHealth(conn.pluginName),
     };
   }
 

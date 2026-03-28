@@ -48,6 +48,29 @@ interface BuiltinPluginHostCaller {
 }
 
 /**
+ * 内建插件可选的治理动作处理器。
+ */
+interface BuiltinPluginGovernanceHandlers {
+  /**
+   * 重新装载当前内建插件。
+   * @returns 无返回值
+   */
+  reload?: () => Promise<void> | void;
+
+  /**
+   * 请求当前内建插件重连。
+   * @returns 无返回值
+   */
+  reconnect?: () => Promise<void> | void;
+
+  /**
+   * 对当前内建插件执行健康检查。
+   * @returns 健康检查结果
+   */
+  checkHealth?: () => Promise<{ ok: boolean }> | { ok: boolean };
+}
+
+/**
  * 内建插件的宿主 API 门面。
  */
 interface BuiltinPluginHostFacade {
@@ -378,6 +401,7 @@ export class BuiltinPluginTransport implements PluginTransport {
   constructor(
     private readonly definition: BuiltinPluginDefinition,
     private readonly hostService: BuiltinPluginHostCaller,
+    private readonly governance?: BuiltinPluginGovernanceHandlers,
   ) {}
 
   /**
@@ -444,6 +468,48 @@ export class BuiltinPluginTransport implements PluginTransport {
       callContext: input.context,
       host: this.createHostFacade(input.context),
     });
+  }
+
+  /**
+   * 重新装载当前内建插件。
+   * @returns 无返回值
+   */
+  async reload(): Promise<void> {
+    if (!this.governance?.reload) {
+      throw new BadRequestException(
+        `插件 ${this.definition.manifest.id} 不支持治理动作 reload`,
+      );
+    }
+
+    await this.governance.reload();
+  }
+
+  /**
+   * 请求当前内建插件重连。
+   * @returns 无返回值
+   */
+  async reconnect(): Promise<void> {
+    if (!this.governance?.reconnect) {
+      throw new BadRequestException(
+        `插件 ${this.definition.manifest.id} 不支持治理动作 reconnect`,
+      );
+    }
+
+    await this.governance.reconnect();
+  }
+
+  /**
+   * 对当前内建插件执行健康检查。
+   * @returns 健康检查结果
+   */
+  async checkHealth(): Promise<{ ok: boolean }> {
+    if (!this.governance?.checkHealth) {
+      return {
+        ok: true,
+      };
+    }
+
+    return this.governance.checkHealth();
   }
 
   /**

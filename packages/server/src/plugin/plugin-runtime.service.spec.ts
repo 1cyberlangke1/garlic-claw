@@ -10,6 +10,7 @@ describe('PluginRuntimeService', () => {
   const pluginService = {
     registerPlugin: jest.fn(),
     setOffline: jest.fn(),
+    heartbeat: jest.fn(),
     getGovernanceSnapshot: jest.fn(),
     recordPluginSuccess: jest.fn(),
     recordPluginFailure: jest.fn(),
@@ -137,6 +138,9 @@ describe('PluginRuntimeService', () => {
     executeTool?: jest.Mock;
     invokeHook?: jest.Mock;
     invokeRoute?: jest.Mock;
+    reload?: jest.Mock;
+    reconnect?: jest.Mock;
+    checkHealth?: jest.Mock;
   }) {
     return {
       executeTool: jest.fn(),
@@ -244,6 +248,73 @@ describe('PluginRuntimeService', () => {
     expect(result).toEqual({
       saved: true,
     });
+  });
+
+  it('delegates governance reload and reconnect actions to the owning transport', async () => {
+    const reload = jest.fn().mockResolvedValue(undefined);
+    const reconnect = jest.fn().mockResolvedValue(undefined);
+
+    await service.registerPlugin({
+      manifest: builtinManifest,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        reload,
+        reconnect,
+      }),
+    });
+
+    await expect(
+      (service as any).runPluginAction({
+        pluginId: 'builtin.memory-tools',
+        action: 'reload',
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      (service as any).runPluginAction({
+        pluginId: 'builtin.memory-tools',
+        action: 'reconnect',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns unhealthy when governance health checks fail or the plugin is offline', async () => {
+    const checkHealth = jest.fn().mockResolvedValue({
+      ok: false,
+    });
+
+    await service.registerPlugin({
+      manifest: builtinManifest,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        checkHealth,
+      }),
+    });
+
+    await expect(
+      (service as any).checkPluginHealth('builtin.memory-tools'),
+    ).resolves.toEqual({
+      ok: false,
+    });
+    await expect(
+      (service as any).checkPluginHealth('builtin.missing-plugin'),
+    ).resolves.toEqual({
+      ok: false,
+    });
+
+    expect(checkHealth).toHaveBeenCalledTimes(1);
+  });
+
+  it('touches plugin heartbeat timestamps through the plugin service', async () => {
+    pluginService.heartbeat.mockResolvedValue(undefined);
+
+    await expect(
+      (service as any).touchPluginHeartbeat('remote.pc-host'),
+    ).resolves.toBeUndefined();
+
+    expect(pluginService.heartbeat).toHaveBeenCalledWith('remote.pc-host');
   });
 
   it('lists declared routes and invokes them through the owning transport', async () => {

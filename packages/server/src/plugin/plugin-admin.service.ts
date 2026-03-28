@@ -4,8 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { BuiltinPluginLoader } from './builtin/builtin-plugin.loader';
-import { PluginGateway } from './plugin.gateway';
+import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
 /**
@@ -27,8 +26,7 @@ import { PluginService } from './plugin.service';
 export class PluginAdminService {
   constructor(
     private readonly pluginService: PluginService,
-    private readonly pluginGateway: PluginGateway,
-    private readonly builtinLoader: BuiltinPluginLoader,
+    private readonly pluginRuntime: PluginRuntimeService,
   ) {}
 
   /**
@@ -48,8 +46,11 @@ export class PluginAdminService {
 
     switch (action) {
       case 'reload':
+        await this.pluginRuntime.runPluginAction({
+          pluginId,
+          action: 'reload',
+        });
         if (plugin.runtimeKind === 'builtin') {
-          await this.builtinLoader.reloadPlugin(pluginId);
           await this.pluginService.recordPluginSuccess(pluginId, {
             type: 'governance:reload',
             message: '已重新装载内建插件',
@@ -61,7 +62,6 @@ export class PluginAdminService {
           );
         }
 
-        await this.pluginGateway.disconnectPlugin(pluginId);
         await this.pluginService.recordPluginSuccess(pluginId, {
           type: 'governance:reload',
           message: '已触发远程插件重连',
@@ -73,7 +73,10 @@ export class PluginAdminService {
           throw new BadRequestException('只有远程插件支持 reconnect');
         }
 
-        await this.pluginGateway.disconnectPlugin(pluginId);
+        await this.pluginRuntime.runPluginAction({
+          pluginId,
+          action: 'reconnect',
+        });
         await this.pluginService.recordPluginSuccess(pluginId, {
           type: 'governance:reconnect',
           message: '已请求远程插件重连',
@@ -81,9 +84,7 @@ export class PluginAdminService {
         return this.createAcceptedResult(pluginId, action, '已请求远程插件重连');
 
       case 'health-check': {
-        const result = plugin.runtimeKind === 'builtin'
-          ? await this.builtinLoader.checkPluginHealth(pluginId)
-          : await this.pluginGateway.checkPluginHealth(pluginId);
+        const result = await this.pluginRuntime.checkPluginHealth(pluginId);
         const message = result.ok ? '插件健康检查通过' : '插件健康检查失败';
         await this.pluginService.recordHealthCheck(pluginId, {
           ok: result.ok,

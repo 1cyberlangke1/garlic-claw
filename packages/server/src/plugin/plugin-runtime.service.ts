@@ -7,6 +7,7 @@ import type {
   ChatBeforeModelHookPassResult,
   ChatBeforeModelHookShortCircuitResult,
   HostCallPayload,
+  PluginActionName,
   PluginCallContext,
   PluginCapability,
   PluginHookName,
@@ -132,6 +133,24 @@ export interface PluginTransport {
     request: PluginRouteRequest;
     context: PluginCallContext;
   }): Promise<PluginRouteResponse> | PluginRouteResponse;
+
+  /**
+   * 重新装载当前插件。
+   * @returns 无返回值
+   */
+  reload?(): Promise<void> | void;
+
+  /**
+   * 请求当前插件主动重连。
+   * @returns 无返回值
+   */
+  reconnect?(): Promise<void> | void;
+
+  /**
+   * 执行一次当前插件的健康检查。
+   * @returns 健康检查结果
+   */
+  checkHealth?(): Promise<{ ok: boolean }> | { ok: boolean };
 }
 
 /**
@@ -317,6 +336,83 @@ export class PluginRuntimeService {
       deviceType: record.deviceType,
       manifest: record.manifest,
     }));
+  }
+
+  /**
+   * 统一执行一个插件治理动作。
+   * @param input 插件 ID 与治理动作名
+   * @returns 无返回值
+   */
+  async runPluginAction(input: {
+    pluginId: string;
+    action: Exclude<PluginActionName, 'health-check'>;
+  }): Promise<void> {
+    const record = this.getRecordOrThrow(input.pluginId);
+    const handler = input.action === 'reload'
+      ? record.transport.reload
+      : record.transport.reconnect;
+    if (!handler) {
+      throw new BadRequestException(
+        `插件 ${input.pluginId} 不支持治理动作 ${input.action}`,
+      );
+    }
+
+    await this.runWithTimeout(
+      Promise.resolve(handler.call(record.transport)),
+      15000,
+      `插件 ${input.pluginId} 治理动作 ${input.action} 执行超时`,
+    );
+  }
+
+  /**
+   * 统一执行一次插件健康检查。
+   * @param pluginId 插件 ID
+   * @returns 健康检查结果
+   */
+  async checkPluginHealth(pluginId: string): Promise<{ ok: boolean }> {
+    const record = this.records.get(pluginId);
+    if (!record) {
+      return {
+        ok: false,
+      };
+    }
+    if (!record.transport.checkHealth) {
+      return {
+        ok: true,
+      };
+    }
+
+    try {
+      return await this.runWithTimeout(
+        Promise.resolve(record.transport.checkHealth()),
+        5000,
+        `插件 ${pluginId} 健康检查超时`,
+      );
+    } catch {
+      return {
+        ok: false,
+      };
+    }
+  }
+
+  /**
+   * 刷新插件最近一次心跳时间。
+   * @param pluginId 插件 ID
+   * @returns 无返回值
+   */
+  async touchPluginHeartbeat(pluginId: string): Promise<void> {
+    if (!pluginId) {
+      return;
+    }
+
+    try {
+      await this.pluginService.heartbeat(pluginId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return;
+      }
+      throw error;
+    }
   }
 
   /**

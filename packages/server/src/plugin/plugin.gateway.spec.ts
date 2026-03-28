@@ -13,6 +13,7 @@ describe('PluginGateway', () => {
     registerPlugin: jest.fn(),
     unregisterPlugin: jest.fn(),
     callHost: jest.fn(),
+    touchPluginHeartbeat: jest.fn(),
   };
 
   const jwtService = {
@@ -163,6 +164,37 @@ describe('PluginGateway', () => {
         ],
       },
     });
+  });
+
+  it('refreshes persisted heartbeat timestamps when a remote plugin sends ping', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+      authenticated: true,
+      manifest: remoteManifest,
+    };
+    pluginRuntime.touchPluginHeartbeat.mockResolvedValue(undefined);
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.HEARTBEAT,
+        action: WS_ACTION.PING,
+        payload: {},
+      },
+    );
+
+    expect(pluginRuntime.touchPluginHeartbeat).toHaveBeenCalledWith('remote.pc-host');
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: WS_TYPE.HEARTBEAT,
+        action: WS_ACTION.PONG,
+        payload: {},
+      }),
+    );
   });
 
   it('sends execute messages through the registered remote transport and resolves the response', async () => {

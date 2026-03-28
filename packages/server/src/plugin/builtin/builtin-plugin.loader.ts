@@ -100,6 +100,9 @@ export class BuiltinPluginLoader implements OnModuleInit {
       runtimeKind: 'builtin',
       transport: new BuiltinPluginTransport(definition, {
         call: (input) => this.pluginRuntime.callHost(input),
+      }, {
+        reload: () => this.reloadPlugin(definition.manifest.id),
+        checkHealth: () => this.checkPluginHealth(definition.manifest.id),
       }),
     });
   }
