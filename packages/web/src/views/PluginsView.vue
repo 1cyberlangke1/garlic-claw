@@ -267,8 +267,20 @@ function pluginHighlights(plugin: PluginInfo): string[] {
   const hooks = new Set((plugin.hooks ?? []).map((hook) => hook.name))
   const highlights: string[] = []
 
+  if (permissions.has('conversation:read')) {
+    highlights.push('可读取会话上下文')
+  }
+  if (permissions.has('conversation:write')) {
+    highlights.push('可修改会话标题')
+  }
   if (permissions.has('provider:read')) {
     highlights.push('可读取 Provider 上下文')
+  }
+  if (permissions.has('memory:read')) {
+    highlights.push('可读取用户记忆')
+  }
+  if (permissions.has('memory:write')) {
+    highlights.push('可写入用户记忆')
   }
   if (permissions.has('automation:read')) {
     highlights.push('可读取自动化规则')
@@ -288,6 +300,18 @@ function pluginHighlights(plugin: PluginInfo): string[] {
   if (permissions.has('llm:generate')) {
     highlights.push('可二次调用模型')
   }
+  if (permissions.has('storage:read') || permissions.has('storage:write')) {
+    highlights.push('可读写持久化插件 KV')
+  }
+  if (permissions.has('state:read') || permissions.has('state:write')) {
+    highlights.push('可读写进程内状态')
+  }
+  if (permissions.has('log:write')) {
+    highlights.push('可写入宿主事件日志')
+  }
+  if (permissions.has('cron:read') || permissions.has('cron:write')) {
+    highlights.push('可管理宿主 Cron')
+  }
   if (permissions.has('subagent:run')) {
     highlights.push('可调用宿主子代理')
   }
@@ -296,10 +320,13 @@ function pluginHighlights(plugin: PluginInfo): string[] {
     highlights.push('可短路模型调用')
   }
   if (hooks.has('chat:after-model')) {
-    highlights.push('可消费模型结果')
+    highlights.push('可消费并改写模型结果')
   }
   if ((plugin.crons?.length ?? 0) > 0) {
     highlights.push('可定时执行任务')
+  }
+  if ((plugin.routes?.length ?? 0) > 0) {
+    highlights.push('可暴露宿主内 JSON Route')
   }
 
   return highlights
