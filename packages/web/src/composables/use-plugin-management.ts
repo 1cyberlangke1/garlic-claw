@@ -27,6 +27,7 @@ export function usePluginManagement() {
   const savingConfig = ref(false)
   const savingStorage = ref(false)
   const savingScope = ref(false)
+  const eventLoading = ref(false)
   const runningAction = ref<PluginActionName | null>(null)
   const deletingCronJobId = ref<string | null>(null)
   const deletingStorageKey = ref<string | null>(null)
@@ -42,6 +43,7 @@ export function usePluginManagement() {
   const eventLogs = shallowRef<PluginEventRecord[]>([])
   const storageEntries = shallowRef<PluginStorageEntry[]>([])
   const storagePrefix = ref('')
+  const eventLimit = ref(50)
 
   const selectedPlugin = computed<PluginInfo | null>(() => {
     const found = plugins.value.find(
@@ -115,7 +117,7 @@ export function usePluginManagement() {
         api.getPluginCrons(pluginName),
         api.getPluginScope(pluginName),
         api.getPluginHealth(pluginName),
-        api.listPluginEvents(pluginName),
+        api.listPluginEvents(pluginName, eventLimit.value),
         api.listPluginStorage(pluginName, storagePrefix.value || undefined),
       ])
       configSnapshot.value = config
@@ -128,6 +130,29 @@ export function usePluginManagement() {
       error.value = toErrorMessage(caughtError, '加载插件详情失败')
     } finally {
       detailLoading.value = false
+    }
+  }
+
+  /**
+   * 按当前条数限制刷新插件事件日志。
+   * @param limit 可选日志条数上限
+   */
+  async function refreshPluginEvents(limit = eventLimit.value) {
+    if (!selectedPlugin.value) {
+      eventLogs.value = []
+      eventLimit.value = limit
+      return
+    }
+
+    eventLoading.value = true
+    error.value = null
+    try {
+      eventLimit.value = limit
+      eventLogs.value = await api.listPluginEvents(selectedPlugin.value.name, limit)
+    } catch (caughtError) {
+      error.value = toErrorMessage(caughtError, '加载插件事件日志失败')
+    } finally {
+      eventLoading.value = false
     }
   }
 
@@ -359,6 +384,7 @@ export function usePluginManagement() {
     savingConfig,
     savingStorage,
     savingScope,
+    eventLoading,
     runningAction,
     deletingCronJobId,
     deletingStorageKey,
@@ -373,11 +399,13 @@ export function usePluginManagement() {
     scopeSettings,
     healthSnapshot,
     eventLogs,
+    eventLimit,
     storageEntries,
     canDeleteSelected,
     refreshAll,
     selectPlugin,
     refreshSelectedDetails,
+    refreshPluginEvents,
     refreshPluginStorage,
     deleteCronJob,
     saveConfig,

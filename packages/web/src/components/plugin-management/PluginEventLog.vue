@@ -5,18 +5,65 @@
         <h3>事件日志</h3>
         <p>查看插件最近的失败、治理动作与健康检查记录。</p>
       </div>
+      <div class="section-actions">
+        <label class="control-field">
+          <span>最近</span>
+          <select
+            :value="selectedLimit"
+            data-test="event-limit"
+            @change="handleLimitChange"
+          >
+            <option v-for="option in limitOptions" :key="option" :value="option">
+              {{ option }}
+            </option>
+          </select>
+        </label>
+        <button
+          type="button"
+          class="ghost-button"
+          data-test="event-refresh"
+          :disabled="loading"
+          @click="emitRefresh(selectedLimit)"
+        >
+          {{ loading ? '刷新中...' : '刷新日志' }}
+        </button>
+      </div>
     </div>
 
-    <div v-if="loading" class="section-empty">加载中...</div>
+    <div class="filter-grid">
+      <label class="control-field">
+        <span>级别</span>
+        <select v-model="levelFilter" data-test="event-level-filter">
+          <option value="all">全部</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+      </label>
+      <label class="control-field control-span">
+        <span>筛选</span>
+        <input
+          v-model="searchFilter"
+          data-test="event-search-filter"
+          type="text"
+          placeholder="按 type / message / metadata 筛选"
+        >
+      </label>
+    </div>
+
+    <div v-if="loading && events.length === 0" class="section-empty">加载中...</div>
     <div v-else-if="events.length === 0" class="section-empty">
       当前还没有事件日志。
     </div>
+    <div v-else-if="filteredEvents.length === 0" class="section-empty">
+      当前筛选下没有事件日志。
+    </div>
     <div v-else class="event-list">
-      <article v-for="event in events" :key="event.id" class="event-item">
+      <article v-for="event in filteredEvents" :key="event.id" class="event-item">
         <div class="event-top">
           <span class="event-level" :class="event.level">{{ event.level }}</span>
           <strong>{{ event.type }}</strong>
-          <time>{{ event.createdAt }}</time>
+          <time>{{ formatTime(event.createdAt) }}</time>
         </div>
         <p>{{ event.message }}</p>
         <pre v-if="event.metadata" class="event-metadata">{{ JSON.stringify(event.metadata, null, 2) }}</pre>
@@ -26,12 +73,80 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import type { PluginEventRecord } from '@garlic-claw/shared'
 
-defineProps<{
+const props = defineProps<{
   events: PluginEventRecord[]
   loading: boolean
+  limit: number
 }>()
+
+const emit = defineEmits<{
+  refresh: [limit: number]
+}>()
+
+const limitOptions = [20, 50, 100, 200]
+const selectedLimit = ref(props.limit)
+const levelFilter = ref<'all' | 'info' | 'warn' | 'error'>('all')
+const searchFilter = ref('')
+
+const filteredEvents = computed(() => {
+  const keyword = searchFilter.value.trim().toLowerCase()
+
+  return props.events.filter((event) => {
+    if (levelFilter.value !== 'all' && event.level !== levelFilter.value) {
+      return false
+    }
+    if (!keyword) {
+      return true
+    }
+
+    const haystack = [
+      event.type,
+      event.message,
+      event.metadata ? JSON.stringify(event.metadata) : '',
+    ]
+      .join(' ')
+      .toLowerCase()
+
+    return haystack.includes(keyword)
+  })
+})
+
+watch(
+  () => props.limit,
+  (value) => {
+    selectedLimit.value = value
+  },
+)
+
+/**
+ * 刷新事件日志列表。
+ * @param limit 日志条数上限
+ */
+function emitRefresh(limit: number) {
+  emit('refresh', limit)
+}
+
+/**
+ * 在切换条数时同步刷新日志。
+ * @param event 原生 change 事件
+ */
+function handleLimitChange(event: Event) {
+  const nextValue = Number((event.target as HTMLSelectElement).value)
+  selectedLimit.value = nextValue
+  emitRefresh(nextValue)
+}
+
+/**
+ * 把 ISO 时间转成人类可读文案。
+ * @param value 时间字符串
+ * @returns 展示文案
+ */
+function formatTime(value: string): string {
+  return new Date(value).toLocaleString()
+}
 </script>
 
 <style scoped>
@@ -44,6 +159,13 @@ defineProps<{
   border-radius: 12px;
 }
 
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .section-header h3 {
   font-size: 1rem;
 }
@@ -52,6 +174,41 @@ defineProps<{
 .section-empty {
   color: var(--text-muted);
   font-size: 0.82rem;
+}
+
+.section-actions,
+.filter-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.section-actions {
+  grid-auto-flow: column;
+  align-items: end;
+  justify-content: end;
+}
+
+.filter-grid {
+  grid-template-columns: 160px minmax(0, 1fr);
+}
+
+.control-field {
+  display: grid;
+  gap: 6px;
+}
+
+.control-field span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.control-span {
+  min-width: 0;
+}
+
+.ghost-button {
+  background: transparent;
+  border: 1px solid var(--border);
 }
 
 .event-list {
@@ -115,5 +272,18 @@ defineProps<{
   color: var(--text-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .section-header,
+  .section-actions,
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-actions {
+    grid-auto-flow: row;
+    justify-content: stretch;
+  }
 }
 </style>
