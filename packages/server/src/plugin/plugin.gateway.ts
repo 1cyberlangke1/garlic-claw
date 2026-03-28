@@ -34,6 +34,16 @@ import type { JsonObject } from '../common/types/json-value';
 import { PluginRuntimeService, type PluginTransport } from './plugin-runtime.service';
 
 /**
+ * 远程插件心跳扫描间隔。
+ */
+const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;
+
+/**
+ * 远程插件连接失活阈值。
+ */
+const HEARTBEAT_TIMEOUT_MS = 90_000;
+
+/**
  * 远程插件连接状态。
  */
 interface PluginConnection {
@@ -47,6 +57,8 @@ interface PluginConnection {
   authenticated: boolean;
   /** 已注册 manifest。 */
   manifest: PluginManifest | null;
+  /** 最近一次收到该连接消息的时间。 */
+  lastHeartbeatAt: number;
 }
 
 /**
@@ -118,7 +130,10 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       this.handleConnection(ws);
     });
 
-    this.heartbeatInterval = setInterval(() => this.checkHeartbeats(), 30000);
+    this.heartbeatInterval = setInterval(
+      () => this.checkHeartbeats(),
+      HEARTBEAT_SWEEP_INTERVAL_MS,
+    );
   }
 
   onModuleDestroy() {
@@ -252,6 +267,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       deviceType: '',
       authenticated: false,
       manifest: null,
+      lastHeartbeatAt: Date.now(),
     };
     this.connections.set(ws, connection);
 
@@ -296,6 +312,9 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     if (!conn.authenticated && !(msg.type === WS_TYPE.AUTH && msg.action === WS_ACTION.AUTHENTICATE)) {
       this.send(ws, WS_TYPE.ERROR, WS_ACTION.AUTH_FAIL, { error: '未认证' });
       return;
+    }
+    if (conn.authenticated) {
+      conn.lastHeartbeatAt = Date.now();
     }
 
     switch (msg.type) {
@@ -419,6 +438,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       conn.authenticated = true;
       conn.pluginName = payload.pluginName;
       conn.deviceType = payload.deviceType;
+      conn.lastHeartbeatAt = Date.now();
       this.connectionByPluginId.set(payload.pluginName, conn);
       this.send(ws, WS_TYPE.AUTH, WS_ACTION.AUTH_OK, {});
       this.logger.log(`Plugin "${payload.pluginName}" authenticated`);
@@ -725,10 +745,28 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 心跳检查占位。
+   * 扫描远程插件连接，并摘除超时未活跃的连接。
    */
   private checkHeartbeats() {
-    // 当前仍由客户端主动发送 ping；后续如需失败摘除可在这里补。
+    const now = Date.now();
+
+    for (const connection of this.connections.values()) {
+      if (!connection.authenticated) {
+        continue;
+      }
+
+      const lastHeartbeatAt = typeof connection.lastHeartbeatAt === 'number'
+        ? connection.lastHeartbeatAt
+        : now;
+      if (now - lastHeartbeatAt <= HEARTBEAT_TIMEOUT_MS) {
+        continue;
+      }
+
+      this.logger.warn(
+        `插件 "${connection.pluginName || 'unknown'}" 心跳超时，主动断开连接`,
+      );
+      connection.ws.close();
+    }
   }
 }
 

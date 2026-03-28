@@ -181,6 +181,7 @@ describe('PluginGateway', () => {
       deviceType: 'pc',
       authenticated: true,
       manifest: remoteManifest,
+      lastHeartbeatAt: 0,
     };
     pluginRuntime.touchPluginHeartbeat.mockResolvedValue(undefined);
 
@@ -195,6 +196,7 @@ describe('PluginGateway', () => {
     );
 
     expect(pluginRuntime.touchPluginHeartbeat).toHaveBeenCalledWith('remote.pc-host');
+    expect(conn.lastHeartbeatAt).toBeGreaterThan(0);
     expect(ws.send).toHaveBeenCalledWith(
       JSON.stringify({
         type: WS_TYPE.HEARTBEAT,
@@ -202,6 +204,35 @@ describe('PluginGateway', () => {
         payload: {},
       }),
     );
+  });
+
+  it('closes stale authenticated remote plugin connections during heartbeat sweeps', () => {
+    const staleSocket = createSocketStub();
+    const freshSocket = createSocketStub();
+    const staleConnection = {
+      ws: staleSocket,
+      pluginName: 'remote.stale-host',
+      deviceType: 'pc',
+      authenticated: true,
+      manifest: remoteManifest,
+      lastHeartbeatAt: Date.now() - 120_000,
+    };
+    const freshConnection = {
+      ws: freshSocket,
+      pluginName: 'remote.fresh-host',
+      deviceType: 'pc',
+      authenticated: true,
+      manifest: remoteManifest,
+      lastHeartbeatAt: Date.now(),
+    };
+
+    (gateway as any).connections.set(staleSocket, staleConnection);
+    (gateway as any).connections.set(freshSocket, freshConnection);
+
+    (gateway as any).checkHeartbeats();
+
+    expect(staleSocket.close).toHaveBeenCalled();
+    expect(freshSocket.close).not.toHaveBeenCalled();
   });
 
   it('sends execute messages through the registered remote transport and resolves the response', async () => {
