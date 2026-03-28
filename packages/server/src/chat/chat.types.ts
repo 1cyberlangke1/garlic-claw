@@ -1,6 +1,6 @@
 import type { JsonValue } from '../common/types/json-value';
-import type { ChatMessageStatus } from '@garlic-claw/shared';
-export type { ChatMessageStatus } from '@garlic-claw/shared';
+import type { ChatMessagePart, ChatMessageStatus } from '@garlic-claw/shared';
+export type { ChatMessagePart, ChatMessageStatus } from '@garlic-claw/shared';
 
 /**
  * 持久化的工具调用记录。
@@ -92,6 +92,7 @@ export type ChatTaskEvent =
       type: 'message-patch';
       messageId: string;
       content: string;
+      parts?: ChatMessagePart[];
     }
   | {
       type: 'finish';

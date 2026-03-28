@@ -876,6 +876,12 @@ describe('ChatMessageService', () => {
     const completedAssistantMessage = {
       ...assistantMessage,
       content: '命令已由插件直接处理。',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '命令已由插件直接处理。',
+        },
+      ]),
       status: 'completed',
       error: null,
       toolCalls: null,
@@ -1333,6 +1339,12 @@ describe('ChatMessageService', () => {
     const completedAssistantMessage = {
       ...assistantMessage,
       content: '插件已经直接回复。',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '插件已经直接回复。',
+        },
+      ]),
       status: 'completed',
       provider: 'anthropic',
       model: 'claude-3-7-sonnet',
@@ -1416,6 +1428,12 @@ describe('ChatMessageService', () => {
       },
       data: {
         content: '插件已经直接回复。',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: '插件已经直接回复。',
+          },
+        ]),
         provider: 'anthropic',
         model: 'claude-3-7-sonnet',
         status: 'completed',
@@ -1438,6 +1456,12 @@ describe('ChatMessageService', () => {
         modelId: 'claude-3-7-sonnet',
         assistantMessageId: 'assistant-message-1',
         assistantContent: '插件已经直接回复。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '插件已经直接回复。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       },
@@ -1542,6 +1566,7 @@ describe('ChatMessageService', () => {
       providerId: 'openai',
       modelId: 'gpt-5.2',
       content: '咖啡偏好总结',
+      parts: [],
       toolCalls: [],
       toolResults: [],
     });
@@ -1560,6 +1585,7 @@ describe('ChatMessageService', () => {
         modelId: 'gpt-5.2',
         assistantMessageId: 'assistant-message-1',
         assistantContent: '咖啡偏好总结',
+        assistantParts: [],
         toolCalls: [],
         toolResults: [],
       },
@@ -1636,6 +1662,12 @@ describe('ChatMessageService', () => {
       modelId: 'gpt-5.2',
       assistantMessageId: 'assistant-message-1',
       assistantContent: '这是插件润色后的最终回复。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '这是插件润色后的最终回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1671,6 +1703,12 @@ describe('ChatMessageService', () => {
       providerId: 'openai',
       modelId: 'gpt-5.2',
       content: '这是插件润色后的最终回复。',
+      parts: [
+        {
+          type: 'text',
+          text: '这是插件润色后的最终回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1746,6 +1784,12 @@ describe('ChatMessageService', () => {
       modelId: 'gpt-5.2',
       assistantMessageId: 'assistant-message-1',
       assistantContent: '模型后 Hook 润色后的回复。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '模型后 Hook 润色后的回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1763,6 +1807,16 @@ describe('ChatMessageService', () => {
       providerId: 'anthropic',
       modelId: 'claude-3-7-sonnet',
       assistantContent: '发送前统一包装后的回复。',
+      assistantParts: [
+        {
+          type: 'image',
+          image: 'https://example.com/final.png',
+        },
+        {
+          type: 'text',
+          text: '发送前统一包装后的回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1789,6 +1843,7 @@ describe('ChatMessageService', () => {
         providerId: 'openai',
         modelId: 'gpt-5.2',
         content: '原始模型回复。',
+        parts: [],
         toolCalls: [],
         toolResults: [],
       }),
@@ -1798,6 +1853,16 @@ describe('ChatMessageService', () => {
       providerId: 'anthropic',
       modelId: 'claude-3-7-sonnet',
       content: '发送前统一包装后的回复。',
+      parts: [
+        {
+          type: 'image',
+          image: 'https://example.com/final.png',
+        },
+        {
+          type: 'text',
+          text: '发送前统一包装后的回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1824,6 +1889,12 @@ describe('ChatMessageService', () => {
         providerId: 'openai',
         modelId: 'gpt-5.2',
         assistantContent: '模型后 Hook 润色后的回复。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '模型后 Hook 润色后的回复。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       },
@@ -1835,6 +1906,16 @@ describe('ChatMessageService', () => {
       providerId: 'anthropic',
       modelId: 'claude-3-7-sonnet',
       content: '发送前统一包装后的回复。',
+      parts: [
+        {
+          type: 'image',
+          image: 'https://example.com/final.png',
+        },
+        {
+          type: 'text',
+          text: '发送前统一包装后的回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1862,6 +1943,16 @@ describe('ChatMessageService', () => {
         providerId: 'anthropic',
         modelId: 'claude-3-7-sonnet',
         assistantContent: '发送前统一包装后的回复。',
+        assistantParts: [
+          {
+            type: 'image',
+            image: 'https://example.com/final.png',
+          },
+          {
+            type: 'text',
+            text: '发送前统一包装后的回复。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       }),
@@ -1892,6 +1983,12 @@ describe('ChatMessageService', () => {
     const completedAssistantMessage = {
       ...assistantMessage,
       content: '这是插件润色后的最终回复。',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '这是插件润色后的最终回复。',
+        },
+      ]),
       status: 'completed',
       provider: 'anthropic',
       model: 'claude-3-7-sonnet',
@@ -1928,6 +2025,12 @@ describe('ChatMessageService', () => {
       .mockResolvedValueOnce({
         ...assistantMessage,
         content: '插件已经直接回复。',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: '插件已经直接回复。',
+          },
+        ]),
         status: 'completed',
         provider: 'anthropic',
         model: 'claude-3-7-sonnet',
@@ -1960,6 +2063,12 @@ describe('ChatMessageService', () => {
       modelId: 'claude-3-7-sonnet',
       assistantMessageId: 'assistant-message-1',
       assistantContent: '这是插件润色后的最终回复。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '这是插件润色后的最终回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1988,6 +2097,12 @@ describe('ChatMessageService', () => {
       },
       data: {
         content: '这是插件润色后的最终回复。',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: '这是插件润色后的最终回复。',
+          },
+        ]),
         provider: 'anthropic',
         model: 'claude-3-7-sonnet',
         status: 'completed',
@@ -2022,6 +2137,12 @@ describe('ChatMessageService', () => {
     const completedAssistantMessage = {
       ...assistantMessage,
       content: '发送前统一包装后的回复。',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '发送前统一包装后的回复。',
+        },
+      ]),
       status: 'completed',
       provider: 'anthropic',
       model: 'claude-3-7-sonnet',
@@ -2058,6 +2179,12 @@ describe('ChatMessageService', () => {
       .mockResolvedValueOnce({
         ...assistantMessage,
         content: '插件已经直接回复。',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: '插件已经直接回复。',
+          },
+        ]),
         status: 'completed',
         provider: 'anthropic',
         model: 'claude-3-7-sonnet',
@@ -2090,6 +2217,12 @@ describe('ChatMessageService', () => {
       modelId: 'claude-3-7-sonnet',
       assistantMessageId: 'assistant-message-1',
       assistantContent: '插件已经直接回复。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '插件已经直接回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -2107,6 +2240,12 @@ describe('ChatMessageService', () => {
       providerId: 'anthropic',
       modelId: 'claude-3-7-sonnet',
       assistantContent: '发送前统一包装后的回复。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '发送前统一包装后的回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -2152,6 +2291,12 @@ describe('ChatMessageService', () => {
         providerId: 'anthropic',
         modelId: 'claude-3-7-sonnet',
         assistantContent: '插件已经直接回复。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '插件已经直接回复。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       },
@@ -2179,6 +2324,12 @@ describe('ChatMessageService', () => {
         providerId: 'anthropic',
         modelId: 'claude-3-7-sonnet',
         assistantContent: '发送前统一包装后的回复。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '发送前统一包装后的回复。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       }),

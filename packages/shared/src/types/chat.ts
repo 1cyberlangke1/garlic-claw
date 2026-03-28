@@ -135,6 +135,7 @@ export type SSEEvent =
       type: 'message-patch';
       messageId: string;
       content: string;
+      parts?: ChatMessagePart[];
     }
   | {
       type: 'finish';

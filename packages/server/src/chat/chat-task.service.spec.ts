@@ -141,6 +141,9 @@ describe('ChatTaskService', () => {
       providerId: 'openai',
       modelId: 'gpt-4o-mini',
       content: '你好',
+      parts: [
+        { type: 'text', text: '你好' },
+      ],
       toolCalls: [
         { toolCallId: 'tool-1', toolName: 'search', input: { q: 'test' } },
       ],
@@ -159,6 +162,10 @@ describe('ChatTaskService', () => {
       providerId: 'openai',
       modelId: 'gpt-4o-mini',
       content: '插件润色后的最终回复',
+      parts: [
+        { type: 'image', image: 'https://example.com/final.png' },
+        { type: 'text', text: '插件润色后的最终回复' },
+      ],
       toolCalls: [
         { toolCallId: 'tool-1', toolName: 'search', input: { q: 'test' } },
       ],
@@ -202,6 +209,10 @@ describe('ChatTaskService', () => {
         where: { id: 'assistant-1' },
         data: expect.objectContaining({
           content: '插件润色后的最终回复',
+          partsJson: JSON.stringify([
+            { type: 'image', image: 'https://example.com/final.png' },
+            { type: 'text', text: '插件润色后的最终回复' },
+          ]),
           status: 'completed',
         }),
       }),
@@ -212,6 +223,10 @@ describe('ChatTaskService', () => {
           type: 'message-patch',
           messageId: 'assistant-1',
           content: '插件润色后的最终回复',
+          parts: [
+            { type: 'image', image: 'https://example.com/final.png' },
+            { type: 'text', text: '插件润色后的最终回复' },
+          ],
         },
         {
           type: 'finish',
@@ -233,6 +248,10 @@ describe('ChatTaskService', () => {
       providerId: 'openai',
       modelId: 'gpt-4o-mini',
       content: '插件润色后的最终回复',
+      parts: [
+        { type: 'image', image: 'https://example.com/final.png' },
+        { type: 'text', text: '插件润色后的最终回复' },
+      ],
       toolCalls: [
         { toolCallId: 'tool-1', toolName: 'search', input: { q: 'test' } },
       ],

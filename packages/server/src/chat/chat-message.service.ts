@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { ChatBeforeModelRequest, PluginResponseSource } from '@garlic-claw/shared';
+import type {
+  ChatBeforeModelRequest,
+  ChatMessagePart,
+  PluginResponseSource,
+} from '@garlic-claw/shared';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { createStepLimit } from '../ai/sdk-adapter';
 import type { ModelConfig } from '../ai/types/provider.types';
@@ -25,6 +29,7 @@ import { ChatService } from './chat.service';
 import { type RetryMessageDto, type SendMessageDto, type UpdateMessageDto } from './dto/chat.dto';
 import {
   deserializeMessageParts,
+  normalizeAssistantMessageOutput,
   normalizeUserMessageInput,
   serializeMessageParts,
 } from './message-parts';
@@ -49,6 +54,7 @@ interface AppliedChatBeforeModelShortCircuitResult {
   action: 'short-circuit';
   request: ChatBeforeModelRequest;
   assistantContent: string;
+  assistantParts: ChatMessagePart[];
   providerId: string;
   modelId: string;
   reason?: string;
@@ -166,6 +172,7 @@ export class ChatMessageService {
           modelId: receivedMessageResult.modelId,
           activePersonaId: resolvedPersona.activePersonaId,
           assistantContent: receivedMessageResult.assistantContent,
+          assistantParts: receivedMessageResult.assistantParts,
         });
         return {
           userMessage,
@@ -190,6 +197,7 @@ export class ChatMessageService {
           modelId: beforeModelResult.modelId,
           activePersonaId: resolvedPersona.activePersonaId,
           assistantContent: beforeModelResult.assistantContent,
+          assistantParts: beforeModelResult.assistantParts,
         });
         return {
           userMessage,
@@ -326,6 +334,7 @@ export class ChatMessageService {
           modelId: beforeModelResult.modelId,
           activePersonaId: resolvedPersona.activePersonaId,
           assistantContent: beforeModelResult.assistantContent,
+          assistantParts: beforeModelResult.assistantParts,
         });
       }
 
@@ -652,10 +661,16 @@ export class ChatMessageService {
     });
 
     if (hookResult.action === 'short-circuit') {
+      const normalizedAssistant = normalizeAssistantMessageOutput({
+        content: hookResult.assistantContent,
+        parts: hookResult.assistantParts,
+      });
+
       return {
         action: 'short-circuit',
         request: hookResult.request,
-        assistantContent: hookResult.assistantContent,
+        assistantContent: normalizedAssistant.content,
+        assistantParts: normalizedAssistant.parts,
         providerId: hookResult.providerId,
         modelId: hookResult.modelId,
         ...(hookResult.reason ? { reason: hookResult.reason } : {}),
@@ -683,6 +698,7 @@ export class ChatMessageService {
     activePersonaId: string;
     result: CompletedChatTaskResult;
   }): Promise<CompletedChatTaskResult> {
+    const currentParts = input.result.parts ?? [];
     const patchedPayload = await this.pluginRuntime.runChatAfterModelHooks({
       context: {
         source: 'chat-hook',
@@ -697,22 +713,28 @@ export class ChatMessageService {
         modelId: input.result.modelId,
         assistantMessageId: input.result.assistantMessageId,
         assistantContent: input.result.content,
+        assistantParts: currentParts,
         toolCalls: input.result.toolCalls,
         toolResults: input.result.toolResults,
       },
     });
 
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: patchedPayload.assistantContent,
+      parts: patchedPayload.assistantParts,
+    });
+
     if (
-      !patchedPayload
-      || typeof patchedPayload.assistantContent !== 'string'
-      || patchedPayload.assistantContent === input.result.content
+      normalizedAssistant.content === input.result.content
+      && JSON.stringify(normalizedAssistant.parts) === JSON.stringify(currentParts)
     ) {
       return input.result;
     }
 
     return {
       ...input.result,
-      content: patchedPayload.assistantContent,
+      content: normalizedAssistant.content,
+      parts: normalizedAssistant.parts,
     };
   }
 
@@ -729,11 +751,19 @@ export class ChatMessageService {
     modelId: string;
     activePersonaId: string;
     assistantContent: string;
+    assistantParts?: ChatMessagePart[];
   }) {
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: input.assistantContent,
+      parts: input.assistantParts,
+    });
     const assistantMessage = await this.prisma.message.update({
       where: { id: input.assistantMessageId },
       data: {
-        content: input.assistantContent,
+        content: normalizedAssistant.content,
+        partsJson: normalizedAssistant.parts.length
+          ? serializeMessageParts(normalizedAssistant.parts)
+          : null,
         provider: input.providerId,
         model: input.modelId,
         status: 'completed',
@@ -752,7 +782,8 @@ export class ChatMessageService {
         conversationId: input.conversationId,
         providerId: input.providerId,
         modelId: input.modelId,
-        content: input.assistantContent,
+        content: normalizedAssistant.content,
+        parts: normalizedAssistant.parts,
         toolCalls: [],
         toolResults: [],
       },
@@ -765,7 +796,11 @@ export class ChatMessageService {
       result: patchedResult,
     });
 
+    const serializedFinalParts = finalResult.parts.length
+      ? serializeMessageParts(finalResult.parts)
+      : null;
     const finalAssistantMessage = finalResult.content === assistantMessage.content
+      && serializedFinalParts === ((assistantMessage as { partsJson?: string | null }).partsJson ?? null)
       && finalResult.providerId === assistantMessage.provider
       && finalResult.modelId === assistantMessage.model
       ? assistantMessage
@@ -773,6 +808,7 @@ export class ChatMessageService {
         where: { id: input.assistantMessageId },
         data: {
           content: finalResult.content,
+          partsJson: serializedFinalParts,
           provider: finalResult.providerId,
           model: finalResult.modelId,
           status: 'completed',
@@ -836,6 +872,7 @@ export class ChatMessageService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<CompletedChatTaskResult> {
+    const currentParts = input.result.parts ?? [];
     const hookContext = this.createChatLifecycleContext({
       userId: input.userId,
       conversationId: input.conversationId,
@@ -852,16 +889,23 @@ export class ChatMessageService {
         providerId: input.result.providerId,
         modelId: input.result.modelId,
         assistantContent: input.result.content,
+        assistantParts: currentParts,
         toolCalls: input.result.toolCalls,
         toolResults: input.result.toolResults,
       },
+    });
+
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: patchedPayload.assistantContent,
+      parts: patchedPayload.assistantParts,
     });
 
     return {
       ...input.result,
       providerId: patchedPayload.providerId,
       modelId: patchedPayload.modelId,
-      content: patchedPayload.assistantContent,
+      content: normalizedAssistant.content,
+      parts: normalizedAssistant.parts,
       toolCalls: patchedPayload.toolCalls,
       toolResults: patchedPayload.toolResults,
     };
@@ -879,6 +923,7 @@ export class ChatMessageService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<void> {
+    const currentParts = input.result.parts ?? [];
     const hookContext = this.createChatLifecycleContext({
       userId: input.userId,
       conversationId: input.conversationId,
@@ -896,6 +941,7 @@ export class ChatMessageService {
         providerId: input.result.providerId,
         modelId: input.result.modelId,
         assistantContent: input.result.content,
+        assistantParts: currentParts,
         toolCalls: input.result.toolCalls,
         toolResults: input.result.toolResults,
         sentAt: new Date().toISOString(),

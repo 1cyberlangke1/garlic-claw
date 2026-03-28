@@ -344,6 +344,12 @@ describe('BuiltinPluginTransport', () => {
         modelId: 'gpt-5.2',
         assistantMessageId: 'assistant-1',
         assistantContent: '好的，我来帮你总结咖啡偏好。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '好的，我来帮你总结咖啡偏好。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       } satisfies ChatAfterModelHookPayload,
@@ -627,6 +633,12 @@ describe('BuiltinPluginTransport', () => {
         modelId: 'gpt-5.2',
         assistantMessageId: 'assistant-1',
         assistantContent: '好的，我来帮你总结咖啡偏好。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '好的，我来帮你总结咖啡偏好。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       } satisfies ChatAfterModelHookPayload,

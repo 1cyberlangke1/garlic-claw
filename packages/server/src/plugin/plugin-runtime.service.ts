@@ -15,6 +15,7 @@ import type {
   ChatBeforeModelHookPayload,
   ChatBeforeModelHookPassResult,
   ChatBeforeModelHookShortCircuitResult,
+  ChatMessagePart,
   ChatWaitingModelHookPayload,
   ConversationCreatedHookPayload,
   HostCallPayload,
@@ -242,6 +243,7 @@ export interface ChatBeforeModelShortCircuitExecutionResult {
   action: 'short-circuit';
   request: ChatBeforeModelRequest;
   assistantContent: string;
+  assistantParts: ChatMessagePart[];
   providerId: string;
   modelId: string;
   reason?: string;
@@ -269,6 +271,7 @@ export interface MessageReceivedShortCircuitExecutionResult {
   action: 'short-circuit';
   payload: MessageReceivedHookPayload;
   assistantContent: string;
+  assistantParts: ChatMessagePart[];
   providerId: string;
   modelId: string;
   reason?: string;
@@ -1049,10 +1052,15 @@ export class PluginRuntimeService {
         }
 
         if (hookResult.action === 'short-circuit') {
+          const normalizedAssistant = normalizeAssistantOutput({
+            assistantContent: hookResult.assistantContent,
+            assistantParts: hookResult.assistantParts,
+          });
           return {
             action: 'short-circuit',
             request,
-            assistantContent: hookResult.assistantContent,
+            assistantContent: normalizedAssistant.assistantContent,
+            assistantParts: normalizedAssistant.assistantParts,
             providerId: hookResult.providerId ?? request.providerId,
             modelId: hookResult.modelId ?? request.modelId,
             ...(hookResult.reason ? { reason: hookResult.reason } : {}),
@@ -1101,10 +1109,15 @@ export class PluginRuntimeService {
         }
 
         if (hookResult.action === 'short-circuit') {
+          const normalizedAssistant = normalizeAssistantOutput({
+            assistantContent: hookResult.assistantContent,
+            assistantParts: hookResult.assistantParts,
+          });
           return {
             action: 'short-circuit',
             payload,
-            assistantContent: hookResult.assistantContent,
+            assistantContent: normalizedAssistant.assistantContent,
+            assistantParts: normalizedAssistant.assistantParts,
             providerId: hookResult.providerId ?? payload.providerId,
             modelId: hookResult.modelId ?? payload.modelId,
             ...(hookResult.reason ? { reason: hookResult.reason } : {}),
@@ -1978,6 +1991,13 @@ export class PluginRuntimeService {
       if (typeof result.assistantContent !== 'string') {
         throw new Error('chat:before-model Hook 的 assistantContent 必须是字符串');
       }
+      if (
+        'assistantParts' in result
+        && result.assistantParts !== null
+        && !isChatMessagePartArray(result.assistantParts)
+      ) {
+        throw new Error('chat:before-model Hook 的 assistantParts 必须是消息 part 数组或 null');
+      }
       if ('providerId' in result && typeof result.providerId !== 'string') {
         throw new Error('chat:before-model Hook 的 providerId 必须是字符串');
       }
@@ -2041,6 +2061,13 @@ export class PluginRuntimeService {
       if (typeof result.assistantContent !== 'string') {
         throw new Error('message:received Hook 的 assistantContent 必须是字符串');
       }
+      if (
+        'assistantParts' in result
+        && result.assistantParts !== null
+        && !isChatMessagePartArray(result.assistantParts)
+      ) {
+        throw new Error('message:received Hook 的 assistantParts 必须是消息 part 数组或 null');
+      }
       if ('providerId' in result && typeof result.providerId !== 'string') {
         throw new Error('message:received Hook 的 providerId 必须是字符串');
       }
@@ -2081,6 +2108,13 @@ export class PluginRuntimeService {
         && typeof result.assistantContent !== 'string'
       ) {
         throw new Error('chat:after-model Hook 的 assistantContent 必须是字符串或 null');
+      }
+      if (
+        'assistantParts' in result
+        && result.assistantParts !== null
+        && !isChatMessagePartArray(result.assistantParts)
+      ) {
+        throw new Error('chat:after-model Hook 的 assistantParts 必须是消息 part 数组或 null');
       }
 
       return result as unknown as ChatAfterModelHookMutateResult;
@@ -2193,6 +2227,11 @@ export class PluginRuntimeService {
       && typeof mutation.assistantContent === 'string'
     ) {
       nextPayload.assistantContent = mutation.assistantContent;
+    }
+    if ('assistantParts' in mutation) {
+      nextPayload.assistantParts = mutation.assistantParts === null
+        ? []
+        : cloneChatMessageParts(mutation.assistantParts ?? []);
     }
 
     return nextPayload;
@@ -2462,6 +2501,13 @@ export class PluginRuntimeService {
       ) {
         throw new Error('response:before-send Hook 的 assistantContent 必须是字符串');
       }
+      if (
+        'assistantParts' in result
+        && result.assistantParts !== null
+        && !isChatMessagePartArray(result.assistantParts)
+      ) {
+        throw new Error('response:before-send Hook 的 assistantParts 必须是消息 part 数组或 null');
+      }
       if ('toolCalls' in result && !Array.isArray(result.toolCalls)) {
         throw new Error('response:before-send Hook 的 toolCalls 必须是数组');
       }
@@ -2654,6 +2700,11 @@ export class PluginRuntimeService {
       && typeof mutation.assistantContent === 'string'
     ) {
       nextPayload.assistantContent = mutation.assistantContent;
+    }
+    if ('assistantParts' in mutation) {
+      nextPayload.assistantParts = mutation.assistantParts === null
+        ? []
+        : cloneChatMessageParts(mutation.assistantParts ?? []);
     }
     if ('toolCalls' in mutation && Array.isArray(mutation.toolCalls)) {
       nextPayload.toolCalls = mutation.toolCalls.map((toolCall) => ({
@@ -3455,6 +3506,7 @@ function cloneChatAfterModelPayload(
     modelId: payload.modelId,
     assistantMessageId: payload.assistantMessageId,
     assistantContent: payload.assistantContent,
+    assistantParts: cloneChatMessageParts(payload.assistantParts),
     toolCalls: payload.toolCalls.map((toolCall) => ({
       ...toolCall,
     })),
@@ -3671,6 +3723,7 @@ function cloneResponseBeforeSendHookPayload(
     providerId: payload.providerId,
     modelId: payload.modelId,
     assistantContent: payload.assistantContent,
+    assistantParts: cloneChatMessageParts(payload.assistantParts),
     toolCalls: payload.toolCalls.map((toolCall) => ({
       ...toolCall,
     })),
@@ -3727,6 +3780,46 @@ function cloneChatMessages(messages: ChatBeforeModelRequest['messages']) {
  */
 function cloneChatMessageParts(parts: PluginMessageHookInfo['parts']) {
   return parts.map((part: PluginMessageHookInfo['parts'][number]) => ({ ...part }));
+}
+
+/**
+ * 归一化插件短路返回的 assistant 输出。
+ * @param input assistant 内容与可选结构化 parts
+ * @returns 统一的 assistant 内容与 parts
+ */
+function normalizeAssistantOutput(input: {
+  assistantContent: string;
+  assistantParts?: ChatMessagePart[] | null;
+}): {
+  assistantContent: string;
+  assistantParts: ChatMessagePart[];
+} {
+  const assistantParts = input.assistantParts
+    ? cloneChatMessageParts(input.assistantParts)
+    : [];
+
+  if (assistantParts.length > 0) {
+    return {
+      assistantContent: assistantParts
+        .filter((part): part is Extract<ChatMessagePart, { type: 'text' }> => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n'),
+      assistantParts,
+    };
+  }
+
+  const text = input.assistantContent.trim();
+    return {
+      assistantContent: text,
+      assistantParts: text
+        ? [
+          {
+            type: 'text' as const,
+            text,
+          },
+        ]
+      : [],
+  };
 }
 
 /**

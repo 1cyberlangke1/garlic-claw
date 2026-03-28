@@ -532,6 +532,7 @@ export interface MessageReceivedHookMutateResult {
 export interface MessageReceivedHookShortCircuitResult {
   action: 'short-circuit';
   assistantContent: string;
+  assistantParts?: ChatMessagePart[] | null;
   providerId?: string;
   modelId?: string;
   reason?: string;
@@ -571,6 +572,7 @@ export interface ChatBeforeModelHookMutateResult {
 export interface ChatBeforeModelHookShortCircuitResult {
   action: 'short-circuit';
   assistantContent: string;
+  assistantParts?: ChatMessagePart[] | null;
   providerId?: string;
   modelId?: string;
   reason?: string;
@@ -589,6 +591,7 @@ export interface ChatAfterModelHookPayload {
   modelId: string;
   assistantMessageId: string;
   assistantContent: string;
+  assistantParts: ChatMessagePart[];
   toolCalls: Array<{
     toolCallId: string;
     toolName: string;
@@ -620,6 +623,7 @@ export interface ChatAfterModelHookPassResult {
 export interface ChatAfterModelHookMutateResult {
   action: 'mutate';
   assistantContent?: string;
+  assistantParts?: ChatMessagePart[] | null;
 }
 
 /** 聊天模型后 Hook 的返回。 */
@@ -872,6 +876,7 @@ export interface ResponseBeforeSendHookPayload {
   providerId: string;
   modelId: string;
   assistantContent: string;
+  assistantParts: ChatMessagePart[];
   toolCalls: Array<{
     toolCallId: string;
     toolName: string;
@@ -895,6 +900,7 @@ export interface ResponseBeforeSendHookMutateResult {
   providerId?: string;
   modelId?: string;
   assistantContent?: string;
+  assistantParts?: ChatMessagePart[] | null;
   toolCalls?: Array<{
     toolCallId: string;
     toolName: string;

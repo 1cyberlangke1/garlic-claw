@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  type ChatMessagePart,
   type ChatMessageStatus,
   type ChatTaskEvent,
   type ChatTaskStreamSource,
@@ -10,6 +11,10 @@ import {
   isToolCallPart,
   isToolResultPart,
 } from './chat.types';
+import {
+  normalizeAssistantMessageOutput,
+  serializeMessageParts,
+} from './message-parts';
 
 /** 聊天后台任务启动参数。 */
 export interface StartChatTaskInput {
@@ -63,6 +68,8 @@ export interface CompletedChatTaskResult {
   modelId: string;
   /** 最终完整文本。 */
   content: string;
+  /** 最终结构化 parts。 */
+  parts: ChatMessagePart[];
   /** 累计工具调用。 */
   toolCalls: PersistedToolCall[];
   /** 累计工具结果。 */
@@ -273,6 +280,9 @@ export class ChatTaskService implements OnModuleInit {
               type: 'message-patch',
               messageId: patchedResult.assistantMessageId,
               content: patchedResult.content,
+              ...(patchedResult.parts.length > 0
+                ? { parts: patchedResult.parts }
+                : {}),
             });
           } else if (patchedResult) {
             finalResult = patchedResult;
@@ -381,12 +391,17 @@ export class ChatTaskService implements OnModuleInit {
     input: StartChatTaskInput,
     state: MutableTaskState,
   ): CompletedChatTaskResult {
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: state.content,
+    });
+
     return {
       assistantMessageId: input.assistantMessageId,
       conversationId: input.conversationId,
       providerId: input.providerId,
       modelId: input.modelId,
-      content: state.content,
+      content: normalizedAssistant.content,
+      parts: normalizedAssistant.parts,
       toolCalls: [...state.toolCalls],
       toolResults: [...state.toolResults],
     };
@@ -404,6 +419,9 @@ export class ChatTaskService implements OnModuleInit {
       where: { id: result.assistantMessageId },
       data: {
         content: result.content,
+        partsJson: result.parts.length
+          ? serializeMessageParts(result.parts)
+          : null,
         provider: result.providerId,
         model: result.modelId,
         status: 'completed',
@@ -435,6 +453,7 @@ export class ChatTaskService implements OnModuleInit {
     patched: CompletedChatTaskResult,
   ): boolean {
     return original.content !== patched.content
+      || JSON.stringify(original.parts) !== JSON.stringify(patched.parts)
       || original.providerId !== patched.providerId
       || original.modelId !== patched.modelId
       || JSON.stringify(original.toolCalls) !== JSON.stringify(patched.toolCalls)

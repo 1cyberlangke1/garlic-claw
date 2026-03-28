@@ -3,6 +3,7 @@ import type {
   PluginCallContext,
   PluginConfigSchema,
   PluginManifest,
+  ResponseAfterSendHookPayload,
 } from '@garlic-claw/shared';
 import { createAutomationRecorderPlugin } from './builtin/automation-recorder.plugin';
 import { BuiltinPluginTransport } from './builtin/builtin-plugin.transport';
@@ -941,6 +942,12 @@ describe('PluginRuntimeService', () => {
         availableTools: [],
       },
       assistantContent: '这轮直接返回，不调用模型。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '这轮直接返回，不调用模型。',
+        },
+      ],
       providerId: 'openai',
       modelId: 'gpt-5.2',
     });
@@ -1282,6 +1289,12 @@ describe('PluginRuntimeService', () => {
         ],
       },
       assistantContent: '命令已由插件直接处理。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '命令已由插件直接处理。',
+        },
+      ],
       providerId: 'openai',
       modelId: 'gpt-5.2',
     });
@@ -1420,6 +1433,12 @@ describe('PluginRuntimeService', () => {
           modelId: 'gpt-5.2',
           assistantMessageId: 'assistant-1',
           assistantContent: '我已经帮你总结好了。',
+          assistantParts: [
+            {
+              type: 'text',
+              text: '我已经帮你总结好了。',
+            },
+          ],
           toolCalls: [],
           toolResults: [],
         } satisfies ChatAfterModelHookPayload,
@@ -1429,6 +1448,12 @@ describe('PluginRuntimeService', () => {
       modelId: 'gpt-5.2',
       assistantMessageId: 'assistant-1',
       assistantContent: '我已经帮你总结好了。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '我已经帮你总结好了。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1445,6 +1470,12 @@ describe('PluginRuntimeService', () => {
         modelId: 'gpt-5.2',
         assistantMessageId: 'assistant-1',
         assistantContent: '我已经帮你总结好了。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '我已经帮你总结好了。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       },
@@ -1503,6 +1534,12 @@ describe('PluginRuntimeService', () => {
           modelId: 'gpt-5.2',
           assistantMessageId: 'assistant-1',
           assistantContent: '原始回复。',
+          assistantParts: [
+            {
+              type: 'text',
+              text: '原始回复。',
+            },
+          ],
           toolCalls: [],
           toolResults: [],
         } satisfies ChatAfterModelHookPayload,
@@ -1512,6 +1549,12 @@ describe('PluginRuntimeService', () => {
       modelId: 'gpt-5.2',
       assistantMessageId: 'assistant-1',
       assistantContent: '这是插件润色后的最终回复。',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '原始回复。',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -1528,6 +1571,12 @@ describe('PluginRuntimeService', () => {
         modelId: 'gpt-5.2',
         assistantMessageId: 'assistant-1',
         assistantContent: '这是插件润色后的最终回复。',
+        assistantParts: [
+          {
+            type: 'text',
+            text: '原始回复。',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
       },
@@ -1990,6 +2039,16 @@ describe('PluginRuntimeService', () => {
     const beforeSendHook = jest.fn().mockResolvedValue({
       action: 'mutate',
       assistantContent: '发送前统一包装后的回复',
+      assistantParts: [
+        {
+          type: 'image',
+          image: 'https://example.com/final.png',
+        },
+        {
+          type: 'text',
+          text: '发送前统一包装后的回复',
+        },
+      ],
       providerId: 'anthropic',
       modelId: 'claude-3-7-sonnet',
     });
@@ -2050,6 +2109,12 @@ describe('PluginRuntimeService', () => {
           providerId: 'openai',
           modelId: 'gpt-5.2',
           assistantContent: '原始最终回复',
+          assistantParts: [
+            {
+              type: 'text',
+              text: '原始最终回复',
+            },
+          ],
           toolCalls: [],
           toolResults: [],
         },
@@ -2067,6 +2132,16 @@ describe('PluginRuntimeService', () => {
       providerId: 'anthropic',
       modelId: 'claude-3-7-sonnet',
       assistantContent: '发送前统一包装后的回复',
+      assistantParts: [
+        {
+          type: 'image',
+          image: 'https://example.com/final.png',
+        },
+        {
+          type: 'text',
+          text: '发送前统一包装后的回复',
+        },
+      ],
       toolCalls: [],
       toolResults: [],
     });
@@ -2093,6 +2168,16 @@ describe('PluginRuntimeService', () => {
           providerId: 'anthropic',
           modelId: 'claude-3-7-sonnet',
           assistantContent: '发送前统一包装后的回复',
+          assistantParts: [
+            {
+              type: 'image',
+              image: 'https://example.com/final.png',
+            },
+            {
+              type: 'text',
+              text: '发送前统一包装后的回复',
+            },
+          ],
           toolCalls: [],
           toolResults: [],
           sentAt: '2026-03-28T18:30:00.000Z',
@@ -2122,6 +2207,16 @@ describe('PluginRuntimeService', () => {
         providerId: 'anthropic',
         modelId: 'claude-3-7-sonnet',
         assistantContent: '发送前统一包装后的回复',
+        assistantParts: [
+          {
+            type: 'image',
+            image: 'https://example.com/final.png',
+          },
+          {
+            type: 'text',
+            text: '发送前统一包装后的回复',
+          },
+        ],
         toolCalls: [],
         toolResults: [],
         sentAt: '2026-03-28T18:30:00.000Z',
@@ -4008,7 +4103,7 @@ describe('PluginRuntimeService', () => {
       userId: 'user-1',
       conversationId: 'conversation-1',
     };
-    const payload = {
+    const payload: ResponseAfterSendHookPayload = {
       context: hookContext,
       responseSource: 'model' as const,
       assistantMessageId: 'assistant-1',
@@ -4031,6 +4126,12 @@ describe('PluginRuntimeService', () => {
           output: {
             saved: true,
           },
+        },
+      ],
+      assistantParts: [
+        {
+          type: 'text',
+          text: '咖啡偏好已保存。',
         },
       ],
       sentAt: '2026-03-28T12:34:56.000Z',

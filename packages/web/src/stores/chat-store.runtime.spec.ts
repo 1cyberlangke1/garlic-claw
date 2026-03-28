@@ -18,6 +18,16 @@ describe('applySseEvent', () => {
       type: 'message-patch',
       messageId: 'assistant-1',
       content: '插件润色后的最终回复',
+      parts: [
+        {
+          type: 'image',
+          image: 'https://example.com/final.png',
+        },
+        {
+          type: 'text',
+          text: '插件润色后的最终回复',
+        },
+      ],
     }
 
     expect(applySseEvent(messages, event, { requestKind: 'send' })).toEqual([
@@ -25,6 +35,16 @@ describe('applySseEvent', () => {
         id: 'assistant-1',
         role: 'assistant',
         content: '插件润色后的最终回复',
+        parts: [
+          {
+            type: 'image',
+            image: 'https://example.com/final.png',
+          },
+          {
+            type: 'text',
+            text: '插件润色后的最终回复',
+          },
+        ],
         status: 'streaming',
         error: null,
       },

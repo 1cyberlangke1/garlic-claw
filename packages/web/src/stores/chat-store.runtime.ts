@@ -180,6 +180,7 @@ export function applySseEvent(
       return updateMessageState(messages, event.messageId, (message) => ({
         ...message,
         content: event.content,
+        ...(event.parts ? { parts: event.parts } : {}),
       }))
     case 'finish':
       return updateMessageState(messages, event.messageId, (message) => ({
