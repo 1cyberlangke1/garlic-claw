@@ -31,6 +31,13 @@
           <span class="health-dot" :class="healthClass(plugin)" />
           <span>{{ healthLabel(plugin) }}</span>
           <span>{{ plugin.connected ? '在线' : '离线' }}</span>
+          <span
+            v-if="runtimePressureLabel(plugin)"
+            class="pressure-badge"
+            :class="{ busy: isPluginBusy(plugin) }"
+          >
+            {{ runtimePressureLabel(plugin) }}
+          </span>
         </div>
         <p class="plugin-item-desc">{{ plugin.description ?? '未填写描述' }}</p>
       </button>
@@ -80,6 +87,30 @@ function healthLabel(plugin: PluginInfo): string {
  */
 function healthClass(plugin: PluginInfo): string {
   return plugin.health?.status ?? 'unknown'
+}
+
+/**
+ * 生成插件运行时压力展示文案。
+ * @param plugin 插件摘要
+ * @returns 压力文本；缺失时返回 null
+ */
+function runtimePressureLabel(plugin: PluginInfo): string | null {
+  const pressure = plugin.health?.runtimePressure
+  if (!pressure) {
+    return null
+  }
+
+  return `并发 ${pressure.activeExecutions} / ${pressure.maxConcurrentExecutions}`
+}
+
+/**
+ * 判断插件当前是否已经把并发打满。
+ * @param plugin 插件摘要
+ * @returns 是否繁忙
+ */
+function isPluginBusy(plugin: PluginInfo): boolean {
+  const pressure = plugin.health?.runtimePressure
+  return !!pressure && pressure.activeExecutions >= pressure.maxConcurrentExecutions
 }
 </script>
 
@@ -178,6 +209,19 @@ function healthClass(plugin: PluginInfo): string {
   color: var(--text-muted);
   font-size: 0.82rem;
   line-height: 1.5;
+}
+
+.pressure-badge {
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(124, 106, 246, 0.14);
+  color: var(--accent);
+  font-size: 0.72rem;
+}
+
+.pressure-badge.busy {
+  background: rgba(217, 83, 79, 0.12);
+  color: var(--danger);
 }
 
 .health-dot {
