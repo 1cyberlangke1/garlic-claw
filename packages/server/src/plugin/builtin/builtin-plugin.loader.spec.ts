@@ -17,7 +17,7 @@ describe('BuiltinPluginLoader', () => {
   it('registers the default builtin plugins on module init', async () => {
     await loader.onModuleInit();
 
-    expect(runtime.registerPlugin).toHaveBeenCalledTimes(16);
+    expect(runtime.registerPlugin).toHaveBeenCalledTimes(17);
     expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -72,7 +72,7 @@ describe('BuiltinPluginLoader', () => {
       6,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.kb-context',
+          id: 'builtin.message-entry-recorder',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -82,7 +82,7 @@ describe('BuiltinPluginLoader', () => {
       7,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.conversation-title',
+          id: 'builtin.kb-context',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -92,7 +92,7 @@ describe('BuiltinPluginLoader', () => {
       8,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.subagent-delegate',
+          id: 'builtin.conversation-title',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -102,7 +102,7 @@ describe('BuiltinPluginLoader', () => {
       9,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.provider-router',
+          id: 'builtin.subagent-delegate',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -112,7 +112,7 @@ describe('BuiltinPluginLoader', () => {
       10,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.persona-router',
+          id: 'builtin.provider-router',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -122,7 +122,7 @@ describe('BuiltinPluginLoader', () => {
       11,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.cron-heartbeat',
+          id: 'builtin.persona-router',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -132,7 +132,7 @@ describe('BuiltinPluginLoader', () => {
       12,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.route-inspector',
+          id: 'builtin.cron-heartbeat',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -142,7 +142,7 @@ describe('BuiltinPluginLoader', () => {
       13,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.automation-recorder',
+          id: 'builtin.route-inspector',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -152,7 +152,7 @@ describe('BuiltinPluginLoader', () => {
       14,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.tool-audit',
+          id: 'builtin.automation-recorder',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -162,7 +162,7 @@ describe('BuiltinPluginLoader', () => {
       15,
       expect.objectContaining({
         manifest: expect.objectContaining({
-          id: 'builtin.response-recorder',
+          id: 'builtin.tool-audit',
           runtime: 'builtin',
         }),
         runtimeKind: 'builtin',
@@ -170,6 +170,16 @@ describe('BuiltinPluginLoader', () => {
     );
     expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
       16,
+      expect.objectContaining({
+        manifest: expect.objectContaining({
+          id: 'builtin.response-recorder',
+          runtime: 'builtin',
+        }),
+        runtimeKind: 'builtin',
+      }),
+    );
+    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+      17,
       expect.objectContaining({
         manifest: expect.objectContaining({
           id: 'builtin.plugin-governance-recorder',

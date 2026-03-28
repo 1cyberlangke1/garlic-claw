@@ -353,6 +353,9 @@ function pluginHighlights(plugin: PluginInfo): string[] {
   if (hooks.has('conversation:created')) {
     pushHighlight('可监听会话创建')
   }
+  if (hooks.has('message:received')) {
+    pushHighlight('可前置监听和过滤消息')
+  }
   if (hooks.has('message:created')) {
     pushHighlight('可改写消息草稿')
   }
@@ -392,6 +395,9 @@ function pluginHighlights(plugin: PluginInfo): string[] {
   if (hooks.has('chat:before-model')) {
     pushHighlight('可改写模型上下文')
     pushHighlight('可短路模型调用')
+  }
+  if (hooks.has('chat:waiting-model')) {
+    pushHighlight('可观察模型等待态')
   }
   if (hooks.has('chat:after-model')) {
     pushHighlight('可消费并改写模型结果')

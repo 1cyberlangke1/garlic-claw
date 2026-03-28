@@ -15,8 +15,13 @@ import type {
   ChatBeforeModelHookPayload,
   ChatBeforeModelHookPassResult,
   ChatBeforeModelHookShortCircuitResult,
+  ChatWaitingModelHookPayload,
   ConversationCreatedHookPayload,
   HostCallPayload,
+  MessageReceivedHookMutateResult,
+  MessageReceivedHookPassResult,
+  MessageReceivedHookPayload,
+  MessageReceivedHookShortCircuitResult,
   MessageCreatedHookMutateResult,
   MessageCreatedHookPayload,
   MessageDeletedHookPayload,
@@ -26,6 +31,9 @@ import type {
   PluginCallContext,
   PluginCapability,
   PluginErrorHookPayload,
+  PluginHookDescriptor,
+  PluginHookFilterDescriptor,
+  PluginMessageKind,
   PluginHookName,
   PluginHostMethod,
   PluginLifecycleHookInfo,
@@ -247,12 +255,47 @@ export type ChatBeforeModelExecutionResult =
   | ChatBeforeModelShortCircuitExecutionResult;
 
 /**
+ * 收到消息后 Hook 继续执行。
+ */
+export interface MessageReceivedContinueResult {
+  action: 'continue';
+  payload: MessageReceivedHookPayload;
+}
+
+/**
+ * 收到消息后 Hook 直接短路。
+ */
+export interface MessageReceivedShortCircuitExecutionResult {
+  action: 'short-circuit';
+  payload: MessageReceivedHookPayload;
+  assistantContent: string;
+  providerId: string;
+  modelId: string;
+  reason?: string;
+}
+
+/**
+ * 收到消息后 Hook 执行结果。
+ */
+export type MessageReceivedExecutionResult =
+  | MessageReceivedContinueResult
+  | MessageReceivedShortCircuitExecutionResult;
+
+/**
  * 归一化后的聊天模型前 Hook 返回。
  */
 type NormalizedChatBeforeModelHookResult =
   | ChatBeforeModelHookPassResult
   | ChatBeforeModelHookMutateResult
   | ChatBeforeModelHookShortCircuitResult;
+
+/**
+ * 归一化后的收到消息 Hook 返回。
+ */
+type NormalizedMessageReceivedHookResult =
+  | MessageReceivedHookPassResult
+  | MessageReceivedHookMutateResult
+  | MessageReceivedHookShortCircuitResult;
 
 /**
  * 归一化后的聊天模型后 Hook 返回。
@@ -1029,6 +1072,74 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 运行所有收到消息后的前置 Hook，并按顺序改写消息载荷。
+   * @param input Hook 调用上下文与载荷
+   * @returns 最终消息载荷或短路结果
+   */
+  async runMessageReceivedHooks(input: {
+    context: PluginCallContext;
+    payload: MessageReceivedHookPayload;
+  }): Promise<MessageReceivedExecutionResult> {
+    let payload = cloneMessageReceivedHookPayload(input.payload);
+
+    for (const record of this.listHookRecords(
+      'message:received',
+      input.context,
+      payload,
+    )) {
+      try {
+        const rawResult = await this.invokePluginHook({
+          pluginId: record.manifest.id,
+          hookName: 'message:received',
+          context: input.context,
+          payload: toJsonValue(payload),
+        });
+        const hookResult = this.normalizeMessageReceivedHookResult(rawResult);
+
+        if (!hookResult || hookResult.action === 'pass') {
+          continue;
+        }
+
+        if (hookResult.action === 'short-circuit') {
+          return {
+            action: 'short-circuit',
+            payload,
+            assistantContent: hookResult.assistantContent,
+            providerId: hookResult.providerId ?? payload.providerId,
+            modelId: hookResult.modelId ?? payload.modelId,
+            ...(hookResult.reason ? { reason: hookResult.reason } : {}),
+          };
+        }
+
+        payload = this.applyMessageReceivedMutation(payload, hookResult);
+      } catch {
+        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
+      }
+    }
+
+    return {
+      action: 'continue',
+      payload,
+    };
+  }
+
+  /**
+   * 在真正进入模型调用前派发 waiting Hook。
+   * @param input Hook 调用上下文与载荷
+   * @returns 无返回值
+   */
+  async runChatWaitingModelHooks(input: {
+    context: PluginCallContext;
+    payload: ChatWaitingModelHookPayload;
+  }): Promise<void> {
+    await this.invokeHookAcrossPlugins({
+      hookName: 'chat:waiting-model',
+      context: input.context,
+      payload: input.payload,
+    });
+  }
+
+  /**
    * 运行所有聊天模型后 Hook。
    * @param input Hook 调用上下文与载荷
    * @returns 顺序应用所有 mutate 后的最终载荷
@@ -1643,13 +1754,143 @@ export class PluginRuntimeService {
   private listHookRecords(
     hookName: PluginHookName,
     context: PluginCallContext,
+    payload?: unknown,
   ): PluginRuntimeRecord[] {
     return [...this.records.values()]
-      .filter((record) =>
-        this.isPluginEnabledForContext(record, context)
-        && (record.manifest.hooks ?? []).some((hook) => hook.name === hookName),
+      .map((record) => ({
+        record,
+        hook: this.getHookDescriptor(record, hookName),
+      }))
+      .filter((entry): entry is { record: PluginRuntimeRecord; hook: PluginHookDescriptor } =>
+        entry.hook !== null,
       )
-      .sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
+      .filter((entry) =>
+        this.isPluginEnabledForContext(entry.record, context)
+        && this.matchesHookFilter(entry.hook, hookName, payload),
+      )
+      .sort((left, right) => {
+        const priorityDiff = this.getHookPriority(left.hook) - this.getHookPriority(right.hook);
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+
+        return left.record.manifest.id.localeCompare(right.record.manifest.id);
+      })
+      .map((entry) => entry.record);
+  }
+
+  /**
+   * 读取插件声明的指定 Hook 描述。
+   * @param record 运行时插件记录
+   * @param hookName Hook 名称
+   * @returns 命中的 Hook 描述；不存在时返回 null
+   */
+  private getHookDescriptor(
+    record: PluginRuntimeRecord,
+    hookName: PluginHookName,
+  ): PluginHookDescriptor | null {
+    return (record.manifest.hooks ?? []).find((hook) => hook.name === hookName) ?? null;
+  }
+
+  /**
+   * 读取 Hook 声明的调度优先级。
+   * @param hook Hook 描述
+   * @returns 归一化后的优先级，数字越小越先执行
+   */
+  private getHookPriority(hook: PluginHookDescriptor): number {
+    if (typeof hook.priority !== 'number' || !Number.isFinite(hook.priority)) {
+      return 0;
+    }
+
+    return Math.trunc(hook.priority);
+  }
+
+  /**
+   * 判断指定 Hook 在当前载荷下是否命中过滤条件。
+   * @param hook Hook 描述
+   * @param hookName Hook 名称
+   * @param payload 当前载荷
+   * @returns 是否命中过滤
+   */
+  private matchesHookFilter(
+    hook: PluginHookDescriptor,
+    hookName: PluginHookName,
+    payload?: unknown,
+  ): boolean {
+    if (hookName !== 'message:received' || !hook.filter?.message) {
+      return true;
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return false;
+    }
+
+    const messagePayload = payload as MessageReceivedHookPayload;
+    const filter = hook.filter.message;
+    const messageText = this.getMessageReceivedText(messagePayload);
+    const messageKind = this.detectMessageKind(messagePayload.message);
+
+    if (
+      Array.isArray(filter.commands)
+      && filter.commands.length > 0
+      && !filter.commands.some((command) => matchesMessageCommand(messageText, command))
+    ) {
+      return false;
+    }
+
+    if (filter.regex) {
+      const regex = buildFilterRegex(filter.regex);
+      if (!regex.test(messageText)) {
+        return false;
+      }
+    }
+
+    if (
+      Array.isArray(filter.messageKinds)
+      && filter.messageKinds.length > 0
+      && !filter.messageKinds.includes(messageKind)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * 提取收到消息过滤时可匹配的文本。
+   * @param payload 收到消息 Hook 载荷
+   * @returns 归一化后的文本
+   */
+  private getMessageReceivedText(payload: MessageReceivedHookPayload): string {
+    if (typeof payload.message.content === 'string') {
+      return payload.message.content;
+    }
+
+    return payload.message.parts
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
+  }
+
+  /**
+   * 判断收到消息的消息类型。
+   * @param message 消息快照
+   * @returns 归一化后的消息类型
+   */
+  private detectMessageKind(
+    message: MessageReceivedHookPayload['message'],
+  ): PluginMessageKind {
+    const hasImage = message.parts.some((part) => part.type === 'image');
+    const hasTextPart = message.parts.some((part) => part.type === 'text');
+    const hasText = hasTextPart || Boolean(message.content?.trim());
+
+    if (hasImage && hasText) {
+      return 'mixed';
+    }
+    if (hasImage) {
+      return 'image';
+    }
+
+    return 'text';
   }
 
   /**
@@ -1754,6 +1995,69 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 将插件返回的收到消息 Hook 结果归一为统一结构。
+   * @param result 插件原始返回值
+   * @returns 归一化后的 Hook 结果
+   */
+  private normalizeMessageReceivedHookResult(
+    result: JsonValue | null | undefined,
+  ): NormalizedMessageReceivedHookResult | null {
+    if (result === null || typeof result === 'undefined') {
+      return null;
+    }
+    if (!isJsonObjectValue(result)) {
+      throw new Error('message:received Hook 返回值必须是对象');
+    }
+    if (result.action === 'pass') {
+      return { action: 'pass' };
+    }
+    if (result.action === 'mutate') {
+      if ('providerId' in result && typeof result.providerId !== 'string') {
+        throw new Error('message:received Hook 的 providerId 必须是字符串');
+      }
+      if ('modelId' in result && typeof result.modelId !== 'string') {
+        throw new Error('message:received Hook 的 modelId 必须是字符串');
+      }
+      if ('content' in result && result.content !== null && typeof result.content !== 'string') {
+        throw new Error('message:received Hook 的 content 必须是字符串或 null');
+      }
+      if (
+        'parts' in result
+        && result.parts !== null
+        && !isChatMessagePartArray(result.parts)
+      ) {
+        throw new Error('message:received Hook 的 parts 必须是消息 part 数组或 null');
+      }
+      if (
+        'modelMessages' in result
+        && !isPluginLlmMessageArray(result.modelMessages)
+      ) {
+        throw new Error('message:received Hook 的 modelMessages 必须是统一消息数组');
+      }
+
+      return result as unknown as MessageReceivedHookMutateResult;
+    }
+    if (result.action === 'short-circuit') {
+      if (typeof result.assistantContent !== 'string') {
+        throw new Error('message:received Hook 的 assistantContent 必须是字符串');
+      }
+      if ('providerId' in result && typeof result.providerId !== 'string') {
+        throw new Error('message:received Hook 的 providerId 必须是字符串');
+      }
+      if ('modelId' in result && typeof result.modelId !== 'string') {
+        throw new Error('message:received Hook 的 modelId 必须是字符串');
+      }
+      if ('reason' in result && typeof result.reason !== 'string') {
+        throw new Error('message:received Hook 的 reason 必须是字符串');
+      }
+
+      return result as unknown as MessageReceivedHookShortCircuitResult;
+    }
+
+    throw new Error('message:received Hook 返回了未知 action');
+  }
+
+  /**
    * 将插件返回的聊天后 Hook 结果归一为统一结构。
    * @param result 插件原始返回值
    * @returns 归一化后的 Hook 结果
@@ -1836,6 +2140,40 @@ export class PluginRuntimeService {
     }
 
     return nextRequest;
+  }
+
+  /**
+   * 将一条收到消息 mutate 结果应用到当前载荷。
+   * @param currentPayload 当前收到消息载荷
+   * @param mutation 变更结果
+   * @returns 新的载荷快照
+   */
+  private applyMessageReceivedMutation(
+    currentPayload: MessageReceivedHookPayload,
+    mutation: MessageReceivedHookMutateResult,
+  ): MessageReceivedHookPayload {
+    const nextPayload = cloneMessageReceivedHookPayload(currentPayload);
+
+    if ('providerId' in mutation && typeof mutation.providerId === 'string') {
+      nextPayload.providerId = mutation.providerId;
+    }
+    if ('modelId' in mutation && typeof mutation.modelId === 'string') {
+      nextPayload.modelId = mutation.modelId;
+    }
+    if ('content' in mutation) {
+      nextPayload.message.content = mutation.content ?? null;
+    }
+    if ('parts' in mutation) {
+      const parts = mutation.parts ?? [];
+      nextPayload.message.parts = mutation.parts === null
+        ? []
+        : cloneChatMessageParts(parts);
+    }
+    if ('modelMessages' in mutation && Array.isArray(mutation.modelMessages)) {
+      nextPayload.modelMessages = clonePluginLlmMessages(mutation.modelMessages);
+    }
+
+    return nextPayload;
   }
 
   /**
@@ -3127,6 +3465,26 @@ function cloneChatAfterModelPayload(
 }
 
 /**
+ * 复制收到消息 Hook 载荷。
+ * @param payload 原始载荷
+ * @returns 新的载荷副本
+ */
+function cloneMessageReceivedHookPayload(
+  payload: MessageReceivedHookPayload,
+): MessageReceivedHookPayload {
+  return {
+    context: {
+      ...payload.context,
+    },
+    conversationId: payload.conversationId,
+    providerId: payload.providerId,
+    modelId: payload.modelId,
+    message: cloneMessageHookInfo(payload.message),
+    modelMessages: clonePluginLlmMessages(payload.modelMessages),
+  };
+}
+
+/**
  * 复制消息创建 Hook 载荷。
  * @param payload 原始载荷
  * @returns 新的载荷副本
@@ -3497,6 +3855,42 @@ function isActionConfigArray(value: JsonValue | undefined): boolean {
       }
       return true;
     });
+}
+
+/**
+ * 把声明式过滤里的正则配置编译成可执行 RegExp。
+ * @param filterRegex 原始正则配置
+ * @returns 编译后的正则对象
+ */
+function buildFilterRegex(
+  filterRegex: NonNullable<NonNullable<PluginHookFilterDescriptor['message']>['regex']>,
+): RegExp {
+  if (typeof filterRegex === 'string') {
+    return new RegExp(filterRegex);
+  }
+
+  return new RegExp(filterRegex.pattern, filterRegex.flags);
+}
+
+/**
+ * 判断一条消息是否命中声明式 command 过滤。
+ * @param messageText 消息文本
+ * @param command 声明的命令前缀
+ * @returns 是否命中
+ */
+function matchesMessageCommand(messageText: string, command: string): boolean {
+  const normalizedCommand = command.trim();
+  if (!normalizedCommand) {
+    return false;
+  }
+
+  const normalizedMessage = messageText.trimStart();
+  if (!normalizedMessage.startsWith(normalizedCommand)) {
+    return false;
+  }
+
+  const nextChar = normalizedMessage.charAt(normalizedCommand.length);
+  return nextChar === '' || /\s/.test(nextChar);
 }
 
 /**

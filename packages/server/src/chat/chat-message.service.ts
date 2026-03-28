@@ -84,8 +84,35 @@ export class ChatMessageService {
       history: conversation.messages,
       input: toUserMessageInput(dto.parts, dto.content),
     });
-    const modelConfig = this.aiProvider.getModelConfig(dto.provider, dto.model);
+    const initialModelConfig = this.aiProvider.getModelConfig(dto.provider, dto.model);
     const resolvedPersona = await this.buildSystemPrompt(conversationId);
+    const messageReceivedContext = this.createChatLifecycleContext({
+      userId,
+      conversationId,
+      activeProviderId: initialModelConfig.providerId,
+      activeModelId: initialModelConfig.id,
+      activePersonaId: resolvedPersona.activePersonaId,
+    });
+    const receivedMessageResult = await this.pluginRuntime.runMessageReceivedHooks({
+      context: messageReceivedContext,
+      payload: {
+        context: messageReceivedContext,
+        conversationId,
+        providerId: initialModelConfig.providerId,
+        modelId: initialModelConfig.id,
+        message: {
+          role: 'user',
+          content: payload.persistedMessage.content,
+          parts: deserializeMessageParts(payload.persistedMessage.partsJson),
+        },
+        modelMessages: payload.modelMessages,
+      },
+    });
+    const receivedMessagePayload = receivedMessageResult.payload;
+    const modelConfig = this.aiProvider.getModelConfig(
+      receivedMessagePayload.providerId,
+      receivedMessagePayload.modelId,
+    );
     const messageCreatedContext = this.createChatLifecycleContext({
       userId,
       conversationId,
@@ -100,11 +127,11 @@ export class ChatMessageService {
         conversationId,
         message: {
           role: 'user',
-          content: payload.persistedMessage.content,
-          parts: deserializeMessageParts(payload.persistedMessage.partsJson),
+          content: receivedMessagePayload.message.content,
+          parts: receivedMessagePayload.message.parts,
           status: 'completed',
         },
-        modelMessages: payload.modelMessages,
+        modelMessages: receivedMessagePayload.modelMessages,
       },
     });
 
@@ -130,6 +157,22 @@ export class ChatMessageService {
     await this.touchConversation(conversationId);
 
     try {
+      if (receivedMessageResult.action === 'short-circuit') {
+        const completedAssistantMessage = await this.completeShortCircuitedAssistant({
+          assistantMessageId: assistantMessage.id,
+          userId,
+          conversationId,
+          providerId: receivedMessageResult.providerId,
+          modelId: receivedMessageResult.modelId,
+          activePersonaId: resolvedPersona.activePersonaId,
+          assistantContent: receivedMessageResult.assistantContent,
+        });
+        return {
+          userMessage,
+          assistantMessage: completedAssistantMessage,
+        };
+      }
+
       const beforeModelResult = await this.applyChatBeforeModelHooks({
         userId,
         conversationId,
@@ -166,6 +209,7 @@ export class ChatMessageService {
         providerId: beforeModelResult.modelConfig.providerId,
         modelId: beforeModelResult.modelConfig.id,
         createStream: this.buildStreamFactory({
+          assistantMessageId: assistantMessage.id,
           userId,
           conversationId,
           request: beforeModelResult.request,
@@ -297,6 +341,7 @@ export class ChatMessageService {
         providerId: beforeModelResult.modelConfig.providerId,
         modelId: beforeModelResult.modelConfig.id,
         createStream: this.buildStreamFactory({
+          assistantMessageId: messageId,
           userId,
           conversationId,
           request: beforeModelResult.request,
@@ -508,6 +553,7 @@ export class ChatMessageService {
 
   /** 统一构造聊天流工厂，供 send/retry 复用。 */
   private buildStreamFactory(input: {
+    assistantMessageId: string;
     userId: string;
     conversationId: string;
     request: ChatBeforeModelRequest;
@@ -517,8 +563,28 @@ export class ChatMessageService {
     activePersonaId: string;
     supportsToolCall: boolean;
   }) {
-    return (abortSignal: AbortSignal) =>
-      this.modelInvocation.streamPrepared({
+    return (abortSignal: AbortSignal) => {
+      const hookContext = this.createChatLifecycleContext({
+        userId: input.userId,
+        conversationId: input.conversationId,
+        activeProviderId: input.activeProviderId,
+        activeModelId: input.activeModelId,
+        activePersonaId: input.activePersonaId,
+      });
+
+      void this.pluginRuntime.runChatWaitingModelHooks({
+        context: hookContext,
+        payload: {
+          context: hookContext,
+          conversationId: input.conversationId,
+          assistantMessageId: input.assistantMessageId,
+          providerId: input.activeProviderId,
+          modelId: input.activeModelId,
+          request: input.request,
+        },
+      });
+
+      return this.modelInvocation.streamPrepared({
         prepared: input.preparedInvocation,
         system: input.request.systemPrompt,
         tools: buildChatToolSet({
@@ -540,6 +606,7 @@ export class ChatMessageService {
         stopWhen: createStepLimit(5),
         abortSignal,
       }).result;
+    };
   }
 
   /**

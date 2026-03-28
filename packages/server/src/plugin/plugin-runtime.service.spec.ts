@@ -6,6 +6,7 @@ import type {
 } from '@garlic-claw/shared';
 import { createAutomationRecorderPlugin } from './builtin/automation-recorder.plugin';
 import { BuiltinPluginTransport } from './builtin/builtin-plugin.transport';
+import { createMessageEntryRecorderPlugin } from './builtin/message-entry-recorder.plugin';
 import { createMessageLifecycleRecorderPlugin } from './builtin/message-lifecycle-recorder.plugin';
 import { createPluginGovernanceRecorderPlugin } from './builtin/plugin-governance-recorder.plugin';
 import { createResponseRecorderPlugin } from './builtin/response-recorder.plugin';
@@ -946,6 +947,444 @@ describe('PluginRuntimeService', () => {
 
     expect(shortCircuitHook).toHaveBeenCalledTimes(1);
     expect(skippedHook).not.toHaveBeenCalled();
+  });
+
+  it('applies message:received filters and priority before later hooks observe the payload', async () => {
+    const routerHook = jest.fn().mockResolvedValue({
+      action: 'mutate',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      content: '/route 插件改写后的输入',
+      parts: [
+        {
+          type: 'text',
+          text: '/route 插件改写后的输入',
+        },
+      ],
+      modelMessages: [
+        {
+          role: 'user',
+          content: '/route 插件改写后的输入',
+        },
+      ],
+    });
+    const observerA = jest.fn().mockResolvedValue({
+      action: 'pass',
+    });
+    const observerB = jest.fn().mockResolvedValue({
+      action: 'pass',
+    });
+    const skippedHook = jest.fn();
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.z-message-router',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:received',
+            priority: -10,
+            filter: {
+              message: {
+                commands: ['/route'],
+              },
+            },
+          } as never,
+        ],
+      } as never,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: routerHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.a-message-observer',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:received',
+            priority: 5,
+          } as never,
+        ],
+      } as never,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: observerA,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.b-message-observer',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:received',
+            priority: 5,
+          } as never,
+        ],
+      } as never,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: observerB,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.image-only-listener',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:received',
+            filter: {
+              message: {
+                messageKinds: ['image'],
+              },
+            },
+          } as never,
+        ],
+      } as never,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: skippedHook,
+      }),
+    });
+
+    await expect(
+      (service as any).runMessageReceivedHooks({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        payload: {
+          context: {
+            source: 'chat-hook',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+            activeProviderId: 'openai',
+            activeModelId: 'gpt-5.2',
+          },
+          conversationId: 'conversation-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          message: {
+            role: 'user',
+            content: '/route 原始输入',
+            parts: [
+              {
+                type: 'text',
+                text: '/route 原始输入',
+              },
+            ],
+          },
+          modelMessages: [
+            {
+              role: 'user',
+              content: '/route 原始输入',
+            },
+          ],
+        },
+      }),
+    ).resolves.toEqual({
+      action: 'continue',
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        conversationId: 'conversation-1',
+        providerId: 'anthropic',
+        modelId: 'claude-3-7-sonnet',
+        message: {
+          role: 'user',
+          content: '/route 插件改写后的输入',
+          parts: [
+            {
+              type: 'text',
+              text: '/route 插件改写后的输入',
+            },
+          ],
+        },
+        modelMessages: [
+          {
+            role: 'user',
+            content: '/route 插件改写后的输入',
+          },
+        ],
+      },
+    });
+
+    expect(observerA).toHaveBeenCalledWith({
+      hookName: 'message:received',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        conversationId: 'conversation-1',
+        providerId: 'anthropic',
+        modelId: 'claude-3-7-sonnet',
+        message: {
+          role: 'user',
+          content: '/route 插件改写后的输入',
+          parts: [
+            {
+              type: 'text',
+              text: '/route 插件改写后的输入',
+            },
+          ],
+        },
+        modelMessages: [
+          {
+            role: 'user',
+            content: '/route 插件改写后的输入',
+          },
+        ],
+      },
+    });
+    expect(observerA.mock.invocationCallOrder[0]).toBeLessThan(
+      observerB.mock.invocationCallOrder[0],
+    );
+    expect(skippedHook).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits message:received and skips later hooks', async () => {
+    const shortCircuitHook = jest.fn().mockResolvedValue({
+      action: 'short-circuit',
+      assistantContent: '命令已由插件直接处理。',
+    });
+    const skippedHook = jest.fn();
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.a-message-short-circuit',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:received',
+            filter: {
+              message: {
+                commands: ['/route'],
+              },
+            },
+          } as never,
+        ],
+      } as never,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: shortCircuitHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.b-message-skipped',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:received',
+          } as never,
+        ],
+      } as never,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: skippedHook,
+      }),
+    });
+
+    await expect(
+      (service as any).runMessageReceivedHooks({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        payload: {
+          context: {
+            source: 'chat-hook',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+            activeProviderId: 'openai',
+            activeModelId: 'gpt-5.2',
+          },
+          conversationId: 'conversation-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          message: {
+            role: 'user',
+            content: '/route 原始输入',
+            parts: [
+              {
+                type: 'text',
+                text: '/route 原始输入',
+              },
+            ],
+          },
+          modelMessages: [
+            {
+              role: 'user',
+              content: '/route 原始输入',
+            },
+          ],
+        },
+      }),
+    ).resolves.toEqual({
+      action: 'short-circuit',
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        conversationId: 'conversation-1',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        message: {
+          role: 'user',
+          content: '/route 原始输入',
+          parts: [
+            {
+              type: 'text',
+              text: '/route 原始输入',
+            },
+          ],
+        },
+        modelMessages: [
+          {
+            role: 'user',
+            content: '/route 原始输入',
+          },
+        ],
+      },
+      assistantContent: '命令已由插件直接处理。',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+    });
+
+    expect(shortCircuitHook).toHaveBeenCalledTimes(1);
+    expect(skippedHook).not.toHaveBeenCalled();
+  });
+
+  it('dispatches chat:waiting-model hooks without exposing a mutate contract', async () => {
+    const waitingHook = jest.fn().mockResolvedValue({
+      action: 'mutate',
+      providerId: 'anthropic',
+    });
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.waiting-observer',
+        tools: [],
+        hooks: [
+          {
+            name: 'chat:waiting-model',
+          } as never,
+        ],
+      } as never,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: waitingHook,
+      }),
+    });
+
+    await expect(
+      (service as any).runChatWaitingModelHooks({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        payload: {
+          context: {
+            source: 'chat-hook',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+            activeProviderId: 'openai',
+            activeModelId: 'gpt-5.2',
+          },
+          conversationId: 'conversation-1',
+          assistantMessageId: 'assistant-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          request: {
+            providerId: 'openai',
+            modelId: 'gpt-5.2',
+            systemPrompt: '你是 Garlic Claw',
+            messages: [
+              {
+                role: 'user',
+                content: '今天喝什么',
+              },
+            ],
+            availableTools: [],
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(waitingHook).toHaveBeenCalledWith({
+      hookName: 'chat:waiting-model',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        conversationId: 'conversation-1',
+        assistantMessageId: 'assistant-1',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        request: {
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          systemPrompt: '你是 Garlic Claw',
+          messages: [
+            {
+              role: 'user',
+              content: '今天喝什么',
+            },
+          ],
+          availableTools: [],
+        },
+      },
+    });
   });
 
   it('dispatches chat:after-model hooks for completed assistant responses', async () => {
@@ -3291,6 +3730,186 @@ describe('PluginRuntimeService', () => {
           contentLength: 6,
           partsCount: 1,
           status: 'completed',
+          userId: 'user-1',
+        },
+      },
+    });
+  });
+
+  it('runs builtin message entry consumers through the unified host api facade', async () => {
+    const definition = createMessageEntryRecorderPlugin();
+    const hookContext = {
+      source: 'chat-hook' as const,
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      activeProviderId: 'openai',
+      activeModelId: 'gpt-5.2',
+    };
+
+    hostService.call.mockResolvedValue(true);
+
+    await service.registerPlugin({
+      manifest: definition.manifest,
+      runtimeKind: 'builtin',
+      transport: new BuiltinPluginTransport(definition, {
+        call: (input) => service.callHost(input),
+      }),
+    });
+
+    hostService.call.mockReset();
+    hostService.call.mockResolvedValue(true);
+
+    await expect(
+      (service as any).runMessageReceivedHooks({
+        context: hookContext,
+        payload: {
+          context: hookContext,
+          conversationId: 'conversation-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          message: {
+            role: 'user',
+            content: '/route 原始输入',
+            parts: [
+              {
+                type: 'text',
+                text: '/route 原始输入',
+              },
+            ],
+          },
+          modelMessages: [
+            {
+              role: 'user',
+              content: '/route 原始输入',
+            },
+          ],
+        },
+      }),
+    ).resolves.toEqual({
+      action: 'continue',
+      payload: {
+        context: hookContext,
+        conversationId: 'conversation-1',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        message: {
+          role: 'user',
+          content: '/route 原始输入',
+          parts: [
+            {
+              type: 'text',
+              text: '/route 原始输入',
+            },
+          ],
+        },
+        modelMessages: [
+          {
+            role: 'user',
+            content: '/route 原始输入',
+          },
+        ],
+      },
+    });
+
+    await expect(
+      (service as any).runChatWaitingModelHooks({
+        context: hookContext,
+        payload: {
+          context: hookContext,
+          conversationId: 'conversation-1',
+          assistantMessageId: 'assistant-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          request: {
+            providerId: 'openai',
+            modelId: 'gpt-5.2',
+            systemPrompt: '你是 Garlic Claw',
+            messages: [
+              {
+                role: 'user',
+                content: '/route 原始输入',
+              },
+            ],
+            availableTools: [
+              {
+                name: 'save_memory',
+                description: '保存记忆',
+                parameters: builtinManifest.tools[0].parameters,
+                pluginId: 'builtin.memory-tools',
+                runtimeKind: 'builtin',
+              },
+            ],
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.message-entry-recorder',
+      context: hookContext,
+      method: 'storage.set',
+      params: {
+        key: 'message.received.last-entry',
+        value: {
+          conversationId: 'conversation-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          contentLength: 11,
+          partsCount: 1,
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.message-entry-recorder',
+      context: hookContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'message:received:observed',
+        message: '会话 conversation-1 收到一条待处理用户消息',
+        metadata: {
+          conversationId: 'conversation-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          contentLength: 11,
+          partsCount: 1,
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(3, {
+      pluginId: 'builtin.message-entry-recorder',
+      context: hookContext,
+      method: 'storage.set',
+      params: {
+        key: 'message.waiting.last-model-request',
+        value: {
+          conversationId: 'conversation-1',
+          assistantMessageId: 'assistant-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          messageCount: 1,
+          toolCount: 1,
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(4, {
+      pluginId: 'builtin.message-entry-recorder',
+      context: hookContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'chat:waiting-model:observed',
+        message: '会话 conversation-1 即将进入模型调用',
+        metadata: {
+          conversationId: 'conversation-1',
+          assistantMessageId: 'assistant-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          messageCount: 1,
+          toolCount: 1,
           userId: 'user-1',
         },
       },

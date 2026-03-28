@@ -40,6 +40,7 @@ vi.mock('../composables/use-plugin-management', () => {
     ],
     hooks: [
       { name: 'conversation:created' },
+      { name: 'message:received' },
       { name: 'message:created' },
       { name: 'automation:before-run' },
       { name: 'automation:after-run' },
@@ -51,6 +52,7 @@ vi.mock('../composables/use-plugin-management', () => {
       { name: 'plugin:unloaded' },
       { name: 'plugin:error' },
       { name: 'chat:before-model' },
+      { name: 'chat:waiting-model' },
       { name: 'chat:after-model' },
     ],
     routes: [
@@ -145,6 +147,7 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可写入宿主事件日志')
     expect(wrapper.text()).toContain('可调用宿主子代理')
     expect(wrapper.text()).toContain('可监听会话创建')
+    expect(wrapper.text()).toContain('可前置监听和过滤消息')
     expect(wrapper.text()).toContain('可改写消息草稿')
     expect(wrapper.text()).toContain('可拦截自动化执行')
     expect(wrapper.text()).toContain('可改写或记录自动化结果')
@@ -156,6 +159,7 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可监听插件卸载')
     expect(wrapper.text()).toContain('可观察插件失败事件')
     expect(wrapper.text()).toContain('可改写模型上下文')
+    expect(wrapper.text()).toContain('可观察模型等待态')
     expect(wrapper.text()).toContain('可消费并改写模型结果')
     expect(wrapper.text()).toContain('可定时执行任务')
     expect(wrapper.text()).toContain('可暴露宿主内 JSON Route')

@@ -40,7 +40,9 @@ export type PluginPermission =
 
 /** 插件 Hook 名称。 */
 export type PluginHookName =
+  | 'message:received'
   | 'chat:before-model'
+  | 'chat:waiting-model'
   | 'chat:after-model'
   | 'conversation:created'
   | 'message:created'
@@ -56,6 +58,27 @@ export type PluginHookName =
   | 'plugin:unloaded'
   | 'plugin:error'
   | 'cron:tick';
+
+/** `message:received` 可声明的消息类型过滤。 */
+export type PluginMessageKind = 'text' | 'image' | 'mixed';
+
+/** 正则过滤描述。 */
+export interface PluginRegexFilterDescriptor {
+  pattern: string;
+  flags?: string;
+}
+
+/** `message:received` 的最小声明式过滤条件。 */
+export interface PluginHookMessageFilter {
+  commands?: string[];
+  regex?: string | PluginRegexFilterDescriptor;
+  messageKinds?: PluginMessageKind[];
+}
+
+/** Hook 过滤描述。 */
+export interface PluginHookFilterDescriptor {
+  message?: PluginHookMessageFilter;
+}
 
 /** 插件调用来源。 */
 export type PluginInvocationSource =
@@ -119,6 +142,8 @@ export interface AuthPayload {
 export interface PluginHookDescriptor {
   name: PluginHookName;
   description?: string;
+  priority?: number;
+  filter?: PluginHookFilterDescriptor;
 }
 
 /** 插件配置字段描述。 */
@@ -478,6 +503,46 @@ export interface ChatBeforeModelHookPayload {
   request: ChatBeforeModelRequest;
 }
 
+/** 收到用户消息后的前置监听载荷。 */
+export interface MessageReceivedHookPayload {
+  context: PluginCallContext;
+  conversationId: string;
+  providerId: string;
+  modelId: string;
+  message: PluginMessageHookInfo;
+  modelMessages: PluginLlmMessage[];
+}
+
+/** 收到用户消息后 Hook 不修改当前载荷。 */
+export interface MessageReceivedHookPassResult {
+  action: 'pass';
+}
+
+/** 收到用户消息后 Hook 改写当前载荷。 */
+export interface MessageReceivedHookMutateResult {
+  action: 'mutate';
+  providerId?: string;
+  modelId?: string;
+  content?: string | null;
+  parts?: ChatMessagePart[] | null;
+  modelMessages?: PluginLlmMessage[];
+}
+
+/** 收到用户消息后 Hook 直接短路本轮模型调用。 */
+export interface MessageReceivedHookShortCircuitResult {
+  action: 'short-circuit';
+  assistantContent: string;
+  providerId?: string;
+  modelId?: string;
+  reason?: string;
+}
+
+/** 收到用户消息后 Hook 的返回。 */
+export type MessageReceivedHookResult =
+  | MessageReceivedHookPassResult
+  | MessageReceivedHookMutateResult
+  | MessageReceivedHookShortCircuitResult;
+
 /** 兼容旧版“只追加系统提示词”的 Hook 返回。 */
 export interface LegacyChatBeforeModelHookResult {
   appendSystemPrompt?: string;
@@ -534,6 +599,16 @@ export interface ChatAfterModelHookPayload {
     toolName: string;
     output: JsonValue;
   }>;
+}
+
+/** 真正进入模型调用前的 waiting Hook 输入。 */
+export interface ChatWaitingModelHookPayload {
+  context: PluginCallContext;
+  conversationId: string;
+  assistantMessageId: string;
+  providerId: string;
+  modelId: string;
+  request: ChatBeforeModelRequest;
 }
 
 /** 聊天模型后 Hook 透传当前结果，不做改写。 */

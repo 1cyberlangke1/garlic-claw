@@ -9,6 +9,7 @@ import { createCoreToolsPlugin } from './core-tools.plugin';
 import { createCronHeartbeatPlugin } from './cron-heartbeat.plugin';
 import { createKbContextPlugin } from './kb-context.plugin';
 import { createMemoryContextPlugin } from './memory-context.plugin';
+import { createMessageEntryRecorderPlugin } from './message-entry-recorder.plugin';
 import { createMessageLifecycleRecorderPlugin } from './message-lifecycle-recorder.plugin';
 import { createMemoryToolsPlugin } from './memory-tools.plugin';
 import { createPersonaRouterPlugin } from './persona-router.plugin';
@@ -49,6 +50,7 @@ export class BuiltinPluginLoader implements OnModuleInit {
       createAutomationToolsPlugin(),
       createMemoryContextPlugin(),
       createMessageLifecycleRecorderPlugin(),
+      createMessageEntryRecorderPlugin(),
       createKbContextPlugin(),
       createConversationTitlePlugin(),
       createSubagentDelegatePlugin(),
