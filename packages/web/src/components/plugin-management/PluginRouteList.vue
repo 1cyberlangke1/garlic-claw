@@ -46,7 +46,7 @@
       <div class="tester-grid">
         <label class="tester-field">
           <span>Route</span>
-          <select v-model="selectedPath">
+          <select v-model="selectedPath" data-test="route-path-select">
             <option v-for="route in routes" :key="route.path" :value="route.path">
               {{ route.path }}
             </option>
@@ -134,6 +134,10 @@ watch(selectedRouteMethods, (methods) => {
   }
 })
 
+watch([selectedPath, selectedMethod], () => {
+  clearResponseState()
+})
+
 /**
  * 调用当前选中的插件 Route，并把结果格式化到面板里。
  */
@@ -147,10 +151,7 @@ async function runSelectedRoute() {
   }
 
   running.value = true
-  responseError.value = null
-  responseText.value = ''
-  responseStatus.value = null
-  responseHeadersText.value = ''
+  clearResponseState()
   try {
     const result = await invokePluginRoute(
       props.pluginName,
@@ -173,6 +174,16 @@ async function runSelectedRoute() {
   } finally {
     running.value = false
   }
+}
+
+/**
+ * 清空 tester 当前展示的响应状态。
+ */
+function clearResponseState() {
+  responseError.value = null
+  responseText.value = ''
+  responseStatus.value = null
+  responseHeadersText.value = ''
 }
 
 /**

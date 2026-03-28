@@ -76,4 +76,42 @@ describe('PluginRouteList', () => {
     expect(invokePluginRoute).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('JSON Body 必须是有效 JSON')
   })
+
+  it('clears the previous response when the selected route changes', async () => {
+    invokePluginRoute.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        ok: true,
+      },
+    })
+
+    const wrapper = mount(PluginRouteList, {
+      props: {
+        pluginName: 'builtin.route-inspector',
+        routes: [
+          {
+            path: 'inspect/context',
+            methods: ['GET'],
+            description: 'inspect current route context',
+          },
+          {
+            path: 'inspect/health',
+            methods: ['GET'],
+            description: 'inspect current route health',
+          },
+        ],
+      },
+    })
+
+    await wrapper.get('[data-test="route-run-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('HTTP 200')
+
+    await wrapper.get('[data-test="route-path-select"]').setValue('inspect/health')
+
+    expect(wrapper.text()).not.toContain('HTTP 200')
+    expect(wrapper.text()).not.toContain('"ok": true')
+  })
 })
