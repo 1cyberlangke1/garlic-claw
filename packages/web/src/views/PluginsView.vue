@@ -295,73 +295,106 @@ function needsAttention(plugin: PluginInfo): boolean {
  * @returns 可展示的能力标签
  */
 function pluginHighlights(plugin: PluginInfo): string[] {
-  const permissions = new Set(plugin.permissions ?? [])
-  const hooks = new Set((plugin.hooks ?? []).map((hook) => hook.name))
-  const highlights: string[] = []
+  const permissions = new Set(plugin.permissions ?? plugin.manifest?.permissions ?? [])
+  const hooks = new Set((plugin.hooks ?? plugin.manifest?.hooks ?? []).map((hook) => hook.name))
+  const highlights = new Set<string>()
+  const pushHighlight = (label: string) => {
+    highlights.add(label)
+  }
 
   if (permissions.has('conversation:read')) {
-    highlights.push('可读取会话上下文')
+    pushHighlight('可读取会话上下文')
   }
   if (permissions.has('conversation:write')) {
-    highlights.push('可修改会话标题')
+    pushHighlight('可修改会话标题')
   }
   if (permissions.has('provider:read')) {
-    highlights.push('可读取 Provider 上下文')
+    pushHighlight('可读取 Provider 上下文')
   }
   if (permissions.has('memory:read')) {
-    highlights.push('可读取用户记忆')
+    pushHighlight('可读取用户记忆')
   }
   if (permissions.has('memory:write')) {
-    highlights.push('可写入用户记忆')
+    pushHighlight('可写入用户记忆')
   }
   if (permissions.has('automation:read')) {
-    highlights.push('可读取自动化规则')
+    pushHighlight('可读取自动化规则')
   }
   if (permissions.has('automation:write')) {
-    highlights.push('可管理和触发自动化')
+    pushHighlight('可管理和触发自动化')
   }
   if (permissions.has('kb:read')) {
-    highlights.push('可读取系统知识库')
+    pushHighlight('可读取系统知识库')
   }
   if (permissions.has('persona:read')) {
-    highlights.push('可读取 Persona 上下文')
+    pushHighlight('可读取 Persona 上下文')
   }
   if (permissions.has('persona:write')) {
-    highlights.push('可切换当前 Persona')
+    pushHighlight('可切换当前 Persona')
   }
   if (permissions.has('llm:generate')) {
-    highlights.push('可二次调用模型')
+    pushHighlight('可二次调用模型')
   }
   if (permissions.has('storage:read') || permissions.has('storage:write')) {
-    highlights.push('可读写持久化插件 KV')
+    pushHighlight('可读写持久化插件 KV')
   }
   if (permissions.has('state:read') || permissions.has('state:write')) {
-    highlights.push('可读写进程内状态')
+    pushHighlight('可读写进程内状态')
   }
   if (permissions.has('log:write')) {
-    highlights.push('可写入宿主事件日志')
+    pushHighlight('可写入宿主事件日志')
   }
   if (permissions.has('cron:read') || permissions.has('cron:write')) {
-    highlights.push('可管理宿主 Cron')
+    pushHighlight('可管理宿主 Cron')
   }
   if (permissions.has('subagent:run')) {
-    highlights.push('可调用宿主子代理')
+    pushHighlight('可调用宿主子代理')
+  }
+  if (hooks.has('conversation:created')) {
+    pushHighlight('可监听会话创建')
+  }
+  if (hooks.has('message:created')) {
+    pushHighlight('可改写消息草稿')
+  }
+  if (hooks.has('message:updated')) {
+    pushHighlight('可改写消息编辑结果')
+  }
+  if (hooks.has('message:deleted')) {
+    pushHighlight('可监听消息删除')
+  }
+  if (hooks.has('automation:before-run')) {
+    pushHighlight('可拦截自动化执行')
+  }
+  if (hooks.has('automation:after-run')) {
+    pushHighlight('可改写或记录自动化结果')
+  }
+  if (hooks.has('tool:before-call')) {
+    pushHighlight('可拦截工具调用参数')
+  }
+  if (hooks.has('tool:after-call')) {
+    pushHighlight('可观察或改写工具结果')
+  }
+  if (hooks.has('response:before-send')) {
+    pushHighlight('可改写最终发送内容')
+  }
+  if (hooks.has('response:after-send')) {
+    pushHighlight('可观察最终发送结果')
   }
   if (hooks.has('chat:before-model')) {
-    highlights.push('可改写模型上下文')
-    highlights.push('可短路模型调用')
+    pushHighlight('可改写模型上下文')
+    pushHighlight('可短路模型调用')
   }
   if (hooks.has('chat:after-model')) {
-    highlights.push('可消费并改写模型结果')
+    pushHighlight('可消费并改写模型结果')
   }
   if ((plugin.crons?.length ?? 0) > 0) {
-    highlights.push('可定时执行任务')
+    pushHighlight('可定时执行任务')
   }
   if ((plugin.routes?.length ?? 0) > 0) {
-    highlights.push('可暴露宿主内 JSON Route')
+    pushHighlight('可暴露宿主内 JSON Route')
   }
 
-  return highlights
+  return [...highlights]
 }
 
 /**

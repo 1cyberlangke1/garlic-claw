@@ -39,6 +39,16 @@ export interface StartChatTaskInput {
   onComplete?: (
     result: CompletedChatTaskResult,
   ) => Promise<CompletedChatTaskResult | void> | CompletedChatTaskResult | void;
+  /**
+   * 在最终回复完成发送后执行的回调。
+   * 输入:
+   * - 已持久化、已发送的最终 assistant 快照
+   * 输出:
+   * - 无返回值
+   */
+  onSent?: (
+    result: CompletedChatTaskResult,
+  ) => Promise<void> | void;
 }
 
 /** 聊天任务完成后的最终 assistant 快照。 */
@@ -249,6 +259,7 @@ export class ChatTaskService implements OnModuleInit {
 
       await this.persistMessageState(input, state, 'completed', null);
       const completedResult = this.buildCompletedTaskResult(input, state);
+      let finalResult = completedResult;
       if (input.onComplete) {
         try {
           const patchedResult = await input.onComplete(completedResult);
@@ -256,12 +267,15 @@ export class ChatTaskService implements OnModuleInit {
             patchedResult
             && this.hasCompletedResultPatch(completedResult, patchedResult)
           ) {
+            finalResult = patchedResult;
             await this.persistCompletedResult(patchedResult);
             this.emit(task, {
               type: 'message-patch',
               messageId: patchedResult.assistantMessageId,
               content: patchedResult.content,
             });
+          } else if (patchedResult) {
+            finalResult = patchedResult;
           }
         } catch (error) {
           this.logger.warn(
@@ -274,6 +288,15 @@ export class ChatTaskService implements OnModuleInit {
         messageId: input.assistantMessageId,
         status: 'completed',
       });
+      if (input.onSent) {
+        try {
+          await input.onSent(finalResult);
+        } catch (error) {
+          this.logger.warn(
+            `聊天发送后回调执行失败: ${input.assistantMessageId} - ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
     } catch (error) {
       if (task.abortController.signal.aborted) {
         await this.persistMessageState(input, state, 'stopped', null);

@@ -39,6 +39,14 @@ vi.mock('../composables/use-plugin-management', () => {
       },
     ],
     hooks: [
+      { name: 'conversation:created' },
+      { name: 'message:created' },
+      { name: 'automation:before-run' },
+      { name: 'automation:after-run' },
+      { name: 'tool:before-call' },
+      { name: 'tool:after-call' },
+      { name: 'response:before-send' },
+      { name: 'response:after-send' },
       { name: 'chat:before-model' },
       { name: 'chat:after-model' },
     ],
@@ -133,6 +141,14 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可读写持久化插件 KV')
     expect(wrapper.text()).toContain('可写入宿主事件日志')
     expect(wrapper.text()).toContain('可调用宿主子代理')
+    expect(wrapper.text()).toContain('可监听会话创建')
+    expect(wrapper.text()).toContain('可改写消息草稿')
+    expect(wrapper.text()).toContain('可拦截自动化执行')
+    expect(wrapper.text()).toContain('可改写或记录自动化结果')
+    expect(wrapper.text()).toContain('可拦截工具调用参数')
+    expect(wrapper.text()).toContain('可观察或改写工具结果')
+    expect(wrapper.text()).toContain('可改写最终发送内容')
+    expect(wrapper.text()).toContain('可观察最终发送结果')
     expect(wrapper.text()).toContain('可改写模型上下文')
     expect(wrapper.text()).toContain('可消费并改写模型结果')
     expect(wrapper.text()).toContain('可定时执行任务')

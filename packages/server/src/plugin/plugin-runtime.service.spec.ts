@@ -4,6 +4,11 @@ import type {
   PluginConfigSchema,
   PluginManifest,
 } from '@garlic-claw/shared';
+import { createAutomationRecorderPlugin } from './builtin/automation-recorder.plugin';
+import { BuiltinPluginTransport } from './builtin/builtin-plugin.transport';
+import { createMessageLifecycleRecorderPlugin } from './builtin/message-lifecycle-recorder.plugin';
+import { createResponseRecorderPlugin } from './builtin/response-recorder.plugin';
+import { createToolAuditPlugin } from './builtin/tool-audit.plugin';
 import { PluginRuntimeService } from './plugin-runtime.service';
 
 describe('PluginRuntimeService', () => {
@@ -311,6 +316,154 @@ describe('PluginRuntimeService', () => {
     expect(result).toEqual({
       saved: true,
     });
+  });
+
+  it('applies tool:* hooks around unified tool execution', async () => {
+    const beforeHook = jest.fn().mockResolvedValue({
+      action: 'mutate',
+      params: {
+        content: '插件改写后的参数',
+      },
+    });
+    const afterHook = jest.fn().mockResolvedValue({
+      action: 'mutate',
+      output: {
+        saved: true,
+        normalized: true,
+      },
+    });
+    const executeTool = jest.fn().mockResolvedValue({
+      saved: true,
+    });
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.a-tool-before',
+        tools: [],
+        hooks: [
+          {
+            name: 'tool:before-call',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: beforeHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.b-tool-after',
+        tools: [],
+        hooks: [
+          {
+            name: 'tool:after-call',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: afterHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: builtinManifest,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        executeTool,
+      }),
+    });
+
+    await expect(
+      service.executeTool({
+        pluginId: 'builtin.memory-tools',
+        toolName: 'save_memory',
+        params: {
+          content: '原始参数',
+        },
+        context: callContext,
+      }),
+    ).resolves.toEqual({
+      saved: true,
+      normalized: true,
+    });
+
+    expect(executeTool).toHaveBeenCalledWith({
+      toolName: 'save_memory',
+      params: {
+        content: '插件改写后的参数',
+      },
+      context: callContext,
+    });
+    expect(afterHook).toHaveBeenCalledWith({
+      hookName: 'tool:after-call',
+      context: callContext,
+      payload: {
+        context: callContext,
+        pluginId: 'builtin.memory-tools',
+        runtimeKind: 'builtin',
+        tool: builtinManifest.tools[0],
+        params: {
+          content: '插件改写后的参数',
+        },
+        output: {
+          saved: true,
+        },
+      },
+    });
+  });
+
+  it('supports tool:before-call short-circuit and skips the target tool execution', async () => {
+    const shortCircuitHook = jest.fn().mockResolvedValue({
+      action: 'short-circuit',
+      output: {
+        saved: true,
+        source: 'hook',
+      },
+    });
+    const executeTool = jest.fn();
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.a-tool-short-circuit',
+        tools: [],
+        hooks: [
+          {
+            name: 'tool:before-call',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: shortCircuitHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: builtinManifest,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        executeTool,
+      }),
+    });
+
+    await expect(
+      service.executeTool({
+        pluginId: 'builtin.memory-tools',
+        toolName: 'save_memory',
+        params: {
+          content: '原始参数',
+        },
+        context: callContext,
+      }),
+    ).resolves.toEqual({
+      saved: true,
+      source: 'hook',
+    });
+
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it('delegates governance reload and reconnect actions to the owning transport', async () => {
@@ -937,6 +1090,536 @@ describe('PluginRuntimeService', () => {
         assistantContent: '这是插件润色后的最终回复。',
         toolCalls: [],
         toolResults: [],
+      },
+    });
+  });
+
+  it('dispatches conversation:created hooks after a conversation is created', async () => {
+    const invokeHook = jest.fn().mockResolvedValue(null);
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.conversation-observer',
+        tools: [],
+        hooks: [
+          {
+            name: 'conversation:created',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook,
+      }),
+    });
+
+    await expect(
+      service.runConversationCreatedHooks({
+        context: {
+          source: 'http-route',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        payload: {
+          context: {
+            source: 'http-route',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+          },
+          conversation: {
+            id: 'conversation-1',
+            title: '新的对话',
+            createdAt: '2026-03-28T10:00:00.000Z',
+            updatedAt: '2026-03-28T10:00:00.000Z',
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(invokeHook).toHaveBeenCalledWith({
+      hookName: 'conversation:created',
+      context: {
+        source: 'http-route',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      payload: {
+        context: {
+          source: 'http-route',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        conversation: {
+          id: 'conversation-1',
+          title: '新的对话',
+          createdAt: '2026-03-28T10:00:00.000Z',
+          updatedAt: '2026-03-28T10:00:00.000Z',
+        },
+      },
+    });
+  });
+
+  it('applies message:created mutations in sequence', async () => {
+    const rewriteHook = jest.fn().mockResolvedValue({
+      action: 'mutate',
+      content: '插件改写后的输入',
+      parts: [
+        {
+          type: 'text',
+          text: '插件改写后的输入',
+        },
+      ],
+      modelMessages: [
+        {
+          role: 'user',
+          content: '插件改写后的输入',
+        },
+      ],
+    });
+    const observeHook = jest.fn().mockResolvedValue({
+      action: 'pass',
+    });
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.a-message-rewriter',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:created',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: rewriteHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.b-message-observer',
+        tools: [],
+        hooks: [
+          {
+            name: 'message:created',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: observeHook,
+      }),
+    });
+
+    await expect(
+      service.runMessageCreatedHooks({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        payload: {
+          context: {
+            source: 'chat-hook',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+            activeProviderId: 'openai',
+            activeModelId: 'gpt-5.2',
+          },
+          conversationId: 'conversation-1',
+          message: {
+            role: 'user',
+            content: '原始输入',
+            parts: [
+              {
+                type: 'text',
+                text: '原始输入',
+              },
+            ],
+            status: 'completed',
+          },
+          modelMessages: [
+            {
+              role: 'user',
+              content: '原始输入',
+            },
+          ],
+        },
+      } as never),
+    ).resolves.toEqual({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      conversationId: 'conversation-1',
+      message: {
+        role: 'user',
+        content: '插件改写后的输入',
+        parts: [
+          {
+            type: 'text',
+            text: '插件改写后的输入',
+          },
+        ],
+        status: 'completed',
+      },
+      modelMessages: [
+        {
+          role: 'user',
+          content: '插件改写后的输入',
+        },
+      ],
+    });
+
+    expect(observeHook).toHaveBeenCalledWith({
+      hookName: 'message:created',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        conversationId: 'conversation-1',
+        message: {
+          role: 'user',
+          content: '插件改写后的输入',
+          parts: [
+            {
+              type: 'text',
+              text: '插件改写后的输入',
+            },
+          ],
+          status: 'completed',
+        },
+        modelMessages: [
+          {
+            role: 'user',
+            content: '插件改写后的输入',
+          },
+        ],
+      },
+    });
+  });
+
+  it('supports automation:before-run short-circuit and applies automation:after-run mutations', async () => {
+    const shortCircuitHook = jest.fn().mockResolvedValue({
+      action: 'short-circuit',
+      status: 'success',
+      results: [
+        {
+          action: 'hook',
+          result: '直接完成',
+        },
+      ],
+    });
+    const afterRunHook = jest.fn().mockResolvedValue({
+      action: 'mutate',
+      results: [
+        {
+          action: 'hook',
+          result: '直接完成',
+        },
+        {
+          action: 'summary',
+          result: '插件补充了摘要',
+        },
+      ],
+    });
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.a-automation-short-circuit',
+        tools: [],
+        hooks: [
+          {
+            name: 'automation:before-run',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: shortCircuitHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.b-automation-after-run',
+        tools: [],
+        hooks: [
+          {
+            name: 'automation:after-run',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: afterRunHook,
+      }),
+    });
+
+    await expect(
+      service.runAutomationBeforeRunHooks({
+        context: {
+          source: 'automation',
+          userId: 'user-1',
+          automationId: 'automation-1',
+        },
+        payload: {
+          context: {
+            source: 'automation',
+            userId: 'user-1',
+            automationId: 'automation-1',
+          },
+          automation: {
+            id: 'automation-1',
+            name: '测试自动化',
+            trigger: {
+              type: 'manual',
+            },
+            actions: [],
+            enabled: true,
+            lastRunAt: null,
+            createdAt: '2026-03-28T10:00:00.000Z',
+            updatedAt: '2026-03-28T10:00:00.000Z',
+          },
+          actions: [],
+        },
+      } as never),
+    ).resolves.toEqual({
+      action: 'short-circuit',
+      status: 'success',
+      results: [
+        {
+          action: 'hook',
+          result: '直接完成',
+        },
+      ],
+    });
+
+    await expect(
+      service.runAutomationAfterRunHooks({
+        context: {
+          source: 'automation',
+          userId: 'user-1',
+          automationId: 'automation-1',
+        },
+        payload: {
+          context: {
+            source: 'automation',
+            userId: 'user-1',
+            automationId: 'automation-1',
+          },
+          automation: {
+            id: 'automation-1',
+            name: '测试自动化',
+            trigger: {
+              type: 'manual',
+            },
+            actions: [],
+            enabled: true,
+            lastRunAt: null,
+            createdAt: '2026-03-28T10:00:00.000Z',
+            updatedAt: '2026-03-28T10:00:00.000Z',
+          },
+          status: 'success',
+          results: [
+            {
+              action: 'hook',
+              result: '直接完成',
+            },
+          ],
+        },
+      } as never),
+    ).resolves.toEqual({
+      context: {
+        source: 'automation',
+        userId: 'user-1',
+        automationId: 'automation-1',
+      },
+      automation: {
+        id: 'automation-1',
+        name: '测试自动化',
+        trigger: {
+          type: 'manual',
+        },
+        actions: [],
+        enabled: true,
+        lastRunAt: null,
+        createdAt: '2026-03-28T10:00:00.000Z',
+        updatedAt: '2026-03-28T10:00:00.000Z',
+      },
+      status: 'success',
+      results: [
+        {
+          action: 'hook',
+          result: '直接完成',
+        },
+        {
+          action: 'summary',
+          result: '插件补充了摘要',
+        },
+      ],
+    });
+  });
+
+  it('applies response:before-send mutations and dispatches response:after-send hooks', async () => {
+    const beforeSendHook = jest.fn().mockResolvedValue({
+      action: 'mutate',
+      assistantContent: '发送前统一包装后的回复',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+    });
+    const afterSendHook = jest.fn().mockResolvedValue(null);
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.a-response-before-send',
+        tools: [],
+        hooks: [
+          {
+            name: 'response:before-send',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: beforeSendHook,
+      }),
+    });
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.b-response-after-send',
+        tools: [],
+        hooks: [
+          {
+            name: 'response:after-send',
+          },
+        ],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        invokeHook: afterSendHook,
+      }),
+    });
+
+    await expect(
+      service.runResponseBeforeSendHooks({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+        },
+        payload: {
+          context: {
+            source: 'chat-hook',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+            activeProviderId: 'openai',
+            activeModelId: 'gpt-5.2',
+          },
+          responseSource: 'model',
+          assistantMessageId: 'assistant-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          assistantContent: '原始最终回复',
+          toolCalls: [],
+          toolResults: [],
+        },
+      } as never),
+    ).resolves.toEqual({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      responseSource: 'model',
+      assistantMessageId: 'assistant-1',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      assistantContent: '发送前统一包装后的回复',
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    await expect(
+      service.runResponseAfterSendHooks({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'anthropic',
+          activeModelId: 'claude-3-7-sonnet',
+        },
+        payload: {
+          context: {
+            source: 'chat-hook',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+            activeProviderId: 'anthropic',
+            activeModelId: 'claude-3-7-sonnet',
+          },
+          responseSource: 'model',
+          assistantMessageId: 'assistant-1',
+          providerId: 'anthropic',
+          modelId: 'claude-3-7-sonnet',
+          assistantContent: '发送前统一包装后的回复',
+          toolCalls: [],
+          toolResults: [],
+          sentAt: '2026-03-28T18:30:00.000Z',
+        },
+      } as never),
+    ).resolves.toBeUndefined();
+
+    expect(afterSendHook).toHaveBeenCalledWith({
+      hookName: 'response:after-send',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'anthropic',
+        activeModelId: 'claude-3-7-sonnet',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'anthropic',
+          activeModelId: 'claude-3-7-sonnet',
+        },
+        responseSource: 'model',
+        assistantMessageId: 'assistant-1',
+        providerId: 'anthropic',
+        modelId: 'claude-3-7-sonnet',
+        assistantContent: '发送前统一包装后的回复',
+        toolCalls: [],
+        toolResults: [],
+        sentAt: '2026-03-28T18:30:00.000Z',
       },
     });
   });
@@ -1952,8 +2635,8 @@ describe('PluginRuntimeService', () => {
     const brokenHookManifest: PluginManifest = {
       ...builtinManifest,
       id: 'builtin.broken-hook',
-      permissions: ['conversation:read'],
-      tools: [],
+      permissions: [...builtinManifest.permissions],
+      tools: [...builtinManifest.tools],
       hooks: [
         {
           name: 'chat:before-model',
@@ -2037,6 +2720,645 @@ describe('PluginRuntimeService', () => {
     );
   });
 
+  it('runs builtin automation:after-run consumers through the unified host api facade', async () => {
+    const definition = createAutomationRecorderPlugin();
+    const hookContext = {
+      source: 'automation' as const,
+      userId: 'user-1',
+      automationId: 'automation-1',
+    };
+    const payload = {
+      context: hookContext,
+      automation: {
+        id: 'automation-1',
+        name: '咖啡提醒',
+        trigger: {
+          type: 'manual' as const,
+        },
+        actions: [],
+        enabled: true,
+        lastRunAt: null,
+        createdAt: '2026-03-28T12:00:00.000Z',
+        updatedAt: '2026-03-28T12:00:00.000Z',
+      },
+      status: 'success',
+      results: [
+        {
+          action: 'device_command',
+          plugin: 'builtin.memory-tools',
+        },
+      ],
+    };
+
+    hostService.call
+      .mockResolvedValueOnce({
+        automationId: 'automation-1',
+        automationName: '咖啡提醒',
+        status: 'success',
+        triggerType: 'manual',
+        resultCount: 1,
+      })
+      .mockResolvedValueOnce(true);
+
+    await service.registerPlugin({
+      manifest: definition.manifest,
+      runtimeKind: 'builtin',
+      transport: new BuiltinPluginTransport(definition, {
+        call: (input) => service.callHost(input),
+      }),
+    });
+
+    await expect(
+      service.runAutomationAfterRunHooks({
+        context: hookContext,
+        payload,
+      }),
+    ).resolves.toEqual(payload);
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.automation-recorder',
+      context: hookContext,
+      method: 'storage.set',
+      params: {
+        key: 'automation.automation-1.last-run',
+        value: {
+          automationId: 'automation-1',
+          automationName: '咖啡提醒',
+          status: 'success',
+          triggerType: 'manual',
+          resultCount: 1,
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.automation-recorder',
+      context: hookContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'automation:observed',
+        message: '自动化 咖啡提醒 执行完成：success',
+        metadata: {
+          automationId: 'automation-1',
+          automationName: '咖啡提醒',
+          status: 'success',
+          triggerType: 'manual',
+          resultCount: 1,
+        },
+      },
+    });
+  });
+
+  it('runs builtin conversation/message lifecycle consumers through the unified host api facade', async () => {
+    const definition = createMessageLifecycleRecorderPlugin();
+    const conversationContext = {
+      source: 'http-route' as const,
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+    };
+    const messageContext = {
+      source: 'chat-hook' as const,
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      activeProviderId: 'openai',
+      activeModelId: 'gpt-5.2',
+    };
+
+    hostService.call
+      .mockResolvedValueOnce({
+        conversationId: 'conversation-1',
+        titleLength: 4,
+        userId: 'user-1',
+      })
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce({
+        eventType: 'message:created',
+        conversationId: 'conversation-1',
+        messageId: null,
+        role: 'user',
+        contentLength: 4,
+        partsCount: 1,
+        status: 'completed',
+        userId: 'user-1',
+      })
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce({
+        eventType: 'message:updated',
+        conversationId: 'conversation-1',
+        messageId: 'message-1',
+        role: 'assistant',
+        contentLength: 6,
+        partsCount: 1,
+        status: 'completed',
+        userId: 'user-1',
+      })
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce({
+        eventType: 'message:deleted',
+        conversationId: 'conversation-1',
+        messageId: 'message-1',
+        role: 'assistant',
+        contentLength: 6,
+        partsCount: 1,
+        status: 'completed',
+        userId: 'user-1',
+      })
+      .mockResolvedValueOnce(true);
+
+    await service.registerPlugin({
+      manifest: definition.manifest,
+      runtimeKind: 'builtin',
+      transport: new BuiltinPluginTransport(definition, {
+        call: (input) => service.callHost(input),
+      }),
+    });
+
+    await expect(
+      service.runConversationCreatedHooks({
+        context: conversationContext,
+        payload: {
+          context: conversationContext,
+          conversation: {
+            id: 'conversation-1',
+            title: '新的对话',
+            createdAt: '2026-03-28T12:00:00.000Z',
+            updatedAt: '2026-03-28T12:00:00.000Z',
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      service.runMessageCreatedHooks({
+        context: messageContext,
+        payload: {
+          context: messageContext,
+          conversationId: 'conversation-1',
+          message: {
+            role: 'user',
+            content: '原始输入',
+            parts: [
+              {
+                type: 'text',
+                text: '原始输入',
+              },
+            ],
+            status: 'completed',
+          },
+          modelMessages: [
+            {
+              role: 'user',
+              content: '原始输入',
+            },
+          ],
+        },
+      } as never),
+    ).resolves.toEqual({
+      context: messageContext,
+      conversationId: 'conversation-1',
+      message: {
+        role: 'user',
+        content: '原始输入',
+        parts: [
+          {
+            type: 'text',
+            text: '原始输入',
+          },
+        ],
+        status: 'completed',
+      },
+      modelMessages: [
+        {
+          role: 'user',
+          content: '原始输入',
+        },
+      ],
+    });
+
+    await expect(
+      service.runMessageUpdatedHooks({
+        context: messageContext,
+        payload: {
+          context: messageContext,
+          conversationId: 'conversation-1',
+          messageId: 'message-1',
+          currentMessage: {
+            id: 'message-1',
+            role: 'assistant',
+            content: '旧回复',
+            parts: [
+              {
+                type: 'text',
+                text: '旧回复',
+              },
+            ],
+            status: 'completed',
+          },
+          nextMessage: {
+            id: 'message-1',
+            role: 'assistant',
+            content: '更新后的回复',
+            parts: [
+              {
+                type: 'text',
+                text: '更新后的回复',
+              },
+            ],
+            status: 'completed',
+          },
+        },
+      } as never),
+    ).resolves.toEqual({
+      context: messageContext,
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      currentMessage: {
+        id: 'message-1',
+        role: 'assistant',
+        content: '旧回复',
+        parts: [
+          {
+            type: 'text',
+            text: '旧回复',
+          },
+        ],
+        status: 'completed',
+      },
+      nextMessage: {
+        id: 'message-1',
+        role: 'assistant',
+        content: '更新后的回复',
+        parts: [
+          {
+            type: 'text',
+            text: '更新后的回复',
+          },
+        ],
+        status: 'completed',
+      },
+    });
+
+    await expect(
+      service.runMessageDeletedHooks({
+        context: messageContext,
+        payload: {
+          context: messageContext,
+          conversationId: 'conversation-1',
+          messageId: 'message-1',
+          message: {
+            id: 'message-1',
+            role: 'assistant',
+            content: '更新后的回复',
+            parts: [
+              {
+                type: 'text',
+                text: '更新后的回复',
+              },
+            ],
+            status: 'completed',
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: conversationContext,
+      method: 'storage.set',
+      params: {
+        key: 'conversation.conversation-1.last-created',
+        value: {
+          conversationId: 'conversation-1',
+          titleLength: 4,
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: conversationContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'conversation:observed',
+        message: '会话 conversation-1 已创建',
+        metadata: {
+          conversationId: 'conversation-1',
+          titleLength: 4,
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(3, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: messageContext,
+      method: 'storage.set',
+      params: {
+        key: 'conversation.conversation-1.last-message-created',
+        value: {
+          eventType: 'message:created',
+          conversationId: 'conversation-1',
+          messageId: null,
+          role: 'user',
+          contentLength: 4,
+          partsCount: 1,
+          status: 'completed',
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(4, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: messageContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'message:observed',
+        message: '会话 conversation-1 已创建一条 user 消息',
+        metadata: {
+          eventType: 'message:created',
+          conversationId: 'conversation-1',
+          messageId: null,
+          role: 'user',
+          contentLength: 4,
+          partsCount: 1,
+          status: 'completed',
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(5, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: messageContext,
+      method: 'storage.set',
+      params: {
+        key: 'message.message-1.last-updated',
+        value: {
+          eventType: 'message:updated',
+          conversationId: 'conversation-1',
+          messageId: 'message-1',
+          role: 'assistant',
+          contentLength: 6,
+          partsCount: 1,
+          status: 'completed',
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(6, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: messageContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'message:observed',
+        message: '消息 message-1 已更新',
+        metadata: {
+          eventType: 'message:updated',
+          conversationId: 'conversation-1',
+          messageId: 'message-1',
+          role: 'assistant',
+          contentLength: 6,
+          partsCount: 1,
+          status: 'completed',
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(7, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: messageContext,
+      method: 'storage.set',
+      params: {
+        key: 'message.message-1.last-deleted',
+        value: {
+          eventType: 'message:deleted',
+          conversationId: 'conversation-1',
+          messageId: 'message-1',
+          role: 'assistant',
+          contentLength: 6,
+          partsCount: 1,
+          status: 'completed',
+          userId: 'user-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(8, {
+      pluginId: 'builtin.message-lifecycle-recorder',
+      context: messageContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'message:observed',
+        message: '消息 message-1 已删除',
+        metadata: {
+          eventType: 'message:deleted',
+          conversationId: 'conversation-1',
+          messageId: 'message-1',
+          role: 'assistant',
+          contentLength: 6,
+          partsCount: 1,
+          status: 'completed',
+          userId: 'user-1',
+        },
+      },
+    });
+  });
+
+  it('runs builtin tool:after-call consumers through the unified host api facade', async () => {
+    const definition = createToolAuditPlugin();
+    const payload = {
+      context: callContext,
+      pluginId: 'builtin.memory-tools',
+      runtimeKind: 'builtin' as const,
+      tool: {
+        ...builtinManifest.tools[0],
+      },
+      params: {
+        content: '记住我喜欢咖啡',
+      },
+      output: {
+        saved: true,
+      },
+    };
+
+    hostService.call
+      .mockResolvedValueOnce({
+        pluginId: 'builtin.memory-tools',
+        runtimeKind: 'builtin',
+        toolName: 'save_memory',
+        callSource: 'chat-tool',
+        paramKeys: ['content'],
+        outputKind: 'object',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      })
+      .mockResolvedValueOnce(true);
+
+    await service.registerPlugin({
+      manifest: definition.manifest,
+      runtimeKind: 'builtin',
+      transport: new BuiltinPluginTransport(definition, {
+        call: (input) => service.callHost(input),
+      }),
+    });
+
+    await expect(
+      service.runToolAfterCallHooks({
+        context: callContext,
+        payload,
+      }),
+    ).resolves.toEqual(payload);
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.tool-audit',
+      context: callContext,
+      method: 'storage.set',
+      params: {
+        key: 'tool.builtin.memory-tools.save_memory.last-call',
+        value: {
+          pluginId: 'builtin.memory-tools',
+          runtimeKind: 'builtin',
+          toolName: 'save_memory',
+          callSource: 'chat-tool',
+          paramKeys: ['content'],
+          outputKind: 'object',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.tool-audit',
+      context: callContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'tool:observed',
+        message: '工具 builtin.memory-tools:save_memory 执行完成',
+        metadata: {
+          pluginId: 'builtin.memory-tools',
+          runtimeKind: 'builtin',
+          toolName: 'save_memory',
+          callSource: 'chat-tool',
+          paramKeys: ['content'],
+          outputKind: 'object',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+      },
+    });
+  });
+
+  it('runs builtin response:after-send consumers through the unified host api facade', async () => {
+    const definition = createResponseRecorderPlugin();
+    const hookContext = {
+      source: 'chat-hook' as const,
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+    };
+    const payload = {
+      context: hookContext,
+      responseSource: 'model' as const,
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      assistantContent: 'Coffee saved.',
+      toolCalls: [
+        {
+          toolCallId: 'call-1',
+          toolName: 'save_memory',
+          input: {
+            content: '记住咖啡偏好',
+          },
+        },
+      ],
+      toolResults: [
+        {
+          toolCallId: 'call-1',
+          toolName: 'save_memory',
+          output: {
+            saved: true,
+          },
+        },
+      ],
+      sentAt: '2026-03-28T12:34:56.000Z',
+    };
+
+    hostService.call
+      .mockResolvedValueOnce({
+        assistantMessageId: 'assistant-1',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        responseSource: 'model',
+        contentLength: 13,
+        toolCallCount: 1,
+        toolResultCount: 1,
+        sentAt: '2026-03-28T12:34:56.000Z',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      })
+      .mockResolvedValueOnce(true);
+
+    await service.registerPlugin({
+      manifest: definition.manifest,
+      runtimeKind: 'builtin',
+      transport: new BuiltinPluginTransport(definition, {
+        call: (input) => service.callHost(input),
+      }),
+    });
+
+    await expect(
+      service.runResponseAfterSendHooks({
+        context: hookContext,
+        payload,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.response-recorder',
+      context: hookContext,
+      method: 'storage.set',
+      params: {
+        key: 'response.assistant-1.last-sent',
+        value: {
+          assistantMessageId: 'assistant-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          responseSource: 'model',
+          contentLength: 13,
+          toolCallCount: 1,
+          toolResultCount: 1,
+          sentAt: '2026-03-28T12:34:56.000Z',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.response-recorder',
+      context: hookContext,
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'response:sent',
+        message: '回复 assistant-1 已发送 (model)',
+        metadata: {
+          assistantMessageId: 'assistant-1',
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          responseSource: 'model',
+          contentLength: 13,
+          toolCallCount: 1,
+          toolResultCount: 1,
+          sentAt: '2026-03-28T12:34:56.000Z',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+      },
+    });
+  });
+
   it('rejects plugin tool calls when the runtime concurrency limit is reached and releases slots afterward', async () => {
     let resolveToolCall!: (value: { saved: boolean }) => void;
     const pendingToolCall = new Promise<{ saved: boolean }>((resolve) => {
@@ -2080,6 +3402,9 @@ describe('PluginRuntimeService', () => {
         content: '先占住一个执行槽位',
       },
       context: callContext,
+    });
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
     });
 
     expect(service.listPlugins()).toEqual([

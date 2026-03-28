@@ -5,6 +5,7 @@ describe('ChatMessageService', () => {
     message: {
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
       findUniqueOrThrow: jest.fn(),
     },
     conversation: {
@@ -29,6 +30,11 @@ describe('ChatMessageService', () => {
     executeTool: jest.fn(),
     runChatBeforeModelHooks: jest.fn(),
     runChatAfterModelHooks: jest.fn(),
+    runMessageCreatedHooks: jest.fn(),
+    runMessageUpdatedHooks: jest.fn(),
+    runMessageDeletedHooks: jest.fn(),
+    runResponseBeforeSendHooks: jest.fn(),
+    runResponseAfterSendHooks: jest.fn(),
   };
 
   const modelInvocation = {
@@ -52,6 +58,17 @@ describe('ChatMessageService', () => {
       prompt: '你是 Garlic Claw',
       isDefault: true,
     });
+    pluginRuntime.runMessageCreatedHooks.mockImplementation(
+      async ({ payload }: { payload: unknown }) => payload,
+    );
+    pluginRuntime.runMessageUpdatedHooks.mockImplementation(
+      async ({ payload }: { payload: unknown }) => payload,
+    );
+    pluginRuntime.runMessageDeletedHooks.mockResolvedValue(undefined);
+    pluginRuntime.runResponseBeforeSendHooks.mockImplementation(
+      async ({ payload }: { payload: unknown }) => payload,
+    );
+    pluginRuntime.runResponseAfterSendHooks.mockResolvedValue(undefined);
     service = new ChatMessageService(
       prisma as never,
       chatService as never,
@@ -397,6 +414,181 @@ describe('ChatMessageService', () => {
         maxOutputTokens: 128,
         tools: expect.objectContaining({
           recall_memory: expect.any(Object),
+        }),
+      }),
+    );
+  });
+
+  it('applies message:created mutations before persisting the user message draft', async () => {
+    const userMessage = {
+      id: 'user-message-1',
+      role: 'user',
+      content: '插件改写后的消息',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '插件改写后的消息',
+        },
+      ]),
+      status: 'completed',
+    };
+    const assistantMessage = {
+      id: 'assistant-message-1',
+      role: 'assistant',
+      content: '',
+      status: 'pending',
+    };
+    const modelConfig = {
+      id: 'gpt-5.2',
+      providerId: 'openai',
+      name: 'GPT 5.2',
+      capabilities: {
+        input: { text: true, image: false },
+        output: { text: true, image: false },
+        reasoning: true,
+        toolCall: true,
+      },
+      api: {
+        id: 'gpt-5.2',
+        url: 'https://example.com/v1',
+        npm: '@ai-sdk/openai',
+      },
+    };
+
+    chatService.getConversation.mockResolvedValue({
+      id: 'conversation-1',
+      messages: [],
+    });
+    aiProvider.getModelConfig.mockReturnValue(modelConfig);
+    prisma.message.create
+      .mockResolvedValueOnce(userMessage)
+      .mockResolvedValueOnce(assistantMessage);
+    prisma.conversation.update.mockResolvedValue(null);
+    modelInvocation.prepareResolved.mockResolvedValue({
+      modelConfig,
+      model: { provider: 'openai', modelId: 'gpt-5.2' },
+      sdkMessages: [],
+    });
+    pluginRuntime.runMessageCreatedHooks.mockResolvedValue({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      conversationId: 'conversation-1',
+      message: {
+        role: 'user',
+        content: '插件改写后的消息',
+        parts: [
+          {
+            type: 'text',
+            text: '插件改写后的消息',
+          },
+        ],
+        status: 'completed',
+      },
+      modelMessages: [
+        {
+          role: 'user',
+          content: '插件改写后的消息',
+        },
+      ],
+    });
+    pluginRuntime.runChatBeforeModelHooks.mockResolvedValue({
+      action: 'continue',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        systemPrompt: '你是 Garlic Claw',
+        messages: [
+          {
+            role: 'user',
+            content: '插件改写后的消息',
+          },
+        ],
+        availableTools: [],
+      },
+    });
+    pluginRuntime.listTools.mockReturnValue([]);
+
+    await service.startMessageGeneration('user-1', 'conversation-1', {
+      content: '原始消息',
+      parts: [
+        {
+          type: 'text',
+          text: '原始消息',
+        },
+      ],
+      provider: 'openai',
+      model: 'gpt-5.2',
+    } as never);
+
+    expect(pluginRuntime.runMessageCreatedHooks).toHaveBeenCalledWith({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+          activePersonaId: 'builtin.default-assistant',
+        },
+        conversationId: 'conversation-1',
+        message: {
+          role: 'user',
+          content: '原始消息',
+          parts: [
+            {
+              type: 'text',
+              text: '原始消息',
+            },
+          ],
+          status: 'completed',
+        },
+        modelMessages: [
+          {
+            role: 'user',
+            content: '原始消息',
+          },
+        ],
+      },
+    });
+    expect(prisma.message.create).toHaveBeenNthCalledWith(1, {
+      data: {
+        conversationId: 'conversation-1',
+        role: 'user',
+        content: '插件改写后的消息',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: '插件改写后的消息',
+          },
+        ]),
+        status: 'completed',
+      },
+    });
+    expect(pluginRuntime.runChatBeforeModelHooks).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          request: expect.objectContaining({
+            messages: [
+              {
+                role: 'user',
+                content: '插件改写后的消息',
+              },
+            ],
+          }),
         }),
       }),
     );
@@ -769,6 +961,198 @@ describe('ChatMessageService', () => {
     });
   });
 
+  it('applies response:* hooks around the final streamed assistant reply', async () => {
+    const userMessage = {
+      id: 'user-message-1',
+      role: 'user',
+      content: '帮我统一包装回复',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '帮我统一包装回复',
+        },
+      ]),
+      status: 'completed',
+    };
+    const assistantMessage = {
+      id: 'assistant-message-1',
+      role: 'assistant',
+      content: '',
+      status: 'pending',
+    };
+    const modelConfig = {
+      id: 'gpt-5.2',
+      providerId: 'openai',
+      name: 'GPT 5.2',
+      capabilities: {
+        input: { text: true, image: false },
+        output: { text: true, image: false },
+        reasoning: true,
+        toolCall: true,
+      },
+      api: {
+        id: 'gpt-5.2',
+        url: 'https://example.com/v1',
+        npm: '@ai-sdk/openai',
+      },
+    };
+
+    chatService.getConversation.mockResolvedValue({
+      id: 'conversation-1',
+      messages: [],
+    });
+    aiProvider.getModelConfig.mockReturnValue(modelConfig);
+    prisma.message.create
+      .mockResolvedValueOnce(userMessage)
+      .mockResolvedValueOnce(assistantMessage);
+    prisma.conversation.update.mockResolvedValue(null);
+    modelInvocation.prepareResolved.mockResolvedValue({
+      modelConfig,
+      model: { provider: 'openai', modelId: 'gpt-5.2' },
+      sdkMessages: [],
+    });
+    pluginRuntime.runChatBeforeModelHooks.mockResolvedValue({
+      action: 'continue',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        systemPrompt: '你是 Garlic Claw',
+        messages: [
+          {
+            role: 'user',
+            content: '帮我统一包装回复',
+          },
+        ],
+        availableTools: [],
+      },
+    });
+    pluginRuntime.runChatAfterModelHooks.mockResolvedValue({
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      assistantMessageId: 'assistant-message-1',
+      assistantContent: '模型后 Hook 润色后的回复。',
+      toolCalls: [],
+      toolResults: [],
+    });
+    pluginRuntime.runResponseBeforeSendHooks.mockResolvedValue({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      responseSource: 'model',
+      assistantMessageId: 'assistant-message-1',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      assistantContent: '发送前统一包装后的回复。',
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    await service.startMessageGeneration('user-1', 'conversation-1', {
+      content: '帮我统一包装回复',
+      parts: [
+        {
+          type: 'text',
+          text: '帮我统一包装回复',
+        },
+      ],
+      provider: 'openai',
+      model: 'gpt-5.2',
+    } as never);
+
+    const taskConfig = chatTaskService.startTask.mock.calls[0]?.[0];
+    expect(taskConfig).toBeDefined();
+
+    await expect(
+      taskConfig.onComplete({
+        assistantMessageId: 'assistant-message-1',
+        conversationId: 'conversation-1',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        content: '原始模型回复。',
+        toolCalls: [],
+        toolResults: [],
+      }),
+    ).resolves.toEqual({
+      assistantMessageId: 'assistant-message-1',
+      conversationId: 'conversation-1',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      content: '发送前统一包装后的回复。',
+      toolCalls: [],
+      toolResults: [],
+    });
+    expect(pluginRuntime.runResponseBeforeSendHooks).toHaveBeenCalledWith({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'openai',
+          activeModelId: 'gpt-5.2',
+          activePersonaId: 'builtin.default-assistant',
+        },
+        responseSource: 'model',
+        assistantMessageId: 'assistant-message-1',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        assistantContent: '模型后 Hook 润色后的回复。',
+        toolCalls: [],
+        toolResults: [],
+      },
+    });
+
+    await taskConfig.onSent({
+      assistantMessageId: 'assistant-message-1',
+      conversationId: 'conversation-1',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      content: '发送前统一包装后的回复。',
+      toolCalls: [],
+      toolResults: [],
+    });
+
+    expect(pluginRuntime.runResponseAfterSendHooks).toHaveBeenCalledWith({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'anthropic',
+        activeModelId: 'claude-3-7-sonnet',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      payload: expect.objectContaining({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'anthropic',
+          activeModelId: 'claude-3-7-sonnet',
+          activePersonaId: 'builtin.default-assistant',
+        },
+        responseSource: 'model',
+        assistantMessageId: 'assistant-message-1',
+        providerId: 'anthropic',
+        modelId: 'claude-3-7-sonnet',
+        assistantContent: '发送前统一包装后的回复。',
+        toolCalls: [],
+        toolResults: [],
+      }),
+    });
+  });
+
   it('returns a patched completed assistant message when chat:after-model rewrites a short-circuited reply', async () => {
     const userMessage = {
       id: 'user-message-1',
@@ -895,6 +1279,373 @@ describe('ChatMessageService', () => {
         error: null,
         toolCalls: null,
         toolResults: null,
+      },
+    });
+  });
+
+  it('applies response:* hooks to short-circuited replies before returning', async () => {
+    const userMessage = {
+      id: 'user-message-1',
+      role: 'user',
+      content: '帮我快速回复',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '帮我快速回复',
+        },
+      ]),
+      status: 'completed',
+    };
+    const assistantMessage = {
+      id: 'assistant-message-1',
+      role: 'assistant',
+      content: '',
+      status: 'pending',
+      provider: 'openai',
+      model: 'gpt-5.2',
+    };
+    const completedAssistantMessage = {
+      ...assistantMessage,
+      content: '发送前统一包装后的回复。',
+      status: 'completed',
+      provider: 'anthropic',
+      model: 'claude-3-7-sonnet',
+      error: null,
+      toolCalls: null,
+      toolResults: null,
+    };
+    const modelConfig = {
+      id: 'gpt-5.2',
+      providerId: 'openai',
+      name: 'GPT 5.2',
+      capabilities: {
+        input: { text: true, image: false },
+        output: { text: true, image: false },
+        reasoning: true,
+        toolCall: true,
+      },
+      api: {
+        id: 'gpt-5.2',
+        url: 'https://example.com/v1',
+        npm: '@ai-sdk/openai',
+      },
+    };
+
+    chatService.getConversation.mockResolvedValue({
+      id: 'conversation-1',
+      messages: [],
+    });
+    aiProvider.getModelConfig.mockReturnValue(modelConfig);
+    prisma.message.create
+      .mockResolvedValueOnce(userMessage)
+      .mockResolvedValueOnce(assistantMessage);
+    prisma.message.update
+      .mockResolvedValueOnce({
+        ...assistantMessage,
+        content: '插件已经直接回复。',
+        status: 'completed',
+        provider: 'anthropic',
+        model: 'claude-3-7-sonnet',
+        error: null,
+        toolCalls: null,
+        toolResults: null,
+      })
+      .mockResolvedValueOnce(completedAssistantMessage);
+    prisma.conversation.update.mockResolvedValue(null);
+    pluginRuntime.runChatBeforeModelHooks.mockResolvedValue({
+      action: 'short-circuit',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        systemPrompt: '你是 Garlic Claw',
+        messages: [
+          {
+            role: 'user',
+            content: '帮我快速回复',
+          },
+        ],
+        availableTools: [],
+      },
+      assistantContent: '插件已经直接回复。',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+    });
+    pluginRuntime.runChatAfterModelHooks.mockResolvedValue({
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      assistantMessageId: 'assistant-message-1',
+      assistantContent: '插件已经直接回复。',
+      toolCalls: [],
+      toolResults: [],
+    });
+    pluginRuntime.runResponseBeforeSendHooks.mockResolvedValue({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'anthropic',
+        activeModelId: 'claude-3-7-sonnet',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      responseSource: 'short-circuit',
+      assistantMessageId: 'assistant-message-1',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      assistantContent: '发送前统一包装后的回复。',
+      toolCalls: [],
+      toolResults: [],
+    });
+    pluginRuntime.listTools.mockReturnValue([]);
+
+    await expect(
+      service.startMessageGeneration('user-1', 'conversation-1', {
+        content: '帮我快速回复',
+        parts: [
+          {
+            type: 'text',
+            text: '帮我快速回复',
+          },
+        ],
+        provider: 'openai',
+        model: 'gpt-5.2',
+      } as never),
+    ).resolves.toEqual({
+      userMessage,
+      assistantMessage: completedAssistantMessage,
+    });
+
+    expect(pluginRuntime.runResponseBeforeSendHooks).toHaveBeenCalledWith({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'anthropic',
+        activeModelId: 'claude-3-7-sonnet',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'anthropic',
+          activeModelId: 'claude-3-7-sonnet',
+          activePersonaId: 'builtin.default-assistant',
+        },
+        responseSource: 'short-circuit',
+        assistantMessageId: 'assistant-message-1',
+        providerId: 'anthropic',
+        modelId: 'claude-3-7-sonnet',
+        assistantContent: '插件已经直接回复。',
+        toolCalls: [],
+        toolResults: [],
+      },
+    });
+    expect(pluginRuntime.runResponseAfterSendHooks).toHaveBeenCalledWith({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'anthropic',
+        activeModelId: 'claude-3-7-sonnet',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      payload: expect.objectContaining({
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activeProviderId: 'anthropic',
+          activeModelId: 'claude-3-7-sonnet',
+          activePersonaId: 'builtin.default-assistant',
+        },
+        responseSource: 'short-circuit',
+        assistantMessageId: 'assistant-message-1',
+        providerId: 'anthropic',
+        modelId: 'claude-3-7-sonnet',
+        assistantContent: '发送前统一包装后的回复。',
+        toolCalls: [],
+        toolResults: [],
+      }),
+    });
+  });
+
+  it('applies message:updated mutations before persisting a user message edit', async () => {
+    chatService.getConversation.mockResolvedValue({
+      id: 'conversation-1',
+      messages: [
+        {
+          id: 'message-1',
+          role: 'user',
+          content: '旧内容',
+          partsJson: JSON.stringify([
+            {
+              type: 'text',
+              text: '旧内容',
+            },
+          ]),
+          status: 'completed',
+        },
+      ],
+    });
+    chatTaskService.stopTask.mockResolvedValue(false);
+    pluginRuntime.runMessageUpdatedHooks.mockResolvedValue({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      currentMessage: {
+        id: 'message-1',
+        role: 'user',
+        content: '旧内容',
+        parts: [
+          {
+            type: 'text',
+            text: '旧内容',
+          },
+        ],
+        status: 'completed',
+      },
+      nextMessage: {
+        role: 'user',
+        content: '插件改写后的新内容',
+        parts: [
+          {
+            type: 'text',
+            text: '插件改写后的新内容',
+          },
+        ],
+        status: 'completed',
+      },
+    });
+    prisma.message.update.mockResolvedValue({
+      id: 'message-1',
+      role: 'user',
+      content: '插件改写后的新内容',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '插件改写后的新内容',
+        },
+      ]),
+      status: 'completed',
+    });
+    prisma.conversation.update.mockResolvedValue(null);
+
+    await service.updateMessage('user-1', 'conversation-1', 'message-1', {
+      content: '用户输入的新内容',
+      parts: [
+        {
+          type: 'text',
+          text: '用户输入的新内容',
+        },
+      ],
+    } as never);
+
+    expect(pluginRuntime.runMessageUpdatedHooks).toHaveBeenCalledWith({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        conversationId: 'conversation-1',
+        messageId: 'message-1',
+        currentMessage: {
+          id: 'message-1',
+          role: 'user',
+          content: '旧内容',
+          parts: [
+            {
+              type: 'text',
+              text: '旧内容',
+            },
+          ],
+          status: 'completed',
+        },
+        nextMessage: {
+          role: 'user',
+          content: '用户输入的新内容',
+          parts: [
+            {
+              type: 'text',
+              text: '用户输入的新内容',
+            },
+          ],
+          status: 'completed',
+        },
+      },
+    });
+    expect(prisma.message.update).toHaveBeenCalledWith({
+      where: { id: 'message-1' },
+      data: {
+        content: '插件改写后的新内容',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: '插件改写后的新内容',
+          },
+        ]),
+        status: 'completed',
+        error: null,
+      },
+    });
+  });
+
+  it('dispatches message:deleted hooks before deleting a message', async () => {
+    chatService.getConversation.mockResolvedValue({
+      id: 'conversation-1',
+      messages: [
+        {
+          id: 'message-1',
+          role: 'assistant',
+          content: '待删除消息',
+          partsJson: null,
+          status: 'completed',
+          provider: 'openai',
+          model: 'gpt-5.2',
+        },
+      ],
+    });
+    chatTaskService.stopTask.mockResolvedValue(false);
+    prisma.message.delete.mockResolvedValue({
+      id: 'message-1',
+    });
+    prisma.conversation.update.mockResolvedValue(null);
+
+    await service.deleteMessage('user-1', 'conversation-1', 'message-1');
+
+    expect(pluginRuntime.runMessageDeletedHooks).toHaveBeenCalledWith({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        conversationId: 'conversation-1',
+        messageId: 'message-1',
+        message: {
+          id: 'message-1',
+          role: 'assistant',
+          content: '待删除消息',
+          parts: [],
+          provider: 'openai',
+          model: 'gpt-5.2',
+          status: 'completed',
+        },
       },
     });
   });

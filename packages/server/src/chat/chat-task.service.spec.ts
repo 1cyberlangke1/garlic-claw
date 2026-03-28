@@ -152,6 +152,7 @@ describe('ChatTaskService', () => {
 
   it('persists a patched completion snapshot and emits a message patch before finish', async () => {
     const events: ChatTaskEvent[] = [];
+    const executionOrder: string[] = [];
     const onComplete = jest.fn().mockResolvedValue({
       assistantMessageId: 'assistant-1',
       conversationId: 'conversation-1',
@@ -164,6 +165,9 @@ describe('ChatTaskService', () => {
       toolResults: [
         { toolCallId: 'tool-1', toolName: 'search', output: { ok: true } },
       ],
+    });
+    const onSent = jest.fn().mockImplementation(async () => {
+      executionOrder.push('sent');
     });
 
     service.startTask({
@@ -181,10 +185,12 @@ describe('ChatTaskService', () => {
         ]),
       }),
       onComplete,
+      onSent,
     });
 
     const unsubscribe = service.subscribe('assistant-1', (event: ChatTaskEvent) => {
       events.push(event);
+      executionOrder.push(String(event.type));
     });
 
     await service.waitForTask('assistant-1');
@@ -221,6 +227,20 @@ describe('ChatTaskService', () => {
 
     expect(messagePatchIndex).toBeGreaterThanOrEqual(0);
     expect(messagePatchIndex).toBeLessThan(finishIndex);
+    expect(onSent).toHaveBeenCalledWith({
+      assistantMessageId: 'assistant-1',
+      conversationId: 'conversation-1',
+      providerId: 'openai',
+      modelId: 'gpt-4o-mini',
+      content: '插件润色后的最终回复',
+      toolCalls: [
+        { toolCallId: 'tool-1', toolName: 'search', input: { q: 'test' } },
+      ],
+      toolResults: [
+        { toolCallId: 'tool-1', toolName: 'search', output: { ok: true } },
+      ],
+    });
+    expect(executionOrder.indexOf('finish')).toBeLessThan(executionOrder.indexOf('sent'));
   });
 
   it('marks the task as stopped when stopTask is called', async () => {

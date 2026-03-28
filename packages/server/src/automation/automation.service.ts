@@ -147,46 +147,69 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       return null;
     }
     const automation = this.toAutomationInfo(automationRecord);
+    const hookContext = {
+      source: 'automation' as const,
+      userId: automationRecord.userId,
+      automationId,
+    };
+    const beforeRunResult = await this.pluginRuntime.runAutomationBeforeRunHooks({
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        automation,
+        actions: automation.actions,
+      },
+    });
 
     const results: JsonValue[] = [];
     let status = 'success';
-
-    for (const action of automation.actions) {
-      try {
-        if (action.type === 'device_command' && action.plugin && action.capability) {
-          const result = await this.pluginRuntime.executeTool({
-            pluginId: action.plugin,
-            toolName: action.capability,
-            params: action.params || {},
-            context: {
-              source: 'automation',
-              userId: automationRecord.userId,
-              automationId,
-            },
-          });
+    if (beforeRunResult.action === 'short-circuit') {
+      status = beforeRunResult.status;
+      results.push(...beforeRunResult.results);
+    } else {
+      for (const action of beforeRunResult.payload.actions) {
+        try {
+          if (action.type === 'device_command' && action.plugin && action.capability) {
+            const result = await this.pluginRuntime.executeTool({
+              pluginId: action.plugin,
+              toolName: action.capability,
+              params: action.params || {},
+              context: hookContext,
+            });
+            results.push({
+              action: action.type,
+              plugin: action.plugin,
+              capability: action.capability,
+              result,
+            });
+          }
+          // ai_message 类型由注入 ChatService 处理，此处留空
+        } catch (err) {
+          status = 'error';
           results.push({
             action: action.type,
-            plugin: action.plugin,
-            capability: action.capability,
-            result,
+            error: err instanceof Error ? err.message : String(err),
           });
         }
-        // ai_message 类型由注入 ChatService 处理，此处留空
-      } catch (err) {
-        status = 'error';
-        results.push({
-          action: action.type,
-          error: err instanceof Error ? err.message : String(err),
-        });
       }
     }
+    const afterRunPayload = await this.pluginRuntime.runAutomationAfterRunHooks({
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        automation,
+        status,
+        results,
+      },
+    });
+    status = afterRunPayload.status;
 
     // 记录执行日志
     await this.prisma.automationLog.create({
       data: {
         automationId,
         status,
-        result: JSON.stringify(results),
+        result: JSON.stringify(afterRunPayload.results),
       },
     });
 
@@ -200,7 +223,10 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       `自动化 "${automationRecord.name}" 已执行：${status}`,
     );
 
-    return { status, results };
+    return {
+      status,
+      results: afterRunPayload.results,
+    };
   }
 
   // --- Cron 计划 ---

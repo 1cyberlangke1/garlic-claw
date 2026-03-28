@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { ChatBeforeModelRequest } from '@garlic-claw/shared';
+import type { ChatBeforeModelRequest, PluginResponseSource } from '@garlic-claw/shared';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { createStepLimit } from '../ai/sdk-adapter';
 import type { ModelConfig } from '../ai/types/provider.types';
@@ -23,7 +23,11 @@ import type { ChatRuntimeMessage } from './chat-message-session';
 import { prepareSendMessagePayload } from './chat-message-session';
 import { ChatService } from './chat.service';
 import { type RetryMessageDto, type SendMessageDto, type UpdateMessageDto } from './dto/chat.dto';
-import { normalizeUserMessageInput, serializeMessageParts } from './message-parts';
+import {
+  deserializeMessageParts,
+  normalizeUserMessageInput,
+  serializeMessageParts,
+} from './message-parts';
 import {
   ChatTaskService,
   type CompletedChatTaskResult,
@@ -81,14 +85,36 @@ export class ChatMessageService {
       input: toUserMessageInput(dto.parts, dto.content),
     });
     const modelConfig = this.aiProvider.getModelConfig(dto.provider, dto.model);
+    const resolvedPersona = await this.buildSystemPrompt(conversationId);
+    const messageCreatedContext = this.createChatLifecycleContext({
+      userId,
+      conversationId,
+      activeProviderId: modelConfig.providerId,
+      activeModelId: modelConfig.id,
+      activePersonaId: resolvedPersona.activePersonaId,
+    });
+    const createdMessagePayload = await this.pluginRuntime.runMessageCreatedHooks({
+      context: messageCreatedContext,
+      payload: {
+        context: messageCreatedContext,
+        conversationId,
+        message: {
+          role: 'user',
+          content: payload.persistedMessage.content,
+          parts: deserializeMessageParts(payload.persistedMessage.partsJson),
+          status: 'completed',
+        },
+        modelMessages: payload.modelMessages,
+      },
+    });
 
     const userMessage = await this.prisma.message.create({
       data: {
         conversationId,
         role: 'user',
-        content: payload.persistedMessage.content,
-        partsJson: payload.persistedMessage.partsJson,
-        status: 'completed',
+        content: createdMessagePayload.message.content ?? '',
+        partsJson: serializeMessageParts(createdMessagePayload.message.parts),
+        status: createdMessagePayload.message.status ?? 'completed',
       },
     });
     const assistantMessage = await this.prisma.message.create({
@@ -104,17 +130,13 @@ export class ChatMessageService {
     await this.touchConversation(conversationId);
 
     try {
-      const resolvedPersona = await this.buildSystemPrompt(conversationId);
       const beforeModelResult = await this.applyChatBeforeModelHooks({
         userId,
         conversationId,
         activePersonaId: resolvedPersona.activePersonaId,
         systemPrompt: resolvedPersona.systemPrompt,
         modelConfig,
-        messages: payload.modelMessages,
-      });
-      const activePersona = await this.personaService.getCurrentPersona({
-        conversationId,
+        messages: createdMessagePayload.modelMessages as ChatRuntimeMessage[],
       });
       if (beforeModelResult.action === 'short-circuit') {
         const completedAssistantMessage = await this.completeShortCircuitedAssistant({
@@ -123,7 +145,7 @@ export class ChatMessageService {
           conversationId,
           providerId: beforeModelResult.providerId,
           modelId: beforeModelResult.modelId,
-          activePersonaId: activePersona.personaId,
+          activePersonaId: resolvedPersona.activePersonaId,
           assistantContent: beforeModelResult.assistantContent,
         });
         return {
@@ -150,14 +172,23 @@ export class ChatMessageService {
           preparedInvocation,
           activeProviderId: beforeModelResult.modelConfig.providerId,
           activeModelId: beforeModelResult.modelConfig.id,
-          activePersonaId: activePersona.personaId,
+          activePersonaId: resolvedPersona.activePersonaId,
           supportsToolCall: beforeModelResult.modelConfig.capabilities.toolCall,
         }),
         onComplete: (result) =>
-          this.applyChatAfterModelHooks({
+          this.applyFinalResponseHooks({
             userId,
             conversationId,
-            activePersonaId: activePersona.personaId,
+            activePersonaId: resolvedPersona.activePersonaId,
+            responseSource: 'model',
+            result,
+          }),
+        onSent: (result) =>
+          this.runResponseAfterSendHooks({
+            userId,
+            conversationId,
+            activePersonaId: resolvedPersona.activePersonaId,
+            responseSource: 'model',
             result,
           }),
       });
@@ -242,9 +273,6 @@ export class ChatMessageService {
         modelConfig,
         messages: runtimeMessages,
       });
-      const activePersona = await this.personaService.getCurrentPersona({
-        conversationId,
-      });
       if (beforeModelResult.action === 'short-circuit') {
         return this.completeShortCircuitedAssistant({
           assistantMessageId: messageId,
@@ -252,7 +280,7 @@ export class ChatMessageService {
           conversationId,
           providerId: beforeModelResult.providerId,
           modelId: beforeModelResult.modelId,
-          activePersonaId: activePersona.personaId,
+          activePersonaId: resolvedPersona.activePersonaId,
           assistantContent: beforeModelResult.assistantContent,
         });
       }
@@ -275,14 +303,23 @@ export class ChatMessageService {
           preparedInvocation,
           activeProviderId: beforeModelResult.modelConfig.providerId,
           activeModelId: beforeModelResult.modelConfig.id,
-          activePersonaId: activePersona.personaId,
+          activePersonaId: resolvedPersona.activePersonaId,
           supportsToolCall: beforeModelResult.modelConfig.capabilities.toolCall,
         }),
         onComplete: (result) =>
-          this.applyChatAfterModelHooks({
+          this.applyFinalResponseHooks({
             userId,
             conversationId,
-            activePersonaId: activePersona.personaId,
+            activePersonaId: resolvedPersona.activePersonaId,
+            responseSource: 'model',
+            result,
+          }),
+        onSent: (result) =>
+          this.runResponseAfterSendHooks({
+            userId,
+            conversationId,
+            activePersonaId: resolvedPersona.activePersonaId,
+            responseSource: 'model',
             result,
           }),
       });
@@ -313,19 +350,49 @@ export class ChatMessageService {
           parts: dto.parts ? mapDtoParts(dto.parts) : undefined,
         })
       : null;
+    const hookContext = this.createChatLifecycleContext({
+      userId,
+      conversationId,
+    });
+    const updatedPayload = await this.pluginRuntime.runMessageUpdatedHooks({
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        conversationId,
+        messageId,
+        currentMessage: this.toMessageHookInfo(message),
+        nextMessage: message.role === 'user'
+          ? {
+              role: 'user',
+              content: updated?.content ?? '',
+              parts: updated?.parts ?? [],
+              status: 'completed',
+            }
+          : {
+              role: message.role,
+              content: dto.content?.trim() ?? '',
+              parts: [],
+              provider: message.provider,
+              model: message.model,
+              status: 'completed',
+            },
+      },
+    });
 
     const result = await this.prisma.message.update({
       where: { id: messageId },
       data: message.role === 'user'
         ? {
-            content: updated?.content,
-            partsJson: updated ? serializeMessageParts(updated.parts) : null,
-            status: 'completed',
+            content: updatedPayload.nextMessage.content ?? '',
+            partsJson: serializeMessageParts(updatedPayload.nextMessage.parts),
+            status: updatedPayload.nextMessage.status ?? 'completed',
             error: null,
           }
         : {
-            content: dto.content?.trim() ?? '',
-            status: 'completed',
+            content: updatedPayload.nextMessage.content ?? '',
+            provider: updatedPayload.nextMessage.provider ?? message.provider,
+            model: updatedPayload.nextMessage.model ?? message.model,
+            status: updatedPayload.nextMessage.status ?? 'completed',
             error: null,
           },
     });
@@ -335,8 +402,21 @@ export class ChatMessageService {
 
   /** 删除一条消息，不会自动删除其后的消息。 */
   async deleteMessage(userId: string, conversationId: string, messageId: string) {
-    await this.getOwnedMessage(userId, conversationId, messageId);
+    const { message } = await this.getOwnedMessage(userId, conversationId, messageId);
     await this.chatTaskService.stopTask(messageId);
+    const hookContext = this.createChatLifecycleContext({
+      userId,
+      conversationId,
+    });
+    await this.pluginRuntime.runMessageDeletedHooks({
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        conversationId,
+        messageId,
+        message: this.toMessageHookInfo(message),
+      },
+    });
     await this.prisma.message.delete({ where: { id: messageId } });
     await this.touchConversation(conversationId);
     return { success: true };
@@ -377,6 +457,53 @@ export class ChatMessageService {
         updatedAt: new Date(),
       },
     });
+  }
+
+  /**
+   * 构造聊天生命周期 Hook 调用上下文。
+   * @param input 当前用户、会话与可选激活上下文
+   * @returns 统一插件调用上下文
+   */
+  private createChatLifecycleContext(input: {
+    userId: string;
+    conversationId: string;
+    activeProviderId?: string;
+    activeModelId?: string;
+    activePersonaId?: string;
+  }) {
+    return {
+      source: 'chat-hook' as const,
+      userId: input.userId,
+      conversationId: input.conversationId,
+      ...(input.activeProviderId ? { activeProviderId: input.activeProviderId } : {}),
+      ...(input.activeModelId ? { activeModelId: input.activeModelId } : {}),
+      ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}),
+    };
+  }
+
+  /**
+   * 将持久化消息记录映射为消息生命周期 Hook 快照。
+   * @param message 已持久化消息
+   * @returns Hook 可见的消息快照
+   */
+  private toMessageHookInfo(message: {
+    id: string;
+    role: string;
+    content: string | null;
+    partsJson?: string | null;
+    provider?: string | null;
+    model?: string | null;
+    status: string;
+  }) {
+    return {
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      parts: deserializeMessageParts(message.partsJson),
+      ...(typeof message.provider !== 'undefined' ? { provider: message.provider } : {}),
+      ...(typeof message.model !== 'undefined' ? { model: message.model } : {}),
+      status: message.status as 'pending' | 'streaming' | 'completed' | 'stopped' | 'error',
+    };
   }
 
   /** 统一构造聊天流工厂，供 send/retry 复用。 */
@@ -563,24 +690,149 @@ export class ChatMessageService {
         toolResults: [],
       },
     });
+    const finalResult = await this.applyResponseBeforeSendHooks({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      responseSource: 'short-circuit',
+      result: patchedResult,
+    });
 
-    if (patchedResult.content === assistantMessage.content) {
-      return assistantMessage;
-    }
+    const finalAssistantMessage = finalResult.content === assistantMessage.content
+      && finalResult.providerId === assistantMessage.provider
+      && finalResult.modelId === assistantMessage.model
+      ? assistantMessage
+      : await this.prisma.message.update({
+        where: { id: input.assistantMessageId },
+        data: {
+          content: finalResult.content,
+          provider: finalResult.providerId,
+          model: finalResult.modelId,
+          status: 'completed',
+          error: null,
+          toolCalls: finalResult.toolCalls.length
+            ? JSON.stringify(finalResult.toolCalls)
+            : null,
+          toolResults: finalResult.toolResults.length
+            ? JSON.stringify(finalResult.toolResults)
+            : null,
+        },
+      });
+    await this.touchConversation(input.conversationId);
+    await this.runResponseAfterSendHooks({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      responseSource: 'short-circuit',
+      result: finalResult,
+    });
+    return finalAssistantMessage;
+  }
 
-    const patchedAssistantMessage = await this.prisma.message.update({
-      where: { id: input.assistantMessageId },
-      data: {
-        content: patchedResult.content,
-        provider: patchedResult.providerId,
-        model: patchedResult.modelId,
-        status: 'completed',
-        error: null,
-        toolCalls: null,
-        toolResults: null,
+  /**
+   * 串行执行 assistant 完成态上的模型后 Hook 与最终发送前 Hook。
+   * @param input 当前用户、会话、回复来源与完成态快照
+   * @returns 最终可发送的 assistant 快照
+   */
+  private async applyFinalResponseHooks(input: {
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    responseSource: PluginResponseSource;
+    result: CompletedChatTaskResult;
+  }): Promise<CompletedChatTaskResult> {
+    const afterModelResult = await this.applyChatAfterModelHooks({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      result: input.result,
+    });
+
+    return this.applyResponseBeforeSendHooks({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      responseSource: input.responseSource,
+      result: afterModelResult,
+    });
+  }
+
+  /**
+   * 在最终 assistant 发送前运行统一插件 Hook。
+   * @param input 当前用户、会话、回复来源与完成态快照
+   * @returns 可能被插件改写后的最终 assistant 快照
+   */
+  private async applyResponseBeforeSendHooks(input: {
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    responseSource: PluginResponseSource;
+    result: CompletedChatTaskResult;
+  }): Promise<CompletedChatTaskResult> {
+    const hookContext = this.createChatLifecycleContext({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activeProviderId: input.result.providerId,
+      activeModelId: input.result.modelId,
+      activePersonaId: input.activePersonaId,
+    });
+    const patchedPayload = await this.pluginRuntime.runResponseBeforeSendHooks({
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        responseSource: input.responseSource,
+        assistantMessageId: input.result.assistantMessageId,
+        providerId: input.result.providerId,
+        modelId: input.result.modelId,
+        assistantContent: input.result.content,
+        toolCalls: input.result.toolCalls,
+        toolResults: input.result.toolResults,
       },
     });
-    await this.touchConversation(input.conversationId);
-    return patchedAssistantMessage;
+
+    return {
+      ...input.result,
+      providerId: patchedPayload.providerId,
+      modelId: patchedPayload.modelId,
+      content: patchedPayload.assistantContent,
+      toolCalls: patchedPayload.toolCalls,
+      toolResults: patchedPayload.toolResults,
+    };
+  }
+
+  /**
+   * 在最终 assistant 发送完成后派发统一插件 Hook。
+   * @param input 当前用户、会话、回复来源与最终 assistant 快照
+   * @returns 无返回值
+   */
+  private async runResponseAfterSendHooks(input: {
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    responseSource: PluginResponseSource;
+    result: CompletedChatTaskResult;
+  }): Promise<void> {
+    const hookContext = this.createChatLifecycleContext({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activeProviderId: input.result.providerId,
+      activeModelId: input.result.modelId,
+      activePersonaId: input.activePersonaId,
+    });
+
+    await this.pluginRuntime.runResponseAfterSendHooks({
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        responseSource: input.responseSource,
+        assistantMessageId: input.result.assistantMessageId,
+        providerId: input.result.providerId,
+        modelId: input.result.modelId,
+        assistantContent: input.result.content,
+        toolCalls: input.result.toolCalls,
+        toolResults: input.result.toolResults,
+        sentAt: new Date().toISOString(),
+      },
+    });
   }
 }

@@ -1,5 +1,6 @@
-import type { ChatMessagePart } from './chat';
+import type { ActionConfig, AutomationInfo } from './automation';
 import type { AiModelCapabilities, AiProviderSummary } from './ai';
+import type { ChatMessagePart, ChatMessageStatus } from './chat';
 import type { JsonObject, JsonValue } from './json';
 
 /** WebSocket 消息信封 */
@@ -41,6 +42,16 @@ export type PluginPermission =
 export type PluginHookName =
   | 'chat:before-model'
   | 'chat:after-model'
+  | 'conversation:created'
+  | 'message:created'
+  | 'message:updated'
+  | 'message:deleted'
+  | 'automation:before-run'
+  | 'automation:after-run'
+  | 'tool:before-call'
+  | 'tool:after-call'
+  | 'response:before-send'
+  | 'response:after-send'
   | 'cron:tick';
 
 /** 插件调用来源。 */
@@ -537,6 +548,263 @@ export interface ChatAfterModelHookMutateResult {
 export type ChatAfterModelHookResult =
   | ChatAfterModelHookPassResult
   | ChatAfterModelHookMutateResult;
+
+/** 插件可见的会话创建摘要。 */
+export interface PluginConversationHookInfo {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 插件可见的消息快照。 */
+export interface PluginMessageHookInfo {
+  id?: string;
+  role: string;
+  content: string | null;
+  parts: ChatMessagePart[];
+  provider?: string | null;
+  model?: string | null;
+  status?: ChatMessageStatus;
+}
+
+/** 会话创建 Hook 的输入。 */
+export interface ConversationCreatedHookPayload {
+  context: PluginCallContext;
+  conversation: PluginConversationHookInfo;
+}
+
+/** 消息创建 Hook 的输入。 */
+export interface MessageCreatedHookPayload {
+  context: PluginCallContext;
+  conversationId: string;
+  message: PluginMessageHookInfo;
+  modelMessages: PluginLlmMessage[];
+}
+
+/** 消息更新 Hook 的输入。 */
+export interface MessageUpdatedHookPayload {
+  context: PluginCallContext;
+  conversationId: string;
+  messageId: string;
+  currentMessage: PluginMessageHookInfo;
+  nextMessage: PluginMessageHookInfo;
+}
+
+/** 消息删除 Hook 的输入。 */
+export interface MessageDeletedHookPayload {
+  context: PluginCallContext;
+  conversationId: string;
+  messageId: string;
+  message: PluginMessageHookInfo;
+}
+
+/** 消息生命周期 Hook 不做改写。 */
+export interface MessageLifecycleHookPassResult {
+  action: 'pass';
+}
+
+/** 消息创建 Hook 改写消息草稿。 */
+export interface MessageCreatedHookMutateResult {
+  action: 'mutate';
+  content?: string | null;
+  parts?: ChatMessagePart[] | null;
+  modelMessages?: PluginLlmMessage[];
+  provider?: string | null;
+  model?: string | null;
+  status?: ChatMessageStatus | null;
+}
+
+/** 消息更新 Hook 改写待写入的新消息快照。 */
+export interface MessageUpdatedHookMutateResult {
+  action: 'mutate';
+  content?: string | null;
+  parts?: ChatMessagePart[] | null;
+  provider?: string | null;
+  model?: string | null;
+  status?: ChatMessageStatus | null;
+}
+
+/** 消息创建 Hook 的返回。 */
+export type MessageCreatedHookResult =
+  | MessageLifecycleHookPassResult
+  | MessageCreatedHookMutateResult;
+
+/** 消息更新 Hook 的返回。 */
+export type MessageUpdatedHookResult =
+  | MessageLifecycleHookPassResult
+  | MessageUpdatedHookMutateResult;
+
+/** 自动化运行前 Hook 的输入。 */
+export interface AutomationBeforeRunHookPayload {
+  context: PluginCallContext;
+  automation: AutomationInfo;
+  actions: ActionConfig[];
+}
+
+/** 自动化运行前 Hook 不改写当前请求。 */
+export interface AutomationBeforeRunHookPassResult {
+  action: 'pass';
+}
+
+/** 自动化运行前 Hook 改写待执行动作列表。 */
+export interface AutomationBeforeRunHookMutateResult {
+  action: 'mutate';
+  actions?: ActionConfig[];
+}
+
+/** 自动化运行前 Hook 直接短路本轮执行。 */
+export interface AutomationBeforeRunHookShortCircuitResult {
+  action: 'short-circuit';
+  status: string;
+  results: JsonValue[];
+}
+
+/** 自动化运行前 Hook 的返回。 */
+export type AutomationBeforeRunHookResult =
+  | AutomationBeforeRunHookPassResult
+  | AutomationBeforeRunHookMutateResult
+  | AutomationBeforeRunHookShortCircuitResult;
+
+/** 自动化运行后 Hook 的输入。 */
+export interface AutomationAfterRunHookPayload {
+  context: PluginCallContext;
+  automation: AutomationInfo;
+  status: string;
+  results: JsonValue[];
+}
+
+/** 自动化运行后 Hook 透传当前结果。 */
+export interface AutomationAfterRunHookPassResult {
+  action: 'pass';
+}
+
+/** 自动化运行后 Hook 改写当前执行结果。 */
+export interface AutomationAfterRunHookMutateResult {
+  action: 'mutate';
+  status?: string;
+  results?: JsonValue[];
+}
+
+/** 自动化运行后 Hook 的返回。 */
+export type AutomationAfterRunHookResult =
+  | AutomationAfterRunHookPassResult
+  | AutomationAfterRunHookMutateResult;
+
+/** 最终回复来源。 */
+export type PluginResponseSource = 'model' | 'short-circuit';
+
+/** 工具调用前 Hook 的输入。 */
+export interface ToolBeforeCallHookPayload {
+  context: PluginCallContext;
+  pluginId: string;
+  runtimeKind: PluginRuntimeKind;
+  tool: PluginCapability;
+  params: JsonObject;
+}
+
+/** 工具调用前 Hook 不改写当前请求。 */
+export interface ToolBeforeCallHookPassResult {
+  action: 'pass';
+}
+
+/** 工具调用前 Hook 改写工具参数。 */
+export interface ToolBeforeCallHookMutateResult {
+  action: 'mutate';
+  params?: JsonObject;
+}
+
+/** 工具调用前 Hook 直接短路本轮工具调用。 */
+export interface ToolBeforeCallHookShortCircuitResult {
+  action: 'short-circuit';
+  output: JsonValue;
+}
+
+/** 工具调用前 Hook 的返回。 */
+export type ToolBeforeCallHookResult =
+  | ToolBeforeCallHookPassResult
+  | ToolBeforeCallHookMutateResult
+  | ToolBeforeCallHookShortCircuitResult;
+
+/** 工具调用后 Hook 的输入。 */
+export interface ToolAfterCallHookPayload {
+  context: PluginCallContext;
+  pluginId: string;
+  runtimeKind: PluginRuntimeKind;
+  tool: PluginCapability;
+  params: JsonObject;
+  output: JsonValue;
+}
+
+/** 工具调用后 Hook 透传当前结果。 */
+export interface ToolAfterCallHookPassResult {
+  action: 'pass';
+}
+
+/** 工具调用后 Hook 改写当前工具输出。 */
+export interface ToolAfterCallHookMutateResult {
+  action: 'mutate';
+  output?: JsonValue;
+}
+
+/** 工具调用后 Hook 的返回。 */
+export type ToolAfterCallHookResult =
+  | ToolAfterCallHookPassResult
+  | ToolAfterCallHookMutateResult;
+
+/** 最终回复发送前 Hook 的输入。 */
+export interface ResponseBeforeSendHookPayload {
+  context: PluginCallContext;
+  responseSource: PluginResponseSource;
+  assistantMessageId: string;
+  providerId: string;
+  modelId: string;
+  assistantContent: string;
+  toolCalls: Array<{
+    toolCallId: string;
+    toolName: string;
+    input: JsonValue;
+  }>;
+  toolResults: Array<{
+    toolCallId: string;
+    toolName: string;
+    output: JsonValue;
+  }>;
+}
+
+/** 最终回复发送前 Hook 透传当前结果。 */
+export interface ResponseBeforeSendHookPassResult {
+  action: 'pass';
+}
+
+/** 最终回复发送前 Hook 改写最终回复。 */
+export interface ResponseBeforeSendHookMutateResult {
+  action: 'mutate';
+  providerId?: string;
+  modelId?: string;
+  assistantContent?: string;
+  toolCalls?: Array<{
+    toolCallId: string;
+    toolName: string;
+    input: JsonValue;
+  }>;
+  toolResults?: Array<{
+    toolCallId: string;
+    toolName: string;
+    output: JsonValue;
+  }>;
+}
+
+/** 最终回复发送前 Hook 的返回。 */
+export type ResponseBeforeSendHookResult =
+  | ResponseBeforeSendHookPassResult
+  | ResponseBeforeSendHookMutateResult;
+
+/** 最终回复发送后 Hook 的输入。 */
+export interface ResponseAfterSendHookPayload
+  extends ResponseBeforeSendHookPayload {
+  sentAt: string;
+}
 
 /** cron 定时触发时的 Hook 输入。 */
 export interface PluginCronTickPayload {

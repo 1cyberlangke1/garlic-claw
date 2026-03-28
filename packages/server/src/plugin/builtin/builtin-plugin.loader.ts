@@ -2,17 +2,21 @@ import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { PluginRuntimeService } from '../plugin-runtime.service';
 import type { BuiltinPluginDefinition } from './builtin-plugin.transport';
 import { BuiltinPluginTransport } from './builtin-plugin.transport';
+import { createAutomationRecorderPlugin } from './automation-recorder.plugin';
 import { createAutomationToolsPlugin } from './automation-tools.plugin';
 import { createConversationTitlePlugin } from './conversation-title.plugin';
 import { createCoreToolsPlugin } from './core-tools.plugin';
 import { createCronHeartbeatPlugin } from './cron-heartbeat.plugin';
 import { createKbContextPlugin } from './kb-context.plugin';
 import { createMemoryContextPlugin } from './memory-context.plugin';
+import { createMessageLifecycleRecorderPlugin } from './message-lifecycle-recorder.plugin';
 import { createMemoryToolsPlugin } from './memory-tools.plugin';
 import { createPersonaRouterPlugin } from './persona-router.plugin';
 import { createProviderRouterPlugin } from './provider-router.plugin';
+import { createResponseRecorderPlugin } from './response-recorder.plugin';
 import { createRouteInspectorPlugin } from './route-inspector.plugin';
 import { createSubagentDelegatePlugin } from './subagent-delegate.plugin';
+import { createToolAuditPlugin } from './tool-audit.plugin';
 
 /**
  * 默认内建插件加载器。
@@ -43,6 +47,7 @@ export class BuiltinPluginLoader implements OnModuleInit {
       createMemoryToolsPlugin(),
       createAutomationToolsPlugin(),
       createMemoryContextPlugin(),
+      createMessageLifecycleRecorderPlugin(),
       createKbContextPlugin(),
       createConversationTitlePlugin(),
       createSubagentDelegatePlugin(),
@@ -50,6 +55,9 @@ export class BuiltinPluginLoader implements OnModuleInit {
       createPersonaRouterPlugin(),
       createCronHeartbeatPlugin(),
       createRouteInspectorPlugin(),
+      createAutomationRecorderPlugin(),
+      createToolAuditPlugin(),
+      createResponseRecorderPlugin(),
     ];
 
     for (const definition of definitions) {
