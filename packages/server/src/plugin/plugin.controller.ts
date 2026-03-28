@@ -57,32 +57,35 @@ export class PluginController {
     const runtimePlugins = new Map(
       this.pluginRuntime.listPlugins().map((plugin) => [plugin.pluginId, plugin]),
     );
-    return Promise.all(plugins.map(async (p) => ({
-      id: p.id,
-      name: p.name,
-      displayName: runtimePlugins.get(p.name)?.manifest.name ?? p.displayName ?? undefined,
-      description: runtimePlugins.get(p.name)?.manifest.description ?? p.description ?? undefined,
-      deviceType: p.deviceType,
-      status: p.status,
-      capabilities: runtimePlugins.get(p.name)?.manifest.tools
-        ?? parsePluginCapabilities(p.capabilities),
-      connected: runtimePlugins.has(p.name),
-      runtimeKind: runtimePlugins.get(p.name)?.runtimeKind
-        ?? (p.runtimeKind === 'builtin' ? 'builtin' : 'remote'),
-      version: runtimePlugins.get(p.name)?.manifest.version ?? p.version ?? undefined,
-      permissions: runtimePlugins.get(p.name)?.manifest.permissions
-        ?? parsePluginPermissions(p.permissions),
-      supportedActions: runtimePlugins.get(p.name)?.supportedActions
-        ?? resolvePersistedSupportedActions(),
-      crons: await this.pluginCronService.listCronJobs(p.name),
-      hooks: runtimePlugins.get(p.name)?.manifest.hooks ?? parsePluginHooks(p.hooks),
-      routes: runtimePlugins.get(p.name)?.manifest.routes ?? parsePluginRoutes(p.routes),
-      manifest: runtimePlugins.get(p.name)?.manifest,
-      health: serializePluginHealth(p),
-      lastSeenAt: p.lastSeenAt ? p.lastSeenAt.toISOString() : null,
-      createdAt: p.createdAt.toISOString(),
-      updatedAt: p.updatedAt.toISOString(),
-    })));
+    return Promise.all(plugins.map(async (p) => {
+      const runtimePlugin = runtimePlugins.get(p.name);
+      return {
+        id: p.id,
+        name: p.name,
+        displayName: runtimePlugin?.manifest.name ?? p.displayName ?? undefined,
+        description: runtimePlugin?.manifest.description ?? p.description ?? undefined,
+        deviceType: p.deviceType,
+        status: p.status,
+        capabilities: runtimePlugin?.manifest.tools
+          ?? parsePluginCapabilities(p.capabilities),
+        connected: runtimePlugins.has(p.name),
+        runtimeKind: runtimePlugin?.runtimeKind
+          ?? (p.runtimeKind === 'builtin' ? 'builtin' : 'remote'),
+        version: runtimePlugin?.manifest.version ?? p.version ?? undefined,
+        permissions: runtimePlugin?.manifest.permissions
+          ?? parsePluginPermissions(p.permissions),
+        supportedActions: runtimePlugin?.supportedActions
+          ?? resolvePersistedSupportedActions(),
+        crons: await this.pluginCronService.listCronJobs(p.name),
+        hooks: runtimePlugin?.manifest.hooks ?? parsePluginHooks(p.hooks),
+        routes: runtimePlugin?.manifest.routes ?? parsePluginRoutes(p.routes),
+        manifest: runtimePlugin?.manifest,
+        health: serializePluginHealth(p, runtimePlugin?.runtimePressure ?? null),
+        lastSeenAt: p.lastSeenAt ? p.lastSeenAt.toISOString() : null,
+        createdAt: p.createdAt.toISOString(),
+        updatedAt: p.updatedAt.toISOString(),
+      };
+    }));
   }
 
   @Get('connected')
@@ -168,8 +171,15 @@ export class PluginController {
   @Get(':name/health')
   @UseGuards(RolesGuard)
   @Roles('admin', 'super_admin')
-  getPluginHealth(@Param('name') name: string): Promise<PluginHealthSnapshot> {
-    return this.pluginService.getPluginHealth(name);
+  async getPluginHealth(@Param('name') name: string): Promise<PluginHealthSnapshot> {
+    const health = await this.pluginService.getPluginHealth(name);
+    const runtimePressure = this.pluginRuntime.getRuntimePressure(name);
+    return runtimePressure
+      ? {
+        ...health,
+        runtimePressure,
+      }
+      : health;
   }
 
   @Get(':name/events')
@@ -297,6 +307,7 @@ function parsePluginRoutes(raw: string | null): PluginRouteDescriptor[] | undefi
  */
 function serializePluginHealth(
   plugin: Record<string, unknown>,
+  runtimePressure: PluginHealthSnapshot['runtimePressure'] | null = null,
 ): PluginHealthSnapshot {
   const status = plugin.status === 'offline'
     ? 'offline'
@@ -315,6 +326,7 @@ function serializePluginHealth(
     lastCheckedAt: plugin.lastCheckedAt instanceof Date
       ? plugin.lastCheckedAt.toISOString()
       : null,
+    ...(runtimePressure ? { runtimePressure } : {}),
   };
 }
 

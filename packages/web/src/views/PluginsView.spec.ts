@@ -53,6 +53,10 @@ vi.mock('../composables/use-plugin-management', () => {
       lastErrorAt: null,
       lastSuccessAt: '2026-03-28T00:00:00.000Z',
       lastCheckedAt: '2026-03-28T00:00:00.000Z',
+      runtimePressure: {
+        activeExecutions: 2,
+        maxConcurrentExecutions: 6,
+      },
     },
     lastSeenAt: '2026-03-28T00:00:00.000Z',
     createdAt: '2026-03-28T00:00:00.000Z',
@@ -130,5 +134,7 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可定时执行任务')
     expect(wrapper.text()).toContain('可暴露宿主内 JSON Route')
     expect(wrapper.text()).toContain('最后检查')
+    expect(wrapper.text()).toContain('并发占用')
+    expect(wrapper.text()).toContain('2 / 6')
   })
 })

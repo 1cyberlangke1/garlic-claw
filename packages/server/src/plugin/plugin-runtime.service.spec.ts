@@ -12,6 +12,7 @@ describe('PluginRuntimeService', () => {
     setOffline: jest.fn(),
     heartbeat: jest.fn(),
     getGovernanceSnapshot: jest.fn(),
+    recordPluginEvent: jest.fn(),
     recordPluginSuccess: jest.fn(),
     recordPluginFailure: jest.fn(),
   };
@@ -2034,5 +2035,104 @@ describe('PluginRuntimeService', () => {
         type: 'hook:error',
       }),
     );
+  });
+
+  it('rejects plugin tool calls when the runtime concurrency limit is reached and releases slots afterward', async () => {
+    let resolveToolCall!: (value: { saved: boolean }) => void;
+    const pendingToolCall = new Promise<{ saved: boolean }>((resolve) => {
+      resolveToolCall = resolve;
+    });
+    let invocationCount = 0;
+    const executeTool = jest.fn().mockImplementation(() => {
+      invocationCount += 1;
+      if (invocationCount === 1) {
+        return pendingToolCall;
+      }
+
+      return Promise.resolve({
+        saved: false,
+      });
+    });
+
+    pluginService.registerPlugin.mockResolvedValueOnce({
+      configSchema: null,
+      resolvedConfig: {
+        maxConcurrentExecutions: 1,
+      },
+      scope: {
+        defaultEnabled: true,
+        conversations: {},
+      },
+    });
+
+    await service.registerPlugin({
+      manifest: builtinManifest,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        executeTool,
+      }),
+    });
+
+    const firstCall = service.executeTool({
+      pluginId: 'builtin.memory-tools',
+      toolName: 'save_memory',
+      params: {
+        content: '先占住一个执行槽位',
+      },
+      context: callContext,
+    });
+
+    expect(service.listPlugins()).toEqual([
+      expect.objectContaining({
+        pluginId: 'builtin.memory-tools',
+        runtimePressure: {
+          activeExecutions: 1,
+          maxConcurrentExecutions: 1,
+        },
+      }),
+    ]);
+
+    try {
+      await expect(
+        service.executeTool({
+          pluginId: 'builtin.memory-tools',
+          toolName: 'save_memory',
+          params: {
+            content: '第二次调用应被拒绝',
+          },
+          context: callContext,
+        }),
+      ).rejects.toThrow('插件 builtin.memory-tools 当前执行并发已达上限，请稍后重试');
+
+      expect(pluginService.recordPluginEvent).toHaveBeenCalledWith(
+        'builtin.memory-tools',
+        expect.objectContaining({
+          type: 'tool:overloaded',
+          level: 'warn',
+          metadata: expect.objectContaining({
+            toolName: 'save_memory',
+            activeExecutions: 1,
+            maxConcurrentExecutions: 1,
+          }),
+        }),
+      );
+    } finally {
+      resolveToolCall({
+        saved: true,
+      });
+      await expect(firstCall).resolves.toEqual({
+        saved: true,
+      });
+    }
+
+    expect(service.listPlugins()).toEqual([
+      expect.objectContaining({
+        pluginId: 'builtin.memory-tools',
+        runtimePressure: {
+          activeExecutions: 0,
+          maxConcurrentExecutions: 1,
+        },
+      }),
+    ]);
   });
 });

@@ -69,6 +69,7 @@
             <strong>{{ healthText(healthSnapshot ?? selectedPlugin.health) }}</strong>
             <p>最后成功：{{ formatTime((healthSnapshot ?? selectedPlugin.health)?.lastSuccessAt ?? null) }}</p>
             <p>最后检查：{{ formatTime((healthSnapshot ?? selectedPlugin.health)?.lastCheckedAt ?? null) }}</p>
+            <p>并发占用：{{ formatRuntimePressure(healthSnapshot ?? selectedPlugin.health) }}</p>
           </article>
           <article class="summary-card">
             <span class="summary-label">失败统计</span>
@@ -287,6 +288,20 @@ function healthText(health: PluginHealthSnapshot | null | undefined): string {
     default:
       return '未知'
   }
+}
+
+/**
+ * 把运行时并发压力格式化为易读文本。
+ * @param health 插件健康快照
+ * @returns `active / max` 或占位文本
+ */
+function formatRuntimePressure(health: PluginHealthSnapshot | null | undefined): string {
+  const pressure = health?.runtimePressure
+  if (!pressure) {
+    return '--'
+  }
+
+  return `${pressure.activeExecutions} / ${pressure.maxConcurrentExecutions}`
 }
 
 /**

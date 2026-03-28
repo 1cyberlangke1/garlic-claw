@@ -20,6 +20,7 @@ import type {
   PluginRouteDescriptor,
   PluginRouteRequest,
   PluginRouteResponse,
+  PluginRuntimePressureSnapshot,
   PluginRuntimeKind,
   PluginSelfInfo,
   PluginSubagentRunResult,
@@ -28,6 +29,8 @@ import type {
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -97,6 +100,8 @@ const PLUGIN_ACTION_ORDER: PluginActionName[] = [
   'reload',
   'reconnect',
 ];
+
+const DEFAULT_PLUGIN_MAX_CONCURRENT_EXECUTIONS = 6;
 
 /**
  * 插件传输适配器接口。
@@ -181,6 +186,8 @@ interface PluginRuntimeRecord {
   deviceType: string;
   transport: PluginTransport;
   governance: PluginGovernanceSnapshot;
+  activeExecutions: number;
+  maxConcurrentExecutions: number;
 }
 
 /**
@@ -279,6 +286,8 @@ export class PluginRuntimeService {
       deviceType: input.deviceType ?? input.runtimeKind,
       transport: input.transport,
       governance,
+      activeExecutions: 0,
+      maxConcurrentExecutions: this.resolveMaxConcurrentExecutions(governance),
     });
     await this.cronService.onPluginRegistered(
       input.manifest.id,
@@ -300,6 +309,7 @@ export class PluginRuntimeService {
     }
 
     record.governance = await this.pluginService.getGovernanceSnapshot(pluginId);
+    record.maxConcurrentExecutions = this.resolveMaxConcurrentExecutions(record.governance);
   }
 
   /**
@@ -356,6 +366,7 @@ export class PluginRuntimeService {
     deviceType: string;
     manifest: PluginManifest;
     supportedActions: PluginActionName[];
+    runtimePressure: PluginRuntimePressureSnapshot;
   }> {
     return [...this.records.entries()].map(([pluginId, record]) => ({
       pluginId,
@@ -363,7 +374,22 @@ export class PluginRuntimeService {
       deviceType: record.deviceType,
       manifest: record.manifest,
       supportedActions: this.listSupportedActionsForRecord(record),
+      runtimePressure: this.buildRuntimePressure(record),
     }));
+  }
+
+  /**
+   * 读取指定插件当前的运行时压力快照。
+   * @param pluginId 插件 ID
+   * @returns 压力快照；插件未注册时返回 null
+   */
+  getRuntimePressure(pluginId: string): PluginRuntimePressureSnapshot | null {
+    const record = this.records.get(pluginId);
+    if (!record) {
+      return null;
+    }
+
+    return this.buildRuntimePressure(record);
   }
 
   /**
@@ -493,18 +519,28 @@ export class PluginRuntimeService {
     this.assertPluginEnabled(record, input.context);
 
     try {
-      return await this.runWithTimeout(
-        Promise.resolve(
-          record.transport.executeTool({
-            toolName: input.toolName,
-            params: input.params,
-            context: input.context,
-          }),
+      return await this.runWithPluginExecutionSlot({
+        record,
+        type: 'tool',
+        metadata: {
+          toolName: input.toolName,
+        },
+        execute: () => this.runWithTimeout(
+          Promise.resolve(
+            record.transport.executeTool({
+              toolName: input.toolName,
+              params: input.params,
+              context: input.context,
+            }),
+          ),
+          this.readTimeoutMs(input.context, 30000),
+          `插件 ${input.pluginId} 工具 ${input.toolName} 执行超时`,
         ),
-        this.readTimeoutMs(input.context, 30000),
-        `插件 ${input.pluginId} 工具 ${input.toolName} 执行超时`,
-      );
+      });
     } catch (error) {
+      if (isPluginOverloadedError(error)) {
+        throw error;
+      }
       await this.pluginService.recordPluginFailure(input.pluginId, {
         type: error instanceof Error && error.message.includes('超时')
           ? 'tool:timeout'
@@ -533,20 +569,31 @@ export class PluginRuntimeService {
     const route = this.findRouteOrThrow(record, input.request.path, input.request.method);
 
     try {
-      return await this.runWithTimeout(
-        Promise.resolve(
-          record.transport.invokeRoute({
-            request: {
-              ...input.request,
-              path: normalizeRoutePath(route.path),
-            },
-            context: input.context,
-          }),
+      return await this.runWithPluginExecutionSlot({
+        record,
+        type: 'route',
+        metadata: {
+          method: input.request.method,
+          path: route.path,
+        },
+        execute: () => this.runWithTimeout(
+          Promise.resolve(
+            record.transport.invokeRoute({
+              request: {
+                ...input.request,
+                path: normalizeRoutePath(route.path),
+              },
+              context: input.context,
+            }),
+          ),
+          this.readTimeoutMs(input.context, 15000),
+          `插件 ${input.pluginId} Route ${route.path} 执行超时`,
         ),
-        this.readTimeoutMs(input.context, 15000),
-        `插件 ${input.pluginId} Route ${route.path} 执行超时`,
-      );
+      });
     } catch (error) {
+      if (isPluginOverloadedError(error)) {
+        throw error;
+      }
       await this.pluginService.recordPluginFailure(input.pluginId, {
         type: error instanceof Error && error.message.includes('超时')
           ? 'route:timeout'
@@ -678,18 +725,28 @@ export class PluginRuntimeService {
     this.assertPluginEnabled(record, input.context);
 
     try {
-      return await this.runWithTimeout(
-        Promise.resolve(
-          record.transport.invokeHook({
-            hookName: input.hookName,
-            context: input.context,
-            payload: input.payload,
-          }),
+      return await this.runWithPluginExecutionSlot({
+        record,
+        type: 'hook',
+        metadata: {
+          hookName: input.hookName,
+        },
+        execute: () => this.runWithTimeout(
+          Promise.resolve(
+            record.transport.invokeHook({
+              hookName: input.hookName,
+              context: input.context,
+              payload: input.payload,
+            }),
+          ),
+          this.readTimeoutMs(input.context, 10000),
+          `插件 ${record.manifest.id} Hook ${input.hookName} 执行超时`,
         ),
-        this.readTimeoutMs(input.context, 10000),
-        `插件 ${record.manifest.id} Hook ${input.hookName} 执行超时`,
-      );
+      });
     } catch (error) {
+      if (isPluginOverloadedError(error)) {
+        throw error;
+      }
       if (input.recordFailure !== false) {
         await this.pluginService.recordPluginFailure(record.manifest.id, {
           type: error instanceof Error && error.message.includes('超时')
@@ -1806,6 +1863,73 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 为插件执行添加统一并发保护。
+   * @param input 插件记录、执行类型、附加元数据和实际执行函数
+   * @returns 执行结果
+   */
+  private async runWithPluginExecutionSlot<T>(input: {
+    record: PluginRuntimeRecord;
+    type: 'tool' | 'route' | 'hook';
+    metadata: JsonObject;
+    execute: () => Promise<T>;
+  }): Promise<T> {
+    if (input.record.activeExecutions >= input.record.maxConcurrentExecutions) {
+      const pressure = this.buildRuntimePressure(input.record);
+      await this.pluginService.recordPluginEvent(input.record.manifest.id, {
+        type: `${input.type}:overloaded`,
+        level: 'warn',
+        message: `插件 ${input.record.manifest.id} 当前执行并发已达上限，请稍后重试`,
+        metadata: {
+          ...input.metadata,
+          activeExecutions: pressure.activeExecutions,
+          maxConcurrentExecutions: pressure.maxConcurrentExecutions,
+        },
+      });
+      throw new HttpException(
+        `插件 ${input.record.manifest.id} 当前执行并发已达上限，请稍后重试`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    input.record.activeExecutions += 1;
+    try {
+      return await input.execute();
+    } finally {
+      input.record.activeExecutions = Math.max(0, input.record.activeExecutions - 1);
+    }
+  }
+
+  /**
+   * 从治理配置中解析插件并发上限。
+   * @param governance 插件治理快照
+   * @returns 合法的并发上限
+   */
+  private resolveMaxConcurrentExecutions(
+    governance: PluginGovernanceSnapshot,
+  ): number {
+    const raw = governance.resolvedConfig.maxConcurrentExecutions;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return Math.min(32, Math.max(1, Math.trunc(raw)));
+    }
+
+    return DEFAULT_PLUGIN_MAX_CONCURRENT_EXECUTIONS;
+  }
+
+  /**
+   * 构建当前插件的运行时压力快照。
+   * @param record 运行时插件记录
+   * @returns 压力快照
+   */
+  private buildRuntimePressure(
+    record: PluginRuntimeRecord,
+  ): PluginRuntimePressureSnapshot {
+    return {
+      activeExecutions: record.activeExecutions,
+      maxConcurrentExecutions: record.maxConcurrentExecutions,
+    };
+  }
+
+  /**
    * 读取单个插件记录当前声明的治理动作。
    * @param record 运行时插件记录
    * @returns 归一化后的治理动作列表
@@ -1847,6 +1971,16 @@ function cloneChatBeforeModelRequest(
       ? { maxOutputTokens: request.maxOutputTokens }
       : {}),
   };
+}
+
+/**
+ * 判断当前异常是否由插件并发保护主动拒绝。
+ * @param error 捕获到的异常
+ * @returns 是否为 429 超载拒绝
+ */
+function isPluginOverloadedError(error: unknown): boolean {
+  return error instanceof HttpException
+    && error.getStatus() === HttpStatus.TOO_MANY_REQUESTS;
 }
 
 /**

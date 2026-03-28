@@ -20,6 +20,7 @@ describe('PluginController', () => {
 
   const pluginRuntime = {
     listPlugins: jest.fn(),
+    getRuntimePressure: jest.fn(),
     refreshPluginGovernance: jest.fn(),
   };
 
@@ -46,6 +47,7 @@ describe('PluginController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    pluginRuntime.getRuntimePressure.mockReturnValue(null);
     controller = new PluginController(
       pluginService as never,
       pluginRuntime as never,
@@ -160,6 +162,10 @@ describe('PluginController', () => {
         runtimeKind: 'builtin',
         deviceType: 'builtin',
         supportedActions: ['health-check', 'reload'],
+        runtimePressure: {
+          activeExecutions: 1,
+          maxConcurrentExecutions: 4,
+        },
         manifest: {
           id: 'builtin.memory-context',
           name: 'Memory Context',
@@ -225,10 +231,46 @@ describe('PluginController', () => {
           enabled: true,
         },
       ],
+      health: expect.objectContaining({
+        runtimePressure: {
+          activeExecutions: 1,
+          maxConcurrentExecutions: 4,
+        },
+      }),
     });
     expect(pluginCronService.listCronJobs).toHaveBeenCalledWith(
       'builtin.memory-context',
     );
+  });
+
+  it('merges runtime concurrency pressure into plugin health responses', async () => {
+    pluginService.getPluginHealth.mockResolvedValue({
+      status: 'healthy',
+      failureCount: 0,
+      consecutiveFailures: 0,
+      lastError: null,
+      lastErrorAt: null,
+      lastSuccessAt: '2026-03-28T05:00:00.000Z',
+      lastCheckedAt: '2026-03-28T05:00:00.000Z',
+    });
+    pluginRuntime.getRuntimePressure.mockReturnValue({
+      activeExecutions: 2,
+      maxConcurrentExecutions: 6,
+    });
+
+    await expect(controller.getPluginHealth('builtin.memory-context')).resolves.toEqual({
+      status: 'healthy',
+      failureCount: 0,
+      consecutiveFailures: 0,
+      lastError: null,
+      lastErrorAt: null,
+      lastSuccessAt: '2026-03-28T05:00:00.000Z',
+      lastCheckedAt: '2026-03-28T05:00:00.000Z',
+      runtimePressure: {
+        activeExecutions: 2,
+        maxConcurrentExecutions: 6,
+      },
+    });
   });
 
   it('returns runtime-declared governance actions instead of letting the client guess by runtime kind', async () => {

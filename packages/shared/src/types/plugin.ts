@@ -148,6 +148,12 @@ export type PluginEventLevel = 'info' | 'warn' | 'error';
 /** 插件治理动作名称。 */
 export type PluginActionName = 'reload' | 'reconnect' | 'health-check';
 
+/** 插件运行时压力快照。 */
+export interface PluginRuntimePressureSnapshot {
+  activeExecutions: number;
+  maxConcurrentExecutions: number;
+}
+
 /** 插件健康快照。 */
 export interface PluginHealthSnapshot {
   status: PluginHealthStatus;
@@ -157,6 +163,7 @@ export interface PluginHealthSnapshot {
   lastErrorAt: string | null;
   lastSuccessAt: string | null;
   lastCheckedAt: string | null;
+  runtimePressure?: PluginRuntimePressureSnapshot;
 }
 
 /** 插件事件日志记录。 */
