@@ -1,5 +1,6 @@
 import { request } from './base'
 import type {
+  JsonValue,
   PluginActionName,
   PluginActionResult,
   PluginConfigSnapshot,
@@ -7,6 +8,7 @@ import type {
   PluginEventRecord,
   PluginHealthSnapshot,
   PluginInfo,
+  PluginRouteMethod,
   PluginScopeSettings,
   PluginStorageEntry,
 } from '@garlic-claw/shared'
@@ -100,5 +102,31 @@ export function runPluginAction(name: string, action: PluginActionName) {
     {
       method: 'POST',
     },
+  )
+}
+
+export function invokePluginRoute(
+  pluginName: string,
+  routePath: string,
+  method: PluginRouteMethod,
+  options: {
+    query?: string
+    body?: JsonValue | null
+  } = {},
+) {
+  const normalizedPath = routePath.trim().replace(/^\/+|\/+$/g, '')
+  const normalizedQuery = options.query?.trim().replace(/^\?/, '') ?? ''
+  const querySuffix = normalizedQuery ? `?${normalizedQuery}` : ''
+  const requestOptions: RequestInit = {
+    method,
+  }
+
+  if (method !== 'GET' && method !== 'DELETE' && options.body !== undefined) {
+    requestOptions.body = JSON.stringify(options.body)
+  }
+
+  return request<JsonValue>(
+    `/plugin-routes/${encodeURIComponent(pluginName)}/${normalizedPath}${querySuffix}`,
+    requestOptions,
   )
 }
