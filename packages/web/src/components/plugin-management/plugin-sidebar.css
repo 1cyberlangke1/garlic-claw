@@ -67,6 +67,32 @@
   color: #f5d38c;
 }
 
+.sidebar-tools {
+  display: grid;
+  gap: 10px;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chip {
+  padding: 0.24rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(133, 163, 199, 0.14);
+  background: rgba(9, 17, 29, 0.38);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.filter-chip.active {
+  border-color: rgba(103, 199, 207, 0.22);
+  background: rgba(103, 199, 207, 0.12);
+  color: #d8f6f3;
+}
+
 .ghost-button {
   background: rgba(9, 17, 29, 0.42);
   border: 1px solid var(--border);
@@ -262,6 +288,10 @@
   .sidebar-header {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .filter-chips {
+    gap: 6px;
   }
 }
 

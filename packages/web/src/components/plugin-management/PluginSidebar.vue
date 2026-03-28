@@ -24,11 +24,59 @@
       </div>
     </div>
 
+    <div v-if="!loading && plugins.length > 0" class="sidebar-tools">
+      <input
+        v-model="searchKeyword"
+        data-test="plugin-sidebar-search"
+        type="text"
+        placeholder="搜索名称、描述或问题摘要"
+      >
+      <div class="filter-chips">
+        <button
+          type="button"
+          class="filter-chip"
+          data-test="plugin-sidebar-filter-all"
+          :class="{ active: activeFilter === 'all' }"
+          @click="activeFilter = 'all'"
+        >
+          全部
+        </button>
+        <button
+          type="button"
+          class="filter-chip"
+          data-test="plugin-sidebar-filter-attention"
+          :class="{ active: activeFilter === 'attention' }"
+          @click="activeFilter = 'attention'"
+        >
+          需关注
+        </button>
+        <button
+          type="button"
+          class="filter-chip"
+          :class="{ active: activeFilter === 'builtin' }"
+          @click="activeFilter = 'builtin'"
+        >
+          内建
+        </button>
+        <button
+          type="button"
+          class="filter-chip"
+          :class="{ active: activeFilter === 'remote' }"
+          @click="activeFilter = 'remote'"
+        >
+          远程
+        </button>
+      </div>
+    </div>
+
     <p v-if="error" class="sidebar-error">{{ error }}</p>
 
     <div v-if="loading" class="sidebar-state">加载中...</div>
     <div v-else-if="plugins.length === 0" class="sidebar-state">
       当前还没有可管理的插件。
+    </div>
+    <div v-else-if="orderedPlugins.length === 0" class="sidebar-state">
+      {{ hasActiveFilter ? '当前筛选下没有匹配插件。' : '当前还没有可管理的插件。' }}
     </div>
     <div v-else class="plugin-list">
       <button
@@ -74,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { PluginInfo } from '@garlic-claw/shared'
 
 const props = defineProps<{
@@ -89,8 +137,18 @@ defineEmits<{
   (event: 'select', pluginName: string): void
 }>()
 
+const searchKeyword = ref('')
+const activeFilter = ref<'all' | 'attention' | 'builtin' | 'remote'>('all')
+const normalizedKeyword = computed(() =>
+  searchKeyword.value.trim().toLocaleLowerCase(),
+)
+const filteredPlugins = computed(() =>
+  props.plugins.filter((plugin) =>
+    matchesFilter(plugin) && matchesKeyword(plugin, normalizedKeyword.value),
+  ),
+)
 const orderedPlugins = computed(() =>
-  [...props.plugins].sort((left, right) => {
+  [...filteredPlugins.value].sort((left, right) => {
     const weightDiff = pluginSortWeight(left) - pluginSortWeight(right)
     if (weightDiff !== 0) {
       return weightDiff
@@ -105,6 +163,51 @@ const onlineCount = computed(() =>
 const issueCount = computed(() =>
   props.plugins.filter((plugin) => hasPluginIssue(plugin)).length,
 )
+const hasActiveFilter = computed(() =>
+  activeFilter.value !== 'all' || normalizedKeyword.value.length > 0,
+)
+
+/**
+ * 判断插件是否符合当前快速筛选类型。
+ * @param plugin 插件摘要
+ * @returns 是否命中筛选
+ */
+function matchesFilter(plugin: PluginInfo): boolean {
+  switch (activeFilter.value) {
+    case 'attention':
+      return hasPluginIssue(plugin)
+    case 'builtin':
+      return (plugin.runtimeKind ?? 'remote') === 'builtin'
+    case 'remote':
+      return (plugin.runtimeKind ?? 'remote') !== 'builtin'
+    default:
+      return true
+  }
+}
+
+/**
+ * 判断插件是否匹配当前关键字搜索。
+ * @param plugin 插件摘要
+ * @param keyword 归一化关键字
+ * @returns 是否匹配
+ */
+function matchesKeyword(plugin: PluginInfo, keyword: string): boolean {
+  if (!keyword) {
+    return true
+  }
+
+  const haystack = [
+    plugin.displayName ?? plugin.name,
+    plugin.name,
+    plugin.description ?? '',
+    pluginIssueSummary(plugin) ?? '',
+    pluginSurfaceSummary(plugin),
+  ]
+    .join(' ')
+    .toLocaleLowerCase()
+
+  return haystack.includes(keyword)
+}
 
 /**
  * 生成插件健康状态的展示文案。

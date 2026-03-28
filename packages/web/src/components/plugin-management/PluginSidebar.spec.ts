@@ -174,4 +174,75 @@ describe('PluginSidebar', () => {
     expect(wrapper.text()).toContain('当前并发已打满')
     expect(wrapper.text()).toContain('最近错误：route timeout while invoking remote endpoint')
   })
+
+  it('filters plugins by quick attention filter and keyword search', async () => {
+    const wrapper = mount(PluginSidebar, {
+      props: {
+        loading: false,
+        selectedPluginName: null,
+        error: null,
+        plugins: [
+          {
+            id: 'plugin-1',
+            name: 'builtin.alpha',
+            displayName: 'Alpha Plugin',
+            description: 'healthy builtin plugin',
+            deviceType: 'builtin',
+            status: 'online',
+            capabilities: [],
+            connected: true,
+            runtimeKind: 'builtin',
+            health: {
+              status: 'healthy',
+              failureCount: 0,
+              consecutiveFailures: 0,
+              lastError: null,
+              lastErrorAt: null,
+              lastSuccessAt: null,
+              lastCheckedAt: null,
+            },
+            lastSeenAt: null,
+            createdAt: '2026-03-28T00:00:00.000Z',
+            updatedAt: '2026-03-28T00:00:00.000Z',
+          },
+          {
+            id: 'plugin-2',
+            name: 'remote.error',
+            displayName: 'Error Plugin',
+            description: 'remote plugin',
+            deviceType: 'api',
+            status: 'error',
+            capabilities: [],
+            connected: false,
+            runtimeKind: 'remote',
+            health: {
+              status: 'error',
+              failureCount: 2,
+              consecutiveFailures: 1,
+              lastError: 'route timeout while invoking remote endpoint',
+              lastErrorAt: '2026-03-28T00:00:00.000Z',
+              lastSuccessAt: null,
+              lastCheckedAt: '2026-03-28T00:00:00.000Z',
+            },
+            lastSeenAt: '2026-03-28T00:00:00.000Z',
+            createdAt: '2026-03-28T00:00:00.000Z',
+            updatedAt: '2026-03-28T00:00:00.000Z',
+          },
+        ],
+      },
+    })
+
+    await wrapper.get('[data-test="plugin-sidebar-filter-attention"]').trigger('click')
+    let titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
+    expect(titles).toEqual(['Error Plugin'])
+
+    await wrapper.get('[data-test="plugin-sidebar-search"]').setValue('alpha')
+    titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
+    expect(titles).toEqual([])
+    expect(wrapper.text()).toContain('当前筛选下没有匹配插件。')
+
+    await wrapper.get('[data-test="plugin-sidebar-filter-all"]').trigger('click')
+    titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
+    expect(titles).toEqual(['Alpha Plugin'])
+  })
 })
