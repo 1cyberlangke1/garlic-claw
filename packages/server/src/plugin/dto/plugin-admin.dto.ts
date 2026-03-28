@@ -1,5 +1,12 @@
 import type { JsonObject } from '@garlic-claw/shared';
-import { IsBoolean, IsObject, IsOptional } from 'class-validator';
+import {
+  IsBoolean,
+  IsDefined,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 /**
  * 更新插件配置 DTO。
@@ -39,4 +46,27 @@ export class UpdatePluginScopeDto {
   @IsOptional()
   @IsObject()
   conversations?: Record<string, boolean>;
+}
+
+/**
+ * 更新插件持久化 KV 的 DTO。
+ *
+ * 输入:
+ * - `key`: 存储键
+ * - `value`: 任意 JSON 值
+ *
+ * 输出:
+ * - 无；仅作为控制器参数约束
+ *
+ * 预期行为:
+ * - 要求 key 为非空字符串
+ * - 要求 value 必须显式提供
+ */
+export class UpdatePluginStorageDto {
+  @IsString()
+  @IsNotEmpty()
+  key!: string;
+
+  @IsDefined()
+  value!: unknown;
 }

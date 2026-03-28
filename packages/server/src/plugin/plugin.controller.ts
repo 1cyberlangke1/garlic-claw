@@ -10,8 +10,10 @@ import type {
   PluginPermission,
   PluginRouteDescriptor,
   PluginScopeSettings,
+  PluginStorageEntry,
 } from '@garlic-claw/shared';
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -29,6 +31,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import {
   UpdatePluginConfigDto,
   UpdatePluginScopeDto,
+  UpdatePluginStorageDto,
 } from './dto/plugin-admin.dto';
 import { PluginAdminService } from './plugin-admin.service';
 import { PluginCronService } from './plugin-cron.service';
@@ -114,6 +117,44 @@ export class PluginController {
     const result = await this.pluginService.updatePluginConfig(name, dto.values);
     await this.pluginRuntime.refreshPluginGovernance(name);
     return result;
+  }
+
+  @Get(':name/storage')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'super_admin')
+  listPluginStorage(
+    @Param('name') name: string,
+    @Query('prefix') prefix?: string,
+  ): Promise<PluginStorageEntry[]> {
+    return this.pluginService.listPluginStorage(name, prefix?.trim() || undefined);
+  }
+
+  @Put(':name/storage')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'super_admin')
+  async setPluginStorage(
+    @Param('name') name: string,
+    @Body() dto: UpdatePluginStorageDto,
+  ): Promise<PluginStorageEntry> {
+    return {
+      key: dto.key,
+      value: await this.pluginService.setPluginStorage(name, dto.key, dto.value as never),
+    };
+  }
+
+  @Delete(':name/storage')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'super_admin')
+  deletePluginStorage(
+    @Param('name') name: string,
+    @Query('key') key?: string,
+  ): Promise<boolean> {
+    const normalizedKey = key?.trim();
+    if (!normalizedKey) {
+      throw new BadRequestException('key 必填');
+    }
+
+    return this.pluginService.deletePluginStorage(name, normalizedKey);
   }
 
   @Get(':name/scopes')

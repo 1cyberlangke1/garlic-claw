@@ -14,6 +14,7 @@ import type {
   Message,
   OfficialProviderCatalogItem,
   PluginInfo,
+  PluginStorageEntry,
   RetryMessagePayload,
   SendMessagePayload,
   SSEEvent,
@@ -118,6 +119,11 @@ const pluginInfo: PluginInfo = {
   updatedAt: '2026-03-26T00:00:00.000Z',
 }
 
+const pluginStorageEntry: PluginStorageEntry = {
+  key: 'cursor.offset',
+  value: 3,
+}
+
 const catalogItem: OfficialProviderCatalogItem = {
   id: 'openai',
   name: 'OpenAI',
@@ -213,6 +219,7 @@ void [
   connectionResult,
   catalogItem,
   pluginInfo,
+  pluginStorageEntry,
   conversationDetail,
   sendPayload,
   updatePayload,

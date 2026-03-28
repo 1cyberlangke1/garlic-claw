@@ -169,6 +169,12 @@ export interface PluginEventRecord {
   createdAt: string;
 }
 
+/** 插件持久化 KV 条目。 */
+export interface PluginStorageEntry {
+  key: string;
+  value: JsonValue;
+}
+
 /** 插件 Route 支持的 HTTP 方法。 */
 export type PluginRouteMethod =
   | 'GET'

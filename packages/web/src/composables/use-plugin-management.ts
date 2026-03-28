@@ -7,6 +7,7 @@ import type {
   PluginHealthSnapshot,
   PluginInfo,
   PluginScopeSettings,
+  PluginStorageEntry,
 } from '@garlic-claw/shared'
 import * as api from '../api'
 
@@ -24,8 +25,10 @@ export function usePluginManagement() {
   const loading = ref(false)
   const detailLoading = ref(false)
   const savingConfig = ref(false)
+  const savingStorage = ref(false)
   const savingScope = ref(false)
   const runningAction = ref<PluginActionName | null>(null)
+  const deletingStorageKey = ref<string | null>(null)
   const deleting = ref(false)
   const error = ref<string | null>(null)
   const notice = ref<string | null>(null)
@@ -36,6 +39,8 @@ export function usePluginManagement() {
   const scopeSettings = shallowRef<PluginScopeSettings | null>(null)
   const healthSnapshot = shallowRef<PluginHealthSnapshot | null>(null)
   const eventLogs = shallowRef<PluginEventRecord[]>([])
+  const storageEntries = shallowRef<PluginStorageEntry[]>([])
+  const storagePrefix = ref('')
 
   const selectedPlugin = computed<PluginInfo | null>(() => {
     const found = plugins.value.find(
@@ -104,18 +109,20 @@ export function usePluginManagement() {
     detailLoading.value = true
     error.value = null
     try {
-      const [config, jobs, scope, health, events] = await Promise.all([
+      const [config, jobs, scope, health, events, storage] = await Promise.all([
         api.getPluginConfig(pluginName),
         api.getPluginCrons(pluginName),
         api.getPluginScope(pluginName),
         api.getPluginHealth(pluginName),
         api.listPluginEvents(pluginName),
+        api.listPluginStorage(pluginName, storagePrefix.value || undefined),
       ])
       configSnapshot.value = config
       cronJobs.value = jobs
       scopeSettings.value = scope
       healthSnapshot.value = health
       eventLogs.value = events
+      storageEntries.value = storage
     } catch (caughtError) {
       error.value = toErrorMessage(caughtError, '加载插件详情失败')
     } finally {
@@ -144,6 +151,81 @@ export function usePluginManagement() {
       error.value = toErrorMessage(caughtError, '保存插件配置失败')
     } finally {
       savingConfig.value = false
+    }
+  }
+
+  /**
+   * 按当前前缀刷新插件持久化 KV 列表。
+   * @param prefix 可选键前缀
+   */
+  async function refreshPluginStorage(prefix = storagePrefix.value) {
+    if (!selectedPlugin.value) {
+      storageEntries.value = []
+      storagePrefix.value = ''
+      return
+    }
+
+    detailLoading.value = true
+    error.value = null
+    try {
+      storagePrefix.value = prefix.trim()
+      storageEntries.value = await api.listPluginStorage(
+        selectedPlugin.value.name,
+        storagePrefix.value || undefined,
+      )
+    } catch (caughtError) {
+      error.value = toErrorMessage(caughtError, '加载插件 KV 失败')
+    } finally {
+      detailLoading.value = false
+    }
+  }
+
+  /**
+   * 保存一个插件持久化 KV 条目。
+   * @param entry 待保存的键值对
+   */
+  async function saveStorageEntry(entry: PluginStorageEntry) {
+    if (!selectedPlugin.value) {
+      return
+    }
+
+    savingStorage.value = true
+    error.value = null
+    notice.value = null
+    try {
+      await api.setPluginStorage(selectedPlugin.value.name, entry.key, entry.value)
+      notice.value = '插件 KV 已保存'
+      await refreshPluginStorage(storagePrefix.value)
+    } catch (caughtError) {
+      error.value = toErrorMessage(caughtError, '保存插件 KV 失败')
+    } finally {
+      savingStorage.value = false
+    }
+  }
+
+  /**
+   * 删除一个插件持久化 KV 条目。
+   * @param key 待删除键名
+   */
+  async function deleteStorageEntry(key: string) {
+    if (!selectedPlugin.value) {
+      return
+    }
+    if (!window.confirm(`确认删除插件 KV ${key} 吗？`)) {
+      return
+    }
+
+    deletingStorageKey.value = key
+    error.value = null
+    notice.value = null
+    try {
+      await api.deletePluginStorage(selectedPlugin.value.name, key)
+      notice.value = '插件 KV 已删除'
+      await refreshPluginStorage(storagePrefix.value)
+    } catch (caughtError) {
+      error.value = toErrorMessage(caughtError, '删除插件 KV 失败')
+    } finally {
+      deletingStorageKey.value = null
     }
   }
 
@@ -233,6 +315,7 @@ export function usePluginManagement() {
     scopeSettings.value = null
     healthSnapshot.value = null
     eventLogs.value = []
+    storageEntries.value = []
   }
 
   /**
@@ -247,8 +330,10 @@ export function usePluginManagement() {
     loading,
     detailLoading,
     savingConfig,
+    savingStorage,
     savingScope,
     runningAction,
+    deletingStorageKey,
     deleting,
     error,
     notice,
@@ -260,13 +345,17 @@ export function usePluginManagement() {
     scopeSettings,
     healthSnapshot,
     eventLogs,
+    storageEntries,
     canDeleteSelected,
     refreshAll,
     selectPlugin,
     refreshSelectedDetails,
+    refreshPluginStorage,
     saveConfig,
+    saveStorageEntry,
     saveScope,
     runAction,
+    deleteStorageEntry,
     deleteSelectedPlugin,
   }
 }

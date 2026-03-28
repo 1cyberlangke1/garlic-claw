@@ -8,6 +8,7 @@ import type {
   PluginHealthSnapshot,
   PluginInfo,
   PluginScopeSettings,
+  PluginStorageEntry,
 } from '@garlic-claw/shared'
 
 export function listPlugins() {
@@ -55,6 +56,33 @@ export function listPluginEvents(name: string, limit = 50) {
 
 export function getPluginCrons(name: string) {
   return request<PluginCronJobSummary[]>(`/plugins/${encodeURIComponent(name)}/crons`)
+}
+
+export function listPluginStorage(name: string, prefix?: string) {
+  const query = prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''
+  return request<PluginStorageEntry[]>(
+    `/plugins/${encodeURIComponent(name)}/storage${query}`,
+  )
+}
+
+export function setPluginStorage(
+  name: string,
+  key: string,
+  value: PluginStorageEntry['value'],
+) {
+  return request<PluginStorageEntry>(`/plugins/${encodeURIComponent(name)}/storage`, {
+    method: 'PUT',
+    body: JSON.stringify({ key, value }),
+  })
+}
+
+export function deletePluginStorage(name: string, key: string) {
+  return request<boolean>(
+    `/plugins/${encodeURIComponent(name)}/storage?key=${encodeURIComponent(key)}`,
+    {
+      method: 'DELETE',
+    },
+  )
 }
 
 export function runPluginAction(name: string, action: PluginActionName) {

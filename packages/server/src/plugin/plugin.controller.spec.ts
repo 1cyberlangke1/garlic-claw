@@ -9,6 +9,9 @@ describe('PluginController', () => {
     findAll: jest.fn(),
     getPluginConfig: jest.fn(),
     updatePluginConfig: jest.fn(),
+    listPluginStorage: jest.fn(),
+    setPluginStorage: jest.fn(),
+    deletePluginStorage: jest.fn(),
     getPluginScope: jest.fn(),
     updatePluginScope: jest.fn(),
     getPluginHealth: jest.fn(),
@@ -329,6 +332,52 @@ describe('PluginController', () => {
         createdAt: '2026-03-27T12:00:00.000Z',
       },
     ]);
+  });
+
+  it('lists, writes, and deletes plugin storage entries through the plugin service', async () => {
+    pluginService.listPluginStorage.mockResolvedValue([
+      {
+        key: 'cursor.offset',
+        value: 3,
+      },
+    ]);
+    pluginService.setPluginStorage.mockResolvedValue(5);
+    pluginService.deletePluginStorage.mockResolvedValue(true);
+
+    await expect(
+      (controller as any).listPluginStorage('builtin.memory-context', 'cursor.'),
+    ).resolves.toEqual([
+      {
+        key: 'cursor.offset',
+        value: 3,
+      },
+    ]);
+    await expect(
+      (controller as any).setPluginStorage('builtin.memory-context', {
+        key: 'cursor.offset',
+        value: 5,
+      }),
+    ).resolves.toEqual({
+      key: 'cursor.offset',
+      value: 5,
+    });
+    await expect(
+      (controller as any).deletePluginStorage('builtin.memory-context', 'cursor.offset'),
+    ).resolves.toBe(true);
+
+    expect(pluginService.listPluginStorage).toHaveBeenCalledWith(
+      'builtin.memory-context',
+      'cursor.',
+    );
+    expect(pluginService.setPluginStorage).toHaveBeenCalledWith(
+      'builtin.memory-context',
+      'cursor.offset',
+      5,
+    );
+    expect(pluginService.deletePluginStorage).toHaveBeenCalledWith(
+      'builtin.memory-context',
+      'cursor.offset',
+    );
   });
 
   it('dispatches governance actions through the plugin admin service', async () => {

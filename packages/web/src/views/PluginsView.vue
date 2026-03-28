@@ -138,6 +138,16 @@
             :events="eventLogs"
             :loading="detailLoading"
           />
+          <PluginStoragePanel
+            class="detail-span"
+            :entries="storageEntries"
+            :loading="detailLoading"
+            :saving="savingStorage"
+            :deleting-key="deletingStorageKey"
+            @refresh="refreshPluginStorage"
+            @save="saveStorageEntry"
+            @delete="deleteStorageEntry"
+          />
           <PluginCronList
             class="detail-span"
             :jobs="selectedCronJobs"
@@ -167,14 +177,17 @@ import PluginEventLog from '../components/plugin-management/PluginEventLog.vue'
 import PluginRouteList from '../components/plugin-management/PluginRouteList.vue'
 import PluginScopeEditor from '../components/plugin-management/PluginScopeEditor.vue'
 import PluginSidebar from '../components/plugin-management/PluginSidebar.vue'
+import PluginStoragePanel from '../components/plugin-management/PluginStoragePanel.vue'
 import { usePluginManagement } from '../composables/use-plugin-management'
 
 const {
   loading,
   detailLoading,
   savingConfig,
+  savingStorage,
   savingScope,
   runningAction,
+  deletingStorageKey,
   deleting,
   error,
   notice,
@@ -186,13 +199,17 @@ const {
   scopeSettings,
   healthSnapshot,
   eventLogs,
+  storageEntries,
   canDeleteSelected,
   refreshAll,
   selectPlugin,
   refreshSelectedDetails,
+  refreshPluginStorage,
   saveConfig,
+  saveStorageEntry,
   saveScope,
   runAction,
+  deleteStorageEntry,
   deleteSelectedPlugin,
 } = usePluginManagement()
 
