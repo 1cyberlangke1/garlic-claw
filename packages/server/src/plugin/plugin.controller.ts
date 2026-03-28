@@ -3,7 +3,8 @@ import type {
   PluginActionResult,
   PluginCapability,
   PluginConfigSnapshot,
-  PluginEventRecord,
+  PluginEventLevel,
+  PluginEventListResult,
   PluginHookDescriptor,
   PluginHealthSnapshot,
   PluginInfo,
@@ -177,10 +178,20 @@ export class PluginController {
   listPluginEvents(
     @Param('name') name: string,
     @Query('limit') limit?: string,
-  ): Promise<PluginEventRecord[]> {
+    @Query('level') level?: string,
+    @Query('type') type?: string,
+    @Query('keyword') keyword?: string,
+    @Query('cursor') cursor?: string,
+  ): Promise<PluginEventListResult> {
     return this.pluginService.listPluginEvents(
       name,
-      limit ? Number(limit) : undefined,
+      parsePluginEventQuery({
+        limit,
+        level,
+        type,
+        keyword,
+        cursor,
+      }),
     );
   }
 
@@ -313,4 +324,48 @@ function serializePluginHealth(
  */
 function resolvePersistedSupportedActions(): PluginActionName[] {
   return ['health-check'];
+}
+
+/**
+ * 解析插件事件日志查询参数。
+ * @param raw 原始查询参数
+ * @returns 归一化后的查询对象
+ */
+function parsePluginEventQuery(raw: {
+  limit?: string;
+  level?: string;
+  type?: string;
+  keyword?: string;
+  cursor?: string;
+}): {
+  limit?: number;
+  level?: PluginEventLevel;
+  type?: string;
+  keyword?: string;
+  cursor?: string;
+} {
+  const limit = raw.limit ? Number(raw.limit) : undefined;
+  if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
+    throw new BadRequestException('limit 必须是正整数');
+  }
+
+  let level: PluginEventLevel | undefined;
+  if (raw.level) {
+    if (raw.level !== 'info' && raw.level !== 'warn' && raw.level !== 'error') {
+      throw new BadRequestException('level 必须是 info / warn / error');
+    }
+    level = raw.level;
+  }
+
+  const type = raw.type?.trim() || undefined;
+  const keyword = raw.keyword?.trim() || undefined;
+  const cursor = raw.cursor?.trim() || undefined;
+
+  return {
+    ...(limit !== undefined ? { limit } : {}),
+    ...(level ? { level } : {}),
+    ...(type ? { type } : {}),
+    ...(keyword ? { keyword } : {}),
+    ...(cursor ? { cursor } : {}),
+  };
 }

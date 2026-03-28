@@ -1,6 +1,6 @@
 import type {
   PluginEventLevel,
-  PluginEventRecord,
+  PluginEventListResult,
   JsonObject,
   JsonValue,
   PluginCapability,
@@ -39,6 +39,17 @@ interface PluginEventInput {
   message: string;
   /** 可选附加上下文。 */
   metadata?: JsonObject;
+}
+
+/**
+ * 列出插件事件日志时使用的查询条件。
+ */
+interface ListPluginEventOptions {
+  limit?: number;
+  level?: PluginEventLevel;
+  type?: string;
+  keyword?: string;
+  cursor?: string;
 }
 
 /**
@@ -437,20 +448,27 @@ export class PluginService {
    */
   async listPluginEvents(
     name: string,
-    limit = 20,
-  ): Promise<PluginEventRecord[]> {
+    options: ListPluginEventOptions | number = 20,
+  ): Promise<PluginEventListResult> {
     const plugin = await this.findByNameOrThrow(name);
+    const normalized = this.normalizePluginEventOptions(options);
+    const cursorEvent = normalized.cursor
+      ? await this.resolvePluginEventCursor(plugin.id, normalized.cursor)
+      : null;
     const events = await this.prisma.pluginEvent.findMany({
-      where: {
-        pluginId: plugin.id,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: Math.max(1, limit),
+      where: this.buildPluginEventWhere(plugin.id, normalized, cursorEvent),
+      orderBy: [
+        {
+          createdAt: 'desc',
+        },
+        {
+          id: 'desc',
+        },
+      ],
+      take: normalized.limit + 1,
     });
-
-    return events.map((event) => ({
+    const hasMore = events.length > normalized.limit;
+    const items = (hasMore ? events.slice(0, normalized.limit) : events).map((event) => ({
       id: event.id,
       type: event.type,
       level: this.parseEventLevel(event.level),
@@ -458,6 +476,11 @@ export class PluginService {
       metadata: this.parseNullableJsonObject(event.metadataJson),
       createdAt: event.createdAt.toISOString(),
     }));
+
+    return {
+      items,
+      nextCursor: hasMore ? events[normalized.limit]?.id ?? null : null,
+    };
   }
 
   /**
@@ -949,6 +972,115 @@ export class PluginService {
         metadataJson: metadata ? JSON.stringify(metadata) : null,
       },
     });
+  }
+
+  /**
+   * 归一化事件日志查询选项。
+   * @param options 查询选项或旧版 limit 数字
+   * @returns 归一化后的查询条件
+   */
+  private normalizePluginEventOptions(
+    options: ListPluginEventOptions | number,
+  ): Required<Pick<ListPluginEventOptions, 'limit'>> & Omit<ListPluginEventOptions, 'limit'> {
+    const raw = typeof options === 'number' ? { limit: options } : options;
+    const limit = Math.min(200, Math.max(1, raw.limit ?? 20));
+
+    return {
+      limit,
+      ...(raw.level ? { level: raw.level } : {}),
+      ...(raw.type?.trim() ? { type: raw.type.trim() } : {}),
+      ...(raw.keyword?.trim() ? { keyword: raw.keyword.trim() } : {}),
+      ...(raw.cursor?.trim() ? { cursor: raw.cursor.trim() } : {}),
+    };
+  }
+
+  /**
+   * 解析事件日志游标。
+   * @param pluginId 插件主键
+   * @param cursor 游标事件 ID
+   * @returns 对应的事件记录；无效时抛错
+   */
+  private async resolvePluginEventCursor(
+    pluginId: string,
+    cursor: string,
+  ): Promise<{ id: string; createdAt: Date }> {
+    const event = await this.prisma.pluginEvent.findUnique({
+      where: {
+        id: cursor,
+      },
+    });
+    if (!event || event.pluginId !== pluginId) {
+      throw new BadRequestException('无效的事件游标');
+    }
+
+    return {
+      id: event.id,
+      createdAt: event.createdAt,
+    };
+  }
+
+  /**
+   * 构建事件日志查询条件。
+   * @param pluginId 插件主键
+   * @param options 归一化查询条件
+   * @param cursorEvent 游标事件
+   * @returns Prisma where 条件
+   */
+  private buildPluginEventWhere(
+    pluginId: string,
+    options: ReturnType<PluginService['normalizePluginEventOptions']>,
+    cursorEvent: { id: string; createdAt: Date } | null,
+  ): Record<string, unknown> {
+    const where: Record<string, unknown> = {
+      pluginId,
+    };
+
+    if (options.level) {
+      where.level = options.level;
+    }
+    if (options.type) {
+      where.type = options.type;
+    }
+    if (options.keyword) {
+      where.OR = [
+        {
+          type: {
+            contains: options.keyword,
+          },
+        },
+        {
+          message: {
+            contains: options.keyword,
+          },
+        },
+        {
+          metadataJson: {
+            contains: options.keyword,
+          },
+        },
+      ];
+    }
+    if (cursorEvent) {
+      where.AND = [
+        {
+          OR: [
+            {
+              createdAt: {
+                lt: cursorEvent.createdAt,
+              },
+            },
+            {
+              createdAt: cursorEvent.createdAt,
+              id: {
+                lt: cursorEvent.id,
+              },
+            },
+          ],
+        },
+      ];
+    }
+
+    return where;
   }
 
   /**

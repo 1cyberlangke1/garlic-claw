@@ -23,6 +23,7 @@ describe('PluginService', () => {
     pluginEvent: {
       create: jest.fn(),
       findMany: jest.fn(),
+      findUnique: jest.fn(),
     },
   };
 
@@ -464,18 +465,21 @@ describe('PluginService', () => {
     });
     await expect(
       (service as any).listPluginEvents('builtin.memory-context', 10),
-    ).resolves.toEqual([
-      {
-        id: 'event-1',
-        type: 'tool:error',
-        level: 'error',
-        message: 'memory.search timeout',
-        metadata: {
-          toolName: 'memory.search',
+    ).resolves.toEqual({
+      items: [
+        {
+          id: 'event-1',
+          type: 'tool:error',
+          level: 'error',
+          message: 'memory.search timeout',
+          metadata: {
+            toolName: 'memory.search',
+          },
+          createdAt: '2026-03-27T12:00:00.000Z',
         },
-        createdAt: '2026-03-27T12:00:00.000Z',
-      },
-    ]);
+      ],
+      nextCursor: null,
+    });
 
     expect(prisma.plugin.update).toHaveBeenCalledWith({
       where: {
@@ -498,6 +502,117 @@ describe('PluginService', () => {
           toolName: 'memory.search',
         }),
       },
+    });
+  });
+
+  it('filters and paginates plugin event logs on the server side', async () => {
+    prisma.plugin.findUnique.mockResolvedValue(
+      createPluginRecord({
+        id: 'plugin-1',
+        name: 'builtin.memory-context',
+      }),
+    );
+    prisma.pluginEvent.findMany.mockResolvedValue([
+      createPluginEventRecord({
+        id: 'event-3',
+        pluginId: 'plugin-1',
+        type: 'tool:error',
+        level: 'error',
+        message: 'memory.search timeout',
+        metadataJson: JSON.stringify({
+          toolName: 'memory.search',
+        }),
+        createdAt: new Date('2026-03-27T12:03:00.000Z'),
+      }),
+      createPluginEventRecord({
+        id: 'event-2',
+        pluginId: 'plugin-1',
+        type: 'tool:error',
+        level: 'error',
+        message: 'memory.search timeout again',
+        metadataJson: JSON.stringify({
+          toolName: 'memory.search',
+        }),
+        createdAt: new Date('2026-03-27T12:02:00.000Z'),
+      }),
+      createPluginEventRecord({
+        id: 'event-1',
+        pluginId: 'plugin-1',
+        type: 'tool:error',
+        level: 'error',
+        message: 'memory.search timeout older',
+        metadataJson: JSON.stringify({
+          toolName: 'memory.search',
+        }),
+        createdAt: new Date('2026-03-27T12:01:00.000Z'),
+      }),
+    ]);
+
+    await expect(
+      (service as any).listPluginEvents('builtin.memory-context', {
+        limit: 2,
+        level: 'error',
+        type: 'tool:error',
+        keyword: 'memory.search',
+      }),
+    ).resolves.toEqual({
+      items: [
+        {
+          id: 'event-3',
+          type: 'tool:error',
+          level: 'error',
+          message: 'memory.search timeout',
+          metadata: {
+            toolName: 'memory.search',
+          },
+          createdAt: '2026-03-27T12:03:00.000Z',
+        },
+        {
+          id: 'event-2',
+          type: 'tool:error',
+          level: 'error',
+          message: 'memory.search timeout again',
+          metadata: {
+            toolName: 'memory.search',
+          },
+          createdAt: '2026-03-27T12:02:00.000Z',
+        },
+      ],
+      nextCursor: 'event-1',
+    });
+
+    expect(prisma.pluginEvent.findMany).toHaveBeenCalledWith({
+      where: {
+        pluginId: 'plugin-1',
+        level: 'error',
+        type: 'tool:error',
+        OR: [
+          {
+            type: {
+              contains: 'memory.search',
+            },
+          },
+          {
+            message: {
+              contains: 'memory.search',
+            },
+          },
+          {
+            metadataJson: {
+              contains: 'memory.search',
+            },
+          },
+        ],
+      },
+      orderBy: [
+        {
+          createdAt: 'desc',
+        },
+        {
+          id: 'desc',
+        },
+      ],
+      take: 3,
     });
   });
 

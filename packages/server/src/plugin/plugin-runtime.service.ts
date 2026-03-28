@@ -410,17 +410,24 @@ export class PluginRuntimeService {
       };
     }
 
-    try {
-      return await this.runWithTimeout(
-        Promise.resolve(record.transport.checkHealth()),
-        5000,
-        `插件 ${pluginId} 健康检查超时`,
-      );
-    } catch {
-      return {
-        ok: false,
-      };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await this.runWithTimeout(
+          Promise.resolve(record.transport.checkHealth()),
+          5000,
+          `插件 ${pluginId} 健康检查超时`,
+        );
+        if (result.ok) {
+          return result;
+        }
+      } catch {
+        // 健康检查允许做一次轻量重试，以过滤瞬时网络抖动。
+      }
     }
+
+    return {
+      ok: false,
+    };
   }
 
   /**

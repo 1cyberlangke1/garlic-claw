@@ -23,7 +23,7 @@
           class="ghost-button"
           data-test="event-refresh"
           :disabled="loading"
-          @click="emitRefresh(selectedLimit)"
+          @click="emitRefresh()"
         >
           {{ loading ? '刷新中...' : '刷新日志' }}
         </button>
@@ -40,13 +40,22 @@
           <option value="error">error</option>
         </select>
       </label>
+      <label class="control-field">
+        <span>类型</span>
+        <input
+          v-model="typeFilter"
+          data-test="event-type-filter"
+          type="text"
+          placeholder="如 tool:error"
+        >
+      </label>
       <label class="control-field control-span">
-        <span>筛选</span>
+        <span>关键词</span>
         <input
           v-model="searchFilter"
           data-test="event-search-filter"
           type="text"
-          placeholder="按 type / message / metadata 筛选"
+          placeholder="按 message / metadata 搜索"
         >
       </label>
     </div>
@@ -55,11 +64,8 @@
     <div v-else-if="events.length === 0" class="section-empty">
       当前还没有事件日志。
     </div>
-    <div v-else-if="filteredEvents.length === 0" class="section-empty">
-      当前筛选下没有事件日志。
-    </div>
     <div v-else class="event-list">
-      <article v-for="event in filteredEvents" :key="event.id" class="event-item">
+      <article v-for="event in events" :key="event.id" class="event-item">
         <div class="event-top">
           <span class="event-level" :class="event.level">{{ event.level }}</span>
           <strong>{{ event.type }}</strong>
@@ -69,64 +75,72 @@
         <pre v-if="event.metadata" class="event-metadata">{{ JSON.stringify(event.metadata, null, 2) }}</pre>
       </article>
     </div>
+    <button
+      v-if="nextCursor"
+      type="button"
+      class="ghost-button load-more-button"
+      data-test="event-load-more"
+      :disabled="loading"
+      @click="emitLoadMore()"
+    >
+      {{ loading ? '加载中...' : '加载更多' }}
+    </button>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import type { PluginEventRecord } from '@garlic-claw/shared'
+import { ref, watch } from 'vue'
+import type { PluginEventQuery, PluginEventRecord } from '@garlic-claw/shared'
 
 const props = defineProps<{
   events: PluginEventRecord[]
   loading: boolean
-  limit: number
+  query: PluginEventQuery
+  nextCursor: string | null
 }>()
 
 const emit = defineEmits<{
-  refresh: [limit: number]
+  refresh: [query: PluginEventQuery]
+  loadMore: [query: PluginEventQuery]
 }>()
 
 const limitOptions = [20, 50, 100, 200]
-const selectedLimit = ref(props.limit)
+const selectedLimit = ref(props.query.limit ?? 50)
 const levelFilter = ref<'all' | 'info' | 'warn' | 'error'>('all')
+const typeFilter = ref('')
 const searchFilter = ref('')
 
-const filteredEvents = computed(() => {
-  const keyword = searchFilter.value.trim().toLowerCase()
-
-  return props.events.filter((event) => {
-    if (levelFilter.value !== 'all' && event.level !== levelFilter.value) {
-      return false
-    }
-    if (!keyword) {
-      return true
-    }
-
-    const haystack = [
-      event.type,
-      event.message,
-      event.metadata ? JSON.stringify(event.metadata) : '',
-    ]
-      .join(' ')
-      .toLowerCase()
-
-    return haystack.includes(keyword)
-  })
-})
-
 watch(
-  () => props.limit,
-  (value) => {
-    selectedLimit.value = value
+  () => props.query,
+  (query) => {
+    selectedLimit.value = query.limit ?? 50
+    levelFilter.value = query.level ?? 'all'
+    typeFilter.value = query.type ?? ''
+    searchFilter.value = query.keyword ?? ''
   },
+  { immediate: true },
 )
 
 /**
  * 刷新事件日志列表。
- * @param limit 日志条数上限
+ * @param query 查询条件
  */
-function emitRefresh(limit: number) {
-  emit('refresh', limit)
+function emitRefresh(query = buildQuery()) {
+  emit('refresh', query)
+}
+
+/**
+ * 继续加载下一页事件日志。
+ */
+function emitLoadMore() {
+  if (!props.nextCursor) {
+    return
+  }
+
+  emit('loadMore', {
+    ...buildQuery(),
+    cursor: props.nextCursor,
+  })
 }
 
 /**
@@ -136,7 +150,7 @@ function emitRefresh(limit: number) {
 function handleLimitChange(event: Event) {
   const nextValue = Number((event.target as HTMLSelectElement).value)
   selectedLimit.value = nextValue
-  emitRefresh(nextValue)
+  emitRefresh(buildQuery())
 }
 
 /**
@@ -146,6 +160,19 @@ function handleLimitChange(event: Event) {
  */
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
+}
+
+/**
+ * 根据当前表单状态构建服务端查询参数。
+ * @returns 查询条件
+ */
+function buildQuery(): PluginEventQuery {
+  return {
+    limit: selectedLimit.value,
+    ...(levelFilter.value !== 'all' ? { level: levelFilter.value } : {}),
+    ...(typeFilter.value.trim() ? { type: typeFilter.value.trim() } : {}),
+    ...(searchFilter.value.trim() ? { keyword: searchFilter.value.trim() } : {}),
+  }
 }
 </script>
 
@@ -189,7 +216,7 @@ function formatTime(value: string): string {
 }
 
 .filter-grid {
-  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-columns: 160px 200px minmax(0, 1fr);
 }
 
 .control-field {
@@ -209,6 +236,10 @@ function formatTime(value: string): string {
 .ghost-button {
   background: transparent;
   border: 1px solid var(--border);
+}
+
+.load-more-button {
+  justify-self: start;
 }
 
 .event-list {

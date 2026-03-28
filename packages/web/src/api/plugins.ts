@@ -5,7 +5,8 @@ import type {
   PluginActionResult,
   PluginConfigSnapshot,
   PluginCronJobSummary,
-  PluginEventRecord,
+  PluginEventListResult,
+  PluginEventQuery,
   PluginHealthSnapshot,
   PluginInfo,
   PluginRouteMethod,
@@ -50,9 +51,30 @@ export function getPluginHealth(name: string) {
   return request<PluginHealthSnapshot>(`/plugins/${encodeURIComponent(name)}/health`)
 }
 
-export function listPluginEvents(name: string, limit = 50) {
-  return request<PluginEventRecord[]>(
-    `/plugins/${encodeURIComponent(name)}/events?limit=${limit}`,
+export function listPluginEvents(
+  name: string,
+  query: PluginEventQuery = {},
+) {
+  const search = new URLSearchParams()
+  if (query.limit !== undefined) {
+    search.set('limit', String(query.limit))
+  }
+  if (query.level) {
+    search.set('level', query.level)
+  }
+  if (query.type?.trim()) {
+    search.set('type', query.type.trim())
+  }
+  if (query.keyword?.trim()) {
+    search.set('keyword', query.keyword.trim())
+  }
+  if (query.cursor?.trim()) {
+    search.set('cursor', query.cursor.trim())
+  }
+
+  const querySuffix = search.size > 0 ? `?${search.toString()}` : ''
+  return request<PluginEventListResult>(
+    `/plugins/${encodeURIComponent(name)}/events${querySuffix}`,
   )
 }
 

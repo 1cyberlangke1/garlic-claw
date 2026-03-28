@@ -295,18 +295,21 @@ describe('PluginController', () => {
       lastSuccessAt: '2026-03-27T11:58:00.000Z',
       lastCheckedAt: '2026-03-27T12:00:00.000Z',
     });
-    pluginService.listPluginEvents.mockResolvedValue([
-      {
-        id: 'event-1',
-        type: 'tool:error',
-        level: 'error',
-        message: 'memory.search timeout',
-        metadata: {
-          toolName: 'memory.search',
+    pluginService.listPluginEvents.mockResolvedValue({
+      items: [
+        {
+          id: 'event-1',
+          type: 'tool:error',
+          level: 'error',
+          message: 'memory.search timeout',
+          metadata: {
+            toolName: 'memory.search',
+          },
+          createdAt: '2026-03-27T12:00:00.000Z',
         },
-        createdAt: '2026-03-27T12:00:00.000Z',
-      },
-    ]);
+      ],
+      nextCursor: 'event-1',
+    });
 
     await expect(
       (controller as any).getPluginHealth('builtin.memory-context'),
@@ -321,18 +324,53 @@ describe('PluginController', () => {
     });
     await expect(
       (controller as any).listPluginEvents('builtin.memory-context', '50'),
-    ).resolves.toEqual([
-      {
-        id: 'event-1',
-        type: 'tool:error',
-        level: 'error',
-        message: 'memory.search timeout',
-        metadata: {
-          toolName: 'memory.search',
+    ).resolves.toEqual({
+      items: [
+        {
+          id: 'event-1',
+          type: 'tool:error',
+          level: 'error',
+          message: 'memory.search timeout',
+          metadata: {
+            toolName: 'memory.search',
+          },
+          createdAt: '2026-03-27T12:00:00.000Z',
         },
-        createdAt: '2026-03-27T12:00:00.000Z',
+      ],
+      nextCursor: 'event-1',
+    });
+  });
+
+  it('passes event log filters and cursor to the plugin service', async () => {
+    pluginService.listPluginEvents.mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    });
+
+    await expect(
+      (controller as any).listPluginEvents(
+        'builtin.memory-context',
+        '100',
+        'error',
+        'tool:error',
+        'memory.search',
+        'event-2',
+      ),
+    ).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+
+    expect(pluginService.listPluginEvents).toHaveBeenCalledWith(
+      'builtin.memory-context',
+      {
+        limit: 100,
+        level: 'error',
+        type: 'tool:error',
+        keyword: 'memory.search',
+        cursor: 'event-2',
       },
-    ]);
+    );
   });
 
   it('deletes host cron jobs through the cron service', async () => {

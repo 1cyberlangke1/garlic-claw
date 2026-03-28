@@ -169,6 +169,21 @@ export interface PluginEventRecord {
   createdAt: string;
 }
 
+/** 插件事件日志查询条件。 */
+export interface PluginEventQuery {
+  limit?: number;
+  level?: PluginEventLevel;
+  type?: string;
+  keyword?: string;
+  cursor?: string;
+}
+
+/** 插件事件日志分页结果。 */
+export interface PluginEventListResult {
+  items: PluginEventRecord[];
+  nextCursor: string | null;
+}
+
 /** 插件持久化 KV 条目。 */
 export interface PluginStorageEntry {
   key: string;

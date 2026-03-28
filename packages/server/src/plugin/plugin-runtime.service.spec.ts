@@ -366,7 +366,31 @@ describe('PluginRuntimeService', () => {
       ok: false,
     });
 
-    expect(checkHealth).toHaveBeenCalledTimes(1);
+    expect(checkHealth).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries one more time when governance health checks fail transiently', async () => {
+    const checkHealth = jest.fn()
+      .mockRejectedValueOnce(new Error('temporary network error'))
+      .mockResolvedValueOnce({
+        ok: true,
+      });
+
+    await service.registerPlugin({
+      manifest: builtinManifest,
+      runtimeKind: 'builtin',
+      transport: createTransport({
+        checkHealth,
+      }),
+    });
+
+    await expect(
+      (service as any).checkPluginHealth('builtin.memory-tools'),
+    ).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(checkHealth).toHaveBeenCalledTimes(2);
   });
 
   it('touches plugin heartbeat timestamps through the plugin service', async () => {

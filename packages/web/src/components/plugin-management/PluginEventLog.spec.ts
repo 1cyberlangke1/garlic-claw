@@ -3,23 +3,46 @@ import { describe, expect, it } from 'vitest'
 import PluginEventLog from './PluginEventLog.vue'
 
 describe('PluginEventLog', () => {
-  it('emits refresh with the selected limit', async () => {
+  it('emits refresh with the selected server-side filters', async () => {
     const wrapper = mount(PluginEventLog, {
       props: {
         events: [],
         loading: false,
-        limit: 50,
+        query: {
+          limit: 50,
+        },
+        nextCursor: null,
       },
     })
 
     await wrapper.get('[data-test="event-limit"]').setValue('100')
-    expect(wrapper.emitted('refresh')).toEqual([[100]])
+    expect(wrapper.emitted('refresh')).toEqual([[
+      {
+        limit: 100,
+      },
+    ]])
+
+    await wrapper.get('[data-test="event-type-filter"]').setValue('tool:error')
+    await wrapper.get('[data-test="event-search-filter"]').setValue('memory.search')
 
     await wrapper.get('[data-test="event-refresh"]').trigger('click')
-    expect(wrapper.emitted('refresh')).toEqual([[100], [100]])
+    expect(wrapper.emitted('refresh')).toEqual([
+      [
+        {
+          limit: 100,
+        },
+      ],
+      [
+        {
+          limit: 100,
+          type: 'tool:error',
+          keyword: 'memory.search',
+        },
+      ],
+    ])
   })
 
-  it('filters events by level and search text', async () => {
+  it('emits load-more with the current query and cursor', async () => {
     const wrapper = mount(PluginEventLog, {
       props: {
         events: [
@@ -45,16 +68,24 @@ describe('PluginEventLog', () => {
           },
         ],
         loading: false,
-        limit: 50,
+        query: {
+          limit: 50,
+        },
+        nextCursor: 'event-2',
       },
     })
 
     await wrapper.get('[data-test="event-level-filter"]').setValue('error')
-    expect(wrapper.text()).toContain('tool:timeout')
-    expect(wrapper.text()).not.toContain('plugin:config')
-
     await wrapper.get('[data-test="event-search-filter"]').setValue('memory.search')
-    expect(wrapper.text()).toContain('memory.search timeout')
-    expect(wrapper.text()).not.toContain('缺少 limit 配置')
+    await wrapper.get('[data-test="event-load-more"]').trigger('click')
+
+    expect(wrapper.emitted('loadMore')).toEqual([[
+      {
+        limit: 50,
+        level: 'error',
+        keyword: 'memory.search',
+        cursor: 'event-2',
+      },
+    ]])
   })
 })

@@ -4,6 +4,7 @@ import type {
   PluginConfigSnapshot,
   PluginCronJobSummary,
   PluginEventRecord,
+  PluginEventQuery,
   PluginHealthSnapshot,
   PluginInfo,
   PluginScopeSettings,
@@ -43,7 +44,10 @@ export function usePluginManagement() {
   const eventLogs = shallowRef<PluginEventRecord[]>([])
   const storageEntries = shallowRef<PluginStorageEntry[]>([])
   const storagePrefix = ref('')
-  const eventLimit = ref(50)
+  const eventQuery = shallowRef<PluginEventQuery>({
+    limit: 50,
+  })
+  const eventNextCursor = ref<string | null>(null)
 
   const selectedPlugin = computed<PluginInfo | null>(() => {
     const found = plugins.value.find(
@@ -117,14 +121,15 @@ export function usePluginManagement() {
         api.getPluginCrons(pluginName),
         api.getPluginScope(pluginName),
         api.getPluginHealth(pluginName),
-        api.listPluginEvents(pluginName, eventLimit.value),
+        api.listPluginEvents(pluginName, eventQuery.value),
         api.listPluginStorage(pluginName, storagePrefix.value || undefined),
       ])
       configSnapshot.value = config
       cronJobs.value = jobs
       scopeSettings.value = scope
       healthSnapshot.value = health
-      eventLogs.value = events
+      eventLogs.value = events.items
+      eventNextCursor.value = events.nextCursor
       storageEntries.value = storage
     } catch (caughtError) {
       error.value = toErrorMessage(caughtError, '加载插件详情失败')
@@ -134,23 +139,55 @@ export function usePluginManagement() {
   }
 
   /**
-   * 按当前条数限制刷新插件事件日志。
-   * @param limit 可选日志条数上限
+   * 按当前筛选条件刷新插件事件日志。
+   * @param query 可选查询条件
    */
-  async function refreshPluginEvents(limit = eventLimit.value) {
+  async function refreshPluginEvents(query: PluginEventQuery = eventQuery.value) {
     if (!selectedPlugin.value) {
       eventLogs.value = []
-      eventLimit.value = limit
+      eventQuery.value = normalizeEventQuery(query)
+      eventNextCursor.value = null
       return
     }
 
     eventLoading.value = true
     error.value = null
     try {
-      eventLimit.value = limit
-      eventLogs.value = await api.listPluginEvents(selectedPlugin.value.name, limit)
+      const normalized = normalizeEventQuery(query)
+      const result = await api.listPluginEvents(selectedPlugin.value.name, normalized)
+      eventQuery.value = normalized
+      eventLogs.value = result.items
+      eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
       error.value = toErrorMessage(caughtError, '加载插件事件日志失败')
+    } finally {
+      eventLoading.value = false
+    }
+  }
+
+  /**
+   * 继续加载下一页插件事件日志。
+   * @param query 可选分页查询；缺省时使用当前状态
+   */
+  async function loadMorePluginEvents(query?: PluginEventQuery) {
+    const normalized = normalizeEventQuery(query ?? eventQuery.value)
+    const cursor = query?.cursor ?? eventNextCursor.value
+    if (!selectedPlugin.value || !cursor) {
+      return
+    }
+
+    eventLoading.value = true
+    error.value = null
+    try {
+      const result = await api.listPluginEvents(selectedPlugin.value.name, {
+        ...normalized,
+        cursor,
+      })
+      eventQuery.value = normalized
+      eventLogs.value = dedupeEventLogs([...eventLogs.value, ...result.items])
+      eventNextCursor.value = result.nextCursor
+    } catch (caughtError) {
+      error.value = toErrorMessage(caughtError, '加载更多插件事件日志失败')
     } finally {
       eventLoading.value = false
     }
@@ -367,6 +404,7 @@ export function usePluginManagement() {
     scopeSettings.value = null
     healthSnapshot.value = null
     eventLogs.value = []
+    eventNextCursor.value = null
     storageEntries.value = []
   }
 
@@ -399,13 +437,15 @@ export function usePluginManagement() {
     scopeSettings,
     healthSnapshot,
     eventLogs,
-    eventLimit,
+    eventQuery,
+    eventNextCursor,
     storageEntries,
     canDeleteSelected,
     refreshAll,
     selectPlugin,
     refreshSelectedDetails,
     refreshPluginEvents,
+    loadMorePluginEvents,
     refreshPluginStorage,
     deleteCronJob,
     saveConfig,
@@ -415,6 +455,36 @@ export function usePluginManagement() {
     deleteStorageEntry,
     deleteSelectedPlugin,
   }
+}
+
+/**
+ * 归一化事件日志查询条件。
+ * @param query 原始查询
+ * @returns 归一化后的查询对象
+ */
+function normalizeEventQuery(query: PluginEventQuery): PluginEventQuery {
+  return {
+    limit: Math.min(200, Math.max(1, query.limit ?? 50)),
+    ...(query.level ? { level: query.level } : {}),
+    ...(query.type?.trim() ? { type: query.type.trim() } : {}),
+    ...(query.keyword?.trim() ? { keyword: query.keyword.trim() } : {}),
+  }
+}
+
+/**
+ * 以事件 ID 去重并保持原顺序。
+ * @param events 事件列表
+ * @returns 去重后的列表
+ */
+function dedupeEventLogs(events: PluginEventRecord[]): PluginEventRecord[] {
+  const seen = new Set<string>()
+  return events.filter((event) => {
+    if (seen.has(event.id)) {
+      return false
+    }
+    seen.add(event.id)
+    return true
+  })
 }
 
 /**

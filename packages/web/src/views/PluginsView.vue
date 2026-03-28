@@ -139,8 +139,10 @@
             class="detail-span"
             :events="eventLogs"
             :loading="detailLoading || eventLoading"
-            :limit="eventLimit"
+            :query="eventQuery"
+            :next-cursor="eventNextCursor"
             @refresh="refreshPluginEvents"
+            @load-more="loadMorePluginEvents"
           />
           <PluginStoragePanel
             class="detail-span"
@@ -207,13 +209,15 @@ const {
   scopeSettings,
   healthSnapshot,
   eventLogs,
-  eventLimit,
+  eventQuery,
+  eventNextCursor,
   storageEntries,
   canDeleteSelected,
   refreshAll,
   selectPlugin,
   refreshSelectedDetails,
   refreshPluginEvents,
+  loadMorePluginEvents,
   refreshPluginStorage,
   deleteCronJob,
   saveConfig,
