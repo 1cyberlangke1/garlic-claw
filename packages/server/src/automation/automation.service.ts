@@ -1,4 +1,11 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  forwardRef,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import type { ActionConfig, AutomationInfo, TriggerConfig } from '@garlic-claw/shared';
 import type { JsonValue } from '../common/types/json-value';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
@@ -12,11 +19,12 @@ interface CronEntry {
 @Injectable()
 export class AutomationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AutomationService.name);
-  private cronJobs = new Map<string, CronEntry>();
+  private readonly cronJobs = new Map<string, CronEntry>();
 
   constructor(
-    private prisma: PrismaService,
-    private pluginRuntime: PluginRuntimeService,
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => PluginRuntimeService))
+    private readonly pluginRuntime: PluginRuntimeService,
   ) {}
 
   async onModuleInit() {
@@ -79,15 +87,15 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     const automation = userId
       ? await this.prisma.automation.findFirst({
           where: { id, userId },
-          include: {
-            logs: { orderBy: { createdAt: 'desc' }, take: 20 },
-          },
+      include: {
+        logs: { orderBy: { createdAt: 'desc' }, take: 20 },
+      },
         })
       : await this.prisma.automation.findUnique({
           where: { id },
-          include: {
-            logs: { orderBy: { createdAt: 'desc' }, take: 20 },
-          },
+      include: {
+        logs: { orderBy: { createdAt: 'desc' }, take: 20 },
+      },
         });
     if (!automation) {
       return null;
@@ -219,9 +227,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       data: { lastRunAt: new Date() },
     });
 
-    this.logger.log(
-      `自动化 "${automationRecord.name}" 已执行：${status}`,
-    );
+    this.logger.log(`自动化 "${automationRecord.name}" 已执行：${status}`);
 
     return {
       status,
@@ -237,11 +243,11 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     });
 
     let scheduled = 0;
-    for (const a of automations) {
-      const trigger = JSON.parse(a.trigger) as TriggerConfig;
+    for (const automation of automations) {
+      const trigger = JSON.parse(automation.trigger) as TriggerConfig;
       if (trigger.type === 'cron' && trigger.cron) {
-        this.scheduleCron(a.id, trigger.cron);
-        scheduled++;
+        this.scheduleCron(automation.id, trigger.cron);
+        scheduled += 1;
       }
     }
 
@@ -253,7 +259,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
   private scheduleCron(automationId: string, cronExpr: string) {
     this.unscheduleCron(automationId);
 
-    // 解析简单的时间间隔表达式：支持 "every Xm"、"every Xh" 或原始毫秒值
+    // 解析简单的时间间隔表达式：支持 "30s"、"5m"、"1h"
     const intervalMs = this.parseCronInterval(cronExpr);
     if (!intervalMs) {
       this.logger.warn(`自动化 ${automationId} 的 cron 表达式无效：${cronExpr}`);
@@ -261,8 +267,8 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     }
 
     const timer = setInterval(() => {
-      this.executeAutomation(automationId).catch((err) => {
-        this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${err.message}`);
+      this.executeAutomation(automationId).catch((error: Error) => {
+        this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${error.message}`);
       });
     }, intervalMs);
 
@@ -280,38 +286,36 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 解析简单的时间间隔表达式：
-   * - "30s" → 30000
-   * - "5m" → 300000
-   * - "1h" → 3600000
-   * - "30m" → 1800000
+   * - "30s" -> 30000
+   * - "5m" -> 300000
+   * - "1h" -> 3600000
    * 无效则返回 null。最小值 10 秒。
    */
   private parseCronInterval(expr: string): number | null {
-    const match = expr.trim().match(/^(\d+)\s*(s|m|h)$/i)
+    const match = expr.trim().match(/^(\d+)\s*(s|m|h)$/i);
     if (!match) {
-      return null
+      return null;
     }
 
     const value = parseInt(match[1], 10);
     const unit = match[2].toLowerCase();
 
-    let ms: number;
+    let milliseconds: number;
     switch (unit) {
       case 's':
-        ms = value * 1000;
+        milliseconds = value * 1000;
         break;
       case 'm':
-        ms = value * 60 * 1000;
+        milliseconds = value * 60 * 1000;
         break;
       case 'h':
-        ms = value * 60 * 60 * 1000;
+        milliseconds = value * 60 * 60 * 1000;
         break;
       default:
-        return null
+        return null;
     }
 
-    // 最小 10 秒以防止滥用
-    return ms >= 10000 ? ms : null;
+    return milliseconds >= 10000 ? milliseconds : null;
   }
 
   /** 获取特定自动化的日志 */

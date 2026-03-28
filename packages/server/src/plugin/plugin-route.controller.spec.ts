@@ -76,6 +76,50 @@ describe('PluginRouteController', () => {
     expect(res.setHeader).toHaveBeenCalledWith('x-plugin-route', 'ok');
     expect(res.setHeader).not.toHaveBeenCalledWith('set-cookie', 'session=1');
   });
+
+  it('supports named wildcard params produced by the route converter', async () => {
+    pluginRuntime.invokeRoute.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        ok: true,
+      },
+    });
+
+    const res = createResponseStub();
+    const req = {
+      method: 'GET',
+      params: {
+        path: ['inspect', 'context'],
+      },
+      headers: {},
+      body: undefined,
+    };
+
+    await expect(
+      controller.handleRoute(
+        'user-1',
+        'builtin.route-inspector',
+        {},
+        req as never,
+        res as never,
+      ),
+    ).resolves.toEqual({
+      ok: true,
+    });
+
+    expect(pluginRuntime.invokeRoute).toHaveBeenCalledWith({
+      pluginId: 'builtin.route-inspector',
+      request: expect.objectContaining({
+        path: 'inspect/context',
+      }),
+      context: {
+        source: 'http-route',
+        userId: 'user-1',
+        conversationId: undefined,
+      },
+    });
+  });
 });
 
 /**

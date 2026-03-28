@@ -83,8 +83,24 @@ export class PluginRouteController {
  * @returns 去掉首尾斜杠后的 Route 路径
  */
 function readWildcardPath(req: Request): string {
-  const raw = typeof req.params?.[0] === 'string' ? req.params[0] : '';
-  return raw.trim().replace(/^\/+|\/+$/g, '');
+  const legacyPath = req.params?.[0];
+  if (typeof legacyPath === 'string' && legacyPath.trim()) {
+    return normalizeRoutePath(legacyPath);
+  }
+
+  const namedPath = req.params?.path;
+  if (typeof namedPath === 'string' && namedPath.trim()) {
+    return normalizeRoutePath(namedPath);
+  }
+  if (Array.isArray(namedPath) && namedPath.length > 0) {
+    return normalizeRoutePath(namedPath.join('/'));
+  }
+
+  return '';
+}
+
+function normalizeRoutePath(routePath: string): string {
+  return routePath.trim().replace(/^\/+|\/+$/g, '');
 }
 
 /**
