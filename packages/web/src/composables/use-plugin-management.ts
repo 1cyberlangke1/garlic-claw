@@ -128,6 +128,9 @@ export function usePluginManagement() {
       cronJobs.value = jobs
       scopeSettings.value = scope
       healthSnapshot.value = health
+      updatePluginSummary(pluginName, {
+        health,
+      })
       eventLogs.value = events.items
       eventNextCursor.value = events.nextCursor
       storageEntries.value = storage
@@ -414,6 +417,23 @@ export function usePluginManagement() {
   async function reloadPluginListSilently() {
     const nextPlugins = await api.listPlugins()
     plugins.value = nextPlugins
+  }
+
+  /**
+   * 回写单个插件在侧栏中的摘要信息。
+   * @param pluginName 插件 ID
+   * @param patch 需要覆盖的摘要字段
+   */
+  function updatePluginSummary(
+    pluginName: string,
+    patch: Partial<PluginInfo>,
+  ) {
+    plugins.value = plugins.value.map((plugin) => plugin.name === pluginName
+      ? {
+        ...plugin,
+        ...patch,
+      }
+      : plugin)
   }
 
   return {
