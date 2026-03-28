@@ -39,6 +39,13 @@
             {{ runtimePressureLabel(plugin) }}
           </span>
         </div>
+        <p
+          v-if="pluginIssueSummary(plugin)"
+          class="plugin-item-issue"
+          :class="issueClass(plugin)"
+        >
+          {{ pluginIssueSummary(plugin) }}
+        </p>
         <p class="plugin-item-desc">{{ plugin.description ?? '未填写描述' }}</p>
       </button>
     </div>
@@ -126,6 +133,38 @@ function isPluginBusy(plugin: PluginInfo): boolean {
 }
 
 /**
+ * 生成插件当前最值得优先关注的问题摘要。
+ * @param plugin 插件摘要
+ * @returns 问题摘要；无问题时返回 null
+ */
+function pluginIssueSummary(plugin: PluginInfo): string | null {
+  const pressure = plugin.health?.runtimePressure
+  if (pressure && isPluginBusy(plugin)) {
+    return `当前并发已打满（${pressure.activeExecutions} / ${pressure.maxConcurrentExecutions}）`
+  }
+
+  const lastError = plugin.health?.lastError?.trim()
+  if (lastError && (plugin.health?.status === 'error' || plugin.health?.status === 'degraded')) {
+    return `最近错误：${truncateText(lastError, 72)}`
+  }
+
+  return null
+}
+
+/**
+ * 生成问题摘要对应的样式类。
+ * @param plugin 插件摘要
+ * @returns 样式类名
+ */
+function issueClass(plugin: PluginInfo): string {
+  if (isPluginBusy(plugin)) {
+    return 'busy'
+  }
+
+  return plugin.health?.status ?? 'unknown'
+}
+
+/**
  * 计算插件在侧栏中的排序优先级。
  * @param plugin 插件摘要
  * @returns 越小越靠前
@@ -147,6 +186,20 @@ function pluginSortWeight(plugin: PluginInfo): number {
     default:
       return 5
   }
+}
+
+/**
+ * 截断侧栏中的长文本，避免问题摘要撑爆布局。
+ * @param value 原始文本
+ * @param maxLength 最大长度
+ * @returns 截断后的文本
+ */
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  return `${value.slice(0, maxLength - 1)}...`
 }
 </script>
 
@@ -245,6 +298,18 @@ function pluginSortWeight(plugin: PluginInfo): number {
   color: var(--text-muted);
   font-size: 0.82rem;
   line-height: 1.5;
+}
+
+.plugin-item-issue {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #f0b24b;
+  overflow-wrap: anywhere;
+}
+
+.plugin-item-issue.busy,
+.plugin-item-issue.error {
+  color: var(--danger);
 }
 
 .pressure-badge {
