@@ -1,5 +1,7 @@
 import {
+  Inject,
   ForbiddenException,
+  forwardRef,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => PluginRuntimeService))
     private readonly pluginRuntime: PluginRuntimeService,
   ) {}
 

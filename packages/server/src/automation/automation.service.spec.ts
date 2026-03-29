@@ -20,6 +20,9 @@ describe('AutomationService', () => {
     runAutomationBeforeRunHooks: jest.fn(),
     runAutomationAfterRunHooks: jest.fn(),
   };
+  const chatMessageService = {
+    sendPluginMessage: jest.fn(),
+  };
 
   let service: AutomationService;
 
@@ -37,6 +40,7 @@ describe('AutomationService', () => {
     service = new AutomationService(
       prisma as never,
       pluginRuntime as never,
+      chatMessageService as never,
     );
   });
 
@@ -305,6 +309,98 @@ describe('AutomationService', () => {
         {
           action: 'hook',
           result: '由插件直接完成',
+        },
+      ],
+    });
+  });
+
+  it('routes ai_message actions through the unified message.send chain', async () => {
+    prisma.automation.findUnique.mockResolvedValue({
+      id: 'automation-1',
+      userId: 'user-1',
+      name: '自动化消息通知',
+      enabled: true,
+      trigger: JSON.stringify({ type: 'manual' }),
+      actions: JSON.stringify([
+        {
+          type: 'ai_message',
+          message: '咖啡已经煮好了',
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+          },
+        },
+      ]),
+      lastRunAt: null,
+      createdAt: new Date('2026-03-29T15:00:00.000Z'),
+      updatedAt: new Date('2026-03-29T15:00:00.000Z'),
+      logs: [],
+    });
+    chatMessageService.sendPluginMessage.mockResolvedValue({
+      id: 'message-1',
+      target: {
+        type: 'conversation',
+        id: 'conversation-1',
+        label: 'Coffee Chat',
+      },
+      role: 'assistant',
+      content: '咖啡已经煮好了',
+      parts: [
+        {
+          type: 'text',
+          text: '咖啡已经煮好了',
+        },
+      ],
+      status: 'completed',
+      createdAt: '2026-03-29T15:00:00.000Z',
+      updatedAt: '2026-03-29T15:00:00.000Z',
+    });
+    prisma.automationLog.create.mockResolvedValue(null);
+    prisma.automation.update.mockResolvedValue(null);
+
+    const result = await service.executeAutomation('automation-1');
+
+    expect(chatMessageService.sendPluginMessage).toHaveBeenCalledWith({
+      context: {
+        source: 'automation',
+        userId: 'user-1',
+        automationId: 'automation-1',
+      },
+      target: {
+        type: 'conversation',
+        id: 'conversation-1',
+      },
+      content: '咖啡已经煮好了',
+    });
+    expect(result).toEqual({
+      status: 'success',
+      results: [
+        {
+          action: 'ai_message',
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+            label: 'Coffee Chat',
+          },
+          result: {
+            id: 'message-1',
+            target: {
+              type: 'conversation',
+              id: 'conversation-1',
+              label: 'Coffee Chat',
+            },
+            role: 'assistant',
+            content: '咖啡已经煮好了',
+            parts: [
+              {
+                type: 'text',
+                text: '咖啡已经煮好了',
+              },
+            ],
+            status: 'completed',
+            createdAt: '2026-03-29T15:00:00.000Z',
+            updatedAt: '2026-03-29T15:00:00.000Z',
+          },
         },
       ],
     });

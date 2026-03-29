@@ -323,5 +323,36 @@ function readAutomationAction(
   return {
     type,
     message: readOptionalString(action, 'message') ?? undefined,
+    target: readOptionalActionTarget(action, `actions[${index}]`),
+  };
+}
+
+/**
+ * 读取 AI 消息动作目标。
+ * @param params 当前动作参数
+ * @param path 当前字段路径
+ * @returns 消息目标；缺失时返回 undefined
+ */
+function readOptionalActionTarget(
+  params: JsonObject,
+  path: string,
+): ActionConfig['target'] | undefined {
+  const value = params.target;
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${path}.target 必须是对象`);
+  }
+
+  const target = value as JsonObject;
+  const type = readRequiredString(target, 'type');
+  if (type !== 'conversation') {
+    throw new Error(`${path}.target.type 当前只支持 conversation`);
+  }
+
+  return {
+    type: 'conversation',
+    id: readRequiredString(target, 'id'),
   };
 }

@@ -196,6 +196,10 @@ const trigger: TriggerConfig = {
 const action: ActionConfig = {
   type: 'ai_message',
   message: 'hello',
+  target: {
+    type: 'conversation',
+    id: 'conversation-1',
+  },
 }
 
 const automation: AutomationInfo = {

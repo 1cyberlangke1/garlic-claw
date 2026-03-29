@@ -329,6 +329,40 @@ async function runSmokeFlow(context) {
     body: {},
     expectedStatus: [200, 201],
   });
+  const messageAutomation = await apiRequest(context, 'POST', '/automations', {
+    token: userToken,
+    body: {
+      name: 'Smoke automation message',
+      trigger: { type: 'manual' },
+      actions: [
+        {
+          type: 'ai_message',
+          message: 'Smoke automation ping',
+          target: {
+            type: 'conversation',
+            id: conversation.id,
+          },
+        },
+      ],
+    },
+    expectedStatus: 201,
+  });
+  await apiRequest(context, 'POST', `/automations/${messageAutomation.id}/run`, {
+    token: userToken,
+    body: {},
+    expectedStatus: [200, 201],
+  });
+  conversationDetail = await apiRequest(context, 'GET', `/chat/conversations/${conversation.id}`, {
+    token: userToken,
+  });
+  ensure(
+    conversationDetail.messages.some(
+      (message) =>
+        message.role === 'assistant'
+        && message.content === 'Smoke automation ping',
+    ),
+    'Expected ai_message automation to append an assistant message',
+  );
   await apiRequest(context, 'GET', `/automations/${automation.id}/logs`, { token: userToken });
   await apiRequest(context, 'PATCH', `/automations/${automation.id}/toggle`, {
     token: userToken,
@@ -412,6 +446,7 @@ async function runSmokeFlow(context) {
   await apiRequest(context, 'DELETE', '/plugins/offline.smoke-plugin', { token: adminToken });
 
   await apiRequest(context, 'DELETE', `/automations/${automation.id}`, { token: userToken });
+  await apiRequest(context, 'DELETE', `/automations/${messageAutomation.id}`, { token: userToken });
   await apiRequest(context, 'DELETE', `/users/${userToDelete.id}`, { token: adminToken });
   await apiRequest(context, 'DELETE', `/chat/conversations/${conversation.id}`, { token: userToken });
   await apiRequest(context, 'DELETE', '/ai/providers/local-openai/models/smoke-vision', {

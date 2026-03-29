@@ -3710,6 +3710,13 @@ export class PluginRuntimeService {
       }
       action.message = value.message;
     }
+    if ('target' in value && value.target !== undefined) {
+      action.target = this.readOptionalMessageTarget(
+        value,
+        'target',
+        `${method}.actions[${index}]`,
+      );
+    }
 
     return action;
   }
@@ -5060,6 +5067,17 @@ function isActionConfigArray(value: JsonValue | undefined): boolean {
       }
       if ('message' in action && action.message !== undefined && typeof action.message !== 'string') {
         return false;
+      }
+      if ('target' in action && action.target !== undefined) {
+        if (!isJsonObjectValue(action.target)) {
+          return false;
+        }
+        if (action.target.type !== 'conversation') {
+          return false;
+        }
+        if (typeof action.target.id !== 'string') {
+          return false;
+        }
       }
       return true;
     });

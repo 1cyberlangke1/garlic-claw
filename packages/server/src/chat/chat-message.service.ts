@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  forwardRef,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   ChatBeforeModelRequest,
   ChatMessagePart,
@@ -95,6 +101,7 @@ export class ChatMessageService {
     private readonly chatService: ChatService,
     private readonly aiProvider: AiProviderService,
     private readonly personaService: PersonaService,
+    @Inject(forwardRef(() => PluginRuntimeService))
     private readonly pluginRuntime: PluginRuntimeService,
     private readonly modelInvocation: ChatModelInvocationService,
     private readonly chatTaskService: ChatTaskService,

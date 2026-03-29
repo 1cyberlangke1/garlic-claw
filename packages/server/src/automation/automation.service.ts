@@ -8,11 +8,14 @@ import {
 } from '@nestjs/common';
 import type {
   ActionConfig,
+  AutomationActionTargetRef,
   AutomationEventDispatchInfo,
   AutomationInfo,
   TriggerConfig,
 } from '@garlic-claw/shared';
+import { ChatMessageService } from '../chat/chat-message.service';
 import type { JsonValue } from '../common/types/json-value';
+import { toJsonValue } from '../common/utils/json-value';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -30,6 +33,7 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => PluginRuntimeService))
     private readonly pluginRuntime: PluginRuntimeService,
+    private readonly chatMessageService: ChatMessageService,
   ) {}
 
   async onModuleInit() {
@@ -229,8 +233,16 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
               capability: action.capability,
               result,
             });
+            continue;
           }
-          // ai_message 类型由注入 ChatService 处理，此处留空
+          if (action.type === 'ai_message') {
+            const result = await this.executeAiMessageAction(action, hookContext);
+            results.push(toJsonValue({
+              action: action.type,
+              target: result.target,
+              result,
+            }));
+          }
         } catch (err) {
           status = 'error';
           results.push({
@@ -272,6 +284,47 @@ export class AutomationService implements OnModuleInit, OnModuleDestroy {
       status,
       results: afterRunPayload.results,
     };
+  }
+
+  /**
+   * 执行一条 `ai_message` 自动化动作。
+   * @param action 当前动作
+   * @param context 自动化运行上下文
+   * @returns 统一消息发送结果
+   */
+  private executeAiMessageAction(
+    action: ActionConfig,
+    context: {
+      source: 'automation';
+      userId: string;
+      automationId: string;
+    },
+  ) {
+    const message = action.message?.trim();
+    if (!message) {
+      throw new Error('ai_message 动作缺少 message');
+    }
+
+    return this.chatMessageService.sendPluginMessage({
+      context,
+      target: this.requireAiMessageTarget(action.target),
+      content: message,
+    });
+  }
+
+  /**
+   * 读取 `ai_message` 的目标；当前只支持 conversation。
+   * @param target 原始动作目标
+   * @returns 可写入的消息目标
+   */
+  private requireAiMessageTarget(
+    target?: AutomationActionTargetRef,
+  ): AutomationActionTargetRef {
+    if (!target) {
+      throw new Error('ai_message 动作缺少 target');
+    }
+
+    return target;
   }
 
   // --- Cron 计划 ---
