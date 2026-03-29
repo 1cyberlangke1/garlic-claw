@@ -78,7 +78,7 @@ async function main() {
     });
 
     const apiBase = `http://127.0.0.1:${backend.port}/api`;
-    await waitForServerReady(`${apiBase}/docs`, backend);
+    await waitForServerReady(`${apiBase}/__smoke_ready__`, backend);
     await runSmokeFlow({ apiBase, fakeBaseUrl: fakeServer.url, prisma });
     console.log('HTTP smoke passed');
   } catch (error) {
@@ -535,7 +535,7 @@ async function waitForServerReady(url, backend) {
 
     try {
       const response = await fetch(url);
-      if (response.ok) {
+      if (response.status >= 200 && response.status < 500) {
         return;
       }
     } catch {
