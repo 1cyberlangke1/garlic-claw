@@ -60,6 +60,9 @@ async function main() {
     });
 
     fakeServer = await startFakeOpenAiServer();
+    const httpPort = await getFreePort();
+    const pluginWsPort = await getFreePort();
+
     backend = await startBackend({
       DATABASE_URL: databaseUrl,
       JWT_SECRET: 'smoke-jwt-secret',
@@ -69,7 +72,8 @@ async function main() {
       BOOTSTRAP_ADMIN_EMAIL: 'smoke-admin@example.com',
       BOOTSTRAP_ADMIN_ROLE: 'super_admin',
       NODE_ENV: 'test',
-      PORT: String(await getFreePort()),
+      PORT: String(httpPort),
+      WS_PORT: String(pluginWsPort),
       CORS_ORIGIN: '*',
     });
 
