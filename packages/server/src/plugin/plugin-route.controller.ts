@@ -44,7 +44,7 @@ export class PluginRouteController {
    * @param res Express 响应对象
    * @returns 插件返回的 JSON body
    */
-  @All(':pluginId/*')
+  @All(':pluginId/*path')
   async handleRoute(
     @CurrentUser('id') userId: string,
     @Param('pluginId') pluginId: string,
