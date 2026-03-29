@@ -36,7 +36,7 @@ packages/
   plugins/      示例插件
 config/
   ai-settings.example.json   AI provider / model / vision fallback 示例配置
-other/
+tools/
   start-dev.bat              开发模式一键启动
   stop-dev.bat               开发模式一键关闭
 ```
@@ -101,13 +101,13 @@ cd ../..
 启动前后端：
 
 ```bash
-cmd /c other\start-dev.bat
+cmd /c tools\start-dev.bat
 ```
 
 关闭前后端：
 
 ```bash
-cmd /c other\stop-dev.bat
+cmd /c tools\stop-dev.bat
 ```
 
 默认地址：

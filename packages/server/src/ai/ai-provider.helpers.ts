@@ -1,17 +1,5 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { createCerebras } from '@ai-sdk/cerebras';
-import { createCohere } from '@ai-sdk/cohere';
-import { createDeepInfra } from '@ai-sdk/deepinfra';
-import { createGateway } from '@ai-sdk/gateway';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createGroq } from '@ai-sdk/groq';
-import { createMistral } from '@ai-sdk/mistral';
 import { createOpenAI } from '@ai-sdk/openai';
-import { createPerplexity } from '@ai-sdk/perplexity';
-import { createTogetherAI } from '@ai-sdk/togetherai';
-import { createVercel } from '@ai-sdk/vercel';
-import { createXai } from '@ai-sdk/xai';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { LanguageModel } from 'ai';
 import { inferModelCapabilities } from './model-capability-inference';
 
@@ -58,6 +46,10 @@ interface ProviderSdkOptions {
   name: string;
 }
 
+type ProviderSdkFactory = (
+  options: ProviderSdkOptions,
+) => CallableProviderFactory | ChatProviderFactory;
+
 /**
  * 可调用 provider 工厂。
  */
@@ -99,23 +91,51 @@ export interface RuntimeProviderInput {
  */
 const OFFICIAL_PROVIDER_FACTORIES: Record<
   OfficialProviderDriver,
-  (options: ProviderSdkOptions) => CallableProviderFactory | ChatProviderFactory
+  ProviderSdkFactory
 > = {
   openai: (options) => createOpenAI(options),
   anthropic: (options) => createAnthropic(options),
-  gemini: (options) => createGoogleGenerativeAI(options),
-  groq: (options) => createGroq(options),
-  xai: (options) => createXai(options),
-  mistral: (options) => createMistral(options),
-  cohere: (options) => createCohere(options),
-  cerebras: (options) => createCerebras(options),
-  deepinfra: (options) => createDeepInfra(options),
-  togetherai: (options) => createTogetherAI(options),
-  perplexity: (options) => createPerplexity(options),
-  gateway: (options) => createGateway(options),
-  vercel: (options) => createVercel(options),
-  openrouter: (options) => createOpenRouter(options),
+  gemini: createLazyProviderFactory('@ai-sdk/google', 'createGoogleGenerativeAI'),
+  groq: createLazyProviderFactory('@ai-sdk/groq', 'createGroq'),
+  xai: createLazyProviderFactory('@ai-sdk/xai', 'createXai'),
+  mistral: createLazyProviderFactory('@ai-sdk/mistral', 'createMistral'),
+  cohere: createLazyProviderFactory('@ai-sdk/cohere', 'createCohere'),
+  cerebras: createLazyProviderFactory('@ai-sdk/cerebras', 'createCerebras'),
+  deepinfra: createLazyProviderFactory('@ai-sdk/deepinfra', 'createDeepInfra'),
+  togetherai: createLazyProviderFactory('@ai-sdk/togetherai', 'createTogetherAI'),
+  perplexity: createLazyProviderFactory('@ai-sdk/perplexity', 'createPerplexity'),
+  gateway: createLazyProviderFactory('@ai-sdk/gateway', 'createGateway'),
+  vercel: createLazyProviderFactory('@ai-sdk/vercel', 'createVercel'),
+  openrouter: createLazyProviderFactory('@openrouter/ai-sdk-provider', 'createOpenRouter'),
 };
+
+function createLazyProviderFactory(
+  moduleName: string,
+  exportName: string,
+): ProviderSdkFactory {
+  return (options) => {
+    const loadedModule = loadOptionalModule(moduleName);
+    const factory = loadedModule[exportName];
+    if (typeof factory !== 'function') {
+      throw new Error(
+        `Provider SDK "${moduleName}" 没有导出 "${exportName}"，无法创建 provider。`,
+      );
+    }
+
+    return (factory as ProviderSdkFactory)(options);
+  };
+}
+
+function loadOptionalModule(moduleName: string): Record<string, unknown> {
+  try {
+    return require(moduleName) as Record<string, unknown>;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `缺少可选 Provider SDK "${moduleName}"。如需启用对应 provider，请先安装该依赖。原始错误: ${detail}`,
+    );
+  }
+}
 
 /**
  * 创建运行时 provider 注册信息。
