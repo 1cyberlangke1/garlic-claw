@@ -77,4 +77,16 @@ describe('ModelQuickInput', () => {
     expect(wrapper.text()).toContain('healthy-provider')
     expect(wrapper.text()).toContain('healthy-model')
   })
+
+  it('falls back to an empty suggestion list when provider loading fails', async () => {
+    vi.mocked(api.listAiProviders).mockRejectedValue(new Error('providers unavailable'))
+
+    const wrapper = mount(ModelQuickInput)
+
+    await flushPromises()
+    await wrapper.find('input').trigger('focus')
+    await flushPromises()
+
+    expect(wrapper.findAll('.suggestion-item')).toHaveLength(0)
+  })
 })

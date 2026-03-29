@@ -90,25 +90,29 @@ watch(
 )
 
 async function loadAllModels() {
-  const providers = await api.listAiProviders()
-  const availableProviders = providers.filter((provider) => provider.available)
-  const suggestionGroups = await Promise.all(
-    availableProviders.map(async (provider) => {
-      try {
-        const models = await api.listAiModels(provider.id)
-        return models.map((model) => ({
-          providerId: provider.id,
-          modelId: model.id,
-          modelName: model.name,
-          capabilities: model.capabilities,
-        }))
-      } catch {
-        return []
-      }
-    }),
-  )
+  try {
+    const providers = await api.listAiProviders()
+    const availableProviders = providers.filter((provider) => provider.available)
+    const suggestionGroups = await Promise.all(
+      availableProviders.map(async (provider) => {
+        try {
+          const models = await api.listAiModels(provider.id)
+          return models.map((model) => ({
+            providerId: provider.id,
+            modelId: model.id,
+            modelName: model.name,
+            capabilities: model.capabilities,
+          }))
+        } catch {
+          return []
+        }
+      }),
+    )
 
-  allSuggestions.value = suggestionGroups.flat()
+    allSuggestions.value = suggestionGroups.flat()
+  } catch {
+    allSuggestions.value = []
+  }
 }
 
 function handleInput() {
