@@ -380,6 +380,17 @@ async function runSmokeFlow(context) {
     expectedStatus: [200, 201],
   });
   await apiRequest(context, 'GET', '/plugins/builtin.provider-router/events?limit=10', { token: adminToken });
+  const pluginSessions = await apiRequest(context, 'GET', '/plugins/builtin.provider-router/sessions', {
+    token: adminToken,
+  });
+  ensure(Array.isArray(pluginSessions), 'Expected plugin session governance endpoint to return an array');
+  const sessionFinishResult = await apiRequest(
+    context,
+    'DELETE',
+    `/plugins/builtin.provider-router/sessions/${conversation.id}`,
+    { token: adminToken },
+  );
+  ensure(typeof sessionFinishResult === 'boolean', 'Expected finishing plugin session to return a boolean');
 
   const cronJobs = await apiRequest(context, 'GET', '/plugins/builtin.cron-heartbeat/crons', {
     token: adminToken,

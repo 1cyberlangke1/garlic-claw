@@ -2904,6 +2904,116 @@ describe('PluginRuntimeService', () => {
     }
   });
 
+  it('lists active conversation sessions for governance and can force-finish them by plugin ownership', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-03-28T12:00:00.000Z'));
+
+    try {
+      await service.registerPlugin({
+        manifest: {
+          ...builtinManifest,
+          id: 'builtin.idiom-session',
+          permissions: ['conversation:write'],
+          tools: [],
+          hooks: [
+            {
+              name: 'message:received',
+            },
+          ],
+        } as never,
+        runtimeKind: 'builtin',
+        transport: createTransport(),
+      });
+      await service.registerPlugin({
+        manifest: {
+          ...builtinManifest,
+          id: 'builtin.second-session',
+          permissions: ['conversation:write'],
+          tools: [],
+          hooks: [
+            {
+              name: 'message:received',
+            },
+          ],
+        } as never,
+        runtimeKind: 'builtin',
+        transport: createTransport(),
+      });
+
+      await service.callHost({
+        pluginId: 'builtin.idiom-session',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'conversation.session.start' as never,
+        params: {
+          timeoutMs: 60000,
+          captureHistory: true,
+          metadata: {
+            flow: 'idiom',
+          },
+        },
+      });
+      await service.callHost({
+        pluginId: 'builtin.second-session',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-2',
+          conversationId: 'conversation-2',
+        },
+        method: 'conversation.session.start' as never,
+        params: {
+          timeoutMs: 120000,
+          captureHistory: false,
+        },
+      });
+
+      expect((service as any).listConversationSessions('builtin.idiom-session')).toEqual([
+        {
+          pluginId: 'builtin.idiom-session',
+          conversationId: 'conversation-1',
+          timeoutMs: 60000,
+          startedAt: '2026-03-28T12:00:00.000Z',
+          expiresAt: '2026-03-28T12:01:00.000Z',
+          lastMatchedAt: null,
+          captureHistory: true,
+          historyMessages: [],
+          metadata: {
+            flow: 'idiom',
+          },
+        },
+      ]);
+      expect((service as any).listConversationSessions()).toEqual([
+        expect.objectContaining({
+          pluginId: 'builtin.idiom-session',
+          conversationId: 'conversation-1',
+        }),
+        expect.objectContaining({
+          pluginId: 'builtin.second-session',
+          conversationId: 'conversation-2',
+        }),
+      ]);
+
+      expect(
+        (service as any).finishConversationSessionForGovernance(
+          'builtin.idiom-session',
+          'conversation-1',
+        ),
+      ).toBe(true);
+      expect((service as any).listConversationSessions('builtin.idiom-session')).toEqual([]);
+      expect(
+        (service as any).finishConversationSessionForGovernance(
+          'builtin.idiom-session',
+          'conversation-2',
+        ),
+      ).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('enforces storage and user permissions before host calls', async () => {
     const manifest: PluginManifest = {
       ...builtinManifest,

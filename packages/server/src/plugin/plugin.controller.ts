@@ -3,6 +3,7 @@ import type {
   PluginActionResult,
   PluginCapability,
   PluginConfigSnapshot,
+  PluginConversationSessionInfo,
   PluginEventLevel,
   PluginEventListResult,
   PluginHookDescriptor,
@@ -221,6 +222,27 @@ export class PluginController {
     @Param('jobId') jobId: string,
   ): Promise<boolean> {
     return this.pluginCronService.deleteCron(name, jobId);
+  }
+
+  @Get(':name/sessions')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'super_admin')
+  listPluginConversationSessions(
+    @Param('name') name: string,
+  ): Promise<PluginConversationSessionInfo[]> {
+    return Promise.resolve(this.pluginRuntime.listConversationSessions(name));
+  }
+
+  @Delete(':name/sessions/:conversationId')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'super_admin')
+  finishPluginConversationSession(
+    @Param('name') name: string,
+    @Param('conversationId') conversationId: string,
+  ): Promise<boolean> {
+    return Promise.resolve(
+      this.pluginRuntime.finishConversationSessionForGovernance(name, conversationId),
+    );
   }
 
   @Put(':name/scopes')

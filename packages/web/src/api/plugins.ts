@@ -4,6 +4,7 @@ import type {
   PluginActionName,
   PluginActionResult,
   PluginConfigSnapshot,
+  PluginConversationSessionInfo,
   PluginCronJobSummary,
   PluginEventListResult,
   PluginEventQuery,
@@ -85,6 +86,24 @@ export function getPluginCrons(name: string) {
 export function deletePluginCron(name: string, jobId: string) {
   return request<boolean>(
     `/plugins/${encodeURIComponent(name)}/crons/${encodeURIComponent(jobId)}`,
+    {
+      method: 'DELETE',
+    },
+  )
+}
+
+export function listPluginConversationSessions(name: string) {
+  return request<PluginConversationSessionInfo[]>(
+    `/plugins/${encodeURIComponent(name)}/sessions`,
+  )
+}
+
+export function finishPluginConversationSession(
+  name: string,
+  conversationId: string,
+) {
+  return request<boolean>(
+    `/plugins/${encodeURIComponent(name)}/sessions/${encodeURIComponent(conversationId)}`,
     {
       method: 'DELETE',
     },

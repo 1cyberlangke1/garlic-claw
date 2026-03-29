@@ -72,6 +72,12 @@
             :deleting-job-id="deletingCronJobId"
             @delete="deleteCronJob"
           />
+          <PluginConversationSessionList
+            class="detail-span"
+            :sessions="selectedConversationSessions"
+            :finishing-conversation-id="finishingConversationId"
+            @finish="finishConversationSession"
+          />
           <PluginRouteList
             class="detail-span"
             :plugin-name="selectedPlugin.name"
@@ -93,6 +99,7 @@
 import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic-claw/shared'
 import { computed } from 'vue'
 import PluginConfigForm from '../components/plugin-management/PluginConfigForm.vue'
+import PluginConversationSessionList from '../components/plugin-management/PluginConversationSessionList.vue'
 import PluginCronList from '../components/plugin-management/PluginCronList.vue'
 import PluginDetailOverview from '../components/plugin-management/PluginDetailOverview.vue'
 import PluginEventLog from '../components/plugin-management/PluginEventLog.vue'
@@ -112,6 +119,7 @@ const {
   eventLoading,
   runningAction,
   deletingCronJobId,
+  finishingConversationId,
   deletingStorageKey,
   deleting,
   error,
@@ -120,6 +128,7 @@ const {
   selectedPluginName,
   selectedPlugin,
   configSnapshot,
+  conversationSessions,
   cronJobs,
   scopeSettings,
   healthSnapshot,
@@ -136,6 +145,7 @@ const {
   loadMorePluginEvents,
   refreshPluginStorage,
   deleteCronJob,
+  finishConversationSession,
   saveConfig,
   saveStorageEntry,
   saveScope,
@@ -156,6 +166,7 @@ const selectedPluginActions = computed(() =>
 const selectedCronJobs = computed(() =>
   cronJobs.value.length > 0 ? cronJobs.value : selectedPlugin.value?.crons ?? [],
 )
+const selectedConversationSessions = computed(() => conversationSessions.value)
 const onlinePluginCount = computed(() =>
   plugins.value.filter((plugin) => plugin.connected).length,
 )

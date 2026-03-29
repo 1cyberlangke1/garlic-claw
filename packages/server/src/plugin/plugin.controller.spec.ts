@@ -1,5 +1,6 @@
 import type {
   PluginConfigSchema,
+  PluginConversationSessionInfo,
   PluginInfo,
 } from '@garlic-claw/shared';
 import { PluginController } from './plugin.controller';
@@ -22,6 +23,8 @@ describe('PluginController', () => {
     listPlugins: jest.fn(),
     getRuntimePressure: jest.fn(),
     refreshPluginGovernance: jest.fn(),
+    listConversationSessions: jest.fn(),
+    finishConversationSessionForGovernance: jest.fn(),
   };
 
   const pluginCronService = {
@@ -467,6 +470,55 @@ describe('PluginController', () => {
     expect(pluginCronService.deleteCron).toHaveBeenCalledWith(
       'builtin.cron-heartbeat',
       'cron-job-2',
+    );
+  });
+
+  it('lists and force-finishes plugin conversation sessions through the runtime service', async () => {
+    const sessions: PluginConversationSessionInfo[] = [
+      {
+        pluginId: 'builtin.idiom-session',
+        conversationId: 'conversation-1',
+        timeoutMs: 45000,
+        startedAt: '2026-03-28T12:00:00.000Z',
+        expiresAt: '2026-03-28T12:00:45.000Z',
+        lastMatchedAt: '2026-03-28T12:00:10.000Z',
+        captureHistory: true,
+        historyMessages: [
+          {
+            role: 'user',
+            content: '成语接龙',
+            parts: [
+              {
+                type: 'text',
+                text: '成语接龙',
+              },
+            ],
+          },
+        ],
+        metadata: {
+          flow: 'idiom',
+        },
+      },
+    ];
+    pluginRuntime.listConversationSessions.mockReturnValue(sessions);
+    pluginRuntime.finishConversationSessionForGovernance.mockReturnValue(true);
+
+    await expect(
+      (controller as any).listPluginConversationSessions('builtin.idiom-session'),
+    ).resolves.toEqual(sessions);
+    await expect(
+      (controller as any).finishPluginConversationSession(
+        'builtin.idiom-session',
+        'conversation-1',
+      ),
+    ).resolves.toBe(true);
+
+    expect(pluginRuntime.listConversationSessions).toHaveBeenCalledWith(
+      'builtin.idiom-session',
+    );
+    expect(pluginRuntime.finishConversationSessionForGovernance).toHaveBeenCalledWith(
+      'builtin.idiom-session',
+      'conversation-1',
     );
   });
 

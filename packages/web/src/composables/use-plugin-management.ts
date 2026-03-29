@@ -2,6 +2,7 @@ import { computed, onMounted, ref, shallowRef } from 'vue'
 import type {
   PluginActionName,
   PluginConfigSnapshot,
+  PluginConversationSessionInfo,
   PluginCronJobSummary,
   PluginEventRecord,
   PluginEventQuery,
@@ -31,6 +32,7 @@ export function usePluginManagement() {
   const eventLoading = ref(false)
   const runningAction = ref<PluginActionName | null>(null)
   const deletingCronJobId = ref<string | null>(null)
+  const finishingConversationId = ref<string | null>(null)
   const deletingStorageKey = ref<string | null>(null)
   const deleting = ref(false)
   const error = ref<string | null>(null)
@@ -38,6 +40,7 @@ export function usePluginManagement() {
   const plugins = shallowRef<PluginInfo[]>([])
   const selectedPluginName = ref<string | null>(null)
   const configSnapshot = shallowRef<PluginConfigSnapshot | null>(null)
+  const conversationSessions = shallowRef<PluginConversationSessionInfo[]>([])
   const cronJobs = shallowRef<PluginCronJobSummary[]>([])
   const scopeSettings = shallowRef<PluginScopeSettings | null>(null)
   const healthSnapshot = shallowRef<PluginHealthSnapshot | null>(null)
@@ -116,8 +119,9 @@ export function usePluginManagement() {
     detailLoading.value = true
     error.value = null
     try {
-      const [config, jobs, scope, health, events, storage] = await Promise.all([
+      const [config, sessions, jobs, scope, health, events, storage] = await Promise.all([
         api.getPluginConfig(pluginName),
+        api.listPluginConversationSessions(pluginName),
         api.getPluginCrons(pluginName),
         api.getPluginScope(pluginName),
         api.getPluginHealth(pluginName),
@@ -125,6 +129,7 @@ export function usePluginManagement() {
         api.listPluginStorage(pluginName, storagePrefix.value || undefined),
       ])
       configSnapshot.value = config
+      conversationSessions.value = sessions
       cronJobs.value = jobs
       scopeSettings.value = scope
       healthSnapshot.value = health
@@ -322,6 +327,34 @@ export function usePluginManagement() {
   }
 
   /**
+   * 强制结束当前插件的一条活动会话等待态。
+   * @param conversationId 待结束的会话 ID
+   */
+  async function finishConversationSession(conversationId: string) {
+    if (!selectedPlugin.value) {
+      return
+    }
+    if (!window.confirm(`确认结束会话等待态 ${conversationId} 吗？`)) {
+      return
+    }
+
+    finishingConversationId.value = conversationId
+    error.value = null
+    notice.value = null
+    try {
+      await api.finishPluginConversationSession(selectedPlugin.value.name, conversationId)
+      notice.value = '会话等待态已结束'
+      conversationSessions.value = await api.listPluginConversationSessions(
+        selectedPlugin.value.name,
+      )
+    } catch (caughtError) {
+      error.value = toErrorMessage(caughtError, '结束会话等待态失败')
+    } finally {
+      finishingConversationId.value = null
+    }
+  }
+
+  /**
    * 保存当前插件作用域设置，并刷新列表与详情。
    * @param scope 新作用域设置
    */
@@ -403,6 +436,7 @@ export function usePluginManagement() {
    */
   function clearDetails() {
     configSnapshot.value = null
+    conversationSessions.value = []
     cronJobs.value = []
     scopeSettings.value = null
     healthSnapshot.value = null
@@ -445,6 +479,7 @@ export function usePluginManagement() {
     eventLoading,
     runningAction,
     deletingCronJobId,
+    finishingConversationId,
     deletingStorageKey,
     deleting,
     error,
@@ -453,6 +488,7 @@ export function usePluginManagement() {
     selectedPluginName,
     selectedPlugin,
     configSnapshot,
+    conversationSessions,
     cronJobs,
     scopeSettings,
     healthSnapshot,
@@ -469,6 +505,7 @@ export function usePluginManagement() {
     loadMorePluginEvents,
     refreshPluginStorage,
     deleteCronJob,
+    finishConversationSession,
     saveConfig,
     saveStorageEntry,
     saveScope,

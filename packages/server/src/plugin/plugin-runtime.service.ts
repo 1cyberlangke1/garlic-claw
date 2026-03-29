@@ -631,6 +631,48 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 列出当前运行时中的活动会话等待态。
+   * @param pluginId 可选插件 ID；提供时仅返回该插件拥有的会话
+   * @returns 当前活动等待态列表
+   */
+  listConversationSessions(pluginId?: string): PluginConversationSessionInfo[] {
+    const sessions: PluginConversationSessionInfo[] = [];
+
+    for (const conversationId of this.conversationSessions.keys()) {
+      const session = this.getActiveConversationSession(conversationId);
+      if (!session) {
+        continue;
+      }
+      if (pluginId && session.pluginId !== pluginId) {
+        continue;
+      }
+
+      sessions.push(this.toConversationSessionInfo(session));
+    }
+
+    return sessions.sort((left, right) => left.expiresAt.localeCompare(right.expiresAt));
+  }
+
+  /**
+   * 为插件治理面强制结束一条活动会话等待态。
+   * @param pluginId 插件 ID
+   * @param conversationId 会话 ID
+   * @returns 是否成功结束
+   */
+  finishConversationSessionForGovernance(
+    pluginId: string,
+    conversationId: string,
+  ): boolean {
+    const session = this.getOwnedConversationSession(pluginId, conversationId);
+    if (!session) {
+      return false;
+    }
+
+    this.conversationSessions.delete(conversationId);
+    return true;
+  }
+
+  /**
    * 统一执行一个插件治理动作。
    * @param input 插件 ID 与治理动作名
    * @returns 无返回值
