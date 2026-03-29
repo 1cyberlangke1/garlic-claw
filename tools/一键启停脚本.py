@@ -15,7 +15,7 @@
 
 预期行为:
 - 保留原 Python 脚本的 CLI 能力
-- 迁移 `other/start-dev.bat` 的开发编排行为
+- 迁移 `tools/start-dev.bat` 的开发编排行为
 - 启动失败时回滚已拉起进程，不做“杀所有 node 进程”
 """
 
@@ -44,6 +44,7 @@ LOG_DIR = common.LOG_DIR
 STATE_FILE = common.STATE_FILE
 LEGACY_STATE_FILE = common.LEGACY_STATE_FILE
 SERVER_PORT = common.SERVER_PORT
+PLUGIN_WS_PORT = common.PLUGIN_WS_PORT
 WEB_PORT = common.WEB_PORT
 DEFAULT_PORTS = list(common.DEFAULT_PORTS)
 
@@ -201,7 +202,7 @@ def createDevServices() -> dict[str, dict[str, Any]]:
         },
         'backend_app': {
             'label': 'Backend App',
-            'command': ['node', '--watch', 'dist/main.js'],
+            'command': ['node', 'dist/main.js'],
             'cwd': SERVER_DIR,
             'stdoutPath': LOG_DIR / 'server-app.log',
             'stderrPath': LOG_DIR / 'server-app.err.log',
@@ -216,6 +217,8 @@ def createDevServices() -> dict[str, dict[str, Any]]:
                 '--port',
                 str(WEB_PORT),
                 '--strictPort',
+                '--configLoader',
+                'native',
             ],
             'cwd': WEB_DIR,
             'stdoutPath': LOG_DIR / 'web-vite.log',

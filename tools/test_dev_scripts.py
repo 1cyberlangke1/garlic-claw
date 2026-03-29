@@ -69,8 +69,23 @@ class DevLauncherRedTests(unittest.TestCase):
         )
         services = launcher.createDevServices()
         self.assertEqual(set(services.keys()), {'backend_tsc', 'backend_app', 'web'})
+        self.assertEqual(services['backend_app']['command'], ['node', 'dist/main.js'])
         self.assertEqual(services['backend_app']['port'], 23330)
+        self.assertEqual(
+            services['web']['command'],
+            [
+                launcher.common.resolveNodeBin('vite'),
+                '--host',
+                '127.0.0.1',
+                '--port',
+                '23333',
+                '--strictPort',
+                '--configLoader',
+                'native',
+            ],
+        )
         self.assertEqual(services['web']['port'], 23333)
+        self.assertEqual(launcher.DEFAULT_PORTS, [23330, 23331, 23333])
 
     def testCreateBuildStepsMatchesLegacyStartWorkflow(self) -> None:
         """构建步骤应对齐旧 start-dev.bat，仅保留 shared/server 引导构建。"""
@@ -102,6 +117,8 @@ class DevLauncherRedTests(unittest.TestCase):
         def fakeFindPortPids(port: int) -> list[int]:
             if port == 23330:
                 return [200]
+            if port == 23331:
+                return [250]
             if port == 23333:
                 return [300]
             return []
@@ -115,14 +132,19 @@ class DevLauncherRedTests(unittest.TestCase):
 
         launcher.stopServices(
             state=state,
-            ports=[23330, 23333],
+            ports=[23330, 23331, 23333],
             killPid=fakeKillPid,
             findPortPids=fakeFindPortPids,
         )
 
         self.assertEqual(
             kill_events,
-            [('backend_tsc', 100), ('backend_app', 200), ('port:23333', 300)],
+            [
+                ('backend_tsc', 100),
+                ('backend_app', 200),
+                ('port:23331', 250),
+                ('port:23333', 300),
+            ],
         )
 
     def testLauncherStopDelegatesToSharedStopLogic(self) -> None:
@@ -148,7 +170,7 @@ class DevLauncherRedTests(unittest.TestCase):
         self.assertEqual(result, 0)
         stopServices.assert_called_once_with(
             state=state,
-            ports=[23330, 23333],
+            ports=[23330, 23331, 23333],
         )
         clearStateFiles.assert_called_once_with()
 

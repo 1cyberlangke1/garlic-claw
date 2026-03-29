@@ -1,5 +1,4 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
 
@@ -19,6 +18,12 @@ interface CompatibleProviderInstance {
   chat: (modelId: string) => LanguageModel;
 }
 
+type CompatibleProviderFactory = (options: {
+  apiKey: string;
+  baseURL?: string;
+  name: string;
+}) => CompatibleProviderInstance;
+
 /**
  * 兼容格式元数据。
  */
@@ -33,6 +38,39 @@ export interface FormatMetadata {
     options: ProviderOptions,
     resolveApiKey: (dto: RegisterCustomProviderDto) => string,
   ) => CompatibleProviderInstance;
+}
+
+const createGeminiProvider = createLazyCompatibleProviderFactory(
+  '@ai-sdk/google',
+  'createGoogleGenerativeAI',
+);
+
+function createLazyCompatibleProviderFactory(
+  moduleName: string,
+  exportName: string,
+): CompatibleProviderFactory {
+  return (options) => {
+    const loadedModule = loadOptionalModule(moduleName);
+    const factory = loadedModule[exportName];
+    if (typeof factory !== 'function') {
+      throw new Error(
+        `兼容 Provider SDK "${moduleName}" 没有导出 "${exportName}"，无法创建 provider。`,
+      );
+    }
+
+    return (factory as CompatibleProviderFactory)(options);
+  };
+}
+
+function loadOptionalModule(moduleName: string): Record<string, unknown> {
+  try {
+    return require(moduleName) as Record<string, unknown>;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `缺少兼容 Provider SDK "${moduleName}"。如需启用对应格式，请先安装该依赖。原始错误: ${detail}`,
+    );
+  }
 }
 
 /**
@@ -75,7 +113,7 @@ export function getCompatibleProviderFormatMetadata(
           'x-goog-api-key': apiKey,
         }),
         createInstance: (dto, options, resolveApiKey) =>
-          createGoogleGenerativeAI({
+          createGeminiProvider({
             apiKey: String(options.apiKey ?? resolveApiKey(dto)),
             baseURL: dto.baseUrl,
             name: dto.id,
