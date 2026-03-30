@@ -14,6 +14,7 @@ import { createResponseRecorderPlugin } from './builtin/response-recorder.plugin
 import { createToolAuditPlugin } from './builtin/tool-audit.plugin';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { ChatMessageService } from '../chat/chat-message.service';
+import { ToolRegistryService } from '../tool/tool-registry.service';
 
 describe('PluginRuntimeService', () => {
   const pluginService = {
@@ -55,6 +56,17 @@ describe('PluginRuntimeService', () => {
   const chatMessageService = {
     getCurrentPluginMessageTarget: jest.fn(),
     sendPluginMessage: jest.fn(),
+  };
+
+  const toolRegistry = {
+    buildToolSet: jest.fn(),
+    listAvailableToolSummaries: jest.fn(),
+  };
+
+  const subagentTaskService = {
+    startTask: jest.fn(),
+    listTasksForPlugin: jest.fn(),
+    getTaskForPlugin: jest.fn(),
   };
 
   const moduleRef = {
@@ -139,8 +151,38 @@ describe('PluginRuntimeService', () => {
       if (token === ChatMessageService) {
         return chatMessageService;
       }
+      if (token === ToolRegistryService) {
+        return toolRegistry;
+      }
+      if (token === 'PLUGIN_SUBAGENT_TASK_SERVICE') {
+        return subagentTaskService;
+      }
       return automationService;
     });
+    toolRegistry.buildToolSet.mockResolvedValue(undefined);
+    toolRegistry.listAvailableToolSummaries.mockResolvedValue([]);
+    subagentTaskService.startTask.mockResolvedValue({
+      id: 'subagent-task-1',
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请帮我总结当前对话',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      writeBackStatus: 'pending',
+      writeBackTarget: {
+        type: 'conversation',
+        id: 'conversation-1',
+      },
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+    });
+    subagentTaskService.listTasksForPlugin.mockResolvedValue([]);
+    subagentTaskService.getTaskForPlugin.mockResolvedValue(null);
     service = new PluginRuntimeService(
       pluginService as never,
       hostService as never,
@@ -417,9 +459,20 @@ describe('PluginRuntimeService', () => {
       context: callContext,
       payload: {
         context: callContext,
+        source: {
+          kind: 'plugin',
+          id: 'builtin.memory-tools',
+          label: '记忆工具',
+          pluginId: 'builtin.memory-tools',
+          runtimeKind: 'builtin',
+        },
         pluginId: 'builtin.memory-tools',
         runtimeKind: 'builtin',
-        tool: builtinManifest.tools[0],
+        tool: {
+          ...builtinManifest.tools[0],
+          toolId: 'plugin:builtin.memory-tools:save_memory',
+          callName: 'save_memory',
+        },
         params: {
           content: '插件改写后的参数',
         },
@@ -3327,6 +3380,192 @@ describe('PluginRuntimeService', () => {
     ).rejects.toThrow('插件 builtin.subagent-delegate 缺少权限 subagent:run');
   });
 
+  it('delegates background subagent task host calls through the task service', async () => {
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.subagent-delegate',
+        name: '子代理委派',
+        permissions: ['subagent:run'],
+        tools: [],
+        hooks: [],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport(),
+    });
+
+    subagentTaskService.listTasksForPlugin.mockResolvedValueOnce([
+      {
+        id: 'subagent-task-1',
+        pluginId: 'builtin.subagent-delegate',
+        pluginDisplayName: '子代理委派',
+        runtimeKind: 'builtin',
+        status: 'queued',
+        requestPreview: '请帮我总结当前对话',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        writeBackStatus: 'pending',
+        requestedAt: '2026-03-30T12:00:00.000Z',
+        startedAt: null,
+        finishedAt: null,
+      },
+    ]);
+    subagentTaskService.getTaskForPlugin.mockResolvedValueOnce({
+      id: 'subagent-task-1',
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'builtin',
+      status: 'completed',
+      requestPreview: '请帮我总结当前对话',
+      resultPreview: '这是后台任务总结',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      writeBackStatus: 'sent',
+      writeBackMessageId: 'assistant-message-1',
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      startedAt: '2026-03-30T12:00:01.000Z',
+      finishedAt: '2026-03-30T12:00:05.000Z',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        messages: [
+          {
+            role: 'user',
+            content: '请帮我总结当前对话',
+          },
+        ],
+        maxSteps: 4,
+      },
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      result: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        text: '这是后台任务总结',
+        message: {
+          role: 'assistant',
+          content: '这是后台任务总结',
+        },
+        finishReason: 'stop',
+        toolCalls: [],
+        toolResults: [],
+      },
+    });
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.subagent-delegate',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'subagent.task.start' as never,
+        params: {
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          messages: [
+            {
+              role: 'user',
+              content: '请帮我总结当前对话',
+            },
+          ],
+          maxSteps: 4,
+          writeBack: {
+            target: {
+              type: 'conversation',
+              id: 'conversation-1',
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: 'subagent-task-1',
+        status: 'queued',
+        writeBackStatus: 'pending',
+      }),
+    );
+
+    expect(subagentTaskService.startTask).toHaveBeenCalledWith({
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'builtin',
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        messages: [
+          {
+            role: 'user',
+            content: '请帮我总结当前对话',
+          },
+        ],
+        maxSteps: 4,
+      },
+      writeBackTarget: {
+        type: 'conversation',
+        id: 'conversation-1',
+      },
+    });
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.subagent-delegate',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'subagent.task.list' as never,
+        params: {},
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'subagent-task-1',
+        status: 'queued',
+      }),
+    ]);
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.subagent-delegate',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'subagent.task.get' as never,
+        params: {
+          taskId: 'subagent-task-1',
+        },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: 'subagent-task-1',
+        status: 'completed',
+        result: expect.objectContaining({
+          text: '这是后台任务总结',
+        }),
+      }),
+    );
+
+    expect(subagentTaskService.listTasksForPlugin).toHaveBeenCalledWith(
+      'builtin.subagent-delegate',
+    );
+    expect(subagentTaskService.getTaskForPlugin).toHaveBeenCalledWith(
+      'builtin.subagent-delegate',
+      'subagent-task-1',
+    );
+  });
+
   it('runs subagent calls through a tool loop with filtered visible tools', async () => {
     const callerManifest: PluginManifest = {
       ...builtinManifest,
@@ -3373,6 +3612,26 @@ describe('PluginRuntimeService', () => {
           },
         ],
       }),
+    });
+    const recallMemoryTool = {
+      description: '读取记忆',
+      inputSchema: undefined,
+      execute: jest.fn().mockImplementation((params) =>
+        memoryToolTransport.executeTool({
+          toolName: 'recall_memory',
+          params,
+          context: {
+            source: 'subagent',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+            activeProviderId: 'openai',
+            activeModelId: 'gpt-5.2',
+            activePersonaId: 'builtin.default-assistant',
+          },
+        })),
+    };
+    toolRegistry.buildToolSet.mockResolvedValue({
+      recall_memory: recallMemoryTool,
     });
     aiModelExecution.prepareResolved.mockReturnValue({
       modelConfig: {
@@ -3776,6 +4035,131 @@ describe('PluginRuntimeService', () => {
       expect.objectContaining({
         system: '你是更谨慎的子代理',
         stopWhen: expect.anything(),
+      }),
+    );
+  });
+
+  it('builds subagent-visible tools through ToolRegistryService instead of the legacy plugin helper path', async () => {
+    const recallMemoryTool = {
+      description: '读取记忆',
+      inputSchema: undefined,
+      execute: jest.fn().mockResolvedValue({
+        count: 1,
+      }),
+    };
+
+    toolRegistry.buildToolSet.mockResolvedValue({
+      recall_memory: recallMemoryTool,
+    });
+    aiModelExecution.prepareResolved.mockReturnValue({
+      modelConfig: {
+        id: 'gpt-5.2',
+        providerId: 'openai',
+        capabilities: {
+          input: { text: true, image: false },
+          output: { text: true, image: false },
+          reasoning: true,
+          toolCall: true,
+        },
+      },
+      model: {
+        provider: 'openai',
+        modelId: 'gpt-5.2',
+      },
+      sdkMessages: [],
+    });
+    aiModelExecution.streamPrepared.mockReturnValue({
+      result: {
+        fullStream: (async function* () {
+          yield {
+            type: 'tool-call',
+            toolCallId: 'call-1',
+            toolName: 'recall_memory',
+            input: {
+              query: '咖啡',
+            },
+          } as const;
+          yield {
+            type: 'tool-result',
+            toolCallId: 'call-1',
+            toolName: 'recall_memory',
+            output: {
+              count: 1,
+            },
+          } as const;
+          yield {
+            type: 'text-delta',
+            text: '已完成总结',
+          } as const;
+          yield { type: 'finish' } as const;
+        })(),
+        finishReason: Promise.resolve('stop'),
+      },
+    });
+
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.subagent-delegate',
+        permissions: ['subagent:run'],
+        tools: [
+          {
+            name: 'delegate_work',
+            description: '委派工作',
+            parameters: {},
+          },
+        ],
+        hooks: [],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport(),
+    });
+
+    await service.callHost({
+      pluginId: 'builtin.subagent-delegate',
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'subagent.run' as never,
+      params: {
+        messages: [
+          {
+            role: 'user',
+            content: '请结合工具帮我总结',
+          },
+        ],
+        toolNames: ['recall_memory'],
+      },
+    });
+
+    expect(toolRegistry.buildToolSet).toHaveBeenCalledWith({
+      context: {
+        source: 'subagent',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      allowedToolNames: ['recall_memory'],
+      excludedSources: [
+        {
+          kind: 'plugin',
+          id: 'builtin.subagent-delegate',
+        },
+      ],
+    });
+
+    expect(aiModelExecution.streamPrepared).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: {
+          recall_memory: recallMemoryTool,
+        },
       }),
     );
   });
@@ -4998,14 +5382,77 @@ describe('PluginRuntimeService', () => {
     });
   });
 
+  it('drops active conversation sessions immediately after governance refresh disables the plugin', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-03-28T12:00:00.000Z'));
+
+    try {
+      await service.registerPlugin({
+        manifest: {
+          ...builtinManifest,
+          id: 'builtin.idiom-session',
+          permissions: ['conversation:write'],
+          tools: [],
+          hooks: [
+            {
+              name: 'message:received',
+            },
+          ],
+        } as never,
+        runtimeKind: 'builtin',
+        transport: createTransport(),
+      });
+
+      await service.callHost({
+        pluginId: 'builtin.idiom-session',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'conversation.session.start' as never,
+        params: {
+          timeoutMs: 60000,
+        },
+      });
+
+      expect((service as any).listConversationSessions('builtin.idiom-session')).toHaveLength(1);
+
+      pluginService.getGovernanceSnapshot.mockResolvedValueOnce({
+        configSchema: null,
+        resolvedConfig: {},
+        scope: {
+          defaultEnabled: true,
+          conversations: {
+            'conversation-1': false,
+          },
+        },
+      });
+
+      await service.refreshPluginGovernance('builtin.idiom-session');
+
+      expect((service as any).listConversationSessions('builtin.idiom-session')).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('runs builtin tool:after-call consumers through the unified host api facade', async () => {
     const definition = createToolAuditPlugin();
     const payload = {
       context: callContext,
+      source: {
+        kind: 'plugin' as const,
+        id: 'builtin.memory-tools',
+        label: '记忆工具',
+        pluginId: 'builtin.memory-tools',
+        runtimeKind: 'builtin' as const,
+      },
       pluginId: 'builtin.memory-tools',
       runtimeKind: 'builtin' as const,
       tool: {
         ...builtinManifest.tools[0],
+        toolId: 'plugin:builtin.memory-tools:save_memory',
+        callName: 'save_memory',
       },
       params: {
         content: '记住我喜欢咖啡',
@@ -5017,8 +5464,12 @@ describe('PluginRuntimeService', () => {
 
     hostService.call
       .mockResolvedValueOnce({
+        sourceKind: 'plugin',
+        sourceId: 'builtin.memory-tools',
         pluginId: 'builtin.memory-tools',
         runtimeKind: 'builtin',
+        toolId: 'plugin:builtin.memory-tools:save_memory',
+        callName: 'save_memory',
         toolName: 'save_memory',
         callSource: 'chat-tool',
         paramKeys: ['content'],
@@ -5050,8 +5501,12 @@ describe('PluginRuntimeService', () => {
       params: {
         key: 'tool.builtin.memory-tools.save_memory.last-call',
         value: {
+          sourceKind: 'plugin',
+          sourceId: 'builtin.memory-tools',
           pluginId: 'builtin.memory-tools',
           runtimeKind: 'builtin',
+          toolId: 'plugin:builtin.memory-tools:save_memory',
+          callName: 'save_memory',
           toolName: 'save_memory',
           callSource: 'chat-tool',
           paramKeys: ['content'],
@@ -5070,8 +5525,12 @@ describe('PluginRuntimeService', () => {
         type: 'tool:observed',
         message: '工具 builtin.memory-tools:save_memory 执行完成',
         metadata: {
+          sourceKind: 'plugin',
+          sourceId: 'builtin.memory-tools',
           pluginId: 'builtin.memory-tools',
           runtimeKind: 'builtin',
+          toolId: 'plugin:builtin.memory-tools:save_memory',
+          callName: 'save_memory',
           toolName: 'save_memory',
           callSource: 'chat-tool',
           paramKeys: ['content'],

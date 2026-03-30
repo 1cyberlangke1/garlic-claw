@@ -82,6 +82,20 @@ export interface PluginHookFilterDescriptor {
   message?: PluginHookMessageFilter;
 }
 
+/** 命令治理视角下的命令类型。 */
+export type PluginCommandKind = 'command' | 'group-help' | 'hook-filter';
+
+/** 插件对外暴露的命令描述。 */
+export interface PluginCommandDescriptor {
+  kind: PluginCommandKind;
+  canonicalCommand: string;
+  path: string[];
+  aliases: string[];
+  variants: string[];
+  description?: string;
+  priority?: number;
+}
+
 /** 插件调用来源。 */
 export type PluginInvocationSource =
   | 'chat-tool'
@@ -291,6 +305,7 @@ export interface PluginSelfInfo {
   description?: string;
   permissions: PluginPermission[];
   crons?: PluginCronDescriptor[];
+  commands?: PluginCommandDescriptor[];
   hooks?: PluginHookDescriptor[];
   routes?: PluginRouteDescriptor[];
   supportedActions?: PluginActionName[];
@@ -314,6 +329,7 @@ export interface PluginManifest {
   permissions: PluginPermission[];
   tools: PluginCapability[];
   crons?: PluginCronDescriptor[];
+  commands?: PluginCommandDescriptor[];
   hooks?: PluginHookDescriptor[];
   config?: PluginConfigSchema;
   routes?: PluginRouteDescriptor[];
@@ -455,6 +471,30 @@ export interface PluginSubagentRunParams {
   maxSteps?: number;
 }
 
+/** 后台子代理任务状态。 */
+export type PluginSubagentTaskStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'error';
+
+/** 后台子代理任务回写状态。 */
+export type PluginSubagentTaskWriteBackStatus =
+  | 'pending'
+  | 'sent'
+  | 'failed'
+  | 'skipped';
+
+/** 后台子代理任务回写配置。 */
+export interface PluginSubagentTaskWriteBack {
+  target?: PluginMessageTargetRef | null;
+}
+
+/** 启动后台子代理任务的参数。 */
+export interface PluginSubagentTaskStartParams extends PluginSubagentRunParams {
+  writeBack?: PluginSubagentTaskWriteBack | null;
+}
+
 /** 子代理工具调用摘要。 */
 export interface PluginSubagentToolCall {
   toolCallId: string;
@@ -481,6 +521,41 @@ export interface PluginSubagentRunResult {
   finishReason?: string | null;
   toolCalls: PluginSubagentToolCall[];
   toolResults: PluginSubagentToolResult[];
+}
+
+/** 后台子代理任务摘要。 */
+export interface PluginSubagentTaskSummary {
+  id: string;
+  pluginId: string;
+  pluginDisplayName?: string;
+  runtimeKind: PluginRuntimeKind;
+  status: PluginSubagentTaskStatus;
+  requestPreview: string;
+  resultPreview?: string;
+  providerId?: string;
+  modelId?: string;
+  error?: string;
+  writeBackStatus: PluginSubagentTaskWriteBackStatus;
+  writeBackTarget?: PluginMessageTargetInfo | null;
+  writeBackError?: string;
+  writeBackMessageId?: string;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  conversationId?: string;
+  userId?: string;
+}
+
+/** 后台子代理任务详情。 */
+export interface PluginSubagentTaskDetail extends PluginSubagentTaskSummary {
+  request: PluginSubagentRequest;
+  context: PluginCallContext;
+  result?: PluginSubagentRunResult | null;
+}
+
+/** 后台子代理任务总览。 */
+export interface PluginSubagentTaskOverview {
+  tasks: PluginSubagentTaskSummary[];
 }
 
 /** 子代理运行时可改写的请求快照。 */
@@ -573,10 +648,14 @@ export type SubagentAfterRunHookResult =
 /** 聊天模型前 Hook 可见的工具摘要。 */
 export interface PluginAvailableToolSummary {
   name: string;
+  callName?: string;
+  toolId?: string;
   description: string;
   parameters: Record<string, PluginParamSchema>;
   pluginId?: string;
   runtimeKind?: PluginRuntimeKind;
+  sourceKind?: 'plugin' | 'mcp';
+  sourceId?: string;
 }
 
 /** 聊天模型前 Hook 可改写的请求快照。 */
@@ -969,12 +1048,31 @@ export type AutomationAfterRunHookResult =
 /** 最终回复来源。 */
 export type PluginResponseSource = 'model' | 'short-circuit';
 
+/** 工具 Hook 看到的来源类型。 */
+export type ToolHookSourceKind = 'plugin' | 'mcp';
+
+/** 工具 Hook 看到的工具来源信息。 */
+export interface ToolHookSourceInfo {
+  kind: ToolHookSourceKind;
+  id: string;
+  label: string;
+  pluginId?: string;
+  runtimeKind?: PluginRuntimeKind;
+}
+
+/** 工具 Hook 看到的统一工具信息。 */
+export interface ToolHookToolInfo extends PluginCapability {
+  toolId: string;
+  callName: string;
+}
+
 /** 工具调用前 Hook 的输入。 */
 export interface ToolBeforeCallHookPayload {
   context: PluginCallContext;
-  pluginId: string;
-  runtimeKind: PluginRuntimeKind;
-  tool: PluginCapability;
+  source: ToolHookSourceInfo;
+  tool: ToolHookToolInfo;
+  pluginId?: string;
+  runtimeKind?: PluginRuntimeKind;
   params: JsonObject;
 }
 
@@ -1004,9 +1102,10 @@ export type ToolBeforeCallHookResult =
 /** 工具调用后 Hook 的输入。 */
 export interface ToolAfterCallHookPayload {
   context: PluginCallContext;
-  pluginId: string;
-  runtimeKind: PluginRuntimeKind;
-  tool: PluginCapability;
+  source: ToolHookSourceInfo;
+  tool: ToolHookToolInfo;
+  pluginId?: string;
+  runtimeKind?: PluginRuntimeKind;
   params: JsonObject;
   output: JsonValue;
 }
@@ -1170,6 +1269,9 @@ export type PluginHostMethod =
   | 'storage.list'
   | 'storage.set'
   | 'subagent.run'
+  | 'subagent.task.get'
+  | 'subagent.task.list'
+  | 'subagent.task.start'
   | 'state.get'
   | 'state.set'
   | 'user.get';
@@ -1193,6 +1295,60 @@ export interface PluginCapability {
   parameters: Record<string, PluginParamSchema>;
 }
 
+/** 内建插件在治理面的角色。 */
+export type PluginBuiltinRole =
+  | 'user-facing'
+  | 'system-optional'
+  | 'system-required';
+
+/** 插件治理摘要。 */
+export interface PluginGovernanceInfo {
+  canDisable: boolean;
+  disableReason?: string;
+  builtinRole?: PluginBuiltinRole;
+}
+
+/** 命令目录的来源。 */
+export type PluginCommandDescriptorSource = 'manifest' | 'hook-filter';
+
+/** 插件命令目录里的单条命令记录。 */
+export interface PluginCommandInfo extends PluginCommandDescriptor {
+  commandId: string;
+  pluginId: string;
+  pluginDisplayName?: string;
+  runtimeKind: PluginRuntimeKind;
+  connected: boolean;
+  defaultEnabled: boolean;
+  source: PluginCommandDescriptorSource;
+  governance?: PluginGovernanceInfo;
+  conflictTriggers: string[];
+}
+
+/** 冲突视图里的命令归属摘要。 */
+export interface PluginCommandConflictEntry {
+  commandId: string;
+  pluginId: string;
+  pluginDisplayName?: string;
+  runtimeKind: PluginRuntimeKind;
+  connected: boolean;
+  defaultEnabled: boolean;
+  kind: PluginCommandKind;
+  canonicalCommand: string;
+  priority?: number;
+}
+
+/** 一个触发词对应的冲突摘要。 */
+export interface PluginCommandConflict {
+  trigger: string;
+  commands: PluginCommandConflictEntry[];
+}
+
+/** 插件命令治理总览。 */
+export interface PluginCommandOverview {
+  commands: PluginCommandInfo[];
+  conflicts: PluginCommandConflict[];
+}
+
 /** 插件/设备信息 */
 export interface PluginInfo {
   id: string;
@@ -1212,6 +1368,7 @@ export interface PluginInfo {
   routes?: PluginRouteDescriptor[];
   manifest?: PluginManifest;
   health?: PluginHealthSnapshot;
+  governance?: PluginGovernanceInfo;
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;

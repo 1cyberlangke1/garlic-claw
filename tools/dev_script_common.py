@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import signal
@@ -226,19 +227,72 @@ def isPidRunning(pid: int) -> bool:
 
     try:
         if IS_WINDOWS:
-            result = subprocess.run(
-                ['tasklist', '/FI', f'PID eq {pid}', '/NH'],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            output = result.stdout.strip()
-            return bool(output) and 'No tasks are running' not in output and 'INFO:' not in output
+            return isWindowsPidRunning(pid)
 
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError, OSError):
+    except ProcessLookupError:
         return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def isWindowsPidRunning(
+    pid: int,
+    *,
+    openProcess=None,
+    getExitCodeProcess=None,
+    closeHandle=None,
+    getLastError=None,
+) -> bool:
+    """使用 Win32 API 判断 PID 是否仍在运行。
+
+    输入:
+    - pid: 进程号
+    - openProcess/getExitCodeProcess/closeHandle/getLastError:
+      可选注入，用于测试
+
+    输出:
+    - `True` 表示 PID 仍存在；`False` 表示不存在
+
+    预期行为:
+    - 避免依赖 `tasklist /FI`，因为该命令在部分 Windows 环境下会直接返回
+      `Access denied`，从而把活进程误判成已停止
+    """
+    if pid <= 0:
+        return False
+
+    processQueryLimitedInformation = 0x1000
+    synchronize = 0x00100000
+    stillActive = 259
+    errorAccessDenied = 5
+
+    if openProcess is None or getExitCodeProcess is None or closeHandle is None:
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        openProcess = kernel32.OpenProcess
+        getExitCodeProcess = kernel32.GetExitCodeProcess
+        closeHandle = kernel32.CloseHandle
+
+    if getLastError is None:
+        getLastError = ctypes.get_last_error
+
+    handle = openProcess(
+        processQueryLimitedInformation | synchronize,
+        False,
+        pid,
+    )
+    if not handle:
+        return getLastError() == errorAccessDenied
+
+    try:
+        exitCode = ctypes.c_ulong()
+        if not getExitCodeProcess(handle, ctypes.byref(exitCode)):
+            return getLastError() == errorAccessDenied
+        return exitCode.value == stillActive
+    finally:
+        closeHandle(handle)
 
 
 def isPortListening(port: int, host: str = '127.0.0.1', timeout: float = 0.5) -> bool:
@@ -399,9 +453,7 @@ def terminateProcess(pid: int, source: str) -> bool:
         else:
             try:
                 os.killpg(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                return False
-            except OSError:
+            except (ProcessLookupError, OSError):
                 os.kill(pid, signal.SIGTERM)
         ok(f'已关闭 {source} (PID {pid})')
         return True

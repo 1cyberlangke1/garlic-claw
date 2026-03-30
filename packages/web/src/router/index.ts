@@ -36,6 +36,26 @@ const router = createRouter({
           component: () => import('../views/PluginsView.vue'),
         },
         {
+          path: 'personas',
+          name: 'persona-settings',
+          component: () => import('../views/PersonaSettingsView.vue'),
+        },
+        {
+          path: 'tools',
+          name: 'tools',
+          component: () => import('../views/ToolsView.vue'),
+        },
+        {
+          path: 'commands',
+          name: 'commands',
+          component: () => import('../views/CommandsView.vue'),
+        },
+        {
+          path: 'subagents',
+          name: 'subagent-tasks',
+          component: () => import('../views/SubagentTasksView.vue'),
+        },
+        {
           path: 'automations',
           name: 'automations',
           component: () => import('../views/AutomationsView.vue'),

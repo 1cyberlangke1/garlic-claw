@@ -39,7 +39,7 @@ export function createSubagentDelegatePlugin(): BuiltinPluginDefinition {
       version: '1.0.0',
       runtime: 'builtin',
       description: '将当前任务委派给宿主子代理执行的内建插件。',
-      permissions: ['config:read', 'subagent:run'],
+      permissions: ['config:read', 'conversation:write', 'subagent:run'],
       tools: [
         {
           name: 'delegate_summary',
@@ -49,6 +49,21 @@ export function createSubagentDelegatePlugin(): BuiltinPluginDefinition {
               type: 'string',
               description: '要交给子代理处理的提示词',
               required: true,
+            },
+          },
+        },
+        {
+          name: 'delegate_summary_background',
+          description: '将当前任务委托给宿主子代理后台执行，并可在完成后回写当前会话',
+          parameters: {
+            prompt: {
+              type: 'string',
+              description: '要交给后台子代理处理的提示词',
+              required: true,
+            },
+            writeBack: {
+              type: 'boolean',
+              description: '完成后是否回写到当前会话；默认在存在会话上下文时开启',
             },
           },
         },
@@ -115,6 +130,55 @@ export function createSubagentDelegatePlugin(): BuiltinPluginDefinition {
 
         return toDelegateSummary(result);
       },
+      /**
+       * 发起一次受控的宿主侧后台子代理总结。
+       * @param params 工具参数
+       * @param context 插件执行上下文
+       * @returns 已排队的后台任务摘要
+       */
+      delegate_summary_background: async (params, context) => {
+        const prompt = sanitizePrompt(params.prompt);
+        const config = (await context.host.getConfig()) as SubagentDelegatePluginConfig;
+        const shouldWriteBack = normalizeWriteBackFlag(
+          params.writeBack,
+          Boolean(context.callContext.conversationId),
+        );
+        const task = await context.host.startSubagentTask({
+          ...(sanitizeText(config.targetProviderId)
+            ? { providerId: sanitizeText(config.targetProviderId) }
+            : {}),
+          ...(sanitizeText(config.targetModelId)
+            ? { modelId: sanitizeText(config.targetModelId) }
+            : {}),
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+          ...(parseAllowedToolNames(config.allowedToolNames)
+            ? { toolNames: parseAllowedToolNames(config.allowedToolNames) as string[] }
+            : {}),
+          maxSteps: normalizeMaxSteps(config.maxSteps),
+          ...(shouldWriteBack && context.callContext.conversationId
+            ? {
+                writeBack: {
+                  target: {
+                    type: 'conversation' as const,
+                    id: context.callContext.conversationId,
+                  },
+                },
+              }
+            : {}),
+        });
+
+        return toJsonValue(task);
+      },
     },
   };
 }
@@ -171,6 +235,20 @@ function normalizeMaxSteps(value?: number): number {
   }
 
   return Math.max(1, Math.floor(value));
+}
+
+/**
+ * 归一化后台任务的回写开关。
+ * @param value 原始布尔值
+ * @param fallback 默认回写策略
+ * @returns 是否应该回写结果
+ */
+function normalizeWriteBackFlag(value: JsonValue, fallback: boolean): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  return fallback;
 }
 
 /**

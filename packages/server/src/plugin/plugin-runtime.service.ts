@@ -54,6 +54,8 @@ import type {
   PluginRuntimeKind,
   PluginSelfInfo,
   PluginSubagentRequest,
+  PluginSubagentTaskDetail,
+  PluginSubagentTaskSummary,
   PluginSubagentToolCall,
   PluginSubagentToolResult,
   SubagentAfterRunHookMutateResult,
@@ -78,6 +80,7 @@ import type {
   ToolBeforeCallHookPayload,
   ToolBeforeCallHookShortCircuitResult,
 } from '@garlic-claw/shared';
+import type { Tool } from 'ai';
 import {
   BadRequestException,
   ForbiddenException,
@@ -89,7 +92,6 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { createStepLimit } from '../ai/sdk-adapter';
-import { filterToolSet, getPluginTools } from '../ai/tools';
 import { AutomationService } from '../automation/automation.service';
 import type { ChatRuntimeMessage } from '../chat/chat-message-session';
 import { toAiSdkMessages } from '../chat/sdk-message-converter';
@@ -97,6 +99,10 @@ import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import { PluginHostService } from './plugin-host.service';
 import { PluginCronService } from './plugin-cron.service';
+import {
+  collectDisabledConversationSessionIds,
+  isPluginEnabledForContext as isPluginEnabledForRuntimeScope,
+} from './plugin-runtime-scope';
 import {
   PluginService,
   type PluginGovernanceSnapshot,
@@ -146,6 +152,9 @@ const HOST_METHOD_PERMISSION_MAP: Record<PluginHostMethod, PluginPermission | nu
   'storage.list': 'storage:read',
   'storage.set': 'storage:write',
   'subagent.run': 'subagent:run',
+  'subagent.task.get': 'subagent:run',
+  'subagent.task.list': 'subagent:run',
+  'subagent.task.start': 'subagent:run',
   'state.get': 'state:read',
   'state.set': 'state:write',
   'user.get': 'user:read',
@@ -496,6 +505,31 @@ export class PluginRuntimeService {
   private readonly conversationSessions = new Map<string, ConversationSessionRecord>();
   private automationService?: AutomationService;
   private chatMessageService?: PluginConversationMessageWriter;
+  private subagentTaskService?: {
+    startTask: (input: {
+      pluginId: string;
+      pluginDisplayName?: string;
+      runtimeKind: PluginRuntimeKind;
+      context: PluginCallContext;
+      request: PluginSubagentRequest;
+      writeBackTarget?: PluginMessageTargetRef | null;
+    }) => Promise<PluginSubagentTaskSummary>;
+    listTasksForPlugin: (pluginId: string) => Promise<PluginSubagentTaskSummary[]>;
+    getTaskForPlugin: (
+      pluginId: string,
+      taskId: string,
+    ) => Promise<PluginSubagentTaskDetail>;
+  };
+  private toolRegistryPromise?: Promise<{
+    buildToolSet: (input: {
+      context: PluginCallContext;
+      allowedToolNames?: string[];
+      excludedSources?: Array<{
+        kind: 'plugin' | 'mcp';
+        id: string;
+      }>;
+    }) => Promise<Record<string, Tool> | undefined>;
+  }>;
 
   constructor(
     private readonly pluginService: PluginService,
@@ -565,6 +599,7 @@ export class PluginRuntimeService {
 
     record.governance = await this.pluginService.getGovernanceSnapshot(pluginId);
     record.maxConcurrentExecutions = this.resolveMaxConcurrentExecutions(record.governance);
+    this.pruneDisabledConversationSessions(pluginId, record.governance.scope);
   }
 
   /**
@@ -827,35 +862,52 @@ export class PluginRuntimeService {
     toolName: string;
     params: JsonObject;
     context: PluginCallContext;
+    skipLifecycleHooks?: boolean;
   }): Promise<JsonValue> {
     const record = this.getRecordOrThrow(input.pluginId);
     this.assertPluginEnabled(record, input.context);
     const targetTool = this.findToolOrThrow(record, input.toolName);
-    const beforeCallResult = await this.runToolBeforeCallHooks({
-      context: input.context,
-      payload: {
-        context: {
-          ...input.context,
-        },
+    const lifecyclePayload = {
+      context: {
+        ...input.context,
+      },
+      source: {
+        kind: 'plugin' as const,
+        id: input.pluginId,
+        label: record.manifest.name || input.pluginId,
         pluginId: input.pluginId,
         runtimeKind: record.runtimeKind,
-        tool: {
-          ...targetTool,
-          parameters: {
-            ...targetTool.parameters,
-          },
-        },
-        params: {
-          ...input.params,
+      },
+      pluginId: input.pluginId,
+      runtimeKind: record.runtimeKind,
+      tool: {
+        toolId: `plugin:${input.pluginId}:${targetTool.name}`,
+        callName: record.runtimeKind === 'builtin'
+          ? targetTool.name
+          : `${input.pluginId}__${targetTool.name}`,
+        ...targetTool,
+        parameters: {
+          ...targetTool.parameters,
         },
       },
-    });
+      params: {
+        ...input.params,
+      },
+    };
+    let toolParams = lifecyclePayload.params;
 
-    if (beforeCallResult.action === 'short-circuit') {
-      return beforeCallResult.output;
+    if (!input.skipLifecycleHooks) {
+      const beforeCallResult = await this.runToolBeforeCallHooks({
+        context: input.context,
+        payload: lifecyclePayload,
+      });
+
+      if (beforeCallResult.action === 'short-circuit') {
+        return beforeCallResult.output;
+      }
+
+      toolParams = beforeCallResult.payload.params;
     }
-
-    const toolParams = beforeCallResult.payload.params;
 
     try {
       const output = await this.runWithPluginExecutionSlot({
@@ -877,20 +929,14 @@ export class PluginRuntimeService {
         ),
       });
 
+      if (input.skipLifecycleHooks) {
+        return output;
+      }
+
       const afterCallPayload = await this.runToolAfterCallHooks({
         context: input.context,
         payload: {
-          context: {
-            ...input.context,
-          },
-          pluginId: input.pluginId,
-          runtimeKind: record.runtimeKind,
-          tool: {
-            ...targetTool,
-            parameters: {
-              ...targetTool.parameters,
-            },
-          },
+          ...lifecyclePayload,
           params: {
             ...toolParams,
           },
@@ -1142,6 +1188,35 @@ export class PluginRuntimeService {
         context: input.context,
         params: input.params,
       }));
+    }
+    if (input.method === 'subagent.task.start') {
+      const record = this.getRecordOrThrow(input.pluginId);
+      const taskService = await this.getSubagentTaskService();
+      const taskParams = this.readSubagentTaskStartParams(
+        input.params,
+        'subagent.task.start',
+      );
+      return toJsonValue(await taskService.startTask({
+        pluginId: input.pluginId,
+        pluginDisplayName: record.manifest.name,
+        runtimeKind: record.runtimeKind,
+        context: input.context,
+        request: taskParams.request,
+        ...(taskParams.writeBackTarget
+          ? { writeBackTarget: taskParams.writeBackTarget }
+          : {}),
+      }));
+    }
+    if (input.method === 'subagent.task.list') {
+      const taskService = await this.getSubagentTaskService();
+      return toJsonValue(await taskService.listTasksForPlugin(input.pluginId));
+    }
+    if (input.method === 'subagent.task.get') {
+      const taskService = await this.getSubagentTaskService();
+      return toJsonValue(await taskService.getTaskForPlugin(
+        input.pluginId,
+        this.requireString(input.params, 'taskId', 'subagent.task.get'),
+      ));
     }
 
     return this.hostService.call(input);
@@ -2045,15 +2120,7 @@ export class PluginRuntimeService {
     record: PluginRuntimeRecord,
     context: PluginCallContext,
   ): boolean {
-    const conversationId = context.conversationId;
-    if (conversationId) {
-      const scoped = record.governance.scope.conversations[conversationId];
-      if (typeof scoped === 'boolean') {
-        return scoped;
-      }
-    }
-
-    return record.governance.scope.defaultEnabled;
+    return isPluginEnabledForRuntimeScope(record.governance.scope, context);
   }
 
   /**
@@ -3371,6 +3438,49 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 延迟解析后台子代理任务服务，避免与 runtime 形成构造期循环依赖。
+   * @returns 后台子代理任务服务实例
+   */
+  private async getSubagentTaskService() {
+    if (this.subagentTaskService) {
+      return this.subagentTaskService;
+    }
+
+    const resolved = this.moduleRef.get<typeof this.subagentTaskService>(
+      'PLUGIN_SUBAGENT_TASK_SERVICE',
+      {
+        strict: false,
+      },
+    );
+    if (!resolved) {
+      throw new NotFoundException('PluginSubagentTaskService is not available');
+    }
+
+    this.subagentTaskService = resolved;
+    return resolved;
+  }
+
+  private async getToolRegistry() {
+    if (this.toolRegistryPromise) {
+      return this.toolRegistryPromise;
+    }
+
+    this.toolRegistryPromise = (async () => {
+      const { ToolRegistryService } = await import('../tool/tool-registry.service');
+      const resolved = this.moduleRef.get(ToolRegistryService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new NotFoundException('ToolRegistryService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.toolRegistryPromise;
+  }
+
+  /**
    * 为当前会话启动一条活动等待态。
    * @param input 插件、上下文与超时参数
    * @returns 当前活动等待态摘要
@@ -3511,6 +3621,26 @@ export class PluginRuntimeService {
     }
 
     return session;
+  }
+
+  /**
+   * 在治理刷新后剔除当前已失效的活动会话等待态。
+   * @param pluginId 插件 ID
+   * @param scope 最新作用域
+   * @returns 无返回值
+   */
+  private pruneDisabledConversationSessions(
+    pluginId: string,
+    scope: PluginGovernanceSnapshot['scope'],
+  ): void {
+    const disabledConversationIds = collectDisabledConversationSessionIds(
+      this.conversationSessions.values(),
+      pluginId,
+      scope,
+    );
+    for (const conversationId of disabledConversationIds) {
+      this.conversationSessions.delete(conversationId);
+    }
   }
 
   /**
@@ -4133,6 +4263,40 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 从 Host API 参数中读取后台子代理任务启动参数。
+   * @param params 参数对象
+   * @param method 当前 Host API 方法名
+   * @returns 归一化后的任务请求与可选回写目标
+   */
+  private readSubagentTaskStartParams(
+    params: JsonObject,
+    method: string,
+  ): {
+    request: PluginSubagentRequest;
+    writeBackTarget?: PluginMessageTargetRef;
+  } {
+    const request = this.readSubagentRequest(params, method);
+    const rawWriteBack = params.writeBack;
+    if (rawWriteBack === undefined || rawWriteBack === null) {
+      return { request };
+    }
+    if (!isJsonObjectValue(rawWriteBack)) {
+      throw new BadRequestException(`${method} 的 writeBack 必须是对象`);
+    }
+
+    const writeBackTarget = this.readOptionalMessageTarget(
+      rawWriteBack,
+      'target',
+      `${method}.writeBack`,
+    );
+
+    return {
+      request,
+      ...(writeBackTarget ? { writeBackTarget } : {}),
+    };
+  }
+
+  /**
    * 构造一个统一的子代理执行结果，并在缺失模型信息时回退到宿主默认解析。
    * @param input 原始结果字段
    * @returns 标准化后的子代理结果
@@ -4167,16 +4331,15 @@ export class PluginRuntimeService {
   }
 
   /**
-   * 执行一次宿主侧 subagent 调用。
-   * @param input 调用参数
-   * @returns subagent 最终结果
+   * 执行一份已经归一化的子代理请求。
+   * @param input 插件 ID、调用上下文与归一化后的请求
+   * @returns 子代理最终结果
    */
-  private async runSubagent(input: {
+  async executeSubagentRequest(input: {
     pluginId: string;
     context: PluginCallContext;
-    params: JsonObject;
+    request: PluginSubagentRequest;
   }): Promise<PluginSubagentRunResult> {
-    const initialRequest = this.readSubagentRequest(input.params, 'subagent.run');
     const beforeRunResult = await this.runSubagentBeforeRunHooks({
       context: input.context,
       payload: {
@@ -4184,7 +4347,7 @@ export class PluginRuntimeService {
           ...input.context,
         },
         pluginId: input.pluginId,
-        request: cloneSubagentRequest(initialRequest),
+        request: cloneSubagentRequest(input.request),
       },
     });
     if (beforeRunResult.action === 'short-circuit') {
@@ -4205,7 +4368,7 @@ export class PluginRuntimeService {
       modelConfig,
       sdkMessages: toAiSdkMessages(request.messages as unknown as ChatRuntimeMessage[]),
     });
-    const tools = this.buildSubagentToolSet({
+    const tools = await this.buildSubagentToolSet({
       pluginId: input.pluginId,
       context: input.context,
       providerId: String(modelConfig.providerId),
@@ -4287,11 +4450,28 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 执行一次宿主侧 subagent 调用。
+   * @param input 调用参数
+   * @returns subagent 最终结果
+   */
+  private async runSubagent(input: {
+    pluginId: string;
+    context: PluginCallContext;
+    params: JsonObject;
+  }): Promise<PluginSubagentRunResult> {
+    return this.executeSubagentRequest({
+      pluginId: input.pluginId,
+      context: input.context,
+      request: this.readSubagentRequest(input.params, 'subagent.run'),
+    });
+  }
+
+  /**
    * 构造 subagent 可见的工具集合，并默认排除调用插件自身的工具。
    * @param input 调用参数
    * @returns 裁剪后的工具集合
    */
-  private buildSubagentToolSet(input: {
+  private async buildSubagentToolSet(input: {
     pluginId: string;
     context: PluginCallContext;
     providerId: string;
@@ -4302,28 +4482,24 @@ export class PluginRuntimeService {
       return undefined;
     }
 
-    const callerRecord = this.getRecordOrThrow(input.pluginId);
-    const ownVisibleToolNames = new Set(
-      (callerRecord.manifest.tools ?? []).map((tool) =>
-        callerRecord.runtimeKind === 'builtin'
-          ? tool.name
-          : `${input.pluginId}__${tool.name}`),
-    );
-    const visibleTools = getPluginTools(this, {
-      source: 'subagent',
-      userId: input.context.userId,
-      conversationId: input.context.conversationId,
-      activeProviderId: input.providerId,
-      activeModelId: input.modelId,
-      activePersonaId: input.context.activePersonaId,
+    const toolRegistry = await this.getToolRegistry();
+    return toolRegistry.buildToolSet({
+      context: {
+        source: 'subagent',
+        userId: input.context.userId,
+        conversationId: input.context.conversationId,
+        activeProviderId: input.providerId,
+        activeModelId: input.modelId,
+        activePersonaId: input.context.activePersonaId,
+      },
+      allowedToolNames: input.toolNames,
+      excludedSources: [
+        {
+          kind: 'plugin',
+          id: input.pluginId,
+        },
+      ],
     });
-    const filteredSelfTools = Object.fromEntries(
-      Object.entries(visibleTools).filter(
-        ([toolName]) => !ownVisibleToolNames.has(toolName),
-      ),
-    );
-
-    return filterToolSet(filteredSelfTools, input.toolNames);
   }
 
   /**
@@ -4674,8 +4850,11 @@ function cloneToolBeforeCallHookPayload(
     context: {
       ...payload.context,
     },
-    pluginId: payload.pluginId,
-    runtimeKind: payload.runtimeKind,
+    source: {
+      ...payload.source,
+    },
+    ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
+    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
     tool: {
       ...payload.tool,
       parameters: {
@@ -4700,8 +4879,11 @@ function cloneToolAfterCallHookPayload(
     context: {
       ...payload.context,
     },
-    pluginId: payload.pluginId,
-    runtimeKind: payload.runtimeKind,
+    source: {
+      ...payload.source,
+    },
+    ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
+    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
     tool: {
       ...payload.tool,
       parameters: {

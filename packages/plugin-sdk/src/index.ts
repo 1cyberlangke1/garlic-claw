@@ -26,8 +26,10 @@ import {
   type PluginConversationSessionInfo,
   type PluginConversationSessionKeepParams,
   type PluginConversationSessionStartParams,
+  type PluginCommandDescriptor,
   type PluginHookName,
   type PluginMessageKind,
+  type PluginMessageHookInfo,
   type PluginMessageSendInfo,
   type PluginMessageSendParams,
   type PluginMessageTargetInfo,
@@ -45,6 +47,9 @@ import {
   type PluginSelfInfo,
   type PluginSubagentRunParams,
   type PluginSubagentRunResult,
+  type PluginSubagentTaskDetail,
+  type PluginSubagentTaskStartParams,
+  type PluginSubagentTaskSummary,
   type RegisterPayload,
   type RouteResultPayload,
   type TriggerConfig,
@@ -68,6 +73,8 @@ export interface PluginManifestInput {
   permissions?: PluginManifest['permissions'];
   /** 工具描述列表。 */
   tools?: PluginCapability[];
+  /** 命令描述列表。 */
+  commands?: NonNullable<PluginManifest['commands']>;
   /** Hook 描述列表。 */
   hooks?: NonNullable<PluginManifest['hooks']>;
   /** 插件配置 schema。 */
@@ -157,6 +164,14 @@ export interface PluginHostFacade {
    * @returns 已发送的消息摘要
    */
   sendMessage(input: PluginMessageSendParams): Promise<PluginMessageSendInfo>;
+
+  /**
+   * 当前执行上下文绑定的会话等待态控制器。
+   *
+   * 这是对现有 `conversation.session.*` Host API 的本地封装，
+   * 不会引入新的宿主协议。
+   */
+  conversationSession: PluginConversationSessionController;
 
   /**
    * 为当前会话启动等待态，多轮用户消息会优先交给当前插件处理。
@@ -423,6 +438,28 @@ export interface PluginHostFacade {
   runSubagent(params: PluginSubagentRunParams): Promise<PluginSubagentRunResult>;
 
   /**
+   * 启动一个后台子代理任务。
+   * @param params 子代理消息、可选回写目标和模型参数
+   * @returns 已排队的任务摘要
+   */
+  startSubagentTask(
+    params: PluginSubagentTaskStartParams,
+  ): Promise<PluginSubagentTaskSummary>;
+
+  /**
+   * 列出当前插件启动过的后台子代理任务。
+   * @returns 任务摘要列表
+   */
+  listSubagentTasks(): Promise<PluginSubagentTaskSummary[]>;
+
+  /**
+   * 读取当前插件的一个后台子代理任务详情。
+   * @param taskId 任务 ID
+   * @returns 任务详情
+   */
+  getSubagentTask(taskId: string): Promise<PluginSubagentTaskDetail>;
+
+  /**
    * 发起一次宿主侧文本生成。
    * @param params 提示词与可选模型参数
    * @returns 文本生成结果
@@ -439,6 +476,47 @@ export interface PluginHostFacade {
   }): Promise<JsonValue>;
 }
 
+/** 会话等待态控制器。 */
+export interface PluginConversationSessionController {
+  /** 当前绑定的会话 ID；无上下文时返回 null。 */
+  readonly conversationId: string | null;
+  /** 当前同步到本地的等待态快照。 */
+  readonly session: PluginConversationSessionInfo | null;
+  /** 当前等待态的超时毫秒数。 */
+  readonly timeoutMs: number | null;
+  /** 当前等待态开始时间。 */
+  readonly startedAt: string | null;
+  /** 当前等待态过期时间。 */
+  readonly expiresAt: string | null;
+  /** 当前等待态最后一次命中的时间。 */
+  readonly lastMatchedAt: string | null;
+  /** 当前等待态是否记录历史。 */
+  readonly captureHistory: boolean;
+  /** 当前等待态累计的历史消息。 */
+  readonly historyMessages: PluginMessageHookInfo[];
+  /** 当前等待态 metadata。 */
+  readonly metadata: JsonValue | undefined;
+
+  /** 启动等待态。 */
+  start(
+    input: PluginConversationSessionStartParams,
+  ): Promise<PluginConversationSessionInfo>;
+
+  /** 读取当前等待态。 */
+  get(): Promise<PluginConversationSessionInfo | null>;
+
+  /** 同步一次当前等待态快照。 */
+  sync(): Promise<PluginConversationSessionInfo | null>;
+
+  /** 续期当前等待态。 */
+  keep(
+    input: PluginConversationSessionKeepParams,
+  ): Promise<PluginConversationSessionInfo | null>;
+
+  /** 结束当前等待态。 */
+  finish(): Promise<boolean>;
+}
+
 /**
  * 插件执行上下文。
  */
@@ -447,6 +525,18 @@ export interface PluginExecutionContext {
   callContext: PluginCallContext;
   /** Host API 门面。 */
   host: PluginHostFacade;
+}
+
+/** `client.sessionWaiter(...)` 返回的 waiter 句柄。 */
+export interface PluginSessionWaiterHandle {
+  /**
+   * 在当前执行上下文里启动等待态，并把后续命中的会话消息
+   * 优先交给对应 handler。
+   */
+  start(
+    context: PluginExecutionContext,
+    input: PluginConversationSessionStartParams,
+  ): Promise<PluginConversationSessionInfo>;
 }
 
 /** SDK 级消息监听配置。 */
@@ -532,6 +622,12 @@ type MessageCommandHandler = (
   context: PluginExecutionContext,
 ) => Promise<PluginMessageHandlerResult> | PluginMessageHandlerResult;
 
+type SessionWaiterHandler = (
+  controller: PluginConversationSessionController,
+  payload: MessageReceivedHookPayload,
+  context: PluginExecutionContext,
+) => Promise<PluginMessageHandlerResult> | PluginMessageHandlerResult;
+
 type HookHandler = (
   payload: JsonValue,
   context: PluginExecutionContext,
@@ -592,6 +688,16 @@ interface CommandSegmentDescriptor {
   aliases: string[];
 }
 
+interface InternalConversationSessionController
+  extends PluginConversationSessionController {
+  setSession(session: PluginConversationSessionInfo | null): void;
+}
+
+interface InternalSessionWaiterRegistration {
+  conversationId: string;
+  handler: SessionWaiterHandler;
+}
+
 /**
  * 输出插件 SDK 的普通运行日志。
  * @param message 完整日志文本
@@ -620,6 +726,7 @@ export class PluginClient {
   private readonly commandGroups: InternalCommandGroupNode[] = [];
   private readonly commandPaths = new Set<string>();
   private readonly commandGroupPaths = new Set<string>();
+  private readonly sessionWaiters = new Map<string, InternalSessionWaiterRegistration>();
   private readonly pendingHostCalls = new Map<string, {
     resolve: (value: JsonValue) => void;
     reject: (reason: Error) => void;
@@ -694,6 +801,21 @@ export class PluginClient {
   onRoute(path: string, handler: RouteHandler) {
     this.routeHandlers.set(normalizeRoutePath(path), handler);
     return this;
+  }
+
+  /** 注册一个本地会话 waiter。 */
+  sessionWaiter(handler: SessionWaiterHandler): PluginSessionWaiterHandle {
+    return {
+      start: async (context, input) => {
+        const controller = context.host.conversationSession;
+        const session = await controller.start(input);
+        this.sessionWaiters.set(session.conversationId, {
+          conversationId: session.conversationId,
+          handler,
+        });
+        return session;
+      },
+    };
   }
 
   /**
@@ -1184,11 +1306,13 @@ export class PluginClient {
     callContext?: PluginCallContext,
   ): PluginExecutionContext {
     const context = callContext ?? { source: 'plugin' as const };
+    const conversationSession = this.createConversationSessionController(context);
 
     return {
       callContext: context,
       host: {
         call: (method, params) => this.sendHostCall(method, params, context),
+        conversationSession,
         getCurrentProvider: () =>
           this.sendHostCall(
             'provider.current.get',
@@ -1253,56 +1377,10 @@ export class PluginClient {
             context,
           ) as unknown as Promise<PluginMessageSendInfo>;
         },
-        startConversationSession: ({
-          timeoutMs,
-          captureHistory,
-          metadata,
-        }) => {
-          const params: JsonObject = {
-            timeoutMs,
-          };
-          if (typeof captureHistory === 'boolean') {
-            params.captureHistory = captureHistory;
-          }
-          if (typeof metadata !== 'undefined') {
-            params.metadata = metadata;
-          }
-
-          return this.sendHostCall(
-            'conversation.session.start',
-            params,
-            context,
-          ) as unknown as Promise<PluginConversationSessionInfo>;
-        },
-        getConversationSession: () =>
-          this.sendHostCall(
-            'conversation.session.get',
-            {},
-            context,
-          ) as unknown as Promise<PluginConversationSessionInfo | null>,
-        keepConversationSession: ({
-          timeoutMs,
-          resetTimeout,
-        }) => {
-          const params: JsonObject = {
-            timeoutMs,
-          };
-          if (typeof resetTimeout === 'boolean') {
-            params.resetTimeout = resetTimeout;
-          }
-
-          return this.sendHostCall(
-            'conversation.session.keep',
-            params,
-            context,
-          ) as unknown as Promise<PluginConversationSessionInfo | null>;
-        },
-        finishConversationSession: () =>
-          this.sendHostCall(
-            'conversation.session.finish',
-            {},
-            context,
-          ) as unknown as Promise<boolean>,
+        startConversationSession: (input) => conversationSession.start(input),
+        getConversationSession: () => conversationSession.get(),
+        keepConversationSession: (input) => conversationSession.keep(input),
+        finishConversationSession: () => conversationSession.finish(),
         listKnowledgeBaseEntries: (limit) =>
           this.sendHostCall(
             'kb.list',
@@ -1501,6 +1579,73 @@ export class PluginClient {
             },
             context,
           ) as unknown as Promise<PluginSubagentRunResult>,
+        startSubagentTask: ({
+          providerId,
+          modelId,
+          system,
+          messages,
+          toolNames,
+          variant,
+          providerOptions,
+          headers,
+          maxOutputTokens,
+          maxSteps,
+          writeBack,
+        }) => {
+          const startTaskParams: JsonObject = {
+            messages: messages as never,
+          };
+          if (providerId) {
+            startTaskParams.providerId = providerId;
+          }
+          if (modelId) {
+            startTaskParams.modelId = modelId;
+          }
+          if (system) {
+            startTaskParams.system = system;
+          }
+          if (toolNames) {
+            startTaskParams.toolNames = toolNames as never;
+          }
+          if (variant) {
+            startTaskParams.variant = variant;
+          }
+          if (providerOptions) {
+            startTaskParams.providerOptions = providerOptions;
+          }
+          if (headers) {
+            startTaskParams.headers = headers as never;
+          }
+          if (typeof maxOutputTokens === 'number') {
+            startTaskParams.maxOutputTokens = maxOutputTokens;
+          }
+          if (typeof maxSteps === 'number') {
+            startTaskParams.maxSteps = maxSteps;
+          }
+          if (writeBack) {
+            startTaskParams.writeBack = writeBack as never;
+          }
+
+          return this.sendHostCall(
+            'subagent.task.start',
+            startTaskParams,
+            context,
+          ) as unknown as Promise<PluginSubagentTaskSummary>;
+        },
+        listSubagentTasks: () =>
+          this.sendHostCall(
+            'subagent.task.list',
+            {},
+            context,
+          ) as unknown as Promise<PluginSubagentTaskSummary[]>,
+        getSubagentTask: (taskId) =>
+          this.sendHostCall(
+            'subagent.task.get',
+            {
+              taskId,
+            },
+            context,
+          ) as unknown as Promise<PluginSubagentTaskDetail>,
         generateText: ({
           prompt,
           system,
@@ -1554,6 +1699,29 @@ export class PluginClient {
   }
 
   /**
+   * 解析当前插件最终应声明的命令描述。
+   * @returns 去重后的命令描述列表
+   */
+  private resolveCommandDescriptors(): PluginCommandDescriptor[] {
+    const commands = (this.options.manifest.commands ?? []).map((command) =>
+      cloneCommandDescriptor(command));
+
+    for (const entry of this.commandHandlers) {
+      this.ensureCommandDescriptor(commands, {
+        kind: entry.kind,
+        canonicalCommand: entry.canonicalCommand,
+        path: [...entry.path],
+        aliases: entry.variants.filter((variant) => variant !== entry.canonicalCommand),
+        variants: [...entry.variants],
+        ...(entry.description ? { description: entry.description } : {}),
+        priority: normalizePriority(entry.priority),
+      });
+    }
+
+    return commands;
+  }
+
+  /**
    * 把一个 Hook 描述合并到最终 manifest 中。
    * @param hooks 当前 Hook 列表
    * @param descriptor 待合并的 Hook 描述
@@ -1578,6 +1746,36 @@ export class PluginClient {
     }
 
     hooks.push(cloneHookDescriptor(descriptor));
+  }
+
+  /**
+   * 把一个命令描述合并到最终 manifest 中。
+   * @param commands 当前命令列表
+   * @param descriptor 待合并的命令描述
+   * @returns 无返回值
+   */
+  private ensureCommandDescriptor(
+    commands: PluginCommandDescriptor[],
+    descriptor: PluginCommandDescriptor,
+  ) {
+    const existing = commands.find((command) =>
+      command.kind === descriptor.kind
+      && command.canonicalCommand === descriptor.canonicalCommand);
+    if (existing) {
+      existing.path = descriptor.path.length > 0 ? [...descriptor.path] : [...existing.path];
+      existing.aliases = dedupeStrings([...existing.aliases, ...descriptor.aliases])
+        .filter((alias) => alias !== existing.canonicalCommand);
+      existing.variants = dedupeStrings([...existing.variants, ...descriptor.variants]);
+      if (!existing.description && descriptor.description) {
+        existing.description = descriptor.description;
+      }
+      if (typeof existing.priority !== 'number' && typeof descriptor.priority === 'number') {
+        existing.priority = descriptor.priority;
+      }
+      return;
+    }
+
+    commands.push(cloneCommandDescriptor(descriptor));
   }
 
   /**
@@ -1675,6 +1873,17 @@ export class PluginClient {
     let currentPayload = cloneJsonValue(payload);
     let hasMutation = false;
 
+    const sessionWaiterResult = await this.runSessionWaiter(currentPayload, context);
+    if (sessionWaiterResult) {
+      if (sessionWaiterResult.action === 'short-circuit') {
+        return sessionWaiterResult as unknown as JsonValue;
+      }
+      if (sessionWaiterResult.action === 'mutate') {
+        currentPayload = applyMessageReceivedMutation(currentPayload, sessionWaiterResult);
+        hasMutation = true;
+      }
+    }
+
     for (const listener of this.listMessagePipelineEntries()) {
       const normalizedResult = await this.runMessagePipelineEntry(listener, currentPayload, context);
       if (!normalizedResult || normalizedResult.action === 'pass') {
@@ -1708,6 +1917,171 @@ export class PluginClient {
     );
 
     return normalizeRawMessageHookResult(rawResult);
+  }
+
+  /**
+   * 当当前会话命中了本地 waiter 时，优先执行 waiter handler。
+   * @param payload 当前消息载荷
+   * @param context 当前执行上下文
+   * @returns 归一化后的 Hook 结果；没有 waiter 时返回 null
+   */
+  private async runSessionWaiter(
+    payload: MessageReceivedHookPayload,
+    context: PluginExecutionContext,
+  ): Promise<MessageReceivedHookResult | null> {
+    const conversationId = payload.conversationId;
+    const registration = this.sessionWaiters.get(conversationId);
+    if (!registration) {
+      return null;
+    }
+
+    if (!payload.session || payload.session.pluginId !== this.options.pluginName) {
+      this.sessionWaiters.delete(conversationId);
+      return null;
+    }
+
+    const controller = this.createConversationSessionController(context.callContext);
+    controller.setSession(payload.session);
+
+    return normalizeMessageListenerResult(await registration.handler(
+      controller,
+      cloneJsonValue(payload),
+      context,
+    ));
+  }
+
+  /**
+   * 为当前执行上下文创建一个本地会话控制器。
+   * @param context 插件调用上下文
+   * @returns 绑定当前上下文的会话控制器
+   */
+  private createConversationSessionController(
+    context: PluginCallContext,
+  ): InternalConversationSessionController {
+    let currentSession: PluginConversationSessionInfo | null = null;
+    const sendHostCall = this.sendHostCall.bind(this);
+
+    const setSession = (session: PluginConversationSessionInfo | null) => {
+      currentSession = session ? cloneConversationSessionInfo(session) : null;
+    };
+    const clearLocalWaiter = (conversationId?: string | null) => {
+      const targetConversationId = conversationId
+        ?? currentSession?.conversationId
+        ?? context.conversationId
+        ?? null;
+      if (targetConversationId) {
+        this.sessionWaiters.delete(targetConversationId);
+      }
+    };
+    const startSession = async (
+      input: PluginConversationSessionStartParams,
+    ): Promise<PluginConversationSessionInfo> => {
+      const params: JsonObject = {
+        timeoutMs: input.timeoutMs,
+      };
+      if (typeof input.captureHistory === 'boolean') {
+        params.captureHistory = input.captureHistory;
+      }
+      if (typeof input.metadata !== 'undefined') {
+        params.metadata = input.metadata;
+      }
+
+      const session = await sendHostCall(
+        'conversation.session.start',
+        params,
+        context,
+      ) as unknown as PluginConversationSessionInfo;
+      setSession(session);
+      return cloneConversationSessionInfo(session);
+    };
+    const getSession = async (): Promise<PluginConversationSessionInfo | null> => {
+      const previousConversationId = currentSession?.conversationId ?? context.conversationId;
+      const session = await sendHostCall(
+        'conversation.session.get',
+        {},
+        context,
+      ) as unknown as PluginConversationSessionInfo | null;
+      setSession(session);
+      if (!session) {
+        clearLocalWaiter(previousConversationId);
+      }
+      return session ? cloneConversationSessionInfo(session) : null;
+    };
+    const keepSession = async (
+      input: PluginConversationSessionKeepParams,
+    ): Promise<PluginConversationSessionInfo | null> => {
+      const previousConversationId = currentSession?.conversationId ?? context.conversationId;
+      const params: JsonObject = {
+        timeoutMs: input.timeoutMs,
+      };
+      if (typeof input.resetTimeout === 'boolean') {
+        params.resetTimeout = input.resetTimeout;
+      }
+
+      const session = await sendHostCall(
+        'conversation.session.keep',
+        params,
+        context,
+      ) as unknown as PluginConversationSessionInfo | null;
+      setSession(session);
+      if (!session) {
+        clearLocalWaiter(previousConversationId);
+      }
+      return session ? cloneConversationSessionInfo(session) : null;
+    };
+    const finishSession = async (): Promise<boolean> => {
+      const previousConversationId = currentSession?.conversationId ?? context.conversationId;
+      const finished = await sendHostCall(
+        'conversation.session.finish',
+        {},
+        context,
+      ) as unknown as boolean;
+      clearLocalWaiter(previousConversationId);
+      setSession(null);
+      return finished;
+    };
+
+    return {
+      get conversationId() {
+        return currentSession?.conversationId ?? context.conversationId ?? null;
+      },
+      get session() {
+        return currentSession ? cloneConversationSessionInfo(currentSession) : null;
+      },
+      get timeoutMs() {
+        return currentSession?.timeoutMs ?? null;
+      },
+      get startedAt() {
+        return currentSession?.startedAt ?? null;
+      },
+      get expiresAt() {
+        return currentSession?.expiresAt ?? null;
+      },
+      get lastMatchedAt() {
+        return currentSession?.lastMatchedAt ?? null;
+      },
+      get captureHistory() {
+        return currentSession?.captureHistory ?? false;
+      },
+      get historyMessages() {
+        return currentSession
+          ? currentSession.historyMessages.map((message) => cloneMessageHookInfo(message))
+          : [];
+      },
+      get metadata() {
+        return typeof currentSession?.metadata !== 'undefined'
+          ? cloneJsonValue(currentSession.metadata)
+          : undefined;
+      },
+      start: startSession,
+      get: getSession,
+      async sync() {
+        return getSession();
+      },
+      keep: keepSession,
+      finish: finishSession,
+      setSession,
+    };
   }
 
   /**
@@ -1823,6 +2197,7 @@ export class PluginClient {
    */
   private resolveManifest(): PluginManifest {
     const hooks = this.resolveHookDescriptors();
+    const commands = this.resolveCommandDescriptors();
 
     return {
       id: this.options.pluginName,
@@ -1832,6 +2207,7 @@ export class PluginClient {
       description: this.options.manifest.description,
       permissions: this.options.manifest.permissions ?? [],
       tools: this.options.manifest.tools ?? this.options.capabilities,
+      ...(commands.length > 0 ? { commands } : {}),
       hooks,
       config: this.options.manifest.config,
       routes: this.options.manifest.routes ?? [],
@@ -2136,6 +2512,26 @@ function cloneJsonValue<T>(value: T): T {
 }
 
 /**
+ * 复制一条消息快照。
+ * @param message 原始消息快照
+ * @returns 深拷贝后的消息快照
+ */
+function cloneMessageHookInfo(message: PluginMessageHookInfo): PluginMessageHookInfo {
+  return cloneJsonValue(message);
+}
+
+/**
+ * 复制一条会话等待态快照。
+ * @param session 原始会话等待态
+ * @returns 深拷贝后的会话等待态
+ */
+function cloneConversationSessionInfo(
+  session: PluginConversationSessionInfo,
+): PluginConversationSessionInfo {
+  return cloneJsonValue(session);
+}
+
+/**
  * 复制一条 Hook 描述。
  * @param hook 原始 Hook 描述
  * @returns 深拷贝后的 Hook 描述
@@ -2146,6 +2542,23 @@ function cloneHookDescriptor(hook: PluginHookDescriptor): PluginHookDescriptor {
     ...(hook.description ? { description: hook.description } : {}),
     ...(typeof hook.priority === 'number' ? { priority: hook.priority } : {}),
     ...(hook.filter ? { filter: cloneHookFilterDescriptor(hook.filter) } : {}),
+  };
+}
+
+/**
+ * 复制一条命令描述。
+ * @param command 原始命令描述
+ * @returns 深拷贝后的命令描述
+ */
+function cloneCommandDescriptor(command: PluginCommandDescriptor): PluginCommandDescriptor {
+  return {
+    kind: command.kind,
+    canonicalCommand: command.canonicalCommand,
+    path: [...command.path],
+    aliases: [...command.aliases],
+    variants: [...command.variants],
+    ...(command.description ? { description: command.description } : {}),
+    ...(typeof command.priority === 'number' ? { priority: command.priority } : {}),
   };
 }
 

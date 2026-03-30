@@ -13,27 +13,22 @@ import type {
   PluginMessageSendParams,
   PluginMessageTargetInfo,
   PluginMessageTargetRef,
-  PluginResponseSource,
 } from '@garlic-claw/shared';
 import { AiProviderService } from '../ai/ai-provider.service';
-import { createStepLimit } from '../ai/sdk-adapter';
-import type { ModelConfig } from '../ai/types/provider.types';
 import { PersonaService } from '../persona/persona.service';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  buildChatToolSet,
   CHAT_SYSTEM_PROMPT,
   hasActiveAssistantMessage,
-  listChatAvailableTools,
   mapDtoParts,
   toRuntimeMessages,
   toUserMessageInput,
 } from './chat-message.helpers';
 import {
-  ChatModelInvocationService,
-  type PreparedChatModelInvocation,
-} from './chat-model-invocation.service';
+  ChatMessageOrchestrationService,
+} from './chat-message-orchestration.service';
+import { ChatModelInvocationService } from './chat-model-invocation.service';
 import type { ChatRuntimeMessage } from './chat-message-session';
 import { prepareSendMessagePayload } from './chat-message-session';
 import { ChatService } from './chat.service';
@@ -46,30 +41,7 @@ import {
 } from './message-parts';
 import {
   ChatTaskService,
-  type CompletedChatTaskResult,
 } from './chat-task.service';
-
-/**
- * 聊天模型前 Hook 归一化后的继续执行结果。
- */
-interface AppliedChatBeforeModelContinueResult {
-  action: 'continue';
-  modelConfig: ModelConfig;
-  request: ChatBeforeModelRequest;
-}
-
-/**
- * 聊天模型前 Hook 归一化后的短路结果。
- */
-interface AppliedChatBeforeModelShortCircuitResult {
-  action: 'short-circuit';
-  request: ChatBeforeModelRequest;
-  assistantContent: string;
-  assistantParts: ChatMessagePart[];
-  providerId: string;
-  modelId: string;
-  reason?: string;
-}
 
 /**
  * 当前 conversation 目标下已写入的 assistant 消息摘要。
@@ -107,13 +79,6 @@ interface ChatVisionFallbackMetadataEntry {
   source: 'cache' | 'generated';
 }
 
-/**
- * 聊天模型前 Hook 的服务内结果联合。
- */
-type AppliedChatBeforeModelResult =
-  | AppliedChatBeforeModelContinueResult
-  | AppliedChatBeforeModelShortCircuitResult;
-
 @Injectable()
 export class ChatMessageService {
   constructor(
@@ -124,6 +89,7 @@ export class ChatMessageService {
     @Inject(forwardRef(() => PluginRuntimeService))
     private readonly pluginRuntime: PluginRuntimeService,
     private readonly modelInvocation: ChatModelInvocationService,
+    private readonly orchestration: ChatMessageOrchestrationService,
     private readonly chatTaskService: ChatTaskService,
   ) {}
 
@@ -228,7 +194,7 @@ export class ChatMessageService {
         };
       }
 
-      const beforeModelResult = await this.applyChatBeforeModelHooks({
+      const beforeModelResult = await this.orchestration.applyChatBeforeModelHooks({
         userId,
         conversationId,
         activePersonaId: resolvedPersona.activePersonaId,
@@ -267,13 +233,28 @@ export class ChatMessageService {
         visionFallbackEntries:
           preparedInvocation.transformResult?.visionFallback?.entries ?? [],
       });
+      const chatToolSet = beforeModelResult.modelConfig.capabilities.toolCall
+        ? beforeModelResult.buildToolSet({
+          context: {
+            source: 'chat-tool',
+            userId,
+            conversationId,
+            activeProviderId: beforeModelResult.modelConfig.providerId,
+            activeModelId: beforeModelResult.modelConfig.id,
+            activePersonaId: resolvedPersona.activePersonaId,
+          },
+          allowedToolNames: beforeModelResult.request.availableTools.map(
+            (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
+          ),
+        })
+        : undefined;
 
       this.chatTaskService.startTask({
         assistantMessageId: assistantMessageWithMetadata.id,
         conversationId,
         providerId: beforeModelResult.modelConfig.providerId,
         modelId: beforeModelResult.modelConfig.id,
-        createStream: this.buildStreamFactory({
+        createStream: this.orchestration.buildStreamFactory({
           assistantMessageId: assistantMessageWithMetadata.id,
           userId,
           conversationId,
@@ -282,10 +263,10 @@ export class ChatMessageService {
           activeProviderId: beforeModelResult.modelConfig.providerId,
           activeModelId: beforeModelResult.modelConfig.id,
           activePersonaId: resolvedPersona.activePersonaId,
-          supportsToolCall: beforeModelResult.modelConfig.capabilities.toolCall,
+          tools: chatToolSet,
         }),
         onComplete: (result) =>
-          this.applyFinalResponseHooks({
+          this.orchestration.applyFinalResponseHooks({
             userId,
             conversationId,
             activePersonaId: resolvedPersona.activePersonaId,
@@ -293,7 +274,7 @@ export class ChatMessageService {
             result,
           }),
         onSent: (result) =>
-          this.runResponseAfterSendHooks({
+          this.orchestration.runResponseAfterSendHooks({
             userId,
             conversationId,
             activePersonaId: resolvedPersona.activePersonaId,
@@ -377,7 +358,7 @@ export class ChatMessageService {
     try {
       const runtimeMessages = toRuntimeMessages(historyMessages);
       const resolvedPersona = await this.buildSystemPrompt(conversationId);
-      const beforeModelResult = await this.applyChatBeforeModelHooks({
+      const beforeModelResult = await this.orchestration.applyChatBeforeModelHooks({
         userId,
         conversationId,
         activePersonaId: resolvedPersona.activePersonaId,
@@ -409,13 +390,28 @@ export class ChatMessageService {
           visionFallbackEntries:
             preparedInvocation.transformResult?.visionFallback?.entries ?? [],
         });
+      const chatToolSet = beforeModelResult.modelConfig.capabilities.toolCall
+        ? beforeModelResult.buildToolSet({
+          context: {
+            source: 'chat-tool',
+            userId,
+            conversationId,
+            activeProviderId: beforeModelResult.modelConfig.providerId,
+            activeModelId: beforeModelResult.modelConfig.id,
+            activePersonaId: resolvedPersona.activePersonaId,
+          },
+          allowedToolNames: beforeModelResult.request.availableTools.map(
+            (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
+          ),
+        })
+        : undefined;
 
       this.chatTaskService.startTask({
         assistantMessageId: assistantMessageWithMetadata.id,
         conversationId,
         providerId: beforeModelResult.modelConfig.providerId,
         modelId: beforeModelResult.modelConfig.id,
-        createStream: this.buildStreamFactory({
+        createStream: this.orchestration.buildStreamFactory({
           assistantMessageId: assistantMessageWithMetadata.id,
           userId,
           conversationId,
@@ -424,10 +420,10 @@ export class ChatMessageService {
           activeProviderId: beforeModelResult.modelConfig.providerId,
           activeModelId: beforeModelResult.modelConfig.id,
           activePersonaId: resolvedPersona.activePersonaId,
-          supportsToolCall: beforeModelResult.modelConfig.capabilities.toolCall,
+          tools: chatToolSet,
         }),
         onComplete: (result) =>
-          this.applyFinalResponseHooks({
+          this.orchestration.applyFinalResponseHooks({
             userId,
             conversationId,
             activePersonaId: resolvedPersona.activePersonaId,
@@ -435,7 +431,7 @@ export class ChatMessageService {
             result,
           }),
         onSent: (result) =>
-          this.runResponseAfterSendHooks({
+          this.orchestration.runResponseAfterSendHooks({
             userId,
             conversationId,
             activePersonaId: resolvedPersona.activePersonaId,
@@ -886,184 +882,6 @@ export class ChatMessageService {
     };
   }
 
-  /** 统一构造聊天流工厂，供 send/retry 复用。 */
-  private buildStreamFactory(input: {
-    assistantMessageId: string;
-    userId: string;
-    conversationId: string;
-    request: ChatBeforeModelRequest;
-    preparedInvocation: PreparedChatModelInvocation;
-    activeProviderId: string;
-    activeModelId: string;
-    activePersonaId: string;
-    supportsToolCall: boolean;
-  }) {
-    return (abortSignal: AbortSignal) => {
-      const hookContext = this.createChatLifecycleContext({
-        userId: input.userId,
-        conversationId: input.conversationId,
-        activeProviderId: input.activeProviderId,
-        activeModelId: input.activeModelId,
-        activePersonaId: input.activePersonaId,
-      });
-
-      void this.pluginRuntime.runChatWaitingModelHooks({
-        context: hookContext,
-        payload: {
-          context: hookContext,
-          conversationId: input.conversationId,
-          assistantMessageId: input.assistantMessageId,
-          providerId: input.activeProviderId,
-          modelId: input.activeModelId,
-          request: input.request,
-        },
-      });
-
-      return this.modelInvocation.streamPrepared({
-        prepared: input.preparedInvocation,
-        system: input.request.systemPrompt,
-        tools: buildChatToolSet({
-          supportsToolCall: input.supportsToolCall,
-          pluginRuntime: this.pluginRuntime,
-          userId: input.userId,
-          conversationId: input.conversationId,
-          activeProviderId: input.activeProviderId,
-          activeModelId: input.activeModelId,
-          activePersonaId: input.activePersonaId,
-          allowedToolNames: input.request.availableTools.map(
-            (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
-          ),
-        }),
-        variant: input.request.variant,
-        providerOptions: input.request.providerOptions,
-        headers: input.request.headers,
-        maxOutputTokens: input.request.maxOutputTokens,
-        stopWhen: createStepLimit(5),
-        abortSignal,
-      }).result;
-    };
-  }
-
-  /**
-   * 在模型调用前运行统一插件 Hook，并得到最终请求快照。
-   * @param input 当前调用的用户、对话、模型和消息上下文
-   * @returns 最终请求快照或短路结果
-   */
-  private async applyChatBeforeModelHooks(input: {
-    userId: string;
-    conversationId: string;
-    activePersonaId: string;
-    systemPrompt: string;
-    modelConfig: { providerId: string; id: string };
-    messages: ChatRuntimeMessage[];
-  }): Promise<AppliedChatBeforeModelResult> {
-    const hookContext = {
-      source: 'chat-hook' as const,
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activeProviderId: input.modelConfig.providerId,
-      activeModelId: input.modelConfig.id,
-      activePersonaId: input.activePersonaId,
-    };
-    const hookResult = await this.pluginRuntime.runChatBeforeModelHooks({
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        request: {
-          providerId: input.modelConfig.providerId,
-          modelId: input.modelConfig.id,
-          systemPrompt: input.systemPrompt,
-          messages: input.messages,
-          availableTools: listChatAvailableTools({
-            pluginRuntime: this.pluginRuntime,
-            userId: input.userId,
-            conversationId: input.conversationId,
-            activeProviderId: input.modelConfig.providerId,
-            activeModelId: input.modelConfig.id,
-            activePersonaId: input.activePersonaId,
-          }),
-        },
-      },
-    });
-
-    if (hookResult.action === 'short-circuit') {
-      const normalizedAssistant = normalizeAssistantMessageOutput({
-        content: hookResult.assistantContent,
-        parts: hookResult.assistantParts,
-      });
-
-      return {
-        action: 'short-circuit',
-        request: hookResult.request,
-        assistantContent: normalizedAssistant.content,
-        assistantParts: normalizedAssistant.parts,
-        providerId: hookResult.providerId,
-        modelId: hookResult.modelId,
-        ...(hookResult.reason ? { reason: hookResult.reason } : {}),
-      };
-    }
-
-    return {
-      action: 'continue',
-      request: hookResult.request,
-      modelConfig: this.aiProvider.getModelConfig(
-        hookResult.request.providerId,
-        hookResult.request.modelId,
-      ),
-    };
-  }
-
-  /**
-   * 在 assistant 成功完成后运行统一插件 Hook。
-   * @param input 当前用户、会话与最终 assistant 快照
-   * @returns 可能被插件改写后的最终 assistant 快照
-   */
-  private async applyChatAfterModelHooks(input: {
-    userId: string;
-    conversationId: string;
-    activePersonaId: string;
-    result: CompletedChatTaskResult;
-  }): Promise<CompletedChatTaskResult> {
-    const currentParts = input.result.parts ?? [];
-    const patchedPayload = await this.pluginRuntime.runChatAfterModelHooks({
-      context: {
-        source: 'chat-hook',
-        userId: input.userId,
-        conversationId: input.conversationId,
-        activeProviderId: input.result.providerId,
-        activeModelId: input.result.modelId,
-        activePersonaId: input.activePersonaId,
-      },
-      payload: {
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantMessageId: input.result.assistantMessageId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
-      },
-    });
-
-    const normalizedAssistant = normalizeAssistantMessageOutput({
-      content: patchedPayload.assistantContent,
-      parts: patchedPayload.assistantParts,
-    });
-
-    if (
-      normalizedAssistant.content === input.result.content
-      && JSON.stringify(normalizedAssistant.parts) === JSON.stringify(currentParts)
-    ) {
-      return input.result;
-    }
-
-    return {
-      ...input.result,
-      content: normalizedAssistant.content,
-      parts: normalizedAssistant.parts,
-    };
-  }
-
   /**
    * 将短路结果直接写回 assistant 消息，并触发模型后 Hook。
    * @param input assistant 消息、上下文和最终回复
@@ -1099,10 +917,11 @@ export class ChatMessageService {
       },
     });
     await this.touchConversation(input.conversationId);
-    const patchedResult = await this.applyChatAfterModelHooks({
+    const finalResult = await this.orchestration.applyFinalResponseHooks({
       userId: input.userId,
       conversationId: input.conversationId,
       activePersonaId: input.activePersonaId,
+      responseSource: 'short-circuit',
       result: {
         assistantMessageId: input.assistantMessageId,
         conversationId: input.conversationId,
@@ -1113,13 +932,6 @@ export class ChatMessageService {
         toolCalls: [],
         toolResults: [],
       },
-    });
-    const finalResult = await this.applyResponseBeforeSendHooks({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activePersonaId: input.activePersonaId,
-      responseSource: 'short-circuit',
-      result: patchedResult,
     });
 
     const serializedFinalParts = finalResult.parts.length
@@ -1148,7 +960,7 @@ export class ChatMessageService {
         },
       });
     await this.touchConversation(input.conversationId);
-    await this.runResponseAfterSendHooks({
+    await this.orchestration.runResponseAfterSendHooks({
       userId: input.userId,
       conversationId: input.conversationId,
       activePersonaId: input.activePersonaId,
@@ -1156,123 +968,6 @@ export class ChatMessageService {
       result: finalResult,
     });
     return finalAssistantMessage;
-  }
-
-  /**
-   * 串行执行 assistant 完成态上的模型后 Hook 与最终发送前 Hook。
-   * @param input 当前用户、会话、回复来源与完成态快照
-   * @returns 最终可发送的 assistant 快照
-   */
-  private async applyFinalResponseHooks(input: {
-    userId: string;
-    conversationId: string;
-    activePersonaId: string;
-    responseSource: PluginResponseSource;
-    result: CompletedChatTaskResult;
-  }): Promise<CompletedChatTaskResult> {
-    const afterModelResult = await this.applyChatAfterModelHooks({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activePersonaId: input.activePersonaId,
-      result: input.result,
-    });
-
-    return this.applyResponseBeforeSendHooks({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activePersonaId: input.activePersonaId,
-      responseSource: input.responseSource,
-      result: afterModelResult,
-    });
-  }
-
-  /**
-   * 在最终 assistant 发送前运行统一插件 Hook。
-   * @param input 当前用户、会话、回复来源与完成态快照
-   * @returns 可能被插件改写后的最终 assistant 快照
-   */
-  private async applyResponseBeforeSendHooks(input: {
-    userId: string;
-    conversationId: string;
-    activePersonaId: string;
-    responseSource: PluginResponseSource;
-    result: CompletedChatTaskResult;
-  }): Promise<CompletedChatTaskResult> {
-    const currentParts = input.result.parts ?? [];
-    const hookContext = this.createChatLifecycleContext({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activeProviderId: input.result.providerId,
-      activeModelId: input.result.modelId,
-      activePersonaId: input.activePersonaId,
-    });
-    const patchedPayload = await this.pluginRuntime.runResponseBeforeSendHooks({
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        responseSource: input.responseSource,
-        assistantMessageId: input.result.assistantMessageId,
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
-      },
-    });
-
-    const normalizedAssistant = normalizeAssistantMessageOutput({
-      content: patchedPayload.assistantContent,
-      parts: patchedPayload.assistantParts,
-    });
-
-    return {
-      ...input.result,
-      providerId: patchedPayload.providerId,
-      modelId: patchedPayload.modelId,
-      content: normalizedAssistant.content,
-      parts: normalizedAssistant.parts,
-      toolCalls: patchedPayload.toolCalls,
-      toolResults: patchedPayload.toolResults,
-    };
-  }
-
-  /**
-   * 在最终 assistant 发送完成后派发统一插件 Hook。
-   * @param input 当前用户、会话、回复来源与最终 assistant 快照
-   * @returns 无返回值
-   */
-  private async runResponseAfterSendHooks(input: {
-    userId: string;
-    conversationId: string;
-    activePersonaId: string;
-    responseSource: PluginResponseSource;
-    result: CompletedChatTaskResult;
-  }): Promise<void> {
-    const currentParts = input.result.parts ?? [];
-    const hookContext = this.createChatLifecycleContext({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activeProviderId: input.result.providerId,
-      activeModelId: input.result.modelId,
-      activePersonaId: input.activePersonaId,
-    });
-
-    await this.pluginRuntime.runResponseAfterSendHooks({
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        responseSource: input.responseSource,
-        assistantMessageId: input.result.assistantMessageId,
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
-        sentAt: new Date().toISOString(),
-      },
-    });
   }
 
   /**
