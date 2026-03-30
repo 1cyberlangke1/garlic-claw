@@ -21,6 +21,7 @@ from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
 LAUNCHER_PATH = TOOLS_DIR / '一键启停脚本.py'
+COMMON_PATH = TOOLS_DIR / 'dev_script_common.py'
 
 
 def loadModule(module_name: str, path: Path):
@@ -88,7 +89,7 @@ class DevLauncherRedTests(unittest.TestCase):
         self.assertEqual(launcher.DEFAULT_PORTS, [23330, 23331, 23333])
 
     def testCreateBuildStepsMatchesLegacyStartWorkflow(self) -> None:
-        """构建步骤应对齐旧 start-dev.bat，仅保留 shared/server 引导构建。"""
+        """构建步骤应补齐 Prisma Client 生成，再执行 shared/server 构建。"""
         launcher = loadModule('dev_launcher_build_steps', LAUNCHER_PATH)
         self.assertTrue(
             hasattr(launcher, 'createBuildSteps'),
@@ -97,8 +98,32 @@ class DevLauncherRedTests(unittest.TestCase):
         buildSteps = launcher.createBuildSteps()
         self.assertEqual(
             [step[0] for step in buildSteps],
-            ['构建 shared', '构建 server'],
+            ['构建 shared', '生成 Prisma Client', '构建 server'],
         )
+
+    def testBackendWaitTimeoutExtendsOnNonWindows(self) -> None:
+        """非 Windows 环境应给后端应用更长的端口等待时间。"""
+        launcher = loadModule('dev_launcher_wait_timeout_posix', LAUNCHER_PATH)
+
+        with mock.patch.object(launcher.common, 'IS_WINDOWS', False):
+            self.assertEqual(
+                launcher.getPortWaitTimeoutSeconds('backend_app'),
+                180,
+            )
+            self.assertEqual(
+                launcher.getPortWaitTimeoutSeconds('web'),
+                60,
+            )
+
+    def testBackendWaitTimeoutStaysDefaultOnWindows(self) -> None:
+        """Windows 环境应保持现有 60 秒等待策略。"""
+        launcher = loadModule('dev_launcher_wait_timeout_windows', LAUNCHER_PATH)
+
+        with mock.patch.object(launcher.common, 'IS_WINDOWS', True):
+            self.assertEqual(
+                launcher.getPortWaitTimeoutSeconds('backend_app'),
+                60,
+            )
 
     def testStopServicesPrefersStatePidsBeforePortFallback(self) -> None:
         """应先按状态文件 PID 关闭，再按端口兜底。"""
@@ -173,6 +198,63 @@ class DevLauncherRedTests(unittest.TestCase):
             ports=[23330, 23331, 23333],
         )
         clearStateFiles.assert_called_once_with()
+
+
+class DevScriptCommonTests(unittest.TestCase):
+    """公共脚本工具回归测试。"""
+
+    def testWindowsPidProbeTreatsAccessDeniedAsStillRunning(self) -> None:
+        """Windows 下 OpenProcess 返回 Access Denied 时应视为进程仍存在。"""
+        common = loadModule('dev_script_common_access_denied', COMMON_PATH)
+
+        def fakeOpenProcess(_access: int, _inherit: bool, _pid: int) -> int:
+            return 0
+
+        self.assertTrue(
+            common.isWindowsPidRunning(
+                123,
+                openProcess=fakeOpenProcess,
+                getExitCodeProcess=mock.Mock(),
+                closeHandle=mock.Mock(),
+                getLastError=lambda: 5,
+            ),
+        )
+
+    def testWindowsPidProbeUsesExitCodeForRunningProcess(self) -> None:
+        """Windows 下应按 GetExitCodeProcess 的 STILL_ACTIVE 判断存活。"""
+        common = loadModule('dev_script_common_still_active', COMMON_PATH)
+        closedHandles: list[int] = []
+
+        def fakeGetExitCodeProcess(handle: int, exitCodePtr) -> int:
+            exitCodePtr._obj.value = 259
+            return 1
+
+        result = common.isWindowsPidRunning(
+            456,
+            openProcess=lambda _access, _inherit, _pid: 99,
+            getExitCodeProcess=fakeGetExitCodeProcess,
+            closeHandle=lambda handle: closedHandles.append(handle),
+            getLastError=lambda: 0,
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(closedHandles, [99])
+
+    def testPosixTerminateFallsBackToPlainKillWhenProcessGroupMissing(self) -> None:
+        """类 Unix 平台在 killpg 找不到进程组时仍应回退到 kill(pid)。"""
+        common = loadModule('dev_script_common_posix_kill_fallback', COMMON_PATH)
+
+        with (
+            mock.patch.object(common, 'IS_WINDOWS', False),
+            mock.patch.object(common, 'isPidRunning', return_value=True),
+            mock.patch.object(common.os, 'killpg', side_effect=ProcessLookupError(), create=True),
+            mock.patch.object(common.os, 'kill') as kill,
+            mock.patch.object(common, 'ok'),
+        ):
+            result = common.terminateProcess(789, 'posix-test')
+
+        self.assertTrue(result)
+        kill.assert_called_once_with(789, common.signal.SIGTERM)
 
 
 if __name__ == '__main__':

@@ -47,6 +47,8 @@ SERVER_PORT = common.SERVER_PORT
 PLUGIN_WS_PORT = common.PLUGIN_WS_PORT
 WEB_PORT = common.WEB_PORT
 DEFAULT_PORTS = list(common.DEFAULT_PORTS)
+DEFAULT_PORT_WAIT_TIMEOUT_SECONDS = 60
+NON_WINDOWS_BACKEND_WAIT_TIMEOUT_SECONDS = 180
 
 
 def ensureGitHooksEnabled() -> None:
@@ -165,10 +167,12 @@ def createBuildSteps() -> list[tuple[str, list[str], Path, int, float]]:
     - 需要顺序执行的构建步骤列表
 
     预期行为:
-    - 与旧 `start-dev.bat` 对齐，只保留 shared/server 引导构建
+    - 在 shared/server 构建前补齐 Prisma Client 生成
+    - 保证跨平台切换环境后也能拿到正确的 Prisma 引擎
     """
     return [
         ('构建 shared', ['npm', 'run', 'build:shared'], ROOT, 0, 1.0),
+        ('生成 Prisma Client', ['npm', 'run', 'prisma:generate', '-w', 'packages/server'], ROOT, 0, 1.0),
         ('构建 server', ['npm', 'run', 'build:server'], ROOT, 0, 1.0),
     ]
 
@@ -226,6 +230,25 @@ def createDevServices() -> dict[str, dict[str, Any]]:
             'port': WEB_PORT,
         },
     }
+
+
+def getPortWaitTimeoutSeconds(serviceName: str) -> int:
+    """返回指定服务的端口等待超时秒数。
+
+    输入:
+    - serviceName: 受管服务名
+
+    输出:
+    - 端口等待超时秒数
+
+    预期行为:
+    - Windows 维持当前 60 秒体验
+    - 非 Windows 环境为后端应用预留更长首启时间，覆盖 WSL/Linux 下
+      MCP server 首次拉起较慢的场景
+    """
+    if not common.IS_WINDOWS and serviceName == 'backend_app':
+        return NON_WINDOWS_BACKEND_WAIT_TIMEOUT_SECONDS
+    return DEFAULT_PORT_WAIT_TIMEOUT_SECONDS
 
 
 def stopServices(
@@ -358,9 +381,10 @@ def start() -> int:
 
         for serviceName in ('backend_app', 'web'):
             port = int(services[serviceName]['port'])
+            timeoutSeconds = getPortWaitTimeoutSeconds(serviceName)
             common.info(f'等待 {serviceName} 打开端口 {port} ...')
-            if not common.waitForPort(port, timeoutSeconds=60):
-                common.err(f'{serviceName} 未在 60 秒内打开端口 {port}')
+            if not common.waitForPort(port, timeoutSeconds=timeoutSeconds):
+                common.err(f'{serviceName} 未在 {timeoutSeconds} 秒内打开端口 {port}')
                 raise RuntimeError(serviceName)
 
         common.saveState(startedState)
