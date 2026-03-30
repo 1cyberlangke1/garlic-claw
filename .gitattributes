@@ -3,3 +3,6 @@
 
 # 强制所有 .sh 文件在检出时使用 LF
 *.sh text eol=lf
+
+# 强制 Windows 批处理脚本在检出时使用 CRLF，避免 cmd.exe 的 label/子程序解析异常
+*.bat text eol=crlf

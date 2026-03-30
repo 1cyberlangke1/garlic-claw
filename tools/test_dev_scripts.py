@@ -22,6 +22,8 @@ from pathlib import Path
 TOOLS_DIR = Path(__file__).resolve().parent
 LAUNCHER_PATH = TOOLS_DIR / '一键启停脚本.py'
 COMMON_PATH = TOOLS_DIR / 'dev_script_common.py'
+START_BAT_PATH = TOOLS_DIR / 'start-dev.bat'
+STOP_BAT_PATH = TOOLS_DIR / 'stop-dev.bat'
 
 
 def loadModule(module_name: str, path: Path):
@@ -48,6 +50,22 @@ def loadModule(module_name: str, path: Path):
 
 class DevLauncherRedTests(unittest.TestCase):
     """启动脚本红灯测试。"""
+
+    def testBatchLaunchersUseCrlfLineEndings(self) -> None:
+        """Windows 批处理脚本应使用 CRLF，避免 cmd.exe 子程序解析异常。"""
+        for scriptPath in (START_BAT_PATH, STOP_BAT_PATH):
+            content = scriptPath.read_bytes()
+            self.assertIn(
+                b'\r\n',
+                content,
+                f'{scriptPath.name} 应至少包含 CRLF 行尾',
+            )
+            normalized = content.replace(b'\r\n', b'')
+            self.assertNotIn(
+                b'\n',
+                normalized,
+                f'{scriptPath.name} 不应包含裸 LF 行尾',
+            )
 
     def testStateFileMovesToOtherDirectoryJson(self) -> None:
         """应将状态文件迁移到 other/dev-processes.json。"""
