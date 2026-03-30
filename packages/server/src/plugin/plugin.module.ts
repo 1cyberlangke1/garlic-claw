@@ -5,6 +5,8 @@ import { PersonaModule } from '../persona/persona.module';
 import { ToolModule } from '../tool/tool.module';
 import { BuiltinPluginLoader } from './builtin/builtin-plugin.loader';
 import { PluginAdminService } from './plugin-admin.service';
+import { PluginCommandController } from './plugin-command.controller';
+import { PluginCommandService } from './plugin-command.service';
 import { PluginCronService } from './plugin-cron.service';
 import { PluginController } from './plugin.controller';
 import { PluginGateway } from './plugin.gateway';
@@ -25,8 +27,9 @@ import { PluginService } from './plugin.service';
     PluginRuntimeService,
     BuiltinPluginLoader,
     PluginAdminService,
+    PluginCommandService,
   ],
-  controllers: [PluginController, PluginRouteController],
+  controllers: [PluginController, PluginRouteController, PluginCommandController],
   exports: [
     PluginService,
     PluginGateway,
@@ -35,6 +38,7 @@ import { PluginService } from './plugin.service';
     PluginRuntimeService,
     PluginStateService,
     PluginAdminService,
+    PluginCommandService,
   ],
 })
 export class PluginModule {}

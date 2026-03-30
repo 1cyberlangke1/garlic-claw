@@ -82,6 +82,20 @@ export interface PluginHookFilterDescriptor {
   message?: PluginHookMessageFilter;
 }
 
+/** 命令治理视角下的命令类型。 */
+export type PluginCommandKind = 'command' | 'group-help' | 'hook-filter';
+
+/** 插件对外暴露的命令描述。 */
+export interface PluginCommandDescriptor {
+  kind: PluginCommandKind;
+  canonicalCommand: string;
+  path: string[];
+  aliases: string[];
+  variants: string[];
+  description?: string;
+  priority?: number;
+}
+
 /** 插件调用来源。 */
 export type PluginInvocationSource =
   | 'chat-tool'
@@ -291,6 +305,7 @@ export interface PluginSelfInfo {
   description?: string;
   permissions: PluginPermission[];
   crons?: PluginCronDescriptor[];
+  commands?: PluginCommandDescriptor[];
   hooks?: PluginHookDescriptor[];
   routes?: PluginRouteDescriptor[];
   supportedActions?: PluginActionName[];
@@ -314,6 +329,7 @@ export interface PluginManifest {
   permissions: PluginPermission[];
   tools: PluginCapability[];
   crons?: PluginCronDescriptor[];
+  commands?: PluginCommandDescriptor[];
   hooks?: PluginHookDescriptor[];
   config?: PluginConfigSchema;
   routes?: PluginRouteDescriptor[];
@@ -1228,6 +1244,47 @@ export interface PluginGovernanceInfo {
   canDisable: boolean;
   disableReason?: string;
   builtinRole?: PluginBuiltinRole;
+}
+
+/** 命令目录的来源。 */
+export type PluginCommandDescriptorSource = 'manifest' | 'hook-filter';
+
+/** 插件命令目录里的单条命令记录。 */
+export interface PluginCommandInfo extends PluginCommandDescriptor {
+  commandId: string;
+  pluginId: string;
+  pluginDisplayName?: string;
+  runtimeKind: PluginRuntimeKind;
+  connected: boolean;
+  defaultEnabled: boolean;
+  source: PluginCommandDescriptorSource;
+  governance?: PluginGovernanceInfo;
+  conflictTriggers: string[];
+}
+
+/** 冲突视图里的命令归属摘要。 */
+export interface PluginCommandConflictEntry {
+  commandId: string;
+  pluginId: string;
+  pluginDisplayName?: string;
+  runtimeKind: PluginRuntimeKind;
+  connected: boolean;
+  defaultEnabled: boolean;
+  kind: PluginCommandKind;
+  canonicalCommand: string;
+  priority?: number;
+}
+
+/** 一个触发词对应的冲突摘要。 */
+export interface PluginCommandConflict {
+  trigger: string;
+  commands: PluginCommandConflictEntry[];
+}
+
+/** 插件命令治理总览。 */
+export interface PluginCommandOverview {
+  commands: PluginCommandInfo[];
+  conflicts: PluginCommandConflict[];
 }
 
 /** 插件/设备信息 */

@@ -13,4 +13,9 @@ describe('router', () => {
     expect(router.hasRoute('persona-settings')).toBe(true)
     expect(router.resolve({ name: 'persona-settings' }).path).toBe('/personas')
   })
+
+  it('registers the command governance route', () => {
+    expect(router.hasRoute('commands')).toBe(true)
+    expect(router.resolve({ name: 'commands' }).path).toBe('/commands')
+  })
 })

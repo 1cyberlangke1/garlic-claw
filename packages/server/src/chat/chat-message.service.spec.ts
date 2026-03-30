@@ -1,3 +1,4 @@
+import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
 import { ChatMessageService } from './chat-message.service';
 
 describe('ChatMessageService', () => {
@@ -127,14 +128,20 @@ describe('ChatMessageService', () => {
         }),
       }),
     );
+    const orchestration = new ChatMessageOrchestrationService(
+      aiProvider as never,
+      pluginRuntime as never,
+      toolRegistry as never,
+      modelInvocation as never,
+    );
     service = new ChatMessageService(
       prisma as never,
       chatService as never,
       aiProvider as never,
       personaService as never,
       pluginRuntime as never,
-      toolRegistry as never,
       modelInvocation as never,
+      orchestration as never,
       chatTaskService as never,
     );
   });

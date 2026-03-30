@@ -1,0 +1,283 @@
+import type {
+  PluginCommandConflict,
+  PluginCommandConflictEntry,
+  PluginCommandDescriptor,
+  PluginCommandInfo,
+  PluginCommandOverview,
+  PluginHookDescriptor,
+  PluginRuntimeKind,
+} from '@garlic-claw/shared';
+import { Injectable } from '@nestjs/common';
+import { describePluginGovernance } from './plugin-governance-policy';
+import { PluginRuntimeService } from './plugin-runtime.service';
+import { PluginService } from './plugin.service';
+
+type PersistedPluginRecord = Awaited<ReturnType<PluginService['findAll']>>[number];
+type RuntimePluginRecord = ReturnType<PluginRuntimeService['listPlugins']>[number];
+
+@Injectable()
+export class PluginCommandService {
+  constructor(
+    private readonly pluginService: PluginService,
+    private readonly pluginRuntime: PluginRuntimeService,
+  ) {}
+
+  async listOverview(): Promise<PluginCommandOverview> {
+    const [persistedPlugins, runtimePlugins] = await Promise.all([
+      this.pluginService.findAll(),
+      Promise.resolve(this.pluginRuntime.listPlugins()),
+    ]);
+    const runtimeByPluginId = new Map(
+      runtimePlugins.map((plugin) => [plugin.pluginId, plugin]),
+    );
+    const baseCommands = persistedPlugins.flatMap((plugin) =>
+      this.buildCommandInfos(plugin, runtimeByPluginId.get(plugin.name) ?? null));
+    const conflicts = this.buildConflicts(baseCommands);
+    const conflictTriggersByCommandId = new Map<string, string[]>();
+
+    for (const conflict of conflicts) {
+      for (const command of conflict.commands) {
+        const triggers = conflictTriggersByCommandId.get(command.commandId);
+        if (triggers) {
+          triggers.push(conflict.trigger);
+        } else {
+          conflictTriggersByCommandId.set(command.commandId, [conflict.trigger]);
+        }
+      }
+    }
+
+    const commands = baseCommands
+      .map((command) => ({
+        ...command,
+        conflictTriggers: dedupeStrings(conflictTriggersByCommandId.get(command.commandId) ?? []),
+      }))
+      .sort((left, right) => {
+        const conflictDiff = right.conflictTriggers.length - left.conflictTriggers.length;
+        if (conflictDiff !== 0) {
+          return conflictDiff;
+        }
+
+        const priorityDiff = normalizePriority(left.priority) - normalizePriority(right.priority);
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+
+        const pluginDiff = (left.pluginDisplayName ?? left.pluginId).localeCompare(
+          right.pluginDisplayName ?? right.pluginId,
+          'zh-CN',
+        );
+        if (pluginDiff !== 0) {
+          return pluginDiff;
+        }
+
+        return left.canonicalCommand.localeCompare(right.canonicalCommand, 'zh-CN');
+      });
+
+    return {
+      commands,
+      conflicts,
+    };
+  }
+
+  private buildCommandInfos(
+    plugin: PersistedPluginRecord,
+    runtimePlugin: RuntimePluginRecord | null,
+  ): PluginCommandInfo[] {
+    const runtimeKind = (runtimePlugin?.runtimeKind ?? plugin.runtimeKind) as PluginRuntimeKind;
+    const governance = describePluginGovernance({
+      pluginId: plugin.name,
+      runtimeKind,
+    });
+    const descriptors = this.resolveCommandDescriptors(plugin, runtimePlugin);
+
+    return descriptors.map(({ descriptor, source }) => ({
+      ...descriptor,
+      commandId: buildCommandId(plugin.name, descriptor),
+      pluginId: plugin.name,
+      pluginDisplayName: runtimePlugin?.manifest.name ?? plugin.displayName ?? plugin.name,
+      runtimeKind,
+      connected: Boolean(runtimePlugin),
+      defaultEnabled: plugin.defaultEnabled,
+      source,
+      governance,
+      conflictTriggers: [],
+    }));
+  }
+
+  private resolveCommandDescriptors(
+    plugin: PersistedPluginRecord,
+    runtimePlugin: RuntimePluginRecord | null,
+  ): Array<{
+    descriptor: PluginCommandDescriptor;
+    source: PluginCommandInfo['source'];
+  }> {
+    const manifestCommands = runtimePlugin?.manifest.commands ?? [];
+    if (manifestCommands.length > 0) {
+      return manifestCommands.map((descriptor) => ({
+        descriptor: cloneCommandDescriptor(descriptor),
+        source: 'manifest' as const,
+      }));
+    }
+
+    const hooks = runtimePlugin?.manifest.hooks ?? parsePersistedHooks(plugin.hooks);
+    return extractCommandsFromHooks(hooks).map((descriptor) => ({
+      descriptor,
+      source: 'hook-filter' as const,
+    }));
+  }
+
+  private buildConflicts(commands: PluginCommandInfo[]): PluginCommandConflict[] {
+    const triggerMap = new Map<string, PluginCommandInfo[]>();
+
+    for (const command of commands) {
+      for (const trigger of command.variants) {
+        const existing = triggerMap.get(trigger);
+        if (existing) {
+          existing.push(command);
+        } else {
+          triggerMap.set(trigger, [command]);
+        }
+      }
+    }
+
+    return [...triggerMap.entries()]
+      .map(([trigger, relatedCommands]) => ({
+        trigger,
+        commands: dedupeByCommandId(relatedCommands)
+          .sort((left, right) => {
+            const priorityDiff = normalizePriority(left.priority) - normalizePriority(right.priority);
+            if (priorityDiff !== 0) {
+              return priorityDiff;
+            }
+
+            return left.pluginId.localeCompare(right.pluginId, 'zh-CN');
+          })
+          .map((command): PluginCommandConflictEntry => ({
+            commandId: command.commandId,
+            pluginId: command.pluginId,
+            pluginDisplayName: command.pluginDisplayName,
+            runtimeKind: command.runtimeKind,
+            connected: command.connected,
+            defaultEnabled: command.defaultEnabled,
+            kind: command.kind,
+            canonicalCommand: command.canonicalCommand,
+            ...(typeof command.priority === 'number' ? { priority: command.priority } : {}),
+          })),
+      }))
+      .filter((conflict) => conflict.commands.length > 1)
+      .sort((left, right) => {
+        const sizeDiff = right.commands.length - left.commands.length;
+        if (sizeDiff !== 0) {
+          return sizeDiff;
+        }
+
+        return left.trigger.localeCompare(right.trigger, 'zh-CN');
+      });
+  }
+}
+
+function parsePersistedHooks(raw: string | null): PluginHookDescriptor[] {
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as PluginHookDescriptor[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function extractCommandsFromHooks(hooks: PluginHookDescriptor[]): PluginCommandDescriptor[] {
+  const descriptors = new Map<string, PluginCommandDescriptor>();
+
+  for (const hook of hooks) {
+    const triggers = dedupeStrings(
+      (hook.name === 'message:received' ? hook.filter?.message?.commands : undefined) ?? [],
+    )
+      .map(normalizeCommandTrigger)
+      .filter((trigger): trigger is string => Boolean(trigger));
+    if (triggers.length === 0) {
+      continue;
+    }
+
+    const canonicalCommand = triggers[0];
+    const existing = descriptors.get(canonicalCommand);
+    const nextDescriptor: PluginCommandDescriptor = {
+      kind: 'hook-filter',
+      canonicalCommand,
+      path: splitCommandPath(canonicalCommand),
+      aliases: triggers.filter((trigger) => trigger !== canonicalCommand),
+      variants: triggers,
+      ...(hook.description ? { description: hook.description } : {}),
+      priority: normalizePriority(hook.priority),
+    };
+
+    if (existing) {
+      existing.aliases = dedupeStrings([...existing.aliases, ...nextDescriptor.aliases]);
+      existing.variants = dedupeStrings([...existing.variants, ...nextDescriptor.variants]);
+      if (!existing.description && nextDescriptor.description) {
+        existing.description = nextDescriptor.description;
+      }
+      if (typeof existing.priority !== 'number' && typeof nextDescriptor.priority === 'number') {
+        existing.priority = nextDescriptor.priority;
+      }
+      continue;
+    }
+
+    descriptors.set(canonicalCommand, nextDescriptor);
+  }
+
+  return [...descriptors.values()];
+}
+
+function buildCommandId(pluginId: string, descriptor: PluginCommandDescriptor): string {
+  return `${pluginId}:${descriptor.canonicalCommand}:${descriptor.kind}`;
+}
+
+function splitCommandPath(command: string): string[] {
+  return command.replace(/^\//, '').split(/\s+/).filter(Boolean);
+}
+
+function normalizeCommandTrigger(command: string): string | null {
+  const normalized = command
+    .trim()
+    .replace(/^\/+/, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ');
+  if (!normalized) {
+    return null;
+  }
+
+  return `/${normalized}`;
+}
+
+function normalizePriority(priority?: number): number {
+  if (typeof priority !== 'number' || !Number.isFinite(priority)) {
+    return 0;
+  }
+
+  return Math.trunc(priority);
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function dedupeByCommandId(commands: PluginCommandInfo[]): PluginCommandInfo[] {
+  return [...new Map(commands.map((command) => [command.commandId, command])).values()];
+}
+
+function cloneCommandDescriptor(command: PluginCommandDescriptor): PluginCommandDescriptor {
+  return {
+    kind: command.kind,
+    canonicalCommand: command.canonicalCommand,
+    path: [...command.path],
+    aliases: [...command.aliases],
+    variants: [...command.variants],
+    ...(command.description ? { description: command.description } : {}),
+    ...(typeof command.priority === 'number' ? { priority: command.priority } : {}),
+  };
+}

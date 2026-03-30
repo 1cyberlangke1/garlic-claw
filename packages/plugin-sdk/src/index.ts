@@ -26,6 +26,7 @@ import {
   type PluginConversationSessionInfo,
   type PluginConversationSessionKeepParams,
   type PluginConversationSessionStartParams,
+  type PluginCommandDescriptor,
   type PluginHookName,
   type PluginMessageKind,
   type PluginMessageHookInfo,
@@ -69,6 +70,8 @@ export interface PluginManifestInput {
   permissions?: PluginManifest['permissions'];
   /** 工具描述列表。 */
   tools?: PluginCapability[];
+  /** 命令描述列表。 */
+  commands?: NonNullable<PluginManifest['commands']>;
   /** Hook 描述列表。 */
   hooks?: NonNullable<PluginManifest['hooks']>;
   /** 插件配置 schema。 */
@@ -1604,6 +1607,29 @@ export class PluginClient {
   }
 
   /**
+   * 解析当前插件最终应声明的命令描述。
+   * @returns 去重后的命令描述列表
+   */
+  private resolveCommandDescriptors(): PluginCommandDescriptor[] {
+    const commands = (this.options.manifest.commands ?? []).map((command) =>
+      cloneCommandDescriptor(command));
+
+    for (const entry of this.commandHandlers) {
+      this.ensureCommandDescriptor(commands, {
+        kind: entry.kind,
+        canonicalCommand: entry.canonicalCommand,
+        path: [...entry.path],
+        aliases: entry.variants.filter((variant) => variant !== entry.canonicalCommand),
+        variants: [...entry.variants],
+        ...(entry.description ? { description: entry.description } : {}),
+        priority: normalizePriority(entry.priority),
+      });
+    }
+
+    return commands;
+  }
+
+  /**
    * 把一个 Hook 描述合并到最终 manifest 中。
    * @param hooks 当前 Hook 列表
    * @param descriptor 待合并的 Hook 描述
@@ -1628,6 +1654,36 @@ export class PluginClient {
     }
 
     hooks.push(cloneHookDescriptor(descriptor));
+  }
+
+  /**
+   * 把一个命令描述合并到最终 manifest 中。
+   * @param commands 当前命令列表
+   * @param descriptor 待合并的命令描述
+   * @returns 无返回值
+   */
+  private ensureCommandDescriptor(
+    commands: PluginCommandDescriptor[],
+    descriptor: PluginCommandDescriptor,
+  ) {
+    const existing = commands.find((command) =>
+      command.kind === descriptor.kind
+      && command.canonicalCommand === descriptor.canonicalCommand);
+    if (existing) {
+      existing.path = descriptor.path.length > 0 ? [...descriptor.path] : [...existing.path];
+      existing.aliases = dedupeStrings([...existing.aliases, ...descriptor.aliases])
+        .filter((alias) => alias !== existing.canonicalCommand);
+      existing.variants = dedupeStrings([...existing.variants, ...descriptor.variants]);
+      if (!existing.description && descriptor.description) {
+        existing.description = descriptor.description;
+      }
+      if (typeof existing.priority !== 'number' && typeof descriptor.priority === 'number') {
+        existing.priority = descriptor.priority;
+      }
+      return;
+    }
+
+    commands.push(cloneCommandDescriptor(descriptor));
   }
 
   /**
@@ -2049,6 +2105,7 @@ export class PluginClient {
    */
   private resolveManifest(): PluginManifest {
     const hooks = this.resolveHookDescriptors();
+    const commands = this.resolveCommandDescriptors();
 
     return {
       id: this.options.pluginName,
@@ -2058,6 +2115,7 @@ export class PluginClient {
       description: this.options.manifest.description,
       permissions: this.options.manifest.permissions ?? [],
       tools: this.options.manifest.tools ?? this.options.capabilities,
+      ...(commands.length > 0 ? { commands } : {}),
       hooks,
       config: this.options.manifest.config,
       routes: this.options.manifest.routes ?? [],
@@ -2392,6 +2450,23 @@ function cloneHookDescriptor(hook: PluginHookDescriptor): PluginHookDescriptor {
     ...(hook.description ? { description: hook.description } : {}),
     ...(typeof hook.priority === 'number' ? { priority: hook.priority } : {}),
     ...(hook.filter ? { filter: cloneHookFilterDescriptor(hook.filter) } : {}),
+  };
+}
+
+/**
+ * 复制一条命令描述。
+ * @param command 原始命令描述
+ * @returns 深拷贝后的命令描述
+ */
+function cloneCommandDescriptor(command: PluginCommandDescriptor): PluginCommandDescriptor {
+  return {
+    kind: command.kind,
+    canonicalCommand: command.canonicalCommand,
+    path: [...command.path],
+    aliases: [...command.aliases],
+    variants: [...command.variants],
+    ...(command.description ? { description: command.description } : {}),
+    ...(typeof command.priority === 'number' ? { priority: command.priority } : {}),
   };
 }
 

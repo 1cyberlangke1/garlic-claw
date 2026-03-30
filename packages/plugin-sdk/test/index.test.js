@@ -195,6 +195,59 @@ test('resolveManifest synthesizes message hook descriptors for commands and grou
       '/m c help',
     ].sort(),
   );
+  assert.ok(Array.isArray(manifest.commands));
+  assert.deepEqual(
+    manifest.commands.map((command) => ({
+      kind: command.kind,
+      canonicalCommand: command.canonicalCommand,
+      aliases: [...command.aliases].sort(),
+      variants: [...command.variants].sort(),
+      priority: command.priority,
+      description: command.description,
+    })),
+    [
+      {
+        kind: 'command',
+        canonicalCommand: '/help',
+        aliases: ['/帮助'].sort(),
+        variants: ['/help', '/帮助'].sort(),
+        priority: -2,
+        description: undefined,
+      },
+      {
+        kind: 'group-help',
+        canonicalCommand: '/math',
+        aliases: ['/m'].sort(),
+        variants: ['/math', '/m'].sort(),
+        priority: 0,
+        description: '数学命令',
+      },
+      {
+        kind: 'command',
+        canonicalCommand: '/math add',
+        aliases: ['/math sum', '/m add', '/m sum'].sort(),
+        variants: ['/math add', '/math sum', '/m add', '/m sum'].sort(),
+        priority: 0,
+        description: '加法',
+      },
+      {
+        kind: 'group-help',
+        canonicalCommand: '/math calc',
+        aliases: ['/math c', '/m calc', '/m c'].sort(),
+        variants: ['/math calc', '/math c', '/m calc', '/m c'].sort(),
+        priority: 0,
+        description: '高级计算',
+      },
+      {
+        kind: 'command',
+        canonicalCommand: '/math calc help',
+        aliases: ['/math c help', '/m calc help', '/m c help'].sort(),
+        variants: ['/math calc help', '/math c help', '/m calc help', '/m c help'].sort(),
+        priority: 0,
+        description: undefined,
+      },
+    ],
+  );
 });
 
 test('routes nested command aliases through the longest matching command path', async () => {
