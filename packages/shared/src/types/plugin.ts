@@ -471,6 +471,30 @@ export interface PluginSubagentRunParams {
   maxSteps?: number;
 }
 
+/** 后台子代理任务状态。 */
+export type PluginSubagentTaskStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'error';
+
+/** 后台子代理任务回写状态。 */
+export type PluginSubagentTaskWriteBackStatus =
+  | 'pending'
+  | 'sent'
+  | 'failed'
+  | 'skipped';
+
+/** 后台子代理任务回写配置。 */
+export interface PluginSubagentTaskWriteBack {
+  target?: PluginMessageTargetRef | null;
+}
+
+/** 启动后台子代理任务的参数。 */
+export interface PluginSubagentTaskStartParams extends PluginSubagentRunParams {
+  writeBack?: PluginSubagentTaskWriteBack | null;
+}
+
 /** 子代理工具调用摘要。 */
 export interface PluginSubagentToolCall {
   toolCallId: string;
@@ -497,6 +521,41 @@ export interface PluginSubagentRunResult {
   finishReason?: string | null;
   toolCalls: PluginSubagentToolCall[];
   toolResults: PluginSubagentToolResult[];
+}
+
+/** 后台子代理任务摘要。 */
+export interface PluginSubagentTaskSummary {
+  id: string;
+  pluginId: string;
+  pluginDisplayName?: string;
+  runtimeKind: PluginRuntimeKind;
+  status: PluginSubagentTaskStatus;
+  requestPreview: string;
+  resultPreview?: string;
+  providerId?: string;
+  modelId?: string;
+  error?: string;
+  writeBackStatus: PluginSubagentTaskWriteBackStatus;
+  writeBackTarget?: PluginMessageTargetInfo | null;
+  writeBackError?: string;
+  writeBackMessageId?: string;
+  requestedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  conversationId?: string;
+  userId?: string;
+}
+
+/** 后台子代理任务详情。 */
+export interface PluginSubagentTaskDetail extends PluginSubagentTaskSummary {
+  request: PluginSubagentRequest;
+  context: PluginCallContext;
+  result?: PluginSubagentRunResult | null;
+}
+
+/** 后台子代理任务总览。 */
+export interface PluginSubagentTaskOverview {
+  tasks: PluginSubagentTaskSummary[];
 }
 
 /** 子代理运行时可改写的请求快照。 */
@@ -1210,6 +1269,9 @@ export type PluginHostMethod =
   | 'storage.list'
   | 'storage.set'
   | 'subagent.run'
+  | 'subagent.task.get'
+  | 'subagent.task.list'
+  | 'subagent.task.start'
   | 'state.get'
   | 'state.set'
   | 'user.get';

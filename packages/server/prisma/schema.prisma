@@ -180,6 +180,35 @@ model PluginEvent {
   @@map("plugin_events")
 }
 
+model PluginSubagentTask {
+  id                 String   @id @default(uuid())
+  pluginId           String   @map("plugin_id")
+  pluginDisplayName  String?  @map("plugin_display_name")
+  runtimeKind        String   @map("runtime_kind")
+  userId             String?  @map("user_id")
+  conversationId     String?  @map("conversation_id")
+  status             String   @default("queued")
+  requestJson        String   @map("request_json")
+  contextJson        String   @map("context_json")
+  resultJson         String?  @map("result_json")
+  error              String?
+  providerId         String?  @map("provider_id")
+  modelId            String?  @map("model_id")
+  writeBackTargetJson String? @map("write_back_target_json")
+  writeBackStatus    String   @default("skipped") @map("write_back_status")
+  writeBackError     String?  @map("write_back_error")
+  writeBackMessageId String?  @map("write_back_message_id")
+  requestedAt        DateTime @default(now()) @map("requested_at")
+  startedAt          DateTime? @map("started_at")
+  finishedAt         DateTime? @map("finished_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([status, requestedAt])
+  @@index([pluginId, requestedAt])
+  @@map("plugin_subagent_tasks")
+}
+
 model Memory {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")

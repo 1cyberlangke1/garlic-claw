@@ -47,6 +47,9 @@ import {
   type PluginSelfInfo,
   type PluginSubagentRunParams,
   type PluginSubagentRunResult,
+  type PluginSubagentTaskDetail,
+  type PluginSubagentTaskStartParams,
+  type PluginSubagentTaskSummary,
   type RegisterPayload,
   type RouteResultPayload,
   type TriggerConfig,
@@ -433,6 +436,28 @@ export interface PluginHostFacade {
    * @returns 子代理执行结果
    */
   runSubagent(params: PluginSubagentRunParams): Promise<PluginSubagentRunResult>;
+
+  /**
+   * 启动一个后台子代理任务。
+   * @param params 子代理消息、可选回写目标和模型参数
+   * @returns 已排队的任务摘要
+   */
+  startSubagentTask(
+    params: PluginSubagentTaskStartParams,
+  ): Promise<PluginSubagentTaskSummary>;
+
+  /**
+   * 列出当前插件启动过的后台子代理任务。
+   * @returns 任务摘要列表
+   */
+  listSubagentTasks(): Promise<PluginSubagentTaskSummary[]>;
+
+  /**
+   * 读取当前插件的一个后台子代理任务详情。
+   * @param taskId 任务 ID
+   * @returns 任务详情
+   */
+  getSubagentTask(taskId: string): Promise<PluginSubagentTaskDetail>;
 
   /**
    * 发起一次宿主侧文本生成。
@@ -1554,6 +1579,73 @@ export class PluginClient {
             },
             context,
           ) as unknown as Promise<PluginSubagentRunResult>,
+        startSubagentTask: ({
+          providerId,
+          modelId,
+          system,
+          messages,
+          toolNames,
+          variant,
+          providerOptions,
+          headers,
+          maxOutputTokens,
+          maxSteps,
+          writeBack,
+        }) => {
+          const startTaskParams: JsonObject = {
+            messages: messages as never,
+          };
+          if (providerId) {
+            startTaskParams.providerId = providerId;
+          }
+          if (modelId) {
+            startTaskParams.modelId = modelId;
+          }
+          if (system) {
+            startTaskParams.system = system;
+          }
+          if (toolNames) {
+            startTaskParams.toolNames = toolNames as never;
+          }
+          if (variant) {
+            startTaskParams.variant = variant;
+          }
+          if (providerOptions) {
+            startTaskParams.providerOptions = providerOptions;
+          }
+          if (headers) {
+            startTaskParams.headers = headers as never;
+          }
+          if (typeof maxOutputTokens === 'number') {
+            startTaskParams.maxOutputTokens = maxOutputTokens;
+          }
+          if (typeof maxSteps === 'number') {
+            startTaskParams.maxSteps = maxSteps;
+          }
+          if (writeBack) {
+            startTaskParams.writeBack = writeBack as never;
+          }
+
+          return this.sendHostCall(
+            'subagent.task.start',
+            startTaskParams,
+            context,
+          ) as unknown as Promise<PluginSubagentTaskSummary>;
+        },
+        listSubagentTasks: () =>
+          this.sendHostCall(
+            'subagent.task.list',
+            {},
+            context,
+          ) as unknown as Promise<PluginSubagentTaskSummary[]>,
+        getSubagentTask: (taskId) =>
+          this.sendHostCall(
+            'subagent.task.get',
+            {
+              taskId,
+            },
+            context,
+          ) as unknown as Promise<PluginSubagentTaskDetail>,
         generateText: ({
           prompt,
           system,

@@ -511,6 +511,123 @@ test('execution context exposes message target lookup and generic send host APIs
   });
 });
 
+test('execution context exposes background subagent task host APIs', async () => {
+  const client = createClient();
+  const sent = installHostCallMock(client, {
+    'subagent.task.start': () => ({
+      id: 'subagent-task-1',
+      pluginId: 'plugin.sdk.test',
+      pluginDisplayName: 'plugin.sdk.test',
+      runtimeKind: 'remote',
+      status: 'queued',
+      requestPreview: '请帮我总结当前对话',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      writeBackStatus: 'pending',
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+    }),
+    'subagent.task.list': () => ([
+      {
+        id: 'subagent-task-1',
+        pluginId: 'plugin.sdk.test',
+        pluginDisplayName: 'plugin.sdk.test',
+        runtimeKind: 'remote',
+        status: 'queued',
+        requestPreview: '请帮我总结当前对话',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        writeBackStatus: 'pending',
+        requestedAt: '2026-03-30T12:00:00.000Z',
+        startedAt: null,
+        finishedAt: null,
+      },
+    ]),
+    'subagent.task.get': () => ({
+      id: 'subagent-task-1',
+      pluginId: 'plugin.sdk.test',
+      pluginDisplayName: 'plugin.sdk.test',
+      runtimeKind: 'remote',
+      status: 'completed',
+      requestPreview: '请帮我总结当前对话',
+      resultPreview: '这是后台任务总结',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      writeBackStatus: 'sent',
+      writeBackMessageId: 'assistant-message-1',
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      startedAt: '2026-03-30T12:00:01.000Z',
+      finishedAt: '2026-03-30T12:00:05.000Z',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        messages: [
+          {
+            role: 'user',
+            content: '请帮我总结当前对话',
+          },
+        ],
+        maxSteps: 4,
+      },
+      context: {
+        source: 'plugin',
+        conversationId: 'conv-1',
+      },
+      result: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        text: '这是后台任务总结',
+        message: {
+          role: 'assistant',
+          content: '这是后台任务总结',
+        },
+        finishReason: 'stop',
+        toolCalls: [],
+        toolResults: [],
+      },
+    }),
+  });
+
+  const executionContext = client.createExecutionContext({
+    source: 'plugin',
+    conversationId: 'conv-1',
+  });
+
+  const startedTask = await executionContext.host.startSubagentTask({
+    providerId: 'openai',
+    modelId: 'gpt-5.2',
+    messages: [
+      {
+        role: 'user',
+        content: '请帮我总结当前对话',
+      },
+    ],
+    maxSteps: 4,
+    writeBack: {
+      target: {
+        type: 'conversation',
+        id: 'conv-1',
+      },
+    },
+  });
+  const listedTasks = await executionContext.host.listSubagentTasks();
+  const loadedTask = await executionContext.host.getSubagentTask('subagent-task-1');
+
+  assert.equal(startedTask.status, 'queued');
+  assert.equal(listedTasks.length, 1);
+  assert.equal(loadedTask.status, 'completed');
+  assert.equal(loadedTask.result.text, '这是后台任务总结');
+  assert.deepEqual(
+    sent.map((entry) => entry.payload.method),
+    [
+      'subagent.task.start',
+      'subagent.task.list',
+      'subagent.task.get',
+    ],
+  );
+});
+
 test('execution context exposes a conversation session controller helper', async () => {
   const client = createClient();
   let activeSession = createConversationSessionInfo();

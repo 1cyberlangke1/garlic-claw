@@ -18,4 +18,9 @@ describe('router', () => {
     expect(router.hasRoute('commands')).toBe(true)
     expect(router.resolve({ name: 'commands' }).path).toBe('/commands')
   })
+
+  it('registers the background subagent task route', () => {
+    expect(router.hasRoute('subagent-tasks')).toBe(true)
+    expect(router.resolve({ name: 'subagent-tasks' }).path).toBe('/subagents')
+  })
 })

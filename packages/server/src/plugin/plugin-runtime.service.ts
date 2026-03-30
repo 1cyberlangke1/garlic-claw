@@ -54,6 +54,8 @@ import type {
   PluginRuntimeKind,
   PluginSelfInfo,
   PluginSubagentRequest,
+  PluginSubagentTaskDetail,
+  PluginSubagentTaskSummary,
   PluginSubagentToolCall,
   PluginSubagentToolResult,
   SubagentAfterRunHookMutateResult,
@@ -150,6 +152,9 @@ const HOST_METHOD_PERMISSION_MAP: Record<PluginHostMethod, PluginPermission | nu
   'storage.list': 'storage:read',
   'storage.set': 'storage:write',
   'subagent.run': 'subagent:run',
+  'subagent.task.get': 'subagent:run',
+  'subagent.task.list': 'subagent:run',
+  'subagent.task.start': 'subagent:run',
   'state.get': 'state:read',
   'state.set': 'state:write',
   'user.get': 'user:read',
@@ -500,6 +505,21 @@ export class PluginRuntimeService {
   private readonly conversationSessions = new Map<string, ConversationSessionRecord>();
   private automationService?: AutomationService;
   private chatMessageService?: PluginConversationMessageWriter;
+  private subagentTaskService?: {
+    startTask: (input: {
+      pluginId: string;
+      pluginDisplayName?: string;
+      runtimeKind: PluginRuntimeKind;
+      context: PluginCallContext;
+      request: PluginSubagentRequest;
+      writeBackTarget?: PluginMessageTargetRef | null;
+    }) => Promise<PluginSubagentTaskSummary>;
+    listTasksForPlugin: (pluginId: string) => Promise<PluginSubagentTaskSummary[]>;
+    getTaskForPlugin: (
+      pluginId: string,
+      taskId: string,
+    ) => Promise<PluginSubagentTaskDetail>;
+  };
   private toolRegistryPromise?: Promise<{
     buildToolSet: (input: {
       context: PluginCallContext;
@@ -1168,6 +1188,35 @@ export class PluginRuntimeService {
         context: input.context,
         params: input.params,
       }));
+    }
+    if (input.method === 'subagent.task.start') {
+      const record = this.getRecordOrThrow(input.pluginId);
+      const taskService = await this.getSubagentTaskService();
+      const taskParams = this.readSubagentTaskStartParams(
+        input.params,
+        'subagent.task.start',
+      );
+      return toJsonValue(await taskService.startTask({
+        pluginId: input.pluginId,
+        pluginDisplayName: record.manifest.name,
+        runtimeKind: record.runtimeKind,
+        context: input.context,
+        request: taskParams.request,
+        ...(taskParams.writeBackTarget
+          ? { writeBackTarget: taskParams.writeBackTarget }
+          : {}),
+      }));
+    }
+    if (input.method === 'subagent.task.list') {
+      const taskService = await this.getSubagentTaskService();
+      return toJsonValue(await taskService.listTasksForPlugin(input.pluginId));
+    }
+    if (input.method === 'subagent.task.get') {
+      const taskService = await this.getSubagentTaskService();
+      return toJsonValue(await taskService.getTaskForPlugin(
+        input.pluginId,
+        this.requireString(input.params, 'taskId', 'subagent.task.get'),
+      ));
     }
 
     return this.hostService.call(input);
@@ -3388,6 +3437,29 @@ export class PluginRuntimeService {
     return resolved;
   }
 
+  /**
+   * 延迟解析后台子代理任务服务，避免与 runtime 形成构造期循环依赖。
+   * @returns 后台子代理任务服务实例
+   */
+  private async getSubagentTaskService() {
+    if (this.subagentTaskService) {
+      return this.subagentTaskService;
+    }
+
+    const resolved = this.moduleRef.get<typeof this.subagentTaskService>(
+      'PLUGIN_SUBAGENT_TASK_SERVICE',
+      {
+        strict: false,
+      },
+    );
+    if (!resolved) {
+      throw new NotFoundException('PluginSubagentTaskService is not available');
+    }
+
+    this.subagentTaskService = resolved;
+    return resolved;
+  }
+
   private async getToolRegistry() {
     if (this.toolRegistryPromise) {
       return this.toolRegistryPromise;
@@ -4191,6 +4263,40 @@ export class PluginRuntimeService {
   }
 
   /**
+   * 从 Host API 参数中读取后台子代理任务启动参数。
+   * @param params 参数对象
+   * @param method 当前 Host API 方法名
+   * @returns 归一化后的任务请求与可选回写目标
+   */
+  private readSubagentTaskStartParams(
+    params: JsonObject,
+    method: string,
+  ): {
+    request: PluginSubagentRequest;
+    writeBackTarget?: PluginMessageTargetRef;
+  } {
+    const request = this.readSubagentRequest(params, method);
+    const rawWriteBack = params.writeBack;
+    if (rawWriteBack === undefined || rawWriteBack === null) {
+      return { request };
+    }
+    if (!isJsonObjectValue(rawWriteBack)) {
+      throw new BadRequestException(`${method} 的 writeBack 必须是对象`);
+    }
+
+    const writeBackTarget = this.readOptionalMessageTarget(
+      rawWriteBack,
+      'target',
+      `${method}.writeBack`,
+    );
+
+    return {
+      request,
+      ...(writeBackTarget ? { writeBackTarget } : {}),
+    };
+  }
+
+  /**
    * 构造一个统一的子代理执行结果，并在缺失模型信息时回退到宿主默认解析。
    * @param input 原始结果字段
    * @returns 标准化后的子代理结果
@@ -4225,16 +4331,15 @@ export class PluginRuntimeService {
   }
 
   /**
-   * 执行一次宿主侧 subagent 调用。
-   * @param input 调用参数
-   * @returns subagent 最终结果
+   * 执行一份已经归一化的子代理请求。
+   * @param input 插件 ID、调用上下文与归一化后的请求
+   * @returns 子代理最终结果
    */
-  private async runSubagent(input: {
+  async executeSubagentRequest(input: {
     pluginId: string;
     context: PluginCallContext;
-    params: JsonObject;
+    request: PluginSubagentRequest;
   }): Promise<PluginSubagentRunResult> {
-    const initialRequest = this.readSubagentRequest(input.params, 'subagent.run');
     const beforeRunResult = await this.runSubagentBeforeRunHooks({
       context: input.context,
       payload: {
@@ -4242,7 +4347,7 @@ export class PluginRuntimeService {
           ...input.context,
         },
         pluginId: input.pluginId,
-        request: cloneSubagentRequest(initialRequest),
+        request: cloneSubagentRequest(input.request),
       },
     });
     if (beforeRunResult.action === 'short-circuit') {
@@ -4342,6 +4447,23 @@ export class PluginRuntimeService {
     });
 
     return afterRunPayload.result;
+  }
+
+  /**
+   * 执行一次宿主侧 subagent 调用。
+   * @param input 调用参数
+   * @returns subagent 最终结果
+   */
+  private async runSubagent(input: {
+    pluginId: string;
+    context: PluginCallContext;
+    params: JsonObject;
+  }): Promise<PluginSubagentRunResult> {
+    return this.executeSubagentRequest({
+      pluginId: input.pluginId,
+      context: input.context,
+      request: this.readSubagentRequest(input.params, 'subagent.run'),
+    });
   }
 
   /**

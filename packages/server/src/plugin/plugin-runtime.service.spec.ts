@@ -63,6 +63,12 @@ describe('PluginRuntimeService', () => {
     listAvailableToolSummaries: jest.fn(),
   };
 
+  const subagentTaskService = {
+    startTask: jest.fn(),
+    listTasksForPlugin: jest.fn(),
+    getTaskForPlugin: jest.fn(),
+  };
+
   const moduleRef = {
     get: jest.fn(),
   };
@@ -148,10 +154,35 @@ describe('PluginRuntimeService', () => {
       if (token === ToolRegistryService) {
         return toolRegistry;
       }
+      if (token === 'PLUGIN_SUBAGENT_TASK_SERVICE') {
+        return subagentTaskService;
+      }
       return automationService;
     });
     toolRegistry.buildToolSet.mockResolvedValue(undefined);
     toolRegistry.listAvailableToolSummaries.mockResolvedValue([]);
+    subagentTaskService.startTask.mockResolvedValue({
+      id: 'subagent-task-1',
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请帮我总结当前对话',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      writeBackStatus: 'pending',
+      writeBackTarget: {
+        type: 'conversation',
+        id: 'conversation-1',
+      },
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+    });
+    subagentTaskService.listTasksForPlugin.mockResolvedValue([]);
+    subagentTaskService.getTaskForPlugin.mockResolvedValue(null);
     service = new PluginRuntimeService(
       pluginService as never,
       hostService as never,
@@ -3347,6 +3378,192 @@ describe('PluginRuntimeService', () => {
         },
       }),
     ).rejects.toThrow('插件 builtin.subagent-delegate 缺少权限 subagent:run');
+  });
+
+  it('delegates background subagent task host calls through the task service', async () => {
+    await service.registerPlugin({
+      manifest: {
+        ...builtinManifest,
+        id: 'builtin.subagent-delegate',
+        name: '子代理委派',
+        permissions: ['subagent:run'],
+        tools: [],
+        hooks: [],
+      },
+      runtimeKind: 'builtin',
+      transport: createTransport(),
+    });
+
+    subagentTaskService.listTasksForPlugin.mockResolvedValueOnce([
+      {
+        id: 'subagent-task-1',
+        pluginId: 'builtin.subagent-delegate',
+        pluginDisplayName: '子代理委派',
+        runtimeKind: 'builtin',
+        status: 'queued',
+        requestPreview: '请帮我总结当前对话',
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        writeBackStatus: 'pending',
+        requestedAt: '2026-03-30T12:00:00.000Z',
+        startedAt: null,
+        finishedAt: null,
+      },
+    ]);
+    subagentTaskService.getTaskForPlugin.mockResolvedValueOnce({
+      id: 'subagent-task-1',
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'builtin',
+      status: 'completed',
+      requestPreview: '请帮我总结当前对话',
+      resultPreview: '这是后台任务总结',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      writeBackStatus: 'sent',
+      writeBackMessageId: 'assistant-message-1',
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      startedAt: '2026-03-30T12:00:01.000Z',
+      finishedAt: '2026-03-30T12:00:05.000Z',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        messages: [
+          {
+            role: 'user',
+            content: '请帮我总结当前对话',
+          },
+        ],
+        maxSteps: 4,
+      },
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      result: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        text: '这是后台任务总结',
+        message: {
+          role: 'assistant',
+          content: '这是后台任务总结',
+        },
+        finishReason: 'stop',
+        toolCalls: [],
+        toolResults: [],
+      },
+    });
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.subagent-delegate',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'subagent.task.start' as never,
+        params: {
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          messages: [
+            {
+              role: 'user',
+              content: '请帮我总结当前对话',
+            },
+          ],
+          maxSteps: 4,
+          writeBack: {
+            target: {
+              type: 'conversation',
+              id: 'conversation-1',
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: 'subagent-task-1',
+        status: 'queued',
+        writeBackStatus: 'pending',
+      }),
+    );
+
+    expect(subagentTaskService.startTask).toHaveBeenCalledWith({
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'builtin',
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        messages: [
+          {
+            role: 'user',
+            content: '请帮我总结当前对话',
+          },
+        ],
+        maxSteps: 4,
+      },
+      writeBackTarget: {
+        type: 'conversation',
+        id: 'conversation-1',
+      },
+    });
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.subagent-delegate',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'subagent.task.list' as never,
+        params: {},
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'subagent-task-1',
+        status: 'queued',
+      }),
+    ]);
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.subagent-delegate',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'subagent.task.get' as never,
+        params: {
+          taskId: 'subagent-task-1',
+        },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: 'subagent-task-1',
+        status: 'completed',
+        result: expect.objectContaining({
+          text: '这是后台任务总结',
+        }),
+      }),
+    );
+
+    expect(subagentTaskService.listTasksForPlugin).toHaveBeenCalledWith(
+      'builtin.subagent-delegate',
+    );
+    expect(subagentTaskService.getTaskForPlugin).toHaveBeenCalledWith(
+      'builtin.subagent-delegate',
+      'subagent-task-1',
+    );
   });
 
   it('runs subagent calls through a tool loop with filtered visible tools', async () => {

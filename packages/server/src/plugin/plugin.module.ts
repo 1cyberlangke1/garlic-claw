@@ -14,6 +14,8 @@ import { PluginHostService } from './plugin-host.service';
 import { PluginRouteController } from './plugin-route.controller';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginStateService } from './plugin-state.service';
+import { PluginSubagentTaskController } from './plugin-subagent-task.controller';
+import { PluginSubagentTaskService } from './plugin-subagent-task.service';
 import { PluginService } from './plugin.service';
 
 @Module({
@@ -28,8 +30,18 @@ import { PluginService } from './plugin.service';
     BuiltinPluginLoader,
     PluginAdminService,
     PluginCommandService,
+    PluginSubagentTaskService,
+    {
+      provide: 'PLUGIN_SUBAGENT_TASK_SERVICE',
+      useExisting: PluginSubagentTaskService,
+    },
   ],
-  controllers: [PluginController, PluginRouteController, PluginCommandController],
+  controllers: [
+    PluginController,
+    PluginRouteController,
+    PluginCommandController,
+    PluginSubagentTaskController,
+  ],
   exports: [
     PluginService,
     PluginGateway,
@@ -39,6 +51,7 @@ import { PluginService } from './plugin.service';
     PluginStateService,
     PluginAdminService,
     PluginCommandService,
+    PluginSubagentTaskService,
   ],
 })
 export class PluginModule {}
