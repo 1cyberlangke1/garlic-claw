@@ -24,6 +24,7 @@ import {
   RetryMessageDto,
   SendMessageDto,
   UpdateConversationHostServicesDto,
+  UpdateConversationSkillsDto,
   UpdateMessageDto,
 } from './dto/chat.dto';
 
@@ -82,6 +83,23 @@ export class ChatController {
     @Body() dto: UpdateConversationHostServicesDto,
   ) {
     return this.chatService.updateConversationHostServices(userId, id, dto);
+  }
+
+  @Get('conversations/:id/skills')
+  getConversationSkillState(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.chatService.getConversationSkillState(userId, id);
+  }
+
+  @Put('conversations/:id/skills')
+  updateConversationSkills(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateConversationSkillsDto,
+  ) {
+    return this.chatService.updateConversationSkills(userId, id, dto.activeSkillIds);
   }
 
   /**

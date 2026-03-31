@@ -40,6 +40,32 @@
             {{ conversationSendDisabledReason }}
           </span>
         </div>
+        <div class="skill-row">
+          <span class="service-label">当前 Skills</span>
+          <div
+            v-if="conversationSkillState?.activeSkills?.length"
+            class="skill-chip-list"
+          >
+            <span
+              v-for="skill in conversationSkillState.activeSkills"
+              :key="skill.id"
+              class="skill-chip"
+            >
+              {{ skill.name }}
+              <button
+                type="button"
+                class="skill-chip-remove"
+                @click="removeConversationSkill(skill.id)"
+              >
+                ×
+              </button>
+            </span>
+          </div>
+          <span v-else class="service-warning">当前会话未激活 skill</span>
+          <RouterLink class="service-link" :to="{ name: 'skills' }">
+            管理 Skills
+          </RouterLink>
+        </div>
       </div>
 
       <ChatMessageList
@@ -84,6 +110,7 @@ const {
   pendingImages,
   selectedCapabilities,
   conversationHostServices,
+  conversationSkillState,
   conversationSendDisabledReason,
   uploadNotices,
   canSend,
@@ -98,6 +125,7 @@ const {
   triggerRetryAction,
   setConversationLlmEnabled,
   setConversationSessionEnabled,
+  removeConversationSkill,
 } = useChatView(chat)
 </script>
 
@@ -179,6 +207,47 @@ const {
 
 .service-warning {
   color: var(--warning);
+  font-size: 12px;
+}
+
+.skill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.skill-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(89, 207, 155, 0.14);
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.skill-chip-remove {
+  border: none;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.service-link {
+  color: var(--accent);
+  text-decoration: none;
   font-size: 12px;
 }
 

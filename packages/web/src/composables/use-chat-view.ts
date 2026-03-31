@@ -1,6 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import type {
   AiModelCapabilities,
+  ConversationSkillState,
   ChatMessageMetadata,
   ChatMessagePart,
   ConversationHostServices,
@@ -51,10 +52,12 @@ export function useChatView(chat: ReturnType<typeof useChatStore>) {
   const pendingImages = ref<PendingImage[]>([])
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
   const conversationHostServices = ref<ConversationHostServices | null>(null)
+  const conversationSkillState = ref<ConversationSkillState | null>(null)
   const uploadProcessingNotices = ref<UploadNotice[]>([])
   const visionFallbackEnabled = ref(false)
   let capabilityRequestId = 0
   let conversationHostServicesRequestId = 0
+  let conversationSkillRequestId = 0
   const imageFallbackNotice = computed<UploadNotice[]>(() => {
     if (
       pendingImages.value.length === 0 ||
@@ -132,6 +135,7 @@ export function useChatView(chat: ReturnType<typeof useChatStore>) {
     () => chat.currentConversationId,
     async (conversationId) => {
       await refreshConversationHostServices(conversationId)
+      await refreshConversationSkillState(conversationId)
     },
     { immediate: true },
   )
@@ -467,11 +471,62 @@ export function useChatView(chat: ReturnType<typeof useChatStore>) {
     }
   }
 
+  async function refreshConversationSkillState(
+    conversationId: string | null = chat.currentConversationId,
+  ) {
+    const requestId = ++conversationSkillRequestId
+    if (!conversationId) {
+      conversationSkillState.value = null
+      return
+    }
+
+    try {
+      const state = await api.getConversationSkills(conversationId)
+      if (
+        requestId !== conversationSkillRequestId ||
+        chat.currentConversationId !== conversationId
+      ) {
+        return
+      }
+
+      conversationSkillState.value = state
+    } catch {
+      if (
+        requestId !== conversationSkillRequestId ||
+        chat.currentConversationId !== conversationId
+      ) {
+        return
+      }
+
+      conversationSkillState.value = {
+        activeSkillIds: [],
+        activeSkills: [],
+      }
+    }
+  }
+
+  async function updateConversationSkills(activeSkillIds: string[]) {
+    const conversationId = chat.currentConversationId
+    if (!conversationId) {
+      return
+    }
+
+    conversationSkillState.value = await api.updateConversationSkills(conversationId, {
+      activeSkillIds,
+    })
+  }
+
+  async function removeConversationSkill(skillId: string) {
+    const activeSkillIds = conversationSkillState.value?.activeSkillIds ?? []
+    await updateConversationSkills(activeSkillIds.filter((activeId) => activeId !== skillId))
+  }
+
   return {
     inputText,
     pendingImages,
     selectedCapabilities,
     conversationHostServices,
+    conversationSkillState,
     conversationSendDisabledReason,
     uploadNotices,
     canSend,
@@ -488,6 +543,7 @@ export function useChatView(chat: ReturnType<typeof useChatStore>) {
     triggerRetryAction,
     setConversationLlmEnabled,
     setConversationSessionEnabled,
+    removeConversationSkill,
   }
 }
 

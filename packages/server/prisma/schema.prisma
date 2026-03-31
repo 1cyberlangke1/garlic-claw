@@ -48,6 +48,7 @@ model Conversation {
   userId          String    @map("user_id")
   activePersonaId String?   @map("active_persona_id")
   hostServicesJson String?  @map("host_services_json")
+  skillsJson      String?   @map("skills_json")
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   activePersona   Persona?  @relation("ConversationActivePersona", fields: [activePersonaId], references: [id], onDelete: SetNull)
   createdAt       DateTime  @default(now()) @map("created_at")

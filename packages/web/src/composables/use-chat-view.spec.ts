@@ -9,6 +9,8 @@ vi.mock('../api', () => ({
   getVisionFallbackConfig: vi.fn(),
   getConversationHostServices: vi.fn(),
   updateConversationHostServices: vi.fn(),
+  getConversationSkills: vi.fn(),
+  updateConversationSkills: vi.fn(),
 }))
 
 function createModelConfig(inputImage: boolean, id = inputImage ? 'image-model' : 'text-only-model') {
@@ -67,10 +69,18 @@ describe('useChatView', () => {
       llmEnabled: true,
       ttsEnabled: true,
     })
+    vi.mocked(api.getConversationSkills).mockResolvedValue({
+      activeSkillIds: [],
+      activeSkills: [],
+    })
     vi.mocked(api.updateConversationHostServices).mockResolvedValue({
       sessionEnabled: true,
       llmEnabled: true,
       ttsEnabled: true,
+    })
+    vi.mocked(api.updateConversationSkills).mockResolvedValue({
+      activeSkillIds: [],
+      activeSkills: [],
     })
   })
 
@@ -255,5 +265,53 @@ describe('useChatView', () => {
       },
     )
     expect(state.conversationHostServices.value?.llmEnabled).toBe(false)
+  })
+
+  it('loads and removes active skills for the current conversation', async () => {
+    vi.mocked(api.listAiModels).mockResolvedValue([
+      createModelConfig(true, 'image-model'),
+    ])
+    vi.mocked(api.getConversationSkills).mockResolvedValue({
+      activeSkillIds: ['project/planner'],
+      activeSkills: [
+        {
+          id: 'project/planner',
+          name: '规划执行',
+          description: '先拆任务，再逐步执行。',
+          tags: ['planning'],
+          sourceKind: 'project',
+          entryPath: 'planner/SKILL.md',
+          promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
+          toolPolicy: {
+            allow: ['kb.search'],
+            deny: [],
+          },
+        },
+      ],
+    })
+    vi.mocked(api.updateConversationSkills).mockResolvedValue({
+      activeSkillIds: [],
+      activeSkills: [],
+    })
+
+    const chat = createChatStub({
+      selectedModel: 'image-model',
+    })
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    await state.removeConversationSkill('project/planner')
+
+    expect(state.conversationSkillState.value?.activeSkillIds).toEqual([])
+    expect(api.updateConversationSkills).toHaveBeenCalledWith('conversation-1', {
+      activeSkillIds: [],
+    })
   })
 })

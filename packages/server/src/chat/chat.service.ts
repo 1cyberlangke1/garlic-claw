@@ -13,6 +13,7 @@ import {
   mergeConversationHostServices,
   normalizeConversationHostServices,
 } from './chat-host-services';
+import { SkillSessionService } from '../skill/skill-session.service';
 
 @Injectable()
 export class ChatService {
@@ -20,6 +21,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => PluginRuntimeService))
     private readonly pluginRuntime: PluginRuntimeService,
+    private readonly skillSession: SkillSessionService,
   ) {}
 
   /**
@@ -33,6 +35,7 @@ export class ChatService {
       data: {
         title: dto.title || 'New Chat',
         hostServicesJson: JSON.stringify(DEFAULT_CONVERSATION_HOST_SERVICES),
+        skillsJson: JSON.stringify([]),
         userId,
       },
     });
@@ -163,6 +166,22 @@ export class ChatService {
     });
 
     return next;
+  }
+
+  async getConversationSkillState(userId: string, conversationId: string) {
+    return this.skillSession.getConversationSkillStateForUser(userId, conversationId);
+  }
+
+  async updateConversationSkills(
+    userId: string,
+    conversationId: string,
+    activeSkillIds: string[],
+  ) {
+    return this.skillSession.updateConversationSkillStateForUser(
+      userId,
+      conversationId,
+      activeSkillIds,
+    );
   }
 
   /**

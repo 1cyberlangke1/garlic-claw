@@ -23,7 +23,9 @@ describe('ChatController', () => {
     listConversations: jest.fn(),
     getConversation: jest.fn(),
     getConversationHostServices: jest.fn(),
+    getConversationSkillState: jest.fn(),
     updateConversationHostServices: jest.fn(),
+    updateConversationSkills: jest.fn(),
     deleteConversation: jest.fn(),
   };
 
@@ -181,6 +183,62 @@ describe('ChatController', () => {
       {
         ttsEnabled: false,
       },
+    );
+  });
+
+  it('reads conversation skills through the chat service', async () => {
+    chatService.getConversationSkillState.mockResolvedValue({
+      activeSkillIds: ['project/planner'],
+      activeSkills: [
+        {
+          id: 'project/planner',
+          name: '规划执行',
+        },
+      ],
+    });
+
+    await expect(
+      controller.getConversationSkillState('user-1', 'conversation-1'),
+    ).resolves.toEqual({
+      activeSkillIds: ['project/planner'],
+      activeSkills: [
+        {
+          id: 'project/planner',
+          name: '规划执行',
+        },
+      ],
+    });
+  });
+
+  it('updates conversation skills through the chat service', async () => {
+    chatService.updateConversationSkills.mockResolvedValue({
+      activeSkillIds: ['project/plugin-operator'],
+      activeSkills: [
+        {
+          id: 'project/plugin-operator',
+          name: '插件运维',
+        },
+      ],
+    });
+
+    await expect(
+      controller.updateConversationSkills('user-1', 'conversation-1', {
+        activeSkillIds: ['project/plugin-operator'],
+      } as never),
+    ).resolves.toEqual({
+      activeSkillIds: ['project/plugin-operator'],
+      activeSkills: [
+        {
+          id: 'project/plugin-operator',
+          name: '插件运维',
+        },
+      ],
+    });
+
+    expect(chatService.updateConversationSkills).toHaveBeenCalledWith(
+      'user-1',
+      'conversation-1',
+      ['project/plugin-operator'],
     );
   });
 });

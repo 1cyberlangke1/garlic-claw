@@ -15,6 +15,11 @@ describe('ChatService', () => {
     runConversationCreatedHooks: jest.fn(),
   };
 
+  const skillSession = {
+    getConversationSkillStateForUser: jest.fn(),
+    updateConversationSkillStateForUser: jest.fn(),
+  };
+
   let service: ChatService;
 
   beforeEach(() => {
@@ -23,6 +28,7 @@ describe('ChatService', () => {
     service = new ChatService(
       prisma as never,
       pluginRuntime as never,
+      skillSession as never,
     );
   });
 
@@ -122,5 +128,61 @@ describe('ChatService', () => {
         }),
       },
     });
+  });
+
+  it('delegates conversation skill state reads and writes to the skill session service', async () => {
+    skillSession.getConversationSkillStateForUser.mockResolvedValue({
+      activeSkillIds: ['project/planner'],
+      activeSkills: [
+        {
+          id: 'project/planner',
+          name: '规划执行',
+        },
+      ],
+    });
+    skillSession.updateConversationSkillStateForUser.mockResolvedValue({
+      activeSkillIds: ['project/plugin-operator'],
+      activeSkills: [
+        {
+          id: 'project/plugin-operator',
+          name: '插件运维',
+        },
+      ],
+    });
+
+    await expect(
+      service.getConversationSkillState('user-1', 'conversation-1'),
+    ).resolves.toEqual({
+      activeSkillIds: ['project/planner'],
+      activeSkills: [
+        {
+          id: 'project/planner',
+          name: '规划执行',
+        },
+      ],
+    });
+    await expect(
+      service.updateConversationSkills('user-1', 'conversation-1', [
+        'project/plugin-operator',
+      ]),
+    ).resolves.toEqual({
+      activeSkillIds: ['project/plugin-operator'],
+      activeSkills: [
+        {
+          id: 'project/plugin-operator',
+          name: '插件运维',
+        },
+      ],
+    });
+
+    expect(skillSession.getConversationSkillStateForUser).toHaveBeenCalledWith(
+      'user-1',
+      'conversation-1',
+    );
+    expect(skillSession.updateConversationSkillStateForUser).toHaveBeenCalledWith(
+      'user-1',
+      'conversation-1',
+      ['project/plugin-operator'],
+    );
   });
 });

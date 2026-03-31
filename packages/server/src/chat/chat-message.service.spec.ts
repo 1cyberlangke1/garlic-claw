@@ -56,6 +56,14 @@ describe('ChatMessageService', () => {
     stopTask: jest.fn(),
   };
 
+  const skillSession = {
+    getConversationSkillContext: jest.fn(),
+  };
+
+  const skillCommands = {
+    tryHandleMessage: jest.fn(),
+  };
+
   let service: ChatMessageService;
 
   beforeEach(() => {
@@ -94,6 +102,13 @@ describe('ChatMessageService', () => {
       async ({ payload }: { payload: unknown }) => payload,
     );
     pluginRuntime.runResponseAfterSendHooks.mockResolvedValue(undefined);
+    skillSession.getConversationSkillContext.mockResolvedValue({
+      activeSkills: [],
+      systemPrompt: '',
+      allowedToolNames: null,
+      deniedToolNames: [],
+    });
+    skillCommands.tryHandleMessage.mockResolvedValue(null);
     toolRegistry.buildToolSet.mockReturnValue(undefined);
     toolRegistry.listAvailableToolSummaries.mockResolvedValue([]);
     toolRegistry.prepareToolSelection.mockImplementation(
@@ -133,6 +148,7 @@ describe('ChatMessageService', () => {
       pluginRuntime as never,
       toolRegistry as never,
       modelInvocation as never,
+      skillSession as never,
     );
     service = new ChatMessageService(
       prisma as never,
@@ -143,6 +159,7 @@ describe('ChatMessageService', () => {
       modelInvocation as never,
       orchestration as never,
       chatTaskService as never,
+      skillCommands as never,
     );
   });
 
@@ -1196,6 +1213,104 @@ describe('ChatMessageService', () => {
       'user-1',
       'conversation-2',
     );
+  });
+
+  it('short-circuits /skill commands before plugin message:received hooks run', async () => {
+    const userMessage = {
+      id: 'user-message-1',
+      role: 'user',
+      content: '/skill use project/planner',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '/skill use project/planner',
+        },
+      ]),
+      status: 'completed',
+    };
+    const assistantMessage = {
+      id: 'assistant-message-1',
+      role: 'assistant',
+      content: '',
+      status: 'pending',
+      provider: 'system',
+      model: 'skill-command',
+    };
+    const completedAssistantMessage = {
+      ...assistantMessage,
+      content: '已激活 1 个 skill：project/planner',
+      partsJson: JSON.stringify([
+        {
+          type: 'text',
+          text: '已激活 1 个 skill：project/planner',
+        },
+      ]),
+      status: 'completed',
+      error: null,
+      toolCalls: null,
+      toolResults: null,
+    };
+
+    chatService.getConversation.mockResolvedValue({
+      id: 'conversation-1',
+      messages: [],
+    });
+    aiProvider.getModelConfig.mockReturnValue({
+      id: 'gpt-5.2',
+      providerId: 'openai',
+      name: 'GPT 5.2',
+      capabilities: {
+        input: { text: true, image: false },
+        output: { text: true, image: false },
+        reasoning: true,
+        toolCall: true,
+      },
+      api: {
+        id: 'gpt-5.2',
+        url: 'https://example.com/v1',
+        npm: '@ai-sdk/openai',
+      },
+    });
+    skillCommands.tryHandleMessage.mockResolvedValue({
+      assistantContent: '已激活 1 个 skill：project/planner',
+      assistantParts: [
+        {
+          type: 'text',
+          text: '已激活 1 个 skill：project/planner',
+        },
+      ],
+      providerId: 'system',
+      modelId: 'skill-command',
+    });
+    prisma.message.create
+      .mockResolvedValueOnce(userMessage)
+      .mockResolvedValueOnce(assistantMessage);
+    prisma.message.update.mockResolvedValueOnce(completedAssistantMessage);
+    prisma.conversation.update.mockResolvedValue(null);
+
+    await expect(
+      service.startMessageGeneration('user-1', 'conversation-1', {
+        content: '/skill use project/planner',
+        parts: [
+          {
+            type: 'text',
+            text: '/skill use project/planner',
+          },
+        ],
+        provider: 'openai',
+        model: 'gpt-5.2',
+      } as never),
+    ).resolves.toEqual({
+      userMessage,
+      assistantMessage: completedAssistantMessage,
+    });
+
+    expect(skillCommands.tryHandleMessage).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      messageText: '/skill use project/planner',
+    });
+    expect(pluginRuntime.runMessageReceivedHooks).not.toHaveBeenCalled();
   });
 
   it('short-circuits through message:received before scheduling a model task', async () => {
