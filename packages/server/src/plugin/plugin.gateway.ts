@@ -18,7 +18,6 @@ import { JwtService } from '@nestjs/jwt';
 import type { IncomingMessage } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { JsonObject } from '../common/types/json-value';
-import { toJsonValue } from '../common/utils/json-value';
 import {
   attachPluginGatewaySocketHandlers,
   createPluginGatewayConnectionRecord,
@@ -26,10 +25,6 @@ import {
 import {
   resolvePluginGatewayManifest,
 } from './plugin-gateway-context.helpers';
-import {
-  handlePluginGatewayErrorMessage,
-  handlePluginGatewayResultMessage,
-} from './plugin-gateway-dispatch.helpers';
 import { handlePluginGatewayHostCall } from './plugin-gateway-host.helpers';
 import { handlePluginGatewayInboundRawMessage } from './plugin-gateway-inbound.helpers';
 import {
@@ -39,13 +34,13 @@ import {
 } from './plugin-gateway-lifecycle.helpers';
 import {
   readAuthPayload,
-  readDataPayload,
-  readErrorPayload,
-  readRegisterPayload,
-  readRouteResultPayload,
   type PluginGatewayInboundMessage,
   type ValidatedRegisterPayload,
 } from './plugin-gateway-payload.helpers';
+import {
+  handlePluginGatewayCommandMessage,
+  handlePluginGatewayPluginMessage,
+} from './plugin-gateway-router.helpers';
 import {
   checkPluginGatewayHealth,
   createPluginGatewayRemoteTransport,
@@ -345,77 +340,16 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     conn: PluginConnection,
     msg: PluginGatewayInboundMessage,
   ): Promise<void> {
-    switch (msg.action) {
-      case WS_ACTION.REGISTER: {
-        const payload = readRegisterPayload(msg.payload);
-        if (!payload) {
-          sendPluginGatewayProtocolError({
-            ws,
-            error: '无效的插件注册负载',
-            protocolErrorAction: PROTOCOL_ERROR_ACTION,
-          });
-          return;
-        }
-        await this.handleRegister(ws, conn, payload);
-        return;
-      }
-      case WS_ACTION.HOOK_RESULT: {
-        handlePluginGatewayResultMessage({
-          msg,
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          loggerWarn: (message) => this.logger.warn(message),
-          invalidPayloadMessage: '无效的 Hook 返回负载',
-          readPayload: readDataPayload,
-        }, msg.payload);
-        return;
-      }
-      case WS_ACTION.HOOK_ERROR: {
-        handlePluginGatewayErrorMessage({
-          msg,
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          loggerWarn: (message) => this.logger.warn(message),
-          invalidPayloadMessage: '无效的 Hook 错误负载',
-          readPayload: readErrorPayload,
-        }, msg.payload);
-        return;
-      }
-      case WS_ACTION.ROUTE_RESULT: {
-        handlePluginGatewayResultMessage({
-          msg,
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          loggerWarn: (message) => this.logger.warn(message),
-          invalidPayloadMessage: '无效的插件 Route 返回负载',
-          readPayload: (payload) => {
-            const result = readRouteResultPayload(payload);
-            return result
-              ? {
-                data: toJsonValue(result.data),
-              }
-              : null;
-          },
-        }, msg.payload);
-        return;
-      }
-      case WS_ACTION.ROUTE_ERROR: {
-        handlePluginGatewayErrorMessage({
-          msg,
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          loggerWarn: (message) => this.logger.warn(message),
-          invalidPayloadMessage: '无效的插件 Route 错误负载',
-          readPayload: readErrorPayload,
-        }, msg.payload);
-        return;
-      }
-      case WS_ACTION.HOST_CALL:
-        await this.handleHostCall(ws, conn, msg);
-        return;
-      default:
-        return;
-    }
+    await handlePluginGatewayPluginMessage({
+      ws,
+      msg,
+      pendingRequests: this.pendingRequests,
+      activeRequestContexts: this.activeRequestContexts,
+      protocolErrorAction: PROTOCOL_ERROR_ACTION,
+      onRegister: (payload) => this.handleRegister(ws, conn, payload),
+      onHostCall: (message) => this.handleHostCall(ws, conn, message),
+      logWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**
@@ -426,32 +360,12 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
   private async handleCommandMessage(
     msg: PluginGatewayInboundMessage,
   ): Promise<void> {
-    switch (msg.action) {
-      case WS_ACTION.EXECUTE_RESULT: {
-        handlePluginGatewayResultMessage({
-          msg,
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          loggerWarn: (message) => this.logger.warn(message),
-          invalidPayloadMessage: '无效的远程命令返回负载',
-          readPayload: readDataPayload,
-        }, msg.payload);
-        return;
-      }
-      case WS_ACTION.EXECUTE_ERROR: {
-        handlePluginGatewayErrorMessage({
-          msg,
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          loggerWarn: (message) => this.logger.warn(message),
-          invalidPayloadMessage: '无效的远程命令错误负载',
-          readPayload: readErrorPayload,
-        }, msg.payload);
-        return;
-      }
-      default:
-        return;
-    }
+    handlePluginGatewayCommandMessage({
+      msg,
+      pendingRequests: this.pendingRequests,
+      activeRequestContexts: this.activeRequestContexts,
+      logWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**

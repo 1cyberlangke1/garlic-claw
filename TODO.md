@@ -498,6 +498,17 @@
     - protocol envelope 校验失败时的统一 protocol_error 返回
     - 下游 handler 抛错时的 warn + protocol_error 返回
   - `plugin.gateway.ts` 主文件行数已从 `582` 继续降到 `556`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-router.helpers.ts`
+    继续把 plugin/command 分支里的 register/result/error/route router 样板从网关主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-router.helpers.spec.ts`
+    直接给 gateway router helper 补 register protocol_error、route result 与 command error 路由回归
+  - `PluginGateway` 已不再直接承载：
+    - register payload 校验与 protocol_error 返回
+    - hook/route/command result-error 到 shared pending-request helper 的路由
+    - host call / register 分支委派的统一入口
+  - `plugin.gateway.ts` 主文件行数已从 `556` 继续降到 `470`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口
