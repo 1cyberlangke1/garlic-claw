@@ -9,16 +9,11 @@ import type {
   PluginScopeSettings,
   PluginSelfInfo,
 } from '@garlic-claw/shared';
-import {
-  Injectable,
-  Logger,
-} from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { Injectable } from '@nestjs/common';
 import { type ListPluginEventOptions } from './plugin-event.helpers';
 import { PluginEventWriteService } from './plugin-event-write.service';
+import { PluginGovernanceWriteService } from './plugin-governance-write.service';
 import { PluginReadService } from './plugin-read.service';
-import { preparePluginConfigUpdate } from './plugin-config-write.helpers';
-import { preparePluginScopeUpdate } from './plugin-scope-write.helpers';
 import {
   type PluginGovernanceSnapshot,
   PluginLifecycleWriteService,
@@ -42,9 +37,6 @@ interface PluginEventInput {
 /**
  * 插件持久化服务。
  *
- * NOTE: 当前保持单文件，因为 plugin 主记录、storage、event、config、scope 写路径仍共享同一个 Prisma 持久化边界；
- * 已持续把视图组装和规则样板外提到 helper，但暂不把同一批治理写路径拆成多 provider 以免把事务语义打散。
- *
  * 输入:
  * - 插件 manifest 与在线状态
  * - 插件配置与作用域更新请求
@@ -60,11 +52,9 @@ interface PluginEventInput {
  */
 @Injectable()
 export class PluginService {
-  private readonly logger = new Logger(PluginService.name);
-
   constructor(
-    private readonly prisma: PrismaService,
     private readonly pluginEventWriteService: PluginEventWriteService,
+    private readonly pluginGovernanceWriteService: PluginGovernanceWriteService,
     private readonly pluginLifecycleWriteService: PluginLifecycleWriteService,
     private readonly pluginReadService: PluginReadService,
     private readonly pluginStorageService: PluginStorageService,
@@ -240,20 +230,7 @@ export class PluginService {
     name: string,
     values: JsonObject,
   ): Promise<PluginConfigSnapshot> {
-    const plugin = await this.pluginReadService.findByNameOrThrow(name);
-    const prepared = preparePluginConfigUpdate({
-      name,
-      plugin,
-      values,
-      onWarn: (message) => this.logger.warn(message),
-    });
-    await this.prisma.plugin.update({
-      where: { name },
-      data: {
-        config: prepared.persistedConfigJson,
-      },
-    });
-    return prepared.snapshot;
+    return this.pluginGovernanceWriteService.updatePluginConfig(name, values);
   }
 
   /**
@@ -275,17 +252,7 @@ export class PluginService {
     name: string,
     scope: PluginScopeSettings,
   ): Promise<PluginScopeSettings> {
-    const plugin = await this.pluginReadService.findByNameOrThrow(name);
-    const prepared = preparePluginScopeUpdate({
-      plugin,
-      scope,
-    });
-
-    await this.prisma.plugin.update({
-      where: { name },
-      data: prepared.updateData,
-    });
-    return prepared.normalizedScope;
+    return this.pluginGovernanceWriteService.updatePluginScope(name, scope);
   }
 
   /**

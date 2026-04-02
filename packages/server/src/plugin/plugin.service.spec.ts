@@ -4,6 +4,7 @@ import type {
   PluginManifest,
 } from '@garlic-claw/shared';
 import { PluginEventWriteService } from './plugin-event-write.service';
+import { PluginGovernanceWriteService } from './plugin-governance-write.service';
 import { PluginLifecycleWriteService } from './plugin-lifecycle-write.service';
 import { PluginReadService } from './plugin-read.service';
 import { serializePersistedPluginManifest } from './plugin-manifest.persistence';
@@ -76,12 +77,16 @@ describe('PluginService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     const pluginEventWriteService = new PluginEventWriteService(prisma as never);
-    const pluginLifecycleWriteService = new PluginLifecycleWriteService(prisma as never);
     const pluginReadService = new PluginReadService(prisma as never);
+    const pluginGovernanceWriteService = new PluginGovernanceWriteService(
+      prisma as never,
+      pluginReadService as never,
+    );
+    const pluginLifecycleWriteService = new PluginLifecycleWriteService(prisma as never);
     const pluginStorageService = new PluginStorageService(prisma as never);
     service = new PluginService(
-      prisma as never,
       pluginEventWriteService as never,
+      pluginGovernanceWriteService as never,
       pluginLifecycleWriteService as never,
       pluginReadService as never,
       pluginStorageService as never,

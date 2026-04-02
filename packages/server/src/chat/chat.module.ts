@@ -6,6 +6,7 @@ import { SkillModule } from '../skill/skill.module';
 import { ToolModule } from '../tool/tool.module';
 import { ChatModelInvocationService } from './chat-model-invocation.service';
 import { ChatMessageCompletionService } from './chat-message-completion.service';
+import { ChatMessageGenerationService } from './chat-message-generation.service';
 import { ChatMessageMutationService } from './chat-message-mutation.service';
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
 import { ChatMessagePluginTargetService } from './chat-message-plugin-target.service';
@@ -23,6 +24,7 @@ import { OpenApiMessageController } from './open-api-message.controller';
     ChatService,
     ChatMessageService,
     ChatMessageCompletionService,
+    ChatMessageGenerationService,
     ChatMessageMutationService,
     ChatMessageOrchestrationService,
     ChatMessagePluginTargetService,

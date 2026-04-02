@@ -1,4 +1,5 @@
 import { ChatMessageCompletionService } from './chat-message-completion.service';
+import { ChatMessageGenerationService } from './chat-message-generation.service';
 import { ChatMessageMutationService } from './chat-message-mutation.service';
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
 import { ChatMessagePluginTargetService } from './chat-message-plugin-target.service';
@@ -157,6 +158,18 @@ describe('ChatMessageService', () => {
       prisma as never,
       orchestration as never,
     );
+    const generationService = new ChatMessageGenerationService(
+      prisma as never,
+      chatService as never,
+      aiProvider as never,
+      personaService as never,
+      pluginRuntime as never,
+      modelInvocation as never,
+      orchestration as never,
+      chatTaskService as never,
+      completionService as never,
+      skillCommands as never,
+    );
     const mutationService = new ChatMessageMutationService(
       prisma as never,
       chatService as never,
@@ -169,18 +182,9 @@ describe('ChatMessageService', () => {
       pluginRuntime as never,
     );
     service = new ChatMessageService(
-      prisma as never,
-      chatService as never,
-      aiProvider as never,
-      personaService as never,
-      pluginRuntime as never,
-      modelInvocation as never,
-      orchestration as never,
-      chatTaskService as never,
-      completionService as never,
+      generationService as never,
       mutationService as never,
       pluginTargetService as never,
-      skillCommands as never,
     );
   });
 

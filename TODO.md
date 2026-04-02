@@ -712,6 +712,10 @@
     - `packages/server/src/chat/chat-message-mutation.service.spec.ts`
     把消息编辑、删除、对应的 `message:*` hook 和持久化写回从 `ChatMessageService` 主类中拆出
   - 已新增：
+    - `packages/server/src/chat/chat-message-generation.service.ts`
+    - `packages/server/src/chat/chat-message-generation.service.spec.ts`
+    把消息生成、重试与停止从 `ChatMessageService` 主类中拆出
+  - 已新增：
     - `packages/server/src/plugin/plugin-storage.service.ts`
     - `packages/server/src/plugin/plugin-storage.service.spec.ts`
     把插件存储的 CRUD、坏 JSON 回退与 logger 告警从 `PluginService` 主类中拆出
@@ -727,6 +731,10 @@
     - `packages/server/src/plugin/plugin-read.service.ts`
     - `packages/server/src/plugin/plugin-read.service.spec.ts`
     把插件治理快照、列表查询、配置/作用域/健康/事件等只读入口从 `PluginService` 主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-governance-write.service.ts`
+    - `packages/server/src/plugin/plugin-governance-write.service.spec.ts`
+    把插件配置写入与作用域写入从 `PluginService` 主类中拆出
   - `ChatMessageService` 已改为通过 `ChatMessagePluginTargetService` 委派：
     - `message.target.current.get`
     - `message.send`
@@ -739,7 +747,11 @@
     - 消息编辑
     - 消息删除
     - 对应的 `message:updated / message:deleted` hook 与持久化写回
-  - `chat-message.service.ts` 主文件行数已从 `1030` 继续降到 `517`
+  - `ChatMessageService` 已改为通过 `ChatMessageGenerationService` 委派：
+    - `startMessageGeneration`
+    - `retryMessageGeneration`
+    - `stopMessageGeneration`
+  - `chat-message.service.ts` 主文件行数已从 `1030` 继续降到 `65`
   - `PluginService` 已改为通过 `PluginStorageService` 委派：
     - `storage.get`
     - `storage.set`
@@ -760,7 +772,10 @@
     - `governance snapshot`
     - `findAll / findOnline / findByName`
     - `config / resolved config / self info / scope / health / events`
-  - `plugin.service.ts` 主文件行数已从 `605` 继续降到 `345`
+  - `PluginService` 已改为通过 `PluginGovernanceWriteService` 委派：
+    - `updatePluginConfig`
+    - `updatePluginScope`
+  - `plugin.service.ts` 主文件行数已从 `605` 继续降到 `342`
   - 已删除多厂商 SDK runtime / stub 残留，当前 runtime 与 type stub 都已收敛到三种协议族
   - 已把 provider catalog 收口为 `core + preset + protocol`，preset 不再绑定独立 SDK
   - 已删除一批 AI 模块薄壳：

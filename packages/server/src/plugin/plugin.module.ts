@@ -12,6 +12,7 @@ import { PluginCronService } from './plugin-cron.service';
 import { PluginController } from './plugin.controller';
 import { PluginEventWriteService } from './plugin-event-write.service';
 import { PluginGateway } from './plugin.gateway';
+import { PluginGovernanceWriteService } from './plugin-governance-write.service';
 import { PluginHostService } from './plugin-host.service';
 import { PluginHostAiFacade } from './plugin-host-ai.facade';
 import { PluginHostConversationFacade } from './plugin-host-conversation.facade';
@@ -46,6 +47,7 @@ import { PluginService } from './plugin.service';
   providers: [
     PluginService,
     PluginEventWriteService,
+    PluginGovernanceWriteService,
     PluginLifecycleWriteService,
     PluginReadService,
     PluginStorageService,
@@ -84,6 +86,7 @@ import { PluginService } from './plugin.service';
   exports: [
     PluginService,
     PluginEventWriteService,
+    PluginGovernanceWriteService,
     PluginLifecycleWriteService,
     PluginReadService,
     PluginStorageService,
