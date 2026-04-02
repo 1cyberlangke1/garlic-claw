@@ -1,13 +1,11 @@
 import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
-import { tool, type Tool } from 'ai';
-import { z } from 'zod';
+import type { Tool } from 'ai';
 import type {
   PluginAvailableToolSummary,
   PluginCallContext,
   ToolOverview,
   ToolSourceInfo,
 } from '@garlic-claw/shared';
-import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { McpToolProvider } from './mcp-tool.provider';
 import { PluginToolProvider } from './plugin-tool.provider';
@@ -17,6 +15,7 @@ import {
   buildToolOverview,
   normalizeToolRecord,
 } from './tool-registry.helpers';
+import { buildAiToolSetFromResolvedTools } from './tool-registry-execution.helpers';
 import { ToolSettingsService } from './tool-settings.service';
 import type {
   ResolvedToolRecord,
@@ -27,23 +26,6 @@ import type {
   ToolRecord,
   ToolSourceDescriptor,
 } from './tool.types';
-
-interface ToolParameterSchema {
-  type: string;
-  description?: string;
-  required?: boolean;
-}
-
-const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(jsonValueSchema),
-    z.record(z.string(), jsonValueSchema),
-  ]),
-);
 
 @Injectable()
 export class ToolRegistryService {
@@ -153,11 +135,12 @@ export class ToolRegistryService {
 
     return {
       availableTools: resolvedTools.map((entry) => buildAvailableToolSummary(entry.record)),
-      buildToolSet: (options) => this.buildAiToolSetFromResolvedTools(
+      buildToolSet: (options) => buildAiToolSetFromResolvedTools({
         resolvedTools,
-        options.context,
-        options.allowedToolNames,
-      ),
+        context: options.context,
+        allowedToolNames: options.allowedToolNames,
+        pluginRuntime: this.pluginRuntime,
+      }),
     };
   }
 
@@ -233,38 +216,6 @@ export class ToolRegistryService {
     );
   }
 
-  private buildAiToolSetFromResolvedTools(
-    resolvedTools: ResolvedToolRecord[],
-    context: PluginCallContext,
-    allowedToolNames?: string[],
-  ): Record<string, Tool> | undefined {
-    const filteredTools = allowedToolNames
-      ? resolvedTools.filter((entry) => allowedToolNames.includes(entry.record.callName))
-      : resolvedTools;
-    if (filteredTools.length === 0) {
-      return undefined;
-    }
-
-    const toolSet: Record<string, Tool> = {};
-    for (const entry of filteredTools) {
-      toolSet[entry.record.callName] = tool({
-        description: entry.record.description,
-        inputSchema: this.paramSchemaToZod(entry.record.parameters),
-        execute: async (args: JsonObject) => {
-          try {
-            return await this.executeResolvedTool(entry, args, context);
-          } catch (error) {
-            return {
-              error: error instanceof Error ? error.message : String(error),
-            };
-          }
-        },
-      });
-    }
-
-    return toolSet;
-  }
-
   private toResolvedToolRecord(
     provider: ToolProvider,
     raw: ToolProviderTool,
@@ -303,111 +254,5 @@ export class ToolRegistryService {
       lastError: source.lastError ?? null,
       lastCheckedAt: source.lastCheckedAt ?? null,
     };
-  }
-
-  private async executeResolvedTool(
-    entry: ResolvedToolRecord,
-    args: JsonObject,
-    context: PluginCallContext,
-  ): Promise<JsonValue> {
-    const beforeCallResult = await this.pluginRuntime.runToolBeforeCallHooks({
-      context,
-      payload: this.buildBeforeCallPayload(entry, args, context),
-    });
-
-    if (beforeCallResult.action === 'short-circuit') {
-      return beforeCallResult.output;
-    }
-
-    const toolParams = beforeCallResult.payload.params;
-    const output = await Promise.resolve(entry.provider.executeTool({
-      tool: entry.raw,
-      params: toolParams,
-      context,
-      skipLifecycleHooks: entry.record.source.kind === 'plugin',
-    }));
-    const afterCallPayload = await this.pluginRuntime.runToolAfterCallHooks({
-      context,
-      payload: this.buildAfterCallPayload(entry, toolParams, output, context),
-    });
-
-    return afterCallPayload.output;
-  }
-
-  private buildBeforeCallPayload(
-    entry: ResolvedToolRecord,
-    params: JsonObject,
-    context: PluginCallContext,
-  ) {
-    return {
-      context: {
-        ...context,
-      },
-      source: {
-        kind: entry.record.source.kind,
-        id: entry.record.source.id,
-        label: entry.record.source.label,
-        ...(entry.record.pluginId ? { pluginId: entry.record.pluginId } : {}),
-        ...(entry.record.runtimeKind ? { runtimeKind: entry.record.runtimeKind } : {}),
-      },
-      ...(entry.record.pluginId ? { pluginId: entry.record.pluginId } : {}),
-      ...(entry.record.runtimeKind ? { runtimeKind: entry.record.runtimeKind } : {}),
-      tool: {
-        toolId: entry.record.toolId,
-        callName: entry.record.callName,
-        name: entry.record.toolName,
-        description: entry.record.description,
-        parameters: {
-          ...entry.record.parameters,
-        },
-      },
-      params: {
-        ...params,
-      },
-    };
-  }
-
-  private buildAfterCallPayload(
-    entry: ResolvedToolRecord,
-    params: JsonObject,
-    output: JsonValue,
-    context: PluginCallContext,
-  ) {
-    return {
-      ...this.buildBeforeCallPayload(entry, params, context),
-      output,
-    };
-  }
-
-  private paramSchemaToZod(params: Record<string, ToolParameterSchema>) {
-    const shape: Record<string, z.ZodTypeAny> = {};
-    for (const [key, schema] of Object.entries(params)) {
-      let zType: z.ZodTypeAny;
-      switch (schema.type) {
-        case 'number':
-          zType = z.number();
-          break;
-        case 'boolean':
-          zType = z.boolean();
-          break;
-        case 'array':
-          zType = z.array(jsonValueSchema);
-          break;
-        case 'object':
-          zType = z.record(z.string(), jsonValueSchema);
-          break;
-        default:
-          zType = z.string();
-      }
-      if (schema.description) {
-        zType = zType.describe(schema.description);
-      }
-      if (!schema.required) {
-        zType = zType.optional();
-      }
-      shape[key] = zType;
-    }
-
-    return z.object(shape);
   }
 }

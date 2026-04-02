@@ -564,12 +564,20 @@
   - 已新增：
     - `packages/server/src/tool/tool-registry.helpers.spec.ts`
     直接给工具层 helper 补 toolId/callName/description/summary 回归
+  - 已新增：
+    - `packages/server/src/tool/tool-registry-execution.helpers.ts`
+    继续把工具层的 toolset 生成、hook payload 组装、schema 转 zod 和执行包装样板从 `ToolRegistryService` 主类中拆出
+  - 已新增：
+    - `packages/server/src/tool/tool-registry-execution.helpers.spec.ts`
+    直接给工具执行 helper 补 hook 包装与空结果回归
   - `ToolRegistryService` 已不再直接承载：
     - source overview 投影
     - tool overview 投影
     - enabled/total 计数统计
     - 缺少 source descriptor 时的 fallback source row 组装
-  - `tool-registry.service.ts` 主文件行数已从 `487` 继续降到 `413`
+    - toolset 生成与 schema 转 zod
+    - `tool:before-call / tool:after-call` payload 组装与执行包装
+  - `tool-registry.service.ts` 主文件行数已从 `487` 继续降到 `226`
   - 已新增：
     - `packages/server/src/plugin/plugin-manifest-normalize.helpers.ts`
     继续把 persisted manifest 的 fallback/normalize/parser 纯规则从 `plugin-manifest.persistence.ts` 主文件中拆出
