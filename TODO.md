@@ -349,6 +349,20 @@
     - `plugin.self.get`
     让 `PluginRuntimeService.callHost(...)` 继续收口为纯委派入口
   - `plugin-runtime.service.ts` 主文件行数已从 `982` 继续降到 `902`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-runtime-automation.facade.ts`
+    - `packages/server/src/plugin/plugin-runtime-automation.facade.spec.ts`
+    把 `PluginRuntimeHostFacade` 里的 `automation/cron` 宿主编排与 lazy `AutomationService` 解析移出
+  - `PluginRuntimeHostFacade` 已改为通过 `PluginRuntimeAutomationFacade` 委派：
+    - `automation.create`
+    - `automation.list`
+    - `automation.event.emit`
+    - `automation.toggle`
+    - `automation.run`
+    - `cron.register`
+    - `cron.list`
+    - `cron.delete`
+  - `plugin-runtime-host.facade.ts` 主文件行数已从 `406` 继续降到 `335`
   - `PluginRuntimeService` 已删除不再使用的直持依赖与死入口：
     - `PluginService`
     - `PluginHostService`

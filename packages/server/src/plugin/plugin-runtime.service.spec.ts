@@ -10,6 +10,7 @@ import { BuiltinPluginTransport } from './builtin/builtin-plugin.transport';
 import { createMessageEntryRecorderPlugin } from './builtin/message-entry-recorder.plugin';
 import { createMessageLifecycleRecorderPlugin } from './builtin/message-lifecycle-recorder.plugin';
 import { createPluginGovernanceRecorderPlugin } from './builtin/plugin-governance-recorder.plugin';
+import { PluginRuntimeAutomationFacade } from './plugin-runtime-automation.facade';
 import { PluginRuntimeBroadcastFacade } from './plugin-runtime-broadcast.facade';
 import { PluginRuntimeGovernanceFacade } from './plugin-runtime-governance.facade';
 import { createResponseRecorderPlugin } from './builtin/response-recorder.plugin';
@@ -124,6 +125,7 @@ describe('PluginRuntimeService', () => {
   };
 
   let service: PluginRuntimeService;
+  let runtimeAutomationFacade: PluginRuntimeAutomationFacade;
   let runtimeBroadcastFacade: PluginRuntimeBroadcastFacade;
   let runtimeGovernanceFacade: PluginRuntimeGovernanceFacade;
   let runtimeHostFacade: PluginRuntimeHostFacade;
@@ -199,12 +201,16 @@ describe('PluginRuntimeService', () => {
     });
     subagentTaskService.listTasksForPlugin.mockResolvedValue([]);
     subagentTaskService.getTaskForPlugin.mockResolvedValue(null);
+    runtimeAutomationFacade = new PluginRuntimeAutomationFacade(
+      cronService as never,
+      moduleRef as never,
+    );
     runtimeBroadcastFacade = new PluginRuntimeBroadcastFacade();
     runtimeGovernanceFacade = new PluginRuntimeGovernanceFacade();
     runtimeHostFacade = new PluginRuntimeHostFacade(
       pluginService as never,
       hostService as never,
-      cronService as never,
+      runtimeAutomationFacade as never,
       moduleRef as never,
     );
     runtimeInboundHooksFacade = new PluginRuntimeInboundHooksFacade();

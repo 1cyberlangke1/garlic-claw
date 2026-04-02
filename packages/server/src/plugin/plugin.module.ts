@@ -21,6 +21,7 @@ import { PluginLifecycleWriteService } from './plugin-lifecycle-write.service';
 import { PluginReadService } from './plugin-read.service';
 import { PluginRouteController } from './plugin-route.controller';
 import { PluginRuntimeBroadcastFacade } from './plugin-runtime-broadcast.facade';
+import { PluginRuntimeAutomationFacade } from './plugin-runtime-automation.facade';
 import { PluginRuntimeGovernanceFacade } from './plugin-runtime-governance.facade';
 import { PluginRuntimeHostFacade } from './plugin-runtime-host.facade';
 import { PluginRuntimeInboundHooksFacade } from './plugin-runtime-inbound-hooks.facade';
@@ -57,6 +58,7 @@ import { PluginService } from './plugin.service';
     PluginHostConversationFacade,
     PluginHostStateFacade,
     PluginHostService,
+    PluginRuntimeAutomationFacade,
     PluginRuntimeBroadcastFacade,
     PluginRuntimeGovernanceFacade,
     PluginRuntimeHostFacade,
@@ -95,6 +97,7 @@ import { PluginService } from './plugin.service';
     PluginHostAiFacade,
     PluginHostConversationFacade,
     PluginHostStateFacade,
+    PluginRuntimeAutomationFacade,
     PluginRuntimeBroadcastFacade,
     PluginRuntimeGovernanceFacade,
     PluginRuntimeHostFacade,

@@ -9,7 +9,6 @@ import type {
 } from '@garlic-claw/shared';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { AutomationService } from '../automation/automation.service';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import { ChatMessageService } from '../chat/chat-message.service';
@@ -31,19 +30,13 @@ import {
   readOptionalRuntimeJsonValue,
   readOptionalRuntimeMessageTarget,
   readOptionalRuntimeString,
-  readRuntimeAutomationActions,
-  readRuntimeAutomationTrigger,
   readRuntimeSubagentRequest,
   readRuntimeSubagentTaskStartParams,
   requirePositiveRuntimeNumber,
   requireRuntimeString,
-  requireRuntimeUserId,
 } from './plugin-runtime-input.helpers';
-import {
-  resolveCachedRuntimeService,
-  resolveCachedRuntimeServiceAsync,
-} from './plugin-runtime-module.helpers';
-import { PluginCronService } from './plugin-cron.service';
+import { resolveCachedRuntimeServiceAsync } from './plugin-runtime-module.helpers';
+import { PluginRuntimeAutomationFacade } from './plugin-runtime-automation.facade';
 import { PluginHostService } from './plugin-host.service';
 import { PluginService } from './plugin.service';
 
@@ -109,7 +102,6 @@ const HOST_METHOD_PERMISSION_MAP: Record<PluginHostMethod, PluginPermission | nu
 
 @Injectable()
 export class PluginRuntimeHostFacade {
-  private automationService?: AutomationService;
   private chatMessageService?: ChatMessageService;
   private subagentTaskService?: {
     startTask: (input: {
@@ -127,7 +119,7 @@ export class PluginRuntimeHostFacade {
   constructor(
     private readonly pluginService: PluginService,
     private readonly hostService: PluginHostService,
-    private readonly cronService: PluginCronService,
+    private readonly runtimeAutomationFacade: PluginRuntimeAutomationFacade,
     private readonly moduleRef: ModuleRef,
   ) {}
 
@@ -183,64 +175,14 @@ export class PluginRuntimeHostFacade {
       }));
     }
 
-    if (input.method === 'automation.create') {
-      return toJsonValue(
-        await this.getAutomationService().create(
-          requireRuntimeUserId(input.context, 'automation.create'),
-          requireRuntimeString(input.params, 'name', 'automation.create'),
-          readRuntimeAutomationTrigger(input.params, 'automation.create'),
-          readRuntimeAutomationActions(input.params, 'automation.create'),
-        ),
-      );
-    }
-    if (input.method === 'automation.list') {
-      return toJsonValue(
-        await this.getAutomationService().findAllByUser(
-          requireRuntimeUserId(input.context, 'automation.list'),
-        ),
-      );
-    }
-    if (input.method === 'automation.event.emit') {
-      return toJsonValue(
-        await this.getAutomationService().emitEvent(
-          requireRuntimeString(input.params, 'event', 'automation.event.emit'),
-          requireRuntimeUserId(input.context, 'automation.event.emit'),
-        ),
-      );
-    }
-    if (input.method === 'automation.toggle') {
-      return toJsonValue(
-        await this.getAutomationService().toggle(
-          requireRuntimeString(input.params, 'automationId', 'automation.toggle'),
-          requireRuntimeUserId(input.context, 'automation.toggle'),
-        ),
-      );
-    }
-    if (input.method === 'automation.run') {
-      return toJsonValue(
-        await this.getAutomationService().executeAutomation(
-          requireRuntimeString(input.params, 'automationId', 'automation.run'),
-          requireRuntimeUserId(input.context, 'automation.run'),
-        ),
-      );
-    }
-    if (input.method === 'cron.register') {
-      return toJsonValue(await this.cronService.registerCron(input.pluginId, {
-        name: requireRuntimeString(input.params, 'name', 'cron.register'),
-        cron: requireRuntimeString(input.params, 'cron', 'cron.register'),
-        description: readOptionalRuntimeString(input.params, 'description', 'cron.register'),
-        data: readOptionalRuntimeJsonValue(input.params, 'data'),
-        enabled: readOptionalRuntimeBoolean(input.params, 'enabled', 'cron.register'),
-      }));
-    }
-    if (input.method === 'cron.list') {
-      return toJsonValue(await this.cronService.listCronJobs(input.pluginId));
-    }
-    if (input.method === 'cron.delete') {
-      return this.cronService.deleteCron(
-        input.pluginId,
-        requireRuntimeString(input.params, 'jobId', 'cron.delete'),
-      );
+    const automationResult = await this.runtimeAutomationFacade.call({
+      pluginId: input.pluginId,
+      context: input.context,
+      method: input.method,
+      params: input.params,
+    });
+    if (automationResult.handled) {
+      return automationResult.value;
     }
     if (input.method === 'message.target.current.get') {
       return toJsonValue(await (await this.getChatMessageService())
@@ -370,21 +312,6 @@ export class PluginRuntimeHostFacade {
       params: input.params,
     });
   }
-
-  private getAutomationService(): AutomationService {
-    return resolveCachedRuntimeService({
-      current: this.automationService,
-      resolve: () =>
-        this.moduleRef.get(AutomationService, {
-          strict: false,
-        }),
-      cache: (value) => {
-        this.automationService = value;
-      },
-      notFoundMessage: 'AutomationService is not available',
-    });
-  }
-
   private async getChatMessageService(): Promise<ChatMessageService> {
     return resolveCachedRuntimeServiceAsync({
       current: this.chatMessageService,
