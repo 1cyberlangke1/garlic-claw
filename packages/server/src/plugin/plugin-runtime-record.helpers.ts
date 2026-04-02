@@ -1,12 +1,24 @@
 import type {
   PluginActionName,
+  PluginManifest,
   PluginRuntimePressureSnapshot,
+  PluginRuntimeKind,
 } from '@garlic-claw/shared';
 import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
 import type { JsonObject } from '../common/types/json-value';
+import type {
+  ConversationSessionRecord,
+} from './plugin-runtime-session.helpers';
+import {
+  collectDisabledConversationSessionIds,
+} from './plugin-runtime-scope';
+import type {
+  PluginRuntimeRecord,
+  PluginTransport,
+} from './plugin-runtime.types';
 import type { PluginGovernanceSnapshot } from './plugin.service';
 
 const PLUGIN_ACTION_ORDER: PluginActionName[] = [
@@ -16,6 +28,37 @@ const PLUGIN_ACTION_ORDER: PluginActionName[] = [
 ];
 
 export const DEFAULT_PLUGIN_MAX_CONCURRENT_EXECUTIONS = 6;
+
+function createDefaultPluginGovernanceSnapshot(): PluginGovernanceSnapshot {
+  return {
+    configSchema: null,
+    resolvedConfig: {},
+    scope: {
+      defaultEnabled: true,
+      conversations: {},
+    },
+  };
+}
+
+export function buildPluginRuntimeRecord(input: {
+  manifest: PluginManifest;
+  runtimeKind: PluginRuntimeKind;
+  deviceType?: string;
+  transport: PluginTransport;
+  governance?: PluginGovernanceSnapshot;
+}): PluginRuntimeRecord {
+  const governance = input.governance ?? createDefaultPluginGovernanceSnapshot();
+
+  return {
+    manifest: input.manifest,
+    runtimeKind: input.runtimeKind,
+    deviceType: input.deviceType ?? input.runtimeKind,
+    transport: input.transport,
+    governance,
+    activeExecutions: 0,
+    maxConcurrentExecutions: resolveMaxConcurrentExecutions(governance),
+  };
+}
 
 export function resolveMaxConcurrentExecutions(
   governance: Pick<PluginGovernanceSnapshot, 'resolvedConfig'>,
@@ -47,6 +90,37 @@ export function listSupportedPluginActions(input: {
   const actionSet = new Set<PluginActionName>(actions);
 
   return PLUGIN_ACTION_ORDER.filter((action) => actionSet.has(action));
+}
+
+export function refreshPluginRuntimeRecordGovernance(input: {
+  record: PluginRuntimeRecord;
+  governance: PluginGovernanceSnapshot;
+  conversationSessions: Iterable<ConversationSessionRecord>;
+}): string[] {
+  input.record.governance = input.governance;
+  input.record.maxConcurrentExecutions = resolveMaxConcurrentExecutions(
+    input.record.governance,
+  );
+
+  return collectDisabledConversationSessionIds(
+    input.conversationSessions,
+    input.record.manifest.id,
+    input.record.governance.scope,
+  );
+}
+
+export function collectConversationSessionIdsOwnedByPlugin(
+  sessions: Iterable<ConversationSessionRecord>,
+  pluginId: string,
+): string[] {
+  const conversationIds: string[] = [];
+  for (const session of sessions) {
+    if (session.pluginId === pluginId) {
+      conversationIds.push(session.conversationId);
+    }
+  }
+
+  return conversationIds;
 }
 
 export async function runWithRuntimeExecutionSlot<T>(input: {

@@ -1,15 +1,24 @@
 import type { PluginActionName } from '@garlic-claw/shared';
 import { HttpException } from '@nestjs/common';
 import {
+  buildPluginRuntimeRecord,
   buildRuntimePressureSnapshot,
+  collectConversationSessionIdsOwnedByPlugin,
   DEFAULT_PLUGIN_MAX_CONCURRENT_EXECUTIONS,
   isPluginOverloadedError,
   listSupportedPluginActions,
+  refreshPluginRuntimeRecordGovernance,
   resolveMaxConcurrentExecutions,
   runWithRuntimeExecutionSlot,
 } from './plugin-runtime-record.helpers';
 
 describe('plugin-runtime-record.helpers', () => {
+  const transport = {
+    executeTool: jest.fn(),
+    invokeHook: jest.fn(),
+    invokeRoute: jest.fn(),
+  };
+
   it('normalizes max concurrent executions from governance config', () => {
     expect(
       resolveMaxConcurrentExecutions({
@@ -51,6 +60,49 @@ describe('plugin-runtime-record.helpers', () => {
     });
   });
 
+  it('builds runtime records with default governance and normalized concurrency', () => {
+    expect(
+      buildPluginRuntimeRecord({
+        manifest: {
+          id: 'plugin-a',
+          name: 'Plugin A',
+          version: '1.0.0',
+          runtime: 'builtin',
+          permissions: [],
+          tools: [],
+          hooks: [],
+          routes: [],
+        },
+        runtimeKind: 'builtin',
+        transport,
+      }),
+    ).toEqual({
+      manifest: {
+        id: 'plugin-a',
+        name: 'Plugin A',
+        version: '1.0.0',
+        runtime: 'builtin',
+        permissions: [],
+        tools: [],
+        hooks: [],
+        routes: [],
+      },
+      runtimeKind: 'builtin',
+      deviceType: 'builtin',
+      transport,
+      governance: {
+        configSchema: null,
+        resolvedConfig: {},
+        scope: {
+          defaultEnabled: true,
+          conversations: {},
+        },
+      },
+      activeExecutions: 0,
+      maxConcurrentExecutions: DEFAULT_PLUGIN_MAX_CONCURRENT_EXECUTIONS,
+    });
+  });
+
   it('normalizes supported plugin actions', () => {
     const supported = listSupportedPluginActions({
       transport: {
@@ -70,6 +122,112 @@ describe('plugin-runtime-record.helpers', () => {
       'reconnect',
     ]);
     expect(listSupportedPluginActions({ transport: {} })).toEqual(['health-check']);
+  });
+
+  it('refreshes runtime governance and collects disabled conversation sessions', () => {
+    const record = buildPluginRuntimeRecord({
+      manifest: {
+        id: 'plugin-a',
+        name: 'Plugin A',
+        version: '1.0.0',
+        runtime: 'builtin',
+        permissions: [],
+        tools: [],
+        hooks: [],
+        routes: [],
+      },
+      runtimeKind: 'builtin',
+      transport,
+      governance: {
+        configSchema: null,
+        resolvedConfig: {
+          maxConcurrentExecutions: 4,
+        },
+        scope: {
+          defaultEnabled: true,
+          conversations: {},
+        },
+      },
+    });
+
+    expect(
+      refreshPluginRuntimeRecordGovernance({
+        record,
+        governance: {
+          configSchema: null,
+          resolvedConfig: {
+            maxConcurrentExecutions: 2,
+          },
+          scope: {
+            defaultEnabled: true,
+            conversations: {
+              'conversation-1': false,
+            },
+          },
+        },
+        conversationSessions: [
+          {
+            pluginId: 'plugin-a',
+            conversationId: 'conversation-1',
+            startedAt: 1,
+            expiresAt: 100,
+            lastMatchedAt: null,
+            captureHistory: false,
+            historyMessages: [],
+          },
+          {
+            pluginId: 'plugin-b',
+            conversationId: 'conversation-2',
+            startedAt: 1,
+            expiresAt: 100,
+            lastMatchedAt: null,
+            captureHistory: false,
+            historyMessages: [],
+          },
+        ],
+      }),
+    ).toEqual(['conversation-1']);
+    expect(record.maxConcurrentExecutions).toBe(2);
+  });
+
+  it('collects owned conversation session ids for unregister cleanup', () => {
+    expect(
+      collectConversationSessionIdsOwnedByPlugin(
+        [
+          {
+            pluginId: 'plugin-a',
+            conversationId: 'conversation-1',
+            startedAt: 1,
+            expiresAt: 100,
+            lastMatchedAt: null,
+            captureHistory: false,
+            historyMessages: [],
+          },
+          {
+            pluginId: 'plugin-b',
+            conversationId: 'conversation-2',
+            startedAt: 1,
+            expiresAt: 100,
+            lastMatchedAt: null,
+            captureHistory: false,
+            historyMessages: [],
+          },
+          {
+            pluginId: 'plugin-a',
+            conversationId: 'conversation-3',
+            startedAt: 1,
+            expiresAt: 100,
+            lastMatchedAt: null,
+            captureHistory: false,
+            historyMessages: [],
+          },
+        ],
+        'plugin-a',
+      ),
+    ).toEqual([
+      'conversation-1',
+      'conversation-3',
+    ]);
   });
 
   it('runs execution within a managed runtime slot and releases it afterwards', async () => {

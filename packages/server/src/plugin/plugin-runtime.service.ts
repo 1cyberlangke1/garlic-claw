@@ -52,28 +52,16 @@ import type {
   ToolBeforeCallExecutionResult,
 } from './plugin-runtime.types';
 import {
-  resolveMaxConcurrentExecutions,
+  buildPluginRuntimeRecord,
+  collectConversationSessionIdsOwnedByPlugin,
+  refreshPluginRuntimeRecordGovernance,
 } from './plugin-runtime-record.helpers';
 import {
   type ConversationSessionRecord,
 } from './plugin-runtime-session.helpers';
 import {
-  collectDisabledConversationSessionIds,
-} from './plugin-runtime-scope';
-import {
   type PluginGovernanceSnapshot,
 } from './plugin.service';
-
-function createDefaultGovernanceSnapshot(): PluginGovernanceSnapshot {
-  return {
-    configSchema: null,
-    resolvedConfig: {},
-    scope: {
-      defaultEnabled: true,
-      conversations: {},
-    },
-  };
-}
 
 /**
  * 统一插件运行时。
@@ -124,17 +112,7 @@ export class PluginRuntimeService {
     transport: PluginTransport;
     governance?: PluginGovernanceSnapshot;
   }): Promise<PluginManifest> {
-    const record: PluginRuntimeRecord = {
-      manifest: input.manifest,
-      runtimeKind: input.runtimeKind,
-      deviceType: input.deviceType ?? input.runtimeKind,
-      transport: input.transport,
-      governance: input.governance ?? createDefaultGovernanceSnapshot(),
-      activeExecutions: 0,
-      maxConcurrentExecutions: resolveMaxConcurrentExecutions(
-        input.governance ?? createDefaultGovernanceSnapshot(),
-      ),
-    };
+    const record: PluginRuntimeRecord = buildPluginRuntimeRecord(input);
     this.records.set(input.manifest.id, record);
 
     return input.manifest;
@@ -154,13 +132,11 @@ export class PluginRuntimeService {
       return;
     }
 
-    record.governance = governance;
-    record.maxConcurrentExecutions = resolveMaxConcurrentExecutions(record.governance);
-    const disabledConversationIds = collectDisabledConversationSessionIds(
-      this.conversationSessions.values(),
-      pluginId,
-      record.governance.scope,
-    );
+    const disabledConversationIds = refreshPluginRuntimeRecordGovernance({
+      record,
+      governance,
+      conversationSessions: this.conversationSessions.values(),
+    });
     for (const conversationId of disabledConversationIds) {
       this.conversationSessions.delete(conversationId);
     }
@@ -173,6 +149,13 @@ export class PluginRuntimeService {
    */
   unregisterPlugin(pluginId: string): void {
     this.records.delete(pluginId);
+    const conversationIds = collectConversationSessionIdsOwnedByPlugin(
+      this.conversationSessions.values(),
+      pluginId,
+    );
+    for (const conversationId of conversationIds) {
+      this.conversationSessions.delete(conversationId);
+    }
   }
 
   /**

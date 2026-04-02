@@ -339,6 +339,17 @@
     - `PluginRuntimeRecord`
     - chat/message/tool/automation 的执行结果类型定义
   - `plugin-runtime.service.ts` 主文件行数已从 `888` 继续降到 `721`
+  - 已扩展：
+    - `packages/server/src/plugin/plugin-runtime-record.helpers.ts`
+    继续把 runtime record 默认治理快照、governance refresh 与会话清理样板从主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-runtime-record.helpers.spec.ts`
+    直接给 runtime record helper 补默认 record、治理刷新和 unregister 会话清理回归
+  - `PluginRuntimeService` 已不再直接承载：
+    - register 时的默认 governance/record 组装
+    - governance refresh 后的 disabled session 收口
+    - unregister 时的 owner session 清理
+  - `plugin-runtime.service.ts` 主文件行数已从 `763` 继续降到 `746`
   - 已新增：
     - `packages/server/src/plugin/plugin-event.helpers.ts`
     继续把插件事件/健康快照相关的纯规则和查询组装从持久化主类中拆出
