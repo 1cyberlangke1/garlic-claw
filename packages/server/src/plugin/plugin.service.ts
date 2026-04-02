@@ -3,7 +3,6 @@ import type {
   PluginEventListResult,
   JsonObject,
   JsonValue,
-  PluginCapability,
   PluginConfigSchema,
   PluginConfigSnapshot,
   PluginHealthSnapshot,
@@ -35,6 +34,14 @@ import {
   parsePersistedPluginManifest,
   serializePersistedPluginManifest,
 } from './plugin-manifest.persistence';
+import {
+  parseNullablePluginJsonObject,
+  parsePluginScope,
+  parseStoredPluginJsonValue,
+  resolvePluginConfig,
+  validateAndNormalizePluginConfig,
+  validatePluginScope,
+} from './plugin-persistence.helpers';
 
 /**
  * 运行时可直接消费的插件治理快照。
@@ -266,7 +273,11 @@ export class PluginService {
     const manifest = this.readPersistedManifest(plugin);
     return {
       schema: manifest.config ?? null,
-      values: this.resolveConfig(plugin.config, manifest),
+      values: resolvePluginConfig({
+        rawConfig: plugin.config,
+        manifest,
+        onWarn: (message) => this.logger.warn(message),
+      }),
     };
   }
 
@@ -277,7 +288,11 @@ export class PluginService {
    */
   async getResolvedConfig(name: string): Promise<JsonObject> {
     const plugin = await this.findByNameOrThrow(name);
-    return this.resolveConfig(plugin.config, this.readPersistedManifest(plugin));
+    return resolvePluginConfig({
+      rawConfig: plugin.config,
+      manifest: this.readPersistedManifest(plugin),
+      onWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**
@@ -300,11 +315,12 @@ export class PluginService {
       return null;
     }
 
-    return this.parseStoredJsonValue(
-      entry.valueJson,
-      null,
-      `pluginStorage:${name}:${key}`,
-    );
+    return parseStoredPluginJsonValue({
+      raw: entry.valueJson,
+      fallback: null,
+      label: `pluginStorage:${name}:${key}`,
+      onWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**
@@ -381,11 +397,12 @@ export class PluginService {
 
     return entries.map((entry) => ({
       key: entry.key,
-      value: this.parseStoredJsonValue(
-        entry.valueJson,
-        null,
-        `pluginStorage:${name}:${entry.key}`,
-      ),
+      value: parseStoredPluginJsonValue({
+        raw: entry.valueJson,
+        fallback: null,
+        label: `pluginStorage:${name}:${entry.key}`,
+        onWarn: (message) => this.logger.warn(message),
+      }),
     }));
   }
 
@@ -428,7 +445,7 @@ export class PluginService {
       throw new BadRequestException(`插件 ${name} 未声明配置 schema`);
     }
 
-    const normalized = this.validateAndNormalizeConfig(schema, values);
+    const normalized = validateAndNormalizePluginConfig(schema, values);
     const updated = await this.prisma.plugin.update({
       where: { name },
       data: {
@@ -438,7 +455,11 @@ export class PluginService {
 
     return {
       schema,
-      values: this.resolveConfig(updated.config, manifest),
+      values: resolvePluginConfig({
+        rawConfig: updated.config,
+        manifest,
+        onWarn: (message) => this.logger.warn(message),
+      }),
     };
   }
 
@@ -449,7 +470,10 @@ export class PluginService {
    */
   async getPluginScope(name: string): Promise<PluginScopeSettings> {
     const plugin = await this.findByNameOrThrow(name);
-    return this.parseScope(plugin);
+    return parsePluginScope({
+      plugin,
+      onWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**
@@ -463,7 +487,7 @@ export class PluginService {
     scope: PluginScopeSettings,
   ): Promise<PluginScopeSettings> {
     const plugin = await this.findByNameOrThrow(name);
-    this.validateScope(scope);
+    validatePluginScope(scope);
     assertPluginScopeCanBeUpdated({
       pluginId: plugin.name,
       runtimeKind: plugin.runtimeKind,
@@ -483,7 +507,10 @@ export class PluginService {
       },
     });
 
-    return this.parseScope(updated);
+    return parsePluginScope({
+      plugin: updated,
+      onWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**
@@ -539,7 +566,11 @@ export class PluginService {
       type: event.type,
       level: parsePluginEventLevel(event.level),
       message: event.message,
-      metadata: this.parseNullableJsonObject(event.metadataJson),
+      metadata: parseNullablePluginJsonObject({
+        raw: event.metadataJson,
+        label: 'plugin.nullableJsonObject',
+        onWarn: (message) => this.logger.warn(message),
+      }),
       createdAt: event.createdAt.toISOString(),
     }));
 
@@ -696,40 +727,16 @@ export class PluginService {
     const manifest = this.readPersistedManifest(plugin);
     return {
       configSchema: manifest.config ?? null,
-      resolvedConfig: this.resolveConfig(plugin.config, manifest),
-      scope: this.parseScope(plugin),
+      resolvedConfig: resolvePluginConfig({
+        rawConfig: plugin.config,
+        manifest,
+        onWarn: (message) => this.logger.warn(message),
+      }),
+      scope: parsePluginScope({
+        plugin,
+        onWarn: (message) => this.logger.warn(message),
+      }),
     };
-  }
-
-  /**
-   * 解析插件配置值并合并默认值。
-   * @param rawConfig 原始持久化配置 JSON
-   * @param manifest 插件清单
-   * @returns 可供插件读取的配置对象
-   */
-  private resolveConfig(
-    rawConfig: string | null,
-    manifest: PluginManifest,
-  ): JsonObject {
-    const schema = manifest.config ?? null;
-    const stored = this.parseJsonObject(rawConfig);
-    if (!schema) {
-      return stored;
-    }
-
-    const resolved: JsonObject = {};
-    for (const field of schema.fields) {
-      const storedValue = stored[field.key];
-      if (storedValue !== undefined) {
-        resolved[field.key] = storedValue;
-        continue;
-      }
-      if (field.defaultValue !== undefined) {
-        resolved[field.key] = field.defaultValue;
-      }
-    }
-
-    return resolved;
   }
 
   /**
@@ -756,193 +763,6 @@ export class PluginService {
   }
 
   /**
-   * 校验并归一化插件配置值。
-   * @param schema 插件声明的配置 schema
-   * @param values 待保存值
-   * @returns 可持久化的配置对象
-   */
-  private validateAndNormalizeConfig(
-    schema: PluginConfigSchema,
-    values: JsonObject,
-  ): JsonObject {
-    const normalized: JsonObject = {};
-    const fieldsByKey = new Map(schema.fields.map((field) => [field.key, field]));
-
-    for (const [key, value] of Object.entries(values)) {
-      const field = fieldsByKey.get(key);
-      if (!field) {
-        throw new BadRequestException(`未知的插件配置项: ${key}`);
-      }
-      if (!this.matchesConfigType(field.type, value)) {
-        throw new BadRequestException(`插件配置 ${key} 类型无效`);
-      }
-      normalized[key] = value;
-    }
-
-    for (const field of schema.fields) {
-      const provided = normalized[field.key];
-      if (field.required && provided === undefined && field.defaultValue === undefined) {
-        throw new BadRequestException(`插件配置 ${field.key} 必填`);
-      }
-    }
-
-    return normalized;
-  }
-
-  /**
-   * 校验作用域配置。
-   * @param scope 作用域设置
-   * @returns 无返回值；校验失败时抛错
-   */
-  private validateScope(scope: PluginScopeSettings): void {
-    if (typeof scope.defaultEnabled !== 'boolean') {
-      throw new BadRequestException('defaultEnabled 必须是布尔值');
-    }
-
-    for (const [conversationId, enabled] of Object.entries(scope.conversations)) {
-      if (!conversationId) {
-        throw new BadRequestException('conversationId 不能为空');
-      }
-      if (typeof enabled !== 'boolean') {
-        throw new BadRequestException(
-          `conversation ${conversationId} 的启停值必须是布尔值`,
-        );
-      }
-    }
-  }
-
-  /**
-   * 解析插件作用域规则。
-   * @param plugin 原始数据库记录
-   * @returns 归一化后的作用域设置
-   */
-  private parseScope(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
-  ): PluginScopeSettings {
-    const conversations = this.parseBooleanRecord(plugin.conversationScopes);
-    return normalizePluginScopeForGovernance({
-      pluginId: plugin.name,
-      runtimeKind: plugin.runtimeKind,
-      scope: {
-        defaultEnabled: plugin.defaultEnabled,
-        conversations,
-      },
-    });
-  }
-
-  /**
-   * 将 JSON 字符串解析为对象。
-   * @param raw 原始 JSON 字符串
-   * @returns JSON 对象；空值时返回空对象
-   */
-  private parseJsonObject(raw: string | null): JsonObject {
-    if (!raw) {
-      return {};
-    }
-
-    const parsed = this.safeParse(raw, 'plugin.jsonObject');
-    if (!isJsonObjectValue(parsed)) {
-      return {};
-    }
-
-    return parsed;
-  }
-
-  /**
-   * 将 JSON 字符串解析为可为空对象。
-   * @param raw 原始 JSON 字符串
-   * @returns JSON 对象；无效时返回 null
-   */
-  private parseNullableJsonObject(raw: string | null): JsonObject | null {
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = this.safeParse(raw, 'plugin.nullableJsonObject');
-    if (!isJsonObjectValue(parsed)) {
-      return null;
-    }
-
-    return parsed;
-  }
-
-  /**
-   * 将 JSON 字符串解析为布尔值字典。
-   * @param raw 原始 JSON 字符串
-   * @returns 布尔值记录
-   */
-  private parseBooleanRecord(raw: string | null): Record<string, boolean> {
-    const parsed = this.parseJsonObject(raw);
-    const result: Record<string, boolean> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === 'boolean') {
-        result[key] = value;
-      }
-    }
-    return result;
-  }
-
-  /**
-   * 判断值是否符合插件配置字段类型。
-   * @param type 声明类型
-   * @param value 待校验值
-   * @returns 是否匹配
-   */
-  private matchesConfigType(
-    type: PluginCapability['parameters'][string]['type'],
-    value: JsonValue,
-  ): boolean {
-    switch (type) {
-      case 'string':
-        return typeof value === 'string';
-      case 'number':
-        return typeof value === 'number';
-      case 'boolean':
-        return typeof value === 'boolean';
-      case 'array':
-        return Array.isArray(value);
-      case 'object':
-        return value !== null && typeof value === 'object' && !Array.isArray(value);
-      default:
-        return false;
-    }
-  }
-
-
-  /**
-   * 安全解析任意持久化 JSON 值，解析失败时记录告警并回退默认值。
-   * @param raw 原始 JSON 字符串
-   * @param fallback 回退值
-   * @param label 日志标签
-   * @returns 解析结果或回退值
-   */
-  private parseStoredJsonValue(
-    raw: string,
-    fallback: JsonValue | null,
-    label: string,
-  ): JsonValue | null {
-    const parsed = this.safeParse(raw, label);
-    return isJsonValue(parsed) ? parsed : fallback;
-  }
-
-  /**
-   * 安全解析 JSON 并在失败时记录日志。
-   * @param raw 原始 JSON 字符串
-   * @param fallback 回退值
-   * @param label 日志标签
-   * @returns 解析结果或回退值
-   */
-  private safeParse(raw: string, label: string): unknown {
-    try {
-      return JSON.parse(raw) as unknown;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`${label} JSON 无效，已回退默认值: ${message}`);
-      return undefined;
-    }
-  }
-
-  /**
    * 读取一条插件记录；不存在时抛出 404。
    * @param name 插件 ID
    * @returns 原始数据库记录
@@ -955,32 +775,4 @@ export class PluginService {
 
     return plugin;
   }
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (
-    value === null
-    || typeof value === 'string'
-    || typeof value === 'number'
-    || typeof value === 'boolean'
-  ) {
-    return true;
-  }
-
-  if (Array.isArray(value)) {
-    return value.every((entry) => isJsonValue(entry));
-  }
-
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  return Object.values(value).every((entry) => isJsonValue(entry));
-}
-
-function isJsonObjectValue(value: unknown): value is JsonObject {
-  return typeof value === 'object'
-    && value !== null
-    && !Array.isArray(value)
-    && Object.values(value).every((entry) => isJsonValue(entry));
 }

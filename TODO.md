@@ -349,6 +349,18 @@
     - event create
     - health snapshot / event level 归一化
   - `plugin.service.ts` 主文件行数已从 `1059` 继续降到 `916`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-persistence.helpers.ts`
+    继续把配置解析/校验、scope 解析/校验和持久化 JSON 回退规则从持久化主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-persistence.helpers.spec.ts`
+    直接给持久化 helper 补纯规则回归，避免规则层再次回流到服务主类
+  - `PluginService` 已不再直接承载：
+    - resolved config 默认值合并
+    - config schema 类型校验
+    - scope JSON 解析与归一化
+    - storage / event metadata JSON 回退解析
+  - `plugin.service.ts` 主文件行数已从 `916` 继续降到 `734`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口
