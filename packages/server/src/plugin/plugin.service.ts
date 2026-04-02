@@ -23,6 +23,15 @@ import {
   normalizePluginScopeForGovernance,
 } from './plugin-governance-policy';
 import {
+  buildPluginEventWhere,
+  buildPluginHealthSnapshot,
+  createPluginEvent,
+  normalizePluginEventOptions,
+  parsePluginEventLevel,
+  resolvePluginEventCursor,
+  type ListPluginEventOptions,
+} from './plugin-event.helpers';
+import {
   parsePersistedPluginManifest,
   serializePersistedPluginManifest,
 } from './plugin-manifest.persistence';
@@ -46,17 +55,6 @@ interface PluginEventInput {
   message: string;
   /** 可选附加上下文。 */
   metadata?: JsonObject;
-}
-
-/**
- * 列出插件事件日志时使用的查询条件。
- */
-interface ListPluginEventOptions {
-  limit?: number;
-  level?: PluginEventLevel;
-  type?: string;
-  keyword?: string;
-  cursor?: string;
 }
 
 /**
@@ -126,10 +124,22 @@ export class PluginService {
       },
     });
     if (existing) {
-      await this.createPluginEvent(plugin.id, 'lifecycle:online', 'info', '插件已上线');
+      await createPluginEvent({
+        prisma: this.prisma,
+        pluginId: plugin.id,
+        type: 'lifecycle:online',
+        level: 'info',
+        message: '插件已上线',
+      });
       this.logger.log(`插件 "${name}" 已重新接入运行时，包含 ${(manifest.tools ?? []).length} 个能力`);
     } else {
-      await this.createPluginEvent(plugin.id, 'register', 'info', '插件已注册');
+      await createPluginEvent({
+        prisma: this.prisma,
+        pluginId: plugin.id,
+        type: 'register',
+        level: 'info',
+        message: '插件已注册',
+      });
       this.logger.log(`插件 "${name}" 已注册，包含 ${(manifest.tools ?? []).length} 个能力`);
     }
     return this.buildGovernanceSnapshot(plugin);
@@ -159,7 +169,13 @@ export class PluginService {
         lastSeenAt: new Date(),
       },
     });
-    await this.createPluginEvent(updated.id, 'lifecycle:online', 'info', '插件已上线');
+    await createPluginEvent({
+      prisma: this.prisma,
+      pluginId: updated.id,
+      type: 'lifecycle:online',
+      level: 'info',
+      message: '插件已上线',
+    });
     return updated;
   }
 
@@ -176,7 +192,13 @@ export class PluginService {
         healthStatus: 'offline',
       },
     });
-    await this.createPluginEvent(updated.id, 'lifecycle:offline', 'warn', '插件已离线');
+    await createPluginEvent({
+      prisma: this.prisma,
+      pluginId: updated.id,
+      type: 'lifecycle:offline',
+      level: 'warn',
+      message: '插件已离线',
+    });
     return updated;
   }
 
@@ -471,7 +493,9 @@ export class PluginService {
    */
   async getPluginHealth(name: string): Promise<PluginHealthSnapshot> {
     const plugin = await this.findByNameOrThrow(name);
-    return this.buildHealthSnapshot(plugin);
+    return buildPluginHealthSnapshot({
+      plugin,
+    });
   }
 
   /**
@@ -485,12 +509,20 @@ export class PluginService {
     options: ListPluginEventOptions = {},
   ): Promise<PluginEventListResult> {
     const plugin = await this.findByNameOrThrow(name);
-    const normalized = this.normalizePluginEventOptions(options);
+    const normalized = normalizePluginEventOptions(options);
     const cursorEvent = normalized.cursor
-      ? await this.resolvePluginEventCursor(plugin.id, normalized.cursor)
+      ? await resolvePluginEventCursor({
+        prisma: this.prisma,
+        pluginId: plugin.id,
+        cursor: normalized.cursor,
+      })
       : null;
     const events = await this.prisma.pluginEvent.findMany({
-      where: this.buildPluginEventWhere(plugin.id, normalized, cursorEvent),
+      where: buildPluginEventWhere({
+        pluginId: plugin.id,
+        options: normalized,
+        cursorEvent,
+      }),
       orderBy: [
         {
           createdAt: 'desc',
@@ -505,7 +537,7 @@ export class PluginService {
     const items = (hasMore ? events.slice(0, normalized.limit) : events).map((event) => ({
       id: event.id,
       type: event.type,
-      level: this.parseEventLevel(event.level),
+      level: parsePluginEventLevel(event.level),
       message: event.message,
       metadata: this.parseNullableJsonObject(event.metadataJson),
       createdAt: event.createdAt.toISOString(),
@@ -530,13 +562,14 @@ export class PluginService {
     },
   ): Promise<void> {
     const plugin = await this.findByNameOrThrow(name);
-    await this.createPluginEvent(
-      plugin.id,
-      input.type,
-      input.level,
-      input.message,
-      input.metadata,
-    );
+    await createPluginEvent({
+      prisma: this.prisma,
+      pluginId: plugin.id,
+      type: input.type,
+      level: input.level,
+      message: input.message,
+      metadata: input.metadata,
+    });
   }
 
   /**
@@ -566,13 +599,14 @@ export class PluginService {
       },
     });
     if (input.persistEvent !== false) {
-      await this.createPluginEvent(
-        plugin.id,
-        input.type,
-        'info',
-        input.message,
-        input.metadata,
-      );
+      await createPluginEvent({
+        prisma: this.prisma,
+        pluginId: plugin.id,
+        type: input.type,
+        level: 'info',
+        message: input.message,
+        metadata: input.metadata,
+      });
     }
   }
 
@@ -609,13 +643,14 @@ export class PluginService {
         ...(input.checked ? { lastCheckedAt: now } : {}),
       },
     });
-    await this.createPluginEvent(
-      plugin.id,
-      input.type,
-      'error',
-      input.message,
-      input.metadata,
-    );
+    await createPluginEvent({
+      prisma: this.prisma,
+      pluginId: plugin.id,
+      type: input.type,
+      level: 'error',
+      message: input.message,
+      metadata: input.metadata,
+    });
   }
 
   /**
@@ -718,27 +753,6 @@ export class PluginService {
         this.logger.warn(`plugin.manifestJson JSON 无效，已回退默认值: ${message}`);
       },
     );
-  }
-
-  /**
-   * 将 Prisma 记录转换为插件健康快照。
-   * @param plugin 原始数据库记录
-   * @returns 健康摘要
-   */
-  private buildHealthSnapshot(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
-  ): PluginHealthSnapshot {
-    return {
-      status: plugin.status === 'offline'
-        ? 'offline'
-        : this.parseHealthStatus(plugin.healthStatus),
-      failureCount: plugin.failureCount,
-      consecutiveFailures: plugin.consecutiveFailures,
-      lastError: plugin.lastError,
-      lastErrorAt: plugin.lastErrorAt?.toISOString() ?? null,
-      lastSuccessAt: plugin.lastSuccessAt?.toISOString() ?? null,
-      lastCheckedAt: plugin.lastCheckedAt?.toISOString() ?? null,
-    };
   }
 
   /**
@@ -894,174 +908,6 @@ export class PluginService {
     }
   }
 
-  /**
-   * 解析健康状态字符串。
-   * @param raw 原始健康状态
-   * @returns 归一化后的健康状态
-   */
-  private parseHealthStatus(
-    raw: string | null,
-  ): PluginHealthSnapshot['status'] {
-    switch (raw) {
-      case 'healthy':
-      case 'degraded':
-      case 'error':
-      case 'offline':
-        return raw;
-      default:
-        return 'unknown';
-    }
-  }
-
-  /**
-   * 解析事件级别字符串。
-   * @param raw 原始级别
-   * @returns 归一化后的级别
-   */
-  private parseEventLevel(raw: string): PluginEventLevel {
-    switch (raw) {
-      case 'warn':
-      case 'error':
-        return raw;
-      default:
-        return 'info';
-    }
-  }
-
-  /**
-   * 向事件表追加一条插件事件。
-   * @param pluginId 插件主键 ID
-   * @param type 事件类型
-   * @param level 事件级别
-   * @param message 事件消息
-   * @param metadata 可选附加元数据
-   * @returns 无返回值
-   */
-  private async createPluginEvent(
-    pluginId: string,
-    type: string,
-    level: PluginEventLevel,
-    message: string,
-    metadata?: JsonObject,
-  ): Promise<void> {
-    await this.prisma.pluginEvent.create({
-      data: {
-        pluginId,
-        type,
-        level,
-        message,
-        metadataJson: metadata ? JSON.stringify(metadata) : null,
-      },
-    });
-  }
-
-  /**
-   * 归一化事件日志查询选项。
-   * @param options 查询选项
-   * @returns 归一化后的查询条件
-   */
-  private normalizePluginEventOptions(
-    options: ListPluginEventOptions,
-  ): Required<Pick<ListPluginEventOptions, 'limit'>> & Omit<ListPluginEventOptions, 'limit'> {
-    const limit = Math.min(200, Math.max(1, options.limit ?? 20));
-
-    return {
-      limit,
-      ...(options.level ? { level: options.level } : {}),
-      ...(options.type?.trim() ? { type: options.type.trim() } : {}),
-      ...(options.keyword?.trim() ? { keyword: options.keyword.trim() } : {}),
-      ...(options.cursor?.trim() ? { cursor: options.cursor.trim() } : {}),
-    };
-  }
-
-  /**
-   * 解析事件日志游标。
-   * @param pluginId 插件主键
-   * @param cursor 游标事件 ID
-   * @returns 对应的事件记录；无效时抛错
-   */
-  private async resolvePluginEventCursor(
-    pluginId: string,
-    cursor: string,
-  ): Promise<{ id: string; createdAt: Date }> {
-    const event = await this.prisma.pluginEvent.findUnique({
-      where: {
-        id: cursor,
-      },
-    });
-    if (!event || event.pluginId !== pluginId) {
-      throw new BadRequestException('无效的事件游标');
-    }
-
-    return {
-      id: event.id,
-      createdAt: event.createdAt,
-    };
-  }
-
-  /**
-   * 构建事件日志查询条件。
-   * @param pluginId 插件主键
-   * @param options 归一化查询条件
-   * @param cursorEvent 游标事件
-   * @returns Prisma where 条件
-   */
-  private buildPluginEventWhere(
-    pluginId: string,
-    options: ReturnType<PluginService['normalizePluginEventOptions']>,
-    cursorEvent: { id: string; createdAt: Date } | null,
-  ): Record<string, unknown> {
-    const where: Record<string, unknown> = {
-      pluginId,
-    };
-
-    if (options.level) {
-      where.level = options.level;
-    }
-    if (options.type) {
-      where.type = options.type;
-    }
-    if (options.keyword) {
-      where.OR = [
-        {
-          type: {
-            contains: options.keyword,
-          },
-        },
-        {
-          message: {
-            contains: options.keyword,
-          },
-        },
-        {
-          metadataJson: {
-            contains: options.keyword,
-          },
-        },
-      ];
-    }
-    if (cursorEvent) {
-      where.AND = [
-        {
-          OR: [
-            {
-              createdAt: {
-                lt: cursorEvent.createdAt,
-              },
-            },
-            {
-              createdAt: cursorEvent.createdAt,
-              id: {
-                lt: cursorEvent.id,
-              },
-            },
-          ],
-        },
-      ];
-    }
-
-    return where;
-  }
 
   /**
    * 安全解析任意持久化 JSON 值，解析失败时记录告警并回退默认值。

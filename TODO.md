@@ -339,6 +339,16 @@
     - `PluginRuntimeRecord`
     - chat/message/tool/automation 的执行结果类型定义
   - `plugin-runtime.service.ts` 主文件行数已从 `888` 继续降到 `721`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-event.helpers.ts`
+    继续把插件事件/健康快照相关的纯规则和查询组装从持久化主类中拆出
+  - `PluginService` 已不再直接承载：
+    - event query option normalize
+    - event cursor resolve
+    - event where 组装
+    - event create
+    - health snapshot / event level 归一化
+  - `plugin.service.ts` 主文件行数已从 `1059` 继续降到 `916`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口
