@@ -456,6 +456,13 @@
     - `packages/server/src/plugin/plugin-subagent-task.helpers.ts`
     继续把后台 subagent task 的 persisted snapshot 解析、summary/detail 序列化与 message.send 返回值校验从服务主类中拆出
   - 已新增：
+    - `packages/server/src/plugin/plugin-subagent-task.types.ts`
+    - `packages/server/src/plugin/plugin-subagent-task-value.helpers.ts`
+    - `packages/server/src/plugin/plugin-subagent-task-request.helpers.ts`
+    - `packages/server/src/plugin/plugin-subagent-task-result.helpers.ts`
+    - `packages/server/src/plugin/plugin-subagent-task-summary.helpers.ts`
+    继续把 subagent task helper 里的值解析、request/context 读取、run result 读取和 summary/detail 规则按域拆分
+  - 已新增：
     - `packages/server/src/plugin/plugin-subagent-task.helpers.spec.ts`
     直接给 subagent task helper 补快照回退、preview 生成和 message.send reader 回归
   - `PluginSubagentTaskService` 已不再直接承载：
@@ -464,6 +471,7 @@
     - request/result preview 规则
     - JSON clone 样板
   - `plugin-subagent-task.service.ts` 主文件行数已从 `668` 继续降到 `223`
+  - `plugin-subagent-task.helpers.ts` 主文件行数已从 `460` 继续降到 `9`
   - 已新增：
     - `packages/server/src/plugin/plugin-cron.helpers.ts`
     继续把 cron job 记录归一化、summary 序列化和 data/interval 纯解析规则从服务主类中拆出
