@@ -27,6 +27,12 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { JsonObject } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import {
+  clonePluginGatewayCallContext,
+  resolvePluginGatewayHostCallContext,
+  resolvePluginGatewayManifest,
+  sameAuthorizedPluginGatewayContext,
+} from './plugin-gateway-context.helpers';
+import {
   readPluginGatewayRequestId,
   readPluginGatewayTimeoutMs,
   rejectPluginGatewayPendingRequest,
@@ -40,7 +46,6 @@ import {
   type PendingRequest,
   type PluginGatewayPayload,
 } from './plugin-gateway-transport.helpers';
-import { normalizePluginManifestCandidate } from './plugin-manifest.persistence';
 import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import type { PluginTransport } from './plugin-runtime.types';
@@ -724,7 +729,10 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     conn: PluginConnection,
     payload: ValidatedRegisterPayload,
   ): Promise<void> {
-    const manifest = this.resolveManifest(conn, payload);
+    const manifest = resolvePluginGatewayManifest({
+      pluginName: conn.pluginName,
+      manifest: payload.manifest,
+    });
     conn.manifest = manifest;
 
     await this.pluginRuntimeOrchestrator.registerPlugin({
@@ -775,11 +783,15 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      const context = this.resolveHostCallContext(
-        conn,
-        payload.method,
-        payload.context,
-      );
+      const context = resolvePluginGatewayHostCallContext({
+        ws: conn.ws,
+        method: payload.method,
+        context: payload.context,
+        activeRequestContexts: this.activeRequestContexts,
+        isConnectionScopedHostMethod: (method) => isConnectionScopedHostMethod(method),
+        isSameContext: sameAuthorizedPluginGatewayContext,
+        cloneContext: clonePluginGatewayCallContext,
+      });
       const result = await this.pluginRuntime.callHost({
         pluginId: conn.pluginName,
         context,
@@ -858,7 +870,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
           extractContext: extractPluginCallContext,
-          cloneContext: clonePluginCallContext,
+          cloneContext: clonePluginGatewayCallContext,
         }),
       invokeHook: ({ hookName, context, payload }) =>
         sendPluginGatewayRequest({
@@ -874,7 +886,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
           extractContext: extractPluginCallContext,
-          cloneContext: clonePluginCallContext,
+          cloneContext: clonePluginGatewayCallContext,
         }),
       invokeRoute: ({ request, context }) =>
         sendTypedPluginGatewayRequest<PluginRouteResponse>({
@@ -889,7 +901,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
           extractContext: extractPluginCallContext,
-          cloneContext: clonePluginCallContext,
+          cloneContext: clonePluginGatewayCallContext,
           readResult: readPluginRouteResponseOrThrow,
         }),
       reload: () => this.disconnectPlugin(conn.pluginName),
@@ -899,81 +911,6 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  /**
-   * 根据注册负载解析 manifest。
-   * @param conn 当前连接
-   * @param payload 注册负载
-   * @returns 规范化后的 manifest
-   */
-  private resolveManifest(
-    conn: PluginConnection,
-    payload: ValidatedRegisterPayload,
-  ): PluginManifest {
-    if (!payload.manifest) {
-      throw new Error('插件注册负载缺少 manifest');
-    }
-
-    return normalizePluginManifestCandidate(payload.manifest, {
-      id: conn.pluginName,
-      displayName: conn.pluginName,
-      version: '0.0.0',
-      runtimeKind: 'remote',
-    });
-  }
-
-  /**
-   * 归一化远程插件发起的 Host API 上下文，避免插件伪造任意 user/conversation。
-   * @param conn 当前远程插件连接
-   * @param method Host API 方法
-   * @param context 远程插件提交的上下文
-   * @returns 可安全传递给 runtime 的上下文
-   */
-  private resolveHostCallContext(
-    conn: PluginConnection,
-    method: PluginHostMethod,
-    context?: PluginCallContext,
-  ): PluginCallContext {
-    const approvedContext = this.findApprovedRequestContext(conn.ws, context);
-    if (approvedContext) {
-      return approvedContext;
-    }
-
-    if (isConnectionScopedHostMethod(method)) {
-      return {
-        source: 'plugin',
-      };
-    }
-
-    throw new Error(`Host API ${method} 缺少已授权的调用上下文`);
-  }
-
-  /**
-   * 查找当前连接已获授权的宿主调用上下文。
-   * @param ws 当前远程插件连接
-   * @param context 远程插件提交的上下文
-   * @returns 命中的宿主上下文；不存在时返回 null
-   */
-  private findApprovedRequestContext(
-    ws: WebSocket,
-    context?: PluginCallContext,
-  ): PluginCallContext | null {
-    if (!context) {
-      return null;
-    }
-
-    for (const active of this.activeRequestContexts.values()) {
-      if (active.ws !== ws) {
-        continue;
-      }
-      if (!sameAuthorizedContext(active.context, context)) {
-        continue;
-      }
-
-      return clonePluginCallContext(active.context);
-    }
-
-    return null;
-  }
 
   /**
    * 扫描远程插件连接，并摘除超时未活跃的连接。
@@ -1270,43 +1207,4 @@ function extractPluginCallContext(
   }
 
   return readPluginCallContext(record.context) ?? undefined;
-}
-
-/**
- * 比较两个上下文是否拥有相同的授权边界。
- * @param left 宿主下发的上下文
- * @param right 远程插件回传的上下文
- * @returns 是否属于同一授权上下文
- */
-function sameAuthorizedContext(
-  left: PluginCallContext,
-  right: PluginCallContext,
-): boolean {
-  return left.source === right.source
-    && left.userId === right.userId
-    && left.conversationId === right.conversationId
-    && left.automationId === right.automationId
-    && left.cronJobId === right.cronJobId
-    && left.activeProviderId === right.activeProviderId
-    && left.activeModelId === right.activeModelId
-    && left.activePersonaId === right.activePersonaId;
-}
-
-/**
- * 复制插件调用上下文，避免共享可变对象。
- * @param context 原始上下文
- * @returns 新的上下文副本
- */
-function clonePluginCallContext(context: PluginCallContext): PluginCallContext {
-  return {
-    source: context.source,
-    ...(context.userId ? { userId: context.userId } : {}),
-    ...(context.conversationId ? { conversationId: context.conversationId } : {}),
-    ...(context.automationId ? { automationId: context.automationId } : {}),
-    ...(context.cronJobId ? { cronJobId: context.cronJobId } : {}),
-    ...(context.activeProviderId ? { activeProviderId: context.activeProviderId } : {}),
-    ...(context.activeModelId ? { activeModelId: context.activeModelId } : {}),
-    ...(context.activePersonaId ? { activePersonaId: context.activePersonaId } : {}),
-    ...(context.metadata ? { metadata: { ...context.metadata } } : {}),
-  };
 }

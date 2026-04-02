@@ -373,6 +373,18 @@
     - request timeout 读取
     - transport request 发起样板
   - `plugin.gateway.ts` 主文件行数已从 `1269` 继续降到 `1205`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-context.helpers.ts`
+    继续把远程 manifest 归一化、Host API 授权上下文匹配与 clone 规则从网关主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-context.helpers.spec.ts`
+    直接给 gateway context helper 补 manifest/host-context 纯规则回归
+  - `PluginGateway` 已不再直接承载：
+    - resolveManifest
+    - resolveHostCallContext
+    - findApprovedRequestContext
+    - authorized context compare / clone
+  - `plugin.gateway.ts` 主文件行数已从 `1205` 继续降到 `1113`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口
