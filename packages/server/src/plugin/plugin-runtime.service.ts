@@ -45,31 +45,14 @@ import { PluginHostService } from './plugin-host.service';
 import { PluginRuntimeBroadcastFacade } from './plugin-runtime-broadcast.facade';
 import { PluginRuntimeGovernanceFacade } from './plugin-runtime-governance.facade';
 import { PluginRuntimeHostFacade } from './plugin-runtime-host.facade';
+import { PluginRuntimeInboundHooksFacade } from './plugin-runtime-inbound-hooks.facade';
 import { PluginRuntimeMessageHooksFacade } from './plugin-runtime-message-hooks.facade';
 import { PluginRuntimeOperationHooksFacade } from './plugin-runtime-operation-hooks.facade';
 import { PluginRuntimeSubagentFacade } from './plugin-runtime-subagent.facade';
 import {
-  cloneChatBeforeModelRequest,
-  cloneMessageReceivedHookPayload,
-} from './plugin-runtime-clone.helpers';
-import {
   assertRuntimeRecordEnabled,
   getRuntimeRecordOrThrow,
-  listDispatchableHookRecords,
 } from './plugin-runtime-dispatch.helpers';
-import {
-  applyChatBeforeModelMutation,
-  applyChatBeforeModelHookResult,
-  applyMessageReceivedMutation,
-  applyMessageReceivedHookResult,
-} from './plugin-runtime-hook-mutation.helpers';
-import {
-  runShortCircuitingHookChain,
-} from './plugin-runtime-hook-runner.helpers';
-import {
-  normalizeChatBeforeModelHookResult,
-  normalizeMessageReceivedHookResult,
-} from './plugin-runtime-hook-result.helpers';
 import { recordRuntimePluginFailureAndDispatch } from './plugin-runtime-failure.helpers';
 import {
   isPluginOverloadedError,
@@ -80,12 +63,8 @@ import {
   findManifestRouteOrThrow,
   findManifestToolOrThrow,
 } from './plugin-runtime-manifest.helpers';
-import {
-} from './plugin-runtime-subagent.helpers';
 import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
 import {
-  prepareDispatchableConversationSessionMessageReceivedHook,
-  syncConversationSessionMessageReceivedPayload,
   type ConversationSessionRecord,
 } from './plugin-runtime-session.helpers';
 import {
@@ -395,6 +374,7 @@ export class PluginRuntimeService {
     private readonly runtimeBroadcastFacade: PluginRuntimeBroadcastFacade,
     private readonly runtimeGovernanceFacade: PluginRuntimeGovernanceFacade,
     private readonly runtimeHostFacade: PluginRuntimeHostFacade,
+    private readonly runtimeInboundHooksFacade: PluginRuntimeInboundHooksFacade,
     private readonly runtimeMessageHooksFacade: PluginRuntimeMessageHooksFacade,
     private readonly runtimeOperationHooksFacade: PluginRuntimeOperationHooksFacade,
     private readonly runtimeSubagentFacade: PluginRuntimeSubagentFacade,
@@ -808,47 +788,12 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: ChatBeforeModelHookPayload;
   }): Promise<ChatBeforeModelExecutionResult> {
-    const result = await runShortCircuitingHookChain({
-      records: listDispatchableHookRecords({
-        records: this.records.values(),
-        hookName: 'chat:before-model',
-        context: input.context,
-      }),
-      hookName: 'chat:before-model',
+    return this.runtimeInboundHooksFacade.runChatBeforeModelHooks({
+      records: this.records.values(),
       context: input.context,
-      payload: {
-        context: {
-          ...input.payload.context,
-        },
-        request: cloneChatBeforeModelRequest(input.payload.request),
-      },
+      payload: input.payload,
       invokeHook: (hookInput) => this.invokePluginHook(hookInput),
-      normalizeResult: normalizeChatBeforeModelHookResult,
-      applyMutation: (payload, mutation) => ({
-        context: {
-          ...payload.context,
-        },
-        request: applyChatBeforeModelMutation(payload.request, mutation),
-      }),
-      buildShortCircuitReturn: ({ payload, result: hookResult }) => {
-        const executionResult = applyChatBeforeModelHookResult({
-          request: payload.request,
-          result: hookResult,
-        });
-        if (executionResult.action !== 'short-circuit') {
-          throw new Error('chat:before-model short-circuit result normalization failed');
-        }
-
-        return executionResult;
-      },
     });
-
-    return result.action === 'short-circuit'
-      ? result
-      : {
-          action: 'continue',
-          request: result.payload.request,
-        };
   }
 
   /**
@@ -860,97 +805,13 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: MessageReceivedHookPayload;
   }): Promise<MessageReceivedExecutionResult> {
-    const payload = cloneMessageReceivedHookPayload(input.payload);
-
-    const sessionResult = await this.runConversationSessionMessageReceivedHook({
-      context: input.context,
-      payload,
-    });
-    if (sessionResult) {
-      return sessionResult;
-    }
-
-    return runShortCircuitingHookChain({
-      records: listDispatchableHookRecords({
-        records: this.records.values(),
-        hookName: 'message:received',
-        context: input.context,
-        payload,
-      }),
-      hookName: 'message:received',
-      context: input.context,
-      payload,
-      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
-      normalizeResult: normalizeMessageReceivedHookResult,
-      applyMutation: applyMessageReceivedMutation,
-      buildShortCircuitReturn: ({ payload: currentPayload, result: hookResult }) => {
-        const executionResult = applyMessageReceivedHookResult({
-          payload: currentPayload,
-          result: hookResult,
-        });
-        if (executionResult.action !== 'short-circuit') {
-          throw new Error('message:received short-circuit result normalization failed');
-        }
-
-        return executionResult;
-      },
-    });
-  }
-
-  /**
-   * 若当前会话存在活动等待态，则优先把消息交给该插件处理。
-   * @param input Hook 调用上下文与载荷
-   * @returns 已消费的结果；无活动等待态或等待态失效时返回 null
-   */
-  private async runConversationSessionMessageReceivedHook(input: {
-    context: PluginCallContext;
-    payload: MessageReceivedHookPayload;
-  }): Promise<MessageReceivedExecutionResult | null> {
-    const prepared = prepareDispatchableConversationSessionMessageReceivedHook({
-      sessions: this.conversationSessions,
+    return this.runtimeInboundHooksFacade.runMessageReceivedHooks({
       records: this.records,
+      conversationSessions: this.conversationSessions,
       context: input.context,
       payload: input.payload,
-      now: Date.now(),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
     });
-    if (!prepared) {
-      return null;
-    }
-    const { session, record: ownerRecord } = prepared;
-
-    let { payload } = prepared;
-
-    try {
-      const rawResult = await this.invokePluginHook({
-        pluginId: ownerRecord.manifest.id,
-        hookName: 'message:received',
-        context: input.context,
-        payload: toJsonValue(payload),
-      });
-      const hookResult = normalizeMessageReceivedHookResult(rawResult);
-      const executionResult = applyMessageReceivedHookResult({
-        payload,
-        result: hookResult,
-      });
-      payload = syncConversationSessionMessageReceivedPayload({
-        sessions: this.conversationSessions,
-        session,
-        payload: executionResult.payload,
-        now: Date.now(),
-      });
-      return executionResult.action === 'short-circuit'
-        ? {
-            ...executionResult,
-            payload,
-          }
-        : {
-            action: 'continue',
-            payload,
-          };
-    } catch {
-      this.conversationSessions.delete(session.conversationId);
-      return null;
-    }
   }
 
   /**
