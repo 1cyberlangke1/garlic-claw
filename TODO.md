@@ -431,6 +431,17 @@
     - persisted manifest 读取
     - governance snapshot 构建
   - `plugin.service.ts` 主文件行数已从 `734` 继续降到 `709`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-runtime.helpers.ts`
+    继续把远程 transport 构造、health-check 和 heartbeat sweep 规则从网关主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-runtime.helpers.spec.ts`
+    直接给 gateway runtime helper 补 transport 请求、health-check 和 stale 连接 sweep 回归
+  - `PluginGateway` 已不再直接承载：
+    - remote transport 构造
+    - websocket ping health-check
+    - heartbeat stale sweep 规则
+  - `plugin.gateway.ts` 主文件行数已从 `799` 继续降到 `730`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

@@ -2,7 +2,6 @@ import {
   type AuthPayload,
   type JsonValue,
   type PluginManifest,
-  type PluginRouteResponse,
   WS_ACTION,
   DeviceType,
   WS_TYPE,
@@ -27,29 +26,29 @@ import {
   sameAuthorizedPluginGatewayContext,
 } from './plugin-gateway-context.helpers';
 import {
-  extractPluginCallContext,
   isConnectionScopedHostMethod,
   readAuthPayload,
   readDataPayload,
   readErrorPayload,
   readHostCallPayload,
   readPluginGatewayMessage,
-  readPluginRouteResponseOrThrow,
   readRegisterPayload,
   readRouteResultPayload,
   type PluginGatewayInboundMessage,
   type ValidatedRegisterPayload,
 } from './plugin-gateway-payload.helpers';
 import {
+  checkPluginGatewayHealth,
+  createPluginGatewayRemoteTransport,
+  sweepStalePluginGatewayConnections,
+} from './plugin-gateway-runtime.helpers';
+import {
   readPluginGatewayRequestId,
-  readPluginGatewayTimeoutMs,
   rejectPluginGatewayPendingRequest,
   rejectPluginGatewayPendingRequestsForSocket,
   resolvePluginGatewayPendingRequest,
   sendPluginGatewayMessage,
   sendPluginGatewayProtocolError,
-  sendPluginGatewayRequest,
-  sendTypedPluginGatewayRequest,
   type ActiveRequestContext,
   type PendingRequest,
 } from './plugin-gateway-transport.helpers';
@@ -210,27 +209,10 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     if (!connection) {
       throw new NotFoundException(`Plugin not connected: ${pluginId}`);
     }
-    if (connection.ws.readyState !== WebSocket.OPEN) {
-      return {
-        ok: false,
-      };
-    }
-
-    return new Promise<{ ok: boolean }>((resolve, reject) => {
-      const handlePong = () => {
-        clearTimeout(timer);
-        connection.ws.off('pong', handlePong);
-        resolve({
-          ok: true,
-        });
-      };
-      const timer = setTimeout(() => {
-        connection.ws.off('pong', handlePong);
-        reject(new Error(`插件健康检查超时: ${pluginId}`));
-      }, timeoutMs);
-
-      connection.ws.once('pong', handlePong);
-      connection.ws.ping();
+    return checkPluginGatewayHealth({
+      pluginId,
+      connection,
+      timeoutMs,
     });
   }
 
@@ -764,60 +746,13 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
    * @returns 可供 runtime 调用的 transport
    */
   private createRemoteTransport(conn: PluginConnection): PluginTransport {
-    return {
-      executeTool: ({ toolName, params, context }) =>
-        sendPluginGatewayRequest({
-          ws: conn.ws,
-          type: WS_TYPE.COMMAND,
-          action: WS_ACTION.EXECUTE,
-          payload: {
-            toolName,
-            params,
-            context,
-          },
-          timeoutMs: readPluginGatewayTimeoutMs(context, 30000),
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          extractContext: extractPluginCallContext,
-          cloneContext: clonePluginGatewayCallContext,
-        }),
-      invokeHook: ({ hookName, context, payload }) =>
-        sendPluginGatewayRequest({
-          ws: conn.ws,
-          type: WS_TYPE.PLUGIN,
-          action: WS_ACTION.HOOK_INVOKE,
-          payload: {
-            hookName,
-            context,
-            payload,
-          },
-          timeoutMs: readPluginGatewayTimeoutMs(context, 10000),
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          extractContext: extractPluginCallContext,
-          cloneContext: clonePluginGatewayCallContext,
-        }),
-      invokeRoute: ({ request, context }) =>
-        sendTypedPluginGatewayRequest<PluginRouteResponse>({
-          ws: conn.ws,
-          type: WS_TYPE.PLUGIN,
-          action: WS_ACTION.ROUTE_INVOKE,
-          payload: {
-            request,
-            context,
-          },
-          timeoutMs: readPluginGatewayTimeoutMs(context, 15000),
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          extractContext: extractPluginCallContext,
-          cloneContext: clonePluginGatewayCallContext,
-          readResult: readPluginRouteResponseOrThrow,
-        }),
-      reload: () => this.disconnectPlugin(conn.pluginName),
-      reconnect: () => this.disconnectPlugin(conn.pluginName),
-      checkHealth: () => this.checkPluginHealth(conn.pluginName),
-      listSupportedActions: () => ['health-check', 'reload', 'reconnect'],
-    };
+    return createPluginGatewayRemoteTransport({
+      connection: conn,
+      pendingRequests: this.pendingRequests,
+      activeRequestContexts: this.activeRequestContexts,
+      disconnectPlugin: (pluginId) => this.disconnectPlugin(pluginId),
+      checkPluginHealth: (pluginId) => this.checkPluginHealth(pluginId),
+    });
   }
 
 
@@ -825,25 +760,16 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
    * 扫描远程插件连接，并摘除超时未活跃的连接。
    */
   private checkHeartbeats() {
-    const now = Date.now();
-
-    for (const connection of this.connections.values()) {
-      if (!connection.authenticated) {
-        continue;
-      }
-
-      const lastHeartbeatAt = typeof connection.lastHeartbeatAt === 'number'
-        ? connection.lastHeartbeatAt
-        : now;
-      if (now - lastHeartbeatAt <= HEARTBEAT_TIMEOUT_MS) {
-        continue;
-      }
-
-      this.logger.warn(
-        `插件 "${connection.pluginName || 'unknown'}" 心跳超时，主动断开连接`,
-      );
-      connection.ws.close();
-    }
+    sweepStalePluginGatewayConnections({
+      now: Date.now(),
+      heartbeatTimeoutMs: HEARTBEAT_TIMEOUT_MS,
+      connections: this.connections.values(),
+      onStaleConnection: (connection) => {
+        this.logger.warn(
+          `插件 "${connection.pluginName || 'unknown'}" 心跳超时，主动断开连接`,
+        );
+      },
+    });
   }
 }
 
