@@ -37,7 +37,7 @@ export function normalizeAiSettingsFile(
     throw new Error('AI settings file must be a JSON object');
   }
 
-  const providers = normalizeProviders(input.providers);
+  const providers = normalizeArrayEntries(input.providers, normalizeProvider);
   const visionFallback = normalizeVisionFallback(input.visionFallback);
   const hostModelRouting = normalizeHostModelRouting(input.hostModelRouting);
   const updatedAt = readNonEmptyString(input.updatedAt) ?? now.toISOString();
@@ -57,12 +57,6 @@ export function normalizeAiSettingsFile(
       || visionFallback.changed
       || hostModelRouting.changed,
   };
-}
-
-function normalizeProviders(
-  value: JsonValue | undefined,
-): NormalizedValue<StoredAiProviderConfig[]> {
-  return normalizeArrayEntries(value, normalizeProvider);
 }
 
 function normalizeProvider(
@@ -163,8 +157,9 @@ function normalizeHostModelRouting(
     };
   }
 
-  const fallbackChatModels = normalizeRequiredModelRouteTargetArray(
+  const fallbackChatModels = normalizeArrayEntries(
     value.fallbackChatModels,
+    normalizeModelRouteTarget,
   );
   const compressionModel = normalizeOptionalModelRouteTarget(
     value.compressionModel,
@@ -215,12 +210,6 @@ function normalizeUtilityModelRoles(
     },
     changed: conversationTitle.changed || pluginGenerateText.changed,
   };
-}
-
-function normalizeRequiredModelRouteTargetArray(
-  value: JsonValue | undefined,
-): NormalizedValue<StoredAiModelRouteTarget[]> {
-  return normalizeArrayEntries(value, normalizeModelRouteTarget);
 }
 
 function normalizeOptionalModelRouteTarget(
