@@ -11,12 +11,14 @@ import {
     type HostCallPayload,
     type HostResultPayload,
     type HookInvokePayload,
-    type JsonObject,
-    type JsonValue,
+  type JsonObject,
+  type JsonValue,
   type MessageReceivedHookPayload,
   type MessageReceivedHookResult,
   type PluginCallContext,
+  type PluginEventListResult,
   type PluginEventLevel,
+  type PluginEventQuery,
   type PluginHookDescriptor,
   type PluginHookMessageFilter,
   type PluginKbEntryDetail,
@@ -321,6 +323,13 @@ export interface PluginHostFacade {
    * @returns 插件摘要
    */
   getPluginSelf(): Promise<PluginSelfInfo>;
+
+  /**
+   * 读取当前插件自身的事件日志。
+   * @param query 可选分页与过滤参数
+   * @returns 事件日志分页结果
+   */
+  listLogs(query?: PluginEventQuery): Promise<PluginEventListResult>;
 
   /**
    * 主动向宿主写入一条插件事件日志。
@@ -1451,6 +1460,10 @@ export class PluginClient {
             event,
           }),
         getPluginSelf: () => callHost<PluginSelfInfo>('plugin.self.get'),
+        listLogs: (query = {}) =>
+          callHost<PluginEventListResult>('log.list', {
+            ...query,
+          }),
         writeLog: ({ level, message, type, metadata }) =>
           callHost<boolean>('log.write', {
             level,

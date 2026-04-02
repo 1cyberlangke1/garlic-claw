@@ -53,6 +53,7 @@ describe('PluginHostService', () => {
     setPluginStorage: jest.fn(),
     deletePluginStorage: jest.fn(),
     listPluginStorage: jest.fn(),
+    listPluginEvents: jest.fn(),
     getPluginSelfInfo: jest.fn(),
     recordPluginEvent: jest.fn(),
   };
@@ -1040,5 +1041,63 @@ describe('PluginHostService', () => {
         },
       },
     );
+  });
+
+  it('lists plugin-authored event logs through log.list', async () => {
+    pluginService.listPluginEvents.mockResolvedValue({
+      items: [
+        {
+          id: 'event-1',
+          type: 'plugin:config',
+          level: 'warn',
+          message: '缺少 limit 配置，已回退默认值',
+          metadata: {
+            field: 'limit',
+          },
+          createdAt: '2026-04-01T08:00:00.000Z',
+        },
+      ],
+      nextCursor: 'event-0',
+    });
+
+    await expect(
+      service.call({
+        pluginId: 'memory-context',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'log.list' as never,
+        params: {
+          limit: 20,
+          level: 'warn',
+          type: 'plugin:config',
+          keyword: 'limit',
+          cursor: 'event-2',
+        },
+      }),
+    ).resolves.toEqual({
+      items: [
+        {
+          id: 'event-1',
+          type: 'plugin:config',
+          level: 'warn',
+          message: '缺少 limit 配置，已回退默认值',
+          metadata: {
+            field: 'limit',
+          },
+          createdAt: '2026-04-01T08:00:00.000Z',
+        },
+      ],
+      nextCursor: 'event-0',
+    });
+
+    expect(pluginService.listPluginEvents).toHaveBeenCalledWith('memory-context', {
+      limit: 20,
+      level: 'warn',
+      type: 'plugin:config',
+      keyword: 'limit',
+      cursor: 'event-2',
+    });
   });
 });

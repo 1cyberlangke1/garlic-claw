@@ -710,7 +710,9 @@ export class ChatMessageService {
   /** 读取对话中的一条消息并校验所有权，输出对话与消息。 */
   private async getOwnedMessage(userId: string, conversationId: string, messageId: string) {
     const conversation = await this.chatService.getConversation(userId, conversationId);
-    const message = conversation.messages.find((item) => item.id === messageId);
+    const message = conversation.messages.find(
+      (item: { id: string }) => item.id === messageId,
+    );
     if (!message) {
       throw new NotFoundException('Message not found');
     }

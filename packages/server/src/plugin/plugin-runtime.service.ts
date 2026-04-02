@@ -132,6 +132,7 @@ const HOST_METHOD_PERMISSION_MAP: Record<PluginHostMethod, PluginPermission | nu
   'kb.search': 'kb:read',
   'llm.generate': 'llm:generate',
   'llm.generate-text': 'llm:generate',
+  'log.list': 'log:read',
   'log.write': 'log:write',
   'message.send': 'conversation:write',
   'message.target.current.get': 'conversation:read',

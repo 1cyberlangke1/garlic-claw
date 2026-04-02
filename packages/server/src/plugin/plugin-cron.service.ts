@@ -187,7 +187,8 @@ export class PluginCronService implements OnModuleDestroy {
       ],
     });
 
-    return records.map((record) => this.serializeJob(this.normalizeRecord(record)));
+    return records.map((record: PluginCronJobRecord) =>
+      this.serializeJob(this.normalizeRecord(record)));
   }
 
   /**
@@ -236,9 +237,9 @@ export class PluginCronService implements OnModuleDestroy {
         pluginName: pluginId,
         source: 'manifest',
       },
-    })).map((record) => this.normalizeRecord(record));
+    })).map((record: PluginCronJobRecord) => this.normalizeRecord(record));
     const desiredNames = new Set(manifestCrons.map((cron) => cron.name));
-    const removed = existing.filter((record) => !desiredNames.has(record.name));
+    const removed = existing.filter((record: PluginCronJobRecord) => !desiredNames.has(record.name));
 
     if (removed.length > 0) {
       for (const record of removed) {
@@ -249,7 +250,7 @@ export class PluginCronService implements OnModuleDestroy {
           pluginName: pluginId,
           source: 'manifest',
           name: {
-            in: removed.map((record) => record.name),
+            in: removed.map((record: PluginCronJobRecord) => record.name),
           },
         },
       });
@@ -477,7 +478,9 @@ export class PluginCronService implements OnModuleDestroy {
    * @param record 原始数据库记录
    * @returns 归一化后的 job 记录
    */
-  private normalizeRecord(record: Record<string, unknown>): PluginCronJobRecord {
+  private normalizeRecord(
+    record: PluginCronJobRecord | Record<string, unknown>,
+  ): PluginCronJobRecord {
     return {
       id: String(record.id),
       pluginName: String(record.pluginName),

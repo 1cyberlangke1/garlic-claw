@@ -3222,6 +3222,36 @@ describe('PluginRuntimeService', () => {
     expect(hostService.call).not.toHaveBeenCalled();
   });
 
+  it('enforces log read permission before log.list host calls', async () => {
+    const manifest: PluginManifest = {
+      ...builtinManifest,
+      id: 'builtin.memory-context',
+      permissions: ['config:read'],
+      tools: [],
+      hooks: [],
+    };
+
+    await service.registerPlugin({
+      manifest,
+      runtimeKind: 'builtin',
+      transport: createTransport(),
+    });
+
+    await expect(
+      service.callHost({
+        pluginId: 'builtin.memory-context',
+        context: {
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'log.list' as never,
+        params: {},
+      }),
+    ).rejects.toThrow('插件 builtin.memory-context 缺少权限 log:read');
+
+    expect(hostService.call).not.toHaveBeenCalled();
+  });
+
   it('enforces provider read permission before provider host calls', async () => {
     const manifest: PluginManifest = {
       ...builtinManifest,

@@ -10,7 +10,6 @@ import type {
   PluginScopeSettings,
   PluginStorageEntry,
 } from '@garlic-claw/shared';
-import type { Plugin as PersistedPluginRecord } from '@prisma/client';
 import {
   BadRequestException,
   Body,
@@ -40,6 +39,8 @@ import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
+type PersistedPluginRecord = Awaited<ReturnType<PluginService['findAll']>>[number];
+
 @ApiTags('Plugins')
 @ApiBearerAuth()
 @Controller('plugins')
@@ -57,9 +58,9 @@ export class PluginController {
   async listPlugins(): Promise<PluginInfo[]> {
     const plugins = await this.pluginService.findAll();
     const runtimePlugins = new Map(
-      this.pluginRuntime.listPlugins().map((plugin) => [plugin.pluginId, plugin]),
+      this.pluginRuntime.listPlugins().map((plugin) => [plugin.pluginId, plugin] as const),
     );
-    return Promise.all(plugins.map(async (p) => {
+    return Promise.all(plugins.map(async (p: PersistedPluginRecord) => {
       const runtimePlugin = runtimePlugins.get(p.name);
       const manifest = runtimePlugin?.manifest ?? buildPersistedManifest(p);
       const governance = describePluginGovernance({
