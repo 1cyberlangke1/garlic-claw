@@ -83,7 +83,10 @@ function normalizeProvider(
   const baseUrl = normalizeOptionalString(value.baseUrl);
   const mode = normalizeProviderMode(value.mode, driver.value, baseUrl.value);
   const defaultModel = normalizeOptionalString(value.defaultModel);
-  const models = normalizeRequiredStringArray(value.models);
+  const models = Array.isArray(value.models)
+    ? value.models.filter((entry): entry is string =>
+        typeof entry === 'string' && entry.length > 0)
+    : [];
 
   return {
     value: {
@@ -94,7 +97,7 @@ function normalizeProvider(
       ...(apiKey.value ? { apiKey: apiKey.value } : {}),
       ...(baseUrl.value ? { baseUrl: baseUrl.value } : {}),
       ...(defaultModel.value ? { defaultModel: defaultModel.value } : {}),
-      models: models.value,
+      models,
     },
     changed: hasNormalizedChanges(
       name,
@@ -103,7 +106,10 @@ function normalizeProvider(
       apiKey,
       baseUrl,
       defaultModel,
-      models,
+      {
+        value: models,
+        changed: !Array.isArray(value.models) || models.length !== value.models.length,
+      },
     ),
   };
 }
@@ -371,25 +377,6 @@ function normalizeOptionalString(
   return {
     value: undefined,
     changed: true,
-  };
-}
-
-function normalizeRequiredStringArray(
-  value: JsonValue | undefined,
-): NormalizedValue<string[]> {
-  if (!Array.isArray(value)) {
-    return {
-      value: [],
-      changed: true,
-    };
-  }
-
-  const entries = value.filter((entry): entry is string =>
-    typeof entry === 'string' && entry.length > 0);
-
-  return {
-    value: entries,
-    changed: entries.length !== value.length,
   };
 }
 
