@@ -520,6 +520,17 @@
     - resolved config 投影
     - plugin self info 投影
   - `plugin.service.ts` 主文件行数已从 `709` 继续降到 `690`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-health.helpers.ts`
+    继续把 success/failure 健康状态更新规则从 `PluginService` 主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-health.helpers.spec.ts`
+    直接给 plugin health helper 补 offline 保持、degraded/error 升级与 success reset 回归
+  - `PluginService` 已不再直接承载：
+    - success 时的健康状态更新样板
+    - failure 时的 degraded/error/offline 判定
+    - failureCount / consecutiveFailures / lastError 写回规则
+  - `plugin.service.ts` 主文件行数已从 `690` 继续降到 `685`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

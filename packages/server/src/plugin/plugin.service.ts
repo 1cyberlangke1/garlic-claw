@@ -44,6 +44,10 @@ import {
   validatePluginScope,
 } from './plugin-persistence.helpers';
 import {
+  buildPluginFailureUpdate,
+  buildPluginSuccessUpdate,
+} from './plugin-health.helpers';
+import {
   buildPluginConfigSnapshot,
   buildPluginSelfInfo,
   buildResolvedPluginConfig,
@@ -622,12 +626,11 @@ export class PluginService {
       where: {
         name,
       },
-      data: {
-        healthStatus: plugin.status === 'offline' ? 'offline' : 'healthy',
-        consecutiveFailures: 0,
-        lastSuccessAt: now,
-        ...(input.checked ? { lastCheckedAt: now } : {}),
-      },
+      data: buildPluginSuccessUpdate({
+        plugin,
+        checked: input.checked,
+        now,
+      }),
     });
     if (input.persistEvent !== false) {
       await createPluginEvent({
@@ -655,24 +658,16 @@ export class PluginService {
   ): Promise<void> {
     const plugin = await this.findByNameOrThrow(name);
     const now = new Date();
-    const consecutiveFailures = plugin.consecutiveFailures + 1;
     await this.prisma.plugin.update({
       where: {
         name,
       },
-      data: {
-        healthStatus:
-          plugin.status === 'offline'
-            ? 'offline'
-            : consecutiveFailures >= 3
-              ? 'error'
-              : 'degraded',
-        failureCount: plugin.failureCount + 1,
-        consecutiveFailures,
-        lastError: input.message,
-        lastErrorAt: now,
-        ...(input.checked ? { lastCheckedAt: now } : {}),
-      },
+      data: buildPluginFailureUpdate({
+        plugin,
+        message: input.message,
+        checked: input.checked,
+        now,
+      }),
     });
     await createPluginEvent({
       prisma: this.prisma,
