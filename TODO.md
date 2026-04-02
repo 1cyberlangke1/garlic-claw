@@ -421,6 +421,16 @@
     - cron summary serialize
     - cron data/source/interval 纯解析规则
   - `plugin-cron.service.ts` 主文件行数已从 `548` 继续降到 `425`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-governance.helpers.ts`
+    继续把持久化 manifest 读取和 governance snapshot 构建从持久化主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-governance.helpers.spec.ts`
+    直接给 governance helper 补 manifest fallback 与 snapshot 组装回归
+  - `PluginService` 已不再直接承载：
+    - persisted manifest 读取
+    - governance snapshot 构建
+  - `plugin.service.ts` 主文件行数已从 `734` 继续降到 `709`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

@@ -31,9 +31,10 @@ import {
   type ListPluginEventOptions,
 } from './plugin-event.helpers';
 import {
-  parsePersistedPluginManifest,
-  serializePersistedPluginManifest,
-} from './plugin-manifest.persistence';
+  buildPluginGovernanceSnapshot,
+  readPersistedPluginManifestRecord,
+} from './plugin-governance.helpers';
+import { serializePersistedPluginManifest } from './plugin-manifest.persistence';
 import {
   parseNullablePluginJsonObject,
   parsePluginScope,
@@ -149,7 +150,10 @@ export class PluginService {
       });
       this.logger.log(`插件 "${name}" 已注册，包含 ${(manifest.tools ?? []).length} 个能力`);
     }
-    return this.buildGovernanceSnapshot(plugin);
+    return buildPluginGovernanceSnapshot({
+      plugin,
+      onWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**
@@ -159,7 +163,10 @@ export class PluginService {
    */
   async getGovernanceSnapshot(name: string): Promise<PluginGovernanceSnapshot> {
     const plugin = await this.findByNameOrThrow(name);
-    return this.buildGovernanceSnapshot(plugin);
+    return buildPluginGovernanceSnapshot({
+      plugin,
+      onWarn: (message) => this.logger.warn(message),
+    });
   }
 
   /**
@@ -270,7 +277,10 @@ export class PluginService {
    */
   async getPluginConfig(name: string): Promise<PluginConfigSnapshot> {
     const plugin = await this.findByNameOrThrow(name);
-    const manifest = this.readPersistedManifest(plugin);
+    const manifest = readPersistedPluginManifestRecord({
+      plugin,
+      onWarn: (message) => this.logger.warn(message),
+    });
     return {
       schema: manifest.config ?? null,
       values: resolvePluginConfig({
@@ -290,7 +300,10 @@ export class PluginService {
     const plugin = await this.findByNameOrThrow(name);
     return resolvePluginConfig({
       rawConfig: plugin.config,
-      manifest: this.readPersistedManifest(plugin),
+      manifest: readPersistedPluginManifestRecord({
+        plugin,
+        onWarn: (message) => this.logger.warn(message),
+      }),
       onWarn: (message) => this.logger.warn(message),
     });
   }
@@ -413,7 +426,10 @@ export class PluginService {
    */
   async getPluginSelfInfo(name: string): Promise<PluginSelfInfo> {
     const plugin = await this.findByNameOrThrow(name);
-    const manifest = this.readPersistedManifest(plugin);
+    const manifest = readPersistedPluginManifestRecord({
+      plugin,
+      onWarn: (message) => this.logger.warn(message),
+    });
     return {
       id: plugin.name,
       name: manifest.name,
@@ -439,7 +455,10 @@ export class PluginService {
     values: JsonObject,
   ): Promise<PluginConfigSnapshot> {
     const plugin = await this.findByNameOrThrow(name);
-    const manifest = this.readPersistedManifest(plugin);
+    const manifest = readPersistedPluginManifestRecord({
+      plugin,
+      onWarn: (message) => this.logger.warn(message),
+    });
     const schema = manifest.config ?? null;
     if (!schema) {
       throw new BadRequestException(`插件 ${name} 未声明配置 schema`);
@@ -714,52 +733,6 @@ export class PluginService {
       metadata: input.metadata,
       checked: true,
     });
-  }
-
-  /**
-   * 将 Prisma 记录转换为运行时治理快照。
-   * @param plugin 原始数据库记录
-   * @returns 配置 schema、解析后的配置值和作用域
-   */
-  private buildGovernanceSnapshot(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
-  ): PluginGovernanceSnapshot {
-    const manifest = this.readPersistedManifest(plugin);
-    return {
-      configSchema: manifest.config ?? null,
-      resolvedConfig: resolvePluginConfig({
-        rawConfig: plugin.config,
-        manifest,
-        onWarn: (message) => this.logger.warn(message),
-      }),
-      scope: parsePluginScope({
-        plugin,
-        onWarn: (message) => this.logger.warn(message),
-      }),
-    };
-  }
-
-  /**
-   * 读取持久化的插件 manifest。
-   * @param plugin 原始数据库记录
-   * @returns 归一化后的插件清单
-   */
-  private readPersistedManifest(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
-  ): PluginManifest {
-    return parsePersistedPluginManifest(
-      plugin.manifestJson,
-      {
-        id: plugin.name,
-        displayName: plugin.displayName,
-        description: plugin.description,
-        version: plugin.version,
-        runtimeKind: plugin.runtimeKind,
-      },
-      (message) => {
-        this.logger.warn(`plugin.manifestJson JSON 无效，已回退默认值: ${message}`);
-      },
-    );
   }
 
   /**
