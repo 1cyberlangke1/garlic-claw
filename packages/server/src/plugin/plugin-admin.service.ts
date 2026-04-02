@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
+import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
 /**
@@ -26,7 +26,7 @@ import { PluginService } from './plugin.service';
 export class PluginAdminService {
   constructor(
     private readonly pluginService: PluginService,
-    private readonly pluginRuntime: PluginRuntimeOrchestratorService,
+    private readonly pluginRuntime: PluginRuntimeService,
   ) {}
 
   /**

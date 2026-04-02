@@ -1,5 +1,4 @@
 import type {
-  PluginActionName,
   PluginManifest,
   PluginRuntimeKind,
 } from '@garlic-claw/shared';
@@ -115,20 +114,5 @@ export class PluginRuntimeOrchestratorService {
       }
       throw error;
     }
-  }
-
-  listSupportedActions(pluginId: string): PluginActionName[] {
-    return this.pluginRuntime.listSupportedActions(pluginId);
-  }
-
-  async runPluginAction(input: {
-    pluginId: string;
-    action: Exclude<PluginActionName, 'health-check'>;
-  }): Promise<void> {
-    await this.pluginRuntime.runPluginAction(input);
-  }
-
-  async checkPluginHealth(pluginId: string): Promise<{ ok: boolean }> {
-    return this.pluginRuntime.checkPluginHealth(pluginId);
   }
 }

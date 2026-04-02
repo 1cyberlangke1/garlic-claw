@@ -232,6 +232,10 @@
     - `packages/server/src/plugin/plugin-runtime-orchestrator.service.ts`
     先把 plugin 持久化注册、governance 刷新、heartbeat 与 loaded/unloaded 生命周期编排从 runtime kernel 中拆出
   - `BuiltinPluginLoader` / `PluginGateway` / `PluginController` / `PluginAdminService` 已改为优先依赖 orchestrator，而不是直接把宿主编排压在 `PluginRuntimeService` 上
+  - `PluginAdminService` 已回退为：
+    - 生命周期仍经由 orchestrator
+    - 支持动作列表 / 运行时治理动作 / 健康检查 直接读取 `PluginRuntimeService`
+    让 orchestrator 继续只保留生命周期编排，而不再夹带 runtime 只读/执行透传薄壳
   - `PluginRuntimeService.registerPlugin / refreshPluginGovernance / unregisterPlugin` 已收窄为 kernel record/cache 操作，不再直接承担：
     - `pluginService.registerPlugin`
     - `pluginService.getGovernanceSnapshot`
@@ -243,6 +247,11 @@
   - 已新增：
     - `packages/server/src/plugin/plugin-runtime-orchestrator.service.spec.ts`
     把原先依赖持久化与 cron 副作用的 runtime lifecycle 断言迁到 orchestrator spec
+  - `plugin-runtime-orchestrator.service.ts` 已删除：
+    - `listSupportedActions(...)`
+    - `runPluginAction(...)`
+    - `checkPluginHealth(...)`
+    三个 runtime 纯透传方法
   - `plugin-runtime.service.ts` 主文件行数已从 `1949` 继续降到 `1907`
   - 已新增：
     - `packages/server/src/plugin/plugin-host-state.facade.ts`
