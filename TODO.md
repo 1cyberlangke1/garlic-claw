@@ -509,6 +509,17 @@
     - hook/route/command result-error 到 shared pending-request helper 的路由
     - host call / register 分支委派的统一入口
   - `plugin.gateway.ts` 主文件行数已从 `556` 继续降到 `470`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-record-view.helpers.ts`
+    继续把 persisted manifest 驱动的 config snapshot/resolved config/self info 视图样板从 `PluginService` 主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-record-view.helpers.spec.ts`
+    直接给 plugin record view helper 补 config defaults 与 self info 投影回归
+  - `PluginService` 已不再直接承载：
+    - config snapshot 组装
+    - resolved config 投影
+    - plugin self info 投影
+  - `plugin.service.ts` 主文件行数已从 `709` 继续降到 `690`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

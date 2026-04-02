@@ -43,6 +43,11 @@ import {
   validateAndNormalizePluginConfig,
   validatePluginScope,
 } from './plugin-persistence.helpers';
+import {
+  buildPluginConfigSnapshot,
+  buildPluginSelfInfo,
+  buildResolvedPluginConfig,
+} from './plugin-record-view.helpers';
 
 /**
  * 运行时可直接消费的插件治理快照。
@@ -277,18 +282,10 @@ export class PluginService {
    */
   async getPluginConfig(name: string): Promise<PluginConfigSnapshot> {
     const plugin = await this.findByNameOrThrow(name);
-    const manifest = readPersistedPluginManifestRecord({
+    return buildPluginConfigSnapshot({
       plugin,
       onWarn: (message) => this.logger.warn(message),
     });
-    return {
-      schema: manifest.config ?? null,
-      values: resolvePluginConfig({
-        rawConfig: plugin.config,
-        manifest,
-        onWarn: (message) => this.logger.warn(message),
-      }),
-    };
   }
 
   /**
@@ -298,12 +295,8 @@ export class PluginService {
    */
   async getResolvedConfig(name: string): Promise<JsonObject> {
     const plugin = await this.findByNameOrThrow(name);
-    return resolvePluginConfig({
-      rawConfig: plugin.config,
-      manifest: readPersistedPluginManifestRecord({
-        plugin,
-        onWarn: (message) => this.logger.warn(message),
-      }),
+    return buildResolvedPluginConfig({
+      plugin,
       onWarn: (message) => this.logger.warn(message),
     });
   }
@@ -426,22 +419,10 @@ export class PluginService {
    */
   async getPluginSelfInfo(name: string): Promise<PluginSelfInfo> {
     const plugin = await this.findByNameOrThrow(name);
-    const manifest = readPersistedPluginManifestRecord({
+    return buildPluginSelfInfo({
       plugin,
       onWarn: (message) => this.logger.warn(message),
     });
-    return {
-      id: plugin.name,
-      name: manifest.name,
-      runtimeKind: plugin.runtimeKind === 'builtin' ? 'builtin' : 'remote',
-      version: manifest.version || undefined,
-      description: manifest.description ?? undefined,
-      permissions: [...manifest.permissions],
-      ...(manifest.crons ? { crons: [...manifest.crons] } : {}),
-      ...(manifest.commands ? { commands: [...manifest.commands] } : {}),
-      hooks: [...(manifest.hooks ?? [])],
-      routes: [...(manifest.routes ?? [])],
-    };
   }
 
   /**
