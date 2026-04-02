@@ -20,26 +20,22 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { JsonObject } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import {
-  clonePluginGatewayCallContext,
-  resolvePluginGatewayHostCallContext,
   resolvePluginGatewayManifest,
-  sameAuthorizedPluginGatewayContext,
 } from './plugin-gateway-context.helpers';
 import {
   handlePluginGatewayErrorMessage,
   handlePluginGatewayResultMessage,
 } from './plugin-gateway-dispatch.helpers';
+import { handlePluginGatewayHostCall } from './plugin-gateway-host.helpers';
 import {
   authenticatePluginGatewayConnection,
   disconnectPluginGatewayConnection,
   registerPluginGatewayConnection,
 } from './plugin-gateway-lifecycle.helpers';
 import {
-  isConnectionScopedHostMethod,
   readAuthPayload,
   readDataPayload,
   readErrorPayload,
-  readHostCallPayload,
   readPluginGatewayMessage,
   readRegisterPayload,
   readRouteResultPayload,
@@ -52,7 +48,6 @@ import {
   sweepStalePluginGatewayConnections,
 } from './plugin-gateway-runtime.helpers';
 import {
-  readPluginGatewayRequestId,
   rejectPluginGatewayPendingRequestsForSocket,
   sendPluginGatewayMessage,
   sendPluginGatewayProtocolError,
@@ -574,59 +569,14 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     conn: PluginConnection,
     msg: PluginGatewayInboundMessage,
   ): Promise<void> {
-    const requestId = readPluginGatewayRequestId({
+    await handlePluginGatewayHostCall({
+      ws,
+      connection: conn,
       msg,
-      onMissing: (message) => this.logger.warn(message),
+      activeRequestContexts: this.activeRequestContexts,
+      callHost: (input) => this.pluginRuntime.callHost(input),
+      logWarn: (message) => this.logger.warn(message),
     });
-    if (!requestId) {
-      return;
-    }
-
-    const payload = readHostCallPayload(msg.payload);
-    if (!payload) {
-      sendPluginGatewayMessage({
-        ws,
-        type: WS_TYPE.PLUGIN,
-        action: WS_ACTION.HOST_ERROR,
-        payload: { error: '无效的 Host API 调用负载' },
-        requestId,
-      });
-      return;
-    }
-
-    try {
-      const context = resolvePluginGatewayHostCallContext({
-        ws: conn.ws,
-        method: payload.method,
-        context: payload.context,
-        activeRequestContexts: this.activeRequestContexts,
-        isConnectionScopedHostMethod: (method) => isConnectionScopedHostMethod(method),
-        isSameContext: sameAuthorizedPluginGatewayContext,
-        cloneContext: clonePluginGatewayCallContext,
-      });
-      const result = await this.pluginRuntime.callHost({
-        pluginId: conn.pluginName,
-        context,
-        method: payload.method,
-        params: payload.params,
-      });
-      sendPluginGatewayMessage({
-        ws,
-        type: WS_TYPE.PLUGIN,
-        action: WS_ACTION.HOST_RESULT,
-        payload: { data: result },
-        requestId,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      sendPluginGatewayMessage({
-        ws,
-        type: WS_TYPE.PLUGIN,
-        action: WS_ACTION.HOST_ERROR,
-        payload: { error: message },
-        requestId,
-      });
-    }
   }
 
   /**

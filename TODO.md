@@ -464,6 +464,18 @@
     - register manifest + transport 装配后的统一 ack
     - disconnect 时的 pending request 清理、active/old connection 判定与 unregister 调度
   - `plugin.gateway.ts` 主文件行数已从 `667` 继续降到 `641`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-host.helpers.ts`
+    继续把远程 Host API bridge 的 requestId/payload/context/result-error 样板从网关主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-host.helpers.spec.ts`
+    直接给 gateway host helper 补 approved context、connection-scoped fallback 与回包规则回归
+  - `PluginGateway` 已不再直接承载：
+    - Host requestId 读取与缺失日志
+    - Host payload 校验失败时的统一 error 返回
+    - approved context 匹配与 connection-scoped fallback
+    - runtime `callHost(...)` 成功/失败回包
+  - `plugin.gateway.ts` 主文件行数已从 `641` 继续降到 `593`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口
