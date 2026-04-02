@@ -32,14 +32,12 @@ import {
 } from './plugin-event.helpers';
 import {
   buildPluginGovernanceSnapshot,
-  readPersistedPluginManifestRecord,
 } from './plugin-governance.helpers';
 import {
   parsePluginScope,
-  resolvePluginConfig,
-  validateAndNormalizePluginConfig,
   validatePluginScope,
 } from './plugin-persistence.helpers';
+import { preparePluginConfigUpdate } from './plugin-config-write.helpers';
 import {
   buildPluginFailureUpdate,
   buildPluginSuccessUpdate,
@@ -403,31 +401,19 @@ export class PluginService {
     values: JsonObject,
   ): Promise<PluginConfigSnapshot> {
     const plugin = await this.findByNameOrThrow(name);
-    const manifest = readPersistedPluginManifestRecord({
+    const prepared = preparePluginConfigUpdate({
+      name,
       plugin,
+      values,
       onWarn: (message) => this.logger.warn(message),
     });
-    const schema = manifest.config ?? null;
-    if (!schema) {
-      throw new BadRequestException(`插件 ${name} 未声明配置 schema`);
-    }
-
-    const normalized = validateAndNormalizePluginConfig(schema, values);
-    const updated = await this.prisma.plugin.update({
+    await this.prisma.plugin.update({
       where: { name },
       data: {
-        config: JSON.stringify(normalized),
+        config: prepared.persistedConfigJson,
       },
     });
-
-    return {
-      schema,
-      values: resolvePluginConfig({
-        rawConfig: updated.config,
-        manifest,
-        onWarn: (message) => this.logger.warn(message),
-      }),
-    };
+    return prepared.snapshot;
   }
 
   /**

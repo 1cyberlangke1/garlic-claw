@@ -563,6 +563,17 @@
     - storage upsert payload 组装
     - persisted storage value 解析与 entry list 投影
   - `plugin.service.ts` 主文件行数已从 `648` 继续降到 `636`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-config-write.helpers.ts`
+    继续把 plugin config update 的 schema 校验/normalize/持久化 snapshot 样板从 `PluginService` 主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-config-write.helpers.spec.ts`
+    直接给 plugin config write helper 补 schema 缺失拒绝与 persisted snapshot 回归
+  - `PluginService` 已不再直接承载：
+    - persisted manifest 驱动的 schema 读取
+    - config values 校验与 normalize
+    - persisted config JSON 与返回 snapshot 组装
+  - `plugin.service.ts` 主文件行数已从 `636` 继续降到 `624`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口
