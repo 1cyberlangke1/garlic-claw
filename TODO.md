@@ -350,6 +350,10 @@
     - governance refresh 后的 disabled session 收口
     - unregister 时的 owner session 清理
   - `plugin-runtime.service.ts` 主文件行数已从 `763` 继续降到 `746`
+  - `PluginRuntimeService` 已继续收口：
+    - broadcast hook 的统一分发表样板
+    - subagent hook 的 JSON payload adapter 样板
+  - `plugin-runtime.service.ts` 主文件行数已从 `746` 继续降到 `738`
   - 已新增：
     - `packages/server/src/plugin/plugin-event.helpers.ts`
     继续把插件事件/健康快照相关的纯规则和查询组装从持久化主类中拆出
