@@ -574,6 +574,28 @@
     - config values 校验与 normalize
     - persisted config JSON 与返回 snapshot 组装
   - `plugin.service.ts` 主文件行数已从 `636` 继续降到 `624`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-lifecycle.helpers.ts`
+    继续把 online/offline/heartbeat 的状态写回与 lifecycle 事件样板从 `PluginService` 主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-lifecycle.helpers.spec.ts`
+    直接给 plugin lifecycle helper 补 online/offline/heartbeat mutation 与 lifecycle event 选择回归
+  - `PluginService` 已不再直接承载：
+    - online/offline 状态写回数据组装
+    - heartbeat 时间戳写回
+    - lifecycle online/offline 事件选择
+  - 该切片后主文件体量一度到 `631`，后续继续减法后已降到 `614`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-scope-write.helpers.ts`
+    继续把 plugin scope update 的校验/normalize/持久化样板从 `PluginService` 主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-scope-write.helpers.spec.ts`
+    直接给 plugin scope write helper 补 protected builtin 拦截与 normalized updateData 回归
+  - `PluginService` 已不再直接承载：
+    - scope 校验
+    - protected builtin 禁用拦截
+    - normalized scope 与持久化 updateData 组装
+  - `plugin.service.ts` 主文件行数已从 `631` 继续降到 `614`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

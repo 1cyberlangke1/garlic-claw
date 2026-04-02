@@ -18,10 +18,6 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  assertPluginScopeCanBeUpdated,
-  normalizePluginScopeForGovernance,
-} from './plugin-governance-policy';
-import {
   buildPluginEventWhere,
   buildPluginEventListResult,
   buildPluginHealthSnapshot,
@@ -35,13 +31,19 @@ import {
 } from './plugin-governance.helpers';
 import {
   parsePluginScope,
-  validatePluginScope,
 } from './plugin-persistence.helpers';
 import { preparePluginConfigUpdate } from './plugin-config-write.helpers';
+import { preparePluginScopeUpdate } from './plugin-scope-write.helpers';
 import {
   buildPluginFailureUpdate,
   buildPluginSuccessUpdate,
 } from './plugin-health.helpers';
+import {
+  buildPluginHeartbeatMutation,
+  buildPluginLifecycleEvent,
+  buildPluginOfflineMutation,
+  buildPluginOnlineMutation,
+} from './plugin-lifecycle.helpers';
 import { buildPluginRegistrationEvent, buildPluginRegistrationUpsertData } from './plugin-register.helpers';
 import { buildPluginConfigSnapshot, buildPluginSelfInfo, buildResolvedPluginConfig } from './plugin-record-view.helpers';
 import {
@@ -163,20 +165,20 @@ export class PluginService {
    * @returns 更新后的数据库记录
    */
   async setOnline(name: string) {
+    const now = new Date();
     const updated = await this.prisma.plugin.update({
       where: { name },
-      data: {
-        status: 'online',
-        healthStatus: 'healthy',
-        lastSeenAt: new Date(),
-      },
+      data: buildPluginOnlineMutation(now),
+    });
+    const lifecycleEvent = buildPluginLifecycleEvent({
+      status: 'online',
     });
     await createPluginEvent({
       prisma: this.prisma,
       pluginId: updated.id,
-      type: 'lifecycle:online',
-      level: 'info',
-      message: '插件已上线',
+      type: lifecycleEvent.type,
+      level: lifecycleEvent.level,
+      message: lifecycleEvent.message,
     });
     return updated;
   }
@@ -189,17 +191,17 @@ export class PluginService {
   async setOffline(name: string) {
     const updated = await this.prisma.plugin.update({
       where: { name },
-      data: {
-        status: 'offline',
-        healthStatus: 'offline',
-      },
+      data: buildPluginOfflineMutation(),
+    });
+    const lifecycleEvent = buildPluginLifecycleEvent({
+      status: 'offline',
     });
     await createPluginEvent({
       prisma: this.prisma,
       pluginId: updated.id,
-      type: 'lifecycle:offline',
-      level: 'warn',
-      message: '插件已离线',
+      type: lifecycleEvent.type,
+      level: lifecycleEvent.level,
+      message: lifecycleEvent.message,
     });
     return updated;
   }
@@ -210,9 +212,10 @@ export class PluginService {
    * @returns 更新后的数据库记录
    */
   async heartbeat(name: string) {
+    const now = new Date();
     return this.prisma.plugin.update({
       where: { name },
-      data: { lastSeenAt: new Date() },
+      data: buildPluginHeartbeatMutation(now),
     });
   }
 
@@ -440,30 +443,16 @@ export class PluginService {
     scope: PluginScopeSettings,
   ): Promise<PluginScopeSettings> {
     const plugin = await this.findByNameOrThrow(name);
-    validatePluginScope(scope);
-    assertPluginScopeCanBeUpdated({
-      pluginId: plugin.name,
-      runtimeKind: plugin.runtimeKind,
-      scope,
-    });
-    const normalizedScope = normalizePluginScopeForGovernance({
-      pluginId: plugin.name,
-      runtimeKind: plugin.runtimeKind,
+    const prepared = preparePluginScopeUpdate({
+      plugin,
       scope,
     });
 
-    const updated = await this.prisma.plugin.update({
+    await this.prisma.plugin.update({
       where: { name },
-      data: {
-        defaultEnabled: normalizedScope.defaultEnabled,
-        conversationScopes: JSON.stringify(normalizedScope.conversations),
-      },
+      data: prepared.updateData,
     });
-
-    return parsePluginScope({
-      plugin: updated,
-      onWarn: (message) => this.logger.warn(message),
-    });
+    return prepared.normalizedScope;
   }
 
   /**
