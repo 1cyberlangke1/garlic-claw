@@ -603,6 +603,8 @@
     - `executeCommand(...)`
     - `getConnectedPlugins()`
   - `plugin.gateway.ts` 主文件行数已从 `399` 继续降到 `364`
+  - `PluginController` 已删除单次 fallback / type-guard helper，并去掉 session 查询与强制结束入口的 `Promise.resolve(...)` 包装
+  - `plugin.controller.ts` 主文件行数已从 `374` 继续降到 `370`
   - 已删除 `McpService` 中未被宿主消费的城市坐标预加载与查询死代码：
     - `packages/server/src/mcp/mcp.service.ts`
     - `packages/server/src/mcp/mcp-path.util.ts`

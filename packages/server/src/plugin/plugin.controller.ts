@@ -41,6 +41,8 @@ import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
+const PERSISTED_SUPPORTED_ACTIONS: PluginActionName[] = ['health-check'];
+
 @ApiTags('Plugins')
 @ApiBearerAuth()
 @Controller('plugins')
@@ -80,7 +82,7 @@ export class PluginController {
           ?? (p.runtimeKind === 'builtin' ? 'builtin' : 'remote'),
         version: manifest.version,
         supportedActions: runtimePlugin?.supportedActions
-          ?? resolvePersistedSupportedActions(),
+          ?? PERSISTED_SUPPORTED_ACTIONS,
         crons: await this.pluginCronService.listCronJobs(p.name),
         manifest,
         health: serializePluginHealth(p, runtimePlugin?.runtimePressure ?? null),
@@ -233,21 +235,22 @@ export class PluginController {
   @Get(':name/sessions')
   @UseGuards(RolesGuard)
   @Roles('admin', 'super_admin')
-  listPluginConversationSessions(
+  async listPluginConversationSessions(
     @Param('name') name: string,
   ): Promise<PluginConversationSessionInfo[]> {
-    return Promise.resolve(this.pluginRuntime.listConversationSessions(name));
+    return this.pluginRuntime.listConversationSessions(name);
   }
 
   @Delete(':name/sessions/:conversationId')
   @UseGuards(RolesGuard)
   @Roles('admin', 'super_admin')
-  finishPluginConversationSession(
+  async finishPluginConversationSession(
     @Param('name') name: string,
     @Param('conversationId') conversationId: string,
   ): Promise<boolean> {
-    return Promise.resolve(
-      this.pluginRuntime.finishConversationSessionForGovernance(name, conversationId),
+    return this.pluginRuntime.finishConversationSessionForGovernance(
+      name,
+      conversationId,
     );
   }
 
@@ -273,7 +276,11 @@ export class PluginController {
     @Param('name') name: string,
     @Param('action') action: string,
   ): Promise<PluginActionResult> {
-    if (!isPluginActionName(action)) {
+    if (
+      action !== 'reload'
+      && action !== 'reconnect'
+      && action !== 'health-check'
+    ) {
       throw new BadRequestException(
         'action 必须是 reload / reconnect / health-check',
       );
@@ -344,18 +351,6 @@ function readPersistedHealthStatus(
     default:
       return 'unknown';
   }
-}
-
-/**
- * 为未接入当前 runtime 的插件记录提供保守治理动作回退。
- * @returns 最小治理动作列表
- */
-function resolvePersistedSupportedActions(): PluginActionName[] {
-  return ['health-check'];
-}
-
-function isPluginActionName(action: string): action is PluginActionName {
-  return action === 'reload' || action === 'reconnect' || action === 'health-check';
 }
 
 /**
