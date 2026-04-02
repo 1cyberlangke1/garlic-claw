@@ -54,7 +54,7 @@
 - [ ] 保留 `private scoped KV`
 - [ ] 保留 `exported resource snapshot`
 - [ ] 保留 `conversation / user scoped state`
-- [ ] 保留 `append-only event log`
+- [x] 保留 `append-only event log`
 - [ ] 默认不再为扩展继续新增核心专用 Prisma schema
 
 ## 减法优先级

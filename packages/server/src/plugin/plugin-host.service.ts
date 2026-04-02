@@ -89,6 +89,8 @@ export class PluginHostService {
         return this.searchKbEntries(input.params);
       case 'kb.get':
         return this.getKbEntry(input.params);
+      case 'log.list':
+        return this.listLogs(input.pluginId, input.params);
       case 'log.write':
         return this.writeLog(input.pluginId, input.params);
       case 'persona.current.get':
@@ -363,7 +365,7 @@ export class PluginHostService {
     const limit = this.readNumber(params, 'limit') ?? 10;
     const memories = await this.memoryService.searchMemories(userId, query, limit);
 
-    return memories.map((memory) => ({
+    return memories.map((memory: (typeof memories)[number]) => ({
       id: memory.id,
       content: memory.content,
       category: memory.category,
@@ -596,6 +598,37 @@ export class PluginHostService {
   }
 
   /**
+   * 读取当前插件的事件日志。
+   * @param pluginId 插件 ID
+   * @param params 查询参数
+   * @returns 事件日志分页结果
+   */
+  private async listLogs(
+    pluginId: string,
+    params: JsonObject,
+  ): Promise<JsonValue> {
+    const limit = this.readNumber(params, 'limit');
+    if (limit !== null && (!Number.isInteger(limit) || limit <= 0)) {
+      throw new BadRequestException('limit 必须是正整数');
+    }
+
+    const type = this.readString(params, 'type');
+    const keyword = this.readString(params, 'keyword');
+    const cursor = this.readString(params, 'cursor');
+    const result = await this.pluginService.listPluginEvents(pluginId, {
+      ...(limit !== null ? { limit } : {}),
+      ...(Object.prototype.hasOwnProperty.call(params, 'level')
+        ? { level: this.readEventLevel(params, 'level') }
+        : {}),
+      ...(type ? { type } : {}),
+      ...(keyword ? { keyword } : {}),
+      ...(cursor ? { cursor } : {}),
+    });
+
+    return toJsonValue(result);
+  }
+
+  /**
    * 读取插件自己的运行时状态。
    * @param pluginId 插件 ID
    * @param params 查询参数
@@ -686,7 +719,7 @@ export class PluginHostService {
     });
 
     return toJsonValue(
-      messages.map((message) => ({
+      messages.map((message: (typeof messages)[number]) => ({
         id: message.id,
         role: message.role,
         content: message.content,

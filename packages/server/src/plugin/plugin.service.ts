@@ -27,6 +27,20 @@ import {
   serializePersistedPluginManifest,
 } from './plugin-manifest.persistence';
 
+type PluginRecord = Awaited<ReturnType<PluginService['findByNameOrThrow']>>;
+type PluginStorageRecord = {
+  key: string;
+  valueJson: string | null;
+};
+type PluginEventRecord = {
+  id: string;
+  type: string;
+  level: string;
+  message: string;
+  metadataJson: string | null;
+  createdAt: Date;
+};
+
 /**
  * 运行时可直接消费的插件治理快照。
  */
@@ -357,7 +371,7 @@ export class PluginService {
       },
     });
 
-    return entries.map((entry) => ({
+    return entries.map((entry: PluginStorageRecord) => ({
       key: entry.key,
       value: this.parseStoredJsonValue(
         entry.valueJson,
@@ -502,14 +516,15 @@ export class PluginService {
       take: normalized.limit + 1,
     });
     const hasMore = events.length > normalized.limit;
-    const items = (hasMore ? events.slice(0, normalized.limit) : events).map((event) => ({
+    const items = (hasMore ? events.slice(0, normalized.limit) : events).map(
+      (event: PluginEventRecord) => ({
       id: event.id,
       type: event.type,
       level: this.parseEventLevel(event.level),
       message: event.message,
       metadata: this.parseNullableJsonObject(event.metadataJson),
       createdAt: event.createdAt.toISOString(),
-    }));
+      }));
 
     return {
       items,
@@ -656,7 +671,7 @@ export class PluginService {
    * @returns 配置 schema、解析后的配置值和作用域
    */
   private buildGovernanceSnapshot(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
+    plugin: PluginRecord,
   ): PluginGovernanceSnapshot {
     const manifest = this.readPersistedManifest(plugin);
     return {
@@ -703,7 +718,7 @@ export class PluginService {
    * @returns 归一化后的插件清单
    */
   private readPersistedManifest(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
+    plugin: PluginRecord,
   ): PluginManifest {
     return parsePersistedPluginManifest(
       plugin.manifestJson,
@@ -726,7 +741,7 @@ export class PluginService {
    * @returns 健康摘要
    */
   private buildHealthSnapshot(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
+    plugin: PluginRecord,
   ): PluginHealthSnapshot {
     return {
       status: plugin.status === 'offline'
@@ -803,7 +818,7 @@ export class PluginService {
    * @returns 归一化后的作用域设置
    */
   private parseScope(
-    plugin: Awaited<ReturnType<PluginService['findByNameOrThrow']>>,
+    plugin: PluginRecord,
   ): PluginScopeSettings {
     const conversations = this.parseBooleanRecord(plugin.conversationScopes);
     return normalizePluginScopeForGovernance({
@@ -1071,10 +1086,13 @@ export class PluginService {
    * @returns 解析结果或回退值
    */
   private parseStoredJsonValue(
-    raw: string,
+    raw: string | null,
     fallback: JsonValue | null,
     label: string,
   ): JsonValue | null {
+    if (!raw) {
+      return fallback;
+    }
     const parsed = this.safeParse(raw, label);
     return isJsonValue(parsed) ? parsed : fallback;
   }

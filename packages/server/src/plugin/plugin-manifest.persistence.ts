@@ -36,6 +36,7 @@ const PLUGIN_PERMISSIONS: PluginPermission[] = [
   'conversation:write',
   'config:read',
   'kb:read',
+  'log:read',
   'llm:generate',
   'log:write',
   'memory:read',

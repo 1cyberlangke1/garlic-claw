@@ -108,7 +108,8 @@ export class PluginSubagentTaskService {
     });
 
     return {
-      tasks: records.map((record) => this.serializeTaskSummary(record)),
+      tasks: records.map((record: PersistedPluginSubagentTaskRecord) =>
+        this.serializeTaskSummary(record)),
     };
   }
 
