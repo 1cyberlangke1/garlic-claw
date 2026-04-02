@@ -2,20 +2,19 @@ import { onMounted, ref } from 'vue'
 import type {
   AiHostModelRoutingConfig,
   AiModelConfig,
+  AiProviderCatalogItem,
   AiProviderConfig,
   AiProviderSummary,
   DiscoveredAiModel,
-  OfficialProviderCatalogItem,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import * as api from '../api'
 import {
   formatConnectionSuccess,
-  loadHostModelRoutingOptions,
   importDiscoveredProviderModels,
-  loadProviderSelectionData,
+  loadProviderModelOptions,
   loadProviderSettingsBaseData,
-  loadVisionModelOptions,
+  loadProviderSelectionData,
   saveProviderConfig,
   toErrorMessage,
   type HostModelRoutingOption,
@@ -39,11 +38,12 @@ export function useProviderSettings() {
   const discoveringModels = ref(false)
   const testingConnection = ref(false)
   const error = ref<string | null>(null)
-  const catalog = ref<OfficialProviderCatalogItem[]>([])
+  const catalog = ref<AiProviderCatalogItem[]>([])
   const providers = ref<AiProviderSummary[]>([])
   const selectedProviderId = ref<string | null>(null)
   const selectedProvider = ref<AiProviderConfig | null>(null)
   const selectedModels = ref<AiModelConfig[]>([])
+  const providerModelsByProviderId = ref<Record<string, AiModelConfig[]>>({})
   const visionConfig = ref<VisionFallbackConfig>({ enabled: false })
   const hostModelRoutingConfig = ref<AiHostModelRoutingConfig>({
     fallbackChatModels: [],
@@ -64,7 +64,7 @@ export function useProviderSettings() {
     void refreshAll()
   })
 
-  async function refreshAll() {
+  async function refreshAll(preferredProviderId?: string) {
     loadingProviders.value = true
     error.value = null
     try {
@@ -76,9 +76,13 @@ export function useProviderSettings() {
         fallbackChatModels: [],
         utilityModelRoles: {},
       }
-      await selectFallbackProvider()
-      await refreshVisionOptions()
-      await refreshHostModelRoutingOptions()
+      providerModelsByProviderId.value = Object.fromEntries(
+        Object.entries(providerModelsByProviderId.value).filter(([providerId]) =>
+          baseData.providers.some((provider) => provider.id === providerId),
+        ),
+      )
+      const selectedSelection = await selectAvailableProvider(preferredProviderId)
+      await refreshProviderModelOptions(selectedSelection)
     } catch (caughtError) {
       error.value = toErrorMessage(
         caughtError instanceof Error ? caughtError : undefined,
@@ -92,34 +96,40 @@ export function useProviderSettings() {
   /**
    * 根据当前选择或首个可用 provider 同步右侧详情。
    */
-  async function selectFallbackProvider() {
+  async function selectAvailableProvider(preferredProviderId?: string) {
+    const preferred = preferredProviderId
+      ? providers.value.find((provider) => provider.id === preferredProviderId)
+      : undefined
     const current = providers.value.find(
       (provider) => provider.id === selectedProviderId.value,
     )
-    const next = current ?? providers.value[0]
+    const next = preferred ?? current ?? providers.value[0]
 
     if (!next) {
       selectedProviderId.value = null
       selectedProvider.value = null
       selectedModels.value = []
-      return
+      return null
     }
 
-    await selectProvider(next.id)
+    return selectProvider(next.id)
   }
 
   async function selectProvider(providerId: string) {
     const requestId = ++providerSelectionRequestId
+    const isProviderSwitch = selectedProviderId.value !== providerId
     discoveryRequestId += 1
     connectionTestRequestId += 1
     selectedProviderId.value = providerId
-    selectedProvider.value = null
-    selectedModels.value = []
-    discoveredModels.value = []
-    showDiscoveryDialog.value = false
-    discoveringModels.value = false
-    testingConnection.value = false
-    connectionResult.value = null
+    if (isProviderSwitch) {
+      selectedProvider.value = null
+      selectedModels.value = []
+      discoveredModels.value = []
+      showDiscoveryDialog.value = false
+      discoveringModels.value = false
+      testingConnection.value = false
+      connectionResult.value = null
+    }
     const selectionData = await loadProviderSelectionData(providerId)
     if (
       requestId !== providerSelectionRequestId ||
@@ -130,6 +140,11 @@ export function useProviderSettings() {
 
     selectedProvider.value = selectionData.provider
     selectedModels.value = selectionData.models
+    providerModelsByProviderId.value = {
+      ...providerModelsByProviderId.value,
+      [selectionData.provider.id]: selectionData.models,
+    }
+    return selectionData
   }
 
   function openCreateDialog() {
@@ -148,8 +163,7 @@ export function useProviderSettings() {
   async function saveProvider(provider: AiProviderConfig) {
     showProviderDialog.value = false
     await saveProviderConfig(provider)
-    await refreshAll()
-    await selectProvider(provider.id)
+    await refreshAll(provider.id)
   }
 
   async function deleteSelectedProvider() {
@@ -167,9 +181,7 @@ export function useProviderSettings() {
     await api.upsertAiModel(selectedProvider.value.id, payload.modelId, {
       name: payload.name,
     })
-    await selectProvider(selectedProvider.value.id)
-    await refreshVisionOptions()
-    await refreshHostModelRoutingOptions()
+    await reloadSelectedProvider(selectedProvider.value.id)
   }
 
   /**
@@ -233,9 +245,7 @@ export function useProviderSettings() {
       discoveredModels.value,
       modelIds,
     )
-    await selectProvider(providerId)
-    await refreshVisionOptions()
-    await refreshHostModelRoutingOptions()
+    await reloadSelectedProvider(providerId)
   }
 
   async function deleteModel(modelId: string) {
@@ -243,17 +253,32 @@ export function useProviderSettings() {
       return
     }
     await api.deleteAiModel(selectedProvider.value.id, modelId)
-    await selectProvider(selectedProvider.value.id)
-    await refreshVisionOptions()
-    await refreshHostModelRoutingOptions()
+    await reloadSelectedProvider(selectedProvider.value.id)
   }
 
   async function setDefaultModel(modelId: string) {
     if (!selectedProvider.value) {
       return
     }
-    await api.setAiProviderDefaultModel(selectedProvider.value.id, modelId)
-    await selectProvider(selectedProvider.value.id)
+    const updatedProvider = await api.setAiProviderDefaultModel(
+      selectedProvider.value.id,
+      modelId,
+    )
+    selectedProvider.value = updatedProvider
+    providers.value = providers.value.map((provider) =>
+      provider.id === updatedProvider.id
+        ? {
+            ...provider,
+            name: updatedProvider.name,
+            mode: updatedProvider.mode,
+            driver: updatedProvider.driver,
+            defaultModel: updatedProvider.defaultModel,
+            baseUrl: updatedProvider.baseUrl,
+            modelCount: updatedProvider.models.length,
+            available: Boolean(updatedProvider.apiKey),
+          }
+        : provider,
+    )
   }
 
   /**
@@ -273,9 +298,7 @@ export function useProviderSettings() {
       payload.modelId,
       payload.capabilities,
     )
-    await selectProvider(selectedProvider.value.id)
-    await refreshVisionOptions()
-    await refreshHostModelRoutingOptions()
+    await reloadSelectedProvider(selectedProvider.value.id)
   }
 
   /**
@@ -341,14 +364,38 @@ export function useProviderSettings() {
   }
 
   /**
-   * 重新构建 Vision Fallback 可选模型列表。
+   * 重新构建 provider 相关模型候选列表。
    */
-  async function refreshVisionOptions() {
-    visionOptions.value = await loadVisionModelOptions(providers.value)
+  async function refreshProviderModelOptions(
+    selectionData?: Awaited<ReturnType<typeof loadProviderSelectionData>> | null,
+  ) {
+    const options = await loadProviderModelOptions({
+      providers: providers.value,
+      preloadedModelsByProviderId: {
+        ...providerModelsByProviderId.value,
+        ...(selectionData?.provider
+          ? {
+              [selectionData.provider.id]: selectionData.models,
+            }
+          : {}),
+      },
+    })
+    providerModelsByProviderId.value = options.modelsByProviderId
+    visionOptions.value = options.visionOptions
+    hostModelRoutingOptions.value = options.hostModelRoutingOptions
   }
 
-  async function refreshHostModelRoutingOptions() {
-    hostModelRoutingOptions.value = await loadHostModelRoutingOptions(providers.value)
+  async function reloadSelectedProvider(providerId?: string) {
+    const targetProviderId =
+      providerId ?? selectedProvider.value?.id ?? selectedProviderId.value
+    if (!targetProviderId) {
+      await refreshProviderModelOptions(null)
+      return null
+    }
+
+    const selectionData = await selectProvider(targetProviderId)
+    await refreshProviderModelOptions(selectionData)
+    return selectionData
   }
 
   return {

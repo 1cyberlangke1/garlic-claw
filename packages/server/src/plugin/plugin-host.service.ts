@@ -1,23 +1,11 @@
 import type {
-  AiUtilityModelRole,
-  ChatMessagePart,
   HostCallPayload,
-  PluginEventLevel,
-  PluginKbEntryDetail,
-  PluginKbEntrySummary,
   PluginCallContext,
   PluginLlmGenerateParams,
   PluginLlmGenerateResult,
-  PluginPersonaCurrentInfo,
-  PluginPersonaSummary,
-  PluginLlmMessage,
-  PluginProviderCurrentInfo,
-  PluginProviderModelSummary,
-  PluginProviderSummary,
 } from '@garlic-claw/shared';
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -26,18 +14,49 @@ import { AiManagementService } from '../ai/ai-management.service';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { ModelRegistryService } from '../ai/registry/model-registry.service';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
-import { deserializeMessageParts } from '../chat/message-parts';
-import { toAiSdkMessages } from '../chat/sdk-message-converter';
 import { toJsonValue } from '../common/utils/json-value';
 import { KbService } from '../kb/kb.service';
 import { MemoryService } from '../memory/memory.service';
 import { PersonaService } from '../persona/persona.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  buildConversationMessageSummaries,
+  buildHostGenerateExecutionInput,
+  buildCurrentHostProviderInfo,
+  buildHostGenerateResult,
+  buildHostGenerateTextResult,
+  findHostProviderSummaryOrThrow,
+  requireHostConversationRecord,
+  requireHostUserSummary,
+  resolveHostProviderModelSummary,
+  readHostGenerateParams,
+  readHostEventLevel,
+  readHostLlmMessages,
+  readHostNumber,
+  readHostObject,
+  resolveHostUtilityRoleForGeneration,
+  readHostString,
+  requireHostConversationId,
+  requireHostJsonValue,
+  requireHostString,
+  requireHostUserId,
+  toConversationSummary,
+  toMemorySummary,
+} from './plugin-host.helpers';
+import {
+  buildPluginScopedStateKey,
+  buildPluginScopedStatePrefix,
+  resolvePluginScopedStateTarget,
+  stripPluginScopedStatePrefix,
+} from './plugin-scoped-state.helpers';
 import { PluginStateService } from './plugin-state.service';
 import { PluginService } from './plugin.service';
 
 /**
  * 插件 Host API 服务。
+ *
+ * NOTE: 当前保持单文件，因为 Host API 分发表、上下文校验和宿主能力映射仍共享同一套私有解析 helper；
+ * 继续减法时会优先外提重复读写与摘要序列化，避免把强耦合的入口语义打散到多处。
  *
  * 输入:
  * - 插件 ID
@@ -89,6 +108,8 @@ export class PluginHostService {
         return this.searchKbEntries(input.params);
       case 'kb.get':
         return this.getKbEntry(input.params);
+      case 'log.list':
+        return this.listLogs(input.pluginId, input.params);
       case 'log.write':
         return this.writeLog(input.pluginId, input.params);
       case 'persona.current.get':
@@ -120,17 +141,21 @@ export class PluginHostService {
       case 'plugin.self.get':
         return this.getPluginSelf(input.pluginId);
       case 'storage.delete':
-        return this.deleteStorage(input.pluginId, input.params);
+        return this.deleteStorage(input.pluginId, input.context, input.params);
       case 'storage.get':
-        return this.getStorage(input.pluginId, input.params);
+        return this.getStorage(input.pluginId, input.context, input.params);
       case 'storage.list':
-        return this.listStorage(input.pluginId, input.params);
+        return this.listStorage(input.pluginId, input.context, input.params);
       case 'storage.set':
-        return this.setStorage(input.pluginId, input.params);
+        return this.setStorage(input.pluginId, input.context, input.params);
+      case 'state.delete':
+        return this.deleteState(input.pluginId, input.context, input.params);
       case 'state.get':
-        return this.getState(input.pluginId, input.params);
+        return this.getState(input.pluginId, input.context, input.params);
+      case 'state.list':
+        return this.listState(input.pluginId, input.context, input.params);
       case 'state.set':
-        return this.setState(input.pluginId, input.params);
+        return this.setState(input.pluginId, input.context, input.params);
       case 'user.get':
         return this.getUser(input.context);
       case 'conversation.messages.list':
@@ -151,7 +176,7 @@ export class PluginHostService {
     params: JsonObject,
   ): Promise<JsonValue> {
     const config = await this.pluginService.getResolvedConfig(pluginId);
-    const key = this.readString(params, 'key');
+    const key = readHostString(params, 'key');
     if (!key) {
       return config;
     }
@@ -174,12 +199,7 @@ export class PluginHostService {
       'conversation.get',
     );
 
-    return {
-      id: conversation.id,
-      title: conversation.title,
-      createdAt: conversation.createdAt.toISOString(),
-      updatedAt: conversation.updatedAt.toISOString(),
-    };
+    return toConversationSummary(conversation);
   }
 
   /**
@@ -188,8 +208,8 @@ export class PluginHostService {
    * @returns KB 摘要列表
    */
   private async listKbEntries(params: JsonObject): Promise<JsonValue> {
-    const limit = this.readNumber(params, 'limit') ?? 20;
-    const entries: PluginKbEntrySummary[] = await this.kbService.listEntries(limit);
+    const limit = readHostNumber(params, 'limit') ?? 20;
+    const entries = await this.kbService.listEntries(limit);
     return toJsonValue(entries);
   }
 
@@ -199,9 +219,9 @@ export class PluginHostService {
    * @returns KB 条目详情列表
    */
   private async searchKbEntries(params: JsonObject): Promise<JsonValue> {
-    const query = this.requireString(params, 'query');
-    const limit = this.readNumber(params, 'limit') ?? 5;
-    const entries: PluginKbEntryDetail[] = await this.kbService.searchEntries(
+    const query = requireHostString(params, 'query');
+    const limit = readHostNumber(params, 'limit') ?? 5;
+    const entries = await this.kbService.searchEntries(
       query,
       limit,
     );
@@ -214,8 +234,8 @@ export class PluginHostService {
    * @returns KB 条目详情
    */
   private async getKbEntry(params: JsonObject): Promise<JsonValue> {
-    const entryId = this.requireString(params, 'entryId');
-    const entry: PluginKbEntryDetail = await this.kbService.getEntry(entryId);
+    const entryId = requireHostString(params, 'entryId');
+    const entry = await this.kbService.getEntry(entryId);
     return toJsonValue(entry);
   }
 
@@ -227,7 +247,7 @@ export class PluginHostService {
   private async getCurrentPersona(
     context: PluginCallContext,
   ): Promise<JsonValue> {
-    const result: PluginPersonaCurrentInfo = await this.personaService.getCurrentPersona({
+    const result = await this.personaService.getCurrentPersona({
       conversationId: context.conversationId,
       activePersonaId: context.activePersonaId,
     });
@@ -240,7 +260,7 @@ export class PluginHostService {
    * @returns persona 摘要列表
    */
   private async listPersonas(): Promise<JsonValue> {
-    const personas: PluginPersonaSummary[] = await this.personaService.listPersonas();
+    const personas = await this.personaService.listPersonas();
     return toJsonValue(personas);
   }
 
@@ -250,7 +270,7 @@ export class PluginHostService {
    * @returns persona 摘要
    */
   private async getPersona(params: JsonObject): Promise<JsonValue> {
-    const personaId = this.requireString(params, 'personaId');
+    const personaId = requireHostString(params, 'personaId');
     const persona = await this.personaService.getPersona(personaId);
     return toJsonValue(persona);
   }
@@ -269,7 +289,7 @@ export class PluginHostService {
       context,
       'persona.activate',
     );
-    const personaId = this.requireString(params, 'personaId');
+    const personaId = requireHostString(params, 'personaId');
     const result = await this.personaService.activateConversationPersona(
       conversation.id,
       personaId,
@@ -284,24 +304,12 @@ export class PluginHostService {
    * @returns 当前 provider/model 摘要
    */
   private getCurrentProvider(context: PluginCallContext): JsonValue {
-    if (context.activeProviderId && context.activeModelId) {
-      const result: PluginProviderCurrentInfo = {
-        source: 'context',
-        providerId: context.activeProviderId,
-        modelId: context.activeModelId,
-      };
-
-      return toJsonValue(result);
-    }
-
-    const modelConfig = this.aiProviderService.getModelConfig();
-    const result: PluginProviderCurrentInfo = {
-      source: 'default',
-      providerId: String(modelConfig.providerId),
-      modelId: String(modelConfig.id),
-    };
-
-    return toJsonValue(result);
+    return toJsonValue(
+      buildCurrentHostProviderInfo(
+        context,
+        this.aiProviderService.getModelConfig(),
+      ),
+    );
   }
 
   /**
@@ -311,8 +319,7 @@ export class PluginHostService {
   private listProviders(): JsonValue {
     return toJsonValue(
       this.aiManagementService
-        .listProviders()
-        .map((provider) => this.toProviderSummary(provider)),
+        .listProviders(),
     );
   }
 
@@ -322,8 +329,16 @@ export class PluginHostService {
    * @returns provider 摘要
    */
   private getProvider(params: JsonObject): JsonValue {
-    const providerId = this.requireString(params, 'providerId');
-    return toJsonValue(this.findProviderSummaryOrThrow(providerId));
+    const providerId = requireHostString(params, 'providerId');
+    return toJsonValue(
+      findHostProviderSummaryOrThrow({
+        providers: this.aiManagementService.listProviders(),
+        providerId,
+        ensureExists: (missingProviderId) => {
+          this.aiManagementService.getProvider(missingProviderId);
+        },
+      }),
+    );
   }
 
   /**
@@ -332,20 +347,20 @@ export class PluginHostService {
    * @returns 模型摘要
    */
   private getProviderModel(params: JsonObject): JsonValue {
-    const providerId = this.requireString(params, 'providerId');
-    const modelId = this.requireString(params, 'modelId');
-    const model =
-      this.modelRegistryService.getModel(providerId, modelId)
-      ?? this.aiManagementService
-        .listModels(providerId)
-        .find((item) => String(item.id) === modelId);
+    const providerId = requireHostString(params, 'providerId');
+    const modelId = requireHostString(params, 'modelId');
+    const model = resolveHostProviderModelSummary({
+      registryModel: this.modelRegistryService.getModel(providerId, modelId) ?? undefined,
+      listedModels: this.aiManagementService.listModels(providerId),
+      modelId,
+    });
     if (!model) {
       throw new NotFoundException(
         `Model "${modelId}" not found for provider "${providerId}"`,
       );
     }
 
-    return toJsonValue(this.toProviderModelSummary(model));
+    return toJsonValue(model);
   }
 
   /**
@@ -358,17 +373,12 @@ export class PluginHostService {
     context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const userId = this.requireUserId(context, 'memory.search');
-    const query = this.requireString(params, 'query');
-    const limit = this.readNumber(params, 'limit') ?? 10;
+    const userId = requireHostUserId(context, 'memory.search');
+    const query = requireHostString(params, 'query');
+    const limit = readHostNumber(params, 'limit') ?? 10;
     const memories = await this.memoryService.searchMemories(userId, query, limit);
 
-    return memories.map((memory) => ({
-      id: memory.id,
-      content: memory.content,
-      category: memory.category,
-      createdAt: memory.createdAt.toISOString(),
-    }));
+    return memories.map((memory) => toMemorySummary(memory));
   }
 
   /**
@@ -381,10 +391,10 @@ export class PluginHostService {
     context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const userId = this.requireUserId(context, 'memory.save');
-    const content = this.requireString(params, 'content');
-    const category = this.readString(params, 'category') ?? 'general';
-    const keywords = this.readString(params, 'keywords');
+    const userId = requireHostUserId(context, 'memory.save');
+    const content = requireHostString(params, 'content');
+    const category = readHostString(params, 'category') ?? 'general';
+    const keywords = readHostString(params, 'keywords');
     const memory = await this.memoryService.saveMemory(
       userId,
       content,
@@ -392,12 +402,7 @@ export class PluginHostService {
       keywords ?? undefined,
     );
 
-    return {
-      id: memory.id,
-      content: memory.content,
-      category: memory.category,
-      createdAt: memory.createdAt.toISOString(),
-    };
+    return toMemorySummary(memory);
   }
 
   /**
@@ -414,7 +419,7 @@ export class PluginHostService {
       context,
       'conversation.title.set',
     );
-    const title = this.requireString(params, 'title').trim();
+    const title = requireHostString(params, 'title').trim();
     if (!title) {
       throw new BadRequestException('title 不能为空');
     }
@@ -428,12 +433,7 @@ export class PluginHostService {
       },
     });
 
-    return {
-      id: updated.id,
-      title: updated.title,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+    return toConversationSummary(updated);
   }
 
   /**
@@ -448,16 +448,11 @@ export class PluginHostService {
     context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const prompt = this.requireString(params, 'prompt');
-    const result = await this.generateCore(pluginId, context, {
-      providerId: this.readString(params, 'providerId') ?? undefined,
-      modelId: this.readString(params, 'modelId') ?? undefined,
-      system: this.readString(params, 'system') ?? undefined,
-      variant: this.readString(params, 'variant') ?? undefined,
-      providerOptions: this.readObject(params, 'providerOptions') ?? undefined,
-      headers: this.readStringRecord(params, 'headers') ?? undefined,
-      maxOutputTokens: this.readNumber(params, 'maxOutputTokens') ?? undefined,
-      messages: [
+    const prompt = requireHostString(params, 'prompt');
+    const result = await this.generateCore(
+      pluginId,
+      context,
+      readHostGenerateParams(params, [
         {
           role: 'user',
           content: [
@@ -467,14 +462,10 @@ export class PluginHostService {
             },
           ],
         },
-      ],
-    });
+      ]),
+    );
 
-    return {
-      providerId: result.providerId,
-      modelId: result.modelId,
-      text: result.text,
-    };
+    return buildHostGenerateTextResult(result);
   }
 
   /**
@@ -489,16 +480,13 @@ export class PluginHostService {
     context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    return toJsonValue(await this.generateCore(pluginId, context, {
-      providerId: this.readString(params, 'providerId') ?? undefined,
-      modelId: this.readString(params, 'modelId') ?? undefined,
-      system: this.readString(params, 'system') ?? undefined,
-      variant: this.readString(params, 'variant') ?? undefined,
-      providerOptions: this.readObject(params, 'providerOptions') ?? undefined,
-      headers: this.readStringRecord(params, 'headers') ?? undefined,
-      maxOutputTokens: this.readNumber(params, 'maxOutputTokens') ?? undefined,
-      messages: this.readLlmMessages(params),
-    }));
+    return toJsonValue(
+      await this.generateCore(
+        pluginId,
+        context,
+        readHostGenerateParams(params, readHostLlmMessages(params)),
+      ),
+    );
   }
 
   /**
@@ -518,10 +506,19 @@ export class PluginHostService {
    */
   private async getStorage(
     pluginId: string,
+    context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const key = this.requireString(params, 'key');
-    return this.pluginService.getPluginStorage(pluginId, key);
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'storage.get',
+    });
+    const key = requireHostString(params, 'key');
+    return this.pluginService.getPluginStorage(
+      pluginId,
+      buildPluginScopedStateKey(target, key),
+    );
   }
 
   /**
@@ -532,13 +529,19 @@ export class PluginHostService {
    */
   private async setStorage(
     pluginId: string,
+    context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const key = this.requireString(params, 'key');
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'storage.set',
+    });
+    const key = requireHostString(params, 'key');
     return this.pluginService.setPluginStorage(
       pluginId,
-      key,
-      this.requireJsonValue(params, 'value', 'storage.set'),
+      buildPluginScopedStateKey(target, key),
+      requireHostJsonValue(params, 'value', 'storage.set'),
     );
   }
 
@@ -550,10 +553,19 @@ export class PluginHostService {
    */
   private async deleteStorage(
     pluginId: string,
+    context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const key = this.requireString(params, 'key');
-    return this.pluginService.deletePluginStorage(pluginId, key);
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'storage.delete',
+    });
+    const key = requireHostString(params, 'key');
+    return this.pluginService.deletePluginStorage(
+      pluginId,
+      buildPluginScopedStateKey(target, key),
+    );
   }
 
   /**
@@ -564,10 +576,26 @@ export class PluginHostService {
    */
   private async listStorage(
     pluginId: string,
+    context: PluginCallContext,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const prefix = this.readString(params, 'prefix') ?? undefined;
-    return this.pluginService.listPluginStorage(pluginId, prefix);
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'storage.list',
+    });
+    const prefix = buildPluginScopedStatePrefix(
+      target,
+      readHostString(params, 'prefix'),
+    );
+    const entries = await this.pluginService.listPluginStorage(pluginId, prefix);
+
+    return entries
+      .map((entry) => ({
+        key: stripPluginScopedStatePrefix(target, entry.key),
+        value: entry.value,
+      }))
+      .filter((entry): entry is { key: string; value: JsonValue } => entry.key !== null);
   }
 
   /**
@@ -580,10 +608,10 @@ export class PluginHostService {
     pluginId: string,
     params: JsonObject,
   ): Promise<JsonValue> {
-    const level = this.readEventLevel(params, 'level');
-    const message = this.requireString(params, 'message');
-    const type = this.readString(params, 'type') ?? 'plugin:log';
-    const metadata = this.readObject(params, 'metadata') ?? undefined;
+    const level = readHostEventLevel(params, 'level');
+    const message = requireHostString(params, 'message');
+    const type = readHostString(params, 'type') ?? 'plugin:log';
+    const metadata = readHostObject(params, 'metadata') ?? undefined;
 
     await this.pluginService.recordPluginEvent(pluginId, {
       level,
@@ -596,14 +624,57 @@ export class PluginHostService {
   }
 
   /**
+   * 读取当前插件的事件日志。
+   * @param pluginId 插件 ID
+   * @param params 查询参数
+   * @returns 事件日志分页结果
+   */
+  private async listLogs(
+    pluginId: string,
+    params: JsonObject,
+  ): Promise<JsonValue> {
+    const limit = readHostNumber(params, 'limit');
+    if (limit !== null && (!Number.isInteger(limit) || limit <= 0)) {
+      throw new BadRequestException('limit 必须是正整数');
+    }
+
+    const type = readHostString(params, 'type');
+    const keyword = readHostString(params, 'keyword');
+    const cursor = readHostString(params, 'cursor');
+    const result = await this.pluginService.listPluginEvents(pluginId, {
+      ...(limit !== null ? { limit } : {}),
+      ...(Object.prototype.hasOwnProperty.call(params, 'level')
+        ? { level: readHostEventLevel(params, 'level') }
+        : {}),
+      ...(type ? { type } : {}),
+      ...(keyword ? { keyword } : {}),
+      ...(cursor ? { cursor } : {}),
+    });
+
+    return toJsonValue(result);
+  }
+
+  /**
    * 读取插件自己的运行时状态。
    * @param pluginId 插件 ID
    * @param params 查询参数
    * @returns 状态值；不存在时返回 null
    */
-  private getState(pluginId: string, params: JsonObject): JsonValue {
-    const key = this.requireString(params, 'key');
-    return this.stateService.get(pluginId, key);
+  private getState(
+    pluginId: string,
+    context: PluginCallContext,
+    params: JsonObject,
+  ): JsonValue {
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'state.get',
+    });
+    const key = requireHostString(params, 'key');
+    return this.stateService.get(
+      pluginId,
+      buildPluginScopedStateKey(target, key),
+    );
   }
 
   /**
@@ -612,13 +683,77 @@ export class PluginHostService {
    * @param params 写入参数
    * @returns 写入后的状态值
    */
-  private setState(pluginId: string, params: JsonObject): JsonValue {
-    const key = this.requireString(params, 'key');
+  private setState(
+    pluginId: string,
+    context: PluginCallContext,
+    params: JsonObject,
+  ): JsonValue {
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'state.set',
+    });
+    const key = requireHostString(params, 'key');
     return this.stateService.set(
       pluginId,
-      key,
-      this.requireJsonValue(params, 'value', 'state.set'),
+      buildPluginScopedStateKey(target, key),
+      requireHostJsonValue(params, 'value', 'state.set'),
     );
+  }
+
+  /**
+   * 删除插件自己的运行时状态。
+   * @param pluginId 插件 ID
+   * @param context 插件调用上下文
+   * @param params 删除参数
+   * @returns 是否删除成功
+   */
+  private deleteState(
+    pluginId: string,
+    context: PluginCallContext,
+    params: JsonObject,
+  ): JsonValue {
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'state.delete',
+    });
+    const key = requireHostString(params, 'key');
+
+    return this.stateService.delete(
+      pluginId,
+      buildPluginScopedStateKey(target, key),
+    );
+  }
+
+  /**
+   * 列出插件自己的运行时状态。
+   * @param pluginId 插件 ID
+   * @param context 插件调用上下文
+   * @param params 查询参数
+   * @returns 状态键值对列表
+   */
+  private listState(
+    pluginId: string,
+    context: PluginCallContext,
+    params: JsonObject,
+  ): JsonValue {
+    const target = resolvePluginScopedStateTarget({
+      context,
+      params,
+      method: 'state.list',
+    });
+    const prefix = buildPluginScopedStatePrefix(
+      target,
+      readHostString(params, 'prefix'),
+    );
+
+    return this.stateService.list(pluginId, prefix)
+      .map((entry) => ({
+        key: stripPluginScopedStatePrefix(target, entry.key),
+        value: entry.value,
+      }))
+      .filter((entry): entry is { key: string; value: JsonValue } => entry.key !== null);
   }
 
   /**
@@ -627,7 +762,7 @@ export class PluginHostService {
    * @returns 用户摘要
    */
   private async getUser(context: PluginCallContext): Promise<JsonValue> {
-    const userId = this.requireUserId(context, 'user.get');
+    const userId = requireHostUserId(context, 'user.get');
     const user = await this.prisma.user.findUnique({
       where: {
         id: userId,
@@ -641,18 +776,11 @@ export class PluginHostService {
         updatedAt: true,
       },
     });
-    if (!user) {
-      throw new NotFoundException(`User not found: ${userId}`);
-    }
 
-    return {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      createdAt: user.createdAt.toISOString(),
-      updatedAt: user.updatedAt.toISOString(),
-    };
+    return requireHostUserSummary({
+      user,
+      userId,
+    });
   }
 
   /**
@@ -663,7 +791,7 @@ export class PluginHostService {
   private async listConversationMessages(
     context: PluginCallContext,
   ): Promise<JsonValue> {
-    const conversationId = this.requireConversationId(
+    const conversationId = requireHostConversationId(
       context,
       'conversation.messages.list',
     );
@@ -685,17 +813,7 @@ export class PluginHostService {
       },
     });
 
-    return toJsonValue(
-      messages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        parts: deserializeMessageParts(message.partsJson),
-        status: message.status,
-        createdAt: message.createdAt.toISOString(),
-        updatedAt: message.updatedAt.toISOString(),
-      })),
-    );
+    return toJsonValue(buildConversationMessageSummaries(messages));
   }
 
   /**
@@ -710,69 +828,19 @@ export class PluginHostService {
     context: PluginCallContext,
     params: PluginLlmGenerateParams,
   ): Promise<PluginLlmGenerateResult> {
-    const utilityRole = this.resolveUtilityRoleForGeneration(
+    const utilityRole = resolveHostUtilityRoleForGeneration(
       pluginId,
       context,
       params,
     );
-    const executed = await this.aiModelExecution.generateText({
-      ...(params.providerId ? { providerId: params.providerId } : {}),
-      ...(params.modelId ? { modelId: params.modelId } : {}),
-      ...(utilityRole ? { utilityRole } : {}),
-      ...(params.system ? { system: params.system } : {}),
-      ...(params.variant ? { variant: params.variant } : {}),
-      ...(params.providerOptions ? { providerOptions: params.providerOptions } : {}),
-      ...(params.headers ? { headers: params.headers } : {}),
-      ...(typeof params.maxOutputTokens === 'number'
-        ? { maxOutputTokens: params.maxOutputTokens }
-        : {}),
-      sdkMessages: toAiSdkMessages(params.messages),
-    });
+    const executed = await this.aiModelExecution.generateText(
+      buildHostGenerateExecutionInput({
+        params,
+        utilityRole,
+      }),
+    );
 
-    return {
-      providerId: String(executed.modelConfig.providerId),
-      modelId: String(executed.modelConfig.id),
-      text: executed.result.text,
-      message: {
-        role: 'assistant',
-        content: executed.result.text,
-      },
-      ...(executed.result.finishReason !== undefined
-        ? { finishReason: String(executed.result.finishReason) }
-        : {}),
-      ...(executed.result.usage !== undefined
-        ? { usage: toJsonValue(executed.result.usage) }
-        : {}),
-    };
-  }
-
-  /**
-   * 为未显式指定 provider/model 的插件生成请求选择 utility role。
-   * @param pluginId 调用插件 ID
-   * @param context 插件调用上下文
-   * @param params 已解析的生成参数
-   * @returns 可选 utility role
-   */
-  private resolveUtilityRoleForGeneration(
-    pluginId: string,
-    context: PluginCallContext,
-    params: Pick<PluginLlmGenerateParams, 'providerId' | 'modelId'>,
-  ): AiUtilityModelRole | undefined {
-    if (params.providerId || params.modelId) {
-      return undefined;
-    }
-
-    if (
-      pluginId === 'builtin.conversation-title'
-      && context.activeProviderId
-      && context.activeModelId
-    ) {
-      params.providerId = context.activeProviderId;
-      params.modelId = context.activeModelId;
-      return 'conversationTitle';
-    }
-
-    return 'pluginGenerateText';
+    return buildHostGenerateResult(executed);
   }
 
   /**
@@ -791,7 +859,7 @@ export class PluginHostService {
     createdAt: Date;
     updatedAt: Date;
   }> {
-    const conversationId = this.requireConversationId(context, method);
+    const conversationId = requireHostConversationId(context, method);
     const conversation = await this.prisma.conversation.findUnique({
       where: {
         id: conversationId,
@@ -804,339 +872,11 @@ export class PluginHostService {
         updatedAt: true,
       },
     });
-    if (!conversation) {
-      throw new NotFoundException(`Conversation not found: ${conversationId}`);
-    }
-    if (context.userId && conversation.userId !== context.userId) {
-      throw new ForbiddenException(`${method} 无权访问当前会话`);
-    }
 
-    return conversation;
+    return requireHostConversationRecord({
+      conversation,
+      context,
+      method,
+    });
   }
-
-  /**
-   * 查找一个 provider 安全摘要；不存在时抛错。
-   * @param providerId provider ID
-   * @returns provider 摘要
-   */
-  private findProviderSummaryOrThrow(providerId: string): PluginProviderSummary {
-    const provider = this.aiManagementService
-      .listProviders()
-      .find((item) => item.id === providerId);
-    if (provider) {
-      return this.toProviderSummary(provider);
-    }
-
-    this.aiManagementService.getProvider(providerId);
-    throw new NotFoundException(`Provider "${providerId}" not found`);
-  }
-
-  /**
-   * 将管理端 provider 摘要裁剪成插件可见字段。
-   * @param provider 原始 provider 摘要
-   * @returns 安全 provider 摘要
-   */
-  private toProviderSummary(
-    provider: {
-      id: string;
-      name: string;
-      mode: 'official' | 'compatible';
-      driver: string;
-      defaultModel?: string;
-      available: boolean;
-    },
-  ): PluginProviderSummary {
-    return {
-      id: provider.id,
-      name: provider.name,
-      mode: provider.mode,
-      driver: provider.driver,
-      defaultModel: provider.defaultModel,
-      available: provider.available,
-    };
-  }
-
-  /**
-   * 将模型配置裁剪成插件可见字段。
-   * @param model 原始模型配置
-   * @returns 安全模型摘要
-   */
-  private toProviderModelSummary(
-    model: {
-      id: string;
-      providerId: string;
-      name: string;
-      capabilities: PluginProviderModelSummary['capabilities'];
-      status?: PluginProviderModelSummary['status'];
-    },
-  ): PluginProviderModelSummary {
-    return {
-      id: model.id,
-      providerId: model.providerId,
-      name: model.name,
-      capabilities: model.capabilities,
-      status: model.status,
-    };
-  }
-
-  /**
-   * 从上下文中读取 userId。
-   * @param context 插件调用上下文
-   * @param method 当前 Host API 方法名
-   * @returns userId
-   */
-  private requireUserId(context: PluginCallContext, method: string): string {
-    if (!context.userId) {
-      throw new BadRequestException(`${method} 需要 userId 上下文`);
-    }
-
-    return context.userId;
-  }
-
-  /**
-   * 从上下文中读取 conversationId。
-   * @param context 插件调用上下文
-   * @param method 当前 Host API 方法名
-   * @returns conversationId
-   */
-  private requireConversationId(
-    context: PluginCallContext,
-    method: string,
-  ): string {
-    if (!context.conversationId) {
-      throw new BadRequestException(`${method} 需要 conversationId 上下文`);
-    }
-
-    return context.conversationId;
-  }
-
-  /**
-   * 从参数中读取统一结构化消息数组。
-   * @param params 参数对象
-   * @returns 已校验的消息数组
-   */
-  private readLlmMessages(params: JsonObject): PluginLlmMessage[] {
-    const value = params.messages;
-    if (!Array.isArray(value)) {
-      throw new BadRequestException('messages 必须是数组');
-    }
-
-    return value.map((item, index) => this.readLlmMessage(item, index));
-  }
-
-  /**
-   * 读取单条结构化消息。
-   * @param value 原始消息值
-   * @param index 当前消息索引
-   * @returns 已校验的消息
-   */
-  private readLlmMessage(value: JsonValue, index: number): PluginLlmMessage {
-    const message = readJsonObjectValue(value, `messages[${index}]`);
-    if (
-      message.role !== 'user'
-      && message.role !== 'assistant'
-      && message.role !== 'system'
-      && message.role !== 'tool'
-    ) {
-      throw new BadRequestException(
-        `messages[${index}].role 必须是 user/assistant/system/tool`,
-      );
-    }
-
-    return {
-      role: message.role,
-      content: this.readLlmMessageContent(
-        message.content,
-        `messages[${index}].content`,
-      ),
-    };
-  }
-
-  /**
-   * 读取单条消息的 content。
-   * @param value 原始 content
-   * @param label 当前字段标签
-   * @returns 字符串或结构化 part 数组
-   */
-  private readLlmMessageContent(
-    value: JsonValue,
-    label: string,
-  ): string | ChatMessagePart[] {
-    if (typeof value === 'string') {
-      return value;
-    }
-    if (!Array.isArray(value)) {
-      throw new BadRequestException(`${label} 必须是字符串或数组`);
-    }
-
-    return value.map((part, index) =>
-      this.readChatMessagePart(part, `${label}[${index}]`),
-    );
-  }
-
-  /**
-   * 读取单个聊天消息 part。
-   * @param value 原始 part
-   * @param label 当前字段标签
-   * @returns 已校验的消息 part
-   */
-  private readChatMessagePart(value: JsonValue, label: string): ChatMessagePart {
-    const part = readJsonObjectValue(value, label);
-    if (part.type === 'text' && typeof part.text === 'string') {
-      return {
-        type: 'text',
-        text: part.text,
-      };
-    }
-    if (part.type === 'image' && typeof part.image === 'string') {
-      return {
-        type: 'image',
-        image: part.image,
-        ...(typeof part.mimeType === 'string' ? { mimeType: part.mimeType } : {}),
-      };
-    }
-
-    throw new BadRequestException(`${label} 不是合法的消息 part`);
-  }
-
-  /**
-   * 从参数对象读取字符串字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @returns 字段值；不存在时返回 null
-   */
-  private readString(params: JsonObject, key: string): string | null {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return null;
-    }
-    if (typeof value !== 'string') {
-      throw new BadRequestException(`${key} 必须是字符串`);
-    }
-
-    return value;
-  }
-
-  /**
-   * 从参数对象读取必填字符串字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @returns 必填字符串值
-   */
-  private requireString(params: JsonObject, key: string): string {
-    const value = this.readString(params, key);
-    if (value === null) {
-      throw new BadRequestException(`${key} 必填`);
-    }
-
-    return value;
-  }
-
-  /**
-   * 从参数对象读取数字字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @returns 字段值；不存在时返回 null
-   */
-  private readNumber(params: JsonObject, key: string): number | null {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return null;
-    }
-    if (typeof value !== 'number') {
-      throw new BadRequestException(`${key} 必须是数字`);
-    }
-
-    return value;
-  }
-
-  /**
-   * 从参数对象读取 JSON 对象字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @returns 字段值；不存在时返回 null
-   */
-  private readObject(params: JsonObject, key: string): JsonObject | null {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return null;
-    }
-
-    return readJsonObjectValue(value, key);
-  }
-
-  /**
-   * 从参数对象读取必填 JSON 值字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns JSON 值
-   */
-  private requireJsonValue(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): JsonValue {
-    if (!Object.prototype.hasOwnProperty.call(params, key)) {
-      throw new BadRequestException(`${method} 缺少 ${key}`);
-    }
-
-    return params[key];
-  }
-
-  /**
-   * 从参数对象读取字符串字典字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @returns 字段值；不存在时返回 null
-   */
-  private readStringRecord(
-    params: JsonObject,
-    key: string,
-  ): Record<string, string> | null {
-    const value = this.readObject(params, key);
-    if (!value) {
-      return null;
-    }
-
-    const record: Record<string, string> = {};
-    for (const [entryKey, entryValue] of Object.entries(value)) {
-      if (typeof entryValue !== 'string') {
-        throw new BadRequestException(`${key}.${entryKey} 必须是字符串`);
-      }
-      record[entryKey] = entryValue;
-    }
-
-    return record;
-  }
-
-  /**
-   * 从参数对象读取插件事件级别字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @returns 受支持的事件级别
-   */
-  private readEventLevel(
-    params: JsonObject,
-    key: string,
-  ): PluginEventLevel {
-    const value = this.requireString(params, key);
-    if (value !== 'info' && value !== 'warn' && value !== 'error') {
-      throw new BadRequestException(`${key} 必须是 info/warn/error`);
-    }
-
-    return value;
-  }
-}
-
-function readJsonObjectValue(value: JsonValue, label: string): JsonObject {
-  if (!isJsonObjectValue(value)) {
-    throw new BadRequestException(`${label} 必须是对象`);
-  }
-
-  return value;
-}
-
-function isJsonObjectValue(value: JsonValue): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

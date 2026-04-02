@@ -2,19 +2,10 @@ import { createRequire } from 'node:module';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LanguageModel } from 'ai';
-import { createModelConfig } from './model-config.helpers';
-import { inferModelCapabilities } from './model-capability-inference';
+import { createInferredModelConfig } from './model-config.helpers';
 
-import type {
-  CompatibleProviderDriver,
-  OfficialProviderDriver,
-} from './official-provider-catalog';
+import type { ProviderProtocolDriver } from './provider-catalog';
 import type { ModelConfig } from './types/provider.types';
-
-/**
- * 模型工厂偏好。
- */
-export type ProviderModelFactoryPreference = 'default' | 'chat';
 
 /**
  * 已注册 provider 的运行时信息。
@@ -23,11 +14,9 @@ export interface RuntimeProviderRegistration {
   /** provider ID。 */
   id: string;
   /** provider driver。 */
-  driver: OfficialProviderDriver | CompatibleProviderDriver;
+  driver: ProviderProtocolDriver;
   /** provider 的语言模型创建函数。 */
   createModel: (modelId: string) => LanguageModel;
-  /** 模型工厂偏好。 */
-  modelFactoryPreference: ProviderModelFactoryPreference;
   /** provider 默认 base URL。 */
   baseUrl: string;
   /** SDK npm 包名。 */
@@ -75,13 +64,11 @@ export interface RuntimeProviderInput {
   /** provider ID。 */
   id: string;
   /** provider driver。 */
-  driver: OfficialProviderDriver | CompatibleProviderDriver;
+  driver: ProviderProtocolDriver;
   /** API key。 */
   apiKey: string;
   /** provider 基础地址。 */
   baseUrl: string;
-  /** 模型工厂偏好。 */
-  modelFactoryPreference: ProviderModelFactoryPreference;
   /** 默认模型。 */
   defaultModel: string;
   /** SDK 包名。 */
@@ -89,26 +76,15 @@ export interface RuntimeProviderInput {
 }
 
 /**
- * 官方 provider 对应的 SDK 工厂集合。
+ * 运行时支持的协议族 SDK 工厂集合。
  */
-const OFFICIAL_PROVIDER_FACTORIES: Record<
-  OfficialProviderDriver,
+const PROTOCOL_PROVIDER_FACTORIES: Record<
+  ProviderProtocolDriver,
   ProviderSdkFactory
 > = {
   openai: (options) => createOpenAI(options),
   anthropic: (options) => createAnthropic(options),
   gemini: createLazyProviderFactory('@ai-sdk/google', 'createGoogleGenerativeAI'),
-  groq: createLazyProviderFactory('@ai-sdk/groq', 'createGroq'),
-  xai: createLazyProviderFactory('@ai-sdk/xai', 'createXai'),
-  mistral: createLazyProviderFactory('@ai-sdk/mistral', 'createMistral'),
-  cohere: createLazyProviderFactory('@ai-sdk/cohere', 'createCohere'),
-  cerebras: createLazyProviderFactory('@ai-sdk/cerebras', 'createCerebras'),
-  deepinfra: createLazyProviderFactory('@ai-sdk/deepinfra', 'createDeepInfra'),
-  togetherai: createLazyProviderFactory('@ai-sdk/togetherai', 'createTogetherAI'),
-  perplexity: createLazyProviderFactory('@ai-sdk/perplexity', 'createPerplexity'),
-  gateway: createLazyProviderFactory('@ai-sdk/gateway', 'createGateway'),
-  vercel: createLazyProviderFactory('@ai-sdk/vercel', 'createVercel'),
-  openrouter: createLazyProviderFactory('@openrouter/ai-sdk-provider', 'createOpenRouter'),
 };
 
 const localRequire = createRequire(__filename);
@@ -160,7 +136,7 @@ function loadOptionalModule(moduleName: string): Record<string, unknown> {
 export function buildRuntimeProviderRegistration(
   input: RuntimeProviderInput,
 ): RuntimeProviderRegistration {
-  const factory = OFFICIAL_PROVIDER_FACTORIES[input.driver];
+  const factory = PROTOCOL_PROVIDER_FACTORIES[input.driver];
   const provider = factory({
     apiKey: input.apiKey,
     baseURL: input.baseUrl,
@@ -170,9 +146,7 @@ export function buildRuntimeProviderRegistration(
   return {
     id: input.id,
     driver: input.driver,
-    createModel: (modelId) =>
-      callProviderModel(provider, modelId, input.modelFactoryPreference),
-    modelFactoryPreference: input.modelFactoryPreference,
+    createModel: (modelId) => callProviderModel(provider, input.driver, modelId),
     baseUrl: input.baseUrl,
     npm: input.npm,
     defaultModel: input.defaultModel,
@@ -191,16 +165,16 @@ export function buildRuntimeProviderRegistration(
  * - 可直接交给 AI SDK 使用的语言模型
  *
  * 预期行为:
- * - OpenAI 兼容 chat 路径优先走 `.chat()`
+ * - OpenAI 协议接入优先走 `.chat()`
  * - 其他 provider 在 callable/chat 两种形态间自动兼容
  */
 export function callProviderModel(
   provider: CallableProviderFactory | ChatProviderFactory,
+  driver: ProviderProtocolDriver,
   modelId: string,
-  preferredFactory: ProviderModelFactoryPreference,
 ): LanguageModel {
   const providerWithChat = provider as Partial<ChatProviderFactory>;
-  if (preferredFactory === 'chat' && typeof providerWithChat.chat === 'function') {
+  if (driver === 'openai' && typeof providerWithChat.chat === 'function') {
     return providerWithChat.chat(modelId);
   }
 
@@ -233,36 +207,10 @@ export function buildRuntimeModelConfig(
   registration: RuntimeProviderRegistration,
   modelId: string,
 ): ModelConfig {
-  return createModelConfig({
+  return createInferredModelConfig({
     modelId,
     providerId: registration.id,
-    name: modelId,
-    capabilities: inferModelCapabilities(modelId),
     baseUrl: registration.baseUrl,
     npm: registration.npm,
   });
-}
-
-/**
- * 获取兼容 provider 对应的 SDK 包名。
- *
- * 输入:
- * - 兼容驱动
- *
- * 输出:
- * - 对应 SDK 包名
- *
- * 预期行为:
- * - 只允许 openai / anthropic / gemini 三种兼容格式
- */
-export function getCompatibleProviderNpm(driver: CompatibleProviderDriver): string {
-  switch (driver) {
-    case 'anthropic':
-      return '@ai-sdk/anthropic';
-    case 'gemini':
-      return '@ai-sdk/google';
-    case 'openai':
-    default:
-      return '@ai-sdk/openai';
-  }
 }

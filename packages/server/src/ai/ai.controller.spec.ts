@@ -16,7 +16,7 @@ import { AiController } from './ai.controller';
 
 describe('AiController', () => {
   const managementService = {
-    listOfficialProviderCatalog: jest.fn(),
+    listProviderCatalog: jest.fn(),
     listProviders: jest.fn(),
     getProvider: jest.fn(),
     upsertProvider: jest.fn(),
@@ -46,16 +46,16 @@ describe('AiController', () => {
     );
   });
 
-  it('returns the official provider catalog', () => {
-    managementService.listOfficialProviderCatalog.mockReturnValue([{ id: 'openai' }]);
+  it('returns the provider catalog', () => {
+    managementService.listProviderCatalog.mockReturnValue([{ id: 'openai' }]);
 
-    expect(controller.listOfficialProviderCatalog()).toEqual([{ id: 'openai' }]);
-    expect(managementService.listOfficialProviderCatalog).toHaveBeenCalled();
+    expect(controller.listProviderCatalog()).toEqual([{ id: 'openai' }]);
+    expect(managementService.listProviderCatalog).toHaveBeenCalled();
   });
 
   it('forwards provider upsert requests to the management service', () => {
     const dto = {
-      mode: 'official' as const,
+      mode: 'catalog' as const,
       driver: 'groq',
       name: 'Groq',
       models: ['llama-3.3-70b'],

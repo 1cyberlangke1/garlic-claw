@@ -2,6 +2,7 @@ import type {
   ActionConfig,
   AiModelCapabilities,
   AiModelConfig,
+  AiProviderCatalogItem,
   AiProviderConfig,
   AiProviderConnectionTestResult,
   AiProviderSummary,
@@ -13,7 +14,6 @@ import type {
   ConversationHostServices,
   DiscoveredAiModel,
   Message,
-  OfficialProviderCatalogItem,
   PluginInfo,
   PluginStorageEntry,
   RetryMessagePayload,
@@ -51,7 +51,7 @@ const modelCapabilities: AiModelCapabilities = {
 const providerSummary: AiProviderSummary = {
   id: 'openai',
   name: 'OpenAI',
-  mode: 'official',
+  mode: 'catalog',
   driver: 'openai',
   defaultModel: 'gpt-4o-mini',
   baseUrl: 'https://api.openai.com/v1',
@@ -62,7 +62,7 @@ const providerSummary: AiProviderSummary = {
 const providerConfig: AiProviderConfig = {
   id: 'openai',
   name: 'OpenAI',
-  mode: 'official',
+  mode: 'catalog',
   driver: 'openai',
   defaultModel: 'gpt-4o-mini',
   models: ['gpt-4o-mini'],
@@ -132,11 +132,11 @@ const pluginStorageEntry: PluginStorageEntry = {
   value: 3,
 }
 
-const catalogItem: OfficialProviderCatalogItem = {
+const catalogItem: AiProviderCatalogItem = {
   id: 'openai',
   kind: 'core',
+  protocol: 'openai',
   name: 'OpenAI',
-  npm: '@ai-sdk/openai',
   defaultBaseUrl: 'https://api.openai.com/v1',
   defaultModel: 'gpt-4o-mini',
 }

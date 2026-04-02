@@ -1,15 +1,15 @@
 /**
- * CustomProviderService 兼容请求格式测试
+ * CustomProviderService 协议接入协议族测试
  *
  * 输入:
  * - 自定义供应商注册参数
  *
  * 输出:
- * - 断言服务会根据 format 选择正确的 SDK 适配器和模型 npm 标识
+ * - 断言服务会根据 protocol 字段语义选择正确的 SDK 适配器和模型 npm 标识
  *
  * 预期行为:
- * - 只支持 openai / anthropic / gemini 三种兼容请求格式
- * - 未显式指定 format 时默认走 openai
+ * - 只支持 openai / anthropic / gemini 三种协议接入协议族
+ * - 未显式指定 protocol 时默认走 openai
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
@@ -39,7 +39,7 @@ jest.mock('@ai-sdk/google', () => ({
   })),
 }));
 
-describe('CustomProviderService compatibility formats', () => {
+describe('CustomProviderService protocol providers', () => {
   let service: CustomProviderService;
   let providerRegistry: {
     hasProvider: jest.Mock;
@@ -88,12 +88,12 @@ describe('CustomProviderService compatibility formats', () => {
     jest.clearAllMocks();
   });
 
-  it('uses the google adapter for gemini-compatible providers', async () => {
+  it('uses the google adapter for gemini protocol providers', async () => {
     const result = await service.registerProvider({
       id: 'gemini-proxy',
       name: 'Gemini Proxy',
       baseUrl: 'https://gemini.example.com/v1beta',
-      format: 'gemini' as never,
+      protocol: 'gemini' as never,
       models: [{ id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' }],
     });
 
@@ -115,12 +115,12 @@ describe('CustomProviderService compatibility formats', () => {
     expect(createGoogleGenerativeAI).not.toHaveBeenCalled();
   });
 
-  it('uses the anthropic adapter for anthropic-compatible providers', async () => {
+  it('uses the anthropic adapter for anthropic protocol providers', async () => {
     const result = await service.registerProvider({
       id: 'anthropic-proxy',
       name: 'Anthropic Proxy',
       baseUrl: 'https://anthropic.example.com/v1',
-      format: 'anthropic',
+      protocol: 'anthropic',
       models: [{ id: 'claude-3-7-sonnet', name: 'Claude 3.7 Sonnet' }],
     });
 
@@ -142,7 +142,7 @@ describe('CustomProviderService compatibility formats', () => {
     expect(createAnthropic).not.toHaveBeenCalled();
   });
 
-  it('defaults to the openai adapter when format is omitted', async () => {
+  it('defaults to the openai adapter when protocol is omitted', async () => {
     const result = await service.registerProvider({
       id: 'openai-proxy',
       name: 'OpenAI Proxy',

@@ -8,7 +8,9 @@ import type {
   HostCallPayload,
   PluginActionName,
   PluginCallContext,
+  PluginEventListResult,
   PluginEventLevel,
+  PluginEventQuery,
   PluginKbEntryDetail,
   PluginKbEntrySummary,
   PluginCronDescriptor,
@@ -35,6 +37,7 @@ import type {
   PluginSubagentTaskSummary,
   PluginRouteRequest,
   PluginRouteResponse,
+  PluginScopedStateScope,
   PluginSelfInfo,
   TriggerConfig,
 } from '@garlic-claw/shared';
@@ -82,6 +85,10 @@ interface BuiltinPluginGovernanceHandlers {
    * @returns 健康检查结果
    */
   checkHealth?: () => Promise<{ ok: boolean }> | { ok: boolean };
+}
+
+interface BuiltinPluginScopedStateOptions {
+  scope?: PluginScopedStateScope;
 }
 
 /**
@@ -295,6 +302,13 @@ interface BuiltinPluginHostFacade {
   getPluginSelf(): Promise<PluginSelfInfo>;
 
   /**
+   * 读取当前插件自身的事件日志。
+   * @param query 可选分页与过滤参数
+   * @returns 事件日志分页结果
+   */
+  listLogs(query?: PluginEventQuery): Promise<PluginEventListResult>;
+
+  /**
    * 主动向宿主写入一条插件事件日志。
    * @param input 日志级别、消息与可选上下文
    * @returns 是否记录成功
@@ -334,31 +348,82 @@ interface BuiltinPluginHostFacade {
   /**
    * 读取插件持久化存储中的单个值。
    * @param key 存储键
+   * @param options 可选作用域；默认 `plugin`
    * @returns JSON 值
    */
-  getStorage(key: string): Promise<JsonValue>;
+  getStorage(key: string, options?: BuiltinPluginScopedStateOptions): Promise<JsonValue>;
 
   /**
    * 写入插件持久化存储。
    * @param key 存储键
    * @param value JSON 值
+   * @param options 可选作用域；默认 `plugin`
    * @returns 写入结果
    */
-  setStorage(key: string, value: JsonValue): Promise<JsonValue>;
+  setStorage(
+    key: string,
+    value: JsonValue,
+    options?: BuiltinPluginScopedStateOptions,
+  ): Promise<JsonValue>;
 
   /**
    * 删除插件持久化存储中的一个键。
    * @param key 存储键
+   * @param options 可选作用域；默认 `plugin`
    * @returns 是否删除成功
    */
-  deleteStorage(key: string): Promise<JsonValue>;
+  deleteStorage(key: string, options?: BuiltinPluginScopedStateOptions): Promise<JsonValue>;
 
   /**
    * 按前缀列出插件持久化存储。
    * @param prefix 可选前缀
+   * @param options 可选作用域；默认 `plugin`
    * @returns 键值对列表
    */
-  listStorage(prefix?: string): Promise<JsonValue>;
+  listStorage(
+    prefix?: string,
+    options?: BuiltinPluginScopedStateOptions,
+  ): Promise<JsonValue>;
+
+  /**
+   * 读取当前插件运行时状态。
+   * @param key 状态键
+   * @param options 可选作用域；默认 `plugin`
+   * @returns JSON 值
+   */
+  getState(key: string, options?: BuiltinPluginScopedStateOptions): Promise<JsonValue>;
+
+  /**
+   * 写入当前插件运行时状态。
+   * @param key 状态键
+   * @param value JSON 值
+   * @param options 可选作用域；默认 `plugin`
+   * @returns 写入结果
+   */
+  setState(
+    key: string,
+    value: JsonValue,
+    options?: BuiltinPluginScopedStateOptions,
+  ): Promise<JsonValue>;
+
+  /**
+   * 删除当前插件运行时状态。
+   * @param key 状态键
+   * @param options 可选作用域；默认 `plugin`
+   * @returns 是否删除成功
+   */
+  deleteState(key: string, options?: BuiltinPluginScopedStateOptions): Promise<JsonValue>;
+
+  /**
+   * 按前缀列出当前插件运行时状态。
+   * @param prefix 可选前缀
+   * @param options 可选作用域；默认 `plugin`
+   * @returns 键值对列表
+   */
+  listState(
+    prefix?: string,
+    options?: BuiltinPluginScopedStateOptions,
+  ): Promise<JsonValue>;
 
   /**
    * 读取当前插件解析后的配置。
@@ -793,6 +858,10 @@ export class BuiltinPluginTransport implements PluginTransport {
         }),
       getPluginSelf: () =>
         callHost<PluginSelfInfo>('plugin.self.get'),
+      listLogs: (query = {}) =>
+        callHost<PluginEventListResult>('log.list', {
+          ...query,
+        }),
       writeLog: ({ level, message, type, metadata }) =>
         callHost<boolean>('log.write', {
           level,
@@ -802,21 +871,48 @@ export class BuiltinPluginTransport implements PluginTransport {
         }),
       listConversationMessages: () =>
         call('conversation.messages.list', {}),
-      getStorage: (key) =>
+      getStorage: (key, options) =>
         call('storage.get', {
           key,
+          ...toScopedStateParams(options),
         }),
-      setStorage: (key, value) =>
+      setStorage: (key, value, options) =>
         call('storage.set', {
           key,
           value,
+          ...toScopedStateParams(options),
         }),
-      deleteStorage: (key) =>
+      deleteStorage: (key, options) =>
         call('storage.delete', {
           key,
+          ...toScopedStateParams(options),
         }),
-      listStorage: (prefix) =>
-        call('storage.list', prefix ? { prefix } : {}),
+      listStorage: (prefix, options) =>
+        call('storage.list', {
+          ...(prefix ? { prefix } : {}),
+          ...toScopedStateParams(options),
+        }),
+      getState: (key, options) =>
+        call('state.get', {
+          key,
+          ...toScopedStateParams(options),
+        }),
+      setState: (key, value, options) =>
+        call('state.set', {
+          key,
+          value,
+          ...toScopedStateParams(options),
+        }),
+      deleteState: (key, options) =>
+        call('state.delete', {
+          key,
+          ...toScopedStateParams(options),
+        }),
+      listState: (prefix, options) =>
+        call('state.list', {
+          ...(prefix ? { prefix } : {}),
+          ...toScopedStateParams(options),
+        }),
       saveMemory: ({ content, category, keywords }) =>
         call('memory.save', {
           content,
@@ -1047,6 +1143,16 @@ function toHostJsonValue(value: unknown): JsonValue {
   }
 
   return toJsonValue(value);
+}
+
+function toScopedStateParams(
+  options?: BuiltinPluginScopedStateOptions,
+): JsonObject {
+  return options?.scope
+    ? {
+        scope: options.scope,
+      }
+    : {};
 }
 
 /**

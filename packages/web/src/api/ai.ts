@@ -3,16 +3,16 @@ import type {
   AiHostModelRoutingConfig,
   AiModelCapabilities,
   AiModelConfig,
+  AiProviderCatalogItem,
   AiProviderConfig,
   AiProviderConnectionTestResult,
   AiProviderSummary,
   DiscoveredAiModel,
-  OfficialProviderCatalogItem,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 
-export function listOfficialProviderCatalog() {
-  return request<OfficialProviderCatalogItem[]>('/ai/provider-catalog')
+export function listAiProviderCatalog() {
+  return request<AiProviderCatalogItem[]>('/ai/provider-catalog')
 }
 
 export function listAiProviders() {

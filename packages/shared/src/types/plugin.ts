@@ -1,5 +1,5 @@
 import type { ActionConfig, AutomationInfo } from './automation';
-import type { AiModelCapabilities, AiProviderSummary } from './ai';
+import type { AiModelConfig, AiProviderSummary } from './ai';
 import type { ChatMessagePart, ChatMessageStatus } from './chat';
 import type { JsonObject, JsonValue } from './json';
 
@@ -24,6 +24,7 @@ export type PluginPermission =
   | 'conversation:write'
   | 'config:read'
   | 'kb:read'
+  | 'log:read'
   | 'llm:generate'
   | 'log:write'
   | 'memory:read'
@@ -252,6 +253,9 @@ export interface PluginStorageEntry {
   value: JsonValue;
 }
 
+/** 插件私有状态/存储可绑定的宿主作用域。 */
+export type PluginScopedStateScope = 'plugin' | 'conversation' | 'user';
+
 /** 插件 Route 支持的 HTTP 方法。 */
 export type PluginRouteMethod =
   | 'GET'
@@ -417,13 +421,10 @@ export type PluginProviderSummary = Pick<
 >;
 
 /** 插件可见的模型安全摘要。 */
-export interface PluginProviderModelSummary {
-  id: string;
-  providerId: string;
-  name: string;
-  capabilities: AiModelCapabilities;
-  status?: 'alpha' | 'beta' | 'active' | 'deprecated';
-}
+export type PluginProviderModelSummary = Pick<
+  AiModelConfig,
+  'id' | 'providerId' | 'name' | 'capabilities' | 'status'
+>;
 
 /** 插件侧统一 LLM 消息。 */
 export interface PluginLlmMessage {
@@ -1243,6 +1244,7 @@ export type PluginHostMethod =
   | 'kb.search'
   | 'llm.generate'
   | 'llm.generate-text'
+  | 'log.list'
   | 'log.write'
   | 'message.send'
   | 'message.target.current.get'
@@ -1265,7 +1267,9 @@ export type PluginHostMethod =
   | 'subagent.task.get'
   | 'subagent.task.list'
   | 'subagent.task.start'
+  | 'state.delete'
   | 'state.get'
+  | 'state.list'
   | 'state.set'
   | 'user.get';
 

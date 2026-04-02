@@ -11,7 +11,7 @@ function createProvider(id: string, available = true, defaultModel?: string) {
   return {
     id,
     name: id,
-    mode: 'official' as const,
+    mode: 'catalog' as const,
     driver: 'openai',
     defaultModel,
     baseUrl: 'https://example.com/v1',

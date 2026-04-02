@@ -2,23 +2,23 @@
  * AiProviderService 运行时配置测试
  *
  * 输入:
- * - 配置文件中的官方 / 兼容 provider 配置
+ * - 配置文件中的 catalog / 协议接入配置
  * - 模型注册表中的能力覆盖
  *
  * 输出:
  * - 断言运行时只读取 config/ai-settings.json 中的 provider
- * - 断言兼容 provider 会按三种请求格式映射到官方 SDK
+ * - 断言 catalog preset 和协议接入 provider 都会按三种协议族收敛到协议族 SDK
  * - 断言模型能力优先使用注册表中的已配置结果
  *
  * 预期行为:
  * - 运行时不再从环境变量自动注入 provider
- * - 兼容 provider 只允许 openai / anthropic / gemini 三种格式
+ * - 协议接入只允许 openai / anthropic / gemini 三种协议族
  * - 聊天运行时读取的模型配置应与管理 API 写入后的能力一致
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { createGroq } from '@ai-sdk/groq';
+import type { AiProviderMode } from '@garlic-claw/shared';
 import type { ModelConfig } from './types/provider.types';
 import { AiProviderService } from './ai-provider.service';
 
@@ -56,20 +56,11 @@ jest.mock('@ai-sdk/google', () => ({
   })),
 }));
 
-jest.mock('@ai-sdk/groq', () => ({
-  createGroq: jest.fn((options?: { name?: string }) => ({
-    chat: jest.fn((modelId: string) => ({
-      provider: options?.name ?? 'groq',
-      modelId,
-    })),
-  })),
-}));
-
 describe('AiProviderService', () => {
   type ConfiguredProvider = {
     id: string
     name: string
-    mode: 'official' | 'compatible'
+    mode: AiProviderMode
     driver: string
     apiKey?: string
     baseUrl?: string
@@ -79,6 +70,7 @@ describe('AiProviderService', () => {
 
   type ConfigManagerLike = {
     listProviders: () => ConfiguredProvider[]
+    getSettingsVersion: () => string
   }
 
   type ModelRegistryLike = {
@@ -91,10 +83,12 @@ describe('AiProviderService', () => {
     overrides?: {
       configuredProviders?: ConfiguredProvider[];
       registeredModel?: ModelConfig | null;
+      settingsVersion?: string;
     },
   ) => {
     const configManager: ConfigManagerLike = {
       listProviders: jest.fn(() => overrides?.configuredProviders ?? []),
+      getSettingsVersion: jest.fn(() => overrides?.settingsVersion ?? 'v1'),
     };
 
     const modelRegistry: ModelRegistryLike = {
@@ -119,7 +113,7 @@ describe('AiProviderService', () => {
         {
           id: 'groq',
           name: 'Groq',
-          mode: 'official',
+          mode: 'catalog',
           driver: 'groq',
           apiKey: 'groq-key',
           baseUrl: 'https://api.groq.com/openai/v1',
@@ -132,28 +126,29 @@ describe('AiProviderService', () => {
     const model = service.getModel('groq', 'llama-3.3-70b-versatile');
     const modelConfig = service.getModelConfig('groq', 'llama-3.3-70b-versatile');
 
-    expect(createGroq).toHaveBeenCalledWith(
+    expect(createOpenAI).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: 'groq-key',
         baseURL: 'https://api.groq.com/openai/v1',
+        name: 'groq',
       }),
     );
     expect(model).toEqual({
-      provider: 'groq',
+      provider: 'groq.chat',
       modelId: 'llama-3.3-70b-versatile',
     });
     expect(modelConfig.providerId).toBe('groq');
-    expect(modelConfig.api.npm).toBe('@ai-sdk/groq');
+    expect(modelConfig.api.npm).toBe('@ai-sdk/openai');
     expect(service.getAvailableProviders()).toEqual(['groq']);
   });
 
-  it('maps compatible providers to the official SDK for the configured request format', () => {
+  it('maps protocol providers to the protocol SDK for the configured protocol family', () => {
     const { service } = createService({
       configuredProviders: [
         {
           id: 'team-gemini',
           name: 'Team Gemini',
-          mode: 'compatible',
+          mode: 'protocol',
           driver: 'gemini',
           apiKey: 'team-key',
           baseUrl: 'https://compat.example.com/v1beta',
@@ -188,7 +183,7 @@ describe('AiProviderService', () => {
         {
           id: 'ds2api',
           name: 'ds2api',
-          mode: 'compatible',
+          mode: 'protocol',
           driver: 'openai',
           apiKey: 'team-key',
           baseUrl: 'https://compat.example.com/v1',
@@ -227,7 +222,7 @@ describe('AiProviderService', () => {
       api: {
         id: 'llama-3.3-70b-versatile',
         url: 'https://api.groq.com/openai/v1',
-        npm: '@ai-sdk/groq',
+        npm: '@ai-sdk/openai',
       },
       status: 'active',
     };
@@ -236,7 +231,7 @@ describe('AiProviderService', () => {
         {
           id: 'groq',
           name: 'Groq',
-          mode: 'official',
+          mode: 'catalog',
           driver: 'groq',
           apiKey: 'groq-key',
           baseUrl: 'https://api.groq.com/openai/v1',
@@ -262,5 +257,32 @@ describe('AiProviderService', () => {
     expect(() => service.getModel()).toThrow(
       'AI provider "unset" is not configured. Available providers: ',
     );
+  });
+
+  it('does not rescan provider config again when the settings version is unchanged', () => {
+    const configuredProviders: ConfiguredProvider[] = [
+      {
+        id: 'groq',
+        name: 'Groq',
+        mode: 'catalog',
+        driver: 'groq',
+        apiKey: 'groq-key',
+        baseUrl: 'https://api.groq.com/openai/v1',
+        defaultModel: 'llama-3.3-70b-versatile',
+        models: ['llama-3.3-70b-versatile'],
+      },
+    ];
+    const { service, configManager } = createService({
+      configuredProviders,
+      settingsVersion: 'stable-version',
+    });
+
+    expect(configManager.listProviders).toHaveBeenCalledTimes(1);
+
+    service.getModel('groq', 'llama-3.3-70b-versatile');
+    service.getAvailableProviders();
+
+    expect(configManager.getSettingsVersion).toHaveBeenCalledTimes(3);
+    expect(configManager.listProviders).toHaveBeenCalledTimes(1);
   });
 });

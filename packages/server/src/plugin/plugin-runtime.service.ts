@@ -1,50 +1,28 @@
 import type {
-  ActionConfig,
-  AutomationAfterRunHookMutateResult,
-  AutomationAfterRunHookPassResult,
   AutomationAfterRunHookPayload,
-  AutomationBeforeRunHookMutateResult,
-  AutomationBeforeRunHookPassResult,
   AutomationBeforeRunHookPayload,
-  AutomationBeforeRunHookShortCircuitResult,
   ChatAfterModelHookPayload,
-  ChatAfterModelHookMutateResult,
-  ChatAfterModelHookPassResult,
-  ChatBeforeModelHookMutateResult,
   ChatBeforeModelRequest,
   ChatBeforeModelHookPayload,
-  ChatBeforeModelHookPassResult,
-  ChatBeforeModelHookShortCircuitResult,
   ChatMessagePart,
   ChatWaitingModelHookPayload,
   ConversationCreatedHookPayload,
   HostCallPayload,
   PluginConversationSessionInfo,
-  MessageReceivedHookMutateResult,
-  MessageReceivedHookPassResult,
   MessageReceivedHookPayload,
-  MessageReceivedHookShortCircuitResult,
-  MessageCreatedHookMutateResult,
   MessageCreatedHookPayload,
   MessageDeletedHookPayload,
-  MessageUpdatedHookMutateResult,
   MessageUpdatedHookPayload,
   PluginActionName,
   PluginCallContext,
   PluginCapability,
   PluginErrorHookPayload,
-  PluginHookDescriptor,
-  PluginHookFilterDescriptor,
-  PluginMessageKind,
   PluginHookName,
   PluginHostMethod,
-  PluginLifecycleHookInfo,
-  PluginLlmMessage,
   PluginManifest,
   PluginMessageSendInfo,
   PluginMessageTargetInfo,
   PluginMessageTargetRef,
-  PluginMessageHookInfo,
   PluginPermission,
   PluginLoadedHookPayload,
   PluginRouteDescriptor,
@@ -52,46 +30,27 @@ import type {
   PluginRouteResponse,
   PluginRuntimePressureSnapshot,
   PluginRuntimeKind,
-  PluginSelfInfo,
   PluginSubagentRequest,
   PluginSubagentTaskDetail,
   PluginSubagentTaskSummary,
-  PluginSubagentToolCall,
-  PluginSubagentToolResult,
-  SubagentAfterRunHookMutateResult,
-  SubagentAfterRunHookPassResult,
   SubagentAfterRunHookPayload,
-  SubagentBeforeRunHookMutateResult,
-  SubagentBeforeRunHookPassResult,
   SubagentBeforeRunHookPayload,
-  SubagentBeforeRunHookShortCircuitResult,
   PluginSubagentRunResult,
   PluginUnloadedHookPayload,
   ResponseAfterSendHookPayload,
-  ResponseBeforeSendHookMutateResult,
-  ResponseBeforeSendHookPassResult,
   ResponseBeforeSendHookPayload,
-  TriggerConfig,
-  ToolAfterCallHookMutateResult,
-  ToolAfterCallHookPassResult,
   ToolAfterCallHookPayload,
-  ToolBeforeCallHookMutateResult,
-  ToolBeforeCallHookPassResult,
   ToolBeforeCallHookPayload,
-  ToolBeforeCallHookShortCircuitResult,
 } from '@garlic-claw/shared';
 import type { Tool } from 'ai';
 import {
   BadRequestException,
   ForbiddenException,
-  HttpException,
-  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
-import { createStepLimit } from '../ai/sdk-adapter';
 import { AutomationService } from '../automation/automation.service';
 import { toAiSdkMessages } from '../chat/sdk-message-converter';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
@@ -99,9 +58,123 @@ import { toJsonValue } from '../common/utils/json-value';
 import { PluginHostService } from './plugin-host.service';
 import { PluginCronService } from './plugin-cron.service';
 import {
+  cloneAutomationAfterRunPayload,
+  cloneAutomationBeforeRunPayload,
+  cloneChatAfterModelPayload,
+  cloneChatBeforeModelRequest,
+  cloneJsonValueArray,
+  cloneMessageCreatedHookPayload,
+  cloneMessageReceivedHookPayload,
+  cloneMessageUpdatedHookPayload,
+  cloneResponseBeforeSendHookPayload,
+  cloneSubagentAfterRunPayload,
+  cloneSubagentBeforeRunPayload,
+  cloneSubagentRequest,
+  cloneToolAfterCallHookPayload,
+  cloneToolBeforeCallHookPayload,
+} from './plugin-runtime-clone.helpers';
+import {
+  assertRuntimeRecordEnabled,
+  getRuntimeRecordOrThrow,
+  isRuntimeRecordEnabledForContext,
+  invokeDispatchableHooks,
+  listDispatchableHookRecords,
+} from './plugin-runtime-dispatch.helpers';
+import {
+  applyAutomationAfterRunMutation,
+  applyAutomationBeforeRunMutation,
+  applyChatAfterModelMutation,
+  applyChatBeforeModelMutation,
+  applyChatBeforeModelHookResult,
+  applyMessageCreatedMutation,
+  applyMessageReceivedMutation,
+  applyMessageReceivedHookResult,
+  applyMessageUpdatedMutation,
+  applyResponseBeforeSendMutation,
+  applySubagentAfterRunMutation,
+  applySubagentBeforeRunMutation,
+  applyToolAfterCallMutation,
+  applyToolBeforeCallMutation,
+} from './plugin-runtime-hook-mutation.helpers';
+import {
+  runMutatingHookChain,
+  runShortCircuitingHookChain,
+} from './plugin-runtime-hook-runner.helpers';
+import {
+  normalizeAutomationAfterRunHookResult,
+  normalizeAutomationBeforeRunHookResult,
+  normalizeChatAfterModelHookResult,
+  normalizeChatBeforeModelHookResult,
+  normalizeMessageCreatedHookResult,
+  normalizeMessageReceivedHookResult,
+  normalizeMessageUpdatedHookResult,
+  normalizeResponseBeforeSendHookResult,
+  normalizeSubagentAfterRunHookResult,
+  normalizeSubagentBeforeRunHookResult,
+  normalizeToolAfterCallHookResult,
+  normalizeToolBeforeCallHookResult,
+} from './plugin-runtime-hook-result.helpers';
+import { recordRuntimePluginFailureAndDispatch } from './plugin-runtime-failure.helpers';
+import {
+  buildRuntimePressureSnapshot,
+  isPluginOverloadedError,
+  listSupportedPluginActions,
+  resolveMaxConcurrentExecutions,
+  runWithRuntimeExecutionSlot,
+} from './plugin-runtime-record.helpers';
+import {
+  resolveCachedRuntimeService,
+  resolveCachedRuntimeServiceAsync,
+  resolveCachedRuntimeServicePromise,
+} from './plugin-runtime-module.helpers';
+import {
+  buildPluginLifecycleHookInfo,
+  buildRuntimePluginSelfInfo,
+  buildStoredPluginSelfInfo,
+  findManifestRouteOrThrow,
+  findManifestToolOrThrow,
+} from './plugin-runtime-manifest.helpers';
+import {
+  assertSubagentRequestInputSupported,
+  buildResolvedSubagentAfterRunPayload,
+  collectSubagentRunResult,
+  buildResolvedSubagentRunResult,
+  buildSubagentStreamPreparedInput,
+  buildSubagentToolSetRequest,
+} from './plugin-runtime-subagent.helpers';
+import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
+import {
+  finishConversationSessionForRuntime,
+  finishOwnedConversationSession,
+  getConversationSessionInfoForRuntime,
+  keepConversationSessionForRuntime,
+  listActiveConversationSessionInfos,
+  prepareDispatchableConversationSessionMessageReceivedHook,
+  startConversationSessionForRuntime,
+  syncConversationSessionMessageReceivedPayload,
+  type ConversationSessionRecord,
+} from './plugin-runtime-session.helpers';
+import {
+  readOptionalRuntimeBoolean,
+  readOptionalRuntimeChatMessageParts,
+  readOptionalRuntimeJsonValue,
+  readOptionalRuntimeMessageTarget,
+  readRuntimeAutomationActions,
+  readRuntimeAutomationTrigger,
+  readOptionalRuntimeString,
+  readRuntimeSubagentRequest,
+  readRuntimeSubagentTaskStartParams,
+  readRuntimeTimeoutMs,
+  requirePositiveRuntimeNumber,
+  requireRuntimeString,
+  requireRuntimeUserId,
+} from './plugin-runtime-input.helpers';
+import {
   collectDisabledConversationSessionIds,
-  isPluginEnabledForContext as isPluginEnabledForRuntimeScope,
 } from './plugin-runtime-scope';
+import {
+  normalizeRoutePath,
+} from './plugin-runtime-validation.helpers';
 import {
   PluginService,
   type PluginGovernanceSnapshot,
@@ -132,6 +205,7 @@ const HOST_METHOD_PERMISSION_MAP: Record<PluginHostMethod, PluginPermission | nu
   'kb.search': 'kb:read',
   'llm.generate': 'llm:generate',
   'llm.generate-text': 'llm:generate',
+  'log.list': 'log:read',
   'log.write': 'log:write',
   'message.send': 'conversation:write',
   'message.target.current.get': 'conversation:read',
@@ -154,21 +228,12 @@ const HOST_METHOD_PERMISSION_MAP: Record<PluginHostMethod, PluginPermission | nu
   'subagent.task.get': 'subagent:run',
   'subagent.task.list': 'subagent:run',
   'subagent.task.start': 'subagent:run',
+  'state.delete': 'state:write',
   'state.get': 'state:read',
+  'state.list': 'state:read',
   'state.set': 'state:write',
   'user.get': 'user:read',
 };
-
-/**
- * 插件治理动作展示顺序。
- */
-const PLUGIN_ACTION_ORDER: PluginActionName[] = [
-  'health-check',
-  'reload',
-  'reconnect',
-];
-
-const DEFAULT_PLUGIN_MAX_CONCURRENT_EXECUTIONS = 6;
 
 /**
  * 插件传输适配器接口。
@@ -275,20 +340,6 @@ interface PluginConversationMessageWriter {
 }
 
 /**
- * 运行时维护的活动会话等待态。
- */
-interface ConversationSessionRecord {
-  pluginId: string;
-  conversationId: string;
-  startedAt: number;
-  expiresAt: number;
-  lastMatchedAt: number | null;
-  captureHistory: boolean;
-  historyMessages: PluginMessageHookInfo[];
-  metadata?: JsonValue;
-}
-
-/**
  * 聊天模型前 Hook 继续执行模型调用。
  */
 export interface ChatBeforeModelContinueResult {
@@ -345,43 +396,6 @@ export type MessageReceivedExecutionResult =
   | MessageReceivedShortCircuitExecutionResult;
 
 /**
- * 归一化后的聊天模型前 Hook 返回。
- */
-type NormalizedChatBeforeModelHookResult =
-  | ChatBeforeModelHookPassResult
-  | ChatBeforeModelHookMutateResult
-  | ChatBeforeModelHookShortCircuitResult;
-
-/**
- * 归一化后的收到消息 Hook 返回。
- */
-type NormalizedMessageReceivedHookResult =
-  | MessageReceivedHookPassResult
-  | MessageReceivedHookMutateResult
-  | MessageReceivedHookShortCircuitResult;
-
-/**
- * 归一化后的聊天模型后 Hook 返回。
- */
-type NormalizedChatAfterModelHookResult =
-  | ChatAfterModelHookPassResult
-  | ChatAfterModelHookMutateResult;
-
-/**
- * 归一化后的消息创建 Hook 返回。
- */
-type NormalizedMessageCreatedHookResult =
-  | { action: 'pass' }
-  | MessageCreatedHookMutateResult;
-
-/**
- * 归一化后的消息更新 Hook 返回。
- */
-type NormalizedMessageUpdatedHookResult =
-  | { action: 'pass' }
-  | MessageUpdatedHookMutateResult;
-
-/**
  * 自动化运行前 Hook 继续执行。
  */
 export interface AutomationBeforeRunContinueResult {
@@ -404,21 +418,6 @@ export interface AutomationBeforeRunShortCircuitExecutionResult {
 export type AutomationBeforeRunExecutionResult =
   | AutomationBeforeRunContinueResult
   | AutomationBeforeRunShortCircuitExecutionResult;
-
-/**
- * 归一化后的自动化运行前 Hook 返回。
- */
-type NormalizedAutomationBeforeRunHookResult =
-  | AutomationBeforeRunHookPassResult
-  | AutomationBeforeRunHookMutateResult
-  | AutomationBeforeRunHookShortCircuitResult;
-
-/**
- * 归一化后的自动化运行后 Hook 返回。
- */
-type NormalizedAutomationAfterRunHookResult =
-  | AutomationAfterRunHookPassResult
-  | AutomationAfterRunHookMutateResult;
 
 /**
  * 工具调用前 Hook 继续执行。
@@ -444,44 +443,10 @@ export type ToolBeforeCallExecutionResult =
   | ToolBeforeCallShortCircuitExecutionResult;
 
 /**
- * 归一化后的工具调用前 Hook 返回。
- */
-type NormalizedToolBeforeCallHookResult =
-  | ToolBeforeCallHookPassResult
-  | ToolBeforeCallHookMutateResult
-  | ToolBeforeCallHookShortCircuitResult;
-
-/**
- * 归一化后的工具调用后 Hook 返回。
- */
-type NormalizedToolAfterCallHookResult =
-  | ToolAfterCallHookPassResult
-  | ToolAfterCallHookMutateResult;
-
-/**
- * 归一化后的最终回复发送前 Hook 返回。
- */
-type NormalizedResponseBeforeSendHookResult =
-  | ResponseBeforeSendHookPassResult
-  | ResponseBeforeSendHookMutateResult;
-
-/**
- * 归一化后的子代理运行前 Hook 返回。
- */
-type NormalizedSubagentBeforeRunHookResult =
-  | SubagentBeforeRunHookPassResult
-  | SubagentBeforeRunHookMutateResult
-  | SubagentBeforeRunHookShortCircuitResult;
-
-/**
- * 归一化后的子代理运行后 Hook 返回。
- */
-type NormalizedSubagentAfterRunHookResult =
-  | SubagentAfterRunHookPassResult
-  | SubagentAfterRunHookMutateResult;
-
-/**
  * 统一插件运行时。
+ *
+ * NOTE: 当前保持单文件，因为 transport 调度、Hook 归一化、会话状态和运行时治理仍共享同一条执行边界；
+ * 后续减法会继续外提重复解析与 clone/helper，但暂不把强耦合的执行链拆散到多个服务里。
  *
  * 输入:
  * - 插件 manifest
@@ -562,7 +527,7 @@ export class PluginRuntimeService {
       transport: input.transport,
       governance,
       activeExecutions: 0,
-      maxConcurrentExecutions: this.resolveMaxConcurrentExecutions(governance),
+      maxConcurrentExecutions: resolveMaxConcurrentExecutions(governance),
     };
     this.records.set(input.manifest.id, record);
     await this.cronService.onPluginRegistered(
@@ -577,7 +542,7 @@ export class PluginRuntimeService {
         context: {
           source: 'plugin',
         },
-        plugin: this.buildPluginLifecycleHookInfo(record),
+        plugin: buildPluginLifecycleHookInfo(record),
         loadedAt: new Date().toISOString(),
       },
     });
@@ -597,8 +562,15 @@ export class PluginRuntimeService {
     }
 
     record.governance = await this.pluginService.getGovernanceSnapshot(pluginId);
-    record.maxConcurrentExecutions = this.resolveMaxConcurrentExecutions(record.governance);
-    this.pruneDisabledConversationSessions(pluginId, record.governance.scope);
+    record.maxConcurrentExecutions = resolveMaxConcurrentExecutions(record.governance);
+    const disabledConversationIds = collectDisabledConversationSessionIds(
+      this.conversationSessions.values(),
+      pluginId,
+      record.governance.scope,
+    );
+    for (const conversationId of disabledConversationIds) {
+      this.conversationSessions.delete(conversationId);
+    }
   }
 
   /**
@@ -617,7 +589,7 @@ export class PluginRuntimeService {
           context: {
             source: 'plugin',
           },
-          plugin: this.buildPluginLifecycleHookInfo(record),
+          plugin: buildPluginLifecycleHookInfo(record),
           unloadedAt: new Date().toISOString(),
         },
       });
@@ -645,7 +617,7 @@ export class PluginRuntimeService {
     }> = [];
 
     for (const [pluginId, record] of this.records) {
-      if (context && !this.isPluginEnabledForContext(record, context)) {
+      if (context && !isRuntimeRecordEnabledForContext(record, context)) {
         continue;
       }
 
@@ -678,8 +650,8 @@ export class PluginRuntimeService {
       runtimeKind: record.runtimeKind,
       deviceType: record.deviceType,
       manifest: record.manifest,
-      supportedActions: this.listSupportedActionsForRecord(record),
-      runtimePressure: this.buildRuntimePressure(record),
+      supportedActions: listSupportedPluginActions(record),
+      runtimePressure: buildRuntimePressureSnapshot(record),
     }));
   }
 
@@ -694,7 +666,7 @@ export class PluginRuntimeService {
       return null;
     }
 
-    return this.buildRuntimePressure(record);
+    return buildRuntimePressureSnapshot(record);
   }
 
   /**
@@ -703,21 +675,11 @@ export class PluginRuntimeService {
    * @returns 当前活动等待态列表
    */
   listConversationSessions(pluginId?: string): PluginConversationSessionInfo[] {
-    const sessions: PluginConversationSessionInfo[] = [];
-
-    for (const conversationId of this.conversationSessions.keys()) {
-      const session = this.getActiveConversationSession(conversationId);
-      if (!session) {
-        continue;
-      }
-      if (pluginId && session.pluginId !== pluginId) {
-        continue;
-      }
-
-      sessions.push(this.toConversationSessionInfo(session));
-    }
-
-    return sessions.sort((left, right) => left.expiresAt.localeCompare(right.expiresAt));
+    return listActiveConversationSessionInfos(
+      this.conversationSessions,
+      pluginId,
+      Date.now(),
+    );
   }
 
   /**
@@ -730,13 +692,11 @@ export class PluginRuntimeService {
     pluginId: string,
     conversationId: string,
   ): boolean {
-    const session = this.getOwnedConversationSession(pluginId, conversationId);
-    if (!session) {
-      return false;
-    }
-
-    this.conversationSessions.delete(conversationId);
-    return true;
+    return finishOwnedConversationSession(
+      this.conversationSessions,
+      pluginId,
+      conversationId,
+    );
   }
 
   /**
@@ -748,7 +708,7 @@ export class PluginRuntimeService {
     pluginId: string;
     action: Exclude<PluginActionName, 'health-check'>;
   }): Promise<void> {
-    const record = this.getRecordOrThrow(input.pluginId);
+    const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
     const handler = input.action === 'reload'
       ? record.transport.reload
       : record.transport.reconnect;
@@ -758,7 +718,7 @@ export class PluginRuntimeService {
       );
     }
 
-    await this.runWithTimeout(
+    await runPromiseWithTimeout(
       Promise.resolve(handler.call(record.transport)),
       15000,
       `插件 ${input.pluginId} 治理动作 ${input.action} 执行超时`,
@@ -785,7 +745,7 @@ export class PluginRuntimeService {
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
-        const result = await this.runWithTimeout(
+        const result = await runPromiseWithTimeout(
           Promise.resolve(record.transport.checkHealth()),
           5000,
           `插件 ${pluginId} 健康检查超时`,
@@ -863,9 +823,9 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     skipLifecycleHooks?: boolean;
   }): Promise<JsonValue> {
-    const record = this.getRecordOrThrow(input.pluginId);
-    this.assertPluginEnabled(record, input.context);
-    const targetTool = this.findToolOrThrow(record, input.toolName);
+    const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
+    assertRuntimeRecordEnabled(record, input.context);
+    const targetTool = findManifestToolOrThrow(record.manifest, input.toolName);
     const lifecyclePayload = {
       context: {
         ...input.context,
@@ -908,59 +868,44 @@ export class PluginRuntimeService {
       toolParams = beforeCallResult.payload.params;
     }
 
-    try {
-      const output = await this.runWithPluginExecutionSlot({
-        record,
-        type: 'tool',
-        metadata: {
+    const output = await this.runTimedPluginInvocation({
+      record,
+      context: input.context,
+      executionType: 'tool',
+      executionMetadata: {
+        toolName: input.toolName,
+      },
+      failureTypePrefix: 'tool',
+      failureMetadata: {
+        toolName: input.toolName,
+      },
+      timeoutMs: readRuntimeTimeoutMs(input.context, 30000),
+      timeoutMessage: `插件 ${input.pluginId} 工具 ${input.toolName} 执行超时`,
+      execute: () => Promise.resolve(
+        record.transport.executeTool({
           toolName: input.toolName,
-        },
-        execute: () => this.runWithTimeout(
-          Promise.resolve(
-            record.transport.executeTool({
-              toolName: input.toolName,
-              params: toolParams,
-              context: input.context,
-            }),
-          ),
-          this.readTimeoutMs(input.context, 30000),
-          `插件 ${input.pluginId} 工具 ${input.toolName} 执行超时`,
-        ),
-      });
+          params: toolParams,
+          context: input.context,
+        }),
+      ),
+    });
 
-      if (input.skipLifecycleHooks) {
-        return output;
-      }
-
-      const afterCallPayload = await this.runToolAfterCallHooks({
-        context: input.context,
-        payload: {
-          ...lifecyclePayload,
-          params: {
-            ...toolParams,
-          },
-          output,
-        },
-      });
-
-      return afterCallPayload.output;
-    } catch (error) {
-      if (isPluginOverloadedError(error)) {
-        throw error;
-      }
-      await this.recordPluginFailureAndDispatch({
-        pluginId: input.pluginId,
-        context: input.context,
-        type: error instanceof Error && error.message.includes('超时')
-          ? 'tool:timeout'
-          : 'tool:error',
-        message: error instanceof Error ? error.message : String(error),
-        metadata: {
-          toolName: input.toolName,
-        },
-      });
-      throw error;
+    if (input.skipLifecycleHooks) {
+      return output;
     }
+
+    const afterCallPayload = await this.runToolAfterCallHooks({
+      context: input.context,
+      payload: {
+        ...lifecyclePayload,
+        params: {
+          ...toolParams,
+        },
+        output,
+      },
+    });
+
+    return afterCallPayload.output;
   }
 
   /**
@@ -973,50 +918,39 @@ export class PluginRuntimeService {
     request: PluginRouteRequest;
     context: PluginCallContext;
   }): Promise<PluginRouteResponse> {
-    const record = this.getRecordOrThrow(input.pluginId);
-    this.assertPluginEnabled(record, input.context);
-    const route = this.findRouteOrThrow(record, input.request.path, input.request.method);
+    const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
+    assertRuntimeRecordEnabled(record, input.context);
+    const route = findManifestRouteOrThrow(
+      record.manifest,
+      input.request.method,
+      input.request.path,
+    );
 
-    try {
-      return await this.runWithPluginExecutionSlot({
-        record,
-        type: 'route',
-        metadata: {
-          method: input.request.method,
-          path: route.path,
-        },
-        execute: () => this.runWithTimeout(
-          Promise.resolve(
-            record.transport.invokeRoute({
-              request: {
-                ...input.request,
-                path: normalizeRoutePath(route.path),
-              },
-              context: input.context,
-            }),
-          ),
-          this.readTimeoutMs(input.context, 15000),
-          `插件 ${input.pluginId} Route ${route.path} 执行超时`,
-        ),
-      });
-    } catch (error) {
-      if (isPluginOverloadedError(error)) {
-        throw error;
-      }
-      await this.recordPluginFailureAndDispatch({
-        pluginId: input.pluginId,
-        context: input.context,
-        type: error instanceof Error && error.message.includes('超时')
-          ? 'route:timeout'
-          : 'route:error',
-        message: error instanceof Error ? error.message : String(error),
-        metadata: {
-          method: input.request.method,
-          path: route.path,
-        },
-      });
-      throw error;
-    }
+    return this.runTimedPluginInvocation({
+      record,
+      context: input.context,
+      executionType: 'route',
+      executionMetadata: {
+        method: input.request.method,
+        path: route.path,
+      },
+      failureTypePrefix: 'route',
+      failureMetadata: {
+        method: input.request.method,
+        path: route.path,
+      },
+      timeoutMs: readRuntimeTimeoutMs(input.context, 15000),
+      timeoutMessage: `插件 ${input.pluginId} Route ${route.path} 执行超时`,
+      execute: () => Promise.resolve(
+        record.transport.invokeRoute({
+          request: {
+            ...input.request,
+            path: normalizeRoutePath(route.path),
+          },
+          context: input.context,
+        }),
+      ),
+    });
   }
 
   /**
@@ -1031,10 +965,25 @@ export class PluginRuntimeService {
     params: JsonObject;
   }): Promise<JsonValue> {
     if (input.method === 'plugin.self.get') {
-      return toJsonValue(await this.buildPluginSelfInfo(input.pluginId));
+      const record = this.records.get(input.pluginId);
+      if (!record) {
+        return toJsonValue(
+          buildStoredPluginSelfInfo({
+            plugin: await this.pluginService.getPluginSelfInfo(input.pluginId),
+          }),
+        );
+      }
+
+      return toJsonValue(
+        buildRuntimePluginSelfInfo({
+          manifest: record.manifest,
+          runtimeKind: record.runtimeKind,
+          supportedActions: listSupportedPluginActions(record),
+        }),
+      );
     }
 
-    const record = this.getRecordOrThrow(input.pluginId);
+    const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
     const requiredPermission = HOST_METHOD_PERMISSION_MAP[input.method];
     if (requiredPermission && !record.manifest.permissions.includes(requiredPermission)) {
       throw new ForbiddenException(
@@ -1045,51 +994,51 @@ export class PluginRuntimeService {
     if (input.method === 'automation.create') {
       return toJsonValue(
         await this.getAutomationService().create(
-          this.requireUserId(input.context, 'automation.create'),
-          this.requireString(input.params, 'name', 'automation.create'),
-          this.readAutomationTrigger(input.params, 'automation.create'),
-          this.readAutomationActions(input.params, 'automation.create'),
+          requireRuntimeUserId(input.context, 'automation.create'),
+          requireRuntimeString(input.params, 'name', 'automation.create'),
+          readRuntimeAutomationTrigger(input.params, 'automation.create'),
+          readRuntimeAutomationActions(input.params, 'automation.create'),
         ),
       );
     }
     if (input.method === 'automation.list') {
       return toJsonValue(
         await this.getAutomationService().findAllByUser(
-          this.requireUserId(input.context, 'automation.list'),
+          requireRuntimeUserId(input.context, 'automation.list'),
         ),
       );
     }
     if (input.method === 'automation.event.emit') {
       return toJsonValue(
         await this.getAutomationService().emitEvent(
-          this.requireString(input.params, 'event', 'automation.event.emit'),
-          this.requireUserId(input.context, 'automation.event.emit'),
+          requireRuntimeString(input.params, 'event', 'automation.event.emit'),
+          requireRuntimeUserId(input.context, 'automation.event.emit'),
         ),
       );
     }
     if (input.method === 'automation.toggle') {
       return toJsonValue(
         await this.getAutomationService().toggle(
-          this.requireString(input.params, 'automationId', 'automation.toggle'),
-          this.requireUserId(input.context, 'automation.toggle'),
+          requireRuntimeString(input.params, 'automationId', 'automation.toggle'),
+          requireRuntimeUserId(input.context, 'automation.toggle'),
         ),
       );
     }
     if (input.method === 'automation.run') {
       return toJsonValue(
         await this.getAutomationService().executeAutomation(
-          this.requireString(input.params, 'automationId', 'automation.run'),
-          this.requireUserId(input.context, 'automation.run'),
+          requireRuntimeString(input.params, 'automationId', 'automation.run'),
+          requireRuntimeUserId(input.context, 'automation.run'),
         ),
       );
     }
     if (input.method === 'cron.register') {
       return toJsonValue(await this.cronService.registerCron(input.pluginId, {
-        name: this.requireString(input.params, 'name', 'cron.register'),
-        cron: this.requireString(input.params, 'cron', 'cron.register'),
-        description: this.readOptionalString(input.params, 'description', 'cron.register'),
-        data: this.readOptionalJsonValue(input.params, 'data'),
-        enabled: this.readOptionalBoolean(input.params, 'enabled', 'cron.register'),
+        name: requireRuntimeString(input.params, 'name', 'cron.register'),
+        cron: requireRuntimeString(input.params, 'cron', 'cron.register'),
+        description: readOptionalRuntimeString(input.params, 'description', 'cron.register'),
+        data: readOptionalRuntimeJsonValue(input.params, 'data'),
+        enabled: readOptionalRuntimeBoolean(input.params, 'enabled', 'cron.register'),
       }));
     }
     if (input.method === 'cron.list') {
@@ -1098,7 +1047,7 @@ export class PluginRuntimeService {
     if (input.method === 'cron.delete') {
       return this.cronService.deleteCron(
         input.pluginId,
-        this.requireString(input.params, 'jobId', 'cron.delete'),
+        requireRuntimeString(input.params, 'jobId', 'cron.delete'),
       );
     }
     if (input.method === 'message.target.current.get') {
@@ -1111,27 +1060,27 @@ export class PluginRuntimeService {
       const chatMessageService = await this.getChatMessageService();
       return toJsonValue(await chatMessageService.sendPluginMessage({
         context: input.context,
-        target: this.readOptionalMessageTarget(
+        target: readOptionalRuntimeMessageTarget(
           input.params,
           'target',
           'message.send',
         ),
-        content: this.readOptionalString(
+        content: readOptionalRuntimeString(
           input.params,
           'content',
           'message.send',
         ),
-        parts: this.readOptionalChatMessageParts(
+        parts: readOptionalRuntimeChatMessageParts(
           input.params,
           'parts',
           'message.send',
         ),
-        provider: this.readOptionalString(
+        provider: readOptionalRuntimeString(
           input.params,
           'provider',
           'message.send',
         ),
-        model: this.readOptionalString(
+        model: readOptionalRuntimeString(
           input.params,
           'model',
           'message.send',
@@ -1139,55 +1088,72 @@ export class PluginRuntimeService {
       }));
     }
     if (input.method === 'conversation.session.start') {
-      return toJsonValue(this.startConversationSession({
+      return toJsonValue(startConversationSessionForRuntime({
+        sessions: this.conversationSessions,
         pluginId: input.pluginId,
         context: input.context,
-        timeoutMs: this.requirePositiveNumber(
+        method: 'conversation.session.start',
+        timeoutMs: requirePositiveRuntimeNumber(
           input.params,
           'timeoutMs',
           'conversation.session.start',
         ),
-        captureHistory: this.readOptionalBoolean(
+        captureHistory: readOptionalRuntimeBoolean(
           input.params,
           'captureHistory',
           'conversation.session.start',
         ) ?? false,
-        metadata: this.readOptionalJsonValue(input.params, 'metadata'),
+        metadata: readOptionalRuntimeJsonValue(input.params, 'metadata'),
+        now: Date.now(),
       }));
     }
     if (input.method === 'conversation.session.get') {
-      return toJsonValue(this.getConversationSession(input.pluginId, input.context));
-    }
-    if (input.method === 'conversation.session.keep') {
-      return toJsonValue(this.keepConversationSession({
+      return toJsonValue(getConversationSessionInfoForRuntime({
+        sessions: this.conversationSessions,
         pluginId: input.pluginId,
         context: input.context,
-        timeoutMs: this.requirePositiveNumber(
+        method: 'conversation.session.get',
+        now: Date.now(),
+      }));
+    }
+    if (input.method === 'conversation.session.keep') {
+      return toJsonValue(keepConversationSessionForRuntime({
+        sessions: this.conversationSessions,
+        pluginId: input.pluginId,
+        context: input.context,
+        method: 'conversation.session.keep',
+        timeoutMs: requirePositiveRuntimeNumber(
           input.params,
           'timeoutMs',
           'conversation.session.keep',
         ),
-        resetTimeout: this.readOptionalBoolean(
+        resetTimeout: readOptionalRuntimeBoolean(
           input.params,
           'resetTimeout',
           'conversation.session.keep',
         ) ?? true,
+        now: Date.now(),
       }));
     }
     if (input.method === 'conversation.session.finish') {
-      return this.finishConversationSession(input.pluginId, input.context);
-    }
-    if (input.method === 'subagent.run') {
-      return toJsonValue(await this.runSubagent({
+      return finishConversationSessionForRuntime({
+        sessions: this.conversationSessions,
         pluginId: input.pluginId,
         context: input.context,
-        params: input.params,
+        method: 'conversation.session.finish',
+      });
+    }
+    if (input.method === 'subagent.run') {
+      return toJsonValue(await this.executeSubagentRequest({
+        pluginId: input.pluginId,
+        context: input.context,
+        request: readRuntimeSubagentRequest(input.params, 'subagent.run'),
       }));
     }
     if (input.method === 'subagent.task.start') {
-      const record = this.getRecordOrThrow(input.pluginId);
+      const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
       const taskService = await this.getSubagentTaskService();
-      const taskParams = this.readSubagentTaskStartParams(
+      const taskParams = readRuntimeSubagentTaskStartParams(
         input.params,
         'subagent.task.start',
       );
@@ -1210,7 +1176,7 @@ export class PluginRuntimeService {
       const taskService = await this.getSubagentTaskService();
       return toJsonValue(await taskService.getTaskForPlugin(
         input.pluginId,
-        this.requireString(input.params, 'taskId', 'subagent.task.get'),
+        requireRuntimeString(input.params, 'taskId', 'subagent.task.get'),
       ));
     }
 
@@ -1228,7 +1194,7 @@ export class PluginRuntimeService {
       return ['health-check'];
     }
 
-    return this.listSupportedActionsForRecord(record);
+    return listSupportedPluginActions(record);
   }
 
   /**
@@ -1243,48 +1209,32 @@ export class PluginRuntimeService {
     payload: JsonValue;
     recordFailure?: boolean;
   }): Promise<JsonValue | null | undefined> {
-    const record = this.getRecordOrThrow(input.pluginId);
-    this.assertPluginEnabled(record, input.context);
+    const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
+    assertRuntimeRecordEnabled(record, input.context);
 
-    try {
-      return await this.runWithPluginExecutionSlot({
-        record,
-        type: 'hook',
-        metadata: {
+    return this.runTimedPluginInvocation({
+      record,
+      context: input.context,
+      executionType: 'hook',
+      executionMetadata: {
+        hookName: input.hookName,
+      },
+      failureTypePrefix: 'hook',
+      failureMetadata: {
+        hookName: input.hookName,
+      },
+      timeoutMs: readRuntimeTimeoutMs(input.context, 10000),
+      timeoutMessage: `插件 ${record.manifest.id} Hook ${input.hookName} 执行超时`,
+      skipPluginErrorHook: input.hookName === 'plugin:error',
+      recordFailure: input.recordFailure !== false,
+      execute: () => Promise.resolve(
+        record.transport.invokeHook({
           hookName: input.hookName,
-        },
-        execute: () => this.runWithTimeout(
-          Promise.resolve(
-            record.transport.invokeHook({
-              hookName: input.hookName,
-              context: input.context,
-              payload: input.payload,
-            }),
-          ),
-          this.readTimeoutMs(input.context, 10000),
-          `插件 ${record.manifest.id} Hook ${input.hookName} 执行超时`,
-        ),
-      });
-    } catch (error) {
-      if (isPluginOverloadedError(error)) {
-        throw error;
-      }
-      if (input.recordFailure !== false) {
-        await this.recordPluginFailureAndDispatch({
-          pluginId: record.manifest.id,
           context: input.context,
-          type: error instanceof Error && error.message.includes('超时')
-            ? 'hook:timeout'
-            : 'hook:error',
-          message: error instanceof Error ? error.message : String(error),
-          metadata: {
-            hookName: input.hookName,
-          },
-          skipPluginErrorHook: input.hookName === 'plugin:error',
-        });
-      }
-      throw error;
-    }
+          payload: input.payload,
+        }),
+      ),
+    });
   }
 
   /**
@@ -1296,54 +1246,47 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: ChatBeforeModelHookPayload;
   }): Promise<ChatBeforeModelExecutionResult> {
-    let request = cloneChatBeforeModelRequest(input.payload.request);
-
-    for (const record of this.listHookRecords('chat:before-model', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'chat:before-model',
-          context: input.context,
-          payload: toJsonValue({
-            context: input.payload.context,
-            request,
-          }),
+    const result = await runShortCircuitingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'chat:before-model',
+        context: input.context,
+      }),
+      hookName: 'chat:before-model',
+      context: input.context,
+      payload: {
+        context: {
+          ...input.payload.context,
+        },
+        request: cloneChatBeforeModelRequest(input.payload.request),
+      },
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeChatBeforeModelHookResult,
+      applyMutation: (payload, mutation) => ({
+        context: {
+          ...payload.context,
+        },
+        request: applyChatBeforeModelMutation(payload.request, mutation),
+      }),
+      buildShortCircuitReturn: ({ payload, result: hookResult }) => {
+        const executionResult = applyChatBeforeModelHookResult({
+          request: payload.request,
+          result: hookResult,
         });
-        const hookResult = this.normalizeChatBeforeModelHookResult(
-          rawResult,
-          request,
-        );
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
+        if (executionResult.action !== 'short-circuit') {
+          throw new Error('chat:before-model short-circuit result normalization failed');
         }
 
-        if (hookResult.action === 'short-circuit') {
-          const normalizedAssistant = normalizeAssistantOutput({
-            assistantContent: hookResult.assistantContent,
-            assistantParts: hookResult.assistantParts,
-          });
-          return {
-            action: 'short-circuit',
-            request,
-            assistantContent: normalizedAssistant.assistantContent,
-            assistantParts: normalizedAssistant.assistantParts,
-            providerId: hookResult.providerId ?? request.providerId,
-            modelId: hookResult.modelId ?? request.modelId,
-            ...(hookResult.reason ? { reason: hookResult.reason } : {}),
-          };
-        }
+        return executionResult;
+      },
+    });
 
-        request = this.applyChatBeforeModelMutation(request, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return {
-      action: 'continue',
-      request,
-    };
+    return result.action === 'short-circuit'
+      ? result
+      : {
+          action: 'continue',
+          request: result.payload.request,
+        };
   }
 
   /**
@@ -1355,7 +1298,7 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: MessageReceivedHookPayload;
   }): Promise<MessageReceivedExecutionResult> {
-    let payload = cloneMessageReceivedHookPayload(input.payload);
+    const payload = cloneMessageReceivedHookPayload(input.payload);
 
     const sessionResult = await this.runConversationSessionMessageReceivedHook({
       context: input.context,
@@ -1365,50 +1308,31 @@ export class PluginRuntimeService {
       return sessionResult;
     }
 
-    for (const record of this.listHookRecords(
-      'message:received',
-      input.context,
+    return runShortCircuitingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'message:received',
+        context: input.context,
+        payload,
+      }),
+      hookName: 'message:received',
+      context: input.context,
       payload,
-    )) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'message:received',
-          context: input.context,
-          payload: toJsonValue(payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeMessageReceivedHookResult,
+      applyMutation: applyMessageReceivedMutation,
+      buildShortCircuitReturn: ({ payload: currentPayload, result: hookResult }) => {
+        const executionResult = applyMessageReceivedHookResult({
+          payload: currentPayload,
+          result: hookResult,
         });
-        const hookResult = this.normalizeMessageReceivedHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
+        if (executionResult.action !== 'short-circuit') {
+          throw new Error('message:received short-circuit result normalization failed');
         }
 
-        if (hookResult.action === 'short-circuit') {
-          const normalizedAssistant = normalizeAssistantOutput({
-            assistantContent: hookResult.assistantContent,
-            assistantParts: hookResult.assistantParts,
-          });
-          return {
-            action: 'short-circuit',
-            payload,
-            assistantContent: normalizedAssistant.assistantContent,
-            assistantParts: normalizedAssistant.assistantParts,
-            providerId: hookResult.providerId ?? payload.providerId,
-            modelId: hookResult.modelId ?? payload.modelId,
-            ...(hookResult.reason ? { reason: hookResult.reason } : {}),
-          };
-        }
-
-        payload = this.applyMessageReceivedMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return {
-      action: 'continue',
-      payload,
-    };
+        return executionResult;
+      },
+    });
   }
 
   /**
@@ -1420,23 +1344,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: MessageReceivedHookPayload;
   }): Promise<MessageReceivedExecutionResult | null> {
-    const session = this.getActiveConversationSession(input.payload.conversationId);
-    if (!session) {
+    const prepared = prepareDispatchableConversationSessionMessageReceivedHook({
+      sessions: this.conversationSessions,
+      records: this.records,
+      context: input.context,
+      payload: input.payload,
+      now: Date.now(),
+    });
+    if (!prepared) {
       return null;
     }
+    const { session, record: ownerRecord } = prepared;
 
-    const ownerRecord = this.records.get(session.pluginId);
-    if (!ownerRecord || !this.isPluginEnabledForContext(ownerRecord, input.context)) {
-      this.conversationSessions.delete(session.conversationId);
-      return null;
-    }
-    if (!this.getHookDescriptor(ownerRecord, 'message:received')) {
-      this.conversationSessions.delete(session.conversationId);
-      return null;
-    }
-
-    let payload = cloneMessageReceivedHookPayload(input.payload);
-    payload.session = this.recordConversationSessionMessage(session, payload.message);
+    let { payload } = prepared;
 
     try {
       const rawResult = await this.invokePluginHook({
@@ -1445,48 +1365,26 @@ export class PluginRuntimeService {
         context: input.context,
         payload: toJsonValue(payload),
       });
-      const hookResult = this.normalizeMessageReceivedHookResult(rawResult);
-
-      if (!hookResult || hookResult.action === 'pass') {
-        const activeSession = this.getActiveConversationSession(session.conversationId);
-        payload.session = activeSession
-          ? this.toConversationSessionInfo(activeSession)
-          : payload.session;
-        return {
-          action: 'continue',
-          payload,
-        };
-      }
-
-      if (hookResult.action === 'short-circuit') {
-        const normalizedAssistant = normalizeAssistantOutput({
-          assistantContent: hookResult.assistantContent,
-          assistantParts: hookResult.assistantParts,
-        });
-        const activeSession = this.getActiveConversationSession(session.conversationId);
-        payload.session = activeSession
-          ? this.toConversationSessionInfo(activeSession)
-          : payload.session;
-        return {
-          action: 'short-circuit',
-          payload,
-          assistantContent: normalizedAssistant.assistantContent,
-          assistantParts: normalizedAssistant.assistantParts,
-          providerId: hookResult.providerId ?? payload.providerId,
-          modelId: hookResult.modelId ?? payload.modelId,
-          ...(hookResult.reason ? { reason: hookResult.reason } : {}),
-        };
-      }
-
-      payload = this.applyMessageReceivedMutation(payload, hookResult);
-      const activeSession = this.getActiveConversationSession(session.conversationId);
-      payload.session = activeSession
-        ? this.toConversationSessionInfo(activeSession)
-        : payload.session;
-      return {
-        action: 'continue',
+      const hookResult = normalizeMessageReceivedHookResult(rawResult);
+      const executionResult = applyMessageReceivedHookResult({
         payload,
-      };
+        result: hookResult,
+      });
+      payload = syncConversationSessionMessageReceivedPayload({
+        sessions: this.conversationSessions,
+        session,
+        payload: executionResult.payload,
+        now: Date.now(),
+      });
+      return executionResult.action === 'short-circuit'
+        ? {
+            ...executionResult,
+            payload,
+          }
+        : {
+            action: 'continue',
+            payload,
+          };
     } catch {
       this.conversationSessions.delete(session.conversationId);
       return null;
@@ -1518,29 +1416,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: ChatAfterModelHookPayload;
   }): Promise<ChatAfterModelHookPayload> {
-    let payload = cloneChatAfterModelPayload(input.payload);
-
-    for (const record of this.listHookRecords('chat:after-model', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'chat:after-model',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeChatAfterModelHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        payload = this.applyChatAfterModelMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return payload;
+    return runMutatingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'chat:after-model',
+        context: input.context,
+      }),
+      hookName: 'chat:after-model',
+      context: input.context,
+      payload: cloneChatAfterModelPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeChatAfterModelHookResult,
+      applyMutation: applyChatAfterModelMutation,
+    });
   }
 
   /**
@@ -1568,29 +1456,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: MessageCreatedHookPayload;
   }): Promise<MessageCreatedHookPayload> {
-    let payload = cloneMessageCreatedHookPayload(input.payload);
-
-    for (const record of this.listHookRecords('message:created', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'message:created',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeMessageCreatedHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        payload = this.applyMessageCreatedMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return payload;
+    return runMutatingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'message:created',
+        context: input.context,
+      }),
+      hookName: 'message:created',
+      context: input.context,
+      payload: cloneMessageCreatedHookPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeMessageCreatedHookResult,
+      applyMutation: applyMessageCreatedMutation,
+    });
   }
 
   /**
@@ -1602,29 +1480,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: MessageUpdatedHookPayload;
   }): Promise<MessageUpdatedHookPayload> {
-    let payload = cloneMessageUpdatedHookPayload(input.payload);
-
-    for (const record of this.listHookRecords('message:updated', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'message:updated',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeMessageUpdatedHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        payload = this.applyMessageUpdatedMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return payload;
+    return runMutatingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'message:updated',
+        context: input.context,
+      }),
+      hookName: 'message:updated',
+      context: input.context,
+      payload: cloneMessageUpdatedHookPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeMessageUpdatedHookResult,
+      applyMutation: applyMessageUpdatedMutation,
+    });
   }
 
   /**
@@ -1652,40 +1520,24 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: AutomationBeforeRunHookPayload;
   }): Promise<AutomationBeforeRunExecutionResult> {
-    let payload = cloneAutomationBeforeRunPayload(input.payload);
-
-    for (const record of this.listHookRecords('automation:before-run', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'automation:before-run',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeAutomationBeforeRunHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        if (hookResult.action === 'short-circuit') {
-          return {
-            action: 'short-circuit',
-            status: hookResult.status,
-            results: cloneJsonValueArray(hookResult.results),
-          };
-        }
-
-        payload = this.applyAutomationBeforeRunMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return {
-      action: 'continue',
-      payload,
-    };
+    return runShortCircuitingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'automation:before-run',
+        context: input.context,
+      }),
+      hookName: 'automation:before-run',
+      context: input.context,
+      payload: cloneAutomationBeforeRunPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeAutomationBeforeRunHookResult,
+      applyMutation: applyAutomationBeforeRunMutation,
+      buildShortCircuitReturn: ({ result }) => ({
+        action: 'short-circuit',
+        status: result.status,
+        results: cloneJsonValueArray(result.results),
+      }),
+    });
   }
 
   /**
@@ -1697,29 +1549,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: AutomationAfterRunHookPayload;
   }): Promise<AutomationAfterRunHookPayload> {
-    let payload = cloneAutomationAfterRunPayload(input.payload);
-
-    for (const record of this.listHookRecords('automation:after-run', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'automation:after-run',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeAutomationAfterRunHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        payload = this.applyAutomationAfterRunMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return payload;
+    return runMutatingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'automation:after-run',
+        context: input.context,
+      }),
+      hookName: 'automation:after-run',
+      context: input.context,
+      payload: cloneAutomationAfterRunPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeAutomationAfterRunHookResult,
+      applyMutation: applyAutomationAfterRunMutation,
+    });
   }
 
   /**
@@ -1731,38 +1573,23 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: ToolBeforeCallHookPayload;
   }): Promise<ToolBeforeCallExecutionResult> {
-    let payload = cloneToolBeforeCallHookPayload(input.payload);
-
-    for (const record of this.listHookRecords('tool:before-call', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'tool:before-call',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeToolBeforeCallHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-        if (hookResult.action === 'short-circuit') {
-          return {
-            action: 'short-circuit',
-            output: toJsonValue(hookResult.output),
-          };
-        }
-
-        payload = this.applyToolBeforeCallMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return {
-      action: 'continue',
-      payload,
-    };
+    return runShortCircuitingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'tool:before-call',
+        context: input.context,
+      }),
+      hookName: 'tool:before-call',
+      context: input.context,
+      payload: cloneToolBeforeCallHookPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeToolBeforeCallHookResult,
+      applyMutation: applyToolBeforeCallMutation,
+      buildShortCircuitReturn: ({ result }) => ({
+        action: 'short-circuit',
+        output: toJsonValue(result.output),
+      }),
+    });
   }
 
   /**
@@ -1774,29 +1601,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: ToolAfterCallHookPayload;
   }): Promise<ToolAfterCallHookPayload> {
-    let payload = cloneToolAfterCallHookPayload(input.payload);
-
-    for (const record of this.listHookRecords('tool:after-call', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'tool:after-call',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeToolAfterCallHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        payload = this.applyToolAfterCallMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return payload;
+    return runMutatingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'tool:after-call',
+        context: input.context,
+      }),
+      hookName: 'tool:after-call',
+      context: input.context,
+      payload: cloneToolAfterCallHookPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeToolAfterCallHookResult,
+      applyMutation: applyToolAfterCallMutation,
+    });
   }
 
   /**
@@ -1808,29 +1625,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: ResponseBeforeSendHookPayload;
   }): Promise<ResponseBeforeSendHookPayload> {
-    let payload = cloneResponseBeforeSendHookPayload(input.payload);
-
-    for (const record of this.listHookRecords('response:before-send', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'response:before-send',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeResponseBeforeSendHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        payload = this.applyResponseBeforeSendMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return payload;
+    return runMutatingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'response:before-send',
+        context: input.context,
+      }),
+      hookName: 'response:before-send',
+      context: input.context,
+      payload: cloneResponseBeforeSendHookPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeResponseBeforeSendHookResult,
+      applyMutation: applyResponseBeforeSendMutation,
+    });
   }
 
   /**
@@ -1861,45 +1668,36 @@ export class PluginRuntimeService {
     | { action: 'continue'; payload: SubagentBeforeRunHookPayload }
     | { action: 'short-circuit'; result: PluginSubagentRunResult }
   > {
-    let payload = cloneSubagentBeforeRunPayload(input.payload);
+    return runShortCircuitingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'subagent:before-run',
+        context: input.context,
+      }),
+      hookName: 'subagent:before-run',
+      context: input.context,
+      payload: cloneSubagentBeforeRunPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeSubagentBeforeRunHookResult,
+      applyMutation: applySubagentBeforeRunMutation,
+      buildShortCircuitReturn: ({ payload, result }) => {
+        const modelConfig = this.aiModelExecution.resolveModelConfig(
+          result.providerId ?? payload.request.providerId,
+          result.modelId ?? payload.request.modelId,
+        );
 
-    for (const record of this.listHookRecords('subagent:before-run', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'subagent:before-run',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeSubagentBeforeRunHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-        if (hookResult.action === 'short-circuit') {
-          return {
-            action: 'short-circuit',
-            result: this.buildSubagentHookResult({
-              providerId: hookResult.providerId ?? payload.request.providerId,
-              modelId: hookResult.modelId ?? payload.request.modelId,
-              text: hookResult.text,
-              finishReason: hookResult.finishReason,
-              toolCalls: hookResult.toolCalls,
-              toolResults: hookResult.toolResults,
-            }),
-          };
-        }
-
-        payload = this.applySubagentBeforeRunMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return {
-      action: 'continue',
-      payload,
-    };
+        return {
+          action: 'short-circuit',
+          result: buildResolvedSubagentRunResult({
+            modelConfig,
+            text: result.text,
+            finishReason: result.finishReason,
+            toolCalls: result.toolCalls,
+            toolResults: result.toolResults,
+          }),
+        };
+      },
+    });
   }
 
   /**
@@ -1911,29 +1709,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: SubagentAfterRunHookPayload;
   }): Promise<SubagentAfterRunHookPayload> {
-    let payload = cloneSubagentAfterRunPayload(input.payload);
-
-    for (const record of this.listHookRecords('subagent:after-run', input.context)) {
-      try {
-        const rawResult = await this.invokePluginHook({
-          pluginId: record.manifest.id,
-          hookName: 'subagent:after-run',
-          context: input.context,
-          payload: toJsonValue(payload),
-        });
-        const hookResult = this.normalizeSubagentAfterRunHookResult(rawResult);
-
-        if (!hookResult || hookResult.action === 'pass') {
-          continue;
-        }
-
-        payload = this.applySubagentAfterRunMutation(payload, hookResult);
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return payload;
+    return runMutatingHookChain({
+      records: listDispatchableHookRecords({
+        records: this.records.values(),
+        hookName: 'subagent:after-run',
+        context: input.context,
+      }),
+      hookName: 'subagent:after-run',
+      context: input.context,
+      payload: cloneSubagentAfterRunPayload(input.payload),
+      invokeHook: (hookInput) => this.invokePluginHook(hookInput),
+      normalizeResult: normalizeSubagentAfterRunHookResult,
+      applyMutation: applySubagentAfterRunMutation,
+    });
   }
 
   /**
@@ -2006,162 +1794,24 @@ export class PluginRuntimeService {
     checked?: boolean;
     skipPluginErrorHook?: boolean;
   }): Promise<void> {
-    await this.pluginService.recordPluginFailure(input.pluginId, {
-      type: input.type,
-      message: input.message,
-      metadata: input.metadata,
-      checked: input.checked,
-    });
-
-    if (input.skipPluginErrorHook) {
-      return;
-    }
-
-    const record = this.records.get(input.pluginId);
-    await this.runPluginErrorHooks({
-      context: input.context,
-      payload: {
-        context: {
-          ...input.context,
-        },
-        plugin: record
-          ? this.buildPluginLifecycleHookInfo(record)
-          : {
-            id: input.pluginId,
-            runtimeKind: 'remote',
-            deviceType: 'remote',
-            manifest: null,
-          },
-        error: {
-          type: input.type,
-          message: input.message,
-          metadata: input.metadata ?? null,
-        },
-        occurredAt: new Date().toISOString(),
+    await recordRuntimePluginFailureAndDispatch({
+      ...input,
+      record: this.records.get(input.pluginId),
+      recordFailure: async (failure) => {
+        await this.pluginService.recordPluginFailure(failure.pluginId, {
+          type: failure.type,
+          message: failure.message,
+          metadata: failure.metadata,
+          checked: failure.checked,
+        });
+      },
+      dispatchPluginErrorHook: async (payload) => {
+        await this.runPluginErrorHooks({
+          context: input.context,
+          payload,
+        });
       },
     });
-  }
-
-  /**
-   * 读取一条运行时记录；不存在时抛错。
-   * @param pluginId 插件 ID
-   * @returns 运行时记录
-   */
-  private getRecordOrThrow(pluginId: string): PluginRuntimeRecord {
-    const record = this.records.get(pluginId);
-    if (!record) {
-      throw new NotFoundException(`Plugin not found: ${pluginId}`);
-    }
-
-    return record;
-  }
-
-  /**
-   * 归一化插件生命周期 Hook 可见的插件摘要。
-   * @param record 运行时插件记录
-   * @returns 可序列化的插件摘要
-   */
-  private buildPluginLifecycleHookInfo(
-    record: PluginRuntimeRecord,
-  ): PluginLifecycleHookInfo {
-    return {
-      id: record.manifest.id,
-      runtimeKind: record.runtimeKind,
-      deviceType: record.deviceType,
-      manifest: record.manifest,
-    };
-  }
-
-  /**
-   * 构造插件自省信息，优先读取 runtime 中的实时声明。
-   * @param pluginId 插件 ID
-   * @returns 可返回给插件自身的摘要
-   */
-  private async buildPluginSelfInfo(pluginId: string): Promise<PluginSelfInfo> {
-    const record = this.records.get(pluginId);
-    if (!record) {
-      const plugin = await this.pluginService.getPluginSelfInfo(pluginId);
-      return {
-        ...plugin,
-        supportedActions: ['health-check'],
-      };
-    }
-
-    return {
-      id: record.manifest.id,
-      name: record.manifest.name,
-      runtimeKind: record.runtimeKind,
-      permissions: [...record.manifest.permissions],
-      hooks: [...(record.manifest.hooks ?? [])],
-      routes: [...(record.manifest.routes ?? [])],
-      supportedActions: this.listSupportedActionsForRecord(record),
-      ...(record.manifest.version ? { version: record.manifest.version } : {}),
-      ...(record.manifest.description
-        ? { description: record.manifest.description }
-        : {}),
-      ...(record.manifest.crons
-        ? { crons: [...record.manifest.crons] }
-        : {}),
-    };
-  }
-
-  /**
-   * 判断插件在当前上下文是否启用。
-   * @param record 插件记录
-   * @param context 调用上下文
-   * @returns 是否启用
-   */
-  private isPluginEnabledForContext(
-    record: PluginRuntimeRecord,
-    context: PluginCallContext,
-  ): boolean {
-    return isPluginEnabledForRuntimeScope(record.governance.scope, context);
-  }
-
-  /**
-   * 在执行前断言插件当前作用域可用。
-   * @param record 插件记录
-   * @param context 调用上下文
-   * @returns 无返回值；禁用时抛错
-   */
-  private assertPluginEnabled(
-    record: PluginRuntimeRecord,
-    context: PluginCallContext,
-  ): void {
-    if (this.isPluginEnabledForContext(record, context)) {
-      return;
-    }
-
-    throw new ForbiddenException(
-      `插件 ${record.manifest.id} 在当前作用域已禁用`,
-    );
-  }
-
-  /**
-   * 按 path + method 读取一个已声明的 Route；不存在时抛错。
-   * @param record 插件记录
-   * @param path 请求路径
-   * @param method HTTP 方法
-   * @returns 命中的 Route 描述
-   */
-  private findRouteOrThrow(
-    record: PluginRuntimeRecord,
-    path: string,
-    method: PluginRouteRequest['method'],
-  ): PluginRouteDescriptor {
-    const normalizedPath = normalizeRoutePath(path);
-    const route = (record.manifest.routes ?? []).find(
-      (item) =>
-        normalizeRoutePath(item.path) === normalizedPath
-        && item.methods.includes(method),
-    );
-    if (route) {
-      return route;
-    }
-
-    throw new NotFoundException(
-      `插件 ${record.manifest.id} 未声明 Route: ${method} ${normalizedPath}`,
-    );
   }
 
   /**
@@ -2174,1211 +1824,19 @@ export class PluginRuntimeService {
     context: PluginCallContext;
     payload: unknown;
   }): Promise<Array<JsonValue | null | undefined>> {
-    const results: Array<JsonValue | null | undefined> = [];
-
-    for (const record of this.listHookRecords(input.hookName, input.context)) {
-      try {
-        results.push(
-          await this.invokePluginHook({
-            pluginId: record.manifest.id,
-            hookName: input.hookName,
-            context: input.context,
-            payload: toJsonValue(input.payload),
-          }),
-        );
-      } catch {
-        // 单个 Hook 失败已由 invokePluginHook 记录；这里继续执行后续插件。
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * 列出当前作用域内声明了指定 Hook 的插件，并按插件 ID 稳定排序。
-   * @param hookName Hook 名称
-   * @param context 调用上下文
-   * @returns 已排序的运行时记录列表
-   */
-  private listHookRecords(
-    hookName: PluginHookName,
-    context: PluginCallContext,
-    payload?: unknown,
-  ): PluginRuntimeRecord[] {
-    return [...this.records.values()]
-      .map((record) => ({
-        record,
-        hook: this.getHookDescriptor(record, hookName),
-      }))
-      .filter((entry): entry is { record: PluginRuntimeRecord; hook: PluginHookDescriptor } =>
-        entry.hook !== null,
-      )
-      .filter((entry) =>
-        this.isPluginEnabledForContext(entry.record, context)
-        && this.matchesHookFilter(entry.hook, hookName, payload),
-      )
-      .sort((left, right) => {
-        const priorityDiff = this.getHookPriority(left.hook) - this.getHookPriority(right.hook);
-        if (priorityDiff !== 0) {
-          return priorityDiff;
-        }
-
-        return left.record.manifest.id.localeCompare(right.record.manifest.id);
-      })
-      .map((entry) => entry.record);
-  }
-
-  /**
-   * 读取插件声明的指定 Hook 描述。
-   * @param record 运行时插件记录
-   * @param hookName Hook 名称
-   * @returns 命中的 Hook 描述；不存在时返回 null
-   */
-  private getHookDescriptor(
-    record: PluginRuntimeRecord,
-    hookName: PluginHookName,
-  ): PluginHookDescriptor | null {
-    return (record.manifest.hooks ?? []).find((hook) => hook.name === hookName) ?? null;
-  }
-
-  /**
-   * 读取 Hook 声明的调度优先级。
-   * @param hook Hook 描述
-   * @returns 归一化后的优先级，数字越小越先执行
-   */
-  private getHookPriority(hook: PluginHookDescriptor): number {
-    if (typeof hook.priority !== 'number' || !Number.isFinite(hook.priority)) {
-      return 0;
-    }
-
-    return Math.trunc(hook.priority);
-  }
-
-  /**
-   * 判断指定 Hook 在当前载荷下是否命中过滤条件。
-   * @param hook Hook 描述
-   * @param hookName Hook 名称
-   * @param payload 当前载荷
-   * @returns 是否命中过滤
-   */
-  private matchesHookFilter(
-    hook: PluginHookDescriptor,
-    hookName: PluginHookName,
-    payload?: unknown,
-  ): boolean {
-    if (hookName !== 'message:received' || !hook.filter?.message) {
-      return true;
-    }
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return false;
-    }
-
-    const messagePayload = payload as MessageReceivedHookPayload;
-    const filter = hook.filter.message;
-    const messageText = this.getMessageReceivedText(messagePayload);
-    const messageKind = this.detectMessageKind(messagePayload.message);
-
-    if (
-      Array.isArray(filter.commands)
-      && filter.commands.length > 0
-      && !filter.commands.some((command) => matchesMessageCommand(messageText, command))
-    ) {
-      return false;
-    }
-
-    if (filter.regex) {
-      const regex = buildFilterRegex(filter.regex);
-      if (!regex.test(messageText)) {
-        return false;
-      }
-    }
-
-    if (
-      Array.isArray(filter.messageKinds)
-      && filter.messageKinds.length > 0
-      && !filter.messageKinds.includes(messageKind)
-    ) {
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * 提取收到消息过滤时可匹配的文本。
-   * @param payload 收到消息 Hook 载荷
-   * @returns 归一化后的文本
-   */
-  private getMessageReceivedText(payload: MessageReceivedHookPayload): string {
-    if (typeof payload.message.content === 'string') {
-      return payload.message.content;
-    }
-
-    return payload.message.parts
-      .filter((part) => part.type === 'text')
-      .map((part) => part.text)
-      .join('\n');
-  }
-
-  /**
-   * 判断收到消息的消息类型。
-   * @param message 消息快照
-   * @returns 归一化后的消息类型
-   */
-  private detectMessageKind(
-    message: MessageReceivedHookPayload['message'],
-  ): PluginMessageKind {
-    const hasImage = message.parts.some((part) => part.type === 'image');
-    const hasTextPart = message.parts.some((part) => part.type === 'text');
-    const hasText = hasTextPart || Boolean(message.content?.trim());
-
-    if (hasImage && hasText) {
-      return 'mixed';
-    }
-    if (hasImage) {
-      return 'image';
-    }
-
-    return 'text';
-  }
-
-  /**
-   * 将已通过结构校验的 Hook 结果收口为目标类型。
-   * @param result 已校验的对象结果
-   * @returns 目标 Hook 结果类型
-   */
-  private castValidatedHookResult<T>(result: JsonObject): T {
-    return result as T;
-  }
-
-  /**
-   * 将插件返回的聊天前 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @param currentRequest 当前请求快照
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeChatBeforeModelHookResult(
-    result: JsonValue | null | undefined,
-    _currentRequest: ChatBeforeModelRequest,
-  ): NormalizedChatBeforeModelHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('chat:before-model Hook 返回值必须是对象');
-    }
-
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-
-    if (result.action === 'mutate') {
-      if ('providerId' in result && typeof result.providerId !== 'string') {
-        throw new Error('chat:before-model Hook 的 providerId 必须是字符串');
-      }
-      if ('modelId' in result && typeof result.modelId !== 'string') {
-        throw new Error('chat:before-model Hook 的 modelId 必须是字符串');
-      }
-      if ('systemPrompt' in result && typeof result.systemPrompt !== 'string') {
-        throw new Error('chat:before-model Hook 的 systemPrompt 必须是字符串');
-      }
-      if ('messages' in result && !Array.isArray(result.messages)) {
-        throw new Error('chat:before-model Hook 的 messages 必须是数组');
-      }
-      if ('toolNames' in result && !isStringArray(result.toolNames)) {
-        throw new Error('chat:before-model Hook 的 toolNames 必须是字符串数组');
-      }
-      if ('variant' in result && result.variant !== null && typeof result.variant !== 'string') {
-        throw new Error('chat:before-model Hook 的 variant 必须是字符串或 null');
-      }
-      if (
-        'providerOptions' in result
-        && result.providerOptions !== null
-        && !isJsonObjectValue(result.providerOptions)
-      ) {
-        throw new Error('chat:before-model Hook 的 providerOptions 必须是对象或 null');
-      }
-      if (
-        'headers' in result
-        && result.headers !== null
-        && !isStringRecord(result.headers)
-      ) {
-        throw new Error('chat:before-model Hook 的 headers 必须是字符串对象或 null');
-      }
-      if (
-        'maxOutputTokens' in result
-        && result.maxOutputTokens !== null
-        && typeof result.maxOutputTokens !== 'number'
-      ) {
-        throw new Error('chat:before-model Hook 的 maxOutputTokens 必须是数字或 null');
-      }
-
-      return this.castValidatedHookResult<ChatBeforeModelHookMutateResult>(result);
-    }
-
-    if (result.action === 'short-circuit') {
-      if (typeof result.assistantContent !== 'string') {
-        throw new Error('chat:before-model Hook 的 assistantContent 必须是字符串');
-      }
-      if (
-        'assistantParts' in result
-        && result.assistantParts !== null
-        && !isChatMessagePartArray(result.assistantParts)
-      ) {
-        throw new Error('chat:before-model Hook 的 assistantParts 必须是消息 part 数组或 null');
-      }
-      if ('providerId' in result && typeof result.providerId !== 'string') {
-        throw new Error('chat:before-model Hook 的 providerId 必须是字符串');
-      }
-      if ('modelId' in result && typeof result.modelId !== 'string') {
-        throw new Error('chat:before-model Hook 的 modelId 必须是字符串');
-      }
-      if ('reason' in result && typeof result.reason !== 'string') {
-        throw new Error('chat:before-model Hook 的 reason 必须是字符串');
-      }
-
-      return this.castValidatedHookResult<ChatBeforeModelHookShortCircuitResult>(result);
-    }
-
-    throw new Error('chat:before-model Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的收到消息 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeMessageReceivedHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedMessageReceivedHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('message:received Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('providerId' in result && typeof result.providerId !== 'string') {
-        throw new Error('message:received Hook 的 providerId 必须是字符串');
-      }
-      if ('modelId' in result && typeof result.modelId !== 'string') {
-        throw new Error('message:received Hook 的 modelId 必须是字符串');
-      }
-      if ('content' in result && result.content !== null && typeof result.content !== 'string') {
-        throw new Error('message:received Hook 的 content 必须是字符串或 null');
-      }
-      if (
-        'parts' in result
-        && result.parts !== null
-        && !isChatMessagePartArray(result.parts)
-      ) {
-        throw new Error('message:received Hook 的 parts 必须是消息 part 数组或 null');
-      }
-      if (
-        'modelMessages' in result
-        && !isPluginLlmMessageArray(result.modelMessages)
-      ) {
-        throw new Error('message:received Hook 的 modelMessages 必须是统一消息数组');
-      }
-
-      return this.castValidatedHookResult<MessageReceivedHookMutateResult>(result);
-    }
-    if (result.action === 'short-circuit') {
-      if (typeof result.assistantContent !== 'string') {
-        throw new Error('message:received Hook 的 assistantContent 必须是字符串');
-      }
-      if (
-        'assistantParts' in result
-        && result.assistantParts !== null
-        && !isChatMessagePartArray(result.assistantParts)
-      ) {
-        throw new Error('message:received Hook 的 assistantParts 必须是消息 part 数组或 null');
-      }
-      if ('providerId' in result && typeof result.providerId !== 'string') {
-        throw new Error('message:received Hook 的 providerId 必须是字符串');
-      }
-      if ('modelId' in result && typeof result.modelId !== 'string') {
-        throw new Error('message:received Hook 的 modelId 必须是字符串');
-      }
-      if ('reason' in result && typeof result.reason !== 'string') {
-        throw new Error('message:received Hook 的 reason 必须是字符串');
-      }
-
-      return this.castValidatedHookResult<MessageReceivedHookShortCircuitResult>(result);
-    }
-
-    throw new Error('message:received Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的聊天后 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeChatAfterModelHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedChatAfterModelHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('chat:after-model Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if (
-        'assistantContent' in result
-        && result.assistantContent !== null
-        && typeof result.assistantContent !== 'string'
-      ) {
-        throw new Error('chat:after-model Hook 的 assistantContent 必须是字符串或 null');
-      }
-      if (
-        'assistantParts' in result
-        && result.assistantParts !== null
-        && !isChatMessagePartArray(result.assistantParts)
-      ) {
-        throw new Error('chat:after-model Hook 的 assistantParts 必须是消息 part 数组或 null');
-      }
-
-      return this.castValidatedHookResult<ChatAfterModelHookMutateResult>(result);
-    }
-
-    throw new Error('chat:after-model Hook 返回了未知 action');
-  }
-
-  /**
-   * 将一条 mutate 结果应用到当前请求快照。
-   * @param currentRequest 当前请求
-   * @param mutation 变更结果
-   * @returns 新的请求快照
-   */
-  private applyChatBeforeModelMutation(
-    currentRequest: ChatBeforeModelRequest,
-    mutation: ChatBeforeModelHookMutateResult,
-  ): ChatBeforeModelRequest {
-    const nextRequest = cloneChatBeforeModelRequest(currentRequest);
-
-    if ('providerId' in mutation && typeof mutation.providerId === 'string') {
-      nextRequest.providerId = mutation.providerId;
-    }
-    if ('modelId' in mutation && typeof mutation.modelId === 'string') {
-      nextRequest.modelId = mutation.modelId;
-    }
-    if ('systemPrompt' in mutation && typeof mutation.systemPrompt === 'string') {
-      nextRequest.systemPrompt = mutation.systemPrompt;
-    }
-    if ('messages' in mutation && Array.isArray(mutation.messages)) {
-      nextRequest.messages = cloneChatMessages(mutation.messages);
-    }
-    if ('variant' in mutation) {
-      nextRequest.variant = mutation.variant ?? undefined;
-    }
-    if ('providerOptions' in mutation) {
-      nextRequest.providerOptions = mutation.providerOptions === null
-        || typeof mutation.providerOptions === 'undefined'
-        ? undefined
-        : { ...mutation.providerOptions };
-    }
-    if ('headers' in mutation) {
-      nextRequest.headers = mutation.headers === null
-        || typeof mutation.headers === 'undefined'
-        ? undefined
-        : { ...mutation.headers };
-    }
-    if ('maxOutputTokens' in mutation) {
-      nextRequest.maxOutputTokens = mutation.maxOutputTokens ?? undefined;
-    }
-    if ('toolNames' in mutation && Array.isArray(mutation.toolNames)) {
-      const allowedToolNames = new Set(mutation.toolNames);
-      nextRequest.availableTools = nextRequest.availableTools.filter(
-        (tool: ChatBeforeModelRequest['availableTools'][number]) =>
-          allowedToolNames.has(tool.name),
-      );
-    }
-
-    return nextRequest;
-  }
-
-  /**
-   * 将一条收到消息 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前收到消息载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyMessageReceivedMutation(
-    currentPayload: MessageReceivedHookPayload,
-    mutation: MessageReceivedHookMutateResult,
-  ): MessageReceivedHookPayload {
-    const nextPayload = cloneMessageReceivedHookPayload(currentPayload);
-
-    if ('providerId' in mutation && typeof mutation.providerId === 'string') {
-      nextPayload.providerId = mutation.providerId;
-    }
-    if ('modelId' in mutation && typeof mutation.modelId === 'string') {
-      nextPayload.modelId = mutation.modelId;
-    }
-    if ('content' in mutation) {
-      nextPayload.message.content = mutation.content ?? null;
-    }
-    if ('parts' in mutation) {
-      const parts = mutation.parts ?? [];
-      nextPayload.message.parts = mutation.parts === null
-        ? []
-        : cloneChatMessageParts(parts);
-    }
-    if ('modelMessages' in mutation && Array.isArray(mutation.modelMessages)) {
-      nextPayload.modelMessages = clonePluginLlmMessages(mutation.modelMessages);
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条聊天后 mutate 结果应用到当前完成态载荷。
-   * @param currentPayload 当前完成态载荷
-   * @param mutation 变更结果
-   * @returns 新的完成态载荷
-   */
-  private applyChatAfterModelMutation(
-    currentPayload: ChatAfterModelHookPayload,
-    mutation: ChatAfterModelHookMutateResult,
-  ): ChatAfterModelHookPayload {
-    const nextPayload = cloneChatAfterModelPayload(currentPayload);
-
-    if (
-      'assistantContent' in mutation
-      && typeof mutation.assistantContent === 'string'
-    ) {
-      nextPayload.assistantContent = mutation.assistantContent;
-    }
-    if ('assistantParts' in mutation) {
-      nextPayload.assistantParts = mutation.assistantParts === null
-        ? []
-        : cloneChatMessageParts(mutation.assistantParts ?? []);
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将插件返回的消息创建 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeMessageCreatedHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedMessageCreatedHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('message:created Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('content' in result && result.content !== null && typeof result.content !== 'string') {
-        throw new Error('message:created Hook 的 content 必须是字符串或 null');
-      }
-      if (
-        'parts' in result
-        && result.parts !== null
-        && !isChatMessagePartArray(result.parts)
-      ) {
-        throw new Error('message:created Hook 的 parts 必须是消息 part 数组或 null');
-      }
-      if (
-        'modelMessages' in result
-        && !isPluginLlmMessageArray(result.modelMessages)
-      ) {
-        throw new Error('message:created Hook 的 modelMessages 必须是统一消息数组');
-      }
-      if ('provider' in result && result.provider !== null && typeof result.provider !== 'string') {
-        throw new Error('message:created Hook 的 provider 必须是字符串或 null');
-      }
-      if ('model' in result && result.model !== null && typeof result.model !== 'string') {
-        throw new Error('message:created Hook 的 model 必须是字符串或 null');
-      }
-      if (
-        'status' in result
-        && result.status !== null
-        && !isChatMessageStatus(result.status)
-      ) {
-        throw new Error('message:created Hook 的 status 必须是合法消息状态或 null');
-      }
-
-      return this.castValidatedHookResult<MessageCreatedHookMutateResult>(result);
-    }
-
-    throw new Error('message:created Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的消息更新 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeMessageUpdatedHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedMessageUpdatedHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('message:updated Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('content' in result && result.content !== null && typeof result.content !== 'string') {
-        throw new Error('message:updated Hook 的 content 必须是字符串或 null');
-      }
-      if (
-        'parts' in result
-        && result.parts !== null
-        && !isChatMessagePartArray(result.parts)
-      ) {
-        throw new Error('message:updated Hook 的 parts 必须是消息 part 数组或 null');
-      }
-      if ('provider' in result && result.provider !== null && typeof result.provider !== 'string') {
-        throw new Error('message:updated Hook 的 provider 必须是字符串或 null');
-      }
-      if ('model' in result && result.model !== null && typeof result.model !== 'string') {
-        throw new Error('message:updated Hook 的 model 必须是字符串或 null');
-      }
-      if (
-        'status' in result
-        && result.status !== null
-        && !isChatMessageStatus(result.status)
-      ) {
-        throw new Error('message:updated Hook 的 status 必须是合法消息状态或 null');
-      }
-
-      return this.castValidatedHookResult<MessageUpdatedHookMutateResult>(result);
-    }
-
-    throw new Error('message:updated Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的自动化运行前 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeAutomationBeforeRunHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedAutomationBeforeRunHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('automation:before-run Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('actions' in result && !isActionConfigArray(result.actions)) {
-        throw new Error('automation:before-run Hook 的 actions 必须是动作数组');
-      }
-
-      return this.castValidatedHookResult<AutomationBeforeRunHookMutateResult>(result);
-    }
-    if (result.action === 'short-circuit') {
-      if (typeof result.status !== 'string') {
-        throw new Error('automation:before-run Hook 的 status 必须是字符串');
-      }
-      if (!Array.isArray(result.results)) {
-        throw new Error('automation:before-run Hook 的 results 必须是数组');
-      }
-
-      return this.castValidatedHookResult<AutomationBeforeRunHookShortCircuitResult>(result);
-    }
-
-    throw new Error('automation:before-run Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的自动化运行后 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeAutomationAfterRunHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedAutomationAfterRunHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('automation:after-run Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('status' in result && typeof result.status !== 'string') {
-        throw new Error('automation:after-run Hook 的 status 必须是字符串');
-      }
-      if ('results' in result && !Array.isArray(result.results)) {
-        throw new Error('automation:after-run Hook 的 results 必须是数组');
-      }
-
-      return this.castValidatedHookResult<AutomationAfterRunHookMutateResult>(result);
-    }
-
-    throw new Error('automation:after-run Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的子代理执行前 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeSubagentBeforeRunHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedSubagentBeforeRunHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('subagent:before-run Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('providerId' in result && result.providerId !== null && typeof result.providerId !== 'string') {
-        throw new Error('subagent:before-run Hook 的 providerId 必须是字符串或 null');
-      }
-      if ('modelId' in result && result.modelId !== null && typeof result.modelId !== 'string') {
-        throw new Error('subagent:before-run Hook 的 modelId 必须是字符串或 null');
-      }
-      if ('system' in result && result.system !== null && typeof result.system !== 'string') {
-        throw new Error('subagent:before-run Hook 的 system 必须是字符串或 null');
-      }
-      if ('messages' in result && !isPluginLlmMessageArray(result.messages)) {
-        throw new Error('subagent:before-run Hook 的 messages 必须是统一消息数组');
-      }
-      if ('toolNames' in result && result.toolNames !== null && !isStringArray(result.toolNames)) {
-        throw new Error('subagent:before-run Hook 的 toolNames 必须是字符串数组或 null');
-      }
-      if ('variant' in result && result.variant !== null && typeof result.variant !== 'string') {
-        throw new Error('subagent:before-run Hook 的 variant 必须是字符串或 null');
-      }
-      if ('providerOptions' in result && result.providerOptions !== null && !isJsonObjectValue(result.providerOptions)) {
-        throw new Error('subagent:before-run Hook 的 providerOptions 必须是对象或 null');
-      }
-      if ('headers' in result && result.headers !== null && !isStringRecord(result.headers)) {
-        throw new Error('subagent:before-run Hook 的 headers 必须是字符串字典或 null');
-      }
-      if ('maxOutputTokens' in result && result.maxOutputTokens !== null && typeof result.maxOutputTokens !== 'number') {
-        throw new Error('subagent:before-run Hook 的 maxOutputTokens 必须是数字或 null');
-      }
-      if ('maxSteps' in result && result.maxSteps !== null && typeof result.maxSteps !== 'number') {
-        throw new Error('subagent:before-run Hook 的 maxSteps 必须是数字或 null');
-      }
-
-      return this.castValidatedHookResult<SubagentBeforeRunHookMutateResult>(result);
-    }
-    if (result.action === 'short-circuit') {
-      if (typeof result.text !== 'string') {
-        throw new Error('subagent:before-run Hook 的 text 必须是字符串');
-      }
-      if ('providerId' in result && result.providerId !== null && typeof result.providerId !== 'string') {
-        throw new Error('subagent:before-run Hook 的 providerId 必须是字符串或 null');
-      }
-      if ('modelId' in result && result.modelId !== null && typeof result.modelId !== 'string') {
-        throw new Error('subagent:before-run Hook 的 modelId 必须是字符串或 null');
-      }
-      if ('finishReason' in result && result.finishReason !== null && typeof result.finishReason !== 'string') {
-        throw new Error('subagent:before-run Hook 的 finishReason 必须是字符串或 null');
-      }
-      if ('toolCalls' in result && !isPluginSubagentToolCallArray(result.toolCalls)) {
-        throw new Error('subagent:before-run Hook 的 toolCalls 必须是工具调用数组');
-      }
-      if ('toolResults' in result && !isPluginSubagentToolResultArray(result.toolResults)) {
-        throw new Error('subagent:before-run Hook 的 toolResults 必须是工具结果数组');
-      }
-
-      return this.castValidatedHookResult<SubagentBeforeRunHookShortCircuitResult>(result);
-    }
-
-    throw new Error('subagent:before-run Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的子代理执行后 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeSubagentAfterRunHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedSubagentAfterRunHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('subagent:after-run Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('text' in result && typeof result.text !== 'string') {
-        throw new Error('subagent:after-run Hook 的 text 必须是字符串');
-      }
-      if ('providerId' in result && result.providerId !== null && typeof result.providerId !== 'string') {
-        throw new Error('subagent:after-run Hook 的 providerId 必须是字符串或 null');
-      }
-      if ('modelId' in result && result.modelId !== null && typeof result.modelId !== 'string') {
-        throw new Error('subagent:after-run Hook 的 modelId 必须是字符串或 null');
-      }
-      if ('finishReason' in result && result.finishReason !== null && typeof result.finishReason !== 'string') {
-        throw new Error('subagent:after-run Hook 的 finishReason 必须是字符串或 null');
-      }
-      if ('toolCalls' in result && !isPluginSubagentToolCallArray(result.toolCalls)) {
-        throw new Error('subagent:after-run Hook 的 toolCalls 必须是工具调用数组');
-      }
-      if ('toolResults' in result && !isPluginSubagentToolResultArray(result.toolResults)) {
-        throw new Error('subagent:after-run Hook 的 toolResults 必须是工具结果数组');
-      }
-
-      return this.castValidatedHookResult<SubagentAfterRunHookMutateResult>(result);
-    }
-
-    throw new Error('subagent:after-run Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的工具调用前 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeToolBeforeCallHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedToolBeforeCallHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('tool:before-call Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('params' in result && !isJsonObjectValue(result.params)) {
-        throw new Error('tool:before-call Hook 的 params 必须是对象');
-      }
-
-      return this.castValidatedHookResult<ToolBeforeCallHookMutateResult>(result);
-    }
-    if (result.action === 'short-circuit') {
-      if (!('output' in result) || typeof result.output === 'undefined') {
-        throw new Error('tool:before-call Hook 的 output 不能为空');
-      }
-
-      return this.castValidatedHookResult<ToolBeforeCallHookShortCircuitResult>(result);
-    }
-
-    throw new Error('tool:before-call Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的工具调用后 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeToolAfterCallHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedToolAfterCallHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('tool:after-call Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if (!('output' in result) || typeof result.output === 'undefined') {
-        throw new Error('tool:after-call Hook 的 output 不能为空');
-      }
-
-      return this.castValidatedHookResult<ToolAfterCallHookMutateResult>(result);
-    }
-
-    throw new Error('tool:after-call Hook 返回了未知 action');
-  }
-
-  /**
-   * 将插件返回的最终回复发送前 Hook 结果归一为统一结构。
-   * @param result 插件原始返回值
-   * @returns 归一化后的 Hook 结果
-   */
-  private normalizeResponseBeforeSendHookResult(
-    result: JsonValue | null | undefined,
-  ): NormalizedResponseBeforeSendHookResult | null {
-    if (result === null || typeof result === 'undefined') {
-      return null;
-    }
-    if (!isJsonObjectValue(result)) {
-      throw new Error('response:before-send Hook 返回值必须是对象');
-    }
-    if (result.action === 'pass') {
-      return { action: 'pass' };
-    }
-    if (result.action === 'mutate') {
-      if ('providerId' in result && typeof result.providerId !== 'string') {
-        throw new Error('response:before-send Hook 的 providerId 必须是字符串');
-      }
-      if ('modelId' in result && typeof result.modelId !== 'string') {
-        throw new Error('response:before-send Hook 的 modelId 必须是字符串');
-      }
-      if (
-        'assistantContent' in result
-        && typeof result.assistantContent !== 'string'
-      ) {
-        throw new Error('response:before-send Hook 的 assistantContent 必须是字符串');
-      }
-      if (
-        'assistantParts' in result
-        && result.assistantParts !== null
-        && !isChatMessagePartArray(result.assistantParts)
-      ) {
-        throw new Error('response:before-send Hook 的 assistantParts 必须是消息 part 数组或 null');
-      }
-      if ('toolCalls' in result && !Array.isArray(result.toolCalls)) {
-        throw new Error('response:before-send Hook 的 toolCalls 必须是数组');
-      }
-      if ('toolResults' in result && !Array.isArray(result.toolResults)) {
-        throw new Error('response:before-send Hook 的 toolResults 必须是数组');
-      }
-
-      return this.castValidatedHookResult<ResponseBeforeSendHookMutateResult>(result);
-    }
-
-    throw new Error('response:before-send Hook 返回了未知 action');
-  }
-
-  /**
-   * 将一条消息创建 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前消息创建载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyMessageCreatedMutation(
-    currentPayload: MessageCreatedHookPayload,
-    mutation: MessageCreatedHookMutateResult,
-  ): MessageCreatedHookPayload {
-    const nextPayload = cloneMessageCreatedHookPayload(currentPayload);
-
-    if ('content' in mutation) {
-      nextPayload.message.content = mutation.content ?? null;
-    }
-    if ('parts' in mutation) {
-      const parts = mutation.parts ?? [];
-      nextPayload.message.parts = mutation.parts === null
-        ? []
-        : cloneChatMessageParts(parts);
-    }
-    if ('modelMessages' in mutation && Array.isArray(mutation.modelMessages)) {
-      nextPayload.modelMessages = clonePluginLlmMessages(mutation.modelMessages);
-    }
-    if ('provider' in mutation) {
-      nextPayload.message.provider = mutation.provider ?? null;
-    }
-    if ('model' in mutation) {
-      nextPayload.message.model = mutation.model ?? null;
-    }
-    if ('status' in mutation) {
-      nextPayload.message.status = mutation.status ?? undefined;
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条消息更新 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前消息更新载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyMessageUpdatedMutation(
-    currentPayload: MessageUpdatedHookPayload,
-    mutation: MessageUpdatedHookMutateResult,
-  ): MessageUpdatedHookPayload {
-    const nextPayload = cloneMessageUpdatedHookPayload(currentPayload);
-
-    if ('content' in mutation) {
-      nextPayload.nextMessage.content = mutation.content ?? null;
-    }
-    if ('parts' in mutation) {
-      const parts = mutation.parts ?? [];
-      nextPayload.nextMessage.parts = mutation.parts === null
-        ? []
-        : cloneChatMessageParts(parts);
-    }
-    if ('provider' in mutation) {
-      nextPayload.nextMessage.provider = mutation.provider ?? null;
-    }
-    if ('model' in mutation) {
-      nextPayload.nextMessage.model = mutation.model ?? null;
-    }
-    if ('status' in mutation) {
-      nextPayload.nextMessage.status = mutation.status ?? undefined;
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条自动化运行前 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前自动化运行前载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyAutomationBeforeRunMutation(
-    currentPayload: AutomationBeforeRunHookPayload,
-    mutation: AutomationBeforeRunHookMutateResult,
-  ): AutomationBeforeRunHookPayload {
-    const nextPayload = cloneAutomationBeforeRunPayload(currentPayload);
-
-    if ('actions' in mutation && Array.isArray(mutation.actions)) {
-      nextPayload.actions = cloneAutomationActions(mutation.actions);
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条自动化运行后 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前自动化运行后载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyAutomationAfterRunMutation(
-    currentPayload: AutomationAfterRunHookPayload,
-    mutation: AutomationAfterRunHookMutateResult,
-  ): AutomationAfterRunHookPayload {
-    const nextPayload = cloneAutomationAfterRunPayload(currentPayload);
-
-    if ('status' in mutation && typeof mutation.status === 'string') {
-      nextPayload.status = mutation.status;
-    }
-    if ('results' in mutation && Array.isArray(mutation.results)) {
-      nextPayload.results = cloneJsonValueArray(mutation.results);
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条子代理执行前 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前子代理执行前载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applySubagentBeforeRunMutation(
-    currentPayload: SubagentBeforeRunHookPayload,
-    mutation: SubagentBeforeRunHookMutateResult,
-  ): SubagentBeforeRunHookPayload {
-    const nextPayload = cloneSubagentBeforeRunPayload(currentPayload);
-
-    if ('providerId' in mutation) {
-      nextPayload.request.providerId = mutation.providerId ?? undefined;
-    }
-    if ('modelId' in mutation) {
-      nextPayload.request.modelId = mutation.modelId ?? undefined;
-    }
-    if ('system' in mutation) {
-      nextPayload.request.system = mutation.system ?? undefined;
-    }
-    if ('messages' in mutation && Array.isArray(mutation.messages)) {
-      nextPayload.request.messages = clonePluginLlmMessages(mutation.messages);
-    }
-    if ('toolNames' in mutation) {
-      nextPayload.request.toolNames = mutation.toolNames === null
-        ? undefined
-        : [...(mutation.toolNames ?? [])];
-    }
-    if ('variant' in mutation) {
-      nextPayload.request.variant = mutation.variant ?? undefined;
-    }
-    if ('providerOptions' in mutation) {
-      nextPayload.request.providerOptions = mutation.providerOptions === null
-        ? undefined
-        : mutation.providerOptions
-          ? { ...mutation.providerOptions }
-          : undefined;
-    }
-    if ('headers' in mutation) {
-      nextPayload.request.headers = mutation.headers === null
-        ? undefined
-        : mutation.headers
-          ? { ...mutation.headers }
-          : undefined;
-    }
-    if ('maxOutputTokens' in mutation) {
-      nextPayload.request.maxOutputTokens = mutation.maxOutputTokens ?? undefined;
-    }
-    if ('maxSteps' in mutation && typeof mutation.maxSteps === 'number') {
-      nextPayload.request.maxSteps = normalizePositiveInteger(mutation.maxSteps, 1);
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条子代理执行后 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前子代理执行后载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applySubagentAfterRunMutation(
-    currentPayload: SubagentAfterRunHookPayload,
-    mutation: SubagentAfterRunHookMutateResult,
-  ): SubagentAfterRunHookPayload {
-    const nextPayload = cloneSubagentAfterRunPayload(currentPayload);
-
-    if ('providerId' in mutation && typeof mutation.providerId === 'string') {
-      nextPayload.result.providerId = mutation.providerId;
-    }
-    if ('modelId' in mutation && typeof mutation.modelId === 'string') {
-      nextPayload.result.modelId = mutation.modelId;
-    }
-    if ('text' in mutation && typeof mutation.text === 'string') {
-      nextPayload.result.text = mutation.text;
-      nextPayload.result.message = {
-        role: 'assistant',
-        content: mutation.text,
-      };
-    }
-    if ('finishReason' in mutation) {
-      nextPayload.result.finishReason = mutation.finishReason ?? null;
-    }
-    if ('toolCalls' in mutation && Array.isArray(mutation.toolCalls)) {
-      nextPayload.result.toolCalls = clonePluginSubagentToolCalls(mutation.toolCalls);
-    }
-    if ('toolResults' in mutation && Array.isArray(mutation.toolResults)) {
-      nextPayload.result.toolResults = clonePluginSubagentToolResults(mutation.toolResults);
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条工具调用前 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前工具调用前载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyToolBeforeCallMutation(
-    currentPayload: ToolBeforeCallHookPayload,
-    mutation: ToolBeforeCallHookMutateResult,
-  ): ToolBeforeCallHookPayload {
-    const nextPayload = cloneToolBeforeCallHookPayload(currentPayload);
-
-    if (
-      'params' in mutation
-      && typeof mutation.params !== 'undefined'
-      && isJsonObjectValue(mutation.params)
-    ) {
-      nextPayload.params = {
-        ...mutation.params,
-      };
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条工具调用后 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前工具调用后载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyToolAfterCallMutation(
-    currentPayload: ToolAfterCallHookPayload,
-    mutation: ToolAfterCallHookMutateResult,
-  ): ToolAfterCallHookPayload {
-    const nextPayload = cloneToolAfterCallHookPayload(currentPayload);
-
-    if ('output' in mutation && typeof mutation.output !== 'undefined') {
-      nextPayload.output = toJsonValue(mutation.output);
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 将一条最终回复发送前 mutate 结果应用到当前载荷。
-   * @param currentPayload 当前最终回复载荷
-   * @param mutation 变更结果
-   * @returns 新的载荷快照
-   */
-  private applyResponseBeforeSendMutation(
-    currentPayload: ResponseBeforeSendHookPayload,
-    mutation: ResponseBeforeSendHookMutateResult,
-  ): ResponseBeforeSendHookPayload {
-    const nextPayload = cloneResponseBeforeSendHookPayload(currentPayload);
-
-    if ('providerId' in mutation && typeof mutation.providerId === 'string') {
-      nextPayload.providerId = mutation.providerId;
-    }
-    if ('modelId' in mutation && typeof mutation.modelId === 'string') {
-      nextPayload.modelId = mutation.modelId;
-    }
-    if (
-      'assistantContent' in mutation
-      && typeof mutation.assistantContent === 'string'
-    ) {
-      nextPayload.assistantContent = mutation.assistantContent;
-    }
-    if ('assistantParts' in mutation) {
-      nextPayload.assistantParts = mutation.assistantParts === null
-        ? []
-        : cloneChatMessageParts(mutation.assistantParts ?? []);
-    }
-    if ('toolCalls' in mutation && Array.isArray(mutation.toolCalls)) {
-      nextPayload.toolCalls = mutation.toolCalls.map((toolCall) => ({
-        ...toolCall,
-      }));
-    }
-    if ('toolResults' in mutation && Array.isArray(mutation.toolResults)) {
-      nextPayload.toolResults = mutation.toolResults.map((toolResult) => ({
-        ...toolResult,
-      }));
-    }
-
-    return nextPayload;
-  }
-
-  /**
-   * 读取指定工具定义；不存在时抛错。
-   * @param record 插件运行时记录
-   * @param toolName 工具名
-   * @returns 工具定义
-   */
-  private findToolOrThrow(
-    record: PluginRuntimeRecord,
-    toolName: string,
-  ): PluginCapability {
-    const tool = (record.manifest.tools ?? []).find((item) => item.name === toolName);
-    if (!tool) {
-      throw new NotFoundException(`Tool not found: ${record.manifest.id}:${toolName}`);
-    }
-
-    return tool;
+    return invokeDispatchableHooks({
+      records: this.records.values(),
+      hookName: input.hookName,
+      context: input.context,
+      payload: input.payload,
+      invoke: (record, payload) =>
+        this.invokePluginHook({
+          pluginId: record.manifest.id,
+          hookName: input.hookName,
+          context: input.context,
+          payload,
+        }),
+    });
   }
 
   /**
@@ -3386,19 +1844,17 @@ export class PluginRuntimeService {
    * @returns 自动化服务实例
    */
   private getAutomationService(): AutomationService {
-    if (this.automationService) {
-      return this.automationService;
-    }
-
-    const resolved = this.moduleRef.get(AutomationService, {
-      strict: false,
+    return resolveCachedRuntimeService({
+      current: this.automationService,
+      resolve: () =>
+        this.moduleRef.get(AutomationService, {
+          strict: false,
+        }),
+      cache: (value) => {
+        this.automationService = value;
+      },
+      notFoundMessage: 'AutomationService is not available',
     });
-    if (!resolved) {
-      throw new NotFoundException('AutomationService is not available');
-    }
-
-    this.automationService = resolved;
-    return resolved;
   }
 
   /**
@@ -3406,23 +1862,22 @@ export class PluginRuntimeService {
    * @returns 聊天消息服务实例
    */
   private async getChatMessageService(): Promise<PluginConversationMessageWriter> {
-    if (this.chatMessageService) {
-      return this.chatMessageService;
-    }
-
-    const { ChatMessageService } = await import('../chat/chat-message.service');
-    const resolved = this.moduleRef.get<PluginConversationMessageWriter>(
-      ChatMessageService,
-      {
-        strict: false,
+    return resolveCachedRuntimeServiceAsync({
+      current: this.chatMessageService,
+      resolve: async () => {
+        const { ChatMessageService } = await import('../chat/chat-message.service');
+        return this.moduleRef.get<PluginConversationMessageWriter>(
+          ChatMessageService,
+          {
+            strict: false,
+          },
+        );
       },
-    );
-    if (!resolved) {
-      throw new NotFoundException('ChatMessageService is not available');
-    }
-
-    this.chatMessageService = resolved;
-    return resolved;
+      cache: (value) => {
+        this.chatMessageService = value;
+      },
+      notFoundMessage: 'ChatMessageService is not available',
+    });
   }
 
   /**
@@ -3430,916 +1885,36 @@ export class PluginRuntimeService {
    * @returns 后台子代理任务服务实例
    */
   private async getSubagentTaskService() {
-    if (this.subagentTaskService) {
-      return this.subagentTaskService;
-    }
-
-    const resolved = this.moduleRef.get<typeof this.subagentTaskService>(
-      'PLUGIN_SUBAGENT_TASK_SERVICE',
-      {
-        strict: false,
+    return resolveCachedRuntimeServiceAsync({
+      current: this.subagentTaskService,
+      resolve: async () =>
+        this.moduleRef.get<typeof this.subagentTaskService>(
+          'PLUGIN_SUBAGENT_TASK_SERVICE',
+          {
+            strict: false,
+          },
+        ),
+      cache: (value) => {
+        this.subagentTaskService = value;
       },
-    );
-    if (!resolved) {
-      throw new NotFoundException('PluginSubagentTaskService is not available');
-    }
-
-    this.subagentTaskService = resolved;
-    return resolved;
+      notFoundMessage: 'PluginSubagentTaskService is not available',
+    });
   }
 
   private async getToolRegistry() {
-    if (this.toolRegistryPromise) {
-      return this.toolRegistryPromise;
-    }
-
-    this.toolRegistryPromise = (async () => {
-      const { ToolRegistryService } = await import('../tool/tool-registry.service');
-      const resolved = this.moduleRef.get(ToolRegistryService, {
-        strict: false,
-      });
-      if (!resolved) {
-        throw new NotFoundException('ToolRegistryService is not available');
-      }
-
-      return resolved;
-    })();
-
-    return this.toolRegistryPromise;
-  }
-
-  /**
-   * 为当前会话启动一条活动等待态。
-   * @param input 插件、上下文与超时参数
-   * @returns 当前活动等待态摘要
-   */
-  private startConversationSession(input: {
-    pluginId: string;
-    context: PluginCallContext;
-    timeoutMs: number;
-    captureHistory: boolean;
-    metadata?: JsonValue;
-  }): PluginConversationSessionInfo {
-    const conversationId = this.requireConversationIdContext(
-      input.context,
-      'conversation.session.start',
-    );
-    const now = Date.now();
-    const record: ConversationSessionRecord = {
-      pluginId: input.pluginId,
-      conversationId,
-      startedAt: now,
-      expiresAt: now + input.timeoutMs,
-      lastMatchedAt: null,
-      captureHistory: input.captureHistory,
-      historyMessages: [],
-      ...(typeof input.metadata !== 'undefined'
-        ? { metadata: toJsonValue(input.metadata) }
-        : {}),
-    };
-    this.conversationSessions.set(conversationId, record);
-    return this.toConversationSessionInfo(record);
-  }
-
-  /**
-   * 读取当前插件在当前会话上的活动等待态。
-   * @param pluginId 当前插件 ID
-   * @param context 插件调用上下文
-   * @returns 会话等待态摘要；不存在时返回 null
-   */
-  private getConversationSession(
-    pluginId: string,
-    context: PluginCallContext,
-  ): PluginConversationSessionInfo | null {
-    const conversationId = this.requireConversationIdContext(
-      context,
-      'conversation.session.get',
-    );
-    const session = this.getOwnedConversationSession(pluginId, conversationId);
-    return session ? this.toConversationSessionInfo(session) : null;
-  }
-
-  /**
-   * 续期当前插件在当前会话上的活动等待态。
-   * @param input 插件、上下文与超时参数
-   * @returns 更新后的会话等待态摘要；不存在时返回 null
-   */
-  private keepConversationSession(input: {
-    pluginId: string;
-    context: PluginCallContext;
-    timeoutMs: number;
-    resetTimeout: boolean;
-  }): PluginConversationSessionInfo | null {
-    const conversationId = this.requireConversationIdContext(
-      input.context,
-      'conversation.session.keep',
-    );
-    const session = this.getOwnedConversationSession(input.pluginId, conversationId);
-    if (!session) {
-      return null;
-    }
-
-    const now = Date.now();
-    session.expiresAt = input.resetTimeout
-      ? now + input.timeoutMs
-      : session.expiresAt + input.timeoutMs;
-    return this.toConversationSessionInfo(session);
-  }
-
-  /**
-   * 结束当前插件在当前会话上的活动等待态。
-   * @param pluginId 当前插件 ID
-   * @param context 插件调用上下文
-   * @returns 是否成功结束
-   */
-  private finishConversationSession(
-    pluginId: string,
-    context: PluginCallContext,
-  ): boolean {
-    const conversationId = this.requireConversationIdContext(
-      context,
-      'conversation.session.finish',
-    );
-    const session = this.getOwnedConversationSession(pluginId, conversationId);
-    if (!session) {
-      return false;
-    }
-
-    this.conversationSessions.delete(conversationId);
-    return true;
-  }
-
-  /**
-   * 读取当前会话上活动且未过期的等待态。
-   * @param conversationId 会话 ID
-   * @returns 活动等待态；不存在或已过期时返回 null
-   */
-  private getActiveConversationSession(
-    conversationId?: string,
-  ): ConversationSessionRecord | null {
-    if (!conversationId) {
-      return null;
-    }
-
-    const session = this.conversationSessions.get(conversationId);
-    if (!session) {
-      return null;
-    }
-    if (session.expiresAt <= Date.now()) {
-      this.conversationSessions.delete(conversationId);
-      return null;
-    }
-
-    return session;
-  }
-
-  /**
-   * 读取当前插件在指定会话上的活动等待态。
-   * @param pluginId 当前插件 ID
-   * @param conversationId 会话 ID
-   * @returns 会话等待态；不存在或不归当前插件所有时返回 null
-   */
-  private getOwnedConversationSession(
-    pluginId: string,
-    conversationId: string,
-  ): ConversationSessionRecord | null {
-    const session = this.getActiveConversationSession(conversationId);
-    if (!session || session.pluginId !== pluginId) {
-      return null;
-    }
-
-    return session;
-  }
-
-  /**
-   * 在治理刷新后剔除当前已失效的活动会话等待态。
-   * @param pluginId 插件 ID
-   * @param scope 最新作用域
-   * @returns 无返回值
-   */
-  private pruneDisabledConversationSessions(
-    pluginId: string,
-    scope: PluginGovernanceSnapshot['scope'],
-  ): void {
-    const disabledConversationIds = collectDisabledConversationSessionIds(
-      this.conversationSessions.values(),
-      pluginId,
-      scope,
-    );
-    for (const conversationId of disabledConversationIds) {
-      this.conversationSessions.delete(conversationId);
-    }
-  }
-
-  /**
-   * 读取当前会话等待态的安全摘要。
-   * @param session 活动等待态
-   * @returns 可暴露给插件的等待态摘要
-   */
-  private toConversationSessionInfo(
-    session: ConversationSessionRecord,
-  ): PluginConversationSessionInfo {
-    return {
-      pluginId: session.pluginId,
-      conversationId: session.conversationId,
-      timeoutMs: Math.max(0, session.expiresAt - Date.now()),
-      startedAt: new Date(session.startedAt).toISOString(),
-      expiresAt: new Date(session.expiresAt).toISOString(),
-      lastMatchedAt: session.lastMatchedAt
-        ? new Date(session.lastMatchedAt).toISOString()
-        : null,
-      captureHistory: session.captureHistory,
-      historyMessages: session.historyMessages.map((message) => cloneMessageHookInfo(message)),
-      ...(typeof session.metadata !== 'undefined'
-        ? { metadata: toJsonValue(session.metadata) }
-        : {}),
-    };
-  }
-
-  /**
-   * 记录一条命中活动等待态的消息。
-   * @param session 活动等待态
-   * @param message 当前收到的消息
-   * @returns 最新的等待态摘要
-   */
-  private recordConversationSessionMessage(
-    session: ConversationSessionRecord,
-    message: PluginMessageHookInfo,
-  ): PluginConversationSessionInfo {
-    session.lastMatchedAt = Date.now();
-    if (session.captureHistory) {
-      session.historyMessages.push(cloneMessageHookInfo(message));
-    }
-
-    return this.toConversationSessionInfo(session);
-  }
-
-  /**
-   * 从上下文中读取 conversationId。
-   * @param context 插件调用上下文
-   * @param method 当前 Host API 方法名
-   * @returns conversationId
-   */
-  private requireConversationIdContext(
-    context: PluginCallContext,
-    method: string,
-  ): string {
-    if (!context.conversationId) {
-      throw new BadRequestException(`${method} 需要 conversationId 上下文`);
-    }
-
-    return context.conversationId;
-  }
-
-  /**
-   * 从调用上下文读取 userId。
-   * @param context 插件调用上下文
-   * @param method 当前 Host API 方法名
-   * @returns userId
-   */
-  private requireUserId(
-    context: PluginCallContext,
-    method: string,
-  ): string {
-    if (!context.userId) {
-      throw new BadRequestException(`${method} 需要 userId 上下文`);
-    }
-
-    return context.userId;
-  }
-
-  /**
-   * 从参数对象读取自动化触发配置。
-   * @param params 参数对象
-   * @param method 当前 Host API 方法名
-   * @returns 已校验的触发配置
-   */
-  private readAutomationTrigger(
-    params: JsonObject,
-    method: string,
-  ): TriggerConfig {
-    const value = params.trigger;
-    if (!isJsonObjectValue(value)) {
-      throw new BadRequestException(`${method} 的 trigger 必须是对象`);
-    }
-    if (
-      value.type !== 'cron'
-      && value.type !== 'event'
-      && value.type !== 'manual'
-    ) {
-      throw new BadRequestException(`${method} 的 trigger.type 不合法`);
-    }
-
-    const trigger: TriggerConfig = {
-      type: value.type,
-    };
-    if ('cron' in value && value.cron !== undefined) {
-      if (typeof value.cron !== 'string') {
-        throw new BadRequestException(`${method} 的 trigger.cron 必须是字符串`);
-      }
-      trigger.cron = value.cron;
-    }
-    if ('event' in value && value.event !== undefined) {
-      if (typeof value.event !== 'string') {
-        throw new BadRequestException(`${method} 的 trigger.event 必须是字符串`);
-      }
-      trigger.event = value.event;
-    }
-
-    return trigger;
-  }
-
-  /**
-   * 从参数对象读取自动化动作列表。
-   * @param params 参数对象
-   * @param method 当前 Host API 方法名
-   * @returns 已校验的动作配置数组
-   */
-  private readAutomationActions(
-    params: JsonObject,
-    method: string,
-  ): ActionConfig[] {
-    const value = params.actions;
-    if (!Array.isArray(value)) {
-      throw new BadRequestException(`${method} 的 actions 必须是数组`);
-    }
-
-    return value.map((action, index) =>
-      this.readAutomationAction(action, index, method),
-    );
-  }
-
-  /**
-   * 从参数对象读取单条自动化动作。
-   * @param value 原始动作值
-   * @param index 当前动作索引
-   * @param method 当前 Host API 方法名
-   * @returns 已校验的动作配置
-   */
-  private readAutomationAction(
-    value: JsonValue,
-    index: number,
-    method: string,
-  ): ActionConfig {
-    if (!isJsonObjectValue(value)) {
-      throw new BadRequestException(`${method} 的 actions[${index}] 必须是对象`);
-    }
-    if (value.type !== 'device_command' && value.type !== 'ai_message') {
-      throw new BadRequestException(`${method} 的 actions[${index}].type 不合法`);
-    }
-
-    if (value.type === 'device_command') {
-      if (typeof value.plugin !== 'string') {
-        throw new BadRequestException(
-          `${method} 的 actions[${index}].plugin 必须是字符串`,
-        );
-      }
-      if (typeof value.capability !== 'string') {
-        throw new BadRequestException(
-          `${method} 的 actions[${index}].capability 必须是字符串`,
-        );
-      }
-
-      const action: ActionConfig = {
-        type: value.type,
-        plugin: value.plugin,
-        capability: value.capability,
-      };
-      if ('params' in value && value.params !== undefined) {
-        if (!isJsonObjectValue(value.params)) {
-          throw new BadRequestException(
-            `${method} 的 actions[${index}].params 必须是对象`,
-          );
-        }
-        action.params = value.params;
-      }
-
-      return action;
-    }
-
-    const action: ActionConfig = {
-      type: value.type,
-    };
-    if ('message' in value && value.message !== undefined) {
-      if (typeof value.message !== 'string') {
-        throw new BadRequestException(
-          `${method} 的 actions[${index}].message 必须是字符串`,
-        );
-      }
-      action.message = value.message;
-    }
-    if ('target' in value && value.target !== undefined) {
-      action.target = this.readOptionalMessageTarget(
-        value,
-        'target',
-        `${method}.actions[${index}]`,
-      );
-    }
-
-    return action;
-  }
-
-  /**
-   * 从调用上下文读取超时参数。
-   * @param context 插件调用上下文
-   * @param fallback 默认超时
-   * @returns 超时毫秒数
-   */
-  private readTimeoutMs(context: PluginCallContext, fallback: number): number {
-    const raw = context.metadata?.timeoutMs;
-    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
-      return fallback;
-    }
-
-    return raw;
-  }
-
-  /**
-   * 从参数对象读取必填字符串字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 字段值
-   */
-  private requireString(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): string {
-    const value = params[key];
-    if (typeof value === 'string') {
-      return value;
-    }
-
-    throw new BadRequestException(`${method} 的 ${key} 必须是字符串`);
-  }
-
-  /**
-   * 从参数对象读取可选字符串字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 字段值；缺失时返回 undefined
-   */
-  private readOptionalString(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): string | undefined {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (typeof value === 'string') {
-      return value;
-    }
-
-    throw new BadRequestException(`${method} 的 ${key} 必须是字符串`);
-  }
-
-  /**
-   * 从参数对象读取可选布尔字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 字段值；缺失时返回 undefined
-   */
-  private readOptionalBoolean(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): boolean | undefined {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (typeof value === 'boolean') {
-      return value;
-    }
-
-    throw new BadRequestException(`${method} 的 ${key} 必须是布尔值`);
-  }
-
-  /**
-   * 从参数对象读取可选数字字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 字段值；缺失时返回 undefined
-   */
-  private readOptionalNumber(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): number | undefined {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    throw new BadRequestException(`${method} 的 ${key} 必须是数字`);
-  }
-
-  /**
-   * 从参数对象读取必填正数字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 正数字段值
-   */
-  private requirePositiveNumber(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): number {
-    const value = this.readOptionalNumber(params, key, method);
-    if (typeof value !== 'number' || value <= 0) {
-      throw new BadRequestException(`${method} 的 ${key} 必须是正数`);
-    }
-
-    return value;
-  }
-
-  /**
-   * 从参数对象读取可选对象字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 对象值；缺失时返回 undefined
-   */
-  private readOptionalObject(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): JsonObject | undefined {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (isJsonObjectValue(value)) {
-      return value;
-    }
-
-    throw new BadRequestException(`${method} 的 ${key} 必须是对象`);
-  }
-
-  /**
-   * 从参数对象读取可选字符串数组字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 字段值；缺失时返回 undefined
-   */
-  private readOptionalStringArray(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): string[] | undefined {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
-      return value;
-    }
-
-    throw new BadRequestException(`${method} 的 ${key} 必须是字符串数组`);
-  }
-
-  /**
-   * 从参数对象读取可选字符串字典字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 字段值；缺失时返回 undefined
-   */
-  private readOptionalStringRecord(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): Record<string, string> | undefined {
-    const value = this.readOptionalObject(params, key, method);
-    if (!value) {
-      return undefined;
-    }
-
-    const record: Record<string, string> = {};
-    for (const [entryKey, entryValue] of Object.entries(value)) {
-      if (typeof entryValue !== 'string') {
-        throw new BadRequestException(`${method} 的 ${key}.${entryKey} 必须是字符串`);
-      }
-      record[entryKey] = entryValue;
-    }
-
-    return record;
-  }
-
-  /**
-   * 从参数对象读取结构化消息数组。
-   * @param params 参数对象
-   * @param method 当前 Host API 方法名
-   * @returns 已校验的消息数组
-   */
-  private readLlmMessages(
-    params: JsonObject,
-    method: string,
-  ): PluginLlmMessage[] {
-    const value = params.messages;
-    if (!Array.isArray(value)) {
-      throw new BadRequestException(`${method} 的 messages 必须是数组`);
-    }
-
-    return value.map((item, index) => this.readLlmMessage(item, index, method));
-  }
-
-  /**
-   * 读取单条结构化消息。
-   * @param value 原始消息值
-   * @param index 当前消息索引
-   * @param method 当前 Host API 方法名
-   * @returns 已校验的消息
-   */
-  private readLlmMessage(
-    value: JsonValue,
-    index: number,
-    method: string,
-  ): PluginLlmMessage {
-    const message = this.requireJsonObjectValue(
-      value,
-      `${method} 的 messages[${index}]`,
-    );
-    if (
-      message.role !== 'user'
-      && message.role !== 'assistant'
-      && message.role !== 'system'
-      && message.role !== 'tool'
-    ) {
-      throw new BadRequestException(
-        `${method} 的 messages[${index}].role 必须是 user/assistant/system/tool`,
-      );
-    }
-
-    return {
-      role: message.role,
-      content: this.readLlmMessageContent(
-        message.content,
-        `${method} 的 messages[${index}].content`,
-      ),
-    };
-  }
-
-  /**
-   * 读取单条消息的 content。
-   * @param value 原始 content
-   * @param label 当前字段标签
-   * @returns 字符串或结构化 part 数组
-   */
-  private readLlmMessageContent(
-    value: JsonValue,
-    label: string,
-  ): string | Array<{ type: 'text'; text: string } | {
-    type: 'image';
-    image: string;
-    mimeType?: string;
-  }> {
-    if (typeof value === 'string') {
-      return value;
-    }
-    if (!Array.isArray(value)) {
-      throw new BadRequestException(`${label} 必须是字符串或数组`);
-    }
-
-    return value.map((part, index) =>
-      this.readChatMessagePart(part, `${label}[${index}]`),
-    );
-  }
-
-  /**
-   * 读取单个消息 part。
-   * @param value 原始 part
-   * @param label 当前字段标签
-   * @returns 已校验的消息 part
-   */
-  private readChatMessagePart(
-    value: JsonValue,
-    label: string,
-  ): { type: 'text'; text: string } | { type: 'image'; image: string; mimeType?: string } {
-    const part = this.requireJsonObjectValue(value, label);
-    if (part.type === 'text' && typeof part.text === 'string') {
-      return {
-        type: 'text',
-        text: part.text,
-      };
-    }
-    if (part.type === 'image' && typeof part.image === 'string') {
-      return {
-        type: 'image',
-        image: part.image,
-        ...(typeof part.mimeType === 'string' ? { mimeType: part.mimeType } : {}),
-      };
-    }
-
-    throw new BadRequestException(`${label} 不是合法的消息 part`);
-  }
-
-  /**
-   * 从参数对象读取可选消息 part 数组。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 已校验的消息 part 数组；缺失时返回 undefined
-   */
-  private readOptionalChatMessageParts(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): ChatMessagePart[] | undefined {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (!Array.isArray(value)) {
-      throw new BadRequestException(`${method} 的 ${key} 必须是数组`);
-    }
-
-    return value.map((part, index) =>
-      this.readChatMessagePart(part, `${method}.${key}[${index}]`),
-    );
-  }
-
-  /**
-   * 从参数对象读取可选 JSON 值字段。
-   * @param params 参数对象
-   * @param key 字段名
-   * @returns JSON 值；缺失时返回 undefined
-   */
-  private readOptionalJsonValue(
-    params: JsonObject,
-    key: string,
-  ): JsonValue | undefined {
-    return Object.prototype.hasOwnProperty.call(params, key)
-      ? params[key]
-      : undefined;
-  }
-
-  /**
-   * 校验并读取 JSON 对象。
-   * @param value 原始 JSON 值
-   * @param label 当前字段标签
-   * @returns JSON 对象
-   */
-  private requireJsonObjectValue(value: JsonValue, label: string): JsonObject {
-    if (!isJsonObjectValue(value)) {
-      throw new BadRequestException(`${label} 必须是对象`);
-    }
-
-    return value;
-  }
-
-  /**
-   * 从参数对象读取可选消息目标。
-   * @param params 参数对象
-   * @param key 字段名
-   * @param method 当前 Host API 方法名
-   * @returns 归一化后的消息目标；缺失时返回 undefined
-   */
-  private readOptionalMessageTarget(
-    params: JsonObject,
-    key: string,
-    method: string,
-  ): PluginMessageTargetRef | undefined {
-    const value = params[key];
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (!isJsonObjectValue(value)) {
-      throw new BadRequestException(`${method} 的 ${key} 必须是对象`);
-    }
-    if (value.type !== 'conversation') {
-      throw new BadRequestException(`${method} 的 ${key}.type 当前只支持 conversation`);
-    }
-    if (typeof value.id !== 'string' || !value.id.trim()) {
-      throw new BadRequestException(`${method} 的 ${key}.id 必须是非空字符串`);
-    }
-
-    return {
-      type: 'conversation',
-      id: value.id.trim(),
-    };
-  }
-
-  /**
-   * 从 Host API 参数中读取并归一化一份子代理请求。
-   * @param params 参数对象
-   * @param method 当前 Host API 方法名
-   * @returns 统一子代理请求快照
-   */
-  private readSubagentRequest(
-    params: JsonObject,
-    method: string,
-  ): PluginSubagentRequest {
-    return {
-      ...(this.readOptionalString(params, 'providerId', method)
-        ? { providerId: this.readOptionalString(params, 'providerId', method) }
-        : {}),
-      ...(this.readOptionalString(params, 'modelId', method)
-        ? { modelId: this.readOptionalString(params, 'modelId', method) }
-        : {}),
-      ...(this.readOptionalString(params, 'system', method)
-        ? { system: this.readOptionalString(params, 'system', method) }
-        : {}),
-      messages: this.readLlmMessages(params, method),
-      ...(this.readOptionalStringArray(params, 'toolNames', method)
-        ? { toolNames: this.readOptionalStringArray(params, 'toolNames', method) }
-        : {}),
-      ...(this.readOptionalString(params, 'variant', method)
-        ? { variant: this.readOptionalString(params, 'variant', method) }
-        : {}),
-      ...(this.readOptionalObject(params, 'providerOptions', method)
-        ? { providerOptions: this.readOptionalObject(params, 'providerOptions', method) }
-        : {}),
-      ...(this.readOptionalStringRecord(params, 'headers', method)
-        ? { headers: this.readOptionalStringRecord(params, 'headers', method) }
-        : {}),
-      ...(typeof this.readOptionalNumber(params, 'maxOutputTokens', method) === 'number'
-        ? { maxOutputTokens: this.readOptionalNumber(params, 'maxOutputTokens', method) }
-        : {}),
-      maxSteps: normalizePositiveInteger(
-        this.readOptionalNumber(params, 'maxSteps', method),
-        5,
-      ),
-    };
-  }
-
-  /**
-   * 从 Host API 参数中读取后台子代理任务启动参数。
-   * @param params 参数对象
-   * @param method 当前 Host API 方法名
-   * @returns 归一化后的任务请求与可选回写目标
-   */
-  private readSubagentTaskStartParams(
-    params: JsonObject,
-    method: string,
-  ): {
-    request: PluginSubagentRequest;
-    writeBackTarget?: PluginMessageTargetRef;
-  } {
-    const request = this.readSubagentRequest(params, method);
-    const rawWriteBack = params.writeBack;
-    if (rawWriteBack === undefined || rawWriteBack === null) {
-      return { request };
-    }
-    if (!isJsonObjectValue(rawWriteBack)) {
-      throw new BadRequestException(`${method} 的 writeBack 必须是对象`);
-    }
-
-    const writeBackTarget = this.readOptionalMessageTarget(
-      rawWriteBack,
-      'target',
-      `${method}.writeBack`,
-    );
-
-    return {
-      request,
-      ...(writeBackTarget ? { writeBackTarget } : {}),
-    };
-  }
-
-  /**
-   * 构造一个统一的子代理执行结果，并在缺失模型信息时回退到宿主默认解析。
-   * @param input 原始结果字段
-   * @returns 标准化后的子代理结果
-   */
-  private buildSubagentHookResult(input: {
-    providerId?: string;
-    modelId?: string;
-    text: string;
-    finishReason?: string | null;
-    toolCalls?: PluginSubagentToolCall[];
-    toolResults?: PluginSubagentToolResult[];
-  }): PluginSubagentRunResult {
-    const modelConfig = this.aiModelExecution.resolveModelConfig(
-      input.providerId,
-      input.modelId,
-    );
-
-    return {
-      providerId: String(modelConfig.providerId),
-      modelId: String(modelConfig.id),
-      text: input.text,
-      message: {
-        role: 'assistant',
-        content: input.text,
+    return resolveCachedRuntimeServicePromise({
+      current: this.toolRegistryPromise,
+      resolve: async () => {
+        const { ToolRegistryService } = await import('../tool/tool-registry.service');
+        return this.moduleRef.get(ToolRegistryService, {
+          strict: false,
+        });
       },
-      ...(typeof input.finishReason !== 'undefined'
-        ? { finishReason: input.finishReason }
-        : {}),
-      toolCalls: clonePluginSubagentToolCalls(input.toolCalls ?? []),
-      toolResults: clonePluginSubagentToolResults(input.toolResults ?? []),
-    };
+      cache: (value) => {
+        this.toolRegistryPromise = value;
+      },
+      notFoundMessage: 'ToolRegistryService is not available',
+    });
   }
 
   /**
@@ -4372,175 +1947,50 @@ export class PluginRuntimeService {
       request.modelId,
     );
 
-    if (hasImagePart(request.messages) && !modelConfig.capabilities.input.image) {
-      throw new BadRequestException('subagent.run 当前模型不支持图片输入');
-    }
+    assertSubagentRequestInputSupported({
+      request,
+      modelConfig,
+    });
 
     const prepared = this.aiModelExecution.prepareResolved({
       modelConfig,
       sdkMessages: toAiSdkMessages(request.messages),
     });
-    const tools = await this.buildSubagentToolSet({
+    const toolSetRequest = buildSubagentToolSetRequest({
       pluginId: input.pluginId,
       context: input.context,
       providerId: String(modelConfig.providerId),
       modelId: String(modelConfig.id),
       toolNames: request.toolNames,
     });
-    const executed = this.aiModelExecution.streamPrepared({
-      prepared,
-      system: request.system,
-      tools,
-      stopWhen: createStepLimit(request.maxSteps),
-      variant: request.variant,
-      providerOptions: request.providerOptions,
-      headers: request.headers,
-      maxOutputTokens: request.maxOutputTokens,
+    const tools = toolSetRequest
+      ? await (await this.getToolRegistry()).buildToolSet(toolSetRequest)
+      : undefined;
+    const executed = this.aiModelExecution.streamPrepared(
+      buildSubagentStreamPreparedInput({
+        prepared,
+        request,
+        tools,
+      }),
+    );
+    const result = await collectSubagentRunResult({
+      modelConfig,
+      fullStream: executed.result.fullStream,
+      finishReason: executed.result.finishReason,
     });
-
-    let text = '';
-    const toolCalls: PluginSubagentToolCall[] = [];
-    const toolResults: PluginSubagentToolResult[] = [];
-
-    for await (const part of executed.result.fullStream) {
-      if (part.type === 'text-delta') {
-        text += part.text;
-        continue;
-      }
-      if (part.type === 'tool-call') {
-        toolCalls.push({
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          input: toJsonValue(part.input),
-        });
-        continue;
-      }
-      if (part.type === 'tool-result') {
-        toolResults.push({
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          output: toJsonValue(part.output),
-        });
-      }
-    }
-
-    const finishReason = await executed.result.finishReason;
-    const result: PluginSubagentRunResult = {
-      providerId: String(modelConfig.providerId),
-      modelId: String(modelConfig.id),
-      text,
-      message: {
-        role: 'assistant',
-        content: text,
-      },
-      ...(finishReason !== undefined
-        ? {
-            finishReason: finishReason === null ? null : String(finishReason),
-          }
-        : {}),
-      toolCalls,
-      toolResults,
-    };
 
     const afterRunPayload = await this.runSubagentAfterRunHooks({
       context: input.context,
-      payload: {
-        context: {
-          ...input.context,
-        },
+      payload: buildResolvedSubagentAfterRunPayload({
+        context: input.context,
         pluginId: input.pluginId,
-        request: {
-          ...cloneSubagentRequest(request),
-          providerId: String(modelConfig.providerId),
-          modelId: String(modelConfig.id),
-        },
+        request,
+        modelConfig,
         result,
-      },
+      }),
     });
 
     return afterRunPayload.result;
-  }
-
-  /**
-   * 执行一次宿主侧 subagent 调用。
-   * @param input 调用参数
-   * @returns subagent 最终结果
-   */
-  private async runSubagent(input: {
-    pluginId: string;
-    context: PluginCallContext;
-    params: JsonObject;
-  }): Promise<PluginSubagentRunResult> {
-    return this.executeSubagentRequest({
-      pluginId: input.pluginId,
-      context: input.context,
-      request: this.readSubagentRequest(input.params, 'subagent.run'),
-    });
-  }
-
-  /**
-   * 构造 subagent 可见的工具集合，并默认排除调用插件自身的工具。
-   * @param input 调用参数
-   * @returns 裁剪后的工具集合
-   */
-  private async buildSubagentToolSet(input: {
-    pluginId: string;
-    context: PluginCallContext;
-    providerId: string;
-    modelId: string;
-    toolNames?: string[];
-  }) {
-    if (!input.context.userId || !input.context.conversationId) {
-      return undefined;
-    }
-
-    const toolRegistry = await this.getToolRegistry();
-    return toolRegistry.buildToolSet({
-      context: {
-        source: 'subagent',
-        userId: input.context.userId,
-        conversationId: input.context.conversationId,
-        activeProviderId: input.providerId,
-        activeModelId: input.modelId,
-        activePersonaId: input.context.activePersonaId,
-      },
-      allowedToolNames: input.toolNames,
-      excludedSources: [
-        {
-          kind: 'plugin',
-          id: input.pluginId,
-        },
-      ],
-    });
-  }
-
-  /**
-   * 为插件执行包一层统一超时控制。
-   * @param promise 原始执行 Promise
-   * @param timeoutMs 超时毫秒数
-   * @param message 超时错误消息
-   * @returns Promise 结果
-   */
-  private async runWithTimeout<T>(
-    promise: Promise<T>,
-    timeoutMs: number,
-    message: string,
-  ): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(message));
-      }, timeoutMs);
-
-      promise
-        .then((value) => {
-          clearTimeout(timer);
-          resolve(value);
-        })
-        .catch((error: unknown) => {
-          clearTimeout(timer);
-          reject(error);
-        });
-    });
   }
 
   /**
@@ -4554,829 +2004,60 @@ export class PluginRuntimeService {
     metadata: JsonObject;
     execute: () => Promise<T>;
   }): Promise<T> {
-    if (input.record.activeExecutions >= input.record.maxConcurrentExecutions) {
-      const pressure = this.buildRuntimePressure(input.record);
-      await this.pluginService.recordPluginEvent(input.record.manifest.id, {
-        type: `${input.type}:overloaded`,
-        level: 'warn',
-        message: `插件 ${input.record.manifest.id} 当前执行并发已达上限，请稍后重试`,
-        metadata: {
-          ...input.metadata,
-          activeExecutions: pressure.activeExecutions,
-          maxConcurrentExecutions: pressure.maxConcurrentExecutions,
-        },
-      });
-      throw new HttpException(
-        `插件 ${input.record.manifest.id} 当前执行并发已达上限，请稍后重试`,
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+    return runWithRuntimeExecutionSlot({
+      record: input.record,
+      type: input.type,
+      metadata: input.metadata,
+      recordPluginEvent: async (pluginId, event) => {
+        await this.pluginService.recordPluginEvent(pluginId, event);
+      },
+      execute: input.execute,
+    });
+  }
 
-    input.record.activeExecutions += 1;
+  private async runTimedPluginInvocation<T>(input: {
+    record: PluginRuntimeRecord;
+    context: PluginCallContext;
+    executionType: 'tool' | 'route' | 'hook';
+    executionMetadata: JsonObject;
+    failureTypePrefix: 'tool' | 'route' | 'hook';
+    failureMetadata: JsonObject;
+    timeoutMs: number;
+    timeoutMessage: string;
+    skipPluginErrorHook?: boolean;
+    recordFailure?: boolean;
+    execute: () => Promise<T>;
+  }): Promise<T> {
     try {
-      return await input.execute();
-    } finally {
-      input.record.activeExecutions = Math.max(0, input.record.activeExecutions - 1);
+      return await this.runWithPluginExecutionSlot({
+        record: input.record,
+        type: input.executionType,
+        metadata: input.executionMetadata,
+        execute: () => runPromiseWithTimeout(
+          Promise.resolve().then(() => input.execute()),
+          input.timeoutMs,
+          input.timeoutMessage,
+        ),
+      });
+    } catch (error) {
+      if (isPluginOverloadedError(error)) {
+        throw error;
+      }
+
+      if (input.recordFailure !== false) {
+        await this.recordPluginFailureAndDispatch({
+          pluginId: input.record.manifest.id,
+          context: input.context,
+          type: error instanceof Error && error.message.includes('超时')
+            ? `${input.failureTypePrefix}:timeout`
+            : `${input.failureTypePrefix}:error`,
+          message: error instanceof Error ? error.message : String(error),
+          metadata: input.failureMetadata,
+          skipPluginErrorHook: input.skipPluginErrorHook,
+        });
+      }
+      throw error;
     }
   }
 
-  /**
-   * 从治理配置中解析插件并发上限。
-   * @param governance 插件治理快照
-   * @returns 合法的并发上限
-   */
-  private resolveMaxConcurrentExecutions(
-    governance: PluginGovernanceSnapshot,
-  ): number {
-    const raw = governance.resolvedConfig.maxConcurrentExecutions;
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-      return Math.min(32, Math.max(1, Math.trunc(raw)));
-    }
-
-    return DEFAULT_PLUGIN_MAX_CONCURRENT_EXECUTIONS;
-  }
-
-  /**
-   * 构建当前插件的运行时压力快照。
-   * @param record 运行时插件记录
-   * @returns 压力快照
-   */
-  private buildRuntimePressure(
-    record: PluginRuntimeRecord,
-  ): PluginRuntimePressureSnapshot {
-    return {
-      activeExecutions: record.activeExecutions,
-      maxConcurrentExecutions: record.maxConcurrentExecutions,
-    };
-  }
-
-  /**
-   * 读取单个插件记录当前声明的治理动作。
-   * @param record 运行时插件记录
-   * @returns 归一化后的治理动作列表
-   */
-  private listSupportedActionsForRecord(
-    record: PluginRuntimeRecord,
-  ): PluginActionName[] {
-    const actions = record.transport.listSupportedActions?.() ?? ['health-check'];
-    const actionSet = new Set<PluginActionName>(actions);
-
-    return PLUGIN_ACTION_ORDER.filter((action) => actionSet.has(action));
-  }
-}
-
-/**
- * 复制聊天模型前 Hook 请求快照，避免插件结果意外污染原对象。
- * @param request 原始请求快照
- * @returns 新的请求副本
- */
-function cloneChatBeforeModelRequest(
-  request: ChatBeforeModelRequest,
-): ChatBeforeModelRequest {
-  return {
-    providerId: request.providerId,
-    modelId: request.modelId,
-    systemPrompt: request.systemPrompt,
-    messages: cloneChatMessages(request.messages),
-    availableTools: request.availableTools.map(
-      (tool: ChatBeforeModelRequest['availableTools'][number]) => ({
-      ...tool,
-      parameters: {
-        ...tool.parameters,
-      },
-    })),
-    ...(request.variant ? { variant: request.variant } : {}),
-    ...(request.providerOptions ? { providerOptions: { ...request.providerOptions } } : {}),
-    ...(request.headers ? { headers: { ...request.headers } } : {}),
-    ...(typeof request.maxOutputTokens === 'number'
-      ? { maxOutputTokens: request.maxOutputTokens }
-      : {}),
-  };
-}
-
-/**
- * 判断当前异常是否由插件并发保护主动拒绝。
- * @param error 捕获到的异常
- * @returns 是否为 429 超载拒绝
- */
-function isPluginOverloadedError(error: unknown): boolean {
-  return error instanceof HttpException
-    && error.getStatus() === HttpStatus.TOO_MANY_REQUESTS;
-}
-
-/**
- * 复制聊天模型后 Hook 载荷，避免插件变更污染原对象。
- * @param payload 原始完成态载荷
- * @returns 新的载荷副本
- */
-function cloneChatAfterModelPayload(
-  payload: ChatAfterModelHookPayload,
-): ChatAfterModelHookPayload {
-  return {
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    assistantMessageId: payload.assistantMessageId,
-    assistantContent: payload.assistantContent,
-    assistantParts: cloneChatMessageParts(payload.assistantParts),
-    toolCalls: payload.toolCalls.map((toolCall) => ({
-      ...toolCall,
-    })),
-    toolResults: payload.toolResults.map((toolResult) => ({
-      ...toolResult,
-    })),
-  };
-}
-
-/**
- * 复制收到消息 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneMessageReceivedHookPayload(
-  payload: MessageReceivedHookPayload,
-): MessageReceivedHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    conversationId: payload.conversationId,
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    ...(typeof payload.session !== 'undefined'
-      ? { session: payload.session ? cloneConversationSessionInfo(payload.session) : null }
-      : {}),
-    message: cloneMessageHookInfo(payload.message),
-    modelMessages: clonePluginLlmMessages(payload.modelMessages),
-  };
-}
-
-/**
- * 复制消息创建 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneMessageCreatedHookPayload(
-  payload: MessageCreatedHookPayload,
-): MessageCreatedHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    conversationId: payload.conversationId,
-    message: cloneMessageHookInfo(payload.message),
-    modelMessages: clonePluginLlmMessages(payload.modelMessages),
-  };
-}
-
-/**
- * 复制消息更新 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneMessageUpdatedHookPayload(
-  payload: MessageUpdatedHookPayload,
-): MessageUpdatedHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    conversationId: payload.conversationId,
-    messageId: payload.messageId,
-    currentMessage: cloneMessageHookInfo(payload.currentMessage),
-    nextMessage: cloneMessageHookInfo(payload.nextMessage),
-  };
-}
-
-/**
- * 复制单条消息 Hook 快照。
- * @param message 原始消息快照
- * @returns 新的消息副本
- */
-function cloneMessageHookInfo(
-  message: PluginMessageHookInfo,
-): PluginMessageHookInfo {
-  return {
-    ...(message.id ? { id: message.id } : {}),
-    role: message.role,
-    content: message.content,
-    parts: cloneChatMessageParts(message.parts),
-    ...(typeof message.provider !== 'undefined' ? { provider: message.provider } : {}),
-    ...(typeof message.model !== 'undefined' ? { model: message.model } : {}),
-    ...(typeof message.status !== 'undefined' ? { status: message.status } : {}),
-  };
-}
-
-/**
- * 复制会话等待态摘要。
- * @param session 原始等待态摘要
- * @returns 新的等待态副本
- */
-function cloneConversationSessionInfo(
-  session: PluginConversationSessionInfo,
-): PluginConversationSessionInfo {
-  return {
-    pluginId: session.pluginId,
-    conversationId: session.conversationId,
-    timeoutMs: session.timeoutMs,
-    startedAt: session.startedAt,
-    expiresAt: session.expiresAt,
-    lastMatchedAt: session.lastMatchedAt,
-    captureHistory: session.captureHistory,
-    historyMessages: session.historyMessages.map((message) => cloneMessageHookInfo(message)),
-    ...(typeof session.metadata !== 'undefined'
-      ? { metadata: toJsonValue(session.metadata) }
-      : {}),
-  };
-}
-
-/**
- * 复制自动化运行前 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneAutomationBeforeRunPayload(
-  payload: AutomationBeforeRunHookPayload,
-): AutomationBeforeRunHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    automation: {
-      ...payload.automation,
-      trigger: {
-        ...payload.automation.trigger,
-      },
-      actions: cloneAutomationActions(payload.automation.actions),
-      ...(payload.automation.logs
-        ? {
-            logs: payload.automation.logs.map((log: (typeof payload.automation.logs)[number]) => ({
-              ...log,
-            })),
-          }
-        : {}),
-    },
-    actions: cloneAutomationActions(payload.actions),
-  };
-}
-
-/**
- * 复制自动化运行后 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneAutomationAfterRunPayload(
-  payload: AutomationAfterRunHookPayload,
-): AutomationAfterRunHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    automation: {
-      ...payload.automation,
-      trigger: {
-        ...payload.automation.trigger,
-      },
-      actions: cloneAutomationActions(payload.automation.actions),
-      ...(payload.automation.logs
-        ? {
-            logs: payload.automation.logs.map((log: (typeof payload.automation.logs)[number]) => ({
-              ...log,
-            })),
-          }
-        : {}),
-    },
-    status: payload.status,
-    results: cloneJsonValueArray(payload.results),
-  };
-}
-
-/**
- * 复制工具调用前 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneToolBeforeCallHookPayload(
-  payload: ToolBeforeCallHookPayload,
-): ToolBeforeCallHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    source: {
-      ...payload.source,
-    },
-    ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
-    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-    tool: {
-      ...payload.tool,
-      parameters: {
-        ...payload.tool.parameters,
-      },
-    },
-    params: {
-      ...payload.params,
-    },
-  };
-}
-
-/**
- * 复制工具调用后 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneToolAfterCallHookPayload(
-  payload: ToolAfterCallHookPayload,
-): ToolAfterCallHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    source: {
-      ...payload.source,
-    },
-    ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
-    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-    tool: {
-      ...payload.tool,
-      parameters: {
-        ...payload.tool.parameters,
-      },
-    },
-    params: {
-      ...payload.params,
-    },
-    output: toJsonValue(payload.output),
-  };
-}
-
-/**
- * 复制最终回复发送前 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneResponseBeforeSendHookPayload(
-  payload: ResponseBeforeSendHookPayload,
-): ResponseBeforeSendHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    responseSource: payload.responseSource,
-    assistantMessageId: payload.assistantMessageId,
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    assistantContent: payload.assistantContent,
-    assistantParts: cloneChatMessageParts(payload.assistantParts),
-    toolCalls: payload.toolCalls.map((toolCall) => ({
-      ...toolCall,
-    })),
-    toolResults: payload.toolResults.map((toolResult) => ({
-      ...toolResult,
-    })),
-  };
-}
-
-/**
- * 复制子代理执行前 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneSubagentBeforeRunPayload(
-  payload: SubagentBeforeRunHookPayload,
-): SubagentBeforeRunHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    pluginId: payload.pluginId,
-    request: cloneSubagentRequest(payload.request),
-  };
-}
-
-/**
- * 复制子代理执行后 Hook 载荷。
- * @param payload 原始载荷
- * @returns 新的载荷副本
- */
-function cloneSubagentAfterRunPayload(
-  payload: SubagentAfterRunHookPayload,
-): SubagentAfterRunHookPayload {
-  return {
-    context: {
-      ...payload.context,
-    },
-    pluginId: payload.pluginId,
-    request: cloneSubagentRequest(payload.request),
-    result: cloneSubagentRunResult(payload.result),
-  };
-}
-
-/**
- * 复制子代理请求快照。
- * @param request 原始请求
- * @returns 新的请求副本
- */
-function cloneSubagentRequest(
-  request: PluginSubagentRequest,
-): PluginSubagentRequest {
-  return {
-    ...(request.providerId ? { providerId: request.providerId } : {}),
-    ...(request.modelId ? { modelId: request.modelId } : {}),
-    ...(typeof request.system === 'string' ? { system: request.system } : {}),
-    messages: clonePluginLlmMessages(request.messages),
-    ...(request.toolNames ? { toolNames: [...request.toolNames] } : {}),
-    ...(typeof request.variant === 'string' ? { variant: request.variant } : {}),
-    ...(request.providerOptions ? { providerOptions: { ...request.providerOptions } } : {}),
-    ...(request.headers ? { headers: { ...request.headers } } : {}),
-    ...(typeof request.maxOutputTokens === 'number'
-      ? { maxOutputTokens: request.maxOutputTokens }
-      : {}),
-    maxSteps: request.maxSteps,
-  };
-}
-
-/**
- * 复制子代理执行结果。
- * @param result 原始结果
- * @returns 新的结果副本
- */
-function cloneSubagentRunResult(
-  result: PluginSubagentRunResult,
-): PluginSubagentRunResult {
-  return {
-    providerId: result.providerId,
-    modelId: result.modelId,
-    text: result.text,
-    message: {
-      role: 'assistant',
-      content: result.message.content,
-    },
-    ...(typeof result.finishReason !== 'undefined'
-      ? { finishReason: result.finishReason }
-      : {}),
-    toolCalls: clonePluginSubagentToolCalls(result.toolCalls),
-    toolResults: clonePluginSubagentToolResults(result.toolResults),
-  };
-}
-
-/**
- * 复制子代理工具调用数组。
- * @param toolCalls 原始工具调用数组
- * @returns 深拷贝后的工具调用数组
- */
-function clonePluginSubagentToolCalls(
-  toolCalls: PluginSubagentToolCall[],
-): PluginSubagentToolCall[] {
-  return toolCalls.map((toolCall) => ({
-    toolCallId: toolCall.toolCallId,
-    toolName: toolCall.toolName,
-    input: toJsonValue(toolCall.input),
-  }));
-}
-
-/**
- * 复制子代理工具结果数组。
- * @param toolResults 原始工具结果数组
- * @returns 深拷贝后的工具结果数组
- */
-function clonePluginSubagentToolResults(
-  toolResults: PluginSubagentToolResult[],
-): PluginSubagentToolResult[] {
-  return toolResults.map((toolResult) => ({
-    toolCallId: toolResult.toolCallId,
-    toolName: toolResult.toolName,
-    output: toJsonValue(toolResult.output),
-  }));
-}
-
-/**
- * 复制自动化动作列表。
- * @param actions 原始动作数组
- * @returns 新的动作数组
- */
-function cloneAutomationActions(actions: ActionConfig[]): ActionConfig[] {
-  return actions.map((action) => ({
-    ...action,
-    ...(action.params ? { params: { ...action.params } } : {}),
-  }));
-}
-
-/**
- * 复制统一 LLM 消息数组。
- * @param messages 原始消息数组
- * @returns 复制后的消息数组
- */
-function clonePluginLlmMessages(messages: PluginLlmMessage[]) {
-  return messages.map((message) => ({
-    ...message,
-    content: Array.isArray(message.content)
-      ? message.content.map((part) => ({ ...part }))
-      : message.content,
-  }));
-}
-
-/**
- * 复制统一 LLM 消息数组。
- * @param messages 原始消息数组
- * @returns 复制后的消息数组
- */
-function cloneChatMessages(messages: ChatBeforeModelRequest['messages']) {
-  return messages.map((message: ChatBeforeModelRequest['messages'][number]) => ({
-    ...message,
-    content: Array.isArray(message.content)
-      ? message.content.map((part) => ({ ...part }))
-      : message.content,
-  }));
-}
-
-/**
- * 复制聊天消息 part 数组。
- * @param parts 原始 part 数组
- * @returns 复制后的 part 数组
- */
-function cloneChatMessageParts(parts: PluginMessageHookInfo['parts']) {
-  return parts.map((part: PluginMessageHookInfo['parts'][number]) => ({ ...part }));
-}
-
-/**
- * 归一化插件短路返回的 assistant 输出。
- * @param input assistant 内容与可选结构化 parts
- * @returns 统一的 assistant 内容与 parts
- */
-function normalizeAssistantOutput(input: {
-  assistantContent: string;
-  assistantParts?: ChatMessagePart[] | null;
-}): {
-  assistantContent: string;
-  assistantParts: ChatMessagePart[];
-} {
-  const assistantParts = input.assistantParts
-    ? cloneChatMessageParts(input.assistantParts)
-    : [];
-
-  if (assistantParts.length > 0) {
-    return {
-      assistantContent: assistantParts
-        .filter((part): part is Extract<ChatMessagePart, { type: 'text' }> => part.type === 'text')
-        .map((part) => part.text)
-        .join('\n'),
-      assistantParts,
-    };
-  }
-
-  const text = input.assistantContent.trim();
-    return {
-      assistantContent: text,
-      assistantParts: text
-        ? [
-          {
-            type: 'text' as const,
-            text,
-          },
-        ]
-      : [],
-  };
-}
-
-/**
- * 复制 JSON 数组。
- * @param values 原始 JSON 数组
- * @returns 深拷贝后的数组
- */
-function cloneJsonValueArray(values: JsonValue[]): JsonValue[] {
-  return values.map((value) => toJsonValue(value));
-}
-
-/**
- * 判断一个值是否为 JSON 对象。
- * @param value 任意 JSON 值
- * @returns 是否为对象
- */
-function isJsonObjectValue(value: JsonValue): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * 判断一个值是否为字符串数组。
- * @param value 任意 JSON 值
- * @returns 是否为字符串数组
- */
-function isStringArray(value: JsonValue | undefined): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
-
-/**
- * 判断一个值是否为字符串值对象。
- * @param value 任意 JSON 值
- * @returns 是否为字符串对象
- */
-function isStringRecord(value: JsonValue): value is Record<string, string> {
-  return isJsonObjectValue(value)
-    && Object.values(value).every((item) => typeof item === 'string');
-}
-
-/**
- * 判断一个值是否为合法的聊天消息状态。
- * @param value 原始值
- * @returns 是否为合法状态
- */
-function isChatMessageStatus(value: JsonValue): boolean {
-  return value === 'pending'
-    || value === 'streaming'
-    || value === 'completed'
-    || value === 'stopped'
-    || value === 'error';
-}
-
-/**
- * 判断一个值是否为聊天消息 part 数组。
- * @param value 原始值
- * @returns 是否为合法的 part 数组
- */
-function isChatMessagePartArray(value: JsonValue): boolean {
-  return Array.isArray(value)
-    && value.every((part) => {
-      if (!isJsonObjectValue(part) || typeof part.type !== 'string') {
-        return false;
-      }
-      if (part.type === 'text') {
-        return typeof part.text === 'string';
-      }
-      if (part.type === 'image') {
-        return typeof part.image === 'string'
-          && (!('mimeType' in part) || typeof part.mimeType === 'string');
-      }
-      return false;
-    });
-}
-
-/**
- * 判断一个值是否为统一 LLM 消息数组。
- * @param value 原始值
- * @returns 是否为合法消息数组
- */
-function isPluginLlmMessageArray(value: JsonValue | undefined): boolean {
-  return Array.isArray(value)
-    && value.every((message) => {
-      if (
-        !isJsonObjectValue(message)
-        || typeof message.role !== 'string'
-        || !['user', 'assistant', 'system', 'tool'].includes(message.role)
-      ) {
-        return false;
-      }
-      if (typeof message.content === 'string') {
-        return true;
-      }
-      return Array.isArray(message.content) && isChatMessagePartArray(message.content);
-    });
-}
-
-/**
- * 判断一个值是否为自动化动作数组。
- * @param value 原始值
- * @returns 是否为合法动作数组
- */
-function isActionConfigArray(value: JsonValue | undefined): boolean {
-  return Array.isArray(value)
-    && value.every((action) => {
-      if (!isJsonObjectValue(action) || typeof action.type !== 'string') {
-        return false;
-      }
-      if (action.type !== 'device_command' && action.type !== 'ai_message') {
-        return false;
-      }
-      if ('plugin' in action && action.plugin !== undefined && typeof action.plugin !== 'string') {
-        return false;
-      }
-      if (
-        'capability' in action
-        && action.capability !== undefined
-        && typeof action.capability !== 'string'
-      ) {
-        return false;
-      }
-      if ('params' in action && action.params !== undefined && !isJsonObjectValue(action.params)) {
-        return false;
-      }
-      if ('message' in action && action.message !== undefined && typeof action.message !== 'string') {
-        return false;
-      }
-      if ('target' in action && action.target !== undefined) {
-        if (!isJsonObjectValue(action.target)) {
-          return false;
-        }
-        if (action.target.type !== 'conversation') {
-          return false;
-        }
-        if (typeof action.target.id !== 'string') {
-          return false;
-        }
-      }
-      return true;
-    });
-}
-
-/**
- * 判断一个值是否为子代理工具调用数组。
- * @param value 原始值
- * @returns 是否为合法工具调用数组
- */
-function isPluginSubagentToolCallArray(value: JsonValue | undefined): boolean {
-  return Array.isArray(value)
-    && value.every((toolCall) =>
-      isJsonObjectValue(toolCall)
-      && typeof toolCall.toolCallId === 'string'
-      && typeof toolCall.toolName === 'string'
-      && Object.prototype.hasOwnProperty.call(toolCall, 'input'),
-    );
-}
-
-/**
- * 判断一个值是否为子代理工具结果数组。
- * @param value 原始值
- * @returns 是否为合法工具结果数组
- */
-function isPluginSubagentToolResultArray(value: JsonValue | undefined): boolean {
-  return Array.isArray(value)
-    && value.every((toolResult) =>
-      isJsonObjectValue(toolResult)
-      && typeof toolResult.toolCallId === 'string'
-      && typeof toolResult.toolName === 'string'
-      && Object.prototype.hasOwnProperty.call(toolResult, 'output'),
-    );
-}
-
-/**
- * 把声明式过滤里的正则配置编译成可执行 RegExp。
- * @param filterRegex 原始正则配置
- * @returns 编译后的正则对象
- */
-function buildFilterRegex(
-  filterRegex: NonNullable<NonNullable<PluginHookFilterDescriptor['message']>['regex']>,
-): RegExp {
-  if (typeof filterRegex === 'string') {
-    return new RegExp(filterRegex);
-  }
-
-  return new RegExp(filterRegex.pattern, filterRegex.flags);
-}
-
-/**
- * 判断一条消息是否命中声明式 command 过滤。
- * @param messageText 消息文本
- * @param command 声明的命令前缀
- * @returns 是否命中
- */
-function matchesMessageCommand(messageText: string, command: string): boolean {
-  const normalizedCommand = command.trim();
-  if (!normalizedCommand) {
-    return false;
-  }
-
-  const normalizedMessage = messageText.trimStart();
-  if (!normalizedMessage.startsWith(normalizedCommand)) {
-    return false;
-  }
-
-  const nextChar = normalizedMessage.charAt(normalizedCommand.length);
-  return nextChar === '' || /\s/.test(nextChar);
-}
-
-/**
- * 归一化插件 Route 路径。
- * @param path 原始路径
- * @returns 去掉首尾斜杠后的路径；根路径时返回空字符串
- */
-function normalizeRoutePath(path: string): string {
-  return path.trim().replace(/^\/+|\/+$/g, '');
-}
-
-/**
- * 把可选数字归一化成正整数；无效值时回退默认值。
- * @param value 原始数字
- * @param fallback 默认值
- * @returns 归一化后的正整数
- */
-function normalizePositiveInteger(
-  value: number | undefined,
-  fallback: number,
-): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    return fallback;
-  }
-
-  return Math.max(1, Math.floor(value));
-}
-
-/**
- * 判断消息列表中是否包含图片 part。
- * @param messages 结构化消息数组
- * @returns 是否包含图片
- */
-function hasImagePart(messages: PluginLlmMessage[]): boolean {
-  return messages.some((message) =>
-    Array.isArray(message.content)
-    && message.content.some((part) => part.type === 'image'),
-  );
 }

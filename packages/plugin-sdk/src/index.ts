@@ -11,12 +11,14 @@ import {
     type HostCallPayload,
     type HostResultPayload,
     type HookInvokePayload,
-    type JsonObject,
-    type JsonValue,
+  type JsonObject,
+  type JsonValue,
   type MessageReceivedHookPayload,
   type MessageReceivedHookResult,
   type PluginCallContext,
+  type PluginEventListResult,
   type PluginEventLevel,
+  type PluginEventQuery,
   type PluginHookDescriptor,
   type PluginHookMessageFilter,
   type PluginKbEntryDetail,
@@ -45,6 +47,7 @@ import {
   type PluginRouteDescriptor,
   type PluginRouteRequest,
   type PluginRouteResponse,
+  type PluginScopedStateScope,
   type PluginSelfInfo,
   type PluginSubagentRunParams,
   type PluginSubagentRunResult,
@@ -102,6 +105,10 @@ export interface PluginClientOptions {
   reconnectInterval?: number;
   /** 心跳间隔（毫秒，默认：20000） */
   heartbeatInterval?: number;
+}
+
+export interface PluginScopedStateOptions {
+  scope?: PluginScopedStateScope;
 }
 
 /**
@@ -323,6 +330,13 @@ export interface PluginHostFacade {
   getPluginSelf(): Promise<PluginSelfInfo>;
 
   /**
+   * 读取当前插件自身的事件日志。
+   * @param query 可选分页与过滤参数
+   * @returns 事件日志分页结果
+   */
+  listLogs(query?: PluginEventQuery): Promise<PluginEventListResult>;
+
+  /**
    * 主动向宿主写入一条插件事件日志。
    * @param input 日志级别、消息与可选上下文
    * @returns 是否记录成功
@@ -362,46 +376,82 @@ export interface PluginHostFacade {
   /**
    * 读取插件持久化存储中的单个值。
    * @param key 存储键
+   * @param options 可选作用域；默认 `plugin`
    * @returns JSON 值
    */
-  getStorage(key: string): Promise<JsonValue>;
+  getStorage(key: string, options?: PluginScopedStateOptions): Promise<JsonValue>;
 
   /**
    * 写入插件持久化存储。
    * @param key 存储键
    * @param value JSON 值
+   * @param options 可选作用域；默认 `plugin`
    * @returns 写入结果
    */
-  setStorage(key: string, value: JsonValue): Promise<JsonValue>;
+  setStorage(
+    key: string,
+    value: JsonValue,
+    options?: PluginScopedStateOptions,
+  ): Promise<JsonValue>;
 
   /**
    * 删除插件持久化存储中的一个键。
    * @param key 存储键
+   * @param options 可选作用域；默认 `plugin`
    * @returns 是否删除成功
    */
-  deleteStorage(key: string): Promise<JsonValue>;
+  deleteStorage(key: string, options?: PluginScopedStateOptions): Promise<JsonValue>;
 
   /**
    * 列出插件持久化存储。
    * @param prefix 可选前缀
+   * @param options 可选作用域；默认 `plugin`
    * @returns 键值对列表
    */
-  listStorage(prefix?: string): Promise<JsonValue>;
+  listStorage(
+    prefix?: string,
+    options?: PluginScopedStateOptions,
+  ): Promise<JsonValue>;
 
   /**
    * 读取插件自身状态。
    * @param key 状态键
+   * @param options 可选作用域；默认 `plugin`
    * @returns 状态值
    */
-  getState(key: string): Promise<JsonValue>;
+  getState(key: string, options?: PluginScopedStateOptions): Promise<JsonValue>;
 
   /**
    * 写入插件自身状态。
    * @param key 状态键
    * @param value JSON 值
+   * @param options 可选作用域；默认 `plugin`
    * @returns 写入后的状态值
    */
-  setState(key: string, value: JsonValue): Promise<JsonValue>;
+  setState(
+    key: string,
+    value: JsonValue,
+    options?: PluginScopedStateOptions,
+  ): Promise<JsonValue>;
+
+  /**
+   * 删除插件自身状态。
+   * @param key 状态键
+   * @param options 可选作用域；默认 `plugin`
+   * @returns 是否删除成功
+   */
+  deleteState(key: string, options?: PluginScopedStateOptions): Promise<JsonValue>;
+
+  /**
+   * 列出插件自身状态。
+   * @param prefix 可选前缀
+   * @param options 可选作用域；默认 `plugin`
+   * @returns 键值对列表
+   */
+  listState(
+    prefix?: string,
+    options?: PluginScopedStateOptions,
+  ): Promise<JsonValue>;
 
   /**
    * 读取当前插件解析后的配置。
@@ -1451,6 +1501,10 @@ export class PluginClient {
             event,
           }),
         getPluginSelf: () => callHost<PluginSelfInfo>('plugin.self.get'),
+        listLogs: (query = {}) =>
+          callHost<PluginEventListResult>('log.list', {
+            ...query,
+          }),
         writeLog: ({ level, message, type, metadata }) =>
           callHost<boolean>('log.write', {
             level,
@@ -1466,17 +1520,48 @@ export class PluginClient {
           }),
         listConversationMessages: () =>
           call('conversation.messages.list', {}),
-        getStorage: (key) =>
-          call('storage.get', { key }),
-        setStorage: (key, value) =>
-          call('storage.set', { key, value }),
-        deleteStorage: (key) =>
-          call('storage.delete', { key }),
-        listStorage: (prefix) =>
-          call('storage.list', prefix ? { prefix } : {}),
-        getState: (key) => call('state.get', { key }),
-        setState: (key, value) =>
-          call('state.set', { key, value }),
+        getStorage: (key, options) =>
+          call('storage.get', {
+            key,
+            ...toScopedStateParams(options),
+          }),
+        setStorage: (key, value, options) =>
+          call('storage.set', {
+            key,
+            value,
+            ...toScopedStateParams(options),
+          }),
+        deleteStorage: (key, options) =>
+          call('storage.delete', {
+            key,
+            ...toScopedStateParams(options),
+          }),
+        listStorage: (prefix, options) =>
+          call('storage.list', {
+            ...(prefix ? { prefix } : {}),
+            ...toScopedStateParams(options),
+          }),
+        getState: (key, options) =>
+          call('state.get', {
+            key,
+            ...toScopedStateParams(options),
+          }),
+        setState: (key, value, options) =>
+          call('state.set', {
+            key,
+            value,
+            ...toScopedStateParams(options),
+          }),
+        deleteState: (key, options) =>
+          call('state.delete', {
+            key,
+            ...toScopedStateParams(options),
+          }),
+        listState: (prefix, options) =>
+          call('state.list', {
+            ...(prefix ? { prefix } : {}),
+            ...toScopedStateParams(options),
+          }),
         getConfig: (key) =>
           call('config.get', key ? { key } : {}),
         getUser: () => call('user.get', {}),
@@ -2858,6 +2943,16 @@ function toHostJsonValue(value: unknown): JsonValue {
   }
 
   return String(value);
+}
+
+function toScopedStateParams(
+  options?: PluginScopedStateOptions,
+): JsonObject {
+  return options?.scope
+    ? {
+        scope: options.scope,
+      }
+    : {};
 }
 
 /**

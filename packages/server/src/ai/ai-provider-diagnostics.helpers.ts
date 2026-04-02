@@ -4,6 +4,8 @@ import type {
 } from '@garlic-claw/shared';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import type { StoredAiProviderConfig } from './config/config-manager.service';
+import { getProviderProtocolMetadata } from './provider-protocol.helpers';
+import { resolveProviderCatalogBinding } from './provider-resolution.helpers';
 export type {
   AiProviderConnectionTestResult,
   DiscoveredAiModel,
@@ -40,33 +42,13 @@ export function buildModelDiscoveryRequest(
   }
 
   const baseUrl = provider.baseUrl.replace(/\/+$/, '');
-  switch (provider.driver) {
-    case 'anthropic':
-      return {
-        url: `${baseUrl}/models`,
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': provider.apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-      };
-    case 'gemini':
-      return {
-        url: `${baseUrl}/models`,
-        headers: {
-          'content-type': 'application/json',
-          'x-goog-api-key': provider.apiKey,
-        },
-      };
-    default:
-      return {
-        url: `${baseUrl}/models`,
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${provider.apiKey}`,
-        },
-      };
-  }
+  const protocol =
+    resolveProviderCatalogBinding(provider.mode, provider.driver)?.protocol ?? 'openai';
+  const protocolMetadata = getProviderProtocolMetadata(protocol);
+  return {
+    url: `${baseUrl}/models`,
+    headers: protocolMetadata.buildHeaders(provider.apiKey),
+  };
 }
 
 /**

@@ -1,14 +1,23 @@
 import type {
-  AiHostModelRoutingConfig,
   AiModelRouteTarget,
-  AiProviderConfig,
+  AiProviderMode,
+  AiUtilityModelRolesConfig,
   VisionFallbackConfig,
 } from '@garlic-claw/shared';
 
 /**
  * 持久化的 provider 配置。
  */
-export interface StoredAiProviderConfig extends AiProviderConfig {}
+export interface StoredAiProviderConfig {
+  id: string;
+  name: string;
+  mode: AiProviderMode;
+  driver: string;
+  apiKey?: string;
+  baseUrl?: string;
+  defaultModel?: string;
+  models: string[];
+}
 
 /**
  * 持久化的视觉转述配置。
@@ -23,7 +32,11 @@ export interface StoredAiModelRouteTarget extends AiModelRouteTarget {}
 /**
  * 持久化的宿主 AI 模型路由配置。
  */
-export interface StoredAiHostModelRoutingConfig extends AiHostModelRoutingConfig {}
+export interface StoredAiHostModelRoutingConfig {
+  fallbackChatModels: StoredAiModelRouteTarget[];
+  compressionModel?: StoredAiModelRouteTarget;
+  utilityModelRoles: AiUtilityModelRolesConfig;
+}
 
 /**
  * AI 设置文件结构。

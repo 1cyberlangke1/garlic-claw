@@ -15,7 +15,7 @@ import type {
 } from './custom-provider.types';
 
 /**
- * 推断兼容 provider 的模型能力。
+ * 推断协议接入的模型能力。
  *
  * 输入:
  * - 模型 ID

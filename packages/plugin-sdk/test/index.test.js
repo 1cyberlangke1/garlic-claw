@@ -256,6 +256,54 @@ test('resolveManifest synthesizes message hook descriptors for commands and grou
   );
 });
 
+test('host facade exposes plugin log listing', async () => {
+  const client = createClient();
+  const sent = installHostCallMock(client, {
+    'log.list': {
+      items: [
+        {
+          id: 'event-1',
+          type: 'plugin:test',
+          level: 'info',
+          message: 'plugin sdk listed logs',
+          metadata: null,
+          createdAt: '2026-04-01T08:15:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    },
+  });
+
+  const executionContext = client.createExecutionContext({
+    source: 'plugin',
+  });
+  const result = await executionContext.host.listLogs({
+    limit: 5,
+    level: 'info',
+  });
+
+  assert.deepEqual(result, {
+    items: [
+      {
+        id: 'event-1',
+        type: 'plugin:test',
+        level: 'info',
+        message: 'plugin sdk listed logs',
+        metadata: null,
+        createdAt: '2026-04-01T08:15:00.000Z',
+      },
+    ],
+    nextCursor: null,
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].action, WS_ACTION.HOST_CALL);
+  assert.equal(sent[0].payload.method, 'log.list');
+  assert.deepEqual(sent[0].payload.params, {
+    limit: 5,
+    level: 'info',
+  });
+});
+
 test('routes nested command aliases through the longest matching command path', async () => {
   const client = createClient();
   const math = client.commandGroup('math', {

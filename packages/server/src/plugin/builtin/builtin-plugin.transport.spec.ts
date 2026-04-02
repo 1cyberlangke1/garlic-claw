@@ -906,7 +906,7 @@ describe('BuiltinPluginTransport', () => {
         {
           id: 'openai',
           name: 'OpenAI',
-          mode: 'official',
+          mode: 'catalog',
           driver: 'openai',
           defaultModel: 'gpt-5.2',
           available: true,
@@ -915,7 +915,7 @@ describe('BuiltinPluginTransport', () => {
       .mockResolvedValueOnce({
         id: 'openai',
         name: 'OpenAI',
-        mode: 'official',
+        mode: 'catalog',
         driver: 'openai',
         defaultModel: 'gpt-5.2',
         available: true,
@@ -1091,7 +1091,7 @@ describe('BuiltinPluginTransport', () => {
         {
           id: 'openai',
           name: 'OpenAI',
-          mode: 'official',
+          mode: 'catalog',
           driver: 'openai',
           defaultModel: 'gpt-5.2',
           available: true,
@@ -1100,7 +1100,7 @@ describe('BuiltinPluginTransport', () => {
       provider: {
         id: 'openai',
         name: 'OpenAI',
-        mode: 'official',
+        mode: 'catalog',
         driver: 'openai',
         defaultModel: 'gpt-5.2',
         available: true,
@@ -1192,6 +1192,89 @@ describe('BuiltinPluginTransport', () => {
         metadata: {
           source: 'emit_log',
         },
+      },
+    });
+  });
+
+  it('exposes plugin log listing through the host facade', async () => {
+    hostService.call.mockResolvedValue({
+      items: [
+        {
+          id: 'event-1',
+          type: 'plugin:test',
+          level: 'info',
+          message: 'builtin logger listed logs',
+          metadata: null,
+          createdAt: '2026-04-01T08:10:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const definition: BuiltinPluginDefinition = {
+      manifest: {
+        id: 'builtin.logger',
+        name: 'Logger',
+        version: '1.0.0',
+        runtime: 'builtin',
+        permissions: ['log:read' as never],
+        tools: [
+          {
+            name: 'list_logs',
+            description: '读取插件日志',
+            parameters: {},
+          },
+        ],
+      },
+      tools: {
+        list_logs: async (_params, { host }) =>
+          (host as any).listLogs({
+            limit: 10,
+            level: 'info',
+          }),
+      },
+    };
+
+    const transport = new BuiltinPluginTransport(
+      definition,
+      hostService as never,
+    );
+
+    await expect(
+      transport.executeTool({
+        toolName: 'list_logs',
+        params: {},
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+      }),
+    ).resolves.toEqual({
+      items: [
+        {
+          id: 'event-1',
+          type: 'plugin:test',
+          level: 'info',
+          message: 'builtin logger listed logs',
+          metadata: null,
+          createdAt: '2026-04-01T08:10:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    });
+
+    expect(hostService.call).toHaveBeenCalledWith({
+      pluginId: 'builtin.logger',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'log.list',
+      params: {
+        limit: 10,
+        level: 'info',
       },
     });
   });

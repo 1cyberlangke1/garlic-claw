@@ -4,7 +4,7 @@
       <div class="dialog-header">
         <div>
           <h2>{{ title }}</h2>
-          <p>按模式填写供应商信息、默认模型和连接凭据。</p>
+          <p>按接入方式填写供应商信息、默认模型和连接凭据。</p>
         </div>
         <button
           type="button"
@@ -18,10 +18,11 @@
 
       <div class="dialog-body">
         <label class="field">
-          <span>模式</span>
+          <span>接入方式</span>
           <select v-model="form.mode" @change="applyDriverDefaults">
-            <option value="official">官方</option>
-            <option value="compatible">兼容</option>
+            <option v-for="option in providerModeOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </label>
 
@@ -29,9 +30,10 @@
           <span>驱动</span>
           <select v-model="form.driver" @change="applyDriverDefaults">
             <option v-for="option in driverOptions" :key="option.id" :value="option.id">
-              {{ option.name }}
+              {{ option.label }}
             </option>
           </select>
+          <small class="field-hint">{{ driverHint }}</small>
         </label>
 
         <div class="field-grid">
@@ -90,19 +92,23 @@
 
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
-import type { AiProviderConfig, OfficialProviderCatalogItem } from '@garlic-claw/shared'
+import type { AiProviderCatalogItem, AiProviderConfig } from '@garlic-claw/shared'
 import {
   applyProviderDriverDefaults,
   buildProviderConfigPayload,
-  compatibleDrivers,
   createProviderFormState,
+  getCatalogDriverOptions,
+  getProviderDriverHint,
+  providerModeOptions,
+  protocolDriverOptions,
   syncProviderFormState,
 } from './provider-editor-form'
+import { isCatalogProviderMode } from './provider-catalog'
 
 const props = defineProps<{
   visible: boolean
   title: string
-  catalog: OfficialProviderCatalogItem[]
+  catalog: AiProviderCatalogItem[]
   initialConfig: AiProviderConfig | null
 }>()
 
@@ -114,9 +120,13 @@ const emit = defineEmits<{
 const form = reactive(createProviderFormState())
 
 const driverOptions = computed(() =>
-  form.mode === 'official'
-    ? props.catalog.map((item) => ({ id: item.id, name: item.name }))
-    : compatibleDrivers,
+  isCatalogProviderMode(form.mode)
+    ? getCatalogDriverOptions(props.catalog)
+    : protocolDriverOptions,
+)
+
+const driverHint = computed(() =>
+  getProviderDriverHint(form.mode, form.driver, props.catalog),
 )
 
 const canSave = computed(() =>
@@ -217,6 +227,11 @@ function submit() {
 
 .field span {
   font-size: 13px;
+  color: var(--text-muted);
+}
+
+.field-hint {
+  font-size: 12px;
   color: var(--text-muted);
 }
 

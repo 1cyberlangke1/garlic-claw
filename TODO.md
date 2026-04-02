@@ -1,5 +1,9 @@
 # Garlic Claw TODO
 
+> 校正 2026-04-01：
+> 之前把“contract 已固化 / 局部 primitive 已落地”误记成“顶层长期目标已完成”，这个状态不准确。
+> 下面这些顶层条目恢复为长期目标；具体已经落地的内容继续以阶段记录和进展记录为准。
+
 ## 北极星
 
 - [ ] 把 Garlic Claw 收敛成 `内核像 C 一样简单, SDK 像 C++ 有丰富的语法糖`
@@ -51,16 +55,175 @@
 ## 状态与持久化
 
 - [ ] kernel 默认只提供少量通用状态原语
-- [ ] 保留 `private scoped KV`
+- [x] 保留 `private scoped KV`
 - [ ] 保留 `exported resource snapshot`
-- [ ] 保留 `conversation / user scoped state`
-- [ ] 保留 `append-only event log`
-- [ ] 默认不再为扩展继续新增核心专用 Prisma schema
+- [x] 保留 `conversation / user scoped state`
+- [x] 保留 `append-only event log`
+- [x] 默认不再为扩展继续新增核心专用 Prisma schema
 
 ## 减法优先级
 
 - [ ] 第一阶段：收薄 `plugin host core`
-- [ ] 第二阶段：定义并固化统一 `extension kernel contract`
+- [x] 第二阶段：定义并固化统一 `extension kernel contract`
 - [ ] 第三阶段：给 `MCP / skill` 做 adapter / bridge，而不是硬改其生态格式
 - [ ] 第四阶段：把更多 builtin 迁成普通扩展消费者
 - [ ] 第五阶段：删除不再必要的核心特判、专用持久化面和历史兼容层
+- 进展记录：
+  - 已新增：
+    - `docs/扩展内核契约说明.md`
+    正式把以下内容固化成可维护 contract：
+    - `plugin / MCP / skill` 的 authoring/runtime 分层
+    - `action call / event subscription` 两类 kernel 原语
+    - builtin 仅作为参考实现
+    - fast-path 只能是实现优化，不能外溢成作者语义
+  - `storage.*` / `state.*` 已补齐：
+    - `plugin`
+    - `conversation`
+    - `user`
+    三种 scoped primitive，继续沿用现有 `PluginStorage` 与 runtime state，不新增 schema
+  - `packages/server/src/plugin/plugin-scoped-state.helpers.ts` 已新增：
+    - 统一 scoped state/storage key 解析
+    - plugin scope 列表默认不泄漏 scoped key
+  - `packages/plugin-sdk/src/index.ts` / `packages/server/src/plugin/builtin/builtin-plugin.transport.ts` 已补：
+    - scoped `storage.*`
+    - scoped `state.*`
+    - `state.list`
+    - `state.delete`
+    让作者侧糖衣继续建立在统一 Host API 之上
+  - `plugin-host.service.ts` / `plugin-runtime.service.ts` 已共享 `plugin-llm-payload.helpers.ts`，删除两处重复的 LLM message / part 解析逻辑
+  - `plugin-host.service.ts` 已继续外提到：
+    - `plugin-host.helpers.ts`
+    - `plugin-json-value.helpers.ts`
+    主类行数已从 1000+ 继续降到 900 以下
+  - `plugin-runtime.service.ts` 已新增 `plugin-runtime-input.helpers.ts`，把 timeout / host param / message target / subagent request 读取继续移出主类
+  - `plugin-runtime.service.ts` 已新增 `plugin-runtime-clone.helpers.ts`，把 hook payload / session / subagent / assistant output 的 clone/normalize 纯函数继续移出主类
+  - `plugin-runtime.service.ts` 的 `readSubagentRequest(...)` 已收口为单次取值，不再对同一参数重复校验多次
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-validation.helpers.ts`
+    - `plugin-runtime-hook-filter.helpers.ts`
+    - `plugin-runtime-hook-result.helpers.ts`
+    - `plugin-runtime-hook-mutation.helpers.ts`
+    继续把基础校验、hook result 归一化和 hook mutation 应用移出主类
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-session.helpers.ts`
+    继续把 conversation session record 创建、续期、归属校验、摘要投影与消息记录移出主类
+  - `plugin-runtime-session.helpers.ts` 已继续补齐：
+    - `getDispatchableConversationSessionRecord(...)`
+    继续把活动 session 的 owner record 启用校验和 hook 可调度校验从主类移走
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-record.helpers.ts`
+    继续把并发上限解析、runtime pressure 快照和治理动作归一化移出主类
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-subagent.helpers.ts`
+    继续把 subagent result 组装、resolved request 投影和 tool-set request 组装移出主类
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-manifest.helpers.ts`
+    继续把 lifecycle/self manifest 投影和 route/hook/tool 查找移出主类
+  - `plugin-runtime-hook-mutation.helpers.ts` 已新增：
+    - `applyChatBeforeModelHookResult(...)`
+    - `applyMessageReceivedHookResult(...)`
+    继续把前置 Hook 的 `pass / mutate / short-circuit` 结果消费从主类移出
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-timeout.helpers.ts`
+    继续把统一 timeout 包装移出主类
+  - `plugin-runtime.service.ts` 已新增：
+  - `plugin-runtime-module.helpers.ts`
+    继续把 Automation / ChatMessage / SubagentTask / ToolRegistry 的 lazy resolver 样板移出主类
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-hook-runner.helpers.ts`
+    继续把 mutate/pass 与 short-circuit Hook 链的公共遍历、JSON 载荷序列化和单插件失败 continue 样板移出主类
+  - `plugin-runtime.service.ts` 已把 `tool / route / hook` 的 timeout、并发槽和 failure 记录样板收口到：
+    - `runTimedPluginInvocation(...)`
+    继续减少 transport 执行路径里的重复错误处理
+  - `plugin-runtime-session.helpers.ts` 已继续补齐：
+    - `createConversationSessionMessageReceivedPayload(...)`
+    - `syncConversationSessionMessageReceivedPayload(...)`
+    继续把 session message:received payload 的克隆、history 记录和 active session info 刷新移出主类
+  - `plugin-runtime-session.helpers.ts` 已继续补齐：
+    - `prepareDispatchableConversationSessionMessageReceivedHook(...)`
+    继续把 owner session 的查找、启用校验和 payload 准备收口为单个 helper
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-failure.helpers.ts`
+    继续把 failure 记录与 `plugin:error` 派发样板移出主类
+  - `plugin-runtime.service.ts` 已新增：
+    - `plugin-runtime-dispatch.helpers.ts`
+    继续把 runtime record 查找、scope 启用断言和 hook dispatch record 筛选/排序移出主类
+  - `plugin-runtime-dispatch.helpers.ts` 已继续补齐：
+    - `invokeDispatchableHooks(...)`
+    继续把跨插件 Hook 广播时的排序、JSON 载荷复用和单插件失败容错移出主类
+  - `plugin-runtime-session.helpers.ts` 已继续补齐：
+    - runtime-facing start/get/keep/finish/list/info bridge
+    继续把会话 API 包装和 active session info 投影从主类移走
+  - `plugin-runtime-subagent.helpers.ts` 已继续补齐：
+    - resolved short-circuit result 投影
+    继续把 subagent 短路结果组装从主类移走
+  - `plugin-runtime-subagent.helpers.ts` 已继续补齐：
+    - `collectSubagentRunResult(...)`
+    继续把 subagent fullStream 的文本/tool call/tool result 采集与 finishReason 收口从主类移走
+  - `plugin-runtime-subagent.helpers.ts` 已继续补齐：
+    - `assertSubagentRequestInputSupported(...)`
+    - `buildSubagentStreamPreparedInput(...)`
+    - `buildResolvedSubagentAfterRunPayload(...)`
+    继续把 subagent 输入能力校验、streamPrepared 参数组装和 after-run payload 组装移出主类
+  - `plugin-runtime.service.ts` 主文件行数已从 `4287` 继续降到 `2714`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2714` 继续降到 `2562`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2562` 继续降到 `2518`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2518` 继续降到 `2397`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2397` 继续降到 `2371`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2371` 继续降到 `2348`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2348` 继续降到 `2204`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2168` 继续降到 `2123`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2123` 继续降到 `2117`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2117` 继续降到 `2083`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2250` 继续降到 `2241`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2241` 继续降到 `2237`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2237` 继续降到 `2228`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2228` 继续降到 `2224`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2224` 继续降到 `2219`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2219` 继续降到 `2113`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2113` 继续降到 `2061`
+  - `plugin-runtime.service.ts` 主文件行数已从 `2061` 继续降到 `2060`
+  - `plugin-host.service.ts` 已把生成参数读取、utility role 选择和结构化 LLM message 读取并入 `plugin-host.helpers.ts`
+  - `plugin-host.service.ts` 已把当前 provider 摘要、provider model 摘要和 host generate result 投影并入 `plugin-host.helpers.ts`
+  - `plugin-host.helpers.ts` 已继续补齐：
+    - provider summary 查找 / not-found 归一化
+    继续把 `provider.get` 的查找薄壳移出主类
+  - `plugin-host.service.ts` 主文件行数已从 `852` 继续降到 `725`
+  - `plugin-host.service.ts` 主文件行数已从 `725` 继续降到 `696`
+  - `plugin-host.service.ts` 主文件行数已从 `696` 继续降到 `689`
+  - `plugin-host.service.ts` 已把 conversation / memory / user / message 摘要映射收成纯函数，便于后续继续外提薄壳
+  - `plugin-host.helpers.ts` 已继续补齐：
+    - `requireHostConversationRecord(...)`
+    - `requireHostUserSummary(...)`
+    - `buildConversationMessageSummaries(...)`
+    继续把会话归属校验、用户缺失校验和消息摘要列表构建移出主类
+  - `plugin-host.helpers.ts` 已继续补齐：
+    - `buildHostGenerateExecutionInput(...)`
+    - `buildHostGenerateTextResult(...)`
+    继续把统一 LLM generate 执行参数组装和 `llm.generate-text` 结果投影移出主类
+  - `plugin-host.service.ts` 主文件行数已从 `737` 继续降到 `733`
+  - `plugin-host.service.ts` 主文件行数已从 `733` 继续降到 `723`
+  - 已新增维护文档：
+    - `docs/扩展内核维护说明.md`
+    并在 `README.md` / `docs/插件开发指南.md` 增加入口
+
+## 当前减法切片
+
+- [x] AI provider runtime 只保留 `openai / anthropic / gemini` 三个协议族
+- [x] provider catalog 只保留“目录模板 + 协议映射”职责，不回退到按厂商 SDK 扩张
+- [x] 继续删除 AI 模块内部残留的 `official / format` 历史命名与空壳 helper 字段
+- 进展记录：
+  - 已删除多厂商 SDK runtime / stub 残留，当前 runtime 与 type stub 都已收敛到三种协议族
+  - 已把 provider catalog 收口为 `core + preset + protocol`，preset 不再绑定独立 SDK
+  - 已删除一批 AI 模块薄壳：
+    - `official-provider-catalog.ts`
+    - `getProviderCatalogItem(...)`
+    - `toManagedProviderSummary(...)`
+    - `resolveProviderDiscoveryProtocol(...)`
+    - `ProviderModelFactoryPreference`
+  - 已把 custom provider 最后一处 `format` 字段收口为 `protocol`
+  - 已把 external mode contract 从 `official / compatible` 收口为 `catalog / protocol`
+  - 已把 `CompatibleProviderDriver` / `isCompatibleProviderDriver(...)` / `protocolCompatibleDrivers` 这批历史命名收口为协议族命名
+  - README、后端调用说明和前端 provider settings 已统一改用“目录模板 / 协议接入”
+  - `config-manager.loader.ts` 已把旧字面量收口为 migration 常量，并补了“读取旧值后落盘为新值”的回归
+  - 当前运行时契约、shared types、前端文案与文档都已不再暴露旧字面量

@@ -6,6 +6,12 @@ import type {
   StoredVisionFallbackConfig,
 } from './config-manager.types';
 import type { JsonObject, JsonValue } from '../../common/types/json-value';
+import {
+  findAiProviderCatalogItem,
+  isAiProviderMode,
+  isProviderProtocolDriver,
+} from '@garlic-claw/shared';
+import { PROVIDER_CATALOG } from '../provider-catalog';
 
 interface NormalizedValue<T> {
   value: T;
@@ -16,6 +22,11 @@ export interface LoadedAiSettingsResult {
   settings: AiSettingsFile;
   changed: boolean;
 }
+
+const CATALOG_PROVIDER_MODE: StoredAiProviderConfig['mode'] = 'catalog';
+const PROTOCOL_PROVIDER_MODE: StoredAiProviderConfig['mode'] = 'protocol';
+const LEGACY_CATALOG_PROVIDER_MODE = 'official';
+const LEGACY_PROTOCOL_PROVIDER_MODE = 'compatible';
 
 export function normalizeAiSettingsFile(
   input: JsonValue,
@@ -98,10 +109,10 @@ function normalizeProvider(
   }
 
   const name = normalizeRequiredStringWithFallback(value.name, id);
-  const mode = normalizeProviderMode(value.mode);
   const driver = normalizeRequiredStringWithFallback(value.driver, id);
   const apiKey = normalizeOptionalString(value.apiKey);
   const baseUrl = normalizeOptionalString(value.baseUrl);
+  const mode = normalizeProviderMode(value.mode, driver.value, baseUrl.value);
   const defaultModel = normalizeOptionalString(value.defaultModel);
   const models = normalizeRequiredStringArray(value.models);
 
@@ -306,18 +317,57 @@ function normalizeModelRouteTarget(
 
 function normalizeProviderMode(
   value: JsonValue | undefined,
+  driver: string,
+  baseUrl?: string,
 ): NormalizedValue<StoredAiProviderConfig['mode']> {
-  if (value === 'official' || value === 'compatible') {
+  if (typeof value === 'string' && isAiProviderMode(value)) {
     return {
       value,
       changed: false,
     };
   }
 
+  if (value === LEGACY_CATALOG_PROVIDER_MODE) {
+    return {
+      value: CATALOG_PROVIDER_MODE,
+      changed: true,
+    };
+  }
+  if (value === LEGACY_PROTOCOL_PROVIDER_MODE) {
+    return {
+      value: PROTOCOL_PROVIDER_MODE,
+      changed: true,
+    };
+  }
+
+  const catalogItem = findAiProviderCatalogItem(PROVIDER_CATALOG, driver);
+  if (!catalogItem) {
+    return {
+      value: PROTOCOL_PROVIDER_MODE,
+      changed: true,
+    };
+  }
+
+  if (!isProviderProtocolDriver(driver)) {
+    return {
+      value: CATALOG_PROVIDER_MODE,
+      changed: true,
+    };
+  }
+
+  const normalizedBaseUrl = normalizeComparableBaseUrl(baseUrl);
+  const defaultBaseUrl = normalizeComparableBaseUrl(catalogItem.defaultBaseUrl);
   return {
-    value: 'compatible',
+    value:
+      !normalizedBaseUrl || normalizedBaseUrl === defaultBaseUrl
+        ? CATALOG_PROVIDER_MODE
+        : PROTOCOL_PROVIDER_MODE,
     changed: true,
   };
+}
+
+function normalizeComparableBaseUrl(value?: string): string {
+  return value?.replace(/\/+$/, '') ?? '';
 }
 
 function normalizeRequiredStringWithFallback(

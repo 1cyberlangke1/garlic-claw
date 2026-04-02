@@ -152,6 +152,14 @@ export class ConfigManagerService {
   }
 
   /**
+   * 获取当前配置版本戳。
+   * @returns 当前 settings.updatedAt
+   */
+  getSettingsVersion(): string {
+    return this.settings.updatedAt;
+  }
+
+  /**
    * 更新宿主模型路由配置。
    * @param config 新配置
    * @returns 写入后的配置

@@ -8,22 +8,31 @@ Garlic Claw 是一个带设备控制、自动化和多提供商聊天能力的 A
 - 前端：Vue 3 + Vite + Pinia
 - 插件：WebSocket + `@garlic-claw/plugin-sdk`
 - AI provider：
-  - 官方 provider 目录当前包括：
+  - core 协议族：
     - `openai` -> `@ai-sdk/openai`
     - `anthropic` -> `@ai-sdk/anthropic`
     - `gemini` -> `@ai-sdk/google`
-    - `groq` -> `@ai-sdk/groq`
-    - `xai` -> `@ai-sdk/xai`
-    - `mistral` -> `@ai-sdk/mistral`
-    - `cohere` -> `@ai-sdk/cohere`
-    - `cerebras` -> `@ai-sdk/cerebras`
-    - `deepinfra` -> `@ai-sdk/deepinfra`
-    - `togetherai` -> `@ai-sdk/togetherai`
-    - `perplexity` -> `@ai-sdk/perplexity`
-    - `gateway` -> `@ai-sdk/gateway`
-    - `vercel` -> `@ai-sdk/vercel`
-    - `openrouter` -> `@openrouter/ai-sdk-provider`
-  - 兼容 provider 只保留三种请求格式：`openai` / `anthropic` / `gemini`
+  - 供应商 preset：
+    - `groq`
+    - `xai`
+    - `mistral`
+    - `cohere`
+    - `cerebras`
+    - `deepinfra`
+    - `togetherai`
+    - `perplexity`
+    - `gateway`
+    - `vercel`
+    - `openrouter`
+    - 这些 preset 运行时会收敛到三种协议族，而不是继续各自绑定独立 SDK
+  - 协议接入只保留三种协议族：`openai` / `anthropic` / `gemini`
+
+## 文档
+
+- 插件作者文档：[`docs/插件开发指南.md`](docs/插件开发指南.md)
+- 扩展内核契约：[`docs/扩展内核契约说明.md`](docs/扩展内核契约说明.md)
+- 扩展内核维护文档：[`docs/扩展内核维护说明.md`](docs/扩展内核维护说明.md)
+- 后端模型调用说明：[`docs/后端模型调用接口说明.md`](docs/后端模型调用接口说明.md)
 
 ## 项目结构
 
@@ -72,12 +81,13 @@ cp config/ai-settings.example.json config/ai-settings.json
 这个文件负责：
 
 - provider 列表
-- provider 模式：`official` / `compatible`
-- 官方 driver 或兼容 driver
+- provider 接入模式：`catalog`（目录模板）/ `protocol`（协议接入）
+- catalog 项或协议接入协议族
 - provider 的 `apiKey` / `baseUrl`
 - 默认模型
 - provider 预设模型列表
 - `visionFallback` 配置
+- `hostModelRouting` 配置
 
 ## 快速开始
 
@@ -130,32 +140,32 @@ BOOTSTRAP_ADMIN_PASSWORD=admin123
 
 ## Provider 系统说明
 
-### 官方 provider
+### Catalog Provider
 
-官方 provider 直接走对应官方 SDK，适合：
+catalog provider 现在分成两层：
 
-- 直接使用官方 API Key
-- 直接使用官方 `baseUrl`
-- 通过管理 API 或前端配置模型能力
-- 当前官方 provider 目录：
+- core 协议族
   - `openai` -> `@ai-sdk/openai`
   - `anthropic` -> `@ai-sdk/anthropic`
   - `gemini` -> `@ai-sdk/google`
-  - `groq` -> `@ai-sdk/groq`
-  - `xai` -> `@ai-sdk/xai`
-  - `mistral` -> `@ai-sdk/mistral`
-  - `cohere` -> `@ai-sdk/cohere`
-  - `cerebras` -> `@ai-sdk/cerebras`
-  - `deepinfra` -> `@ai-sdk/deepinfra`
-  - `togetherai` -> `@ai-sdk/togetherai`
-  - `perplexity` -> `@ai-sdk/perplexity`
-  - `gateway` -> `@ai-sdk/gateway`
-  - `vercel` -> `@ai-sdk/vercel`
-  - `openrouter` -> `@openrouter/ai-sdk-provider`
+- 供应商 preset
+  - `groq`
+  - `xai`
+  - `mistral`
+  - `cohere`
+  - `cerebras`
+  - `deepinfra`
+  - `togetherai`
+  - `perplexity`
+  - `gateway`
+  - `vercel`
+  - `openrouter`
 
-### 兼容 provider
+其中 preset 主要提供默认 `baseUrl`、默认模型和协议族归属；运行时会统一收敛到 `openai / anthropic / gemini` 三种协议族 SDK，而不是继续为每家 preset 维持独立 SDK 依赖。
 
-兼容 provider 只支持三种 driver：
+### 协议接入
+
+协议接入只支持三种协议族：
 
 - `openai`
 - `anthropic`
@@ -165,9 +175,9 @@ BOOTSTRAP_ADMIN_PASSWORD=admin123
 
 - 第三方中转站
 - 自建兼容网关
-- 厂商兼容 OpenAI / Anthropic / Gemini 请求格式
+- 厂商兼容 OpenAI / Anthropic / Gemini 协议族接口
 
-其中 `openai` 兼容模式会显式走 `/v1/chat/completions`，不会误落到 Responses API。
+其中 `openai` 协议接入会显式走 `/v1/chat/completions`，不会误落到 Responses API。
 
 ### Vision Fallback
 

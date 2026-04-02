@@ -1,12 +1,9 @@
-import type { AiProviderSummary } from '@garlic-claw/shared';
-import { getCompatibleProviderNpm } from './ai-provider.helpers';
+import type { AiProviderMode } from '@garlic-claw/shared';
+import { isCatalogProviderMode } from '@garlic-claw/shared';
 import type { StoredAiProviderConfig } from './config/config-manager.service';
-import { createModelConfig } from './model-config.helpers';
-import {
-  getOfficialProviderCatalogItem,
-  isCompatibleProviderDriver,
-} from './official-provider-catalog';
-import { inferModelCapabilities } from './model-capability-inference';
+import { createInferredModelConfig } from './model-config.helpers';
+import { isProviderProtocolDriver } from './provider-catalog';
+import { resolveProviderCatalogBinding } from './provider-resolution.helpers';
 import type { ModelConfig } from './types/provider.types';
 import type { ModelCapabilities } from './types/provider.types';
 
@@ -15,8 +12,8 @@ import type { ModelCapabilities } from './types/provider.types';
  */
 export interface UpsertAiProviderInput {
   /** provider 模式。 */
-  mode: 'official' | 'compatible';
-  /** 官方 driver 或兼容格式。 */
+  mode: AiProviderMode;
+  /** catalog driver 或协议协议族。 */
   driver: string;
   /** provider 名称。 */
   name: string;
@@ -44,45 +41,20 @@ export interface UpsertAiModelInput {
 }
 
 /**
- * 管理端 provider 摘要，直接复用 shared 公共契约。
- */
-export type ManagedAiProviderSummary = AiProviderSummary;
-
-/**
- * 将持久化 provider 配置映射为管理端摘要。
- * @param provider 持久化 provider 配置
- * @returns 前端可直接消费的摘要
- */
-export function toManagedProviderSummary(
-  provider: StoredAiProviderConfig,
-): ManagedAiProviderSummary {
-  return {
-    id: provider.id,
-    name: provider.name,
-    mode: provider.mode,
-    driver: provider.driver,
-    defaultModel: provider.defaultModel,
-    baseUrl: provider.baseUrl,
-    modelCount: provider.models.length,
-    available: Boolean(provider.apiKey),
-  };
-}
-
-/**
  * 校验 provider 写入输入。
  * @param input provider 输入
  */
 export function validateManagedProviderInput(input: UpsertAiProviderInput): void {
-  if (input.mode === 'official') {
-    if (!getOfficialProviderCatalogItem(input.driver)) {
-      throw new Error(`Unknown official provider driver "${input.driver}"`);
+  if (isCatalogProviderMode(input.mode)) {
+    if (!resolveProviderCatalogBinding(input.mode, input.driver)) {
+      throw new Error(`Unknown provider catalog driver "${input.driver}"`);
     }
     return;
   }
 
-  if (!isCompatibleProviderDriver(input.driver)) {
+  if (!isProviderProtocolDriver(input.driver)) {
     throw new Error(
-      'Compatible provider driver must be one of: openai, anthropic, gemini',
+      'Protocol provider driver must be one of: openai, anthropic, gemini',
     );
   }
 }
@@ -99,20 +71,13 @@ export function buildManagedModelConfig(
   modelId: string,
   name?: string,
 ): ModelConfig {
-  const official =
-    provider.mode === 'official'
-      ? getOfficialProviderCatalogItem(provider.driver)
-      : null;
-  const compatibleDriver = isCompatibleProviderDriver(provider.driver)
-    ? provider.driver
-    : 'openai';
+  const resolved = resolveProviderCatalogBinding(provider.mode, provider.driver);
 
-  return createModelConfig({
+  return createInferredModelConfig({
     modelId,
     providerId: provider.id,
-    name: name ?? modelId,
-    capabilities: inferModelCapabilities(modelId),
-    baseUrl: provider.baseUrl ?? official?.defaultBaseUrl ?? '',
-    npm: official?.npm ?? getCompatibleProviderNpm(compatibleDriver),
+    baseUrl: provider.baseUrl ?? resolved?.defaultBaseUrl ?? '',
+    npm: resolved?.npm ?? '@ai-sdk/openai',
+    name,
   });
 }
