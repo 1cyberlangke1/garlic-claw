@@ -37,6 +37,7 @@ import { PluginAdminService } from './plugin-admin.service';
 import { PluginCronService } from './plugin-cron.service';
 import { describePluginGovernance } from './plugin-governance-policy';
 import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
+import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
@@ -49,6 +50,7 @@ export class PluginController {
   constructor(
     private pluginService: PluginService,
     private pluginRuntime: PluginRuntimeService,
+    private pluginRuntimeOrchestrator: PluginRuntimeOrchestratorService,
     private pluginCronService: PluginCronService,
     private pluginAdmin: PluginAdminService,
   ) {}
@@ -121,7 +123,7 @@ export class PluginController {
     @Body() dto: UpdatePluginConfigDto,
   ): Promise<PluginConfigSnapshot> {
     const result = await this.pluginService.updatePluginConfig(name, dto.values);
-    await this.pluginRuntime.refreshPluginGovernance(name);
+    await this.pluginRuntimeOrchestrator.refreshPluginGovernance(name);
     return result;
   }
 
@@ -260,7 +262,7 @@ export class PluginController {
       defaultEnabled: dto.defaultEnabled,
       conversations: dto.conversations ?? {},
     });
-    await this.pluginRuntime.refreshPluginGovernance(name);
+    await this.pluginRuntimeOrchestrator.refreshPluginGovernance(name);
     return result;
   }
 

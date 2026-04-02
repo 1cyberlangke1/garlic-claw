@@ -23,9 +23,11 @@ describe('PluginController', () => {
   const pluginRuntime = {
     listPlugins: jest.fn(),
     getRuntimePressure: jest.fn(),
-    refreshPluginGovernance: jest.fn(),
     listConversationSessions: jest.fn(),
     finishConversationSessionForGovernance: jest.fn(),
+  };
+  const pluginRuntimeOrchestrator = {
+    refreshPluginGovernance: jest.fn(),
   };
 
   const pluginCronService = {
@@ -55,6 +57,7 @@ describe('PluginController', () => {
     controller = new PluginController(
       pluginService as never,
       pluginRuntime as never,
+      pluginRuntimeOrchestrator as never,
       pluginCronService as never,
       pluginAdmin as never,
     );
@@ -96,7 +99,7 @@ describe('PluginController', () => {
         limit: 6,
       },
     });
-    expect(pluginRuntime.refreshPluginGovernance).toHaveBeenCalledWith(
+    expect(pluginRuntimeOrchestrator.refreshPluginGovernance).toHaveBeenCalledWith(
       'builtin.memory-context',
     );
   });
@@ -134,7 +137,7 @@ describe('PluginController', () => {
         'conversation-1': true,
       },
     });
-    expect(pluginRuntime.refreshPluginGovernance).toHaveBeenCalledWith(
+    expect(pluginRuntimeOrchestrator.refreshPluginGovernance).toHaveBeenCalledWith(
       'builtin.memory-context',
     );
   });

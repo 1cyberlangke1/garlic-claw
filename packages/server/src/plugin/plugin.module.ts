@@ -12,7 +12,12 @@ import { PluginCronService } from './plugin-cron.service';
 import { PluginController } from './plugin.controller';
 import { PluginGateway } from './plugin.gateway';
 import { PluginHostService } from './plugin-host.service';
+import { PluginHostAiFacade } from './plugin-host-ai.facade';
+import { PluginHostConversationFacade } from './plugin-host-conversation.facade';
+import { PluginHostStateFacade } from './plugin-host-state.facade';
 import { PluginRouteController } from './plugin-route.controller';
+import { PluginRuntimeHostFacade } from './plugin-runtime-host.facade';
+import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginStateService } from './plugin-state.service';
 import { PluginSubagentTaskController } from './plugin-subagent-task.controller';
@@ -31,9 +36,14 @@ import { PluginService } from './plugin.service';
     PluginService,
     PluginGateway,
     PluginStateService,
+    PluginHostAiFacade,
+    PluginHostConversationFacade,
+    PluginHostStateFacade,
     PluginHostService,
+    PluginRuntimeHostFacade,
     PluginCronService,
     PluginRuntimeService,
+    PluginRuntimeOrchestratorService,
     BuiltinPluginLoader,
     PluginAdminService,
     PluginCommandService,
@@ -53,8 +63,13 @@ import { PluginService } from './plugin.service';
     PluginService,
     PluginGateway,
     PluginHostService,
+    PluginHostAiFacade,
+    PluginHostConversationFacade,
+    PluginHostStateFacade,
+    PluginRuntimeHostFacade,
     PluginCronService,
     PluginRuntimeService,
+    PluginRuntimeOrchestratorService,
     PluginStateService,
     PluginAdminService,
     PluginCommandService,

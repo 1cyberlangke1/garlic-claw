@@ -203,6 +203,45 @@
     继续把统一 LLM generate 执行参数组装和 `llm.generate-text` 结果投影移出主类
   - `plugin-host.service.ts` 主文件行数已从 `737` 继续降到 `733`
   - `plugin-host.service.ts` 主文件行数已从 `733` 继续降到 `723`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-runtime-orchestrator.service.ts`
+    先把 plugin 持久化注册、governance 刷新、heartbeat 与 loaded/unloaded 生命周期编排从 runtime kernel 中拆出
+  - `BuiltinPluginLoader` / `PluginGateway` / `PluginController` / `PluginAdminService` 已改为优先依赖 orchestrator，而不是直接把宿主编排压在 `PluginRuntimeService` 上
+  - `PluginRuntimeService.registerPlugin / refreshPluginGovernance / unregisterPlugin` 已收窄为 kernel record/cache 操作，不再直接承担：
+    - `pluginService.registerPlugin`
+    - `pluginService.getGovernanceSnapshot`
+    - `pluginService.setOffline`
+    - `pluginService.heartbeat`
+    - `cronService.onPluginRegistered`
+    - `cronService.onPluginUnregistered`
+    - `plugin:loaded / plugin:unloaded` 生命周期编排
+  - 已新增：
+    - `packages/server/src/plugin/plugin-runtime-orchestrator.service.spec.ts`
+    把原先依赖持久化与 cron 副作用的 runtime lifecycle 断言迁到 orchestrator spec
+  - `plugin-runtime.service.ts` 主文件行数已从 `1949` 继续降到 `1907`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-host-state.facade.ts`
+    - `packages/server/src/plugin/plugin-host-ai.facade.ts`
+    - `packages/server/src/plugin/plugin-host-conversation.facade.ts`
+    继续把 Host API 的宿主查询、状态/KV 与 AI 调用桥接从主类里拆出
+  - `PluginHostService` 已改为主要承担 Host API 分发表，不再直接持有：
+    - conversation / kb / persona / memory / user 查询桥接
+    - storage / state / log / config 桥接
+    - provider / llm.generate / llm.generate-text 桥接
+  - `plugin-host.service.ts` 主文件行数已从 `826` 继续降到 `403`
+  - `plugin-host.service.ts` 主文件行数已从 `403` 继续降到 `126`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-runtime-host.facade.ts`
+    把 `PluginRuntimeService.callHost(...)` 中的宿主编排入口继续拆到 facade
+  - `PluginRuntimeService.callHost(...)` 已不再直接承载：
+    - `plugin.self.get`
+    - `automation.*`
+    - `cron.*`
+    - `message.target.current.get`
+    - `message.send`
+    - `conversation.session.*`
+    - `subagent.task.*`
+  - `plugin-runtime.service.ts` 主文件行数已从 `1907` 继续降到 `1606`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

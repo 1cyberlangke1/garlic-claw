@@ -20,9 +20,6 @@ import type {
   PluginHookName,
   PluginHostMethod,
   PluginManifest,
-  PluginMessageSendInfo,
-  PluginMessageTargetInfo,
-  PluginMessageTargetRef,
   PluginPermission,
   PluginLoadedHookPayload,
   PluginRouteDescriptor,
@@ -31,8 +28,6 @@ import type {
   PluginRuntimePressureSnapshot,
   PluginRuntimeKind,
   PluginSubagentRequest,
-  PluginSubagentTaskDetail,
-  PluginSubagentTaskSummary,
   SubagentAfterRunHookPayload,
   SubagentBeforeRunHookPayload,
   PluginSubagentRunResult,
@@ -43,20 +38,15 @@ import type {
   ToolBeforeCallHookPayload,
 } from '@garlic-claw/shared';
 import type { Tool } from 'ai';
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
-import { AutomationService } from '../automation/automation.service';
 import { toAiSdkMessages } from '../chat/sdk-message-converter';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import { PluginHostService } from './plugin-host.service';
 import { PluginCronService } from './plugin-cron.service';
+import { PluginRuntimeHostFacade } from './plugin-runtime-host.facade';
 import {
   cloneAutomationAfterRunPayload,
   cloneAutomationBeforeRunPayload,
@@ -123,14 +113,9 @@ import {
   runWithRuntimeExecutionSlot,
 } from './plugin-runtime-record.helpers';
 import {
-  resolveCachedRuntimeService,
-  resolveCachedRuntimeServiceAsync,
   resolveCachedRuntimeServicePromise,
 } from './plugin-runtime-module.helpers';
 import {
-  buildPluginLifecycleHookInfo,
-  buildRuntimePluginSelfInfo,
-  buildStoredPluginSelfInfo,
   findManifestRouteOrThrow,
   findManifestToolOrThrow,
 } from './plugin-runtime-manifest.helpers';
@@ -144,30 +129,15 @@ import {
 } from './plugin-runtime-subagent.helpers';
 import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
 import {
-  finishConversationSessionForRuntime,
   finishOwnedConversationSession,
-  getConversationSessionInfoForRuntime,
-  keepConversationSessionForRuntime,
   listActiveConversationSessionInfos,
   prepareDispatchableConversationSessionMessageReceivedHook,
-  startConversationSessionForRuntime,
   syncConversationSessionMessageReceivedPayload,
   type ConversationSessionRecord,
 } from './plugin-runtime-session.helpers';
 import {
-  readOptionalRuntimeBoolean,
-  readOptionalRuntimeChatMessageParts,
-  readOptionalRuntimeJsonValue,
-  readOptionalRuntimeMessageTarget,
-  readRuntimeAutomationActions,
-  readRuntimeAutomationTrigger,
-  readOptionalRuntimeString,
   readRuntimeSubagentRequest,
-  readRuntimeSubagentTaskStartParams,
   readRuntimeTimeoutMs,
-  requirePositiveRuntimeNumber,
-  requireRuntimeString,
-  requireRuntimeUserId,
 } from './plugin-runtime-input.helpers';
 import {
   collectDisabledConversationSessionIds,
@@ -309,6 +279,17 @@ export interface PluginTransport {
   listSupportedActions?(): PluginActionName[];
 }
 
+function createDefaultGovernanceSnapshot(): PluginGovernanceSnapshot {
+  return {
+    configSchema: null,
+    resolvedConfig: {},
+    scope: {
+      defaultEnabled: true,
+      conversations: {},
+    },
+  };
+}
+
 /**
  * 注册到统一 runtime 的插件记录。
  */
@@ -325,20 +306,6 @@ interface PluginRuntimeRecord {
 /**
  * 宿主侧会话消息写入器。
  */
-interface PluginConversationMessageWriter {
-  getCurrentPluginMessageTarget(input: {
-    context: PluginCallContext;
-  }): Promise<PluginMessageTargetInfo | null>;
-  sendPluginMessage(input: {
-    context: PluginCallContext;
-    target?: PluginMessageTargetRef | null;
-    content?: string;
-    parts?: ChatMessagePart[];
-    provider?: string;
-    model?: string;
-  }): Promise<PluginMessageSendInfo>;
-}
-
 /**
  * 聊天模型前 Hook 继续执行模型调用。
  */
@@ -467,23 +434,6 @@ export type ToolBeforeCallExecutionResult =
 export class PluginRuntimeService {
   private readonly records = new Map<string, PluginRuntimeRecord>();
   private readonly conversationSessions = new Map<string, ConversationSessionRecord>();
-  private automationService?: AutomationService;
-  private chatMessageService?: PluginConversationMessageWriter;
-  private subagentTaskService?: {
-    startTask: (input: {
-      pluginId: string;
-      pluginDisplayName?: string;
-      runtimeKind: PluginRuntimeKind;
-      context: PluginCallContext;
-      request: PluginSubagentRequest;
-      writeBackTarget?: PluginMessageTargetRef | null;
-    }) => Promise<PluginSubagentTaskSummary>;
-    listTasksForPlugin: (pluginId: string) => Promise<PluginSubagentTaskSummary[]>;
-    getTaskForPlugin: (
-      pluginId: string,
-      taskId: string,
-    ) => Promise<PluginSubagentTaskDetail>;
-  };
   private toolRegistryPromise?: Promise<{
     buildToolSet: (input: {
       context: PluginCallContext;
@@ -501,6 +451,7 @@ export class PluginRuntimeService {
     private readonly cronService: PluginCronService,
     private readonly aiModelExecution: AiModelExecutionService,
     private readonly moduleRef: ModuleRef,
+    private readonly runtimeHostFacade: PluginRuntimeHostFacade,
   ) {}
 
   /**
@@ -513,39 +464,20 @@ export class PluginRuntimeService {
     runtimeKind: PluginRuntimeKind;
     deviceType?: string;
     transport: PluginTransport;
+    governance?: PluginGovernanceSnapshot;
   }): Promise<PluginManifest> {
-    const governance = await this.pluginService.registerPlugin(
-      input.manifest.id,
-      input.deviceType ?? input.runtimeKind,
-      input.manifest,
-    );
-
     const record: PluginRuntimeRecord = {
       manifest: input.manifest,
       runtimeKind: input.runtimeKind,
       deviceType: input.deviceType ?? input.runtimeKind,
       transport: input.transport,
-      governance,
+      governance: input.governance ?? createDefaultGovernanceSnapshot(),
       activeExecutions: 0,
-      maxConcurrentExecutions: resolveMaxConcurrentExecutions(governance),
+      maxConcurrentExecutions: resolveMaxConcurrentExecutions(
+        input.governance ?? createDefaultGovernanceSnapshot(),
+      ),
     };
     this.records.set(input.manifest.id, record);
-    await this.cronService.onPluginRegistered(
-      input.manifest.id,
-      input.manifest.crons ?? [],
-    );
-    await this.runPluginLoadedHooks({
-      context: {
-        source: 'plugin',
-      },
-      payload: {
-        context: {
-          source: 'plugin',
-        },
-        plugin: buildPluginLifecycleHookInfo(record),
-        loadedAt: new Date().toISOString(),
-      },
-    });
 
     return input.manifest;
   }
@@ -555,13 +487,16 @@ export class PluginRuntimeService {
    * @param pluginId 插件 ID
    * @returns 无返回值
    */
-  async refreshPluginGovernance(pluginId: string): Promise<void> {
+  refreshPluginGovernance(
+    pluginId: string,
+    governance: PluginGovernanceSnapshot,
+  ): void {
     const record = this.records.get(pluginId);
     if (!record) {
       return;
     }
 
-    record.governance = await this.pluginService.getGovernanceSnapshot(pluginId);
+    record.governance = governance;
     record.maxConcurrentExecutions = resolveMaxConcurrentExecutions(record.governance);
     const disabledConversationIds = collectDisabledConversationSessionIds(
       this.conversationSessions.values(),
@@ -578,26 +513,8 @@ export class PluginRuntimeService {
    * @param pluginId 插件 ID
    * @returns 无返回值
    */
-  async unregisterPlugin(pluginId: string): Promise<void> {
-    const record = this.records.get(pluginId);
-    if (record) {
-      await this.runPluginUnloadedHooks({
-        context: {
-          source: 'plugin',
-        },
-        payload: {
-          context: {
-            source: 'plugin',
-          },
-          plugin: buildPluginLifecycleHookInfo(record),
-          unloadedAt: new Date().toISOString(),
-        },
-      });
-    }
-
-    this.cronService.onPluginUnregistered(pluginId);
+  unregisterPlugin(pluginId: string): void {
     this.records.delete(pluginId);
-    await this.pluginService.setOffline(pluginId);
   }
 
   /**
@@ -761,26 +678,6 @@ export class PluginRuntimeService {
     return {
       ok: false,
     };
-  }
-
-  /**
-   * 刷新插件最近一次心跳时间。
-   * @param pluginId 插件 ID
-   * @returns 无返回值
-   */
-  async touchPluginHeartbeat(pluginId: string): Promise<void> {
-    if (!pluginId) {
-      return;
-    }
-
-    try {
-      await this.pluginService.heartbeat(pluginId);
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        return;
-      }
-      throw error;
-    }
   }
 
   /**
@@ -964,184 +861,18 @@ export class PluginRuntimeService {
     method: HostCallPayload['method'];
     params: JsonObject;
   }): Promise<JsonValue> {
-    if (input.method === 'plugin.self.get') {
-      const record = this.records.get(input.pluginId);
-      if (!record) {
-        return toJsonValue(
-          buildStoredPluginSelfInfo({
-            plugin: await this.pluginService.getPluginSelfInfo(input.pluginId),
-          }),
-        );
-      }
-
-      return toJsonValue(
-        buildRuntimePluginSelfInfo({
-          manifest: record.manifest,
-          runtimeKind: record.runtimeKind,
-          supportedActions: listSupportedPluginActions(record),
-        }),
-      );
-    }
-
-    const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
+    const record = input.method === 'plugin.self.get'
+      ? this.records.get(input.pluginId)
+      : getRuntimeRecordOrThrow(this.records, input.pluginId);
     const requiredPermission = HOST_METHOD_PERMISSION_MAP[input.method];
-    if (requiredPermission && !record.manifest.permissions.includes(requiredPermission)) {
+    if (
+      requiredPermission
+      && record
+      && !record.manifest.permissions.includes(requiredPermission)
+    ) {
       throw new ForbiddenException(
         `插件 ${input.pluginId} 缺少权限 ${requiredPermission}`,
       );
-    }
-
-    if (input.method === 'automation.create') {
-      return toJsonValue(
-        await this.getAutomationService().create(
-          requireRuntimeUserId(input.context, 'automation.create'),
-          requireRuntimeString(input.params, 'name', 'automation.create'),
-          readRuntimeAutomationTrigger(input.params, 'automation.create'),
-          readRuntimeAutomationActions(input.params, 'automation.create'),
-        ),
-      );
-    }
-    if (input.method === 'automation.list') {
-      return toJsonValue(
-        await this.getAutomationService().findAllByUser(
-          requireRuntimeUserId(input.context, 'automation.list'),
-        ),
-      );
-    }
-    if (input.method === 'automation.event.emit') {
-      return toJsonValue(
-        await this.getAutomationService().emitEvent(
-          requireRuntimeString(input.params, 'event', 'automation.event.emit'),
-          requireRuntimeUserId(input.context, 'automation.event.emit'),
-        ),
-      );
-    }
-    if (input.method === 'automation.toggle') {
-      return toJsonValue(
-        await this.getAutomationService().toggle(
-          requireRuntimeString(input.params, 'automationId', 'automation.toggle'),
-          requireRuntimeUserId(input.context, 'automation.toggle'),
-        ),
-      );
-    }
-    if (input.method === 'automation.run') {
-      return toJsonValue(
-        await this.getAutomationService().executeAutomation(
-          requireRuntimeString(input.params, 'automationId', 'automation.run'),
-          requireRuntimeUserId(input.context, 'automation.run'),
-        ),
-      );
-    }
-    if (input.method === 'cron.register') {
-      return toJsonValue(await this.cronService.registerCron(input.pluginId, {
-        name: requireRuntimeString(input.params, 'name', 'cron.register'),
-        cron: requireRuntimeString(input.params, 'cron', 'cron.register'),
-        description: readOptionalRuntimeString(input.params, 'description', 'cron.register'),
-        data: readOptionalRuntimeJsonValue(input.params, 'data'),
-        enabled: readOptionalRuntimeBoolean(input.params, 'enabled', 'cron.register'),
-      }));
-    }
-    if (input.method === 'cron.list') {
-      return toJsonValue(await this.cronService.listCronJobs(input.pluginId));
-    }
-    if (input.method === 'cron.delete') {
-      return this.cronService.deleteCron(
-        input.pluginId,
-        requireRuntimeString(input.params, 'jobId', 'cron.delete'),
-      );
-    }
-    if (input.method === 'message.target.current.get') {
-      const chatMessageService = await this.getChatMessageService();
-      return toJsonValue(await chatMessageService.getCurrentPluginMessageTarget({
-        context: input.context,
-      }));
-    }
-    if (input.method === 'message.send') {
-      const chatMessageService = await this.getChatMessageService();
-      return toJsonValue(await chatMessageService.sendPluginMessage({
-        context: input.context,
-        target: readOptionalRuntimeMessageTarget(
-          input.params,
-          'target',
-          'message.send',
-        ),
-        content: readOptionalRuntimeString(
-          input.params,
-          'content',
-          'message.send',
-        ),
-        parts: readOptionalRuntimeChatMessageParts(
-          input.params,
-          'parts',
-          'message.send',
-        ),
-        provider: readOptionalRuntimeString(
-          input.params,
-          'provider',
-          'message.send',
-        ),
-        model: readOptionalRuntimeString(
-          input.params,
-          'model',
-          'message.send',
-        ),
-      }));
-    }
-    if (input.method === 'conversation.session.start') {
-      return toJsonValue(startConversationSessionForRuntime({
-        sessions: this.conversationSessions,
-        pluginId: input.pluginId,
-        context: input.context,
-        method: 'conversation.session.start',
-        timeoutMs: requirePositiveRuntimeNumber(
-          input.params,
-          'timeoutMs',
-          'conversation.session.start',
-        ),
-        captureHistory: readOptionalRuntimeBoolean(
-          input.params,
-          'captureHistory',
-          'conversation.session.start',
-        ) ?? false,
-        metadata: readOptionalRuntimeJsonValue(input.params, 'metadata'),
-        now: Date.now(),
-      }));
-    }
-    if (input.method === 'conversation.session.get') {
-      return toJsonValue(getConversationSessionInfoForRuntime({
-        sessions: this.conversationSessions,
-        pluginId: input.pluginId,
-        context: input.context,
-        method: 'conversation.session.get',
-        now: Date.now(),
-      }));
-    }
-    if (input.method === 'conversation.session.keep') {
-      return toJsonValue(keepConversationSessionForRuntime({
-        sessions: this.conversationSessions,
-        pluginId: input.pluginId,
-        context: input.context,
-        method: 'conversation.session.keep',
-        timeoutMs: requirePositiveRuntimeNumber(
-          input.params,
-          'timeoutMs',
-          'conversation.session.keep',
-        ),
-        resetTimeout: readOptionalRuntimeBoolean(
-          input.params,
-          'resetTimeout',
-          'conversation.session.keep',
-        ) ?? true,
-        now: Date.now(),
-      }));
-    }
-    if (input.method === 'conversation.session.finish') {
-      return finishConversationSessionForRuntime({
-        sessions: this.conversationSessions,
-        pluginId: input.pluginId,
-        context: input.context,
-        method: 'conversation.session.finish',
-      });
     }
     if (input.method === 'subagent.run') {
       return toJsonValue(await this.executeSubagentRequest({
@@ -1150,37 +881,15 @@ export class PluginRuntimeService {
         request: readRuntimeSubagentRequest(input.params, 'subagent.run'),
       }));
     }
-    if (input.method === 'subagent.task.start') {
-      const record = getRuntimeRecordOrThrow(this.records, input.pluginId);
-      const taskService = await this.getSubagentTaskService();
-      const taskParams = readRuntimeSubagentTaskStartParams(
-        input.params,
-        'subagent.task.start',
-      );
-      return toJsonValue(await taskService.startTask({
-        pluginId: input.pluginId,
-        pluginDisplayName: record.manifest.name,
-        runtimeKind: record.runtimeKind,
-        context: input.context,
-        request: taskParams.request,
-        ...(taskParams.writeBackTarget
-          ? { writeBackTarget: taskParams.writeBackTarget }
-          : {}),
-      }));
-    }
-    if (input.method === 'subagent.task.list') {
-      const taskService = await this.getSubagentTaskService();
-      return toJsonValue(await taskService.listTasksForPlugin(input.pluginId));
-    }
-    if (input.method === 'subagent.task.get') {
-      const taskService = await this.getSubagentTaskService();
-      return toJsonValue(await taskService.getTaskForPlugin(
-        input.pluginId,
-        requireRuntimeString(input.params, 'taskId', 'subagent.task.get'),
-      ));
-    }
 
-    return this.hostService.call(input);
+    return this.runtimeHostFacade.call({
+      records: this.records,
+      conversationSessions: this.conversationSessions,
+      pluginId: input.pluginId,
+      context: input.context,
+      method: input.method,
+      params: input.params,
+    });
   }
 
   /**
@@ -1836,68 +1545,6 @@ export class PluginRuntimeService {
           context: input.context,
           payload,
         }),
-    });
-  }
-
-  /**
-   * 延迟解析自动化服务，避免与 runtime 形成构造期循环依赖。
-   * @returns 自动化服务实例
-   */
-  private getAutomationService(): AutomationService {
-    return resolveCachedRuntimeService({
-      current: this.automationService,
-      resolve: () =>
-        this.moduleRef.get(AutomationService, {
-          strict: false,
-        }),
-      cache: (value) => {
-        this.automationService = value;
-      },
-      notFoundMessage: 'AutomationService is not available',
-    });
-  }
-
-  /**
-   * 延迟解析聊天消息服务，避免与 runtime 形成静态循环依赖。
-   * @returns 聊天消息服务实例
-   */
-  private async getChatMessageService(): Promise<PluginConversationMessageWriter> {
-    return resolveCachedRuntimeServiceAsync({
-      current: this.chatMessageService,
-      resolve: async () => {
-        const { ChatMessageService } = await import('../chat/chat-message.service');
-        return this.moduleRef.get<PluginConversationMessageWriter>(
-          ChatMessageService,
-          {
-            strict: false,
-          },
-        );
-      },
-      cache: (value) => {
-        this.chatMessageService = value;
-      },
-      notFoundMessage: 'ChatMessageService is not available',
-    });
-  }
-
-  /**
-   * 延迟解析后台子代理任务服务，避免与 runtime 形成构造期循环依赖。
-   * @returns 后台子代理任务服务实例
-   */
-  private async getSubagentTaskService() {
-    return resolveCachedRuntimeServiceAsync({
-      current: this.subagentTaskService,
-      resolve: async () =>
-        this.moduleRef.get<typeof this.subagentTaskService>(
-          'PLUGIN_SUBAGENT_TASK_SERVICE',
-          {
-            strict: false,
-          },
-        ),
-      cache: (value) => {
-        this.subagentTaskService = value;
-      },
-      notFoundMessage: 'PluginSubagentTaskService is not available',
     });
   }
 

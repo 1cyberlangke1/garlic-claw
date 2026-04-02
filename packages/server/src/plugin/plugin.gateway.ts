@@ -34,6 +34,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { JsonObject } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import { normalizePluginManifestCandidate } from './plugin-manifest.persistence';
+import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService, type PluginTransport } from './plugin-runtime.service';
 
 /**
@@ -235,6 +236,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly pluginRuntime: PluginRuntimeService,
+    private readonly pluginRuntimeOrchestrator: PluginRuntimeOrchestratorService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
@@ -468,7 +470,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       case WS_TYPE.HEARTBEAT:
         if (msg.action === WS_ACTION.PING) {
           if (conn.manifest) {
-            await this.pluginRuntime.touchPluginHeartbeat(conn.pluginName);
+            await this.pluginRuntimeOrchestrator.touchPluginHeartbeat(conn.pluginName);
           }
           this.send(ws, WS_TYPE.HEARTBEAT, WS_ACTION.PONG, {});
         }
@@ -647,7 +649,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     const manifest = this.resolveManifest(conn, payload);
     conn.manifest = manifest;
 
-    await this.pluginRuntime.registerPlugin({
+    await this.pluginRuntimeOrchestrator.registerPlugin({
       manifest,
       runtimeKind: 'remote',
       deviceType: conn.deviceType,
@@ -725,7 +727,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
 
     this.connectionByPluginId.delete(conn.pluginName);
     try {
-      await this.pluginRuntime.unregisterPlugin(conn.pluginName);
+      await this.pluginRuntimeOrchestrator.unregisterPlugin(conn.pluginName);
     } catch {
       // 连接可能在注册前就断开，这里忽略。
     }

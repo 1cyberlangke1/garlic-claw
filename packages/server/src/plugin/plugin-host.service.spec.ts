@@ -1,5 +1,8 @@
 import type { ChatMessagePart } from '@garlic-claw/shared';
+import { PluginHostAiFacade } from './plugin-host-ai.facade';
+import { PluginHostConversationFacade } from './plugin-host-conversation.facade';
 import { PluginHostService } from './plugin-host.service';
+import { PluginHostStateFacade } from './plugin-host-state.facade';
 import { PluginStateService } from './plugin-state.service';
 
 describe('PluginHostService', () => {
@@ -63,24 +66,36 @@ describe('PluginHostService', () => {
   };
 
   let stateService: PluginStateService;
+  let hostAiFacade: PluginHostAiFacade;
+  let hostConversationFacade: PluginHostConversationFacade;
+  let hostStateFacade: PluginHostStateFacade;
   let service: PluginHostService;
 
   beforeEach(() => {
     jest.clearAllMocks();
     stateService = new PluginStateService();
-    service = new (PluginHostService as unknown as new (
-      ...args: unknown[]
-    ) => PluginHostService)(
-      memoryService as never,
-      kbService as never,
-      personaService as never,
-      prisma as never,
-      stateService,
-      pluginService as never,
+    hostAiFacade = new PluginHostAiFacade(
       aiModelExecution as never,
       aiProviderService as never,
       aiManagementService as never,
       modelRegistryService as never,
+    );
+    hostConversationFacade = new PluginHostConversationFacade(
+      memoryService as never,
+      kbService as never,
+      personaService as never,
+      prisma as never,
+    );
+    hostStateFacade = new PluginHostStateFacade(
+      pluginService as never,
+      stateService,
+    );
+    service = new (PluginHostService as unknown as new (
+      ...args: unknown[]
+    ) => PluginHostService)(
+      hostAiFacade,
+      hostConversationFacade,
+      hostStateFacade,
     );
   });
 
