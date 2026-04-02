@@ -1,17 +1,25 @@
 import {
-  requireRuntimeConversationId,
   readRuntimeAutomationActions,
   readRuntimeAutomationTrigger,
+} from './plugin-runtime-automation-input.helpers';
+import {
+  requireRuntimeConversationId,
+  readRuntimeTimeoutMs,
+  requireRuntimeUserId,
+} from './plugin-runtime-context.helpers';
+import {
   readOptionalRuntimeMessageTarget,
   readRuntimeLlmMessages,
-  readRuntimeSubagentRequest,
-  readRuntimeSubagentTaskStartParams,
-  readRuntimeTimeoutMs,
+} from './plugin-runtime-message.helpers';
+import {
   requirePositiveRuntimeNumber,
   requireRuntimeJsonObjectValue,
   requireRuntimeString,
-  requireRuntimeUserId,
-} from './plugin-runtime-input.helpers';
+} from './plugin-runtime-params.helpers';
+import {
+  readRuntimeSubagentRequest,
+  readRuntimeSubagentTaskStartParams,
+} from './plugin-runtime-subagent-input.helpers';
 
 describe('plugin-runtime-input.helpers', () => {
   it('reads runtime timeout from context metadata', () => {

@@ -1,17 +1,23 @@
 import {
+  normalizeChatBeforeModelHookResult,
+  normalizeMessageReceivedHookResult,
+} from './plugin-runtime-inbound-hook-result.helpers';
+import {
+  normalizeChatAfterModelHookResult,
+  normalizeMessageCreatedHookResult,
+  normalizeMessageUpdatedHookResult,
+} from './plugin-runtime-message-hook-result.helpers';
+import {
   normalizeAutomationAfterRunHookResult,
   normalizeAutomationBeforeRunHookResult,
-  normalizeChatAfterModelHookResult,
-  normalizeChatBeforeModelHookResult,
-  normalizeMessageCreatedHookResult,
-  normalizeMessageReceivedHookResult,
-  normalizeMessageUpdatedHookResult,
   normalizeResponseBeforeSendHookResult,
-  normalizeSubagentAfterRunHookResult,
-  normalizeSubagentBeforeRunHookResult,
   normalizeToolAfterCallHookResult,
   normalizeToolBeforeCallHookResult,
-} from './plugin-runtime-hook-result.helpers';
+} from './plugin-runtime-operation-hook-result.helpers';
+import {
+  normalizeSubagentAfterRunHookResult,
+  normalizeSubagentBeforeRunHookResult,
+} from './plugin-runtime-subagent-hook-result.helpers';
 
 describe('plugin-runtime-hook-result.helpers', () => {
   it('normalizes chat hook results', () => {
