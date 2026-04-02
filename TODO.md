@@ -584,6 +584,12 @@
     - 未认证消息的统一 AUTH_FAIL 返回
     - auth envelope 的 payload 读取与 protocol_error 返回
     - heartbeat ping 的顶层路由样板
+  - `PluginGateway` 已继续删除单次薄壳：
+    - plugin message -> helper 的二次转发私有方法
+    - command message -> helper 的二次转发私有方法
+    - host call -> helper 的二次转发私有方法
+    - remote transport 构造的单次包装私有方法
+  - `plugin.gateway.ts` 主文件行数已从 `470` 继续降到 `399`
   - 已删除 `McpService` 中未被宿主消费的城市坐标预加载与查询死代码：
     - `packages/server/src/mcp/mcp.service.ts`
     - `packages/server/src/mcp/mcp-path.util.ts`

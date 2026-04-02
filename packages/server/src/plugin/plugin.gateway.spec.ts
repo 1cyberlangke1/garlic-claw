@@ -186,7 +186,7 @@ describe('PluginGateway', () => {
     };
 
     await expect(
-      (gateway as any).handlePluginMessage(
+      (gateway as any).handleMessage(
         ws,
         conn,
         {

@@ -54,7 +54,6 @@ import {
 } from './plugin-gateway-transport.helpers';
 import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
-import type { PluginTransport } from './plugin-runtime.types';
 
 /**
  * 远程插件心跳扫描间隔。
@@ -277,8 +276,34 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       msg,
       protocolErrorAction: PROTOCOL_ERROR_ACTION,
       onAuth: (payload) => this.handleAuth(ws, conn, payload),
-      onPluginMessage: (message) => this.handlePluginMessage(ws, conn, message),
-      onCommandMessage: (message) => this.handleCommandMessage(message),
+      onPluginMessage: async (message) => {
+        await handlePluginGatewayPluginMessage({
+          ws,
+          msg: message,
+          pendingRequests: this.pendingRequests,
+          activeRequestContexts: this.activeRequestContexts,
+          protocolErrorAction: PROTOCOL_ERROR_ACTION,
+          onRegister: (payload) => this.handleRegister(ws, conn, payload),
+          onHostCall: (hostCallMessage) =>
+            handlePluginGatewayHostCall({
+              ws,
+              connection: conn,
+              msg: hostCallMessage,
+              activeRequestContexts: this.activeRequestContexts,
+              callHost: (input) => this.pluginRuntime.callHost(input),
+              logWarn: (message) => this.logger.warn(message),
+            }),
+          logWarn: (message) => this.logger.warn(message),
+        });
+      },
+      onCommandMessage: async (message) => {
+        handlePluginGatewayCommandMessage({
+          msg: message,
+          pendingRequests: this.pendingRequests,
+          activeRequestContexts: this.activeRequestContexts,
+          logWarn: (logMessage) => this.logger.warn(logMessage),
+        });
+      },
       onHeartbeatPing: async () => {
         if (conn.manifest) {
           await this.pluginRuntimeOrchestrator.touchPluginHeartbeat(conn.pluginName);
@@ -290,46 +315,6 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
           payload: {},
         });
       },
-    });
-  }
-
-  /**
-   * 处理插件类型消息。
-   * @param ws WebSocket 连接
-   * @param conn 当前连接
-   * @param msg 插件消息
-   * @returns 无返回值
-   */
-  private async handlePluginMessage(
-    ws: WebSocket,
-    conn: PluginConnection,
-    msg: PluginGatewayInboundMessage,
-  ): Promise<void> {
-    await handlePluginGatewayPluginMessage({
-      ws,
-      msg,
-      pendingRequests: this.pendingRequests,
-      activeRequestContexts: this.activeRequestContexts,
-      protocolErrorAction: PROTOCOL_ERROR_ACTION,
-      onRegister: (payload) => this.handleRegister(ws, conn, payload),
-      onHostCall: (message) => this.handleHostCall(ws, conn, message),
-      logWarn: (message) => this.logger.warn(message),
-    });
-  }
-
-  /**
-   * 处理命令类型消息。
-   * @param msg 插件消息
-   * @returns 无返回值
-   */
-  private async handleCommandMessage(
-    msg: PluginGatewayInboundMessage,
-  ): Promise<void> {
-    handlePluginGatewayCommandMessage({
-      msg,
-      pendingRequests: this.pendingRequests,
-      activeRequestContexts: this.activeRequestContexts,
-      logWarn: (message) => this.logger.warn(message),
     });
   }
 
@@ -386,31 +371,16 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       connection: conn,
       payload,
       resolveManifest: resolvePluginGatewayManifest,
-      createTransport: () => this.createRemoteTransport(conn),
+      createTransport: () =>
+        createPluginGatewayRemoteTransport({
+          connection: conn,
+          pendingRequests: this.pendingRequests,
+          activeRequestContexts: this.activeRequestContexts,
+          disconnectPlugin: (pluginId) => this.disconnectPlugin(pluginId),
+          checkPluginHealth: (pluginId) => this.checkPluginHealth(pluginId),
+        }),
       registerPlugin: (input) => this.pluginRuntimeOrchestrator.registerPlugin(input),
       sendMessage: sendPluginGatewayMessage,
-    });
-  }
-
-  /**
-   * 处理远程插件发起的 Host API 调用。
-   * @param ws WebSocket 连接
-   * @param conn 当前连接
-   * @param msg 原始消息
-   * @returns 无返回值
-   */
-  private async handleHostCall(
-    ws: WebSocket,
-    conn: PluginConnection,
-    msg: PluginGatewayInboundMessage,
-  ): Promise<void> {
-    await handlePluginGatewayHostCall({
-      ws,
-      connection: conn,
-      msg,
-      activeRequestContexts: this.activeRequestContexts,
-      callHost: (input) => this.pluginRuntime.callHost(input),
-      logWarn: (message) => this.logger.warn(message),
     });
   }
 
@@ -431,23 +401,6 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       logInfo: (message) => this.logger.log(message),
     });
   }
-
-  /**
-   * 为远程连接构造统一 transport。
-   * @param conn 远程连接
-   * @returns 可供 runtime 调用的 transport
-   */
-  private createRemoteTransport(conn: PluginConnection): PluginTransport {
-    return createPluginGatewayRemoteTransport({
-      connection: conn,
-      pendingRequests: this.pendingRequests,
-      activeRequestContexts: this.activeRequestContexts,
-      disconnectPlugin: (pluginId) => this.disconnectPlugin(pluginId),
-      checkPluginHealth: (pluginId) => this.checkPluginHealth(pluginId),
-    });
-  }
-
-
   /**
    * 扫描远程插件连接，并摘除超时未活跃的连接。
    */
