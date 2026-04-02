@@ -2,12 +2,10 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  NotFoundException,
   forwardRef,
 } from '@nestjs/common';
 import type {
   ChatBeforeModelRequest,
-  PluginCallContext,
 } from '@garlic-claw/shared';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { PersonaService } from '../persona/persona.service';
@@ -21,13 +19,18 @@ import {
   toUserMessageInput,
 } from './chat-message.helpers';
 import { ChatMessageCompletionService } from './chat-message-completion.service';
+import {
+  assertConversationLlmEnabled,
+  createChatLifecycleContext,
+  getOwnedConversationMessage,
+  touchConversationTimestamp,
+} from './chat-message-common.helpers';
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
 import type { ChatRuntimeMessage } from './chat-message-session';
 import { prepareSendMessagePayload } from './chat-message-session';
 import { ChatModelInvocationService } from './chat-model-invocation.service';
 import { ChatService } from './chat.service';
 import { type RetryMessageDto, type SendMessageDto } from './dto/chat.dto';
-import { normalizeConversationHostServices } from './chat-host-services';
 import { deserializeMessageParts, serializeMessageParts } from './message-parts';
 import { ChatTaskService } from './chat-task.service';
 
@@ -53,7 +56,7 @@ export class ChatMessageGenerationService {
     dto: SendMessageDto,
   ) {
     const conversation = await this.chatService.getConversation(userId, conversationId);
-    this.assertConversationLlmEnabled(conversation);
+    assertConversationLlmEnabled(conversation);
     if (hasActiveAssistantMessage(conversation.messages)) {
       throw new BadRequestException('当前仍有回复在生成中，请先停止或等待完成');
     }
@@ -64,7 +67,7 @@ export class ChatMessageGenerationService {
     });
     const initialModelConfig = this.aiProvider.getModelConfig(dto.provider, dto.model);
     const resolvedPersona = await this.buildSystemPrompt(conversationId);
-    const messageReceivedContext = this.createChatLifecycleContext({
+    const messageReceivedContext = createChatLifecycleContext({
       userId,
       conversationId,
       activeProviderId: initialModelConfig.providerId,
@@ -106,7 +109,7 @@ export class ChatMessageGenerationService {
       receivedMessagePayload.providerId,
       receivedMessagePayload.modelId,
     );
-    const messageCreatedContext = this.createChatLifecycleContext({
+    const messageCreatedContext = createChatLifecycleContext({
       userId,
       conversationId,
       activeProviderId: modelConfig.providerId,
@@ -147,7 +150,7 @@ export class ChatMessageGenerationService {
         status: 'pending',
       },
     });
-    await this.touchConversation(conversationId);
+    await touchConversationTimestamp(this.prisma, conversationId);
 
     try {
       if (receivedMessageResult.action === 'short-circuit') {
@@ -270,7 +273,7 @@ export class ChatMessageGenerationService {
           error: errorMessage,
         },
       });
-      await this.touchConversation(conversationId);
+      await touchConversationTimestamp(this.prisma, conversationId);
       throw error;
     }
   }
@@ -280,7 +283,12 @@ export class ChatMessageGenerationService {
     conversationId: string,
     messageId: string,
   ) {
-    const { message } = await this.getOwnedMessage(userId, conversationId, messageId);
+    const { message } = await getOwnedConversationMessage(
+      this.chatService,
+      userId,
+      conversationId,
+      messageId,
+    );
     if (message.role !== 'assistant') {
       throw new BadRequestException('只有 AI 回复消息可以停止');
     }
@@ -294,7 +302,7 @@ export class ChatMessageGenerationService {
           error: null,
         },
       });
-      await this.touchConversation(conversationId);
+      await touchConversationTimestamp(this.prisma, conversationId);
     }
 
     return this.prisma.message.findUniqueOrThrow({ where: { id: messageId } });
@@ -306,8 +314,13 @@ export class ChatMessageGenerationService {
     messageId: string,
     dto: RetryMessageDto,
   ) {
-    const { conversation, message } = await this.getOwnedMessage(userId, conversationId, messageId);
-    this.assertConversationLlmEnabled(conversation);
+    const { conversation, message } = await getOwnedConversationMessage(
+      this.chatService,
+      userId,
+      conversationId,
+      messageId,
+    );
+    assertConversationLlmEnabled(conversation);
     const lastMessage = conversation.messages[conversation.messages.length - 1];
     if (!lastMessage || lastMessage.id !== messageId || message.role !== 'assistant') {
       throw new BadRequestException('只能重试最后一条 AI 回复');
@@ -336,7 +349,7 @@ export class ChatMessageGenerationService {
         metadataJson: null,
       },
     });
-    await this.touchConversation(conversationId);
+    await touchConversationTimestamp(this.prisma, conversationId);
 
     try {
       const runtimeMessages = toRuntimeMessages(historyMessages);
@@ -432,19 +445,9 @@ export class ChatMessageGenerationService {
           error: errorMessage,
         },
       });
-      await this.touchConversation(conversationId);
+      await touchConversationTimestamp(this.prisma, conversationId);
       throw error;
     }
-  }
-
-  private async getOwnedMessage(userId: string, conversationId: string, messageId: string) {
-    const conversation = await this.chatService.getConversation(userId, conversationId);
-    const message = conversation.messages.find((item) => item.id === messageId);
-    if (!message) {
-      throw new NotFoundException('Message not found');
-    }
-
-    return { conversation, message };
   }
 
   private async buildSystemPrompt(conversationId: string) {
@@ -456,48 +459,5 @@ export class ChatMessageGenerationService {
       systemPrompt: currentPersona.prompt || CHAT_SYSTEM_PROMPT,
       activePersonaId: currentPersona.personaId,
     };
-  }
-
-  private async touchConversation(conversationId: string) {
-    await this.prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
-  }
-
-  private createChatLifecycleContext(input: {
-    source?: PluginCallContext['source'];
-    userId?: string;
-    conversationId: string;
-    activeProviderId?: string;
-    activeModelId?: string;
-    activePersonaId?: string;
-  }) {
-    return {
-      source: input.source ?? ('chat-hook' as const),
-      ...(input.userId ? { userId: input.userId } : {}),
-      conversationId: input.conversationId,
-      ...(input.activeProviderId ? { activeProviderId: input.activeProviderId } : {}),
-      ...(input.activeModelId ? { activeModelId: input.activeModelId } : {}),
-      ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}),
-    };
-  }
-
-  private assertConversationLlmEnabled(conversation: {
-    hostServicesJson?: string | null;
-  }) {
-    const hostServices = normalizeConversationHostServices(
-      conversation.hostServicesJson,
-    );
-
-    if (!hostServices.sessionEnabled) {
-      throw new BadRequestException('当前会话宿主服务已停用');
-    }
-
-    if (!hostServices.llmEnabled) {
-      throw new BadRequestException('当前会话已关闭 LLM 自动回复');
-    }
   }
 }

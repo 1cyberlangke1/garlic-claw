@@ -1,8 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import type { PluginCallContext } from '@garlic-claw/shared';
+import { Injectable } from '@nestjs/common';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatService } from './chat.service';
+import {
+  createChatLifecycleContext,
+  getOwnedConversationMessage,
+  touchConversationTimestamp,
+} from './chat-message-common.helpers';
 import { type UpdateMessageDto } from './dto/chat.dto';
 import {
   deserializeMessageParts,
@@ -27,7 +31,12 @@ export class ChatMessageMutationService {
     messageId: string,
     dto: UpdateMessageDto,
   ) {
-    const { message } = await this.getOwnedMessage(userId, conversationId, messageId);
+    const { message } = await getOwnedConversationMessage(
+      this.chatService,
+      userId,
+      conversationId,
+      messageId,
+    );
     await this.chatTaskService.stopTask(messageId);
 
     const updated = message.role === 'user'
@@ -36,7 +45,7 @@ export class ChatMessageMutationService {
           parts: dto.parts ? mapDtoParts(dto.parts) : undefined,
         })
       : null;
-    const hookContext = this.createChatLifecycleContext({
+    const hookContext = createChatLifecycleContext({
       userId,
       conversationId,
     });
@@ -82,7 +91,7 @@ export class ChatMessageMutationService {
             error: null,
           },
     });
-    await this.touchConversation(conversationId);
+    await touchConversationTimestamp(this.prisma, conversationId);
     return result;
   }
 
@@ -91,9 +100,14 @@ export class ChatMessageMutationService {
     conversationId: string,
     messageId: string,
   ) {
-    const { message } = await this.getOwnedMessage(userId, conversationId, messageId);
+    const { message } = await getOwnedConversationMessage(
+      this.chatService,
+      userId,
+      conversationId,
+      messageId,
+    );
     await this.chatTaskService.stopTask(messageId);
-    const hookContext = this.createChatLifecycleContext({
+    const hookContext = createChatLifecycleContext({
       userId,
       conversationId,
     });
@@ -107,45 +121,8 @@ export class ChatMessageMutationService {
       },
     });
     await this.prisma.message.delete({ where: { id: messageId } });
-    await this.touchConversation(conversationId);
+    await touchConversationTimestamp(this.prisma, conversationId);
     return { success: true };
-  }
-
-  private async getOwnedMessage(userId: string, conversationId: string, messageId: string) {
-    const conversation = await this.chatService.getConversation(userId, conversationId);
-    const message = conversation.messages.find((item) => item.id === messageId);
-    if (!message) {
-      throw new NotFoundException('Message not found');
-    }
-
-    return { conversation, message };
-  }
-
-  private async touchConversation(conversationId: string) {
-    await this.prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
-  }
-
-  private createChatLifecycleContext(input: {
-    source?: PluginCallContext['source'];
-    userId?: string;
-    conversationId: string;
-    activeProviderId?: string;
-    activeModelId?: string;
-    activePersonaId?: string;
-  }) {
-    return {
-      source: input.source ?? ('chat-hook' as const),
-      ...(input.userId ? { userId: input.userId } : {}),
-      conversationId: input.conversationId,
-      ...(input.activeProviderId ? { activeProviderId: input.activeProviderId } : {}),
-      ...(input.activeModelId ? { activeModelId: input.activeModelId } : {}),
-      ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}),
-    };
   }
 
   private toMessageHookInfo(message: {

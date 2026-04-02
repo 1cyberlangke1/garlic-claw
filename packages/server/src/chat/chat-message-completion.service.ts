@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { touchConversationTimestamp } from './chat-message-common.helpers';
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
 import {
   normalizeAssistantMessageOutput,
@@ -63,7 +64,7 @@ export class ChatMessageCompletionService {
         toolResults: null,
       },
     });
-    await this.touchConversation(input.conversationId);
+    await touchConversationTimestamp(this.prisma, input.conversationId);
     const finalResult = await this.orchestration.applyFinalResponseHooks({
       userId: input.userId,
       conversationId: input.conversationId,
@@ -106,7 +107,7 @@ export class ChatMessageCompletionService {
             : null,
         },
       });
-    await this.touchConversation(input.conversationId);
+    await touchConversationTimestamp(this.prisma, input.conversationId);
     await this.orchestration.runResponseAfterSendHooks({
       userId: input.userId,
       conversationId: input.conversationId,
@@ -182,15 +183,6 @@ export class ChatMessageCompletionService {
       ...input.assistantMessage,
       metadataJson,
     };
-  }
-
-  private async touchConversation(conversationId: string) {
-    await this.prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
   }
 }
 

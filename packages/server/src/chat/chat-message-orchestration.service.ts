@@ -20,9 +20,8 @@ import {
   type PreparedChatModelInvocation,
 } from './chat-model-invocation.service';
 import type { ChatRuntimeMessage } from './chat-message-session';
-import {
-  normalizeAssistantMessageOutput,
-} from './message-parts';
+import { createChatLifecycleContext } from './chat-message-common.helpers';
+import { normalizeAssistantMessageOutput } from './message-parts';
 import type { CompletedChatTaskResult } from './chat-task.service';
 
 /** 模型前 Hook 继续执行结果。 */
@@ -77,7 +76,7 @@ export class ChatMessageOrchestrationService {
     tools: ChatToolSet;
   }) {
     return (abortSignal: AbortSignal) => {
-      const hookContext = this.createChatLifecycleContext({
+      const hookContext = createChatLifecycleContext({
         userId: input.userId,
         conversationId: input.conversationId,
         activeProviderId: input.activeProviderId,
@@ -128,7 +127,7 @@ export class ChatMessageOrchestrationService {
     const skillContext = await this.skillSession.getConversationSkillContext(
       input.conversationId,
     );
-    const hookContext = this.createChatLifecycleContext({
+    const hookContext = createChatLifecycleContext({
       userId: input.userId,
       conversationId: input.conversationId,
       activeProviderId: input.modelConfig.providerId,
@@ -230,7 +229,7 @@ export class ChatMessageOrchestrationService {
     result: CompletedChatTaskResult;
   }): Promise<void> {
     const currentParts = input.result.parts ?? [];
-    const hookContext = this.createChatLifecycleContext({
+    const hookContext = createChatLifecycleContext({
       userId: input.userId,
       conversationId: input.conversationId,
       activeProviderId: input.result.providerId,
@@ -309,7 +308,7 @@ export class ChatMessageOrchestrationService {
     result: CompletedChatTaskResult;
   }): Promise<CompletedChatTaskResult> {
     const currentParts = input.result.parts ?? [];
-    const hookContext = this.createChatLifecycleContext({
+    const hookContext = createChatLifecycleContext({
       userId: input.userId,
       conversationId: input.conversationId,
       activeProviderId: input.result.providerId,
@@ -344,24 +343,6 @@ export class ChatMessageOrchestrationService {
       parts: normalizedAssistant.parts,
       toolCalls: patchedPayload.toolCalls,
       toolResults: patchedPayload.toolResults,
-    };
-  }
-
-  private createChatLifecycleContext(input: {
-    source?: PluginCallContext['source'];
-    userId?: string;
-    conversationId: string;
-    activeProviderId?: string;
-    activeModelId?: string;
-    activePersonaId?: string;
-  }) {
-    return {
-      source: input.source ?? ('chat-hook' as const),
-      ...(input.userId ? { userId: input.userId } : {}),
-      conversationId: input.conversationId,
-      ...(input.activeProviderId ? { activeProviderId: input.activeProviderId } : {}),
-      ...(input.activeModelId ? { activeModelId: input.activeModelId } : {}),
-      ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}),
     };
   }
 }

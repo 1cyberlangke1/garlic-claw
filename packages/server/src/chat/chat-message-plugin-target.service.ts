@@ -15,6 +15,10 @@ import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatService } from './chat.service';
 import {
+  createChatLifecycleContext,
+  touchConversationTimestamp,
+} from './chat-message-common.helpers';
+import {
   deserializeMessageParts,
   normalizeAssistantMessageOutput,
   serializeMessageParts,
@@ -119,7 +123,7 @@ export class ChatMessagePluginTargetService {
 
     const provider = input.provider ?? input.context.activeProviderId ?? null;
     const model = input.model ?? input.context.activeModelId ?? null;
-    const hookContext = this.createChatLifecycleContext({
+    const hookContext = createChatLifecycleContext({
       source: input.context.source,
       userId: input.context.userId,
       conversationId: targetConversationId,
@@ -165,7 +169,7 @@ export class ChatMessagePluginTargetService {
         error: null,
       },
     });
-    await this.touchConversation(targetConversationId);
+    await touchConversationTimestamp(this.prisma, targetConversationId);
 
     return {
       id: createdMessage.id,
@@ -269,33 +273,6 @@ export class ChatMessagePluginTargetService {
     return {
       id: conversation.id,
       title: conversation.title,
-    };
-  }
-
-  private async touchConversation(conversationId: string) {
-    await this.prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
-  }
-
-  private createChatLifecycleContext(input: {
-    source?: PluginCallContext['source'];
-    userId?: string;
-    conversationId: string;
-    activeProviderId?: string;
-    activeModelId?: string;
-    activePersonaId?: string;
-  }) {
-    return {
-      source: input.source ?? ('chat-hook' as const),
-      ...(input.userId ? { userId: input.userId } : {}),
-      conversationId: input.conversationId,
-      ...(input.activeProviderId ? { activeProviderId: input.activeProviderId } : {}),
-      ...(input.activeModelId ? { activeModelId: input.activeModelId } : {}),
-      ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}),
     };
   }
 }
