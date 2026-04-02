@@ -442,6 +442,17 @@
     - websocket ping health-check
     - heartbeat stale sweep 规则
   - `plugin.gateway.ts` 主文件行数已从 `799` 继续降到 `730`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-dispatch.helpers.ts`
+    继续把 hook/route/command 结果回填与错误拒绝样板从网关主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-dispatch.helpers.spec.ts`
+    直接给 gateway dispatch helper 补 pending request resolve/reject 样板回归
+  - `PluginGateway` 已不再直接承载：
+    - hook result/error resolve-reject 样板
+    - route result/error resolve-reject 样板
+    - command result/error resolve-reject 样板
+  - `plugin.gateway.ts` 主文件行数已从 `730` 继续降到 `667`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

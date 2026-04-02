@@ -26,6 +26,10 @@ import {
   sameAuthorizedPluginGatewayContext,
 } from './plugin-gateway-context.helpers';
 import {
+  handlePluginGatewayErrorMessage,
+  handlePluginGatewayResultMessage,
+} from './plugin-gateway-dispatch.helpers';
+import {
   isConnectionScopedHostMethod,
   readAuthPayload,
   readDataPayload,
@@ -44,9 +48,7 @@ import {
 } from './plugin-gateway-runtime.helpers';
 import {
   readPluginGatewayRequestId,
-  rejectPluginGatewayPendingRequest,
   rejectPluginGatewayPendingRequestsForSocket,
-  resolvePluginGatewayPendingRequest,
   sendPluginGatewayMessage,
   sendPluginGatewayProtocolError,
   type ActiveRequestContext,
@@ -402,95 +404,54 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
         return;
       }
       case WS_ACTION.HOOK_RESULT: {
-        const requestId = readPluginGatewayRequestId({
+        handlePluginGatewayResultMessage({
           msg,
-          onMissing: (message) => this.logger.warn(message),
-        });
-        const payload = readDataPayload(msg.payload);
-        if (!payload) {
-          rejectPluginGatewayPendingRequest({
-            requestId,
-            error: '无效的 Hook 返回负载',
-            pendingRequests: this.pendingRequests,
-            activeRequestContexts: this.activeRequestContexts,
-          });
-          return;
-        }
-        resolvePluginGatewayPendingRequest({
-          requestId,
-          data: payload.data,
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
-        });
+          loggerWarn: (message) => this.logger.warn(message),
+          invalidPayloadMessage: '无效的 Hook 返回负载',
+          readPayload: readDataPayload,
+        }, msg.payload);
         return;
       }
       case WS_ACTION.HOOK_ERROR: {
-        const requestId = readPluginGatewayRequestId({
+        handlePluginGatewayErrorMessage({
           msg,
-          onMissing: (message) => this.logger.warn(message),
-        });
-        const payload = readErrorPayload(msg.payload);
-        if (!payload) {
-          rejectPluginGatewayPendingRequest({
-            requestId,
-            error: '无效的 Hook 错误负载',
-            pendingRequests: this.pendingRequests,
-            activeRequestContexts: this.activeRequestContexts,
-          });
-          return;
-        }
-        rejectPluginGatewayPendingRequest({
-          requestId,
-          error: payload.error,
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
-        });
+          loggerWarn: (message) => this.logger.warn(message),
+          invalidPayloadMessage: '无效的 Hook 错误负载',
+          readPayload: readErrorPayload,
+        }, msg.payload);
         return;
       }
       case WS_ACTION.ROUTE_RESULT: {
-        const requestId = readPluginGatewayRequestId({
+        handlePluginGatewayResultMessage({
           msg,
-          onMissing: (message) => this.logger.warn(message),
-        });
-        const payload = readRouteResultPayload(msg.payload);
-        if (!payload) {
-          rejectPluginGatewayPendingRequest({
-            requestId,
-            error: '无效的插件 Route 返回负载',
-            pendingRequests: this.pendingRequests,
-            activeRequestContexts: this.activeRequestContexts,
-          });
-          return;
-        }
-        resolvePluginGatewayPendingRequest({
-          requestId,
-          data: toJsonValue(payload.data),
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
-        });
+          loggerWarn: (message) => this.logger.warn(message),
+          invalidPayloadMessage: '无效的插件 Route 返回负载',
+          readPayload: (payload) => {
+            const result = readRouteResultPayload(payload);
+            return result
+              ? {
+                data: toJsonValue(result.data),
+              }
+              : null;
+          },
+        }, msg.payload);
         return;
       }
       case WS_ACTION.ROUTE_ERROR: {
-        const requestId = readPluginGatewayRequestId({
+        handlePluginGatewayErrorMessage({
           msg,
-          onMissing: (message) => this.logger.warn(message),
-        });
-        const payload = readErrorPayload(msg.payload);
-        if (!payload) {
-          rejectPluginGatewayPendingRequest({
-            requestId,
-            error: '无效的插件 Route 错误负载',
-            pendingRequests: this.pendingRequests,
-            activeRequestContexts: this.activeRequestContexts,
-          });
-          return;
-        }
-        rejectPluginGatewayPendingRequest({
-          requestId,
-          error: payload.error,
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
-        });
+          loggerWarn: (message) => this.logger.warn(message),
+          invalidPayloadMessage: '无效的插件 Route 错误负载',
+          readPayload: readErrorPayload,
+        }, msg.payload);
         return;
       }
       case WS_ACTION.HOST_CALL:
@@ -511,49 +472,25 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     switch (msg.action) {
       case WS_ACTION.EXECUTE_RESULT: {
-        const requestId = readPluginGatewayRequestId({
+        handlePluginGatewayResultMessage({
           msg,
-          onMissing: (message) => this.logger.warn(message),
-        });
-        const payload = readDataPayload(msg.payload);
-        if (!payload) {
-          rejectPluginGatewayPendingRequest({
-            requestId,
-            error: '无效的远程命令返回负载',
-            pendingRequests: this.pendingRequests,
-            activeRequestContexts: this.activeRequestContexts,
-          });
-          return;
-        }
-        resolvePluginGatewayPendingRequest({
-          requestId,
-          data: payload.data,
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
-        });
+          loggerWarn: (message) => this.logger.warn(message),
+          invalidPayloadMessage: '无效的远程命令返回负载',
+          readPayload: readDataPayload,
+        }, msg.payload);
         return;
       }
       case WS_ACTION.EXECUTE_ERROR: {
-        const requestId = readPluginGatewayRequestId({
+        handlePluginGatewayErrorMessage({
           msg,
-          onMissing: (message) => this.logger.warn(message),
-        });
-        const payload = readErrorPayload(msg.payload);
-        if (!payload) {
-          rejectPluginGatewayPendingRequest({
-            requestId,
-            error: '无效的远程命令错误负载',
-            pendingRequests: this.pendingRequests,
-            activeRequestContexts: this.activeRequestContexts,
-          });
-          return;
-        }
-        rejectPluginGatewayPendingRequest({
-          requestId,
-          error: payload.error,
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
-        });
+          loggerWarn: (message) => this.logger.warn(message),
+          invalidPayloadMessage: '无效的远程命令错误负载',
+          readPayload: readErrorPayload,
+        }, msg.payload);
         return;
       }
       default:
