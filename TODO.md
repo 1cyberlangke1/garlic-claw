@@ -453,6 +453,17 @@
     - route result/error resolve-reject 样板
     - command result/error resolve-reject 样板
   - `plugin.gateway.ts` 主文件行数已从 `730` 继续降到 `667`
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-lifecycle.helpers.ts`
+    继续把 websocket auth/register/disconnect 生命周期样板从网关主类中拆出
+  - 已新增：
+    - `packages/server/src/plugin/plugin-gateway-lifecycle.helpers.spec.ts`
+    直接给 gateway lifecycle helper 补连接状态写回、旧连接替换与断连清理回归
+  - `PluginGateway` 已不再直接承载：
+    - auth token 校验后的连接状态写回
+    - register manifest + transport 装配后的统一 ack
+    - disconnect 时的 pending request 清理、active/old connection 判定与 unregister 调度
+  - `plugin.gateway.ts` 主文件行数已从 `667` 继续降到 `641`
   - 已新增维护文档：
     - `docs/扩展内核维护说明.md`
     并在 `README.md` / `docs/插件开发指南.md` 增加入口

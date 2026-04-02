@@ -30,6 +30,11 @@ import {
   handlePluginGatewayResultMessage,
 } from './plugin-gateway-dispatch.helpers';
 import {
+  authenticatePluginGatewayConnection,
+  disconnectPluginGatewayConnection,
+  registerPluginGatewayConnection,
+} from './plugin-gateway-lifecycle.helpers';
+import {
   isConnectionScopedHostMethod,
   readAuthPayload,
   readDataPayload,
@@ -512,27 +517,16 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     try {
       const secret = this.configService.get<string>('JWT_SECRET', 'fallback-secret');
-      const verified = this.jwtService.verify<{ role?: string }>(payload.token, { secret });
-      if (verified.role !== 'admin' && verified.role !== 'super_admin') {
-        throw new Error('只有管理员可以接入远程插件');
-      }
-      const previousConnection = this.connectionByPluginId.get(payload.pluginName);
-      conn.authenticated = true;
-      conn.pluginName = payload.pluginName;
-      conn.deviceType = payload.deviceType;
-      conn.lastHeartbeatAt = Date.now();
-      this.connectionByPluginId.set(payload.pluginName, conn);
-      if (previousConnection && previousConnection.ws !== ws) {
-        this.logger.warn(`插件 "${payload.pluginName}" 已存在旧连接，当前将其替换`);
-        previousConnection.ws.close();
-      }
-      sendPluginGatewayMessage({
+      await authenticatePluginGatewayConnection({
         ws,
-        type: WS_TYPE.AUTH,
-        action: WS_ACTION.AUTH_OK,
-        payload: {},
+        connection: conn,
+        payload,
+        verifyToken: (token) => this.jwtService.verify<{ role?: string }>(token, { secret }),
+        connectionByPluginId: this.connectionByPluginId,
+        logWarn: (message) => this.logger.warn(message),
+        logInfo: (message) => this.logger.log(message),
+        sendMessage: sendPluginGatewayMessage,
       });
-      this.logger.log(`Plugin "${payload.pluginName}" authenticated`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid token';
       sendPluginGatewayMessage({
@@ -557,24 +551,14 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     conn: PluginConnection,
     payload: ValidatedRegisterPayload,
   ): Promise<void> {
-    const manifest = resolvePluginGatewayManifest({
-      pluginName: conn.pluginName,
-      manifest: payload.manifest,
-    });
-    conn.manifest = manifest;
-
-    await this.pluginRuntimeOrchestrator.registerPlugin({
-      manifest,
-      runtimeKind: 'remote',
-      deviceType: conn.deviceType,
-      transport: this.createRemoteTransport(conn),
-    });
-
-    sendPluginGatewayMessage({
+    await registerPluginGatewayConnection({
       ws,
-      type: WS_TYPE.PLUGIN,
-      action: WS_ACTION.REGISTER_OK,
-      payload: {},
+      connection: conn,
+      payload,
+      resolveManifest: resolvePluginGatewayManifest,
+      createTransport: () => this.createRemoteTransport(conn),
+      registerPlugin: (input) => this.pluginRuntimeOrchestrator.registerPlugin(input),
+      sendMessage: sendPluginGatewayMessage,
     });
   }
 
@@ -651,30 +635,16 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
    * @returns 无返回值
    */
   private async handleDisconnect(conn: PluginConnection): Promise<void> {
-    this.connections.delete(conn.ws);
-    rejectPluginGatewayPendingRequestsForSocket({
-      ws: conn.ws,
-      error: new Error('插件连接已断开'),
+    await disconnectPluginGatewayConnection({
+      connection: conn,
+      connections: this.connections,
+      connectionByPluginId: this.connectionByPluginId,
       pendingRequests: this.pendingRequests,
       activeRequestContexts: this.activeRequestContexts,
+      unregisterPlugin: (pluginId) => this.pluginRuntimeOrchestrator.unregisterPlugin(pluginId),
+      rejectPendingRequestsForSocket: rejectPluginGatewayPendingRequestsForSocket,
+      logInfo: (message) => this.logger.log(message),
     });
-    if (!conn.pluginName) {
-      return;
-    }
-
-    const activeConnection = this.connectionByPluginId.get(conn.pluginName);
-    if (activeConnection?.ws !== conn.ws) {
-      this.logger.log(`插件 "${conn.pluginName}" 的旧连接已断开`);
-      return;
-    }
-
-    this.connectionByPluginId.delete(conn.pluginName);
-    try {
-      await this.pluginRuntimeOrchestrator.unregisterPlugin(conn.pluginName);
-    } catch {
-      // 连接可能在注册前就断开，这里忽略。
-    }
-    this.logger.log(`插件 "${conn.pluginName}" 已断开连接`);
   }
 
   /**
