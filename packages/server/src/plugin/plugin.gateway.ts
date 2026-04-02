@@ -1,6 +1,5 @@
 import {
   type AuthPayload,
-  type JsonValue,
   type PluginManifest,
   WS_ACTION,
   DeviceType,
@@ -17,7 +16,6 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { IncomingMessage } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
-import type { JsonObject } from '../common/types/json-value';
 import {
   attachPluginGatewaySocketHandlers,
   createPluginGatewayConnectionRecord,
@@ -143,41 +141,6 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     }
     this.pendingRequests.clear();
     this.wss?.close();
-  }
-
-  /**
-   * 在统一 runtime 上执行远程插件工具。
-   * @param pluginId 插件 ID
-   * @param capability 工具名
-   * @param params JSON 参数
-   * @param timeoutMs 超时时间
-   * @returns 工具返回值
-   */
-  async executeCommand(
-    pluginId: string,
-    capability: string,
-    params: JsonObject,
-    timeoutMs = 30000,
-  ): Promise<JsonValue> {
-    return this.pluginRuntime.executeTool({
-      pluginId,
-      toolName: capability,
-      params,
-      context: {
-        source: 'plugin',
-        metadata: {
-          timeoutMs,
-        },
-      },
-    });
-  }
-
-  /**
-   * 获取当前在线的远程插件 ID 列表。
-   * @returns 插件 ID 数组
-   */
-  getConnectedPlugins(): string[] {
-    return [...this.connectionByPluginId.keys()];
   }
 
   /**
