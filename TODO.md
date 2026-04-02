@@ -616,12 +616,19 @@
     - `packages/server/src/plugin/plugin-manifest-normalize.helpers.ts`
     继续把 persisted manifest 的 fallback/normalize/parser 纯规则从 `plugin-manifest.persistence.ts` 主文件中拆出
   - 已新增：
+    - `packages/server/src/plugin/plugin-manifest-normalize-base.helpers.ts`
+    - `packages/server/src/plugin/plugin-manifest-normalize-capability.helpers.ts`
+    - `packages/server/src/plugin/plugin-manifest-normalize-lifecycle.helpers.ts`
+    - `packages/server/src/plugin/plugin-manifest-normalize-surface.helpers.ts`
+    继续把 manifest normalize helper 里的基础值读取、capability/config、lifecycle 和 route/command 规则按域拆分
+  - 已新增：
     - `packages/server/src/plugin/plugin-manifest-normalize.helpers.spec.ts`
     直接给 manifest normalize helper 补 persisted metadata fallback 与 malformed 输入回归
   - `plugin-manifest.persistence.ts` 已不再直接承载：
     - manifest candidate normalize
     - permission/tool/hook/route/command/cron/config 的纯解析规则
   - `plugin-manifest.persistence.ts` 主文件行数已从 `464` 继续降到 `43`
+  - `plugin-manifest-normalize.helpers.ts` 主文件行数已从 `436` 继续降到 `70`
   - 已新增：
     - `packages/server/src/plugin/plugin-record-view.helpers.ts`
     继续把 persisted manifest 驱动的 config snapshot/resolved config/self info 视图样板从 `PluginService` 主类中拆出
