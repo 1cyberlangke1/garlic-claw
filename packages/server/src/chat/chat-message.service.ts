@@ -10,7 +10,6 @@ import type {
   ChatMessagePart,
   PluginCallContext,
   PluginMessageSendInfo,
-  PluginMessageSendParams,
   PluginMessageTargetInfo,
   PluginMessageTargetRef,
 } from '@garlic-claw/shared';
@@ -29,6 +28,7 @@ import {
 import {
   ChatMessageOrchestrationService,
 } from './chat-message-orchestration.service';
+import { ChatMessagePluginTargetService } from './chat-message-plugin-target.service';
 import { ChatModelInvocationService } from './chat-model-invocation.service';
 import type { ChatRuntimeMessage } from './chat-message-session';
 import { prepareSendMessagePayload } from './chat-message-session';
@@ -44,22 +44,6 @@ import {
 import {
   ChatTaskService,
 } from './chat-task.service';
-
-/**
- * 当前 conversation 目标下已写入的 assistant 消息摘要。
- */
-interface ConversationTargetMessageRecord {
-  id: string;
-  conversationId: string;
-  role: 'assistant';
-  content: string;
-  parts: ChatMessagePart[];
-  provider?: string | null;
-  model?: string | null;
-  status: 'pending' | 'streaming' | 'completed' | 'stopped' | 'error';
-  createdAt: string;
-  updatedAt: string;
-}
 
 type MessageRecordWithMetadata = {
   id: string;
@@ -93,6 +77,7 @@ export class ChatMessageService {
     private readonly modelInvocation: ChatModelInvocationService,
     private readonly orchestration: ChatMessageOrchestrationService,
     private readonly chatTaskService: ChatTaskService,
+    private readonly pluginTargetService: ChatMessagePluginTargetService,
     private readonly skillCommands: SkillCommandService,
   ) {}
 
@@ -557,113 +542,11 @@ export class ChatMessageService {
     return { success: true };
   }
 
-  /** 向指定 conversation 目标追加一条已完成的 assistant 消息。 */
-  private async appendConversationTargetMessage(input: {
-    context: PluginCallContext;
-    conversationId?: string;
-    content?: string | null;
-    parts?: ChatMessagePart[] | null;
-    provider?: string | null;
-    model?: string | null;
-  }): Promise<ConversationTargetMessageRecord> {
-    const targetConversationId = input.conversationId ?? input.context.conversationId;
-    if (!targetConversationId) {
-      throw new BadRequestException('message.send 需要 conversationId 上下文');
-    }
-
-    await this.ensureConversationAccess(input.context, targetConversationId);
-
-    const normalizedAssistant = normalizeAssistantMessageOutput({
-      content: input.content,
-      parts: input.parts,
-    });
-    if (!normalizedAssistant.content && normalizedAssistant.parts.length === 0) {
-      throw new BadRequestException(
-        'message.send 需要非空 content 或 parts',
-      );
-    }
-
-    const provider = input.provider ?? input.context.activeProviderId ?? null;
-    const model = input.model ?? input.context.activeModelId ?? null;
-    const hookContext = this.createChatLifecycleContext({
-      source: input.context.source,
-      userId: input.context.userId,
-      conversationId: targetConversationId,
-      ...(provider ? { activeProviderId: provider } : {}),
-      ...(model ? { activeModelId: model } : {}),
-      ...(input.context.activePersonaId
-        ? { activePersonaId: input.context.activePersonaId }
-        : {}),
-    });
-    const createdMessagePayload = await this.pluginRuntime.runMessageCreatedHooks({
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        conversationId: targetConversationId,
-        message: {
-          role: 'assistant',
-          content: normalizedAssistant.content,
-          parts: normalizedAssistant.parts,
-          ...(provider ? { provider } : {}),
-          ...(model ? { model } : {}),
-          status: 'completed',
-        },
-        modelMessages: [
-          {
-            role: 'assistant',
-            content: normalizedAssistant.parts,
-          },
-        ],
-      },
-    });
-
-    const createdMessage = await this.prisma.message.create({
-      data: {
-        conversationId: targetConversationId,
-        role: 'assistant',
-        content: createdMessagePayload.message.content ?? '',
-        partsJson: createdMessagePayload.message.parts.length
-          ? serializeMessageParts(createdMessagePayload.message.parts)
-          : null,
-        provider: createdMessagePayload.message.provider ?? null,
-        model: createdMessagePayload.message.model ?? null,
-        status: createdMessagePayload.message.status ?? 'completed',
-        error: null,
-      },
-    });
-    await this.touchConversation(targetConversationId);
-
-    return {
-      id: createdMessage.id,
-      conversationId: targetConversationId,
-      role: 'assistant',
-      content: createdMessage.content ?? '',
-      parts: deserializeMessageParts(createdMessage.partsJson),
-      ...(typeof createdMessage.provider !== 'undefined'
-        ? { provider: createdMessage.provider }
-        : {}),
-      ...(typeof createdMessage.model !== 'undefined'
-        ? { model: createdMessage.model }
-        : {}),
-      status: createdMessage.status as
-        'pending' | 'streaming' | 'completed' | 'stopped' | 'error',
-      createdAt: createdMessage.createdAt.toISOString(),
-      updatedAt: createdMessage.updatedAt.toISOString(),
-    };
-  }
-
   /** 供插件读取当前消息目标摘要；当前实现映射为当前会话。 */
   async getCurrentPluginMessageTarget(input: {
     context: PluginCallContext;
   }): Promise<PluginMessageTargetInfo | null> {
-    if (!input.context.conversationId) {
-      return null;
-    }
-
-    return this.resolvePluginMessageTarget(input.context, {
-      type: 'conversation',
-      id: input.context.conversationId,
-    });
+    return this.pluginTargetService.getCurrentPluginMessageTarget(input);
   }
 
   /** 供插件向当前或指定单用户消息目标发送一条 assistant 消息。 */
@@ -675,36 +558,7 @@ export class ChatMessageService {
     provider?: string | null;
     model?: string | null;
   }): Promise<PluginMessageSendInfo> {
-    const target = await this.resolveSendMessageTarget(input.context, input.target);
-    if (target.type !== 'conversation') {
-      throw new BadRequestException(`message.send 当前不支持目标类型 ${target.type}`);
-    }
-
-    const sentMessage = await this.appendConversationTargetMessage({
-      context: input.context,
-      conversationId: target.id,
-      content: input.content,
-      parts: input.parts,
-      provider: input.provider,
-      model: input.model,
-    });
-
-    return {
-      id: sentMessage.id,
-      target,
-      role: sentMessage.role,
-      content: sentMessage.content,
-      parts: sentMessage.parts,
-      ...(typeof sentMessage.provider !== 'undefined'
-        ? { provider: sentMessage.provider }
-        : {}),
-      ...(typeof sentMessage.model !== 'undefined'
-        ? { model: sentMessage.model }
-        : {}),
-      status: sentMessage.status,
-      createdAt: sentMessage.createdAt,
-      updatedAt: sentMessage.updatedAt,
-    };
+    return this.pluginTargetService.sendPluginMessage(input);
   }
 
   /** 读取对话中的一条消息并校验所有权，输出对话与消息。 */
@@ -717,117 +571,6 @@ export class ChatMessageService {
 
     return { conversation, message };
   }
-
-  /**
-   * 校验插件要写入的目标会话确实存在，并在有 userId 时复用现有所有权校验。
-   * @param context 插件调用上下文
-   * @param conversationId 目标会话 ID
-   * @returns 无返回值
-   */
-  private async ensureConversationAccess(
-    context: PluginCallContext,
-    conversationId: string,
-  ) {
-    if (context.userId) {
-      await this.chatService.getConversation(context.userId, conversationId);
-      return;
-    }
-
-    const conversation = await this.prisma.conversation.findUnique({
-      where: {
-        id: conversationId,
-      },
-      select: {
-        id: true,
-      },
-    });
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
-  }
-
-  /**
-   * 解析插件当前可见的会话消息目标，并返回带标题的安全摘要。
-   * @param context 插件调用上下文
-   * @param target 目标引用
-   * @returns 归一化后的目标摘要
-   */
-  private async resolvePluginMessageTarget(
-    context: PluginCallContext,
-    target: PluginMessageTargetRef,
-  ): Promise<PluginMessageTargetInfo> {
-    if (target.type !== 'conversation') {
-      throw new BadRequestException(`当前不支持消息目标类型 ${target.type}`);
-    }
-
-    const conversation = await this.getConversationTargetRecord(context, target.id);
-    return {
-      type: 'conversation',
-      id: conversation.id,
-      label: conversation.title,
-    };
-  }
-
-  /**
-   * 解析 `message.send` 应写入的目标；未显式提供时回退到当前上下文。
-   * @param context 插件调用上下文
-   * @param target 可选显式目标
-   * @returns 可写入的目标摘要
-   */
-  private async resolveSendMessageTarget(
-    context: PluginCallContext,
-    target?: PluginMessageSendParams['target'],
-  ): Promise<PluginMessageTargetInfo> {
-    if (target) {
-      return this.resolvePluginMessageTarget(context, target);
-    }
-    if (context.conversationId) {
-      return this.resolvePluginMessageTarget(context, {
-        type: 'conversation',
-        id: context.conversationId,
-      });
-    }
-
-    throw new BadRequestException('message.send 需要消息目标上下文');
-  }
-
-  /**
-   * 读取一个当前上下文可见的会话目标记录。
-   * @param context 插件调用上下文
-   * @param conversationId 目标会话 ID
-   * @returns 只包含安全字段的会话目标
-   */
-  private async getConversationTargetRecord(
-    context: PluginCallContext,
-    conversationId: string,
-  ): Promise<{ id: string; title: string }> {
-    if (context.userId) {
-      const conversation = await this.chatService.getConversation(context.userId, conversationId);
-      return {
-        id: conversation.id,
-        title: conversation.title,
-      };
-    }
-
-    const conversation = await this.prisma.conversation.findUnique({
-      where: {
-        id: conversationId,
-      },
-      select: {
-        id: true,
-        title: true,
-      },
-    });
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
-
-    return {
-      id: conversation.id,
-      title: conversation.title,
-    };
-  }
-
   /**
    * 构建当前会话的人设系统提示词。
    * @param conversationId 当前会话 ID

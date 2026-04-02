@@ -1,4 +1,5 @@
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
+import { ChatMessagePluginTargetService } from './chat-message-plugin-target.service';
 import { ChatMessageService } from './chat-message.service';
 
 describe('ChatMessageService', () => {
@@ -150,6 +151,11 @@ describe('ChatMessageService', () => {
       modelInvocation as never,
       skillSession as never,
     );
+    const pluginTargetService = new ChatMessagePluginTargetService(
+      prisma as never,
+      chatService as never,
+      pluginRuntime as never,
+    );
     service = new ChatMessageService(
       prisma as never,
       chatService as never,
@@ -159,6 +165,7 @@ describe('ChatMessageService', () => {
       modelInvocation as never,
       orchestration as never,
       chatTaskService as never,
+      pluginTargetService as never,
       skillCommands as never,
     );
   });

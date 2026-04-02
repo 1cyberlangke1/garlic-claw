@@ -687,6 +687,15 @@
 - [x] provider catalog 只保留“目录模板 + 协议映射”职责，不回退到按厂商 SDK 扩张
 - [x] 继续删除 AI 模块内部残留的 `official / format` 历史命名与空壳 helper 字段
 - 进展记录：
+  - 已新增：
+    - `packages/server/src/chat/chat-message-plugin-target.service.ts`
+    - `packages/server/src/chat/chat-message-plugin-target.service.spec.ts`
+    把聊天消息里“插件消息目标解析 + message.send 写回链路”从 `ChatMessageService` 主类中拆出
+  - `ChatMessageService` 已改为通过 `ChatMessagePluginTargetService` 委派：
+    - `message.target.current.get`
+    - `message.send`
+    以及对应的 conversation 可见性校验、目标解析与 assistant 消息写回
+  - `chat-message.service.ts` 主文件行数已从 `1030` 继续降到 `793`
   - 已删除多厂商 SDK runtime / stub 残留，当前 runtime 与 type stub 都已收敛到三种协议族
   - 已把 provider catalog 收口为 `core + preset + protocol`，preset 不再绑定独立 SDK
   - 已删除一批 AI 模块薄壳：
