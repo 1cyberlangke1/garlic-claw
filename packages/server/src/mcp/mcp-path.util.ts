@@ -8,10 +8,6 @@ export function resolveMcpConfigFilePath(): string {
     : path.join(findProjectRoot(), '.mcp', 'mcp.json');
 }
 
-export function resolveCityCoordinatesFilePath(): string {
-  return path.join(findProjectRoot(), '.mcp', 'city-coordinates.json');
-}
-
 export function ensureParentDirectory(filePath: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }

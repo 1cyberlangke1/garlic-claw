@@ -531,6 +531,11 @@
     - 未认证消息的统一 AUTH_FAIL 返回
     - auth envelope 的 payload 读取与 protocol_error 返回
     - heartbeat ping 的顶层路由样板
+  - 已删除 `McpService` 中未被宿主消费的城市坐标预加载与查询死代码：
+    - `packages/server/src/mcp/mcp.service.ts`
+    - `packages/server/src/mcp/mcp-path.util.ts`
+    - `tools/test-city-coordinates.ts`
+    让 MCP core 回到“server runtime + tool snapshot + callTool”这一条主职责
   - 已新增：
     - `packages/server/src/plugin/plugin-record-view.helpers.ts`
     继续把 persisted manifest 驱动的 config snapshot/resolved config/self info 视图样板从 `PluginService` 主类中拆出
