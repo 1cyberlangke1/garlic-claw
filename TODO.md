@@ -159,6 +159,7 @@
   - `chat-message.helpers.ts` 已把两处 `chat-tool` context 组装并回共享本地函数
   - `plugin-cron.service.ts` 已把 host/manifest 两处重复的 cron upsert 载荷生成并回单一 mutation builder
   - `plugin-command.service.ts` 已把两处重复的 priority 比较并回共享本地 comparator
+  - `plugin-route.controller.ts` 已删回现有 `readUnknownObject(...)` / `normalizeRoutePath(...)`，并顺手删掉请求体与 header 屏蔽薄壳，不再在 route controller 本地维护同义 helper 副本
   - `plugin-subagent-task-request.helpers.ts` 里重复的 `normalizePositiveInteger(...)` 已删回现有 validation helper
   - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
   - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
@@ -188,14 +189,15 @@
 - `config-manager.loader.ts`: `426 -> 392`
 - `plugin-command.service.ts`: `250 -> 242`
 - `plugin-cron.service.ts`: `244 -> 239`
+- `plugin-route.controller.ts`: `218 -> 180`
 - `builtin-plugin-host-facade.helpers.ts`: `255 -> 0`（已删）
 - `builtin-plugin-host-params.helpers.ts`: `200 -> 0`（已删）
 - `builtin-plugin.types.ts`: `215 -> 31`
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `32532`
-- `packages/server/src/plugin`: `17016`
+- `packages/server/src`: `32494`
+- `packages/server/src/plugin`: `16978`
 - `packages/server/src/chat`: `3862`
 - `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message.helpers.ts`: `152`
@@ -209,6 +211,7 @@
 - `packages/server/src/chat/chat-task.service.ts`: `360`
 - `packages/server/src/plugin/plugin-command.service.ts`: `242`
 - `packages/server/src/plugin/plugin-cron.service.ts`: `239`
+- `packages/server/src/plugin/plugin-route.controller.ts`: `180`
 - `packages/server/src/plugin/builtin/builtin-plugin.transport.ts`: `162`
 - `packages/server/src/plugin/builtin/builtin-plugin.types.ts`: `31`
 - `packages/server/src/plugin/plugin-subagent-task-request.helpers.ts`: `160`
@@ -250,6 +253,7 @@
 - [x] 本轮已把 `chat-message.helpers.ts` 的两处 `chat-tool` context 组装并回共享本地函数
 - [x] 本轮已把 `plugin-cron.service.ts` 的 host/manifest 重复 cron upsert 载荷并回单一 mutation builder
 - [x] 本轮已把 `plugin-command.service.ts` 的两处 priority 比较并回共享本地 comparator
+- [x] 本轮已把 `plugin-route.controller.ts` 的本地 `readUnknownObject(...)` / `normalizeRoutePath(...)` 删回现有 helper，并删掉请求体与 header 屏蔽薄壳
 - [x] 这一次切片已确认满足“core 净减少、复杂度外移到 SDK”：
   - `git diff --numstat` 显示 `packages/server/src/plugin/builtin/*host*` 与 `builtin-plugin.types.ts` 合计净减 `557` 行
   - 同一轮 `packages/plugin-sdk/src/index.ts` 净增 `70` 行，用于承接共用 facade / builder 导出
