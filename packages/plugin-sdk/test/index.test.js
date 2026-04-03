@@ -7,6 +7,8 @@ const {
   buildPluginGovernanceMessage,
   buildPluginGovernanceSummary,
   buildConversationTitlePrompt,
+  buildSubagentDelegateRunParams,
+  buildSubagentDelegateTaskParams,
   buildToolAuditStorageKey,
   CONVERSATION_TITLE_CONFIG_FIELDS,
   CONVERSATION_TITLE_DEFAULT_TITLE,
@@ -34,6 +36,7 @@ const {
   createPassHookResult,
   createProviderRouterMutateResult,
   createProviderRouterShortCircuitResult,
+  createSubagentTaskSummaryResult,
   createSystemPromptMutateResult,
   describeJsonValueKind,
   filterAllowedToolNames,
@@ -64,6 +67,7 @@ const {
   readLatestUserTextFromMessages,
   readRequiredStringParam,
   readRequiredTextValue,
+  readSubagentDelegateConfig,
   resolvePromptBlockConfig,
   resolveProviderRouterShortCircuitReply,
   sameToolNames,
@@ -71,6 +75,7 @@ const {
   sanitizeConversationTitle,
   sanitizeOptionalText,
   shouldGenerateConversationTitle,
+  SUBAGENT_DELEGATE_CONFIG_FIELDS,
   textIncludesKeyword,
 } = require('../dist/index.js');
 
@@ -1332,6 +1337,17 @@ test('plugin-sdk exposes shared author-side value readers for builtin and remote
   assert.equal(normalizePositiveInteger(undefined, 2), 2);
   assert.equal(readBooleanFlag(true, false), true);
   assert.equal(readBooleanFlag('invalid', true), true);
+  assert.deepEqual(readSubagentDelegateConfig({
+    targetProviderId: 'openai',
+    targetModelId: 'gpt-5.2-mini',
+    allowedToolNames: 'recall_memory,save_memory',
+    maxSteps: 6,
+  }), {
+    targetProviderId: 'openai',
+    targetModelId: 'gpt-5.2-mini',
+    allowedToolNames: 'recall_memory,save_memory',
+    maxSteps: 6,
+  });
   assert.deepEqual(
     createSubagentRunSummary({
       providerId: 'openai',
@@ -1350,6 +1366,92 @@ test('plugin-sdk exposes shared author-side value readers for builtin and remote
       finishReason: 'stop',
     },
   );
+  assert.deepEqual(
+    buildSubagentDelegateRunParams({
+      config: {
+        targetProviderId: 'openai',
+        targetModelId: 'gpt-5.2-mini',
+        allowedToolNames: 'recall_memory,save_memory',
+        maxSteps: 6,
+      },
+      prompt: '请结合当前可用工具做一个简短总结',
+    }),
+    {
+      providerId: 'openai',
+      modelId: 'gpt-5.2-mini',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '请结合当前可用工具做一个简短总结',
+            },
+          ],
+        },
+      ],
+      toolNames: ['recall_memory', 'save_memory'],
+      maxSteps: 6,
+    },
+  );
+  assert.deepEqual(
+    buildSubagentDelegateTaskParams({
+      config: {
+        targetProviderId: 'openai',
+        targetModelId: 'gpt-5.2-mini',
+      },
+      prompt: '请后台处理这条任务',
+      shouldWriteBack: true,
+      conversationId: 'conversation-1',
+    }),
+    {
+      providerId: 'openai',
+      modelId: 'gpt-5.2-mini',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '请后台处理这条任务',
+            },
+          ],
+        },
+      ],
+      maxSteps: 4,
+      writeBack: {
+        target: {
+          type: 'conversation',
+          id: 'conversation-1',
+        },
+      },
+    },
+  );
+  assert.deepEqual(
+    createSubagentTaskSummaryResult({
+      id: 'task-1',
+      pluginId: 'builtin.subagent-delegate',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请后台处理这条任务',
+      writeBackStatus: 'pending',
+      requestedAt: '2026-04-03T00:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+    }),
+    {
+      id: 'task-1',
+      pluginId: 'builtin.subagent-delegate',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请后台处理这条任务',
+      writeBackStatus: 'pending',
+      requestedAt: '2026-04-03T00:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+    },
+  );
+  assert.equal(SUBAGENT_DELEGATE_CONFIG_FIELDS.length, 4);
 
   assert.throws(() => readRequiredTextValue('', 'prompt'), /prompt 必须是非空字符串/);
 });

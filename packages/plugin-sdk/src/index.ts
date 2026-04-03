@@ -769,6 +769,13 @@ export interface PluginConversationTitleConfig {
   maxMessages?: number;
 }
 
+export interface PluginSubagentDelegateConfig {
+  targetProviderId?: string;
+  targetModelId?: string;
+  allowedToolNames?: string;
+  maxSteps?: number;
+}
+
 export const CONVERSATION_TITLE_DEFAULT_TITLE = 'New Chat';
 export const CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES = 4;
 export const PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY =
@@ -777,6 +784,7 @@ export const MEMORY_CONTEXT_DEFAULT_LIMIT = 5;
 export const MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX = '与此用户相关的记忆';
 export const KB_CONTEXT_DEFAULT_LIMIT = 3;
 export const KB_CONTEXT_DEFAULT_PROMPT_PREFIX = '与当前问题相关的系统知识';
+export const SUBAGENT_DELEGATE_DEFAULT_MAX_STEPS = 4;
 
 export const CONVERSATION_TITLE_CONFIG_FIELDS = [
   {
@@ -862,6 +870,30 @@ export const KB_CONTEXT_CONFIG_FIELDS = [
     type: 'string',
     description: '知识摘要写入系统提示词时的前缀',
     defaultValue: KB_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  },
+] satisfies NonNullable<PluginManifest['config']>['fields'];
+
+export const SUBAGENT_DELEGATE_CONFIG_FIELDS = [
+  {
+    key: 'targetProviderId',
+    type: 'string',
+    description: '子代理默认使用的 provider ID',
+  },
+  {
+    key: 'targetModelId',
+    type: 'string',
+    description: '子代理默认使用的 model ID',
+  },
+  {
+    key: 'allowedToolNames',
+    type: 'string',
+    description: '允许子代理使用的工具名列表，使用英文逗号分隔',
+  },
+  {
+    key: 'maxSteps',
+    type: 'number',
+    description: '子代理最多允许多少轮工具调用',
+    defaultValue: SUBAGENT_DELEGATE_DEFAULT_MAX_STEPS,
   },
 ] satisfies NonNullable<PluginManifest['config']>['fields'];
 
@@ -1704,6 +1736,58 @@ export function buildToolAuditStorageKey(
   return `tool.${storageScope}.${payload.tool.name}.last-call`;
 }
 
+export function readSubagentDelegateConfig(
+  value: unknown,
+): PluginSubagentDelegateConfig {
+  const object = readJsonObjectValue(value);
+  if (!object) {
+    return {};
+  }
+
+  return {
+    ...(typeof object.targetProviderId === 'string'
+      ? { targetProviderId: object.targetProviderId }
+      : {}),
+    ...(typeof object.targetModelId === 'string'
+      ? { targetModelId: object.targetModelId }
+      : {}),
+    ...(typeof object.allowedToolNames === 'string'
+      ? { allowedToolNames: object.allowedToolNames }
+      : {}),
+    ...(typeof object.maxSteps === 'number' ? { maxSteps: object.maxSteps } : {}),
+  };
+}
+
+export function buildSubagentDelegateRunParams(input: {
+  config: PluginSubagentDelegateConfig;
+  prompt: string;
+}): PluginSubagentRunParams {
+  return buildSubagentDelegateBaseParams(input);
+}
+
+export function buildSubagentDelegateTaskParams(input: {
+  config: PluginSubagentDelegateConfig;
+  prompt: string;
+  shouldWriteBack: boolean;
+  conversationId?: string | null;
+}): PluginSubagentTaskStartParams {
+  const base = buildSubagentDelegateBaseParams(input);
+
+  return {
+    ...base,
+    ...(input.shouldWriteBack && input.conversationId
+      ? {
+          writeBack: {
+            target: {
+              type: 'conversation',
+              id: input.conversationId,
+            },
+          },
+        }
+      : {}),
+  };
+}
+
 export function readRequiredStringParam(params: JsonObject, key: string): string {
   const value = params[key];
   if (typeof value !== 'string' || value.length === 0) {
@@ -1812,6 +1896,46 @@ export function createSubagentRunSummary(result: PluginSubagentRunResult): JsonV
       ? { finishReason: result.finishReason }
       : {}),
   });
+}
+
+export function createSubagentTaskSummaryResult(
+  result: PluginSubagentTaskSummary,
+): JsonValue {
+  return toHostJsonValue(result);
+}
+
+function buildSubagentDelegateBaseParams(input: {
+  config: PluginSubagentDelegateConfig;
+  prompt: string;
+}): PluginSubagentRunParams {
+  const toolNames = parseCommaSeparatedNames(
+    input.config.allowedToolNames,
+  ) as string[] | null;
+
+  return {
+    ...(sanitizeOptionalText(input.config.targetProviderId)
+      ? { providerId: sanitizeOptionalText(input.config.targetProviderId) }
+      : {}),
+    ...(sanitizeOptionalText(input.config.targetModelId)
+      ? { modelId: sanitizeOptionalText(input.config.targetModelId) }
+      : {}),
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: input.prompt,
+          },
+        ],
+      },
+    ],
+    ...(toolNames ? { toolNames } : {}),
+    maxSteps: normalizePositiveInteger(
+      input.config.maxSteps,
+      SUBAGENT_DELEGATE_DEFAULT_MAX_STEPS,
+    ),
+  };
 }
 
 function readPluginAutomationActionsParam(params: JsonObject): ActionConfig[] {

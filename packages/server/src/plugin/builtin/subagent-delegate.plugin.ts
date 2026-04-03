@@ -1,27 +1,14 @@
 import {
+  buildSubagentDelegateRunParams,
+  buildSubagentDelegateTaskParams,
   createSubagentRunSummary,
-  normalizePositiveInteger,
-  parseCommaSeparatedNames,
+  createSubagentTaskSummaryResult,
   readBooleanFlag,
+  readSubagentDelegateConfig,
   readRequiredTextValue,
-  sanitizeOptionalText,
+  SUBAGENT_DELEGATE_CONFIG_FIELDS,
 } from '@garlic-claw/plugin-sdk';
-import { toJsonValue } from '../../common/utils/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * 子代理委托插件配置。
- */
-interface SubagentDelegatePluginConfig {
-  /** 目标 provider ID。 */
-  targetProviderId?: string;
-  /** 目标 model ID。 */
-  targetModelId?: string;
-  /** 允许子代理使用的工具名列表，逗号分隔。 */
-  allowedToolNames?: string;
-  /** 子代理最大工具调用步数。 */
-  maxSteps?: number;
-}
 
 /**
  * 创建子代理委托插件。
@@ -75,29 +62,7 @@ export function createSubagentDelegatePlugin(): BuiltinPluginDefinition {
         },
       ],
       config: {
-        fields: [
-          {
-            key: 'targetProviderId',
-            type: 'string',
-            description: '子代理默认使用的 provider ID',
-          },
-          {
-            key: 'targetModelId',
-            type: 'string',
-            description: '子代理默认使用的 model ID',
-          },
-          {
-            key: 'allowedToolNames',
-            type: 'string',
-            description: '允许子代理使用的工具名列表，使用英文逗号分隔',
-          },
-          {
-            key: 'maxSteps',
-            type: 'number',
-            description: '子代理最多允许多少轮工具调用',
-            defaultValue: 4,
-          },
-        ],
+        fields: SUBAGENT_DELEGATE_CONFIG_FIELDS,
       },
     },
     tools: {
@@ -109,30 +74,11 @@ export function createSubagentDelegatePlugin(): BuiltinPluginDefinition {
        */
       delegate_summary: async (params, context) => {
         const prompt = readRequiredTextValue(params.prompt, 'delegate_summary 的 prompt');
-        const config = (await context.host.getConfig()) as SubagentDelegatePluginConfig;
-        const result = await context.host.runSubagent({
-          ...(sanitizeOptionalText(config.targetProviderId)
-            ? { providerId: sanitizeOptionalText(config.targetProviderId) }
-            : {}),
-          ...(sanitizeOptionalText(config.targetModelId)
-            ? { modelId: sanitizeOptionalText(config.targetModelId) }
-            : {}),
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          ...(parseCommaSeparatedNames(config.allowedToolNames)
-            ? { toolNames: parseCommaSeparatedNames(config.allowedToolNames) as string[] }
-            : {}),
-          maxSteps: normalizePositiveInteger(config.maxSteps, 4),
-        });
+        const config = readSubagentDelegateConfig(await context.host.getConfig());
+        const result = await context.host.runSubagent(buildSubagentDelegateRunParams({
+          config,
+          prompt,
+        }));
 
         return createSubagentRunSummary(result);
       },
@@ -144,46 +90,19 @@ export function createSubagentDelegatePlugin(): BuiltinPluginDefinition {
        */
       delegate_summary_background: async (params, context) => {
         const prompt = readRequiredTextValue(params.prompt, 'delegate_summary 的 prompt');
-        const config = (await context.host.getConfig()) as SubagentDelegatePluginConfig;
+        const config = readSubagentDelegateConfig(await context.host.getConfig());
         const shouldWriteBack = readBooleanFlag(
           params.writeBack,
           Boolean(context.callContext.conversationId),
         );
-        const task = await context.host.startSubagentTask({
-          ...(sanitizeOptionalText(config.targetProviderId)
-            ? { providerId: sanitizeOptionalText(config.targetProviderId) }
-            : {}),
-          ...(sanitizeOptionalText(config.targetModelId)
-            ? { modelId: sanitizeOptionalText(config.targetModelId) }
-            : {}),
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          ...(parseCommaSeparatedNames(config.allowedToolNames)
-            ? { toolNames: parseCommaSeparatedNames(config.allowedToolNames) as string[] }
-            : {}),
-          maxSteps: normalizePositiveInteger(config.maxSteps, 4),
-          ...(shouldWriteBack && context.callContext.conversationId
-            ? {
-                writeBack: {
-                  target: {
-                    type: 'conversation' as const,
-                    id: context.callContext.conversationId,
-                  },
-                },
-              }
-            : {}),
-        });
+        const task = await context.host.startSubagentTask(buildSubagentDelegateTaskParams({
+          config,
+          prompt,
+          shouldWriteBack,
+          conversationId: context.callContext.conversationId,
+        }));
 
-        return toJsonValue(task);
+        return createSubagentTaskSummaryResult(task);
       },
     },
   };

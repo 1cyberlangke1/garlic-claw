@@ -2146,6 +2146,102 @@ describe('BuiltinPluginTransport', () => {
     });
   });
 
+  it('exposes background subagent task helpers through the host facade', async () => {
+    hostService.call
+      .mockResolvedValueOnce({
+        targetProviderId: 'openai',
+        targetModelId: 'gpt-5.2-mini',
+      })
+      .mockResolvedValueOnce({
+        id: 'subagent-task-1',
+        pluginId: 'builtin.subagent-delegate',
+        runtimeKind: 'builtin',
+        status: 'queued',
+        requestPreview: '请后台处理这条任务',
+        writeBackStatus: 'pending',
+        requestedAt: '2026-04-03T10:00:00.000Z',
+        startedAt: null,
+        finishedAt: null,
+      });
+
+    const transport = new BuiltinPluginTransport(
+      createSubagentDelegatePlugin(),
+      hostService as never,
+    );
+
+    const result = await transport.executeTool({
+      toolName: 'delegate_summary_background',
+      params: {
+        prompt: '请后台处理这条任务',
+        writeBack: true,
+      },
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+    });
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.subagent-delegate',
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      method: 'config.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.subagent-delegate',
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      method: 'subagent.task.start',
+      params: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: '请后台处理这条任务',
+              },
+            ],
+          },
+        ],
+        maxSteps: 4,
+        writeBack: {
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+          },
+        },
+      },
+    });
+    expect(result).toEqual({
+      id: 'subagent-task-1',
+      pluginId: 'builtin.subagent-delegate',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请后台处理这条任务',
+      writeBackStatus: 'pending',
+      requestedAt: '2026-04-03T10:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+    });
+  });
+
   it('exposes message.target.current.get and message.send through the builtin host facade', async () => {
     hostService.call
       .mockResolvedValueOnce({
