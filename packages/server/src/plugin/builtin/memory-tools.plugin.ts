@@ -1,6 +1,7 @@
 import {
   createMemoryRecallToolResult,
   createMemorySaveToolResult,
+  MEMORY_TOOLS_MANIFEST_TOOLS,
   readMemorySearchResults,
   readMemorySaveResultId,
   readOptionalStringParam,
@@ -31,38 +32,7 @@ export function createMemoryToolsPlugin(): BuiltinPluginDefinition {
       runtime: 'builtin',
       description: '提供长期记忆写入与检索能力的内建插件。',
       permissions: ['memory:read', 'memory:write'],
-      tools: [
-        {
-          name: 'save_memory',
-          description: '将重要信息保存到长期记忆中',
-          parameters: {
-            content: {
-              type: 'string',
-              description: '要记住的信息',
-              required: true,
-            },
-            category: {
-              type: 'string',
-              description: '记忆类别',
-            },
-            keywords: {
-              type: 'string',
-              description: '逗号分隔的关键词',
-            },
-          },
-        },
-        {
-          name: 'recall_memory',
-          description: '搜索用户长期记忆',
-          parameters: {
-            query: {
-              type: 'string',
-              description: '搜索查询',
-              required: true,
-            },
-          },
-        },
-      ],
+      tools: MEMORY_TOOLS_MANIFEST_TOOLS,
       hooks: [],
     },
     tools: {

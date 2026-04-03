@@ -25,12 +25,14 @@ const {
   CONVERSATION_TITLE_CONFIG_FIELDS,
   CONVERSATION_TITLE_DEFAULT_TITLE,
   CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES,
+  CORE_TOOLS_MANIFEST_TOOLS,
   KB_CONTEXT_CONFIG_FIELDS,
   KB_CONTEXT_DEFAULT_LIMIT,
   KB_CONTEXT_DEFAULT_PROMPT_PREFIX,
   MEMORY_CONTEXT_CONFIG_FIELDS,
   MEMORY_CONTEXT_DEFAULT_LIMIT,
   MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  MEMORY_TOOLS_MANIFEST_TOOLS,
   buildMessageLifecycleSummary,
   buildMessageReceivedSummary,
   buildResponseSendSummary,
@@ -1653,6 +1655,10 @@ test('plugin-sdk exposes shared automation tool param readers for author-side pl
   assert.deepEqual(createCalculateErrorResult('表达式计算失败'), {
     error: '表达式计算失败',
   });
+  assert.equal(MEMORY_TOOLS_MANIFEST_TOOLS.length, 2);
+  assert.equal(MEMORY_TOOLS_MANIFEST_TOOLS[0].name, 'save_memory');
+  assert.equal(CORE_TOOLS_MANIFEST_TOOLS.length, 3);
+  assert.equal(CORE_TOOLS_MANIFEST_TOOLS[2].name, 'calculate');
 
   assert.throws(
     () => readPluginCreateAutomationParams({

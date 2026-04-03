@@ -1,4 +1,5 @@
 import {
+  CORE_TOOLS_MANIFEST_TOOLS,
   createCalculateErrorResult,
   createCalculateSuccessResult,
   createCurrentTimeToolResult,
@@ -30,29 +31,7 @@ export function createCoreToolsPlugin(): BuiltinPluginDefinition {
       runtime: 'builtin',
       description: '提供时间、系统信息和计算器等基础能力的内建插件。',
       permissions: [],
-      tools: [
-        {
-          name: 'getCurrentTime',
-          description: '获取当前日期和时间',
-          parameters: {},
-        },
-        {
-          name: 'getSystemInfo',
-          description: '获取服务器的基本系统信息',
-          parameters: {},
-        },
-        {
-          name: 'calculate',
-          description: '执行数学计算',
-          parameters: {
-            expression: {
-              type: 'string',
-              description: '简单数学表达式，例如 2 + 3 * 4',
-              required: true,
-            },
-          },
-        },
-      ],
+      tools: CORE_TOOLS_MANIFEST_TOOLS,
       hooks: [],
     },
     tools: {

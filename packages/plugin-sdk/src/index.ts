@@ -897,6 +897,73 @@ export const SUBAGENT_DELEGATE_CONFIG_FIELDS = [
   },
 ] satisfies NonNullable<PluginManifest['config']>['fields'];
 
+const MEMORY_SAVE_TOOL_CAPABILITY: PluginCapability = {
+  name: 'save_memory',
+  description: '将重要信息保存到长期记忆中',
+  parameters: {
+    content: {
+      type: 'string',
+      description: '要记住的信息',
+      required: true,
+    },
+    category: {
+      type: 'string',
+      description: '记忆类别',
+    },
+    keywords: {
+      type: 'string',
+      description: '逗号分隔的关键词',
+    },
+  },
+};
+
+const MEMORY_RECALL_TOOL_CAPABILITY: PluginCapability = {
+  name: 'recall_memory',
+  description: '搜索用户长期记忆',
+  parameters: {
+    query: {
+      type: 'string',
+      description: '搜索查询',
+      required: true,
+    },
+  },
+};
+
+export const MEMORY_TOOLS_MANIFEST_TOOLS: NonNullable<PluginManifest['tools']> = [
+  MEMORY_SAVE_TOOL_CAPABILITY,
+  MEMORY_RECALL_TOOL_CAPABILITY,
+];
+
+const CORE_CURRENT_TIME_TOOL_CAPABILITY: PluginCapability = {
+  name: 'getCurrentTime',
+  description: '获取当前日期和时间',
+  parameters: {},
+};
+
+const CORE_SYSTEM_INFO_TOOL_CAPABILITY: PluginCapability = {
+  name: 'getSystemInfo',
+  description: '获取服务器的基本系统信息',
+  parameters: {},
+};
+
+const CORE_CALCULATE_TOOL_CAPABILITY: PluginCapability = {
+  name: 'calculate',
+  description: '执行数学计算',
+  parameters: {
+    expression: {
+      type: 'string',
+      description: '简单数学表达式，例如 2 + 3 * 4',
+      required: true,
+    },
+  },
+};
+
+export const CORE_TOOLS_MANIFEST_TOOLS: NonNullable<PluginManifest['tools']> = [
+  CORE_CURRENT_TIME_TOOL_CAPABILITY,
+  CORE_SYSTEM_INFO_TOOL_CAPABILITY,
+  CORE_CALCULATE_TOOL_CAPABILITY,
+];
+
 export interface PluginProviderRouterConfig {
   targetProviderId?: string;
   targetModelId?: string;
