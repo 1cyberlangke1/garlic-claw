@@ -1,40 +1,16 @@
 import {
   asChatBeforeModelPayload,
+  readCurrentProviderInfo,
   filterAllowedToolNames,
   parseCommaSeparatedNames,
   readLatestUserTextFromMessages,
+  readProviderRouterConfig,
   sameToolNames,
   sanitizeOptionalText,
+  textIncludesKeyword,
+  toHostJsonValue,
 } from '@garlic-claw/plugin-sdk';
-import type { JsonValue } from '../../common/types/json-value';
-import { toJsonValue } from '../../common/utils/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * Provider Router 插件配置。
- */
-interface ProviderRouterPluginConfig {
-  /** 目标 provider ID。 */
-  targetProviderId?: string;
-  /** 目标 model ID。 */
-  targetModelId?: string;
-  /** 允许暴露给模型的工具名列表，逗号分隔。 */
-  allowedToolNames?: string;
-  /** 命中后直接短路回复的关键字。 */
-  shortCircuitKeyword?: string;
-  /** 短路时写回的 assistant 内容。 */
-  shortCircuitReply?: string;
-}
-
-/**
- * 当前 provider 上下文摘要。
- */
-interface CurrentProviderInfo {
-  /** 当前 provider ID。 */
-  providerId?: string;
-  /** 当前 model ID。 */
-  modelId?: string;
-}
 
 /**
  * 创建 provider 上下文路由插件。
@@ -105,14 +81,16 @@ export function createProviderRouterPlugin(): BuiltinPluginDefinition {
        * @param context 插件执行上下文
        * @returns `pass` / `mutate` / `short-circuit`
        */
-      'chat:before-model': async (payload: JsonValue, context) => {
+      'chat:before-model': async (payload, context) => {
         const hookPayload = asChatBeforeModelPayload(payload);
-        const config = (await context.host.getConfig()) as ProviderRouterPluginConfig;
-        const currentProvider = (await context.host.getCurrentProvider()) as CurrentProviderInfo;
+        const config = readProviderRouterConfig(await context.host.getConfig());
+        const currentProvider = readCurrentProviderInfo(
+          await context.host.getCurrentProvider(),
+        );
         const latestUserText = readLatestUserTextFromMessages(hookPayload.request.messages);
 
-        if (shouldShortCircuit(latestUserText, config.shortCircuitKeyword)) {
-          return toJsonValue({
+        if (textIncludesKeyword(latestUserText, config.shortCircuitKeyword)) {
+          return toHostJsonValue({
             action: 'short-circuit',
             assistantContent: sanitizeOptionalText(config.shortCircuitReply)
               || '本轮请求已由 provider-router 直接处理。',
@@ -145,12 +123,12 @@ export function createProviderRouterPlugin(): BuiltinPluginDefinition {
           && !sameToolNames(allowedToolNames, currentToolNames);
 
         if (!shouldRoute && !shouldFilterTools) {
-          return toJsonValue({
+          return toHostJsonValue({
             action: 'pass',
           });
         }
 
-        return toJsonValue({
+        return toHostJsonValue({
           action: 'mutate',
           ...(shouldRoute
             ? {
@@ -163,19 +141,4 @@ export function createProviderRouterPlugin(): BuiltinPluginDefinition {
       },
     },
   };
-}
-
-/**
- * 判断本轮是否应直接 short-circuit。
- * @param latestUserText 最近一条用户消息文本
- * @param keyword 配置中的关键字
- * @returns 是否短路
- */
-function shouldShortCircuit(latestUserText: string, keyword?: string): boolean {
-  const normalizedKeyword = sanitizeOptionalText(keyword);
-  if (!normalizedKeyword) {
-    return false;
-  }
-
-  return latestUserText.includes(normalizedKeyword);
 }

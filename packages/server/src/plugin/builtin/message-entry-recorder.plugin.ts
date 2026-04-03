@@ -1,6 +1,7 @@
 import {
   buildMessageReceivedSummary,
   buildWaitingModelSummary,
+  persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
 import type {
@@ -55,13 +56,14 @@ export function createMessageEntryRecorderPlugin(): BuiltinPluginDefinition {
         const received = readPluginHookPayload<MessageReceivedHookPayload>(payload);
         const summary = buildMessageReceivedSummary(received);
 
-        await host.setStorage('message.received.last-entry', summary);
-        await host.writeLog({
-          level: 'info',
-          type: 'message:received:observed',
-          message: `会话 ${received.conversationId} 收到一条待处理用户消息`,
-          metadata: summary,
-        });
+        await persistPluginObservation(
+          host,
+          'message.received.last-entry',
+          summary,
+          'info',
+          `会话 ${received.conversationId} 收到一条待处理用户消息`,
+          'message:received:observed',
+        );
 
         return {
           action: 'pass',
@@ -71,13 +73,14 @@ export function createMessageEntryRecorderPlugin(): BuiltinPluginDefinition {
         const waiting = readPluginHookPayload<ChatWaitingModelHookPayload>(payload);
         const summary = buildWaitingModelSummary(waiting);
 
-        await host.setStorage('message.waiting.last-model-request', summary);
-        await host.writeLog({
-          level: 'info',
-          type: 'chat:waiting-model:observed',
-          message: `会话 ${waiting.conversationId} 即将进入模型调用`,
-          metadata: summary,
-        });
+        await persistPluginObservation(
+          host,
+          'message.waiting.last-model-request',
+          summary,
+          'info',
+          `会话 ${waiting.conversationId} 即将进入模型调用`,
+          'chat:waiting-model:observed',
+        );
 
         return undefined;
       },

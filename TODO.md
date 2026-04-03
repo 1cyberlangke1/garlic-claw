@@ -28,6 +28,52 @@
 - [ ] 新能力默认先判断能否落在 `plugin / MCP / skill / tool`，只有明确不能时才进入 core
 - [ ] 持续删除 builtin / plugin / skill / MCP 的核心特判路径
 
+## Core 接口目标
+
+- [ ] 把 core 对扩展暴露的接口面收敛成少量稳定 contract，不再继续边改边长
+- [ ] `plugin` exported surface 只保留：
+  - `tools`
+  - `hooks`
+  - `routes`
+  - `crons`
+  - `config`
+  - `commands`
+  - `supportedActions`
+- [ ] `supportedActions` 目标上只保留：
+  - `reload`
+  - `reconnect`
+  - `health-check`
+- [ ] `hook` 目标上只保留现有事件族，不再继续平铺新的私有 hook 大类：
+  - `chat:*`
+  - `message:*`
+  - `conversation:*`
+  - `automation:*`
+  - `tool:*`
+  - `response:*`
+  - `plugin:*`
+  - `cron:tick`
+  - `subagent:*`
+- [ ] Host API 目标上只保留下面这些能力族，不再为单个 builtin 发明新的私有 Host 方法：
+  - `config / plugin self`
+  - `conversation / message target / message send / conversation session`
+  - `user / memory / kb`
+  - `provider / persona`
+  - `llm`
+  - `storage / state`
+  - `log`
+  - `cron`
+  - `automation`
+  - `subagent`
+- [ ] 当前 Host API 真相源以 `packages/shared/src/types/plugin.ts` 的 `PluginHostMethod` 为准
+- [ ] 任何新增能力默认只能：
+  - 落到现有 Host API 能力族里扩一个 method
+  - 或落到现有 hook 事件族里扩一个 event
+  - 或完全放到 SDK / adapter / builtin authoring sugar
+- [ ] 不再接受这几种做法：
+  - 为单个 builtin 增加私有 Host API
+  - 为单个生态增加只在 core 内部可见的新协议层
+  - 把作者侧摘要、格式化、config reader、prompt builder 留在 core
+
 ## 统一扩展模型
 
 - [ ] 保持 `plugin` 作为宿主原生扩展协议
@@ -164,6 +210,8 @@
   - builtin `memory-context / kb-context` 的 prompt block config、`chat:before-model` 行块结果 helper 与知识裁剪 helper，已进一步外移到 `plugin-sdk`
   - builtin observer recorder 的执行/消息/回复摘要 builder，已进一步外移到 `plugin-sdk`
   - builtin `plugin-governance-recorder` 的治理摘要/日志文案与 `tool-audit` 的工具审计摘要，也已进一步外移到 `plugin-sdk`
+  - builtin observer / governance / tool-audit 里重复的 `storage.set + log.write` 作者侧持久化语法糖，已进一步外移到 `plugin-sdk` 的 `persistPluginObservation(...)`
+  - builtin `provider-router / persona-router` 的 config reader、host result reader 与关键字匹配 helper，也已进一步外移到 `plugin-sdk`
   - `chat-message-orchestration.service.ts` 已删掉一份本地工具白名单裁剪 helper，改直接复用 SDK 导出
   - `chat-message-generation.service.ts` 已把 start/retry 里的短路完成、任务启动、错误回写并回统一内部流程，不再保留两段近乎相同的主链控制流
   - `chat-message-completion.service.ts` 已把“双消息 metadata 写回 / 单消息 metadata 写回”并回统一内部持久化入口，不再保留两段近乎相同的 vision fallback 写回流程
@@ -187,6 +235,8 @@
   - 这轮连续两刀 `plugin runtime` 内部减法后，`packages/server/src/plugin` 已从 `16879` 降到 `16765`，`packages/server/src` 已从 `32395` 降到 `32281`
   - builtin 标题/上下文这批作者侧 helper 再外移后，`packages/server/src/plugin` 已继续从 `16765` 降到 `16640`，`packages/server/src` 已继续从 `32281` 降到 `32156`
   - builtin recorder / governance / tool-audit 这批摘要格式化继续外移后，`packages/server/src/plugin` 已继续从 `16640` 降到 `16331`，`packages/server/src` 已继续从 `32156` 降到 `31847`
+  - builtin observation persist helper 继续外移后，`packages/server/src/plugin` 已继续从 `16331` 降到 `16316`，`packages/server/src` 已继续从 `31847` 降到 `31832`
+  - builtin `provider-router / persona-router` 作者侧 reader/helper 继续外移后，`packages/server/src/plugin` 已继续从 `16316` 降到 `16266`，`packages/server/src` 已继续从 `31832` 降到 `31782`
   - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
   - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
   - 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
@@ -228,8 +278,8 @@
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `31847`
-- `packages/server/src/plugin`: `16331`
+- `packages/server/src`: `31782`
+- `packages/server/src/plugin`: `16266`
 - `packages/server/src/chat`: `3862`
 - `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message.helpers.ts`: `152`
@@ -247,6 +297,8 @@
 - `packages/server/src/plugin/plugin-route.controller.ts`: `180`
 - `packages/server/src/plugin/builtin/builtin-plugin.transport.ts`: `162`
 - `packages/server/src/plugin/builtin/builtin-plugin.types.ts`: `31`
+- `packages/server/src/plugin/builtin/provider-router.plugin.ts`: `138`
+- `packages/server/src/plugin/builtin/persona-router.plugin.ts`: `102`
 - `packages/server/src/plugin/plugin-subagent-task-request.helpers.ts`: `160`
 - `packages/server/src/plugin/plugin-runtime.service.ts`: `684`
 - `packages/server/src/plugin/plugin-runtime-operation-hooks.facade.ts`: `147`
@@ -283,6 +335,8 @@
 - [x] 本轮已把 builtin `memory-context / kb-context` 的 prompt block config、行块结果 helper 与知识裁剪 helper 收口到 `plugin-sdk`
 - [x] 本轮已把 builtin observer recorder 的执行/消息/回复摘要 builder 收口到 `plugin-sdk`
 - [x] 本轮已把 builtin `plugin-governance-recorder` 的治理摘要/日志文案与 `tool-audit` 的工具审计摘要收口到 `plugin-sdk`
+- [x] 本轮已把 builtin observer / governance / tool-audit 里重复的 `storage.set + log.write` 作者侧持久化语法糖收口到 `plugin-sdk` 的 `persistPluginObservation(...)`
+- [x] 本轮已把 builtin `provider-router / persona-router` 的 config/context reader、host result reader 与 keyword match helper 收口到 `plugin-sdk`
 - [x] 本轮已把 `plugin-subagent-task-request.helpers.ts` 里的重复 `normalizePositiveInteger(...)` 并回现有 validation helper
 - [x] 本轮已删掉 `builtin-plugin.types.ts` 里无人消费的 builtin 别名层，并让治理 handler 直接复用 SDK type
 - [x] 本轮已把 `chat-message-completion.service.ts` 的 vision fallback metadata 重复写回并回统一内部持久化入口
@@ -308,8 +362,16 @@
   - `packages/server/src` 非空生产代码：`32156 -> 31847`
   - `packages/server/src/plugin` 非空生产代码：`16640 -> 16331`
   - `packages/plugin-sdk/src/index.ts` 非空生产代码：`3876 -> 4081`
+- [x] 这一轮 builtin observation persist helper 外移也已确认满足“core 净减少、复杂度外移到 SDK”：
+  - `packages/server/src` 非空生产代码：`31847 -> 31832`
+  - `packages/server/src/plugin` 非空生产代码：`16331 -> 16316`
+  - `packages/plugin-sdk/src/index.ts` 非空生产代码：`4081 -> 4098`
+- [x] 这一轮 builtin `provider-router / persona-router` 作者侧 reader/helper 外移也已确认满足“core 净减少、复杂度外移到 SDK”：
+  - `packages/server/src` 非空生产代码：`31832 -> 31782`
+  - `packages/server/src/plugin` 非空生产代码：`16316 -> 16266`
+  - `packages/plugin-sdk/src/index.ts` 非空生产代码：`4098 -> 4200`
 - [ ] 后续切片先核对是否真的让 `core` 生产代码净减少；只在 `core` 内横向搬运的切片不再优先
 - [ ] 优先把作者侧复杂度继续外移到 `SDK / adapter`，而不是继续给 `core` 增加新 helper 层
 - [ ] 如继续收口 `plugin` 私有治理，只评估 conversation override 是否还需要独立入口；不再回到双轨全局启停
 - [ ] 复盘这轮新增的 `core helper / facade / service`，优先找出可以删回、并回，或迁到 `plugin-sdk / adapter` 的部分
-- [ ] 下一候选优先查看 `provider-router / persona-router` 与 recorder 类 builtin 里剩余的配置读取、短路判定和日志/storage scope 格式化，评估是否继续外移到 `plugin-sdk`
+- [ ] 下一候选优先查看 recorder / router builtin 里剩余的 storage scope key 格式化、短路结果 builder、默认 reply/prompt fallback，评估是否继续外移到 `plugin-sdk`

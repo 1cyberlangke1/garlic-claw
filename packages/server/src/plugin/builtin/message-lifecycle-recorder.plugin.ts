@@ -1,6 +1,7 @@
 import {
   buildConversationCreatedSummary,
   buildMessageLifecycleSummary,
+  persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
 import type {
@@ -59,16 +60,14 @@ export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition 
         const created = readPluginHookPayload<ConversationCreatedHookPayload>(payload);
         const summary = buildConversationCreatedSummary(created);
 
-        await host.setStorage(
+        await persistPluginObservation(
+          host,
           `conversation.${created.conversation.id}.last-created`,
           summary,
+          'info',
+          `会话 ${created.conversation.id} 已创建`,
+          'conversation:observed',
         );
-        await host.writeLog({
-          level: 'info',
-          type: 'conversation:observed',
-          message: `会话 ${created.conversation.id} 已创建`,
-          metadata: summary,
-        });
 
         return undefined;
       },
@@ -81,16 +80,14 @@ export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition 
           created.context.userId ?? null,
         );
 
-        await host.setStorage(
+        await persistPluginObservation(
+          host,
           `conversation.${created.conversationId}.last-message-created`,
           summary,
+          'info',
+          `会话 ${created.conversationId} 已创建一条 ${created.message.role} 消息`,
+          'message:observed',
         );
-        await host.writeLog({
-          level: 'info',
-          type: 'message:observed',
-          message: `会话 ${created.conversationId} 已创建一条 ${created.message.role} 消息`,
-          metadata: summary,
-        });
 
         return {
           action: 'pass',
@@ -108,16 +105,14 @@ export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition 
           updated.context.userId ?? null,
         );
 
-        await host.setStorage(
+        await persistPluginObservation(
+          host,
           `message.${updated.messageId}.last-updated`,
           summary,
+          'info',
+          `消息 ${updated.messageId} 已更新`,
+          'message:observed',
         );
-        await host.writeLog({
-          level: 'info',
-          type: 'message:observed',
-          message: `消息 ${updated.messageId} 已更新`,
-          metadata: summary,
-        });
 
         return {
           action: 'pass',
@@ -135,16 +130,14 @@ export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition 
           deleted.context.userId ?? null,
         );
 
-        await host.setStorage(
+        await persistPluginObservation(
+          host,
           `message.${deleted.messageId}.last-deleted`,
           summary,
+          'info',
+          `消息 ${deleted.messageId} 已删除`,
+          'message:observed',
         );
-        await host.writeLog({
-          level: 'info',
-          type: 'message:observed',
-          message: `消息 ${deleted.messageId} 已删除`,
-          metadata: summary,
-        });
 
         return undefined;
       },

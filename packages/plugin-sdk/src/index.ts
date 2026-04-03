@@ -769,6 +769,33 @@ export interface PluginConversationTitleConfig {
   maxMessages?: number;
 }
 
+export interface PluginProviderRouterConfig {
+  targetProviderId?: string;
+  targetModelId?: string;
+  allowedToolNames?: string;
+  shortCircuitKeyword?: string;
+  shortCircuitReply?: string;
+}
+
+export interface PluginCurrentProviderInfo {
+  providerId?: string;
+  modelId?: string;
+}
+
+export interface PluginPersonaRouterConfig {
+  targetPersonaId?: string;
+  switchKeyword?: string;
+}
+
+export interface PluginCurrentPersonaInfo {
+  personaId?: string;
+}
+
+export interface PluginPersonaSummaryInfo {
+  id?: string;
+  prompt?: string;
+}
+
 export interface PluginAutomationRunSummary extends JsonObject {
   automationId: string;
   automationName: string;
@@ -849,6 +876,24 @@ export interface PluginToolAuditSummary extends JsonObject {
   outputKind: string;
   userId: string | null;
   conversationId: string | null;
+}
+
+export async function persistPluginObservation<TSummary extends JsonObject>(
+  host: Pick<PluginHostFacade, 'setStorage' | 'writeLog'>,
+  storageKey: string,
+  summary: TSummary,
+  level: PluginEventLevel,
+  message: string,
+  type?: string,
+  metadata?: JsonObject,
+): Promise<void> {
+  await host.setStorage(storageKey, summary);
+  await host.writeLog({
+    level,
+    ...(type ? { type } : {}),
+    message,
+    metadata: metadata ?? summary,
+  });
 }
 
 export function createChatBeforeModelLineBlockResult(
@@ -984,6 +1029,11 @@ export function readPromptBlockConfig(value: JsonValue): PluginPromptBlockConfig
   };
 }
 
+export function textIncludesKeyword(text: string, keyword?: string): boolean {
+  const normalizedKeyword = sanitizeOptionalText(keyword);
+  return Boolean(normalizedKeyword) && text.includes(normalizedKeyword);
+}
+
 export function parseCommaSeparatedNames(raw?: string): string[] | undefined {
   const normalized = sanitizeOptionalText(raw);
   if (!normalized) {
@@ -1088,6 +1138,92 @@ export function readConversationTitleConfig(
     ...(typeof object.maxMessages === 'number'
       ? { maxMessages: object.maxMessages }
       : {}),
+  };
+}
+
+export function readProviderRouterConfig(
+  value: unknown,
+): PluginProviderRouterConfig {
+  const object = readJsonObjectValue(value);
+  if (!object) {
+    return {};
+  }
+
+  return {
+    ...(typeof object.targetProviderId === 'string'
+      ? { targetProviderId: object.targetProviderId }
+      : {}),
+    ...(typeof object.targetModelId === 'string'
+      ? { targetModelId: object.targetModelId }
+      : {}),
+    ...(typeof object.allowedToolNames === 'string'
+      ? { allowedToolNames: object.allowedToolNames }
+      : {}),
+    ...(typeof object.shortCircuitKeyword === 'string'
+      ? { shortCircuitKeyword: object.shortCircuitKeyword }
+      : {}),
+    ...(typeof object.shortCircuitReply === 'string'
+      ? { shortCircuitReply: object.shortCircuitReply }
+      : {}),
+  };
+}
+
+export function readCurrentProviderInfo(
+  value: unknown,
+): PluginCurrentProviderInfo {
+  const object = readJsonObjectValue(value);
+  if (!object) {
+    return {};
+  }
+
+  return {
+    ...(typeof object.providerId === 'string' ? { providerId: object.providerId } : {}),
+    ...(typeof object.modelId === 'string' ? { modelId: object.modelId } : {}),
+  };
+}
+
+export function readPersonaRouterConfig(
+  value: unknown,
+): PluginPersonaRouterConfig {
+  const object = readJsonObjectValue(value);
+  if (!object) {
+    return {};
+  }
+
+  return {
+    ...(typeof object.targetPersonaId === 'string'
+      ? { targetPersonaId: object.targetPersonaId }
+      : {}),
+    ...(typeof object.switchKeyword === 'string'
+      ? { switchKeyword: object.switchKeyword }
+      : {}),
+  };
+}
+
+export function readCurrentPersonaInfo(
+  value: unknown,
+): PluginCurrentPersonaInfo {
+  const object = readJsonObjectValue(value);
+  if (!object) {
+    return {};
+  }
+
+  return {
+    ...(typeof object.personaId === 'string' ? { personaId: object.personaId } : {}),
+  };
+}
+
+export function readPersonaSummaryInfo(
+  value: unknown,
+): PluginPersonaSummaryInfo {
+  const object = readJsonObjectValue(value);
+  if (!object) {
+    return {};
+  }
+
+  return {
+    ...(typeof object.id === 'string' ? { id: object.id } : {}),
+    ...(typeof object.prompt === 'string' ? { prompt: object.prompt } : {}),
   };
 }
 
@@ -1363,7 +1499,7 @@ export function readMemorySaveResultId(value: JsonValue): string | null {
 }
 
 export function readJsonObjectValue(
-  value: JsonValue,
+  value: unknown,
 ): Record<string, JsonValue> | null {
   return isJsonObjectValue(value)
     ? Object.fromEntries(Object.entries(value))

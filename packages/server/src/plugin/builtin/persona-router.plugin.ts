@@ -1,39 +1,14 @@
 import {
   asChatBeforeModelPayload,
+  readCurrentPersonaInfo,
   readLatestUserTextFromMessages,
+  readPersonaRouterConfig,
+  readPersonaSummaryInfo,
   sanitizeOptionalText,
+  textIncludesKeyword,
+  toHostJsonValue,
 } from '@garlic-claw/plugin-sdk';
-import type { JsonValue } from '../../common/types/json-value';
-import { toJsonValue } from '../../common/utils/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * Persona Router 插件配置。
- */
-interface PersonaRouterPluginConfig {
-  /** 命中后切换到的 persona ID。 */
-  targetPersonaId?: string;
-  /** 命中切换规则时使用的关键字。 */
-  switchKeyword?: string;
-}
-
-/**
- * 当前 persona 摘要。
- */
-interface CurrentPersonaInfo {
-  /** 当前 persona ID。 */
-  personaId?: string;
-}
-
-/**
- * 目标 persona 摘要。
- */
-interface PersonaSummary {
-  /** persona ID。 */
-  id?: string;
-  /** persona 提示词。 */
-  prompt?: string;
-}
 
 /**
  * 创建 persona 上下文路由插件。
@@ -87,36 +62,41 @@ export function createPersonaRouterPlugin(): BuiltinPluginDefinition {
        * @param context 插件执行上下文
        * @returns `pass` 或 `mutate`
        */
-      'chat:before-model': async (payload: JsonValue, context) => {
+      'chat:before-model': async (payload, context) => {
         const hookPayload = asChatBeforeModelPayload(payload);
-        const config = (await context.host.getConfig()) as PersonaRouterPluginConfig;
+        const config = readPersonaRouterConfig(await context.host.getConfig());
         const latestUserText = readLatestUserTextFromMessages(hookPayload.request.messages);
         const targetPersonaId = sanitizeOptionalText(config.targetPersonaId);
-        const switchKeyword = sanitizeOptionalText(config.switchKeyword);
-        if (!targetPersonaId || !switchKeyword || !latestUserText.includes(switchKeyword)) {
-          return toJsonValue({
+        if (!targetPersonaId || !textIncludesKeyword(latestUserText, config.switchKeyword)) {
+          return toHostJsonValue({
             action: 'pass',
           });
         }
 
-        const currentPersona = (await context.host.getCurrentPersona()) as CurrentPersonaInfo;
+        const currentPersona = readCurrentPersonaInfo(
+          await context.host.getCurrentPersona(),
+        );
         if (currentPersona.personaId === targetPersonaId) {
-          return toJsonValue({
+          return toHostJsonValue({
             action: 'pass',
           });
         }
 
-        const targetPersona = (await context.host.getPersona(targetPersonaId)) as PersonaSummary;
-        const activatedPersona = (await context.host.activatePersona(targetPersonaId)) as PersonaSummary;
+        const targetPersona = readPersonaSummaryInfo(
+          await context.host.getPersona(targetPersonaId),
+        );
+        const activatedPersona = readPersonaSummaryInfo(
+          await context.host.activatePersona(targetPersonaId),
+        );
         const prompt = sanitizeOptionalText(activatedPersona.prompt)
           || sanitizeOptionalText(targetPersona.prompt);
         if (!prompt) {
-          return toJsonValue({
+          return toHostJsonValue({
             action: 'pass',
           });
         }
 
-        return toJsonValue({
+        return toHostJsonValue({
           action: 'mutate',
           systemPrompt: prompt,
         });

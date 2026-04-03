@@ -1,5 +1,6 @@
 import {
   buildResponseSendSummary,
+  persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
 import type { ResponseAfterSendHookPayload } from '@garlic-claw/shared';
@@ -41,16 +42,14 @@ export function createResponseRecorderPlugin(): BuiltinPluginDefinition {
         const afterSend = readPluginHookPayload<ResponseAfterSendHookPayload>(payload);
         const summary = buildResponseSendSummary(afterSend);
 
-        await host.setStorage(
+        await persistPluginObservation(
+          host,
           `response.${afterSend.assistantMessageId}.last-sent`,
           summary,
+          'info',
+          `回复 ${afterSend.assistantMessageId} 已发送 (${afterSend.responseSource})`,
+          'response:sent',
         );
-        await host.writeLog({
-          level: 'info',
-          type: 'response:sent',
-          message: `回复 ${afterSend.assistantMessageId} 已发送 (${afterSend.responseSource})`,
-          metadata: summary,
-        });
 
         return undefined;
       },

@@ -7,6 +7,7 @@ import { createConversationTitlePlugin } from './conversation-title.plugin';
 import { createKbContextPlugin } from './kb-context.plugin';
 import { createMemoryContextPlugin } from './memory-context.plugin';
 import { createMemoryToolsPlugin } from './memory-tools.plugin';
+import { createPersonaRouterPlugin } from './persona-router.plugin';
 import { createProviderRouterPlugin } from './provider-router.plugin';
 import { createRouteInspectorPlugin } from './route-inspector.plugin';
 import { createSubagentDelegatePlugin } from './subagent-delegate.plugin';
@@ -780,6 +781,116 @@ describe('BuiltinPluginTransport', () => {
       providerId: 'openai',
       modelId: 'gpt-5.2',
       reason: 'matched-short-circuit-keyword',
+    });
+  });
+
+  it('switches persona through the persona router hook', async () => {
+    hostService.call
+      .mockResolvedValueOnce({
+        targetPersonaId: 'persona-writer',
+        switchKeyword: '#writer',
+      })
+      .mockResolvedValueOnce({
+        source: 'conversation',
+        personaId: 'builtin.default-assistant',
+        name: 'Default Assistant',
+      })
+      .mockResolvedValueOnce({
+        id: 'persona-writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+      })
+      .mockResolvedValueOnce({
+        source: 'conversation',
+        personaId: 'persona-writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+      });
+
+    const transport = new BuiltinPluginTransport(
+      createPersonaRouterPlugin(),
+      hostService as never,
+    );
+
+    const result = await transport.invokeHook({
+      hookName: 'chat:before-model',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activePersonaId: 'builtin.default-assistant',
+        },
+        request: {
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          systemPrompt: '你是 Garlic Claw',
+          messages: [
+            {
+              role: 'user',
+              content: '请切到写作模式 #writer',
+            },
+          ],
+          availableTools: [],
+        },
+      } satisfies ChatBeforeModelHookPayload,
+    });
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'config.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.current.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(3, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.get',
+      params: {
+        personaId: 'persona-writer',
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(4, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.activate',
+      params: {
+        personaId: 'persona-writer',
+      },
+    });
+    expect(result).toEqual({
+      action: 'mutate',
+      systemPrompt: '你是一个偏文学表达的写作助手。',
     });
   });
 

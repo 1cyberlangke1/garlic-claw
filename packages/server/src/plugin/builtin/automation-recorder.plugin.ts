@@ -1,5 +1,6 @@
 import {
   buildAutomationRunSummary,
+  persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
 import type { AutomationAfterRunHookPayload } from '@garlic-claw/shared';
@@ -41,16 +42,14 @@ export function createAutomationRecorderPlugin(): BuiltinPluginDefinition {
         const afterRun = readPluginHookPayload<AutomationAfterRunHookPayload>(payload);
         const summary = buildAutomationRunSummary(afterRun);
 
-        await host.setStorage(
+        await persistPluginObservation(
+          host,
           `automation.${afterRun.automation.id}.last-run`,
           summary,
+          summary.status === 'success' ? 'info' : 'warn',
+          `自动化 ${summary.automationName} 执行完成：${summary.status}`,
+          'automation:observed',
         );
-        await host.writeLog({
-          level: summary.status === 'success' ? 'info' : 'warn',
-          type: 'automation:observed',
-          message: `自动化 ${summary.automationName} 执行完成：${summary.status}`,
-          metadata: summary,
-        });
 
         return {
           action: 'pass',

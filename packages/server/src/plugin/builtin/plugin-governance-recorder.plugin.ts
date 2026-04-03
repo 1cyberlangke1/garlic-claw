@@ -1,15 +1,14 @@
 import {
   buildPluginGovernanceMessage,
   buildPluginGovernanceSummary,
+  persistPluginObservation,
   readPluginHookPayload,
-  type PluginGovernanceSummary,
 } from '@garlic-claw/plugin-sdk';
 import type {
   PluginErrorHookPayload,
   PluginLoadedHookPayload,
   PluginUnloadedHookPayload,
 } from '@garlic-claw/shared';
-import type { JsonObject } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**
@@ -105,23 +104,16 @@ export function createPluginGovernanceRecorderPlugin(): BuiltinPluginDefinition 
  * @returns 无返回值
  */
 async function persistGovernanceSummary(
-  host: {
-    setStorage: (key: string, value: JsonObject) => Promise<unknown>;
-    writeLog: (input: {
-      level: 'info' | 'warn';
-      type?: string;
-      message: string;
-      metadata?: JsonObject;
-    }) => Promise<boolean>;
-  },
+  host: Parameters<typeof persistPluginObservation>[0],
   pluginId: string,
-  summary: PluginGovernanceSummary,
+  summary: ReturnType<typeof buildPluginGovernanceSummary>,
 ): Promise<void> {
-  await host.setStorage(`plugin.${pluginId}.last-governance-event`, summary);
-  await host.writeLog({
-    level: summary.eventType === 'plugin:error' ? 'warn' : 'info',
-    type: 'plugin:observed',
-    message: buildPluginGovernanceMessage(summary),
-    metadata: summary,
-  });
+  await persistPluginObservation(
+    host,
+    `plugin.${pluginId}.last-governance-event`,
+    summary,
+    summary.eventType === 'plugin:error' ? 'warn' : 'info',
+    buildPluginGovernanceMessage(summary),
+    'plugin:observed',
+  );
 }

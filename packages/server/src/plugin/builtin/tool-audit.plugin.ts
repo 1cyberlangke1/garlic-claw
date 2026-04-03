@@ -1,5 +1,6 @@
 import {
   buildToolAuditSummary,
+  persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
 import type { ToolAfterCallHookPayload } from '@garlic-claw/shared';
@@ -44,16 +45,14 @@ export function createToolAuditPlugin(): BuiltinPluginDefinition {
           ? afterCall.pluginId ?? afterCall.source.id
           : `${afterCall.source.kind}.${afterCall.source.id}`;
 
-        await host.setStorage(
+        await persistPluginObservation(
+          host,
           `tool.${storageScope}.${afterCall.tool.name}.last-call`,
           summary,
+          'info',
+          `工具 ${afterCall.source.id}:${afterCall.tool.name} 执行完成`,
+          'tool:observed',
         );
-        await host.writeLog({
-          level: 'info',
-          type: 'tool:observed',
-          message: `工具 ${afterCall.source.id}:${afterCall.tool.name} 执行完成`,
-          metadata: summary,
-        });
 
         return {
           action: 'pass',

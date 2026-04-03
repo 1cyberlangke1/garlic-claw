@@ -25,15 +25,21 @@ const {
   filterAllowedToolNames,
   normalizePositiveInteger,
   parseCommaSeparatedNames,
+  persistPluginObservation,
+  readCurrentPersonaInfo,
+  readCurrentProviderInfo,
   readPluginCreateAutomationParams,
   readBooleanFlag,
   readConversationMessages,
+  readPersonaRouterConfig,
+  readPersonaSummaryInfo,
   readConversationSummary,
   readConversationTitleConfig,
   readMemorySearchResults,
   readMemorySaveResultId,
   readOptionalObjectParam,
   readPromptBlockConfig,
+  readProviderRouterConfig,
   readOptionalStringParam,
   readPluginHookPayload,
   readJsonObjectValue,
@@ -45,6 +51,7 @@ const {
   sanitizeConversationTitle,
   sanitizeOptionalText,
   shouldGenerateConversationTitle,
+  textIncludesKeyword,
 } = require('../dist/index.js');
 
 const WS_TYPE = {
@@ -714,6 +721,8 @@ test('plugin-sdk exposes shared author-side text helpers for builtin plugins', (
   assert.equal(sameToolNames(['alpha'], ['beta']), false);
   assert.equal(clipContextText('  short text  '), 'short text');
   assert.equal(clipContextText('a'.repeat(250)).length, 240);
+  assert.equal(textIncludesKeyword('请直接回复 #fast', '#fast'), true);
+  assert.equal(textIncludesKeyword('普通消息', ' #fast '), false);
 });
 
 test('plugin-sdk exposes shared json object readers for author-side plugins', () => {
@@ -818,6 +827,60 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
     {
       defaultTitle: 'New Chat',
       maxMessages: 6,
+    },
+  );
+  assert.deepEqual(
+    readProviderRouterConfig({
+      targetProviderId: 'anthropic',
+      targetModelId: 'claude-3-7-sonnet',
+      allowedToolNames: 'recall_memory',
+      shortCircuitKeyword: '#fast',
+      shortCircuitReply: '直接回复',
+    }),
+    {
+      targetProviderId: 'anthropic',
+      targetModelId: 'claude-3-7-sonnet',
+      allowedToolNames: 'recall_memory',
+      shortCircuitKeyword: '#fast',
+      shortCircuitReply: '直接回复',
+    },
+  );
+  assert.deepEqual(
+    readCurrentProviderInfo({
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+    }),
+    {
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+    },
+  );
+  assert.deepEqual(
+    readPersonaRouterConfig({
+      targetPersonaId: 'persona-writer',
+      switchKeyword: '#writer',
+    }),
+    {
+      targetPersonaId: 'persona-writer',
+      switchKeyword: '#writer',
+    },
+  );
+  assert.deepEqual(
+    readCurrentPersonaInfo({
+      personaId: 'persona-writer',
+    }),
+    {
+      personaId: 'persona-writer',
+    },
+  );
+  assert.deepEqual(
+    readPersonaSummaryInfo({
+      id: 'persona-writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+    }),
+    {
+      id: 'persona-writer',
+      prompt: '你是一个偏文学表达的写作助手。',
     },
   );
   assert.equal(shouldGenerateConversationTitle(' New Chat ', 'New Chat'), true);
@@ -1072,6 +1135,56 @@ test('plugin-sdk exposes shared recorder summary builders for builtin observer p
       conversationId: 'conversation-1',
     },
   );
+});
+
+test('plugin-sdk exposes shared observation persistence helper for builtin observer plugins', async () => {
+  const calls = [];
+  const summary = {
+    conversationId: 'conversation-1',
+    providerId: 'openai',
+  };
+
+  await persistPluginObservation(
+    {
+      async setStorage(key, value) {
+        calls.push({
+          kind: 'storage',
+          key,
+          value,
+        });
+        return value;
+      },
+      async writeLog(input) {
+        calls.push({
+          kind: 'log',
+          input,
+        });
+        return true;
+      },
+    },
+    'message.received.last-entry',
+    summary,
+    'info',
+    '会话 conversation-1 收到一条待处理用户消息',
+    'message:received:observed',
+  );
+
+  assert.deepEqual(calls, [
+    {
+      kind: 'storage',
+      key: 'message.received.last-entry',
+      value: summary,
+    },
+    {
+      kind: 'log',
+      input: {
+        level: 'info',
+        type: 'message:received:observed',
+        message: '会话 conversation-1 收到一条待处理用户消息',
+        metadata: summary,
+      },
+    },
+  ]);
 });
 
 test('plugin-sdk exposes json value kind summaries for author-side audit plugins', () => {
