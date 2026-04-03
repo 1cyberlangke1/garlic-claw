@@ -1,46 +1,15 @@
-import { readPluginHookPayload } from '@garlic-claw/plugin-sdk';
+import {
+  buildConversationCreatedSummary,
+  buildMessageLifecycleSummary,
+  readPluginHookPayload,
+} from '@garlic-claw/plugin-sdk';
 import type {
   ConversationCreatedHookPayload,
   MessageCreatedHookPayload,
   MessageDeletedHookPayload,
   MessageUpdatedHookPayload,
 } from '@garlic-claw/shared';
-import type { JsonObject } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * 会话创建摘要。
- */
-interface ConversationCreatedSummary extends JsonObject {
-  /** 会话 ID。 */
-  conversationId: string;
-  /** 标题长度。 */
-  titleLength: number;
-  /** 当前用户 ID。 */
-  userId: string | null;
-}
-
-/**
- * 消息生命周期摘要。
- */
-interface MessageLifecycleSummary extends JsonObject {
-  /** 生命周期事件名。 */
-  eventType: string;
-  /** 会话 ID。 */
-  conversationId: string;
-  /** 消息 ID。 */
-  messageId: string | null;
-  /** 角色。 */
-  role: string;
-  /** 文本长度。 */
-  contentLength: number;
-  /** part 数量。 */
-  partsCount: number;
-  /** 状态。 */
-  status: string | null;
-  /** 当前用户 ID。 */
-  userId: string | null;
-}
 
 /**
  * 创建会话/消息生命周期记录插件。
@@ -180,52 +149,5 @@ export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition 
         return undefined;
       },
     },
-  };
-}
-
-/**
- * 构建会话创建摘要。
- * @param payload 会话创建 Hook 载荷
- * @returns 可持久化的摘要
- */
-function buildConversationCreatedSummary(
-  payload: ConversationCreatedHookPayload,
-): ConversationCreatedSummary {
-  return {
-    conversationId: payload.conversation.id,
-    titleLength: payload.conversation.title.length,
-    userId: payload.context.userId ?? null,
-  };
-}
-
-/**
- * 构建消息生命周期摘要。
- * @param eventType 生命周期事件名
- * @param conversationId 会话 ID
- * @param message 消息快照
- * @param userId 当前用户 ID
- * @returns 可持久化的摘要
- */
-function buildMessageLifecycleSummary(
-  eventType: string,
-  conversationId: string,
-  message: {
-    id?: string | null;
-    role: string;
-    content: string | null;
-    parts: unknown[];
-    status?: string | null;
-  },
-  userId: string | null,
-): MessageLifecycleSummary {
-  return {
-    eventType,
-    conversationId,
-    messageId: message.id ?? null,
-    role: message.role,
-    contentLength: message.content?.length ?? 0,
-    partsCount: message.parts.length,
-    status: message.status ?? null,
-    userId,
   };
 }

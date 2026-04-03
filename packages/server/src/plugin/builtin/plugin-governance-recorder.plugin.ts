@@ -1,4 +1,9 @@
-import { readPluginHookPayload } from '@garlic-claw/plugin-sdk';
+import {
+  buildPluginGovernanceMessage,
+  buildPluginGovernanceSummary,
+  readPluginHookPayload,
+  type PluginGovernanceSummary,
+} from '@garlic-claw/plugin-sdk';
 import type {
   PluginErrorHookPayload,
   PluginLoadedHookPayload,
@@ -6,26 +11,6 @@ import type {
 } from '@garlic-claw/shared';
 import type { JsonObject } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * 插件治理事件摘要。
- */
-interface PluginGovernanceSummary extends JsonObject {
-  /** 事件类型。 */
-  eventType: string;
-  /** 插件 ID。 */
-  pluginId: string;
-  /** 运行形态。 */
-  runtimeKind: string;
-  /** 设备类型。 */
-  deviceType: string;
-  /** 错误类型。 */
-  errorType: string | null;
-  /** 错误消息。 */
-  errorMessage: string | null;
-  /** 发生时间。 */
-  occurredAt: string;
-}
 
 /**
  * 创建插件治理记录插件。
@@ -69,7 +54,7 @@ export function createPluginGovernanceRecorderPlugin(): BuiltinPluginDefinition 
     hooks: {
       'plugin:loaded': async (payload, { host }) => {
         const loaded = readPluginHookPayload<PluginLoadedHookPayload>(payload);
-        const summary = buildGovernanceSummary({
+        const summary = buildPluginGovernanceSummary({
           eventType: 'plugin:loaded',
           pluginId: loaded.plugin.id,
           runtimeKind: loaded.plugin.runtimeKind,
@@ -82,7 +67,7 @@ export function createPluginGovernanceRecorderPlugin(): BuiltinPluginDefinition 
       },
       'plugin:unloaded': async (payload, { host }) => {
         const unloaded = readPluginHookPayload<PluginUnloadedHookPayload>(payload);
-        const summary = buildGovernanceSummary({
+        const summary = buildPluginGovernanceSummary({
           eventType: 'plugin:unloaded',
           pluginId: unloaded.plugin.id,
           runtimeKind: unloaded.plugin.runtimeKind,
@@ -95,7 +80,7 @@ export function createPluginGovernanceRecorderPlugin(): BuiltinPluginDefinition 
       },
       'plugin:error': async (payload, { host }) => {
         const failed = readPluginHookPayload<PluginErrorHookPayload>(payload);
-        const summary = buildGovernanceSummary({
+        const summary = buildPluginGovernanceSummary({
           eventType: 'plugin:error',
           pluginId: failed.plugin.id,
           runtimeKind: failed.plugin.runtimeKind,
@@ -136,48 +121,7 @@ async function persistGovernanceSummary(
   await host.writeLog({
     level: summary.eventType === 'plugin:error' ? 'warn' : 'info',
     type: 'plugin:observed',
-    message: buildGovernanceMessage(summary),
+    message: buildPluginGovernanceMessage(summary),
     metadata: summary,
   });
-}
-
-/**
- * 构建统一治理摘要。
- * @param input 治理事件输入
- * @returns 可持久化摘要
- */
-function buildGovernanceSummary(input: {
-  eventType: string;
-  pluginId: string;
-  runtimeKind: string;
-  deviceType: string;
-  occurredAt: string;
-  errorType?: string;
-  errorMessage?: string;
-}): PluginGovernanceSummary {
-  return {
-    eventType: input.eventType,
-    pluginId: input.pluginId,
-    runtimeKind: input.runtimeKind,
-    deviceType: input.deviceType,
-    errorType: input.errorType ?? null,
-    errorMessage: input.errorMessage ?? null,
-    occurredAt: input.occurredAt,
-  };
-}
-
-/**
- * 构建统一治理日志文案。
- * @param summary 治理摘要
- * @returns 日志消息
- */
-function buildGovernanceMessage(summary: PluginGovernanceSummary): string {
-  if (summary.eventType === 'plugin:error') {
-    return `插件 ${summary.pluginId} 发生失败：${summary.errorType ?? 'unknown'}`;
-  }
-  if (summary.eventType === 'plugin:unloaded') {
-    return `插件 ${summary.pluginId} 已卸载`;
-  }
-
-  return `插件 ${summary.pluginId} 已加载`;
 }

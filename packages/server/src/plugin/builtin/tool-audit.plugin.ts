@@ -1,40 +1,9 @@
 import {
-  describeJsonValueKind,
+  buildToolAuditSummary,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
 import type { ToolAfterCallHookPayload } from '@garlic-claw/shared';
-import type { JsonObject } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * 工具调用审计摘要。
- */
-interface ToolAuditSummary extends JsonObject {
-  /** 工具来源类型。 */
-  sourceKind: string;
-  /** 工具来源 ID。 */
-  sourceId: string;
-  /** 被调用的插件 ID。 */
-  pluginId: string | null;
-  /** 插件运行形态。 */
-  runtimeKind: string | null;
-  /** 统一工具 ID。 */
-  toolId: string;
-  /** LLM 看到的调用名。 */
-  callName: string;
-  /** 工具名。 */
-  toolName: string;
-  /** 调用来源。 */
-  callSource: string;
-  /** 参数键列表。 */
-  paramKeys: string[];
-  /** 输出类型摘要。 */
-  outputKind: string;
-  /** 当前用户 ID。 */
-  userId: string | null;
-  /** 当前会话 ID。 */
-  conversationId: string | null;
-}
 
 /**
  * 创建工具调用审计插件。
@@ -92,30 +61,4 @@ export function createToolAuditPlugin(): BuiltinPluginDefinition {
       },
     },
   };
-}
-
-/**
- * 从 Hook 载荷中抽取稳定的工具调用摘要。
- * @param payload 工具调用后的 Hook 载荷
- * @returns 可持久化、可写日志的摘要对象
- */
-function buildToolAuditSummary(
-  payload: ToolAfterCallHookPayload,
-): ToolAuditSummary {
-  const summary: ToolAuditSummary = {
-    sourceKind: payload.source.kind,
-    sourceId: payload.source.id,
-    pluginId: payload.pluginId ?? null,
-    runtimeKind: payload.runtimeKind ?? null,
-    toolId: payload.tool.toolId,
-    callName: payload.tool.callName,
-    toolName: payload.tool.name,
-    callSource: payload.context.source,
-    paramKeys: Object.keys(payload.params),
-    outputKind: describeJsonValueKind(payload.output),
-    userId: payload.context.userId ?? null,
-    conversationId: payload.context.conversationId ?? null,
-  };
-
-  return summary;
 }

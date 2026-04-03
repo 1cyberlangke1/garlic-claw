@@ -1,35 +1,13 @@
-import { readPluginHookPayload } from '@garlic-claw/plugin-sdk';
+import {
+  buildMessageReceivedSummary,
+  buildWaitingModelSummary,
+  readPluginHookPayload,
+} from '@garlic-claw/plugin-sdk';
 import type {
   ChatWaitingModelHookPayload,
   MessageReceivedHookPayload,
 } from '@garlic-claw/shared';
-import type { JsonObject } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * 收到消息阶段摘要。
- */
-interface MessageReceivedSummary extends JsonObject {
-  conversationId: string;
-  providerId: string;
-  modelId: string;
-  contentLength: number;
-  partsCount: number;
-  userId: string | null;
-}
-
-/**
- * waiting-model 阶段摘要。
- */
-interface WaitingModelSummary extends JsonObject {
-  conversationId: string;
-  assistantMessageId: string;
-  providerId: string;
-  modelId: string;
-  messageCount: number;
-  toolCount: number;
-  userId: string | null;
-}
 
 /**
  * 创建收到消息 / waiting-model 记录插件。
@@ -104,42 +82,5 @@ export function createMessageEntryRecorderPlugin(): BuiltinPluginDefinition {
         return undefined;
       },
     },
-  };
-}
-
-/**
- * 构建收到消息阶段摘要。
- * @param payload 收到消息 Hook 载荷
- * @returns 可持久化的摘要
- */
-function buildMessageReceivedSummary(
-  payload: MessageReceivedHookPayload,
-): MessageReceivedSummary {
-  return {
-    conversationId: payload.conversationId,
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    contentLength: payload.message.content?.length ?? 0,
-    partsCount: payload.message.parts.length,
-    userId: payload.context.userId ?? null,
-  };
-}
-
-/**
- * 构建 waiting-model 阶段摘要。
- * @param payload waiting-model Hook 载荷
- * @returns 可持久化的摘要
- */
-function buildWaitingModelSummary(
-  payload: ChatWaitingModelHookPayload,
-): WaitingModelSummary {
-  return {
-    conversationId: payload.conversationId,
-    assistantMessageId: payload.assistantMessageId,
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    messageCount: payload.request.messages.length,
-    toolCount: payload.request.availableTools.length,
-    userId: payload.context.userId ?? null,
   };
 }

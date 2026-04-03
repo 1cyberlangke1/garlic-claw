@@ -2,7 +2,16 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildAutomationRunSummary,
+  buildConversationCreatedSummary,
+  buildPluginGovernanceMessage,
+  buildPluginGovernanceSummary,
   buildConversationTitlePrompt,
+  buildMessageLifecycleSummary,
+  buildMessageReceivedSummary,
+  buildResponseSendSummary,
+  buildToolAuditSummary,
+  buildWaitingModelSummary,
   clipContextText,
   createChatBeforeModelLineBlockResult,
   DeviceType,
@@ -829,6 +838,239 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(
     sanitizeConversationTitle('「咖啡店会员系统设计」\n补充解释'),
     '咖啡店会员系统设计',
+  );
+});
+
+test('plugin-sdk exposes shared recorder summary builders for builtin observer plugins', () => {
+  assert.deepEqual(
+    buildAutomationRunSummary({
+      context: {
+        source: 'automation-hook',
+        userId: 'user-1',
+      },
+      automation: {
+        id: 'automation-1',
+        name: '日报推送',
+        trigger: {
+          type: 'cron',
+        },
+        actions: [],
+      },
+      status: 'success',
+      results: [{ ok: true }],
+    }),
+    {
+      automationId: 'automation-1',
+      automationName: '日报推送',
+      status: 'success',
+      triggerType: 'cron',
+      resultCount: 1,
+    },
+  );
+  assert.deepEqual(
+    buildMessageReceivedSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+      },
+      conversationId: 'conversation-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      message: {
+        role: 'user',
+        content: '你好',
+        parts: [{ type: 'text', text: '你好' }],
+      },
+    }),
+    {
+      conversationId: 'conversation-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      contentLength: 2,
+      partsCount: 1,
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildWaitingModelSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+      },
+      conversationId: 'conversation-1',
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        systemPrompt: '你是 Garlic Claw',
+        messages: [{ role: 'user', content: '你好' }],
+        availableTools: [{ name: 'recall_memory' }],
+      },
+    }),
+    {
+      conversationId: 'conversation-1',
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      messageCount: 1,
+      toolCount: 1,
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildConversationCreatedSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+      },
+      conversation: {
+        id: 'conversation-1',
+        title: '新会话',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z',
+      },
+    }),
+    {
+      conversationId: 'conversation-1',
+      titleLength: 3,
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildMessageLifecycleSummary(
+      'message:updated',
+      'conversation-1',
+      {
+        id: 'message-1',
+        role: 'assistant',
+        content: '已更新',
+        parts: [{ type: 'text', text: '已更新' }],
+        status: 'completed',
+      },
+      'user-1',
+    ),
+    {
+      eventType: 'message:updated',
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      role: 'assistant',
+      contentLength: 3,
+      partsCount: 1,
+      status: 'completed',
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildResponseSendSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      responseSource: 'model',
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      assistantContent: '回复内容',
+      assistantParts: [{ type: 'text', text: '回复内容' }],
+      toolCalls: [{ toolCallId: 'tool-1', toolName: 'recall_memory', input: {} }],
+      toolResults: [{ toolCallId: 'tool-1', toolName: 'recall_memory', output: {} }],
+      sentAt: '2026-04-03T00:00:00.000Z',
+    }),
+    {
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      responseSource: 'model',
+      contentLength: 4,
+      toolCallCount: 1,
+      toolResultCount: 1,
+      sentAt: '2026-04-03T00:00:00.000Z',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+    },
+  );
+  assert.deepEqual(
+    buildPluginGovernanceSummary({
+      eventType: 'plugin:error',
+      pluginId: 'builtin.tool-audit',
+      runtimeKind: 'builtin',
+      deviceType: 'builtin',
+      occurredAt: '2026-04-03T00:00:00.000Z',
+      errorType: 'timeout',
+      errorMessage: 'tool timeout',
+    }),
+    {
+      eventType: 'plugin:error',
+      pluginId: 'builtin.tool-audit',
+      runtimeKind: 'builtin',
+      deviceType: 'builtin',
+      errorType: 'timeout',
+      errorMessage: 'tool timeout',
+      occurredAt: '2026-04-03T00:00:00.000Z',
+    },
+  );
+  assert.equal(
+    buildPluginGovernanceMessage({
+      eventType: 'plugin:unloaded',
+      pluginId: 'builtin.tool-audit',
+      runtimeKind: 'builtin',
+      deviceType: 'builtin',
+      errorType: null,
+      errorMessage: null,
+      occurredAt: '2026-04-03T00:00:00.000Z',
+    }),
+    '插件 builtin.tool-audit 已卸载',
+  );
+  assert.deepEqual(
+    buildToolAuditSummary({
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      source: {
+        kind: 'plugin',
+        id: 'builtin.memory-tools',
+        label: '记忆工具',
+      },
+      tool: {
+        toolId: 'tool-1',
+        callName: 'save_memory',
+        name: 'save_memory',
+        description: '保存记忆',
+        parameters: {
+          content: {
+            type: 'string',
+            required: true,
+          },
+        },
+      },
+      pluginId: 'builtin.memory-tools',
+      runtimeKind: 'builtin',
+      params: {
+        content: '用户喜欢咖啡',
+      },
+      output: {
+        id: 'memory-1',
+      },
+    }),
+    {
+      sourceKind: 'plugin',
+      sourceId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory-tools',
+      runtimeKind: 'builtin',
+      toolId: 'tool-1',
+      callName: 'save_memory',
+      toolName: 'save_memory',
+      callSource: 'chat-tool',
+      paramKeys: ['content'],
+      outputKind: 'object',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+    },
   );
 });
 

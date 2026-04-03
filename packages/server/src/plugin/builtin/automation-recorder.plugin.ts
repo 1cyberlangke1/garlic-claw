@@ -1,23 +1,9 @@
-import { readPluginHookPayload } from '@garlic-claw/plugin-sdk';
+import {
+  buildAutomationRunSummary,
+  readPluginHookPayload,
+} from '@garlic-claw/plugin-sdk';
 import type { AutomationAfterRunHookPayload } from '@garlic-claw/shared';
-import type { JsonObject } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * 自动化执行摘要。
- */
-interface AutomationRunSummary extends JsonObject {
-  /** 自动化 ID。 */
-  automationId: string;
-  /** 自动化名称。 */
-  automationName: string;
-  /** 最终执行状态。 */
-  status: string;
-  /** 触发器类型。 */
-  triggerType: string;
-  /** 结果条数。 */
-  resultCount: number;
-}
 
 /**
  * 创建自动化执行记录插件。
@@ -71,22 +57,5 @@ export function createAutomationRecorderPlugin(): BuiltinPluginDefinition {
         };
       },
     },
-  };
-}
-
-/**
- * 从 Hook 负载中抽取稳定的执行摘要。
- * @param payload 自动化执行后的 Hook 负载
- * @returns 可持久化、可写日志的摘要对象
- */
-function buildAutomationRunSummary(
-  payload: AutomationAfterRunHookPayload,
-): AutomationRunSummary {
-  return {
-    automationId: payload.automation.id,
-    automationName: payload.automation.name,
-    status: payload.status,
-    triggerType: payload.automation.trigger.type,
-    resultCount: payload.results.length,
   };
 }
