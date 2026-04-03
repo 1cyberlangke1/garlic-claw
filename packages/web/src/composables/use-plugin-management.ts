@@ -379,7 +379,7 @@ export function usePluginManagement(options?: {
    * 保存当前插件作用域设置，并刷新列表与详情。
    * @param scope 新作用域设置
    */
-  async function saveScope(scope: PluginScopeSettings) {
+  async function saveScope(conversations: PluginScopeSettings['conversations']) {
     if (!selectedPlugin.value) {
       return
     }
@@ -388,7 +388,10 @@ export function usePluginManagement(options?: {
     error.value = null
     notice.value = null
     try {
-      scopeSettings.value = await api.updatePluginScope(selectedPlugin.value.name, scope)
+      scopeSettings.value = await api.updatePluginScope(
+        selectedPlugin.value.name,
+        conversations,
+      )
       notice.value = '插件作用域已保存'
       await reloadPluginListSilently()
       await refreshSelectedDetails(selectedPlugin.value.name)

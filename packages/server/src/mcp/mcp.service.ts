@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { McpServerConfig } from '@garlic-claw/shared';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
+import { ToolSettingsService } from '../tool/tool-settings.service';
 import { McpConfigService } from './mcp-config.service';
 
 interface McpToolListResponse {
@@ -58,10 +60,12 @@ export class McpService {
   private clients = new Map<string, Client>();
   private serverRecords = new Map<string, McpServerRuntimeRecord>();
   private startupWarmupPromise: Promise<void> | null = null;
+  private toolSettingsService: ToolSettingsService | null | undefined;
 
   constructor(
-    private configService: ConfigService,
+    private readonly configService: ConfigService,
     private readonly mcpConfig: McpConfigService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async warmupOnStartup(): Promise<void> {
@@ -91,7 +95,11 @@ export class McpService {
 
       const snapshot = await this.mcpConfig.getSnapshot();
       for (const server of snapshot.servers) {
-        this.setInitialServerRecord(server);
+        const enabled = this.isServerEnabled(server.name);
+        this.setInitialServerRecord(server, enabled);
+        if (!enabled) {
+          continue;
+        }
         await this.connectMcpServer(server.name, server);
       }
     } catch (error) {
@@ -106,12 +114,58 @@ export class McpService {
     }
 
     await this.disconnectServer(name);
-    this.setInitialServerRecord(config);
+    const enabled = this.isServerEnabled(config.name);
+    this.setInitialServerRecord(config, enabled);
+    if (!enabled) {
+      return;
+    }
     await this.connectMcpServer(config.name, config);
+  }
+
+  async applyServerConfig(
+    config: McpServerConfig,
+    previousName?: string,
+  ): Promise<void> {
+    const normalizedPreviousName = previousName?.trim();
+    if (normalizedPreviousName && normalizedPreviousName !== config.name) {
+      await this.removeServer(normalizedPreviousName);
+    }
+
+    await this.disconnectServer(config.name);
+    const enabled = this.isServerEnabled(config.name);
+    this.setInitialServerRecord(config, enabled);
+    if (!enabled) {
+      return;
+    }
+
+    await this.connectMcpServer(config.name, config);
+  }
+
+  async removeServer(name: string): Promise<void> {
+    const normalizedName = name.trim();
+    await this.disconnectServer(normalizedName);
+    this.serverRecords.delete(normalizedName);
   }
 
   async reconnectServer(name: string): Promise<void> {
     await this.reloadServer(name);
+  }
+
+  async setServerEnabled(name: string, enabled: boolean): Promise<void> {
+    const normalizedName = name.trim();
+    const config = await this.resolveServerConfig(normalizedName);
+    if (!config) {
+      throw new Error(`MCP server not found: ${normalizedName}`);
+    }
+
+    await this.disconnectServer(normalizedName);
+    if (!enabled) {
+      this.setDisabledServerRecord(config);
+      return;
+    }
+
+    this.setInitialServerRecord(config, true);
+    await this.connectMcpServer(config.name, config);
   }
 
   private async connectMcpServer(name: string, config: McpServerConfig) {
@@ -239,7 +293,7 @@ export class McpService {
         ...record.status,
       });
 
-      if (!record.status.connected) {
+      if (!record.status.connected || !record.status.enabled) {
         continue;
       }
 
@@ -261,6 +315,11 @@ export class McpService {
     toolName: string;
     arguments: JsonObject;
   }): Promise<JsonValue> {
+    const record = this.serverRecords.get(input.serverName);
+    if (record && !record.status.enabled) {
+      throw new Error(`MCP 服务器 "${input.serverName}" 已禁用`);
+    }
+
     const client = this.clients.get(input.serverName);
     if (!client) {
       this.updateServerStatus(input.serverName, {
@@ -315,19 +374,43 @@ export class McpService {
     this.serverRecords.set(name, existing);
   }
 
-  private setInitialServerRecord(config: McpServerConfig): void {
+  private setInitialServerRecord(
+    config: McpServerConfig,
+    enabled = this.isServerEnabled(config.name),
+  ): void {
     this.serverRecords.set(config.name, {
       config,
       status: {
         name: config.name,
         connected: false,
-        enabled: true,
+        enabled,
         health: 'unknown',
         lastError: null,
         lastCheckedAt: null,
       },
       tools: [],
     });
+  }
+
+  private setDisabledServerRecord(config: McpServerConfig): void {
+    this.serverRecords.set(config.name, {
+      config,
+      status: {
+        name: config.name,
+        connected: false,
+        enabled: false,
+        health: 'unknown',
+        lastError: null,
+        lastCheckedAt: new Date().toISOString(),
+      },
+      tools: [],
+    });
+  }
+
+  private async resolveServerConfig(name: string): Promise<McpServerConfig | null> {
+    return (await this.mcpConfig.getServer(name))
+      ?? this.serverRecords.get(name)?.config
+      ?? null;
   }
 
   private async disconnectAllClients(): Promise<void> {
@@ -353,5 +436,23 @@ export class McpService {
       }
       this.clients.delete(name);
     }
+  }
+
+  private getToolSettingsService(): ToolSettingsService | null {
+    if (this.toolSettingsService === undefined) {
+      try {
+        this.toolSettingsService = this.moduleRef.get(ToolSettingsService, {
+          strict: false,
+        });
+      } catch {
+        this.toolSettingsService = null;
+      }
+    }
+
+    return this.toolSettingsService ?? null;
+  }
+
+  private isServerEnabled(name: string): boolean {
+    return this.getToolSettingsService()?.getSourceEnabled('mcp', name) ?? true;
   }
 }

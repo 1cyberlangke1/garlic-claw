@@ -1,4 +1,5 @@
 import type {
+  DeviceType,
   PluginConfigSchema,
   PluginConversationSessionInfo,
   PluginInfo,
@@ -39,6 +40,10 @@ describe('PluginController', () => {
     runAction: jest.fn(),
   };
 
+  const pluginRemoteBootstrap = {
+    issueBootstrap: jest.fn(),
+  };
+
   const configSchema: PluginConfigSchema = {
     fields: [
       {
@@ -60,7 +65,41 @@ describe('PluginController', () => {
       pluginRuntimeOrchestrator as never,
       pluginCronService as never,
       pluginAdmin as never,
+      pluginRemoteBootstrap as never,
     );
+  });
+
+  it('issues remote plugin bootstrap connection info through the dedicated service', async () => {
+    pluginRemoteBootstrap.issueBootstrap.mockResolvedValue({
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc' as DeviceType,
+      serverUrl: 'ws://127.0.0.1:23331',
+      token: 'signed-remote-token',
+      tokenExpiresIn: '30d',
+    });
+
+    await expect(
+      controller.createRemoteBootstrap({
+        pluginName: 'remote.pc-host',
+        deviceType: 'pc' as DeviceType,
+        displayName: '电脑助手',
+        description: '远程 PC 插件',
+        version: '1.0.0',
+      } as never),
+    ).resolves.toEqual({
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+      serverUrl: 'ws://127.0.0.1:23331',
+      token: 'signed-remote-token',
+      tokenExpiresIn: '30d',
+    });
+    expect(pluginRemoteBootstrap.issueBootstrap).toHaveBeenCalledWith({
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+      displayName: '电脑助手',
+      description: '远程 PC 插件',
+      version: '1.0.0',
+    });
   });
 
   it('returns plugin config snapshots from the plugin service', async () => {
@@ -104,7 +143,7 @@ describe('PluginController', () => {
     );
   });
 
-  it('returns and updates plugin scope rules', async () => {
+  it('returns plugin scope rules and keeps defaultEnabled unchanged when updating conversation overrides', async () => {
     pluginService.getPluginScope.mockResolvedValue({
       defaultEnabled: true,
       conversations: {
@@ -112,7 +151,7 @@ describe('PluginController', () => {
       },
     });
     pluginService.updatePluginScope.mockResolvedValue({
-      defaultEnabled: false,
+      defaultEnabled: true,
       conversations: {
         'conversation-1': true,
       },
@@ -126,17 +165,25 @@ describe('PluginController', () => {
     });
     await expect(
       controller.updatePluginScope('builtin.memory-context', {
-        defaultEnabled: false,
         conversations: {
           'conversation-1': true,
         },
       } as never),
     ).resolves.toEqual({
-      defaultEnabled: false,
+      defaultEnabled: true,
       conversations: {
         'conversation-1': true,
       },
     });
+    expect(pluginService.updatePluginScope).toHaveBeenCalledWith(
+      'builtin.memory-context',
+      {
+        defaultEnabled: true,
+        conversations: {
+          'conversation-1': true,
+        },
+      },
+    );
     expect(pluginRuntimeOrchestrator.refreshPluginGovernance).toHaveBeenCalledWith(
       'builtin.memory-context',
     );

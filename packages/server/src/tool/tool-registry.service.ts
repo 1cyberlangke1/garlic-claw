@@ -6,6 +6,8 @@ import type {
   ToolOverview,
   ToolSourceInfo,
 } from '@garlic-claw/shared';
+import { McpService } from '../mcp/mcp.service';
+import { PluginService } from '../plugin/plugin.service';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { McpToolProvider } from './mcp-tool.provider';
 import { PluginToolProvider } from './plugin-tool.provider';
@@ -39,6 +41,8 @@ export class ToolRegistryService {
     private readonly mcpToolProvider: McpToolProvider,
     @Inject(forwardRef(() => SkillToolProvider))
     private readonly skillToolProvider?: SkillToolProvider,
+    private readonly mcpService?: McpService,
+    private readonly pluginService?: PluginService,
   ) {}
 
   async listTools(input: ToolFilterInput): Promise<ToolRecord[]> {
@@ -71,7 +75,47 @@ export class ToolRegistryService {
       throw new NotFoundException(`Tool source not found: ${kind}:${id}`);
     }
 
+    if (kind === 'plugin' && this.pluginService) {
+      const currentScope = await this.pluginService.getPluginScope(id);
+      await this.pluginService.updatePluginScope(id, {
+        ...currentScope,
+        defaultEnabled: enabled,
+      });
+      this.settings.setSourceEnabled(kind, id, enabled);
+      const updatedState = await this.collectProviderState();
+      const updated = this.buildOverviewFromProviderState(updatedState).sources.find((source) =>
+        source.kind === kind && source.id === id);
+      if (!updated) {
+        throw new NotFoundException(`Tool source not found after update: ${kind}:${id}`);
+      }
+
+      return updated;
+    }
+
     this.settings.setSourceEnabled(kind, id, enabled);
+    if (kind === 'mcp' && this.mcpService) {
+      await this.mcpService.setServerEnabled(id, enabled);
+      const updatedState = await this.collectProviderState();
+      const updated = this.buildOverviewFromProviderState(updatedState).sources.find((source) =>
+        source.kind === kind && source.id === id);
+      if (!updated) {
+        throw new NotFoundException(`Tool source not found after update: ${kind}:${id}`);
+      }
+
+      return updated;
+    }
+
+    if (kind === 'skill') {
+      const updatedState = await this.collectProviderState();
+      const updated = this.buildOverviewFromProviderState(updatedState).sources.find((source) =>
+        source.kind === kind && source.id === id);
+      if (!updated) {
+        throw new NotFoundException(`Tool source not found after update: ${kind}:${id}`);
+      }
+
+      return updated;
+    }
+
     const updated = this.buildOverviewFromProviderState(providerState).sources.find((source) =>
       source.kind === kind && source.id === id);
     if (!updated) {

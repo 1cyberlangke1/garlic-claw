@@ -74,7 +74,6 @@ export class SkillDiscoveryService {
           promptPreview: buildPromptPreview(parsed.content),
           toolPolicy,
           governance: {
-            enabled: true,
             trustLevel: 'prompt-only',
           },
           assets,

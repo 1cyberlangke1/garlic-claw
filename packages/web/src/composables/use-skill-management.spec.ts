@@ -36,7 +36,6 @@ describe('useSkillManagement', () => {
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'asset-read',
         },
         assets: [
@@ -64,7 +63,6 @@ describe('useSkillManagement', () => {
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'asset-read',
         },
         assets: [
@@ -91,7 +89,6 @@ describe('useSkillManagement', () => {
         deny: [],
       },
       governance: {
-        enabled: payload.enabled ?? true,
         trustLevel: payload.trustLevel ?? 'asset-read',
       },
       assets: [
@@ -120,7 +117,6 @@ describe('useSkillManagement', () => {
             deny: [],
           },
           governance: {
-            enabled: true,
             trustLevel: 'asset-read',
           },
         },
@@ -148,7 +144,7 @@ describe('useSkillManagement', () => {
     expect(state.skills.value).toHaveLength(1)
     expect(state.conversationSkillState.value?.activeSkillIds).toEqual(['project/planner'])
     expect(state.packageCount.value).toBe(1)
-    expect(state.disabledCount.value).toBe(0)
+    expect(state.scriptCapableCount.value).toBe(0)
   })
 
   it('toggles a skill for the current conversation', async () => {
@@ -188,20 +184,17 @@ describe('useSkillManagement', () => {
     })
 
     await state.updateSkillGovernance('project/planner', {
-      enabled: false,
       trustLevel: 'local-script',
     })
     await flushPromises()
 
     expect(api.updateSkillGovernance).toHaveBeenCalledWith('project/planner', {
-      enabled: false,
       trustLevel: 'local-script',
     })
     expect(state.skills.value[0]?.governance).toEqual({
-      enabled: false,
       trustLevel: 'local-script',
     })
     expect(state.conversationSkillState.value?.activeSkillIds).toEqual([])
-    expect(state.disabledCount.value).toBe(1)
+    expect(state.scriptCapableCount.value).toBe(1)
   })
 })

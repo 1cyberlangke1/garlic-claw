@@ -256,6 +256,40 @@ test('resolveManifest synthesizes message hook descriptors for commands and grou
   );
 });
 
+test('PluginClient.fromBootstrap creates a client directly from bootstrap connection info', () => {
+  const client = PluginClient.fromBootstrap({
+    pluginName: 'remote.pc-host',
+    deviceType: DeviceType.API,
+    serverUrl: 'ws://127.0.0.1:23331',
+    token: 'remote-bootstrap-token',
+    tokenExpiresIn: '30d',
+  }, {
+    manifest: {
+      name: 'Remote PC Host',
+      version: '1.0.0',
+      permissions: [],
+      tools: [],
+    },
+  });
+
+  assert.equal(client.options.serverUrl, 'ws://127.0.0.1:23331');
+  assert.equal(client.options.token, 'remote-bootstrap-token');
+  assert.equal(client.options.pluginName, 'remote.pc-host');
+  assert.equal(client.options.deviceType, DeviceType.API);
+  assert.deepEqual(client.resolveManifest(), {
+    id: 'remote.pc-host',
+    name: 'Remote PC Host',
+    version: '1.0.0',
+    runtime: 'remote',
+    description: undefined,
+    permissions: [],
+    tools: [],
+    hooks: [],
+    config: undefined,
+    routes: [],
+  });
+});
+
 test('host facade exposes plugin log listing', async () => {
   const client = createClient();
   const sent = installHostCallMock(client, {

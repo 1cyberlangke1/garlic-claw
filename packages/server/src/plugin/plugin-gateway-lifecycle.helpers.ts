@@ -21,6 +21,13 @@ export interface PluginGatewayLifecycleConnection {
   lastHeartbeatAt: number;
 }
 
+interface PluginGatewayVerifiedToken {
+  role?: string;
+  authKind?: string;
+  pluginName?: string;
+  deviceType?: string;
+}
+
 interface SendGatewayMessageInput {
   ws: WebSocket;
   type: string;
@@ -32,15 +39,28 @@ export async function authenticatePluginGatewayConnection(input: {
   ws: WebSocket;
   connection: PluginGatewayLifecycleConnection;
   payload: AuthPayload;
-  verifyToken: (token: string) => { role?: string };
+  verifyToken: (token: string) => PluginGatewayVerifiedToken;
   connectionByPluginId: Map<string, { ws: WebSocket }>;
   logWarn?: (message: string) => void;
   logInfo?: (message: string) => void;
   sendMessage: (input: SendGatewayMessageInput) => void;
 }): Promise<void> {
   const verified = input.verifyToken(input.payload.token);
-  if (verified.role !== 'admin' && verified.role !== 'super_admin') {
-    throw new Error('只有管理员可以接入远程插件');
+  const isAdminToken = verified.role === 'admin' || verified.role === 'super_admin';
+  const isRemotePluginToken = verified.role === 'remote_plugin'
+    && verified.authKind === 'remote-plugin';
+  if (!isAdminToken && !isRemotePluginToken) {
+    throw new Error('只有管理员或专用远程插件令牌可以接入远程插件');
+  }
+
+  if (
+    isRemotePluginToken
+    && (
+      verified.pluginName !== input.payload.pluginName
+      || verified.deviceType !== input.payload.deviceType
+    )
+  ) {
+    throw new Error('远程插件令牌与当前插件标识不匹配');
   }
 
   const previousConnection = input.connectionByPluginId.get(input.payload.pluginName);

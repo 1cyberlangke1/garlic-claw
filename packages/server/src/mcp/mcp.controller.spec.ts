@@ -7,7 +7,8 @@ describe('McpController', () => {
     deleteServer: jest.fn(),
   };
   const mcpService = {
-    reloadServersFromConfig: jest.fn(),
+    applyServerConfig: jest.fn(),
+    removeServer: jest.fn(),
   };
 
   let controller: McpController;
@@ -43,7 +44,7 @@ describe('McpController', () => {
     });
   });
 
-  it('creates and updates MCP server config then reloads runtime state', async () => {
+  it('creates and updates MCP server config then applies runtime state only for the target server', async () => {
     mcpConfig.saveServer
       .mockResolvedValueOnce({
         name: 'tavily',
@@ -108,10 +109,25 @@ describe('McpController', () => {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
       },
     }, 'tavily');
-    expect(mcpService.reloadServersFromConfig).toHaveBeenCalledTimes(2);
+    expect(mcpService.applyServerConfig).toHaveBeenNthCalledWith(1, {
+      name: 'tavily',
+      command: 'npx',
+      args: ['-y', 'tavily-mcp@latest'],
+      env: {
+        TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
+    });
+    expect(mcpService.applyServerConfig).toHaveBeenNthCalledWith(2, {
+      name: 'tavily-search',
+      command: 'node',
+      args: ['dist/index.js'],
+      env: {
+        TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
+    }, 'tavily');
   });
 
-  it('deletes MCP server config then reloads runtime state', async () => {
+  it('deletes MCP server config then removes only the target runtime state', async () => {
     mcpConfig.deleteServer.mockResolvedValue({
       deleted: true,
       name: 'weather-server',
@@ -125,6 +141,6 @@ describe('McpController', () => {
     });
 
     expect(mcpConfig.deleteServer).toHaveBeenCalledWith('weather-server');
-    expect(mcpService.reloadServersFromConfig).toHaveBeenCalledTimes(1);
+    expect(mcpService.removeServer).toHaveBeenCalledWith('weather-server');
   });
 });

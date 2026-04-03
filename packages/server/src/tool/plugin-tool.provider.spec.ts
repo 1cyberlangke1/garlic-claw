@@ -40,6 +40,7 @@ describe('PluginToolProvider', () => {
         {
           name: 'remote.pc-host',
           status: 'online',
+          defaultEnabled: false,
           healthStatus: 'totally-bad-state',
           lastError: null,
           lastCheckedAt: null,
@@ -68,7 +69,7 @@ describe('PluginToolProvider', () => {
         kind: 'plugin',
         id: 'remote.pc-host',
         label: '电脑助手',
-        enabled: true,
+        enabled: false,
         health: 'unknown',
         lastError: null,
         lastCheckedAt: null,

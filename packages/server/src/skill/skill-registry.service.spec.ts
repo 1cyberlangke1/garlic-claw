@@ -29,7 +29,6 @@ describe('SkillRegistryService', () => {
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'prompt-only',
         },
         assets: [],
@@ -48,7 +47,6 @@ describe('SkillRegistryService', () => {
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'prompt-only',
         },
         assets: [],
@@ -58,16 +56,13 @@ describe('SkillRegistryService', () => {
     governance.getSkillGovernance.mockImplementation((skillId: string) =>
       skillId === 'project/planner'
         ? {
-            enabled: true,
             trustLevel: 'local-script',
           }
         : {
-            enabled: false,
             trustLevel: 'asset-read',
           });
     governance.updateSkillGovernance.mockImplementation(
-      (_skillId: string, patch: { enabled?: boolean; trustLevel?: string }) => ({
-        enabled: patch.enabled ?? true,
+      (_skillId: string, patch: { trustLevel?: string }) => ({
         trustLevel: patch.trustLevel ?? 'prompt-only',
       }),
     );
@@ -82,14 +77,12 @@ describe('SkillRegistryService', () => {
       expect.objectContaining({
         id: 'project/planner',
         governance: {
-          enabled: true,
           trustLevel: 'local-script',
         },
       }),
       expect.objectContaining({
         id: 'user/ops/incident',
         governance: {
-          enabled: false,
           trustLevel: 'asset-read',
         },
       }),
@@ -99,14 +92,12 @@ describe('SkillRegistryService', () => {
   it('updates governance for an existing skill and rejects unknown ids', async () => {
     await expect(
       service.updateSkillGovernance('project/planner', {
-        enabled: false,
         trustLevel: 'asset-read',
       }),
     ).resolves.toEqual(
       expect.objectContaining({
         id: 'project/planner',
         governance: {
-          enabled: false,
           trustLevel: 'asset-read',
         },
       }),
@@ -114,7 +105,7 @@ describe('SkillRegistryService', () => {
 
     await expect(
       service.updateSkillGovernance('missing/skill', {
-        enabled: true,
+        trustLevel: 'prompt-only',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });

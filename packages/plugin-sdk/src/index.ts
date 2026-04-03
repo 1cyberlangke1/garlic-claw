@@ -54,6 +54,7 @@ import {
   type PluginSubagentTaskDetail,
   type PluginSubagentTaskStartParams,
   type PluginSubagentTaskSummary,
+  type RemotePluginBootstrapInfo,
     type RegisterPayload,
     type RouteInvokePayload,
     type RouteResultPayload,
@@ -798,6 +799,25 @@ export class PluginClient {
       manifest: {},
       ...options,
     };
+  }
+
+  /**
+   * 直接使用宿主返回的 remote bootstrap 信息创建一个插件客户端。
+   * @param bootstrap 宿主 bootstrap 接口返回的连接信息
+   * @param options 其余插件选项，例如 manifest 与重连参数
+   * @returns 已准备好的插件客户端
+   */
+  static fromBootstrap(
+    bootstrap: RemotePluginBootstrapInfo,
+    options: Omit<PluginClientOptions, 'serverUrl' | 'token' | 'pluginName' | 'deviceType'> = {},
+  ): PluginClient {
+    return new PluginClient({
+      ...options,
+      serverUrl: bootstrap.serverUrl,
+      token: bootstrap.token,
+      pluginName: bootstrap.pluginName,
+      deviceType: bootstrap.deviceType,
+    });
   }
 
   /** 注册工具处理器。 */

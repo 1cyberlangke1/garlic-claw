@@ -155,6 +155,15 @@ export interface AuthPayload {
   deviceType: DeviceType;
 }
 
+/** 远程插件在线接入时返回给作者侧的连接信息。 */
+export interface RemotePluginBootstrapInfo {
+  pluginName: string;
+  deviceType: DeviceType;
+  serverUrl: string;
+  token: string;
+  tokenExpiresIn: string;
+}
+
 /** 插件 Hook 描述。 */
 export interface PluginHookDescriptor {
   name: PluginHookName;

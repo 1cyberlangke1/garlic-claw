@@ -77,6 +77,99 @@ describe('plugin-gateway-lifecycle.helpers', () => {
     });
   });
 
+  it('authenticates remote bootstrap tokens when plugin identity matches the token claims', async () => {
+    const ws = createSocketStub();
+    const connectionByPluginId = new Map<string, { ws: WebSocket }>();
+    const conn = {
+      ws,
+      pluginName: '',
+      deviceType: '',
+      authenticated: false,
+      manifest: null,
+      lastHeartbeatAt: 0,
+    };
+
+    await authenticatePluginGatewayConnection({
+      ws,
+      connection: conn,
+      payload: {
+        token: 'remote-bootstrap-token',
+        pluginName: 'remote.pc-host',
+        deviceType: DeviceType.PC,
+      },
+      verifyToken: () => ({
+        role: 'remote_plugin',
+        authKind: 'remote-plugin',
+        pluginName: 'remote.pc-host',
+        deviceType: 'pc',
+      }),
+      connectionByPluginId,
+      logWarn: jest.fn(),
+      logInfo: jest.fn(),
+      sendMessage: ({ ws: target, type, action, payload }: {
+        ws: WebSocket;
+        type: string;
+        action: string;
+        payload: unknown;
+      }) =>
+        target.send(JSON.stringify({ type, action, payload })),
+    });
+
+    expect(conn).toEqual(
+      expect.objectContaining({
+        authenticated: true,
+        pluginName: 'remote.pc-host',
+        deviceType: 'pc',
+      }),
+    );
+    expect(JSON.parse(ws.send.mock.calls[0]?.[0] ?? '{}')).toEqual({
+      type: WS_TYPE.AUTH,
+      action: WS_ACTION.AUTH_OK,
+      payload: {},
+    });
+  });
+
+  it('rejects remote bootstrap tokens when the token claims do not match the requested plugin identity', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: '',
+      deviceType: '',
+      authenticated: false,
+      manifest: null,
+      lastHeartbeatAt: 0,
+    };
+
+    await expect(
+      authenticatePluginGatewayConnection({
+        ws,
+        connection: conn,
+        payload: {
+          token: 'remote-bootstrap-token',
+          pluginName: 'remote.pc-host',
+          deviceType: DeviceType.PC,
+        },
+        verifyToken: () => ({
+          role: 'remote_plugin',
+          authKind: 'remote-plugin',
+          pluginName: 'remote.other-host',
+          deviceType: 'pc',
+        }),
+        connectionByPluginId: new Map<string, { ws: WebSocket }>(),
+        logWarn: jest.fn(),
+        logInfo: jest.fn(),
+        sendMessage: ({ ws: target, type, action, payload }: {
+          ws: WebSocket;
+          type: string;
+          action: string;
+          payload: unknown;
+        }) =>
+          target.send(JSON.stringify({ type, action, payload })),
+      }),
+    ).rejects.toThrow('远程插件令牌与当前插件标识不匹配');
+    expect(conn.authenticated).toBe(false);
+  });
+
   it('registers manifests and disconnects only the active connection', async () => {
     const ws = createSocketStub();
     const conn = {

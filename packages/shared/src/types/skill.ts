@@ -10,7 +10,6 @@ export type SkillTrustLevel = 'prompt-only' | 'asset-read' | 'local-script';
 export type SkillAssetKind = 'script' | 'template' | 'reference' | 'asset' | 'other';
 
 export interface SkillGovernanceInfo {
-  enabled: boolean;
   trustLevel: SkillTrustLevel;
 }
 
@@ -84,7 +83,6 @@ export interface UpdateConversationSkillsPayload {
 }
 
 export interface UpdateSkillGovernancePayload {
-  enabled?: boolean;
   trustLevel?: SkillTrustLevel;
 }
 

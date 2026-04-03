@@ -70,7 +70,6 @@ export function toSkillSummary(skill: SkillDetail): SkillSummary {
       deny: [...skill.toolPolicy.deny],
     },
     governance: {
-      enabled: skill.governance.enabled,
       trustLevel: skill.governance.trustLevel,
     },
   };
@@ -96,7 +95,6 @@ function applyGovernance(
   return {
     ...skill,
     governance: {
-      enabled: governance.enabled,
       trustLevel: governance.trustLevel,
     },
   };

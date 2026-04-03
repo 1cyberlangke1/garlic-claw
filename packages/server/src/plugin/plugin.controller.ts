@@ -7,6 +7,7 @@ import type {
   PluginEventListResult,
   PluginHealthSnapshot,
   PluginInfo,
+  RemotePluginBootstrapInfo,
   PluginScopeSettings,
   PluginStorageEntry,
 } from '@garlic-claw/shared';
@@ -29,6 +30,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { toJsonValue } from '../common/utils/json-value';
 import {
+  CreateRemotePluginBootstrapDto,
   UpdatePluginConfigDto,
   UpdatePluginScopeDto,
   UpdatePluginStorageDto,
@@ -37,6 +39,7 @@ import { PluginAdminService } from './plugin-admin.service';
 import { PluginCronService } from './plugin-cron.service';
 import { describePluginGovernance } from './plugin-governance-policy';
 import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
+import { PluginRemoteBootstrapService } from './plugin-remote-bootstrap.service';
 import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
@@ -55,6 +58,7 @@ export class PluginController {
     private pluginRuntimeOrchestrator: PluginRuntimeOrchestratorService,
     private pluginCronService: PluginCronService,
     private pluginAdmin: PluginAdminService,
+    private pluginRemoteBootstrap: PluginRemoteBootstrapService,
   ) {}
 
   @Get()
@@ -101,6 +105,21 @@ export class PluginController {
       runtimeKind: plugin.runtimeKind,
       manifest: plugin.manifest,
     }));
+  }
+
+  @Post('remote/bootstrap')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'super_admin')
+  createRemoteBootstrap(
+    @Body() dto: CreateRemotePluginBootstrapDto,
+  ): Promise<RemotePluginBootstrapInfo> {
+    return this.pluginRemoteBootstrap.issueBootstrap({
+      pluginName: dto.pluginName,
+      deviceType: dto.deviceType,
+      ...(dto.displayName ? { displayName: dto.displayName } : {}),
+      ...(dto.description ? { description: dto.description } : {}),
+      ...(dto.version ? { version: dto.version } : {}),
+    });
   }
 
   @Delete(':name')
@@ -261,9 +280,10 @@ export class PluginController {
     @Param('name') name: string,
     @Body() dto: UpdatePluginScopeDto,
   ): Promise<PluginScopeSettings> {
+    const currentScope = await this.pluginService.getPluginScope(name);
     const result = await this.pluginService.updatePluginScope(name, {
-      defaultEnabled: dto.defaultEnabled,
-      conversations: dto.conversations ?? {},
+      defaultEnabled: currentScope.defaultEnabled,
+      conversations: dto.conversations ?? currentScope.conversations,
     });
     await this.pluginRuntimeOrchestrator.refreshPluginGovernance(name);
     return result;

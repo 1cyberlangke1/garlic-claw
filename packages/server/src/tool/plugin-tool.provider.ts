@@ -66,7 +66,7 @@ export class PluginToolProvider implements ToolProvider {
         kind: 'plugin' as const,
         id: entry.pluginId,
         label: entry.manifest.name || entry.pluginId,
-        enabled: true,
+        enabled: persisted?.defaultEnabled ?? true,
         health: readToolHealthStatus(persisted),
         lastError: persisted?.lastError ?? null,
         lastCheckedAt: persisted?.lastCheckedAt?.toISOString() ?? null,

@@ -20,6 +20,7 @@ import { PluginHostConversationFacade } from './plugin-host-conversation.facade'
 import { PluginHostStateFacade } from './plugin-host-state.facade';
 import { PluginLifecycleWriteService } from './plugin-lifecycle-write.service';
 import { PluginReadService } from './plugin-read.service';
+import { PluginRemoteBootstrapService } from './plugin-remote-bootstrap.service';
 import { PluginRouteController } from './plugin-route.controller';
 import { PluginRuntimeBroadcastFacade } from './plugin-runtime-broadcast.facade';
 import { PluginRuntimeAutomationFacade } from './plugin-runtime-automation.facade';
@@ -52,6 +53,7 @@ import { PluginService } from './plugin.service';
     PluginGovernanceWriteService,
     PluginLifecycleWriteService,
     PluginReadService,
+    PluginRemoteBootstrapService,
     PluginStorageService,
     PluginGateway,
     PluginStateService,
@@ -93,6 +95,7 @@ import { PluginService } from './plugin.service';
     PluginGovernanceWriteService,
     PluginLifecycleWriteService,
     PluginReadService,
+    PluginRemoteBootstrapService,
     PluginStorageService,
     PluginGateway,
     PluginHostService,

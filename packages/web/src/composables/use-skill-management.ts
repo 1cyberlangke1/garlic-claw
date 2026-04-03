@@ -53,8 +53,8 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
   const packageCount = computed(() =>
     skills.value.filter((skill) => skill.assets.length > 0).length,
   )
-  const disabledCount = computed(() =>
-    skills.value.filter((skill) => !skill.governance.enabled).length,
+  const scriptCapableCount = computed(() =>
+    skills.value.filter((skill) => skill.governance.trustLevel === 'local-script').length,
   )
 
   watch(
@@ -206,7 +206,7 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
     activeCount,
     restrictedCount,
     packageCount,
-    disabledCount,
+    scriptCapableCount,
     selectSkill,
     toggleSkill,
     clearConversationSkills,

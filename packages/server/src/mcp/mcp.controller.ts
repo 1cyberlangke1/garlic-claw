@@ -40,7 +40,7 @@ export class McpController {
   @Post('servers')
   async createServer(@Body() dto: UpsertMcpServerDto): Promise<McpServerConfig> {
     const saved = await this.mcpConfig.saveServer(toServerConfig(dto));
-    await this.mcpService.reloadServersFromConfig();
+    await this.mcpService.applyServerConfig(saved);
     return saved;
   }
 
@@ -50,14 +50,14 @@ export class McpController {
     @Body() dto: UpsertMcpServerDto,
   ): Promise<McpServerConfig> {
     const saved = await this.mcpConfig.saveServer(toServerConfig(dto), name);
-    await this.mcpService.reloadServersFromConfig();
+    await this.mcpService.applyServerConfig(saved, name);
     return saved;
   }
 
   @Delete('servers/:name')
   async deleteServer(@Param('name') name: string): Promise<McpServerDeleteResult> {
     const result = await this.mcpConfig.deleteServer(name);
-    await this.mcpService.reloadServersFromConfig();
+    await this.mcpService.removeServer(name);
     return result;
   }
 }

@@ -51,10 +51,10 @@ export class SkillExecutionService {
 
     return {
       availableSkillIds: activeSkills.map((skill) => skill.id),
-      canReadAssets: activeSkills.some((skill) =>
+      canReadAssets: skillContext.skillPackageToolsEnabled && activeSkills.some((skill) =>
         canReadAssetsForTrust(skill.governance.trustLevel)
         && skill.assets.some((asset) => asset.textReadable)),
-      canRunScripts: activeSkills.some((skill) =>
+      canRunScripts: skillContext.skillPackageToolsEnabled && activeSkills.some((skill) =>
         skill.governance.trustLevel === 'local-script'
         && skill.assets.some((asset) => asset.executable)),
     };

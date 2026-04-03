@@ -41,7 +41,6 @@ vi.mock('../composables/use-chat-view', () => ({
             deny: [],
           },
           governance: {
-            enabled: true,
             trustLevel: 'asset-read',
           },
         },
