@@ -40,19 +40,25 @@ type RuntimeInboundHookRecord = {
   };
 };
 
+type InvokeRuntimeInboundHook = (input: {
+  pluginId: string;
+  hookName: PluginHookName;
+  context: PluginCallContext;
+  payload: JsonValue;
+}) => Promise<JsonValue | null | undefined>;
+
+type RuntimeInboundHookInput<TPayload> = {
+  records: Iterable<RuntimeInboundHookRecord>;
+  context: PluginCallContext;
+  payload: TPayload;
+  invokeHook: InvokeRuntimeInboundHook;
+};
+
 @Injectable()
 export class PluginRuntimeInboundHooksFacade {
-  async runChatBeforeModelHooks(input: {
-    records: Iterable<RuntimeInboundHookRecord>;
-    context: PluginCallContext;
-    payload: ChatBeforeModelHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  async runChatBeforeModelHooks(
+    input: RuntimeInboundHookInput<ChatBeforeModelHookPayload>,
+  ) {
     const result = await runShortCircuitingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,
@@ -101,12 +107,7 @@ export class PluginRuntimeInboundHooksFacade {
     conversationSessions: Map<string, ConversationSessionRecord>;
     context: PluginCallContext;
     payload: MessageReceivedHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
+    invokeHook: InvokeRuntimeInboundHook;
   }) {
     const payload = cloneMessageReceivedHookPayload(input.payload);
     const sessionResult = await this.runConversationSessionMessageReceivedHook({
@@ -152,12 +153,7 @@ export class PluginRuntimeInboundHooksFacade {
     conversationSessions: Map<string, ConversationSessionRecord>;
     context: PluginCallContext;
     payload: MessageReceivedHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
+    invokeHook: InvokeRuntimeInboundHook;
   }) {
     const prepared = prepareDispatchableConversationSessionMessageReceivedHook({
       sessions: input.conversationSessions,

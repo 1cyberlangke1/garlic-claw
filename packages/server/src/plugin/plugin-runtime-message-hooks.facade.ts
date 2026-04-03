@@ -25,27 +25,33 @@ import {
   cloneMessageUpdatedHookPayload,
 } from './plugin-runtime-clone.helpers';
 
+type DispatchableMessageHookRecord = {
+  manifest: import('@garlic-claw/shared').PluginManifest;
+  governance: {
+    scope: {
+      defaultEnabled: boolean;
+      conversations: Record<string, boolean>;
+    };
+  };
+};
+
+type InvokeMessageHook = (input: {
+  pluginId: string;
+  hookName: PluginHookName;
+  context: PluginCallContext;
+  payload: JsonValue;
+}) => Promise<JsonValue | null | undefined>;
+
+type MessageHookInput<TPayload> = {
+  records: Iterable<DispatchableMessageHookRecord>;
+  context: PluginCallContext;
+  payload: TPayload;
+  invokeHook: InvokeMessageHook;
+};
+
 @Injectable()
 export class PluginRuntimeMessageHooksFacade {
-  runChatAfterModelHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: ChatAfterModelHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runChatAfterModelHooks(input: MessageHookInput<ChatAfterModelHookPayload>) {
     return runMutatingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,
@@ -61,25 +67,7 @@ export class PluginRuntimeMessageHooksFacade {
     });
   }
 
-  runMessageCreatedHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: MessageCreatedHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runMessageCreatedHooks(input: MessageHookInput<MessageCreatedHookPayload>) {
     return runMutatingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,
@@ -95,25 +83,7 @@ export class PluginRuntimeMessageHooksFacade {
     });
   }
 
-  runMessageUpdatedHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: MessageUpdatedHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runMessageUpdatedHooks(input: MessageHookInput<MessageUpdatedHookPayload>) {
     return runMutatingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,

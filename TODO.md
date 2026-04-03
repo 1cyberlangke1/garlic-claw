@@ -177,8 +177,10 @@
   - `plugin-subagent-task-request.helpers.ts` 里重复的 `normalizePositiveInteger(...)` 已删回现有 validation helper
   - `plugin-runtime-operation-hooks.facade.ts` 已把五组重复的 `records/context/payload/invokeHook` 类型样板压成共享输入类型，`216 -> 147`
   - `plugin-runtime-subagent.facade.ts` 已把 `executeRequest/runBeforeHooks/runAfterHooks` 里重复的 subagent hook 输入类型样板压成共享输入类型，`243 -> 217`
+  - `plugin-runtime-message-hooks.facade.ts` 已把三组重复的 message hook 输入类型样板压成共享输入类型，`128 -> 95`
+  - `plugin-runtime-inbound-hooks.facade.ts` 已把 `chat/message` inbound hook 的重复 `invokeHook` 类型样板压成共享输入类型，`198 -> 192`
   - `plugin-runtime-clone.helpers.ts` 已把 automation/tool/subagent/assistant-output 的重复 clone 骨架并回共享私有函数，`392 -> 387`
-  - 这轮 `plugin runtime` 内部减法后，`packages/server/src/plugin` 已从 `16879` 降到 `16804`，`packages/server/src` 已从 `32395` 降到 `32320`
+  - 这轮连续两刀 `plugin runtime` 内部减法后，`packages/server/src/plugin` 已从 `16879` 降到 `16765`，`packages/server/src` 已从 `32395` 降到 `32281`
   - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
   - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
   - 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
@@ -211,6 +213,8 @@
 - `plugin-route.controller.ts`: `218 -> 180`
 - `plugin-runtime-operation-hooks.facade.ts`: `216 -> 147`
 - `plugin-runtime-subagent.facade.ts`: `243 -> 217`
+- `plugin-runtime-message-hooks.facade.ts`: `128 -> 95`
+- `plugin-runtime-inbound-hooks.facade.ts`: `198 -> 192`
 - `plugin-runtime-clone.helpers.ts`: `392 -> 387`
 - `builtin-plugin-host-facade.helpers.ts`: `255 -> 0`（已删）
 - `builtin-plugin-host-params.helpers.ts`: `200 -> 0`（已删）
@@ -218,8 +222,8 @@
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `32320`
-- `packages/server/src/plugin`: `16804`
+- `packages/server/src`: `32281`
+- `packages/server/src/plugin`: `16765`
 - `packages/server/src/chat`: `3862`
 - `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message.helpers.ts`: `152`
@@ -241,6 +245,8 @@
 - `packages/server/src/plugin/plugin-runtime.service.ts`: `684`
 - `packages/server/src/plugin/plugin-runtime-operation-hooks.facade.ts`: `147`
 - `packages/server/src/plugin/plugin-runtime-subagent.facade.ts`: `217`
+- `packages/server/src/plugin/plugin-runtime-message-hooks.facade.ts`: `95`
+- `packages/server/src/plugin/plugin-runtime-inbound-hooks.facade.ts`: `192`
 - `packages/server/src/plugin/plugin-runtime-clone.helpers.ts`: `387`
 - `packages/server/src/plugin/plugin-host.service.ts`: `126`
 
