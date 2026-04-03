@@ -1,4 +1,7 @@
-import { readPluginHookPayload } from '@garlic-claw/plugin-sdk';
+import {
+  CRON_HEARTBEAT_MANIFEST,
+  readPluginHookPayload,
+} from '@garlic-claw/plugin-sdk';
 import type { PluginCronTickPayload } from '@garlic-claw/shared';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
@@ -17,28 +20,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createCronHeartbeatPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.cron-heartbeat',
-      name: '定时心跳',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证统一 cron 插件协议链路的内建插件',
-      permissions: ['cron:read', 'cron:write', 'storage:read', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'cron:tick',
-          description: '处理插件定时任务 tick',
-        },
-      ],
-      crons: [
-        {
-          name: 'heartbeat',
-          cron: '10s',
-          description: '定时写入插件心跳计数',
-        },
-      ],
-    },
+    manifest: CRON_HEARTBEAT_MANIFEST,
     hooks: {
       'cron:tick': async (payload, { host }) => {
         const tick = readPluginHookPayload<PluginCronTickPayload>(payload);

@@ -6,8 +6,7 @@ import {
   readBooleanFlag,
   readSubagentDelegateConfig,
   readRequiredTextValue,
-  SUBAGENT_DELEGATE_CONFIG_FIELDS,
-  SUBAGENT_DELEGATE_MANIFEST_TOOLS,
+  SUBAGENT_DELEGATE_MANIFEST,
 } from '@garlic-claw/plugin-sdk';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
@@ -27,18 +26,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createSubagentDelegatePlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.subagent-delegate',
-      name: '子代理委派',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '将当前任务委派给宿主子代理执行的内建插件。',
-      permissions: ['config:read', 'conversation:write', 'subagent:run'],
-      tools: SUBAGENT_DELEGATE_MANIFEST_TOOLS,
-      config: {
-        fields: SUBAGENT_DELEGATE_CONFIG_FIELDS,
-      },
-    },
+    manifest: SUBAGENT_DELEGATE_MANIFEST,
     tools: {
       /**
        * 发起一次受控的宿主侧子代理总结。

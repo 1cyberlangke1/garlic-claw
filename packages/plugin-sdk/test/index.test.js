@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
   AUTOMATION_RECORDER_MANIFEST,
+  AUTOMATION_TOOLS_MANIFEST,
+  CORE_TOOLS_MANIFEST,
   createAutomationCreatedResult,
   createAutomationEventDispatchResult,
   createAutomationListResult,
@@ -14,6 +16,7 @@ const {
   createRouteInspectorContextResponse,
   createAutomationRunResult,
   createSystemInfoToolResult,
+  MEMORY_TOOLS_MANIFEST,
   createAutomationToggleResult,
   buildAutomationRunSummary,
   buildConversationCreatedSummary,
@@ -24,13 +27,17 @@ const {
   buildSubagentDelegateTaskParams,
   buildToolAuditStorageKey,
   CONVERSATION_TITLE_CONFIG_FIELDS,
+  CONVERSATION_TITLE_MANIFEST,
   CONVERSATION_TITLE_DEFAULT_TITLE,
   CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES,
+  CRON_HEARTBEAT_MANIFEST,
   AUTOMATION_TOOLS_MANIFEST_TOOLS,
   CORE_TOOLS_MANIFEST_TOOLS,
+  KB_CONTEXT_MANIFEST,
   KB_CONTEXT_CONFIG_FIELDS,
   KB_CONTEXT_DEFAULT_LIMIT,
   KB_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  MEMORY_CONTEXT_MANIFEST,
   MEMORY_CONTEXT_CONFIG_FIELDS,
   MEMORY_CONTEXT_DEFAULT_LIMIT,
   MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
@@ -69,10 +76,13 @@ const {
   readPersonaRouterConfig,
   readPersonaSummaryInfo,
   PERSONA_ROUTER_CONFIG_FIELDS,
+  PERSONA_ROUTER_MANIFEST,
   PLUGIN_GOVERNANCE_RECORDER_MANIFEST,
+  PROVIDER_ROUTER_MANIFEST,
   PROVIDER_ROUTER_CONFIG_FIELDS,
   PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY,
   RESPONSE_RECORDER_MANIFEST,
+  ROUTE_INSPECTOR_MANIFEST,
   ROUTE_INSPECTOR_MANIFEST_ROUTES,
   readConversationSummary,
   readConversationTitleConfig,
@@ -97,6 +107,7 @@ const {
   sanitizeOptionalText,
   shouldGenerateConversationTitle,
   SUBAGENT_DELEGATE_MANIFEST_TOOLS,
+  SUBAGENT_DELEGATE_MANIFEST,
   SUBAGENT_DELEGATE_CONFIG_FIELDS,
   textIncludesKeyword,
   TOOL_AUDIT_MANIFEST,
@@ -1680,6 +1691,17 @@ test('plugin-sdk exposes shared automation tool param readers for author-side pl
   assert.equal(RESPONSE_RECORDER_MANIFEST.hooks[0].name, 'response:after-send');
   assert.equal(PLUGIN_GOVERNANCE_RECORDER_MANIFEST.hooks[2].name, 'plugin:error');
   assert.equal(TOOL_AUDIT_MANIFEST.hooks[0].name, 'tool:after-call');
+  assert.equal(CONVERSATION_TITLE_MANIFEST.config.fields[0].key, 'defaultTitle');
+  assert.equal(MEMORY_CONTEXT_MANIFEST.permissions[0], 'memory:read');
+  assert.equal(KB_CONTEXT_MANIFEST.hooks[0].name, 'chat:before-model');
+  assert.equal(PROVIDER_ROUTER_MANIFEST.config.fields[0].key, 'targetProviderId');
+  assert.equal(PERSONA_ROUTER_MANIFEST.config.fields[0].key, 'targetPersonaId');
+  assert.equal(CRON_HEARTBEAT_MANIFEST.crons[0].cron, '10s');
+  assert.equal(CORE_TOOLS_MANIFEST.tools[1].name, 'getSystemInfo');
+  assert.equal(MEMORY_TOOLS_MANIFEST.permissions[1], 'memory:write');
+  assert.equal(AUTOMATION_TOOLS_MANIFEST.tools[4].name, 'run_automation');
+  assert.equal(SUBAGENT_DELEGATE_MANIFEST.config.fields[3].key, 'maxSteps');
+  assert.equal(ROUTE_INSPECTOR_MANIFEST.routes[0].path, 'inspect/context');
 
   assert.throws(
     () => readPluginCreateAutomationParams({

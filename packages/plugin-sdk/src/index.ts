@@ -1226,6 +1226,186 @@ export const TOOL_AUDIT_MANIFEST: PluginManifest = {
   hooks: TOOL_AUDIT_MANIFEST_HOOKS,
 };
 
+export const CONVERSATION_TITLE_MANIFEST: PluginManifest = {
+  id: 'builtin.conversation-title',
+  name: '会话标题',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '在首次回复后为默认标题会话自动生成更合适标题的内建插件。',
+  permissions: [
+    'config:read',
+    'conversation:read',
+    'conversation:write',
+    'llm:generate',
+  ],
+  tools: [],
+  hooks: [
+    {
+      name: 'chat:after-model',
+      description: '在 assistant 完成回复后为会话生成标题',
+    },
+  ],
+  config: {
+    fields: CONVERSATION_TITLE_CONFIG_FIELDS,
+  },
+};
+
+export const MEMORY_CONTEXT_MANIFEST: PluginManifest = {
+  id: 'builtin.memory-context',
+  name: '记忆上下文',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '在模型调用前检索并注入用户长期记忆摘要的内建插件。',
+  permissions: ['memory:read', 'config:read'],
+  tools: [],
+  hooks: [
+    {
+      name: 'chat:before-model',
+      description: '在模型调用前补入用户长期记忆摘要',
+    },
+  ],
+  config: {
+    fields: MEMORY_CONTEXT_CONFIG_FIELDS,
+  },
+};
+
+export const KB_CONTEXT_MANIFEST: PluginManifest = {
+  id: 'builtin.kb-context',
+  name: '知识库上下文',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '在模型调用前检索并注入系统知识摘要的内建插件。',
+  permissions: ['kb:read', 'config:read'],
+  tools: [],
+  hooks: [
+    {
+      name: 'chat:before-model',
+      description: '在模型调用前补入系统知识摘要',
+    },
+  ],
+  config: {
+    fields: KB_CONTEXT_CONFIG_FIELDS,
+  },
+};
+
+export const PROVIDER_ROUTER_MANIFEST: PluginManifest = {
+  id: 'builtin.provider-router',
+  name: '模型路由',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '按规则切换 provider/model、裁剪工具或直接短路回复的内建插件。',
+  permissions: ['config:read', 'provider:read'],
+  tools: [],
+  hooks: [
+    {
+      name: 'chat:before-model',
+      description: '按配置改写当前 provider/model、裁剪工具或直接短路回复',
+    },
+  ],
+  config: {
+    fields: PROVIDER_ROUTER_CONFIG_FIELDS,
+  },
+};
+
+export const PERSONA_ROUTER_MANIFEST: PluginManifest = {
+  id: 'builtin.persona-router',
+  name: '人设路由',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '按规则切换当前会话人设并同步改写系统提示词的内建插件。',
+  permissions: ['config:read', 'persona:read', 'persona:write'],
+  tools: [],
+  hooks: [
+    {
+      name: 'chat:before-model',
+      description: '按规则切换当前会话 persona，并同步改写本轮系统提示词',
+    },
+  ],
+  config: {
+    fields: PERSONA_ROUTER_CONFIG_FIELDS,
+  },
+};
+
+export const CRON_HEARTBEAT_MANIFEST: PluginManifest = {
+  id: 'builtin.cron-heartbeat',
+  name: '定时心跳',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '用于验证统一 cron 插件协议链路的内建插件',
+  permissions: ['cron:read', 'cron:write', 'storage:read', 'storage:write'],
+  tools: [],
+  hooks: [
+    {
+      name: 'cron:tick',
+      description: '处理插件定时任务 tick',
+    },
+  ],
+  crons: [
+    {
+      name: 'heartbeat',
+      cron: '10s',
+      description: '定时写入插件心跳计数',
+    },
+  ],
+};
+
+export const CORE_TOOLS_MANIFEST: PluginManifest = {
+  id: 'builtin.core-tools',
+  name: '内建工具',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '提供时间、系统信息和计算器等基础能力的内建插件。',
+  permissions: [],
+  tools: CORE_TOOLS_MANIFEST_TOOLS,
+  hooks: [],
+};
+
+export const MEMORY_TOOLS_MANIFEST: PluginManifest = {
+  id: 'builtin.memory-tools',
+  name: '记忆工具',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '提供长期记忆写入与检索能力的内建插件。',
+  permissions: ['memory:read', 'memory:write'],
+  tools: MEMORY_TOOLS_MANIFEST_TOOLS,
+  hooks: [],
+};
+
+export const AUTOMATION_TOOLS_MANIFEST: PluginManifest = {
+  id: 'builtin.automation-tools',
+  name: '自动化工具',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '提供自动化创建、事件触发、启停和执行能力的内建插件。',
+  permissions: ['automation:read', 'automation:write'],
+  tools: AUTOMATION_TOOLS_MANIFEST_TOOLS,
+  hooks: [],
+};
+
+export const SUBAGENT_DELEGATE_MANIFEST: PluginManifest = {
+  id: 'builtin.subagent-delegate',
+  name: '子代理委派',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '将当前任务委派给宿主子代理执行的内建插件。',
+  permissions: ['config:read', 'conversation:write', 'subagent:run'],
+  tools: SUBAGENT_DELEGATE_MANIFEST_TOOLS,
+  config: {
+    fields: SUBAGENT_DELEGATE_CONFIG_FIELDS,
+  },
+};
+
+export const ROUTE_INSPECTOR_MANIFEST: PluginManifest = {
+  id: 'builtin.route-inspector',
+  name: '路由探针',
+  version: '1.0.0',
+  runtime: 'builtin',
+  description: '用于查看插件 Web Route 可见上下文的内建诊断插件。',
+  permissions: ['conversation:read', 'user:read'],
+  tools: [],
+  routes: ROUTE_INSPECTOR_MANIFEST_ROUTES,
+};
+
 export interface PluginProviderRouterConfig {
   targetProviderId?: string;
   targetModelId?: string;

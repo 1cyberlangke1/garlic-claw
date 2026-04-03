@@ -1,5 +1,5 @@
 import {
-  CORE_TOOLS_MANIFEST_TOOLS,
+  CORE_TOOLS_MANIFEST,
   createCalculateErrorResult,
   createCalculateSuccessResult,
   createCurrentTimeToolResult,
@@ -24,16 +24,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createCoreToolsPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.core-tools',
-      name: '内建工具',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '提供时间、系统信息和计算器等基础能力的内建插件。',
-      permissions: [],
-      tools: CORE_TOOLS_MANIFEST_TOOLS,
-      hooks: [],
-    },
+    manifest: CORE_TOOLS_MANIFEST,
     tools: {
       /**
        * 读取当前时间。

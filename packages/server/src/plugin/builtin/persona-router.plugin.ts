@@ -2,7 +2,7 @@ import {
   asChatBeforeModelPayload,
   createPassHookResult,
   createSystemPromptMutateResult,
-  PERSONA_ROUTER_CONFIG_FIELDS,
+  PERSONA_ROUTER_MANIFEST,
   readCurrentPersonaInfo,
   readLatestUserTextFromMessages,
   readPersonaRouterConfig,
@@ -28,24 +28,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createPersonaRouterPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.persona-router',
-      name: '人设路由',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '按规则切换当前会话人设并同步改写系统提示词的内建插件。',
-      permissions: ['config:read', 'persona:read', 'persona:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'chat:before-model',
-          description: '按规则切换当前会话 persona，并同步改写本轮系统提示词',
-        },
-      ],
-      config: {
-        fields: PERSONA_ROUTER_CONFIG_FIELDS,
-      },
-    },
+    manifest: PERSONA_ROUTER_MANIFEST,
     hooks: {
       /**
        * 在模型调用前按配置切换 persona。

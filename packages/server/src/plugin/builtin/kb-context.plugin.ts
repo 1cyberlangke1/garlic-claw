@@ -2,7 +2,7 @@ import {
   asChatBeforeModelPayload,
   clipContextText,
   createChatBeforeModelLineBlockResult,
-  KB_CONTEXT_CONFIG_FIELDS,
+  KB_CONTEXT_MANIFEST,
   KB_CONTEXT_DEFAULT_LIMIT,
   KB_CONTEXT_DEFAULT_PROMPT_PREFIX,
   readLatestUserTextFromMessages,
@@ -28,24 +28,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createKbContextPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.kb-context',
-      name: '知识库上下文',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '在模型调用前检索并注入系统知识摘要的内建插件。',
-      permissions: ['kb:read', 'config:read'],
-      tools: [],
-      hooks: [
-        {
-          name: 'chat:before-model',
-          description: '在模型调用前补入系统知识摘要',
-        },
-      ],
-      config: {
-        fields: KB_CONTEXT_CONFIG_FIELDS,
-      },
-    },
+    manifest: KB_CONTEXT_MANIFEST,
     hooks: {
       /**
        * 在模型调用前补入知识库提示词。

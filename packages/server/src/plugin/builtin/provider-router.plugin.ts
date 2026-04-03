@@ -3,10 +3,10 @@ import {
   createPassHookResult,
   createProviderRouterMutateResult,
   createProviderRouterShortCircuitResult,
-  PROVIDER_ROUTER_CONFIG_FIELDS,
   readCurrentProviderInfo,
   filterAllowedToolNames,
   parseCommaSeparatedNames,
+  PROVIDER_ROUTER_MANIFEST,
   readLatestUserTextFromMessages,
   readProviderRouterConfig,
   sameToolNames,
@@ -32,24 +32,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createProviderRouterPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.provider-router',
-      name: '模型路由',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '按规则切换 provider/model、裁剪工具或直接短路回复的内建插件。',
-      permissions: ['config:read', 'provider:read'],
-      tools: [],
-      hooks: [
-        {
-          name: 'chat:before-model',
-          description: '按配置改写当前 provider/model、裁剪工具或直接短路回复',
-        },
-      ],
-      config: {
-        fields: PROVIDER_ROUTER_CONFIG_FIELDS,
-      },
-    },
+    manifest: PROVIDER_ROUTER_MANIFEST,
     hooks: {
       /**
        * 在模型调用前按配置路由 provider/model。

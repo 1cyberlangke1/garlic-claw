@@ -1,7 +1,7 @@
 import {
   asChatBeforeModelPayload,
   createChatBeforeModelLineBlockResult,
-  MEMORY_CONTEXT_CONFIG_FIELDS,
+  MEMORY_CONTEXT_MANIFEST,
   MEMORY_CONTEXT_DEFAULT_LIMIT,
   MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
   readLatestUserTextFromMessages,
@@ -28,24 +28,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createMemoryContextPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.memory-context',
-      name: '记忆上下文',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '在模型调用前检索并注入用户长期记忆摘要的内建插件。',
-      permissions: ['memory:read', 'config:read'],
-      tools: [],
-      hooks: [
-        {
-          name: 'chat:before-model',
-          description: '在模型调用前补入用户长期记忆摘要',
-        },
-      ],
-      config: {
-        fields: MEMORY_CONTEXT_CONFIG_FIELDS,
-      },
-    },
+    manifest: MEMORY_CONTEXT_MANIFEST,
     hooks: {
       /**
        * 在模型调用前补入记忆提示词。

@@ -1,7 +1,7 @@
 import {
   createMemoryRecallToolResult,
   createMemorySaveToolResult,
-  MEMORY_TOOLS_MANIFEST_TOOLS,
+  MEMORY_TOOLS_MANIFEST,
   readMemorySearchResults,
   readMemorySaveResultId,
   readOptionalStringParam,
@@ -25,16 +25,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createMemoryToolsPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.memory-tools',
-      name: '记忆工具',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '提供长期记忆写入与检索能力的内建插件。',
-      permissions: ['memory:read', 'memory:write'],
-      tools: MEMORY_TOOLS_MANIFEST_TOOLS,
-      hooks: [],
-    },
+    manifest: MEMORY_TOOLS_MANIFEST,
     tools: {
       /**
        * 保存一条长期记忆。
