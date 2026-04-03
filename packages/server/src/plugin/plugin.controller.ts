@@ -37,8 +37,10 @@ import {
 } from './dto/plugin-admin.dto';
 import { PluginAdminService } from './plugin-admin.service';
 import { PluginCronService } from './plugin-cron.service';
+import { parsePluginHealthStatus } from './plugin-event.helpers';
 import { describePluginGovernance } from './plugin-governance-policy';
 import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
+import { readNonEmptyString } from './plugin-manifest-normalize-base.helpers';
 import { PluginRemoteBootstrapService } from './plugin-remote-bootstrap.service';
 import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
@@ -307,7 +309,7 @@ function serializePluginHealth(
 ): PluginHealthSnapshot {
   const status = plugin.status === 'offline'
     ? 'offline'
-    : readPersistedHealthStatus(plugin.healthStatus);
+    : parsePluginHealthStatus(plugin.healthStatus);
   return {
     status,
     failureCount: plugin.failureCount,
@@ -324,21 +326,6 @@ function serializePluginHealth(
       : null,
     ...(runtimePressure ? { runtimePressure } : {}),
   };
-}
-
-function readPersistedHealthStatus(
-  value: string | null,
-): PluginHealthSnapshot['status'] {
-  switch (value) {
-    case 'healthy':
-    case 'degraded':
-    case 'error':
-    case 'offline':
-    case 'unknown':
-      return value;
-    default:
-      return 'unknown';
-  }
 }
 
 /**
@@ -372,9 +359,9 @@ function parsePluginEventQuery(raw: {
     level = raw.level;
   }
 
-  const type = raw.type?.trim() || undefined;
-  const keyword = raw.keyword?.trim() || undefined;
-  const cursor = raw.cursor?.trim() || undefined;
+  const type = readNonEmptyString(raw.type) ?? undefined;
+  const keyword = readNonEmptyString(raw.keyword) ?? undefined;
+  const cursor = readNonEmptyString(raw.cursor) ?? undefined;
 
   return {
     ...(limit !== undefined ? { limit } : {}),
