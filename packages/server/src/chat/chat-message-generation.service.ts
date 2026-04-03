@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type {
   ChatBeforeModelRequest,
+  ChatMessagePart,
 } from '@garlic-claw/shared';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { PersonaService } from '../persona/persona.service';
@@ -28,7 +29,10 @@ import {
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
 import type { ChatRuntimeMessage } from './chat-message-session';
 import { prepareSendMessagePayload } from './chat-message-session';
-import { ChatModelInvocationService } from './chat-model-invocation.service';
+import {
+  ChatModelInvocationService,
+  type PreparedChatModelInvocation,
+} from './chat-model-invocation.service';
 import { ChatService } from './chat.service';
 import { type RetryMessageDto, type SendMessageDto } from './dto/chat.dto';
 import { deserializeMessageParts, serializeMessageParts } from './message-parts';
@@ -154,17 +158,16 @@ export class ChatMessageGenerationService {
 
     try {
       if (receivedMessageResult.action === 'short-circuit') {
-        const completedAssistantMessage =
-          await this.completionService.completeShortCircuitedAssistant({
-            assistantMessageId: assistantMessage.id,
-            userId,
-            conversationId,
-            providerId: receivedMessageResult.providerId,
-            modelId: receivedMessageResult.modelId,
-            activePersonaId: resolvedPersona.activePersonaId,
-            assistantContent: receivedMessageResult.assistantContent,
-            assistantParts: receivedMessageResult.assistantParts,
-          });
+        const completedAssistantMessage = await this.completeShortCircuitedAssistant({
+          assistantMessageId: assistantMessage.id,
+          userId,
+          conversationId,
+          activePersonaId: resolvedPersona.activePersonaId,
+          providerId: receivedMessageResult.providerId,
+          modelId: receivedMessageResult.modelId,
+          assistantContent: receivedMessageResult.assistantContent,
+          assistantParts: receivedMessageResult.assistantParts,
+        });
         return {
           userMessage,
           assistantMessage: completedAssistantMessage,
@@ -180,17 +183,16 @@ export class ChatMessageGenerationService {
         messages: createdMessagePayload.modelMessages as ChatRuntimeMessage[],
       });
       if (beforeModelResult.action === 'short-circuit') {
-        const completedAssistantMessage =
-          await this.completionService.completeShortCircuitedAssistant({
-            assistantMessageId: assistantMessage.id,
-            userId,
-            conversationId,
-            providerId: beforeModelResult.providerId,
-            modelId: beforeModelResult.modelId,
-            activePersonaId: resolvedPersona.activePersonaId,
-            assistantContent: beforeModelResult.assistantContent,
-            assistantParts: beforeModelResult.assistantParts,
-          });
+        const completedAssistantMessage = await this.completeShortCircuitedAssistant({
+          assistantMessageId: assistantMessage.id,
+          userId,
+          conversationId,
+          activePersonaId: resolvedPersona.activePersonaId,
+          providerId: beforeModelResult.providerId,
+          modelId: beforeModelResult.modelId,
+          assistantContent: beforeModelResult.assistantContent,
+          assistantParts: beforeModelResult.assistantParts,
+        });
         return {
           userMessage,
           assistantMessage: completedAssistantMessage,
@@ -211,69 +213,20 @@ export class ChatMessageGenerationService {
         visionFallbackEntries:
           preparedInvocation.transformResult?.visionFallback?.entries ?? [],
       });
-      const chatToolSet = beforeModelResult.modelConfig.capabilities.toolCall
-        ? beforeModelResult.buildToolSet({
-            context: {
-              source: 'chat-tool',
-              userId,
-              conversationId,
-              activeProviderId: beforeModelResult.modelConfig.providerId,
-              activeModelId: beforeModelResult.modelConfig.id,
-              activePersonaId: resolvedPersona.activePersonaId,
-            },
-            allowedToolNames: beforeModelResult.request.availableTools.map(
-              (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
-            ),
-          })
-        : undefined;
-
-      this.chatTaskService.startTask({
+      this.startPreparedGenerationTask({
         assistantMessageId: assistantMessageWithMetadata.id,
+        userId,
         conversationId,
-        providerId: beforeModelResult.modelConfig.providerId,
-        modelId: beforeModelResult.modelConfig.id,
-        createStream: this.orchestration.buildStreamFactory({
-          assistantMessageId: assistantMessageWithMetadata.id,
-          userId,
-          conversationId,
-          request: beforeModelResult.request,
-          preparedInvocation,
-          activeProviderId: beforeModelResult.modelConfig.providerId,
-          activeModelId: beforeModelResult.modelConfig.id,
-          activePersonaId: resolvedPersona.activePersonaId,
-          tools: chatToolSet,
-        }),
-        onComplete: (result) =>
-          this.orchestration.applyFinalResponseHooks({
-            userId,
-            conversationId,
-            activePersonaId: resolvedPersona.activePersonaId,
-            responseSource: 'model',
-            result,
-          }),
-        onSent: (result) =>
-          this.orchestration.runResponseAfterSendHooks({
-            userId,
-            conversationId,
-            activePersonaId: resolvedPersona.activePersonaId,
-            responseSource: 'model',
-            result,
-          }),
+        activePersonaId: resolvedPersona.activePersonaId,
+        beforeModelResult,
+        preparedInvocation,
       });
       return {
         userMessage: userMessageWithMetadata,
         assistantMessage: assistantMessageWithMetadata,
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      await this.prisma.message.update({
-        where: { id: assistantMessage.id },
-        data: {
-          status: 'error',
-          error: errorMessage,
-        },
-      });
-      await touchConversationTimestamp(this.prisma, conversationId);
+      await this.markAssistantMessageAsError(assistantMessage.id, conversationId, error);
       throw error;
     }
   }
@@ -363,13 +316,13 @@ export class ChatMessageGenerationService {
         messages: runtimeMessages,
       });
       if (beforeModelResult.action === 'short-circuit') {
-        return this.completionService.completeShortCircuitedAssistant({
+        return this.completeShortCircuitedAssistant({
           assistantMessageId: messageId,
           userId,
           conversationId,
+          activePersonaId: resolvedPersona.activePersonaId,
           providerId: beforeModelResult.providerId,
           modelId: beforeModelResult.modelId,
-          activePersonaId: resolvedPersona.activePersonaId,
           assistantContent: beforeModelResult.assistantContent,
           assistantParts: beforeModelResult.assistantParts,
         });
@@ -386,68 +339,110 @@ export class ChatMessageGenerationService {
           visionFallbackEntries:
             preparedInvocation.transformResult?.visionFallback?.entries ?? [],
         });
-      const chatToolSet = beforeModelResult.modelConfig.capabilities.toolCall
-        ? beforeModelResult.buildToolSet({
-            context: {
-              source: 'chat-tool',
-              userId,
-              conversationId,
-              activeProviderId: beforeModelResult.modelConfig.providerId,
-              activeModelId: beforeModelResult.modelConfig.id,
-              activePersonaId: resolvedPersona.activePersonaId,
-            },
-            allowedToolNames: beforeModelResult.request.availableTools.map(
-              (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
-            ),
-          })
-        : undefined;
-
-      this.chatTaskService.startTask({
+      this.startPreparedGenerationTask({
         assistantMessageId: assistantMessageWithMetadata.id,
+        userId,
         conversationId,
-        providerId: beforeModelResult.modelConfig.providerId,
-        modelId: beforeModelResult.modelConfig.id,
-        createStream: this.orchestration.buildStreamFactory({
-          assistantMessageId: assistantMessageWithMetadata.id,
-          userId,
-          conversationId,
-          request: beforeModelResult.request,
-          preparedInvocation,
-          activeProviderId: beforeModelResult.modelConfig.providerId,
-          activeModelId: beforeModelResult.modelConfig.id,
-          activePersonaId: resolvedPersona.activePersonaId,
-          tools: chatToolSet,
-        }),
-        onComplete: (result) =>
-          this.orchestration.applyFinalResponseHooks({
-            userId,
-            conversationId,
-            activePersonaId: resolvedPersona.activePersonaId,
-            responseSource: 'model',
-            result,
-          }),
-        onSent: (result) =>
-          this.orchestration.runResponseAfterSendHooks({
-            userId,
-            conversationId,
-            activePersonaId: resolvedPersona.activePersonaId,
-            responseSource: 'model',
-            result,
-          }),
+        activePersonaId: resolvedPersona.activePersonaId,
+        beforeModelResult,
+        preparedInvocation,
       });
       return assistantMessageWithMetadata;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      await this.prisma.message.update({
-        where: { id: messageId },
-        data: {
-          status: 'error',
-          error: errorMessage,
-        },
-      });
-      await touchConversationTimestamp(this.prisma, conversationId);
+      await this.markAssistantMessageAsError(messageId, conversationId, error);
       throw error;
     }
+  }
+
+  private async completeShortCircuitedAssistant(input: {
+    assistantMessageId: string;
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    providerId: string;
+    modelId: string;
+    assistantContent: string;
+    assistantParts?: ChatMessagePart[];
+  }) {
+    return this.completionService.completeShortCircuitedAssistant(input);
+  }
+
+  private startPreparedGenerationTask(input: {
+    assistantMessageId: string;
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    beforeModelResult: Extract<
+      Awaited<ReturnType<ChatMessageOrchestrationService['applyChatBeforeModelHooks']>>,
+      { action: 'continue' }
+    >;
+    preparedInvocation: PreparedChatModelInvocation;
+  }) {
+    const modelContext = {
+      source: 'chat-tool' as const,
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activeProviderId: input.beforeModelResult.modelConfig.providerId,
+      activeModelId: input.beforeModelResult.modelConfig.id,
+      activePersonaId: input.activePersonaId,
+    };
+    const chatToolSet = input.beforeModelResult.modelConfig.capabilities.toolCall
+      ? input.beforeModelResult.buildToolSet({
+          context: modelContext,
+          allowedToolNames: input.beforeModelResult.request.availableTools.map(
+            (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
+          ),
+        })
+      : undefined;
+
+    this.chatTaskService.startTask({
+      assistantMessageId: input.assistantMessageId,
+      conversationId: input.conversationId,
+      providerId: input.beforeModelResult.modelConfig.providerId,
+      modelId: input.beforeModelResult.modelConfig.id,
+      createStream: this.orchestration.buildStreamFactory({
+        assistantMessageId: input.assistantMessageId,
+        userId: input.userId,
+        conversationId: input.conversationId,
+        request: input.beforeModelResult.request,
+        preparedInvocation: input.preparedInvocation,
+        activeProviderId: input.beforeModelResult.modelConfig.providerId,
+        activeModelId: input.beforeModelResult.modelConfig.id,
+        activePersonaId: input.activePersonaId,
+        tools: chatToolSet,
+      }),
+      onComplete: (result) =>
+        this.orchestration.applyFinalResponseHooks({
+          userId: input.userId,
+          conversationId: input.conversationId,
+          activePersonaId: input.activePersonaId,
+          responseSource: 'model',
+          result,
+        }),
+      onSent: (result) =>
+        this.orchestration.runResponseAfterSendHooks({
+          userId: input.userId,
+          conversationId: input.conversationId,
+          activePersonaId: input.activePersonaId,
+          responseSource: 'model',
+          result,
+        }),
+    });
+  }
+
+  private async markAssistantMessageAsError(
+    messageId: string,
+    conversationId: string,
+    error: unknown,
+  ) {
+    await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        status: 'error',
+        error: error instanceof Error ? error.message : '未知错误',
+      },
+    });
+    await touchConversationTimestamp(this.prisma, conversationId);
   }
 
   private async buildSystemPrompt(conversationId: string) {

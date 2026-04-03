@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   type ChatMessagePart,
   type ChatTaskEvent,
+  type ChatTaskStreamPart,
   type ChatTaskStreamSource,
   type PersistedToolCall,
   type PersistedToolResult,
@@ -218,82 +219,19 @@ export class ChatTaskService implements OnModuleInit {
       });
 
       for await (const part of streamSource.stream.fullStream) {
-        if (isTextDeltaPart(part)) {
-          state.content += part.text;
-          await this.taskPersistence.persistMessageState(
-            resolvedInput,
-            state,
-            'streaming',
-            null,
-          );
-          this.emit(task, {
-            type: 'text-delta',
-            messageId: input.assistantMessageId,
-            text: part.text,
-          });
-          continue;
-        }
-
-        if (isToolCallPart(part)) {
-          state.toolCalls.push({
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            input: part.input,
-          });
-          await this.taskPersistence.persistMessageState(
-            resolvedInput,
-            state,
-            'streaming',
-            null,
-          );
-          this.emit(task, {
-            type: 'tool-call',
-            messageId: input.assistantMessageId,
-            toolName: part.toolName,
-            input: part.input,
-          });
-          continue;
-        }
-
-        if (isToolResultPart(part)) {
-          state.toolResults.push({
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            output: part.output,
-          });
-          await this.taskPersistence.persistMessageState(
-            resolvedInput,
-            state,
-            'streaming',
-            null,
-          );
-          this.emit(task, {
-            type: 'tool-result',
-            messageId: input.assistantMessageId,
-            toolName: part.toolName,
-            output: part.output,
-          });
-          continue;
+        const streamEvent = await this.applyStreamPart(
+          resolvedInput,
+          state,
+          input.assistantMessageId,
+          part,
+        );
+        if (streamEvent) {
+          this.emit(task, streamEvent);
         }
       }
 
       if (task.abortController.signal.aborted) {
-        await this.taskPersistence.persistMessageState(
-          resolvedInput,
-          state,
-          'stopped',
-          null,
-        );
-        this.emit(task, {
-          type: 'status',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
-        this.emit(task, {
-          type: 'finish',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
+        await this.finishStoppedTask(task, input.assistantMessageId, resolvedInput, state);
         return;
       }
 
@@ -337,11 +275,7 @@ export class ChatTaskService implements OnModuleInit {
           );
         }
       }
-      this.emit(task, {
-        type: 'finish',
-        messageId: input.assistantMessageId,
-        status: 'completed',
-      });
+      this.emitTerminalTaskEvent(task, input.assistantMessageId, 'completed');
       if (input.onSent) {
         try {
           await input.onSent(finalResult);
@@ -353,22 +287,7 @@ export class ChatTaskService implements OnModuleInit {
       }
     } catch (error) {
       if (task.abortController.signal.aborted) {
-        await this.taskPersistence.persistMessageState(
-          resolvedInput,
-          state,
-          'stopped',
-          null,
-        );
-        this.emit(task, {
-          type: 'status',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
-        this.emit(task, {
-          type: 'finish',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
+        await this.finishStoppedTask(task, input.assistantMessageId, resolvedInput, state);
         return;
       }
 
@@ -383,18 +302,85 @@ export class ChatTaskService implements OnModuleInit {
         'error',
         errorMessage,
       );
+      this.emitTerminalTaskEvent(
+        task,
+        input.assistantMessageId,
+        'error',
+        errorMessage,
+      );
+    }
+  }
+
+  private async applyStreamPart(
+    input: StartChatTaskInput,
+    state: ChatTaskMutableState,
+    messageId: string,
+    part: ChatTaskStreamPart,
+  ): Promise<ChatTaskEvent | null> {
+    if (isTextDeltaPart(part)) {
+      state.content += part.text;
+      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
+      return { type: 'text-delta', messageId, text: part.text };
+    }
+
+    if (isToolCallPart(part)) {
+      state.toolCalls.push({
+        toolCallId: part.toolCallId,
+        toolName: part.toolName,
+        input: part.input,
+      });
+      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
+      return {
+        type: 'tool-call',
+        messageId,
+        toolName: part.toolName,
+        input: part.input,
+      };
+    }
+
+    if (isToolResultPart(part)) {
+      state.toolResults.push({
+        toolCallId: part.toolCallId,
+        toolName: part.toolName,
+        output: part.output,
+      });
+      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
+      return {
+        type: 'tool-result',
+        messageId,
+        toolName: part.toolName,
+        output: part.output,
+      };
+    }
+
+    return null;
+  }
+
+  private async finishStoppedTask(
+    task: ActiveChatTask,
+    messageId: string,
+    input: StartChatTaskInput,
+    state: ChatTaskMutableState,
+  ): Promise<void> {
+    await this.taskPersistence.persistMessageState(input, state, 'stopped', null);
+    this.emitTerminalTaskEvent(task, messageId, 'stopped');
+  }
+
+  private emitTerminalTaskEvent(
+    task: ActiveChatTask,
+    messageId: string,
+    status: 'completed' | 'stopped' | 'error',
+    error?: string,
+  ): void {
+    if (status !== 'completed') {
       this.emit(task, {
         type: 'status',
-        messageId: input.assistantMessageId,
-        status: 'error',
-        error: errorMessage,
-      });
-      this.emit(task, {
-        type: 'finish',
-        messageId: input.assistantMessageId,
-        status: 'error',
+        messageId,
+        status,
+        ...(error ? { error } : {}),
       });
     }
+    this.emit(task, { type: 'finish', messageId, status });
   }
 
   /** 向所有订阅者广播事件。 */

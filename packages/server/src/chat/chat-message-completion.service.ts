@@ -3,37 +3,19 @@ import type { ChatMessagePart } from '@garlic-claw/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { touchConversationTimestamp } from './chat-message-common.helpers';
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
-import {
-  normalizeAssistantMessageOutput,
-  serializeMessageParts,
-} from './message-parts';
+import { normalizeAssistantMessageOutput, serializeMessageParts } from './message-parts';
 
-type MessageRecordWithMetadata = {
-  id: string;
-  metadataJson?: string | null;
-} & Record<string, unknown>;
+type MessageRecordWithMetadata = { id: string; metadataJson?: string | null } & Record<string, unknown>;
 
 interface ChatMessageMetadataValue {
-  visionFallback?: {
-    state: 'transcribing' | 'completed';
-    entries: Array<{
-      text: string;
-      source: 'cache' | 'generated';
-    }>;
-  };
+  visionFallback?: { state: 'transcribing' | 'completed'; entries: ChatVisionFallbackMetadataEntry[] };
 }
 
-interface ChatVisionFallbackMetadataEntry {
-  text: string;
-  source: 'cache' | 'generated';
-}
+interface ChatVisionFallbackMetadataEntry { text: string; source: 'cache' | 'generated' }
 
 @Injectable()
 export class ChatMessageCompletionService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly orchestration: ChatMessageOrchestrationService,
-  ) {}
+  constructor(private readonly prisma: PrismaService, private readonly orchestration: ChatMessageOrchestrationService) {}
 
   async completeShortCircuitedAssistant(input: {
     assistantMessageId: string;
@@ -123,26 +105,13 @@ export class ChatMessageCompletionService {
     assistantMessage: MessageRecordWithMetadata;
     visionFallbackEntries: ChatVisionFallbackMetadataEntry[];
   }) {
-    if (input.visionFallbackEntries.length === 0) {
+    const metadataJson = await this.persistVisionFallbackMetadata(
+      [input.userMessage.id, input.assistantMessage.id],
+      input.visionFallbackEntries,
+    );
+    if (!metadataJson) {
       return input;
     }
-
-    const metadataJson = serializeChatMessageMetadata({
-      visionFallback: {
-        state: 'completed',
-        entries: input.visionFallbackEntries,
-      },
-    });
-    await this.prisma.message.updateMany({
-      where: {
-        id: {
-          in: [input.userMessage.id, input.assistantMessage.id],
-        },
-      },
-      data: {
-        metadataJson,
-      },
-    });
 
     return {
       userMessage: {
@@ -160,34 +129,58 @@ export class ChatMessageCompletionService {
     assistantMessage: MessageRecordWithMetadata;
     visionFallbackEntries: ChatVisionFallbackMetadataEntry[];
   }) {
-    if (input.visionFallbackEntries.length === 0) {
+    const metadataJson = await this.persistVisionFallbackMetadata(
+      [input.assistantMessage.id],
+      input.visionFallbackEntries,
+    );
+    if (!metadataJson) {
       return input.assistantMessage;
     }
-
-    const metadataJson = serializeChatMessageMetadata({
-      visionFallback: {
-        state: 'completed',
-        entries: input.visionFallbackEntries,
-      },
-    });
-    await this.prisma.message.update({
-      where: {
-        id: input.assistantMessage.id,
-      },
-      data: {
-        metadataJson,
-      },
-    });
 
     return {
       ...input.assistantMessage,
       metadataJson,
     };
   }
+
+  private async persistVisionFallbackMetadata(
+    messageIds: readonly string[],
+    visionFallbackEntries: ChatVisionFallbackMetadataEntry[],
+  ): Promise<string | null> {
+    if (visionFallbackEntries.length === 0) {
+      return null;
+    }
+
+    const metadataJson = serializeChatMessageMetadata({
+      visionFallback: {
+        state: 'completed',
+        entries: visionFallbackEntries,
+      },
+    });
+    if (messageIds.length === 1) {
+      await this.prisma.message.update({
+        where: {
+          id: messageIds[0],
+        },
+        data: {
+          metadataJson,
+        },
+      });
+    } else {
+      await this.prisma.message.updateMany({
+        where: {
+          id: {
+            in: [...messageIds],
+          },
+        },
+        data: {
+          metadataJson,
+        },
+      });
+    }
+
+    return metadataJson;
+  }
 }
 
-function serializeChatMessageMetadata(
-  metadata: ChatMessageMetadataValue,
-): string {
-  return JSON.stringify(metadata);
-}
+function serializeChatMessageMetadata(metadata: ChatMessageMetadataValue): string { return JSON.stringify(metadata); }
