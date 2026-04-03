@@ -1,4 +1,4 @@
-import type { PluginCommandConflict, PluginCommandConflictEntry, PluginCommandDescriptor, PluginCommandInfo, PluginCommandOverview, PluginHookDescriptor, PluginRuntimeKind } from '@garlic-claw/shared';
+import type { PluginCommandConflict, PluginCommandConflictEntry, PluginCommandDescriptor, PluginCommandInfo, PluginCommandOverview, PluginHookDescriptor } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { describePluginGovernance } from './plugin-governance-policy';
 import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
@@ -73,9 +73,9 @@ export class PluginCommandService {
     plugin: PersistedPluginRecord,
     runtimePlugin: RuntimePluginRecord | null,
   ): PluginCommandInfo[] {
-    const runtimeKind = readPluginRuntimeKind(
-      runtimePlugin?.runtimeKind ?? plugin.runtimeKind,
-    );
+    const runtimeKind = runtimePlugin?.runtimeKind === 'builtin' || plugin.runtimeKind === 'builtin'
+      ? 'builtin'
+      : 'remote';
     const governance = describePluginGovernance({
       pluginId: plugin.name,
       runtimeKind,
@@ -193,7 +193,7 @@ function extractCommandsFromHooks(hooks: PluginHookDescriptor[]): PluginCommandD
     const nextDescriptor: PluginCommandDescriptor = {
       kind: 'hook-filter',
       canonicalCommand,
-      path: splitCommandPath(canonicalCommand),
+      path: canonicalCommand.slice(1).split(' '),
       aliases: triggers.filter((trigger) => trigger !== canonicalCommand),
       variants: triggers,
       ...(hook.description ? { description: hook.description } : {}),
@@ -220,10 +220,6 @@ function extractCommandsFromHooks(hooks: PluginHookDescriptor[]): PluginCommandD
 
 function buildCommandId(pluginId: string, descriptor: PluginCommandDescriptor): string {
   return `${pluginId}:${descriptor.canonicalCommand}:${descriptor.kind}`;
-}
-
-function splitCommandPath(command: string): string[] {
-  return command.replace(/^\//, '').split(/\s+/).filter(Boolean);
 }
 
 function normalizeCommandTrigger(command: string): string | null {
@@ -262,16 +258,9 @@ function dedupeByCommandId(commands: PluginCommandInfo[]): PluginCommandInfo[] {
 
 function cloneCommandDescriptor(command: PluginCommandDescriptor): PluginCommandDescriptor {
   return {
-    kind: command.kind,
-    canonicalCommand: command.canonicalCommand,
+    ...command,
     path: [...command.path],
     aliases: [...command.aliases],
     variants: [...command.variants],
-    ...(command.description ? { description: command.description } : {}),
-    ...(typeof command.priority === 'number' ? { priority: command.priority } : {}),
   };
-}
-
-function readPluginRuntimeKind(value: string | null | undefined): PluginRuntimeKind {
-  return value === 'builtin' ? 'builtin' : 'remote';
 }
