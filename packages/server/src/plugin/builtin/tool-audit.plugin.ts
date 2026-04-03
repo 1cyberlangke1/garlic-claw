@@ -1,8 +1,10 @@
 import {
   buildToolAuditStorageKey,
   buildToolAuditSummary,
+  createPassHookResult,
   persistPluginObservation,
   readPluginHookPayload,
+  TOOL_AUDIT_MANIFEST,
 } from '@garlic-claw/plugin-sdk';
 import type { ToolAfterCallHookPayload } from '@garlic-claw/shared';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
@@ -23,21 +25,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createToolAuditPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.tool-audit',
-      name: '工具审计器',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证工具生命周期 Hook 链路的内建插件',
-      permissions: ['log:write', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'tool:after-call',
-          description: '在工具执行完成后记录调用摘要',
-        },
-      ],
-    },
+    manifest: TOOL_AUDIT_MANIFEST,
     hooks: {
       'tool:after-call': async (payload, { host }) => {
         const afterCall = readPluginHookPayload<ToolAfterCallHookPayload>(payload);
@@ -52,9 +40,7 @@ export function createToolAuditPlugin(): BuiltinPluginDefinition {
           'tool:observed',
         );
 
-        return {
-          action: 'pass',
-        };
+        return createPassHookResult();
       },
     },
   };

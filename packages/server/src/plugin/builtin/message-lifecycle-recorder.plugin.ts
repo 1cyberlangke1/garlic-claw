@@ -1,6 +1,8 @@
 import {
   buildConversationCreatedSummary,
   buildMessageLifecycleSummary,
+  createPassHookResult,
+  MESSAGE_LIFECYCLE_RECORDER_MANIFEST,
   persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
@@ -28,33 +30,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.message-lifecycle-recorder',
-      name: '消息生命周期记录器',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证会话与消息生命周期 Hook 链路的内建插件',
-      permissions: ['log:write', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'conversation:created',
-          description: '在新会话创建后记录会话摘要',
-        },
-        {
-          name: 'message:created',
-          description: '在消息创建后记录消息摘要',
-        },
-        {
-          name: 'message:updated',
-          description: '在消息更新后记录消息摘要',
-        },
-        {
-          name: 'message:deleted',
-          description: '在消息删除后记录消息摘要',
-        },
-      ],
-    },
+    manifest: MESSAGE_LIFECYCLE_RECORDER_MANIFEST,
     hooks: {
       'conversation:created': async (payload, { host }) => {
         const created = readPluginHookPayload<ConversationCreatedHookPayload>(payload);
@@ -89,9 +65,7 @@ export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition 
           'message:observed',
         );
 
-        return {
-          action: 'pass',
-        };
+        return createPassHookResult();
       },
       'message:updated': async (payload, { host }) => {
         const updated = readPluginHookPayload<MessageUpdatedHookPayload>(payload);
@@ -114,9 +88,7 @@ export function createMessageLifecycleRecorderPlugin(): BuiltinPluginDefinition 
           'message:observed',
         );
 
-        return {
-          action: 'pass',
-        };
+        return createPassHookResult();
       },
       'message:deleted': async (payload, { host }) => {
         const deleted = readPluginHookPayload<MessageDeletedHookPayload>(payload);

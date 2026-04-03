@@ -2,6 +2,7 @@ import {
   buildResponseSendSummary,
   persistPluginObservation,
   readPluginHookPayload,
+  RESPONSE_RECORDER_MANIFEST,
 } from '@garlic-claw/plugin-sdk';
 import type { ResponseAfterSendHookPayload } from '@garlic-claw/shared';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
@@ -22,21 +23,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createResponseRecorderPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.response-recorder',
-      name: '回复记录器',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证最终回复发送 Hook 链路的内建插件',
-      permissions: ['log:write', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'response:after-send',
-          description: '在最终回复发送后记录发送摘要',
-        },
-      ],
-    },
+    manifest: RESPONSE_RECORDER_MANIFEST,
     hooks: {
       'response:after-send': async (payload, { host }) => {
         const afterSend = readPluginHookPayload<ResponseAfterSendHookPayload>(payload);

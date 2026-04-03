@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  AUTOMATION_RECORDER_MANIFEST,
   createAutomationCreatedResult,
   createAutomationEventDispatchResult,
   createAutomationListResult,
@@ -36,6 +37,8 @@ const {
   MEMORY_TOOLS_MANIFEST_TOOLS,
   buildMessageLifecycleSummary,
   buildMessageReceivedSummary,
+  MESSAGE_ENTRY_RECORDER_MANIFEST,
+  MESSAGE_LIFECYCLE_RECORDER_MANIFEST,
   buildResponseSendSummary,
   buildToolAuditSummary,
   buildWaitingModelSummary,
@@ -66,8 +69,10 @@ const {
   readPersonaRouterConfig,
   readPersonaSummaryInfo,
   PERSONA_ROUTER_CONFIG_FIELDS,
+  PLUGIN_GOVERNANCE_RECORDER_MANIFEST,
   PROVIDER_ROUTER_CONFIG_FIELDS,
   PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY,
+  RESPONSE_RECORDER_MANIFEST,
   ROUTE_INSPECTOR_MANIFEST_ROUTES,
   readConversationSummary,
   readConversationTitleConfig,
@@ -94,6 +99,7 @@ const {
   SUBAGENT_DELEGATE_MANIFEST_TOOLS,
   SUBAGENT_DELEGATE_CONFIG_FIELDS,
   textIncludesKeyword,
+  TOOL_AUDIT_MANIFEST,
 } = require('../dist/index.js');
 
 const WS_TYPE = {
@@ -1668,6 +1674,12 @@ test('plugin-sdk exposes shared automation tool param readers for author-side pl
   assert.equal(SUBAGENT_DELEGATE_MANIFEST_TOOLS[1].name, 'delegate_summary_background');
   assert.equal(ROUTE_INSPECTOR_MANIFEST_ROUTES.length, 1);
   assert.equal(ROUTE_INSPECTOR_MANIFEST_ROUTES[0].path, 'inspect/context');
+  assert.equal(AUTOMATION_RECORDER_MANIFEST.id, 'builtin.automation-recorder');
+  assert.equal(MESSAGE_ENTRY_RECORDER_MANIFEST.hooks[0].filter.message.regex, '^/');
+  assert.equal(MESSAGE_LIFECYCLE_RECORDER_MANIFEST.hooks.length, 4);
+  assert.equal(RESPONSE_RECORDER_MANIFEST.hooks[0].name, 'response:after-send');
+  assert.equal(PLUGIN_GOVERNANCE_RECORDER_MANIFEST.hooks[2].name, 'plugin:error');
+  assert.equal(TOOL_AUDIT_MANIFEST.hooks[0].name, 'tool:after-call');
 
   assert.throws(
     () => readPluginCreateAutomationParams({

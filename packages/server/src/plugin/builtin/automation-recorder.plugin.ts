@@ -1,5 +1,7 @@
 import {
+  AUTOMATION_RECORDER_MANIFEST,
   buildAutomationRunSummary,
+  createPassHookResult,
   persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
@@ -22,21 +24,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createAutomationRecorderPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.automation-recorder',
-      name: '自动化记录器',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证自动化生命周期 Hook 链路的内建插件',
-      permissions: ['log:write', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'automation:after-run',
-          description: '在自动化执行完成后记录执行摘要',
-        },
-      ],
-    },
+    manifest: AUTOMATION_RECORDER_MANIFEST,
     hooks: {
       'automation:after-run': async (payload, { host }) => {
         const afterRun = readPluginHookPayload<AutomationAfterRunHookPayload>(payload);
@@ -51,9 +39,7 @@ export function createAutomationRecorderPlugin(): BuiltinPluginDefinition {
           'automation:observed',
         );
 
-        return {
-          action: 'pass',
-        };
+        return createPassHookResult();
       },
     },
   };

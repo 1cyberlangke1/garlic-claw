@@ -1,6 +1,8 @@
 import {
   buildMessageReceivedSummary,
   buildWaitingModelSummary,
+  createPassHookResult,
+  MESSAGE_ENTRY_RECORDER_MANIFEST,
   persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
@@ -26,31 +28,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createMessageEntryRecorderPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.message-entry-recorder',
-      name: '消息入口记录器',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证 message:received 与 chat:waiting-model 链路的内建插件',
-      permissions: ['log:write', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'message:received',
-          description: '在命令式消息进入 LLM 前记录摘要',
-          priority: 100,
-          filter: {
-            message: {
-              regex: '^/',
-            },
-          },
-        },
-        {
-          name: 'chat:waiting-model',
-          description: '在真正进入模型调用前记录 waiting 摘要',
-        },
-      ],
-    },
+    manifest: MESSAGE_ENTRY_RECORDER_MANIFEST,
     hooks: {
       'message:received': async (payload, { host }) => {
         const received = readPluginHookPayload<MessageReceivedHookPayload>(payload);
@@ -65,9 +43,7 @@ export function createMessageEntryRecorderPlugin(): BuiltinPluginDefinition {
           'message:received:observed',
         );
 
-        return {
-          action: 'pass',
-        };
+        return createPassHookResult();
       },
       'chat:waiting-model': async (payload, { host }) => {
         const waiting = readPluginHookPayload<ChatWaitingModelHookPayload>(payload);

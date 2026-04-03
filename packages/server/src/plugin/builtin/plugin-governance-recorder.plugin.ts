@@ -1,6 +1,7 @@
 import {
   buildPluginGovernanceMessage,
   buildPluginGovernanceSummary,
+  PLUGIN_GOVERNANCE_RECORDER_MANIFEST,
   persistPluginObservation,
   readPluginHookPayload,
 } from '@garlic-claw/plugin-sdk';
@@ -27,29 +28,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin.types';
  */
 export function createPluginGovernanceRecorderPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.plugin-governance-recorder',
-      name: '插件治理记录器',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证插件治理生命周期 Hook 链路的内建插件',
-      permissions: ['log:write', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'plugin:loaded',
-          description: '在插件加载后记录治理摘要',
-        },
-        {
-          name: 'plugin:unloaded',
-          description: '在插件卸载后记录治理摘要',
-        },
-        {
-          name: 'plugin:error',
-          description: '在插件失败后记录治理摘要',
-        },
-      ],
-    },
+    manifest: PLUGIN_GOVERNANCE_RECORDER_MANIFEST,
     hooks: {
       'plugin:loaded': async (payload, { host }) => {
         const loaded = readPluginHookPayload<PluginLoadedHookPayload>(payload);
