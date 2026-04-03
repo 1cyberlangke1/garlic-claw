@@ -1,12 +1,4 @@
-import type {
-  PluginCommandConflict,
-  PluginCommandConflictEntry,
-  PluginCommandDescriptor,
-  PluginCommandInfo,
-  PluginCommandOverview,
-  PluginHookDescriptor,
-  PluginRuntimeKind,
-} from '@garlic-claw/shared';
+import type { PluginCommandConflict, PluginCommandConflictEntry, PluginCommandDescriptor, PluginCommandInfo, PluginCommandOverview, PluginHookDescriptor, PluginRuntimeKind } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { describePluginGovernance } from './plugin-governance-policy';
 import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
@@ -18,10 +10,7 @@ type RuntimePluginRecord = ReturnType<PluginRuntimeService['listPlugins']>[numbe
 
 @Injectable()
 export class PluginCommandService {
-  constructor(
-    private readonly pluginService: PluginService,
-    private readonly pluginRuntime: PluginRuntimeService,
-  ) {}
+  constructor(private readonly pluginService: PluginService, private readonly pluginRuntime: PluginRuntimeService) {}
 
   async listOverview(): Promise<PluginCommandOverview> {
     const [persistedPlugins, runtimePlugins] = await Promise.all([
@@ -58,7 +47,7 @@ export class PluginCommandService {
           return conflictDiff;
         }
 
-        const priorityDiff = normalizePriority(left.priority) - normalizePriority(right.priority);
+        const priorityDiff = comparePluginCommandPriority(left, right);
         if (priorityDiff !== 0) {
           return priorityDiff;
         }
@@ -155,7 +144,7 @@ export class PluginCommandService {
         trigger,
         commands: dedupeByCommandId(relatedCommands)
           .sort((left, right) => {
-            const priorityDiff = normalizePriority(left.priority) - normalizePriority(right.priority);
+            const priorityDiff = comparePluginCommandPriority(left, right);
             if (priorityDiff !== 0) {
               return priorityDiff;
             }
@@ -257,6 +246,10 @@ function normalizePriority(priority?: number): number {
   }
 
   return Math.trunc(priority);
+}
+
+function comparePluginCommandPriority(left: { priority?: number }, right: { priority?: number }): number {
+  return normalizePriority(left.priority) - normalizePriority(right.priority);
 }
 
 function dedupeStrings(values: string[]): string[] {

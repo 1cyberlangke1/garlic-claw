@@ -157,6 +157,8 @@
   - `chat.service.ts` 已把三处重复的 conversation owner 校验并回统一内部断言，不再各自手写 `not found / forbidden` 分支
   - `chat-message-session.ts` 已删除本地 `normalizeRole(...)`，改复用现有 `normalizeMessageRole(...)`
   - `chat-message.helpers.ts` 已把两处 `chat-tool` context 组装并回共享本地函数
+  - `plugin-cron.service.ts` 已把 host/manifest 两处重复的 cron upsert 载荷生成并回单一 mutation builder
+  - `plugin-command.service.ts` 已把两处重复的 priority 比较并回共享本地 comparator
   - `plugin-subagent-task-request.helpers.ts` 里重复的 `normalizePositiveInteger(...)` 已删回现有 validation helper
   - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
   - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
@@ -184,14 +186,16 @@
 - `chat-message-session.ts`: `109 -> 92`
 - `chat-task.service.ts`: `443 -> 360`
 - `config-manager.loader.ts`: `426 -> 392`
+- `plugin-command.service.ts`: `250 -> 242`
+- `plugin-cron.service.ts`: `244 -> 239`
 - `builtin-plugin-host-facade.helpers.ts`: `255 -> 0`（已删）
 - `builtin-plugin-host-params.helpers.ts`: `200 -> 0`（已删）
 - `builtin-plugin.types.ts`: `215 -> 31`
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `32545`
-- `packages/server/src/plugin`: `17029`
+- `packages/server/src`: `32532`
+- `packages/server/src/plugin`: `17016`
 - `packages/server/src/chat`: `3862`
 - `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message.helpers.ts`: `152`
@@ -203,6 +207,8 @@
 - `packages/server/src/chat/chat-message-session.ts`: `92`
 - `packages/server/src/chat/chat.service.ts`: `175`
 - `packages/server/src/chat/chat-task.service.ts`: `360`
+- `packages/server/src/plugin/plugin-command.service.ts`: `242`
+- `packages/server/src/plugin/plugin-cron.service.ts`: `239`
 - `packages/server/src/plugin/builtin/builtin-plugin.transport.ts`: `162`
 - `packages/server/src/plugin/builtin/builtin-plugin.types.ts`: `31`
 - `packages/server/src/plugin/plugin-subagent-task-request.helpers.ts`: `160`
@@ -242,6 +248,8 @@
 - [x] 本轮已把 `chat.service.ts` 的重复 conversation owner 校验并回统一内部断言
 - [x] 本轮已把 `chat-message-session.ts` 的本地角色归一化删回现有 `normalizeMessageRole(...)`
 - [x] 本轮已把 `chat-message.helpers.ts` 的两处 `chat-tool` context 组装并回共享本地函数
+- [x] 本轮已把 `plugin-cron.service.ts` 的 host/manifest 重复 cron upsert 载荷并回单一 mutation builder
+- [x] 本轮已把 `plugin-command.service.ts` 的两处 priority 比较并回共享本地 comparator
 - [x] 这一次切片已确认满足“core 净减少、复杂度外移到 SDK”：
   - `git diff --numstat` 显示 `packages/server/src/plugin/builtin/*host*` 与 `builtin-plugin.types.ts` 合计净减 `557` 行
   - 同一轮 `packages/plugin-sdk/src/index.ts` 净增 `70` 行，用于承接共用 facade / builder 导出

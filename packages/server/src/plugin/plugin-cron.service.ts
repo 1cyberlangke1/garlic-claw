@@ -95,6 +95,7 @@ export class PluginCronService implements OnModuleDestroy {
     input: PluginCronRegistrationInput,
   ): Promise<PluginCronJobSummary> {
     this.assertCronExpression(input.cron, 'cron.register');
+    const mutation = buildPluginCronMutationData(input);
 
     const record = await this.prisma.pluginCronJob.upsert({
       where: {
@@ -107,18 +108,10 @@ export class PluginCronService implements OnModuleDestroy {
       create: {
         pluginName: pluginId,
         name: input.name,
-        cron: input.cron,
-        description: input.description ?? null,
         source: 'host',
-        enabled: input.enabled ?? true,
-        dataJson: input.data === undefined ? null : JSON.stringify(input.data),
+        ...mutation,
       },
-      update: {
-        cron: input.cron,
-        description: input.description ?? null,
-        enabled: input.enabled ?? true,
-        dataJson: input.data === undefined ? null : JSON.stringify(input.data),
-      },
+      update: mutation,
     });
 
     const normalized = normalizePluginCronJobRecord(record);
@@ -216,6 +209,7 @@ export class PluginCronService implements OnModuleDestroy {
       });
     }
     for (const descriptor of manifestCrons) {
+      const mutation = buildPluginCronMutationData(descriptor);
       await this.prisma.pluginCronJob.upsert({
         where: {
           pluginName_name_source: {
@@ -227,22 +221,10 @@ export class PluginCronService implements OnModuleDestroy {
         create: {
           pluginName: pluginId,
           name: descriptor.name,
-          cron: descriptor.cron,
-          description: descriptor.description ?? null,
           source: 'manifest',
-          enabled: descriptor.enabled ?? true,
-          dataJson: descriptor.data === undefined
-            ? null
-            : JSON.stringify(descriptor.data),
+          ...mutation,
         },
-        update: {
-          cron: descriptor.cron,
-          description: descriptor.description ?? null,
-          enabled: descriptor.enabled ?? true,
-          dataJson: descriptor.data === undefined
-            ? null
-            : JSON.stringify(descriptor.data),
-        },
+        update: mutation,
       });
     }
   }
@@ -260,4 +242,18 @@ export class PluginCronService implements OnModuleDestroy {
 
     throw new BadRequestException(`${method} 的 cron 表达式无效`);
   }
+}
+
+function buildPluginCronMutationData(input: {
+  cron: string;
+  description?: string;
+  enabled?: boolean;
+  data?: JsonValue;
+}) {
+  return {
+    cron: input.cron,
+    description: input.description ?? null,
+    enabled: input.enabled ?? true,
+    dataJson: input.data === undefined ? null : JSON.stringify(input.data),
+  };
 }
