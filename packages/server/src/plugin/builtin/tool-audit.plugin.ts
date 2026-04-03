@@ -1,4 +1,5 @@
 import {
+  buildToolAuditStorageKey,
   buildToolAuditSummary,
   persistPluginObservation,
   readPluginHookPayload,
@@ -41,13 +42,10 @@ export function createToolAuditPlugin(): BuiltinPluginDefinition {
       'tool:after-call': async (payload, { host }) => {
         const afterCall = readPluginHookPayload<ToolAfterCallHookPayload>(payload);
         const summary = buildToolAuditSummary(afterCall);
-        const storageScope = afterCall.source.kind === 'plugin'
-          ? afterCall.pluginId ?? afterCall.source.id
-          : `${afterCall.source.kind}.${afterCall.source.id}`;
 
         await persistPluginObservation(
           host,
-          `tool.${storageScope}.${afterCall.tool.name}.last-call`,
+          buildToolAuditStorageKey(afterCall),
           summary,
           'info',
           `工具 ${afterCall.source.id}:${afterCall.tool.name} 执行完成`,

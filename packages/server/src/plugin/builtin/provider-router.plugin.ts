@@ -1,16 +1,17 @@
 import {
   asChatBeforeModelPayload,
+  createPassHookResult,
+  createProviderRouterMutateResult,
+  createProviderRouterShortCircuitResult,
   PROVIDER_ROUTER_CONFIG_FIELDS,
   readCurrentProviderInfo,
   filterAllowedToolNames,
   parseCommaSeparatedNames,
   readLatestUserTextFromMessages,
   readProviderRouterConfig,
-  resolveProviderRouterShortCircuitReply,
   sameToolNames,
   sanitizeOptionalText,
   textIncludesKeyword,
-  toHostJsonValue,
 } from '@garlic-claw/plugin-sdk';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
@@ -65,14 +66,12 @@ export function createProviderRouterPlugin(): BuiltinPluginDefinition {
         const latestUserText = readLatestUserTextFromMessages(hookPayload.request.messages);
 
         if (textIncludesKeyword(latestUserText, config.shortCircuitKeyword)) {
-          return toHostJsonValue({
-            action: 'short-circuit',
-            assistantContent: resolveProviderRouterShortCircuitReply(
-              config.shortCircuitReply,
-            ),
-            providerId: currentProvider.providerId ?? hookPayload.request.providerId,
-            modelId: currentProvider.modelId ?? hookPayload.request.modelId,
-            reason: 'matched-short-circuit-keyword',
+          return createProviderRouterShortCircuitResult({
+            reply: config.shortCircuitReply,
+            currentProviderId: currentProvider.providerId,
+            currentModelId: currentProvider.modelId,
+            requestProviderId: hookPayload.request.providerId,
+            requestModelId: hookPayload.request.modelId,
           });
         }
 
@@ -99,20 +98,14 @@ export function createProviderRouterPlugin(): BuiltinPluginDefinition {
           && !sameToolNames(allowedToolNames, currentToolNames);
 
         if (!shouldRoute && !shouldFilterTools) {
-          return toHostJsonValue({
-            action: 'pass',
-          });
+          return createPassHookResult();
         }
 
-        return toHostJsonValue({
-          action: 'mutate',
-          ...(shouldRoute
-            ? {
-                providerId: targetProviderId,
-                modelId: targetModelId,
-              }
-            : {}),
-          ...(shouldFilterTools ? { toolNames: allowedToolNames } : {}),
+        return createProviderRouterMutateResult({
+          shouldRoute,
+          targetProviderId,
+          targetModelId,
+          toolNames: shouldFilterTools ? allowedToolNames : null,
         });
       },
     },

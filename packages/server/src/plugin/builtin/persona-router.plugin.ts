@@ -1,5 +1,7 @@
 import {
   asChatBeforeModelPayload,
+  createPassHookResult,
+  createSystemPromptMutateResult,
   PERSONA_ROUTER_CONFIG_FIELDS,
   readCurrentPersonaInfo,
   readLatestUserTextFromMessages,
@@ -7,7 +9,6 @@ import {
   readPersonaSummaryInfo,
   sanitizeOptionalText,
   textIncludesKeyword,
-  toHostJsonValue,
 } from '@garlic-claw/plugin-sdk';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
@@ -58,18 +59,14 @@ export function createPersonaRouterPlugin(): BuiltinPluginDefinition {
         const latestUserText = readLatestUserTextFromMessages(hookPayload.request.messages);
         const targetPersonaId = sanitizeOptionalText(config.targetPersonaId);
         if (!targetPersonaId || !textIncludesKeyword(latestUserText, config.switchKeyword)) {
-          return toHostJsonValue({
-            action: 'pass',
-          });
+          return createPassHookResult();
         }
 
         const currentPersona = readCurrentPersonaInfo(
           await context.host.getCurrentPersona(),
         );
         if (currentPersona.personaId === targetPersonaId) {
-          return toHostJsonValue({
-            action: 'pass',
-          });
+          return createPassHookResult();
         }
 
         const targetPersona = readPersonaSummaryInfo(
@@ -81,15 +78,10 @@ export function createPersonaRouterPlugin(): BuiltinPluginDefinition {
         const prompt = sanitizeOptionalText(activatedPersona.prompt)
           || sanitizeOptionalText(targetPersona.prompt);
         if (!prompt) {
-          return toHostJsonValue({
-            action: 'pass',
-          });
+          return createPassHookResult();
         }
 
-        return toHostJsonValue({
-          action: 'mutate',
-          systemPrompt: prompt,
-        });
+        return createSystemPromptMutateResult(prompt);
       },
     },
   };

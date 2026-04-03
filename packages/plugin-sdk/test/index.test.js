@@ -7,6 +7,7 @@ const {
   buildPluginGovernanceMessage,
   buildPluginGovernanceSummary,
   buildConversationTitlePrompt,
+  buildToolAuditStorageKey,
   CONVERSATION_TITLE_CONFIG_FIELDS,
   CONVERSATION_TITLE_DEFAULT_TITLE,
   CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES,
@@ -30,6 +31,10 @@ const {
   createPluginAuthorTransportExecutor,
   createPluginHostFacade,
   createChatBeforeModelHookResult,
+  createPassHookResult,
+  createProviderRouterMutateResult,
+  createProviderRouterShortCircuitResult,
+  createSystemPromptMutateResult,
   describeJsonValueKind,
   filterAllowedToolNames,
   normalizePositiveInteger,
@@ -752,6 +757,13 @@ test('plugin-sdk exposes shared author-side text helpers for builtin plugins', (
     resolveProviderRouterShortCircuitReply('   '),
     PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY,
   );
+  assert.deepEqual(createPassHookResult(), {
+    action: 'pass',
+  });
+  assert.deepEqual(createSystemPromptMutateResult('你是写作助手'), {
+    action: 'mutate',
+    systemPrompt: '你是写作助手',
+  });
 });
 
 test('plugin-sdk exposes shared json object readers for author-side plugins', () => {
@@ -918,6 +930,53 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
       id: 'persona-writer',
       prompt: '你是一个偏文学表达的写作助手。',
     },
+  );
+  assert.deepEqual(
+    createProviderRouterShortCircuitResult({
+      reply: '直接回复',
+      currentProviderId: 'anthropic',
+      currentModelId: 'claude-3-7-sonnet',
+      requestProviderId: 'openai',
+      requestModelId: 'gpt-5.2',
+    }),
+    {
+      action: 'short-circuit',
+      assistantContent: '直接回复',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      reason: 'matched-short-circuit-keyword',
+    },
+  );
+  assert.deepEqual(
+    createProviderRouterMutateResult({
+      shouldRoute: true,
+      targetProviderId: 'anthropic',
+      targetModelId: 'claude-3-7-sonnet',
+      toolNames: ['recall_memory'],
+    }),
+    {
+      action: 'mutate',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      toolNames: ['recall_memory'],
+    },
+  );
+  assert.equal(
+    buildToolAuditStorageKey({
+      source: {
+        kind: 'plugin',
+        id: 'builtin.memory-tools',
+      },
+      pluginId: 'builtin.memory-tools',
+      tool: {
+        toolId: 'tool-1',
+        callName: 'save_memory',
+        name: 'save_memory',
+        description: '保存记忆',
+        parameters: {},
+      },
+    }),
+    'tool.builtin.memory-tools.save_memory.last-call',
   );
   assert.equal(CONVERSATION_TITLE_CONFIG_FIELDS.length, 2);
   assert.equal(PROVIDER_ROUTER_CONFIG_FIELDS.length, 5);

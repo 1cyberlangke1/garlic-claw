@@ -1298,6 +1298,53 @@ export function resolveProviderRouterShortCircuitReply(reply?: string): string {
   return sanitizeOptionalText(reply) || PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY;
 }
 
+export function createPassHookResult(): JsonObject {
+  return {
+    action: 'pass',
+  };
+}
+
+export function createSystemPromptMutateResult(systemPrompt: string): JsonObject {
+  return {
+    action: 'mutate',
+    systemPrompt,
+  };
+}
+
+export function createProviderRouterShortCircuitResult(input: {
+  reply?: string;
+  currentProviderId?: string;
+  currentModelId?: string;
+  requestProviderId: string;
+  requestModelId: string;
+}): JsonObject {
+  return {
+    action: 'short-circuit',
+    assistantContent: resolveProviderRouterShortCircuitReply(input.reply),
+    providerId: input.currentProviderId ?? input.requestProviderId,
+    modelId: input.currentModelId ?? input.requestModelId,
+    reason: 'matched-short-circuit-keyword',
+  };
+}
+
+export function createProviderRouterMutateResult(input: {
+  shouldRoute: boolean;
+  targetProviderId: string;
+  targetModelId: string;
+  toolNames: string[] | null;
+}): JsonObject {
+  return {
+    action: 'mutate',
+    ...(input.shouldRoute
+      ? {
+          providerId: input.targetProviderId,
+          modelId: input.targetModelId,
+        }
+      : {}),
+    ...(input.toolNames ? { toolNames: input.toolNames } : {}),
+  };
+}
+
 export function readCurrentProviderInfo(
   value: unknown,
 ): PluginCurrentProviderInfo {
@@ -1645,6 +1692,16 @@ export function describeJsonValueKind(value: JsonValue): string {
   }
 
   return typeof value;
+}
+
+export function buildToolAuditStorageKey(
+  payload: Pick<ToolAfterCallHookPayload, 'source' | 'pluginId' | 'tool'>,
+): string {
+  const storageScope = payload.source.kind === 'plugin'
+    ? payload.pluginId ?? payload.source.id
+    : `${payload.source.kind}.${payload.source.id}`;
+
+  return `tool.${storageScope}.${payload.tool.name}.last-call`;
 }
 
 export function readRequiredStringParam(params: JsonObject, key: string): string {
