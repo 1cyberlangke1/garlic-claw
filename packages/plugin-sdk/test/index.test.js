@@ -2,6 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  createAutomationCreatedResult,
+  createAutomationEventDispatchResult,
+  createAutomationListResult,
+  createRouteInspectorContextResponse,
+  createAutomationRunResult,
+  createAutomationToggleResult,
   buildAutomationRunSummary,
   buildConversationCreatedSummary,
   buildPluginGovernanceMessage,
@@ -1505,6 +1511,93 @@ test('plugin-sdk exposes shared automation tool param readers for author-side pl
           },
         },
       ],
+    },
+  );
+  assert.deepEqual(
+    createAutomationCreatedResult({
+      id: 'automation-1',
+      name: '咖啡提醒',
+    }),
+    {
+      created: true,
+      id: 'automation-1',
+      name: '咖啡提醒',
+    },
+  );
+  assert.deepEqual(
+    createAutomationListResult([
+      {
+        id: 'automation-1',
+        name: '咖啡提醒',
+        trigger: {
+          type: 'cron',
+          cron: '5m',
+        },
+        actions: [],
+        enabled: true,
+        lastRunAt: null,
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z',
+      },
+    ]),
+    [
+      {
+        id: 'automation-1',
+        name: '咖啡提醒',
+        trigger: {
+          type: 'cron',
+          cron: '5m',
+        },
+        enabled: true,
+        lastRunAt: null,
+      },
+    ],
+  );
+  assert.deepEqual(
+    createAutomationEventDispatchResult({
+      event: 'coffee.ready',
+      matchedAutomationIds: ['automation-1'],
+    }),
+    {
+      event: 'coffee.ready',
+      matchedAutomationIds: ['automation-1'],
+    },
+  );
+  assert.deepEqual(createAutomationToggleResult(null), {
+    error: '未找到自动化',
+  });
+  assert.deepEqual(createAutomationRunResult(null), {
+    error: '未找到自动化或已禁用',
+  });
+  assert.deepEqual(
+    createRouteInspectorContextResponse({
+      plugin: {
+        id: 'builtin.route-inspector',
+      },
+      user: {
+        id: 'user-1',
+      },
+      conversation: {
+        id: 'conversation-1',
+        title: '咖啡偏好总结',
+      },
+      messageCount: 1,
+    }),
+    {
+      status: 200,
+      body: {
+        plugin: {
+          id: 'builtin.route-inspector',
+        },
+        user: {
+          id: 'user-1',
+        },
+        conversation: {
+          id: 'conversation-1',
+          title: '咖啡偏好总结',
+        },
+        messageCount: 1,
+      },
     },
   );
 

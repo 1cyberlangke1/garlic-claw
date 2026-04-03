@@ -1,9 +1,13 @@
 import {
+  createAutomationCreatedResult,
+  createAutomationEventDispatchResult,
+  createAutomationListResult,
+  createAutomationRunResult,
+  createAutomationToggleResult,
   readPluginCreateAutomationParams,
   readRequiredStringParam,
 } from '@garlic-claw/plugin-sdk';
 import type { JsonObject, JsonValue } from '../../common/types/json-value';
-import { toJsonValue } from '../../common/utils/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**
@@ -115,11 +119,7 @@ export function createAutomationToolsPlugin(): BuiltinPluginDefinition {
           readPluginCreateAutomationParams(params),
         );
 
-        return {
-          created: true,
-          id: automation.id,
-          name: automation.name,
-        };
+        return createAutomationCreatedResult(automation);
       },
 
       /**
@@ -134,13 +134,7 @@ export function createAutomationToolsPlugin(): BuiltinPluginDefinition {
       ): Promise<JsonValue> => {
         const automations = await context.host.listAutomations();
 
-        return automations.map((automation) => ({
-          id: automation.id,
-          name: automation.name,
-          trigger: toJsonValue(automation.trigger),
-          enabled: automation.enabled,
-          lastRunAt: automation.lastRunAt,
-        }));
+        return createAutomationListResult(automations);
       },
 
       /**
@@ -153,7 +147,9 @@ export function createAutomationToolsPlugin(): BuiltinPluginDefinition {
         params: JsonObject,
         context,
       ): Promise<JsonValue> =>
-        toJsonValue(await context.host.emitAutomationEvent(readRequiredStringParam(params, 'event'))),
+        createAutomationEventDispatchResult(
+          await context.host.emitAutomationEvent(readRequiredStringParam(params, 'event')),
+        ),
 
       /**
        * 切换一条自动化规则的启用状态。
@@ -169,7 +165,7 @@ export function createAutomationToolsPlugin(): BuiltinPluginDefinition {
           readRequiredStringParam(params, 'automationId'),
         );
 
-        return result ?? { error: '未找到自动化' };
+        return createAutomationToggleResult(result);
       },
 
       /**
@@ -186,7 +182,7 @@ export function createAutomationToolsPlugin(): BuiltinPluginDefinition {
           readRequiredStringParam(params, 'automationId'),
         );
 
-        return result ?? { error: '未找到自动化或已禁用' };
+        return createAutomationRunResult(result);
       },
     },
   };

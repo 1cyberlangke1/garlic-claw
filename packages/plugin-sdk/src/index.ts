@@ -1861,6 +1861,69 @@ export function readPluginCreateAutomationParams(params: JsonObject): {
   };
 }
 
+export function createAutomationCreatedResult(
+  automation: Pick<AutomationInfo, 'id' | 'name'>,
+): JsonValue {
+  return {
+    created: true,
+    id: automation.id,
+    name: automation.name,
+  };
+}
+
+export function createAutomationListResult(
+  automations: AutomationInfo[],
+): JsonValue {
+  return automations.map((automation) => ({
+    id: automation.id,
+    name: automation.name,
+    trigger: toHostJsonValue(automation.trigger),
+    enabled: automation.enabled,
+    lastRunAt: automation.lastRunAt,
+  }));
+}
+
+export function createAutomationEventDispatchResult(
+  result: AutomationEventDispatchInfo,
+): JsonValue {
+  return toHostJsonValue(result);
+}
+
+export function createAutomationToggleResult(
+  result: { id: string; enabled: boolean } | null,
+): JsonValue {
+  return result ?? { error: '未找到自动化' };
+}
+
+export function createAutomationRunResult(
+  result: { status: string; results: JsonValue[] } | null,
+): JsonValue {
+  return result ?? { error: '未找到自动化或已禁用' };
+}
+
+export function createRouteInspectorContextResponse(input: {
+  plugin: unknown;
+  user: unknown;
+  conversation: {
+    id?: string;
+    title?: string;
+  } | null;
+  messageCount: number;
+}): {
+  status: number;
+  body: JsonValue;
+} {
+  return {
+    status: 200,
+    body: toHostJsonValue({
+      plugin: readJsonObjectValue(input.plugin),
+      user: readJsonObjectValue(input.user),
+      conversation: input.conversation,
+      messageCount: input.messageCount,
+    }),
+  };
+}
+
 export function readRequiredTextValue(value: JsonValue, label: string): string {
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`${label} 必须是非空字符串`);

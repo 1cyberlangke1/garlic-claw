@@ -1,14 +1,8 @@
-import { readConversationSummary } from '@garlic-claw/plugin-sdk';
-import { toJsonValue } from '../../common/utils/json-value';
+import {
+  createRouteInspectorContextResponse,
+  readConversationSummary,
+} from '@garlic-claw/plugin-sdk';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
-
-/**
- * Route 探针插件返回的会话摘要。
- */
-interface RouteInspectorConversationSummary {
-  id?: string;
-  title?: string;
-}
 
 /**
  * 创建一个用于验证插件 Web Route 能力的内建插件。
@@ -51,7 +45,10 @@ export function createRouteInspectorPlugin(): BuiltinPluginDefinition {
       'inspect/context': async (_request, context) => {
         const plugin = await context.host.getPluginSelf();
         const user = await context.host.getUser();
-        let conversation: RouteInspectorConversationSummary | null = null;
+        let conversation: {
+          id?: string;
+          title?: string;
+        } | null = null;
         let messageCount = 0;
 
         if (context.callContext.conversationId) {
@@ -60,15 +57,12 @@ export function createRouteInspectorPlugin(): BuiltinPluginDefinition {
           messageCount = Array.isArray(messages) ? messages.length : 0;
         }
 
-        return {
-          status: 200,
-          body: toJsonValue({
-            plugin,
-            user,
-            conversation,
-            messageCount,
-          }),
-        };
+        return createRouteInspectorContextResponse({
+          plugin,
+          user,
+          conversation,
+          messageCount,
+        });
       },
     },
   };

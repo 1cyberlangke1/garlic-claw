@@ -241,6 +241,7 @@
   - builtin router/context/title 的 manifest config fields 与默认 fallback 继续外移后，`packages/server/src/plugin` 已继续从 `16266` 降到 `16216`，`packages/server/src` 已继续从 `31782` 降到 `31732`
   - builtin router 的短路/变更结果装配与 `tool-audit` 的 storage key builder 继续外移后，`packages/server/src/plugin` 已继续从 `16216` 降到 `16199`，`packages/server/src` 已继续从 `31732` 降到 `31715`
   - builtin `subagent-delegate` 的 config fields、subagent 请求装配与后台任务回写结果投影继续外移后，`packages/server/src/plugin` 已继续从 `16199` 降到 `16119`，`packages/server/src` 已继续从 `31715` 降到 `31635`
+  - builtin `automation-tools / route-inspector` 的结果投影与 route body 包装继续外移后，`packages/server/src/plugin` 已继续从 `16119` 降到 `16110`，`packages/server/src` 已继续从 `31635` 降到 `31626`
   - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
   - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
   - 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
@@ -282,8 +283,8 @@
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `31635`
-- `packages/server/src/plugin`: `16119`
+- `packages/server/src`: `31626`
+- `packages/server/src/plugin`: `16110`
 - `packages/server/src/chat`: `3862`
 - `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message.helpers.ts`: `152`
@@ -301,11 +302,13 @@
 - `packages/server/src/plugin/plugin-route.controller.ts`: `180`
 - `packages/server/src/plugin/builtin/builtin-plugin.transport.ts`: `162`
 - `packages/server/src/plugin/builtin/builtin-plugin.types.ts`: `31`
+- `packages/server/src/plugin/builtin/automation-tools.plugin.ts`: `180`
 - `packages/server/src/plugin/builtin/provider-router.plugin.ts`: `107`
 - `packages/server/src/plugin/builtin/persona-router.plugin.ts`: `84`
 - `packages/server/src/plugin/builtin/conversation-title.plugin.ts`: `90`
 - `packages/server/src/plugin/builtin/memory-context.plugin.ts`: `86`
 - `packages/server/src/plugin/builtin/kb-context.plugin.ts`: `86`
+- `packages/server/src/plugin/builtin/route-inspector.plugin.ts`: `66`
 - `packages/server/src/plugin/builtin/subagent-delegate.plugin.ts`: `106`
 - `packages/server/src/plugin/builtin/tool-audit.plugin.ts`: `58`
 - `packages/server/src/plugin/plugin-subagent-task-request.helpers.ts`: `160`
@@ -392,10 +395,15 @@
   - `packages/server/src` 非空生产代码：`31715 -> 31635`
   - `packages/server/src/plugin` 非空生产代码：`16199 -> 16119`
   - `packages/plugin-sdk/src/index.ts` 非空生产代码：`4372 -> 4486`
+- [x] 这一轮 builtin `automation-tools / route-inspector` 的结果投影与 route body 包装外移也已确认满足“core 净减少、复杂度外移到 SDK”：
+  - `packages/server/src` 非空生产代码：`31635 -> 31626`
+  - `packages/server/src/plugin` 非空生产代码：`16119 -> 16110`
+  - `packages/plugin-sdk/src/index.ts` 非空生产代码：`4486 -> 4543`
 - [ ] 后续切片先核对是否真的让 `core` 生产代码净减少；只在 `core` 内横向搬运的切片不再优先
 - [ ] 优先把作者侧复杂度继续外移到 `SDK / adapter`，而不是继续给 `core` 增加新 helper 层
 - [ ] 如继续收口 `plugin` 私有治理，只评估 conversation override 是否还需要独立入口；不再回到双轨全局启停
 - [ ] 复盘这轮新增的 `core helper / facade / service`，优先找出可以删回、并回，或迁到 `plugin-sdk / adapter` 的部分
 - [x] 上一候选里 recorder / router builtin 的短路结果 builder、路由结果装配和 `tool-audit` storage key 已继续外移到 `plugin-sdk`
 - [x] 上一候选里 `subagent-delegate` 的 manifest config fields、subagent request 装配与后台任务 writeBack 结果样板已继续外移到 `plugin-sdk`
-- [ ] 下一候选优先查看 `automation-tools / route-inspector` 里的工具结果投影、route body builder 与 JSON 包装样板，评估是否继续外移到 `plugin-sdk`
+- [x] 上一候选里 `automation-tools / route-inspector` 的工具结果投影、route body builder 与 JSON 包装样板已继续外移到 `plugin-sdk`
+- [ ] 下一候选优先查看 `memory-tools / core-tools` 里的工具结果投影与错误对象样板，评估是否继续外移到 `plugin-sdk`
