@@ -160,13 +160,8 @@ describe('ChatMessagePluginTargetService', () => {
       updatedAt: '2026-03-28T10:00:00.000Z',
     });
 
-    expect(chatService.getConversation).toHaveBeenNthCalledWith(
-      1,
-      'user-1',
-      'conversation-2',
-    );
-    expect(chatService.getConversation).toHaveBeenNthCalledWith(
-      2,
+    expect(chatService.getConversation).toHaveBeenCalledTimes(1);
+    expect(chatService.getConversation).toHaveBeenCalledWith(
       'user-1',
       'conversation-2',
     );

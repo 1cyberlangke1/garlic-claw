@@ -151,6 +151,9 @@
   - `chat-message-generation.service.ts` 已把 start/retry 里的短路完成、任务启动、错误回写并回统一内部流程，不再保留两段近乎相同的主链控制流
   - `chat-message-completion.service.ts` 已把“双消息 metadata 写回 / 单消息 metadata 写回”并回统一内部持久化入口，不再保留两段近乎相同的 vision fallback 写回流程
   - `chat-task.service.ts` 已把三类流片段的 streaming 写回、两处 stopped 终态和统一 finish/status 发射并回类内共享流程
+  - `chat-message-plugin-target.service.ts` 已删掉 `sendPluginMessage(...)` 里重复的会话访问校验，不再为同一个 target conversation 做两次相同权限读取
+  - `chat-message-response-hooks.service.ts` 已把 `CompletedChatTaskResult -> hook context/payload` 的三处重复组装并回类内共享入口
+  - `chat.controller.ts` 已把 `sendMessage/retryMessage` 两条 SSE 骨架并回统一内部流程，不再保留两段近乎相同的订阅/等待/错误写回控制流
   - `plugin-subagent-task-request.helpers.ts` 里重复的 `normalizePositiveInteger(...)` 已删回现有 validation helper
   - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
   - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
@@ -167,9 +170,12 @@
 - `tool-registry.service.ts`: `487 -> 226`
 - `plugin.service.ts`: `1059 -> 342`
 - `chat-message.service.ts`: `1030 -> 65`
+- `chat.controller.ts`: `266 -> 228`
 - `chat-message-completion.service.ts`: `180 -> 172`
 - `chat-message-generation.service.ts`: `503 -> 436`
 - `chat-message-orchestration.service.ts`: `359 -> 234`
+- `chat-message-plugin-target.service.ts`: `259 -> 228`
+- `chat-message-response-hooks.service.ts`: `154 -> 134`
 - `chat-task.service.ts`: `443 -> 360`
 - `config-manager.loader.ts`: `426 -> 392`
 - `builtin-plugin-host-facade.helpers.ts`: `255 -> 0`（已删）
@@ -178,12 +184,15 @@
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `32669`
+- `packages/server/src`: `32580`
 - `packages/server/src/plugin`: `17029`
-- `packages/server/src/chat`: `3986`
+- `packages/server/src/chat`: `3897`
+- `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message-completion.service.ts`: `172`
 - `packages/server/src/chat/chat-message-generation.service.ts`: `436`
+- `packages/server/src/chat/chat-message-plugin-target.service.ts`: `228`
 - `packages/server/src/chat/chat-message-orchestration.service.ts`: `234`
+- `packages/server/src/chat/chat-message-response-hooks.service.ts`: `134`
 - `packages/server/src/chat/chat-task.service.ts`: `360`
 - `packages/server/src/plugin/builtin/builtin-plugin.transport.ts`: `162`
 - `packages/server/src/plugin/builtin/builtin-plugin.types.ts`: `31`
@@ -218,6 +227,9 @@
 - [x] 本轮已删掉 `builtin-plugin.types.ts` 里无人消费的 builtin 别名层，并让治理 handler 直接复用 SDK type
 - [x] 本轮已把 `chat-message-completion.service.ts` 的 vision fallback metadata 重复写回并回统一内部持久化入口
 - [x] 本轮已把 `chat-task.service.ts` 的 streaming/stopped 重复控制流并回统一内部流程
+- [x] 本轮已把 `chat-message-plugin-target.service.ts` 的重复会话访问校验删回单次目标解析
+- [x] 本轮已把 `chat-message-response-hooks.service.ts` 的 response hook context/payload 重复组装并回类内共享入口
+- [x] 本轮已把 `chat.controller.ts` 的 `sendMessage/retryMessage` SSE 骨架并回统一内部流程
 - [x] 这一次切片已确认满足“core 净减少、复杂度外移到 SDK”：
   - `git diff --numstat` 显示 `packages/server/src/plugin/builtin/*host*` 与 `builtin-plugin.types.ts` 合计净减 `557` 行
   - 同一轮 `packages/plugin-sdk/src/index.ts` 净增 `70` 行，用于承接共用 facade / builder 导出

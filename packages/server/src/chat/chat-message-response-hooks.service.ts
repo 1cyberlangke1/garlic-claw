@@ -1,8 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  forwardRef,
-} from '@nestjs/common';
+import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import type { PluginResponseSource } from '@garlic-claw/shared';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { createChatLifecycleContext } from './chat-message-common.helpers';
@@ -46,27 +42,14 @@ export class ChatMessageResponseHooksService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<void> {
-    const currentParts = input.result.parts ?? [];
-    const hookContext = createChatLifecycleContext({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activeProviderId: input.result.providerId,
-      activeModelId: input.result.modelId,
-      activePersonaId: input.activePersonaId,
-    });
+    const hookContext = this.createResultHookContext(input);
 
     await this.pluginRuntime.runResponseAfterSendHooks({
       context: hookContext,
       payload: {
         context: hookContext,
         responseSource: input.responseSource,
-        assistantMessageId: input.result.assistantMessageId,
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
+        ...this.createAssistantHookPayload(input.result),
         sentAt: new Date().toISOString(),
       },
     });
@@ -80,23 +63,8 @@ export class ChatMessageResponseHooksService {
   }): Promise<CompletedChatTaskResult> {
     const currentParts = input.result.parts ?? [];
     const patchedPayload = await this.pluginRuntime.runChatAfterModelHooks({
-      context: {
-        source: 'chat-hook',
-        userId: input.userId,
-        conversationId: input.conversationId,
-        activeProviderId: input.result.providerId,
-        activeModelId: input.result.modelId,
-        activePersonaId: input.activePersonaId,
-      },
-      payload: {
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantMessageId: input.result.assistantMessageId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
-      },
+      context: this.createResultHookContext(input),
+      payload: this.createAssistantHookPayload(input.result),
     });
 
     const normalizedAssistant = normalizeAssistantMessageOutput({
@@ -125,26 +93,13 @@ export class ChatMessageResponseHooksService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<CompletedChatTaskResult> {
-    const currentParts = input.result.parts ?? [];
-    const hookContext = createChatLifecycleContext({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activeProviderId: input.result.providerId,
-      activeModelId: input.result.modelId,
-      activePersonaId: input.activePersonaId,
-    });
+    const hookContext = this.createResultHookContext(input);
     const patchedPayload = await this.pluginRuntime.runResponseBeforeSendHooks({
       context: hookContext,
       payload: {
         context: hookContext,
         responseSource: input.responseSource,
-        assistantMessageId: input.result.assistantMessageId,
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
+        ...this.createAssistantHookPayload(input.result),
       },
     });
 
@@ -161,6 +116,33 @@ export class ChatMessageResponseHooksService {
       parts: normalizedAssistant.parts,
       toolCalls: patchedPayload.toolCalls,
       toolResults: patchedPayload.toolResults,
+    };
+  }
+
+  private createResultHookContext(input: {
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    result: CompletedChatTaskResult;
+  }) {
+    return createChatLifecycleContext({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activeProviderId: input.result.providerId,
+      activeModelId: input.result.modelId,
+      activePersonaId: input.activePersonaId,
+    });
+  }
+
+  private createAssistantHookPayload(result: CompletedChatTaskResult) {
+    return {
+      assistantMessageId: result.assistantMessageId,
+      providerId: result.providerId,
+      modelId: result.modelId,
+      assistantContent: result.content,
+      assistantParts: result.parts ?? [],
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
     };
   }
 }

@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  forwardRef,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import type {
   ChatMessagePart,
   PluginCallContext,
@@ -103,19 +97,12 @@ export class ChatMessagePluginTargetService {
 
   private async appendConversationTargetMessage(input: {
     context: PluginCallContext;
-    conversationId?: string;
+    conversationId: string;
     content?: string | null;
     parts?: ChatMessagePart[] | null;
     provider?: string | null;
     model?: string | null;
   }): Promise<ConversationTargetMessageRecord> {
-    const targetConversationId = input.conversationId ?? input.context.conversationId;
-    if (!targetConversationId) {
-      throw new BadRequestException('message.send 需要 conversationId 上下文');
-    }
-
-    await this.ensureConversationAccess(input.context, targetConversationId);
-
     const normalizedAssistant = normalizeAssistantMessageOutput({
       content: input.content,
       parts: input.parts,
@@ -129,7 +116,7 @@ export class ChatMessagePluginTargetService {
     const hookContext = createChatLifecycleContext({
       source: input.context.source,
       userId: input.context.userId,
-      conversationId: targetConversationId,
+      conversationId: input.conversationId,
       ...(provider ? { activeProviderId: provider } : {}),
       ...(model ? { activeModelId: model } : {}),
       ...(input.context.activePersonaId
@@ -140,7 +127,7 @@ export class ChatMessagePluginTargetService {
       context: hookContext,
       payload: {
         context: hookContext,
-        conversationId: targetConversationId,
+        conversationId: input.conversationId,
         message: {
           role: 'assistant',
           content: normalizedAssistant.content,
@@ -160,7 +147,7 @@ export class ChatMessagePluginTargetService {
 
     const createdMessage = await this.prisma.message.create({
       data: {
-        conversationId: targetConversationId,
+        conversationId: input.conversationId,
         role: 'assistant',
         content: createdMessagePayload.message.content ?? '',
         partsJson: createdMessagePayload.message.parts.length
@@ -172,11 +159,11 @@ export class ChatMessagePluginTargetService {
         error: null,
       },
     });
-    await touchConversationTimestamp(this.prisma, targetConversationId);
+    await touchConversationTimestamp(this.prisma, input.conversationId);
 
     return {
       id: createdMessage.id,
-      conversationId: targetConversationId,
+      conversationId: input.conversationId,
       role: 'assistant',
       content: createdMessage.content ?? '',
       parts: deserializeMessageParts(createdMessage.partsJson),
@@ -191,28 +178,6 @@ export class ChatMessagePluginTargetService {
       createdAt: createdMessage.createdAt.toISOString(),
       updatedAt: createdMessage.updatedAt.toISOString(),
     };
-  }
-
-  private async ensureConversationAccess(
-    context: PluginCallContext,
-    conversationId: string,
-  ) {
-    if (context.userId) {
-      await this.chatService.getConversation(context.userId, conversationId);
-      return;
-    }
-
-    const conversation = await this.prisma.conversation.findUnique({
-      where: {
-        id: conversationId,
-      },
-      select: {
-        id: true,
-      },
-    });
-    if (!conversation) {
-      throw new NotFoundException('Conversation not found');
-    }
   }
 
   private async resolvePluginMessageTarget(
