@@ -1,5 +1,37 @@
 # Garlic Claw TODO
 
+> 最高优先级要求：
+> 重构要一直继续，直到仓库变得好维护、代码优雅，而不是继续停留在现在这种几万行 `core` 屎山状态。
+> 只要 `core` 体量、重复控制流、特判路径、作者侧语法糖仍然大量堆在本体里，这个目标就不能算完成。
+
+## 重构核心理念
+
+- `core` 要像 `C` 一样简单：
+  - 只保留稳定内核边界
+  - 只保留少量必须长期维护的 runtime contract
+  - 优先删重复、删入口壳、删特判，而不是继续长新层
+- `SDK` 要像 `C++` 一样提供丰富语法糖：
+  - 作者侧模板、payload/result builder、config reader、adapter glue 优先放到 `SDK / adapter / plugin-side facade`
+  - 不把作者体验和兼容层长期堆在 `core`
+- 分散在各处的重复代码要主动并回：
+  - 同一语义只允许保留一份执行骨架
+  - 不允许 `tool / route / hook`、`controller / gateway / runtime` 各自维护同义控制流副本
+  - 先合并重复，再决定哪些还能继续外移到 `SDK / adapter`
+- 统一发生在 `runtime contract`，不强推统一作者格式：
+  - `plugin` 维持宿主原生扩展协议
+  - `MCP` 通过 adapter 接入
+  - `skill` 保持生态兼容
+- 每一刀都按“总代码减法”判断是否成立：
+  - `packages/server/src` 要继续下降
+  - `packages/server/src/plugin` 或 `packages/server/src/chat` 要继续下降
+  - 不接受把同等复杂度换个名字留在新的 `core helper / facade / service`
+  - 单刀如果只减少几十行，不能算有效推进，不能当作阶段完成
+  - 后续优先做能形成 `100 ~ 200` 行以上净减，或能直接打开下一刀大段删除面的切片
+- 新能力默认先问：
+  - 能不能放进现有 contract
+  - 能不能外移到 `SDK / adapter`
+  - 只有明确不能时才允许进入 `core`
+
 > 校正 2026-04-01：
 > 之前把“contract 已固化 / 局部 primitive 已落地”误记成“顶层长期目标已完成”，这个状态不准确。
 > 下面这些顶层条目恢复为长期目标；具体已经落地的内容继续以阶段记录和进展记录为准。
@@ -20,7 +52,7 @@
 
 ## 真正重构执行清单
 
-- [ ] `plugin-runtime.service.ts`
+- [x] `plugin-runtime.service.ts`
   - 删除按 hook 名字平铺的入口样板
   - 收口广播、mutation、subagent 三类重复调度骨架
   - 文件目标：`678 -> <= 520`
@@ -28,7 +60,7 @@
   - 删除本地大 `if` 分支里的重复读参和重复 `toJsonValue(...)`
   - 改成按 host capability family 调度
   - 文件目标：`284 -> 180 ~ 220`
-- [ ] `plugin-runtime-transport.facade.ts`
+- [x] `plugin-runtime-transport.facade.ts`
   - 合并 `tool / route / hook` 三条链路重复的超时、失败记录、slot 包装
   - 文件目标：`306 -> 220 ~ 240`
 - [ ] `plugin.gateway.ts`
@@ -192,6 +224,7 @@
 - [ ] 作者体验、协议糖和适配复杂度优先外移到 `SDK / adapter / plugin-side facade`
 - [ ] 只有在 `core` 更薄、边界更稳、且总代码更少时，才算这轮减法成立
 - [ ] 重构做法默认顺序是：先删重复、删薄壳、把作者侧复杂度外移；只有少量局部重写能换来 `core` 总量继续下降时，才接受重写
+- [ ] 单刀如果只有 `< 100` 行级别净减，默认视为不达标；除非它明确解锁下一刀更大的整段删除，否则不再重复这类低收益整理
 - 结论校正 2026-04-03：
   - 当前这套功能不应该天然需要现在这套 `core` 体量
   - 最新实时口径已经压到：
@@ -308,6 +341,16 @@
 - `plugin-runtime.service.ts` 已从“按 hook 名字平铺的大入口壳”压成共享骨架驱动的 runtime 入口，`678 -> 435`
 - `plugin-runtime-host.facade.ts` 已从单条大 `if` 链改成按能力族分发；结构更清楚了，但文件体量还没压到目标区间，后面还要继续收
 - 这次 runtime/host 切片后，`packages/server/src/plugin` 已继续从 `13734` 降到 `13528`，`packages/server/src` 已继续从 `29255` 降到 `29049`
+- `plugin-runtime-transport.facade.ts` 已把 `tool / route / hook` 三条链路共享的执行骨架收成单一入口，`306 -> 233`
+- 这次 transport 切片后，`packages/server/src/plugin` 已继续从 `13528` 降到 `13455`，`packages/server/src` 已继续从 `29049` 降到 `28976`
+- `plugin-runtime-host.facade.ts` 已继续把 `plugin.self / subagent.run / message / conversation session / subagent.task` 的重复包装并回更少分支，`321 -> 305`
+- 这次 host 继续收口后，`packages/server/src/plugin` 已继续从 `13455` 降到 `13439`，`packages/server/src` 已继续从 `28976` 降到 `28960`
+- `plugin.gateway.ts` 已删除 inbound 薄壳与多段纯转手 wrapper，`364 -> 323`
+- 这次 gateway 切片后，`packages/server/src/plugin` 已继续从 `13439` 降到 `13398`，`packages/server/src` 已继续从 `28960` 降到 `28919`
+- `plugin-runtime-host.facade.ts` 已继续删掉 runtime-managed method 分发中的重复哨兵和无意义默认分支，`305 -> 290`
+- 这次 host 继续压缩后，`packages/server/src/plugin` 已继续从 `13398` 降到 `13383`，`packages/server/src` 已继续从 `28919` 降到 `28904`
+- `chat-message-generation.service.ts` 这轮尝试过继续把 `start / retry` 后半段合并成一套公共骨架
+- 但该版本虽然结构更统一，总代码没有继续下降，所以已撤回，不计入有效减法成果
 - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
 - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
 - 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
@@ -315,8 +358,8 @@
 ## 最新行数快照
 
 - 2026-04-03 当前口径：
-  - `packages/server/src`: `29049`
-  - `packages/server/src/plugin`: `13528`
+  - `packages/server/src`: `28904`
+  - `packages/server/src/plugin`: `13383`
   - `packages/server/src/chat`: `3862`
   - `packages/plugin-sdk/src/index.ts`: `5063`
   - `packages/server/src/plugin/plugin.service.ts`: `122`
@@ -328,7 +371,7 @@
 - `plugin-runtime.service.ts`: `4287 -> 684`
 - `plugin-runtime-input.helpers.ts`: `362 -> 5`
 - `plugin-runtime-hook-result.helpers.ts`: `555 -> 4`
-- `plugin.gateway.ts`: `1269 -> 364`
+- `plugin.gateway.ts`: `1269 -> 323`
 - `tool-registry.service.ts`: `487 -> 226`
 - `plugin.service.ts`: `1059 -> 122`
 - `chat-message.service.ts`: `1030 -> 65`
@@ -360,17 +403,17 @@
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `29049`
-- `packages/server/src/plugin`: `13528`
+- `packages/server/src`: `28904`
+- `packages/server/src/plugin`: `13383`
 - `packages/server/src/chat`: `3862`
 - 当前最大热点：
   - `packages/server/src/plugin/plugin-runtime.service.ts`: `435`
-  - `packages/server/src/plugin/plugin.gateway.ts`: `364`
-  - `packages/server/src/plugin/plugin.controller.ts`: `313`
-  - `packages/server/src/plugin/plugin-runtime-host.facade.ts`: `321`
-  - `packages/server/src/plugin/plugin-runtime-transport.facade.ts`: `306`
   - `packages/server/src/chat/chat-message-generation.service.ts`: `436`
   - `packages/server/src/chat/chat-task.service.ts`: `360`
+  - `packages/server/src/plugin/plugin.gateway.ts`: `323`
+  - `packages/server/src/plugin/plugin.controller.ts`: `313`
+  - `packages/server/src/plugin/plugin-runtime-host.facade.ts`: `290`
+  - `packages/server/src/plugin/plugin-runtime-transport.facade.ts`: `233`
   - `packages/server/src/plugin/plugin.service.ts`: `122`
 
 ## 当前下一步

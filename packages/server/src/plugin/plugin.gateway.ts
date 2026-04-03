@@ -1,6 +1,7 @@
 import {
   type AuthPayload,
   type PluginManifest,
+  type PluginGatewayInboundMessage,
   WS_ACTION,
   DeviceType,
   WS_TYPE,
@@ -14,7 +15,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import type { IncomingMessage } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
   attachPluginGatewaySocketHandlers,
@@ -30,10 +30,6 @@ import {
   disconnectPluginGatewayConnection,
   registerPluginGatewayConnection,
 } from './plugin-gateway-lifecycle.helpers';
-import {
-  type PluginGatewayInboundMessage,
-  type ValidatedRegisterPayload,
-} from '@garlic-claw/shared';
 import {
   handlePluginGatewayMessageEnvelope,
   handlePluginGatewayCommandMessage,
@@ -122,7 +118,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     this.wss = new WebSocketServer({ port });
     this.logger.log(`插件 WebSocket 服务器监听端口 ${port}`);
 
-    this.wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
+    this.wss.on('connection', (ws: WebSocket) => {
       this.handleConnection(ws);
     });
 
@@ -149,12 +145,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
    * @returns 无返回值
    */
   async disconnectPlugin(pluginId: string): Promise<void> {
-    const connection = this.connectionByPluginId.get(pluginId);
-    if (!connection) {
-      throw new NotFoundException(`Plugin not connected: ${pluginId}`);
-    }
-
-    connection.ws.close();
+    this.getConnectedPluginOrThrow(pluginId).ws.close();
   }
 
   /**
@@ -167,10 +158,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     pluginId: string,
     timeoutMs = 5000,
   ): Promise<{ ok: boolean }> {
-    const connection = this.connectionByPluginId.get(pluginId);
-    if (!connection) {
-      throw new NotFoundException(`Plugin not connected: ${pluginId}`);
-    }
+    const connection = this.getConnectedPluginOrThrow(pluginId);
     return checkPluginGatewayHealth({
       pluginId,
       connection,
@@ -190,7 +178,13 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       ws,
       connection,
       onIncomingMessage: (socket, record, raw) => {
-        void this.handleIncomingMessage(socket, record, raw);
+        void handlePluginGatewayInboundRawMessage({
+          ws: socket,
+          raw,
+          protocolErrorAction: PROTOCOL_ERROR_ACTION,
+          handleMessage: (message) => this.handleMessage(socket, record, message),
+          logWarn: (message) => this.logger.warn(message),
+        });
       },
       onDisconnect: (record) => {
         void this.handleDisconnect(record);
@@ -198,26 +192,6 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       onSocketError: (error, record) => {
         this.logger.error(`来自 "${record.pluginName}" 的 WS 错误：${error.message}`);
       },
-    });
-  }
-
-  /**
-   * 解析并处理一条原始 websocket 消息。
-   * @param ws WebSocket 连接
-   * @param conn 当前连接
-   * @param raw 原始消息内容
-   */
-  private async handleIncomingMessage(
-    ws: WebSocket,
-    conn: PluginConnection,
-    raw: Buffer,
-  ): Promise<void> {
-    await handlePluginGatewayInboundRawMessage({
-      ws,
-      raw,
-      protocolErrorAction: PROTOCOL_ERROR_ACTION,
-      handleMessage: (message) => this.handleMessage(ws, conn, message),
-      logWarn: (message) => this.logger.warn(message),
     });
   }
 
@@ -246,7 +220,24 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
           protocolErrorAction: PROTOCOL_ERROR_ACTION,
-          onRegister: (payload) => this.handleRegister(ws, conn, payload),
+          onRegister: async (payload) => {
+            await registerPluginGatewayConnection({
+              ws,
+              connection: conn,
+              payload,
+              resolveManifest: resolvePluginGatewayManifest,
+              createTransport: () =>
+                createPluginGatewayRemoteTransport({
+                  connection: conn,
+                  pendingRequests: this.pendingRequests,
+                  activeRequestContexts: this.activeRequestContexts,
+                  disconnectPlugin: (pluginId) => this.disconnectPlugin(pluginId),
+                  checkPluginHealth: (pluginId) => this.checkPluginHealth(pluginId),
+                }),
+              registerPlugin: (input) => this.pluginRuntimeOrchestrator.registerPlugin(input),
+              sendMessage: sendPluginGatewayMessage,
+            });
+          },
           onHostCall: (hostCallMessage) =>
             handlePluginGatewayHostCall({
               ws,
@@ -281,13 +272,6 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * 处理插件认证。
-   * @param ws WebSocket 连接
-   * @param conn 当前连接
-   * @param payload 认证负载
-   * @returns 无返回值
-   */
   private async handleAuth(
     ws: WebSocket,
     conn: PluginConnection,
@@ -317,41 +301,6 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * 处理插件注册。
-   * @param ws WebSocket 连接
-   * @param conn 当前连接
-   * @param payload 注册负载
-   * @returns 无返回值
-   */
-  private async handleRegister(
-    ws: WebSocket,
-    conn: PluginConnection,
-    payload: ValidatedRegisterPayload,
-  ): Promise<void> {
-    await registerPluginGatewayConnection({
-      ws,
-      connection: conn,
-      payload,
-      resolveManifest: resolvePluginGatewayManifest,
-      createTransport: () =>
-        createPluginGatewayRemoteTransport({
-          connection: conn,
-          pendingRequests: this.pendingRequests,
-          activeRequestContexts: this.activeRequestContexts,
-          disconnectPlugin: (pluginId) => this.disconnectPlugin(pluginId),
-          checkPluginHealth: (pluginId) => this.checkPluginHealth(pluginId),
-        }),
-      registerPlugin: (input) => this.pluginRuntimeOrchestrator.registerPlugin(input),
-      sendMessage: sendPluginGatewayMessage,
-    });
-  }
-
-  /**
-   * 断开连接时注销对应远程插件。
-   * @param conn 当前连接
-   * @returns 无返回值
-   */
   private async handleDisconnect(conn: PluginConnection): Promise<void> {
     await disconnectPluginGatewayConnection({
       connection: conn,
@@ -364,6 +313,7 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
       logInfo: (message) => this.logger.log(message),
     });
   }
+
   /**
    * 扫描远程插件连接，并摘除超时未活跃的连接。
    */
@@ -378,6 +328,15 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
         );
       },
     });
+  }
+
+  private getConnectedPluginOrThrow(pluginId: string): PluginConnection {
+    const connection = this.connectionByPluginId.get(pluginId);
+    if (!connection) {
+      throw new NotFoundException(`Plugin not connected: ${pluginId}`);
+    }
+
+    return connection;
   }
 }
 

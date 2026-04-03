@@ -2,10 +2,8 @@ import { PLUGIN_HOST_METHOD_PERMISSION_MAP } from '@garlic-claw/shared';
 import type {
   ConversationSessionRecord,
   HostCallPayload,
-  PluginActionName,
   PluginCallContext,
   PluginHostMethod,
-  PluginManifest,
   PluginRuntimeKind,
 } from '@garlic-claw/shared';
 import { ForbiddenException, Injectable } from '@nestjs/common';
@@ -30,6 +28,7 @@ import {
   requireRuntimeString,
 } from './plugin-runtime-input.helpers';
 import { resolveCachedRuntimeServiceAsync } from './plugin-runtime-module.helpers';
+import type { PluginRuntimeRecord } from './plugin-runtime.types';
 import {
   finishConversationSessionForRuntime,
   getConversationSessionInfoForRuntime,
@@ -40,18 +39,8 @@ import { PluginRuntimeAutomationFacade } from './plugin-runtime-automation.facad
 import { PluginHostService } from './plugin-host.service';
 import { PluginService } from './plugin.service';
 
-const HOST_CALL_UNHANDLED = Symbol('HOST_CALL_UNHANDLED');
-
-interface RuntimeHostFacadeRecord {
-  manifest: PluginManifest;
-  runtimeKind: PluginRuntimeKind;
-  transport: {
-    listSupportedActions?: () => PluginActionName[];
-  };
-}
-
 type RuntimeHostCallInput = {
-  records: Map<string, RuntimeHostFacadeRecord>;
+  records: Map<string, PluginRuntimeRecord>;
   conversationSessions: Map<string, ConversationSessionRecord>;
   pluginId: string;
   context: PluginCallContext;
@@ -88,19 +77,11 @@ export class PluginRuntimeHostFacade {
   ) {}
 
   async call(input: RuntimeHostCallInput): Promise<JsonValue> {
-    const record = this.resolveRuntimeRecord(input.records, input.pluginId, input.method);
-    this.ensurePermission(input.pluginId, input.method, record);
-
-    if (input.method === 'plugin.self.get') {
-      return this.getPluginSelfValue(input.pluginId, record);
-    }
-    if (input.method === 'subagent.run') {
-      return toJsonValue(await input.runSubagentRequest({
-        pluginId: input.pluginId,
-        context: input.context,
-        request: readRuntimeSubagentRequest(input.params, 'subagent.run'),
-      }));
-    }
+    const record = this.resolvePermittedRuntimeRecord(
+      input.records,
+      input.pluginId,
+      input.method,
+    );
 
     const automationResult = await this.runtimeAutomationFacade.call({
       pluginId: input.pluginId,
@@ -116,7 +97,7 @@ export class PluginRuntimeHostFacade {
       ...input,
       record,
     });
-    if (runtimeManagedResult !== HOST_CALL_UNHANDLED) {
+    if (typeof runtimeManagedResult !== 'undefined') {
       return runtimeManagedResult;
     }
 
@@ -128,21 +109,14 @@ export class PluginRuntimeHostFacade {
     });
   }
 
-  private resolveRuntimeRecord(
-    records: Map<string, RuntimeHostFacadeRecord>,
+  private resolvePermittedRuntimeRecord(
+    records: Map<string, PluginRuntimeRecord>,
     pluginId: string,
     method: PluginHostMethod,
-  ) {
-    return method === 'plugin.self.get'
+  ): PluginRuntimeRecord | undefined {
+    const record = method === 'plugin.self.get'
       ? records.get(pluginId)
       : getRuntimeRecordOrThrow(records, pluginId);
-  }
-
-  private ensurePermission(
-    pluginId: string,
-    method: PluginHostMethod,
-    record: RuntimeHostFacadeRecord | undefined,
-  ) {
     const requiredPermission = PLUGIN_HOST_METHOD_PERMISSION_MAP[method];
     if (
       requiredPermission
@@ -151,39 +125,42 @@ export class PluginRuntimeHostFacade {
     ) {
       throw new ForbiddenException(`插件 ${pluginId} 缺少权限 ${requiredPermission}`);
     }
+
+    return record;
   }
 
   private async getPluginSelfValue(
     pluginId: string,
-    record: RuntimeHostFacadeRecord | undefined,
+    record: PluginRuntimeRecord | undefined,
   ): Promise<JsonValue> {
-    if (!record) {
-      return toJsonValue(
-        buildStoredPluginSelfInfo({
-          plugin: await this.pluginService.getPluginSelfInfo(pluginId),
-        }),
-      );
-    }
-
-    return toJsonValue(
-      buildRuntimePluginSelfInfo({
+    return toJsonValue(record
+      ? buildRuntimePluginSelfInfo({
         manifest: record.manifest,
         runtimeKind: record.runtimeKind,
         supportedActions: record.transport.listSupportedActions?.() ?? ['health-check'],
-      }),
-    );
+      })
+      : buildStoredPluginSelfInfo({
+        plugin: await this.pluginService.getPluginSelfInfo(pluginId),
+      }));
   }
 
   private async callRuntimeManagedMethod(
     input: RuntimeHostCallInput & {
-      record: RuntimeHostFacadeRecord | undefined;
+      record: PluginRuntimeRecord | undefined;
     },
-  ): Promise<JsonValue | typeof HOST_CALL_UNHANDLED> {
+  ): Promise<JsonValue | undefined> {
     switch (input.method) {
+      case 'plugin.self.get':
+        return this.getPluginSelfValue(input.pluginId, input.record);
+      case 'subagent.run':
+        return toJsonValue(await input.runSubagentRequest({
+          pluginId: input.pluginId,
+          context: input.context,
+          request: readRuntimeSubagentRequest(input.params, input.method),
+        }));
       case 'message.target.current.get':
-        return this.getCurrentMessageTarget(input.context);
       case 'message.send':
-        return this.sendPluginMessage(input.context, input.params);
+        return this.callMessageMethod(input);
       case 'conversation.session.start':
       case 'conversation.session.get':
       case 'conversation.session.keep':
@@ -194,124 +171,116 @@ export class PluginRuntimeHostFacade {
       case 'subagent.task.get':
         return this.callSubagentTaskMethod(input);
       default:
-        return HOST_CALL_UNHANDLED;
+        return undefined;
     }
   }
 
-  private async getCurrentMessageTarget(context: PluginCallContext): Promise<JsonValue> {
-    return toJsonValue(await (await this.getChatMessageService()).getCurrentPluginMessageTarget({
-      context,
-    }));
-  }
-
-  private async sendPluginMessage(
-    context: PluginCallContext,
-    params: JsonObject,
-  ): Promise<JsonValue> {
-    return toJsonValue(await (await this.getChatMessageService()).sendPluginMessage({
-      context,
-      target: readOptionalRuntimeMessageTarget(params, 'target', 'message.send'),
-      content: readOptionalRuntimeString(params, 'content', 'message.send'),
-      parts: readOptionalRuntimeChatMessageParts(params, 'parts', 'message.send'),
-      provider: readOptionalRuntimeString(params, 'provider', 'message.send'),
-      model: readOptionalRuntimeString(params, 'model', 'message.send'),
-    }));
-  }
-
-  private callConversationSessionMethod(
-    input: RuntimeHostCallInput,
-  ): JsonValue | typeof HOST_CALL_UNHANDLED {
-    switch (input.method) {
-      case 'conversation.session.start':
-        return toJsonValue(startConversationSessionForRuntime({
-          sessions: input.conversationSessions,
-          pluginId: input.pluginId,
-          context: input.context,
-          method: input.method,
-          timeoutMs: requirePositiveRuntimeNumber(
-            input.params,
-            'timeoutMs',
-            input.method,
-          ),
-          captureHistory: readOptionalRuntimeBoolean(
-            input.params,
-            'captureHistory',
-            input.method,
-          ) ?? false,
-          metadata: readOptionalRuntimeJsonValue(input.params, 'metadata'),
-          now: Date.now(),
-        }));
-      case 'conversation.session.get':
-        return toJsonValue(getConversationSessionInfoForRuntime({
-          sessions: input.conversationSessions,
-          pluginId: input.pluginId,
-          context: input.context,
-          method: input.method,
-          now: Date.now(),
-        }));
-      case 'conversation.session.keep':
-        return toJsonValue(keepConversationSessionForRuntime({
-          sessions: input.conversationSessions,
-          pluginId: input.pluginId,
-          context: input.context,
-          method: input.method,
-          timeoutMs: requirePositiveRuntimeNumber(
-            input.params,
-            'timeoutMs',
-            input.method,
-          ),
-          resetTimeout: readOptionalRuntimeBoolean(
-            input.params,
-            'resetTimeout',
-            input.method,
-          ) ?? true,
-          now: Date.now(),
-        }));
-      case 'conversation.session.finish':
-        return finishConversationSessionForRuntime({
-          sessions: input.conversationSessions,
-          pluginId: input.pluginId,
-          context: input.context,
-          method: input.method,
-        });
-      default:
-        return HOST_CALL_UNHANDLED;
+  private async callMessageMethod(input: RuntimeHostCallInput): Promise<JsonValue> {
+    const chatMessageService = await this.getChatMessageService();
+    if (input.method === 'message.target.current.get') {
+      return toJsonValue(await chatMessageService.getCurrentPluginMessageTarget({
+        context: input.context,
+      }));
     }
+
+    return toJsonValue(await chatMessageService.sendPluginMessage({
+      context: input.context,
+      target: readOptionalRuntimeMessageTarget(input.params, 'target', input.method),
+      content: readOptionalRuntimeString(input.params, 'content', input.method),
+      parts: readOptionalRuntimeChatMessageParts(input.params, 'parts', input.method),
+      provider: readOptionalRuntimeString(input.params, 'provider', input.method),
+      model: readOptionalRuntimeString(input.params, 'model', input.method),
+    }));
+  }
+
+  private callConversationSessionMethod(input: RuntimeHostCallInput): JsonValue {
+    const baseInput = {
+      sessions: input.conversationSessions,
+      pluginId: input.pluginId,
+      context: input.context,
+      method: input.method,
+    };
+    const now = Date.now();
+
+    if (input.method === 'conversation.session.start') {
+      return toJsonValue(startConversationSessionForRuntime({
+        ...baseInput,
+        timeoutMs: requirePositiveRuntimeNumber(
+          input.params,
+          'timeoutMs',
+          input.method,
+        ),
+        captureHistory: readOptionalRuntimeBoolean(
+          input.params,
+          'captureHistory',
+          input.method,
+        ) ?? false,
+        metadata: readOptionalRuntimeJsonValue(input.params, 'metadata'),
+        now,
+      }));
+    }
+    if (input.method === 'conversation.session.get') {
+      return toJsonValue(getConversationSessionInfoForRuntime({
+        ...baseInput,
+        now,
+      }));
+    }
+    if (input.method === 'conversation.session.keep') {
+      return toJsonValue(keepConversationSessionForRuntime({
+        ...baseInput,
+        timeoutMs: requirePositiveRuntimeNumber(
+          input.params,
+          'timeoutMs',
+          input.method,
+        ),
+        resetTimeout: readOptionalRuntimeBoolean(
+          input.params,
+          'resetTimeout',
+          input.method,
+        ) ?? true,
+        now,
+      }));
+    }
+
+    return finishConversationSessionForRuntime({
+      ...baseInput,
+    });
   }
 
   private async callSubagentTaskMethod(
     input: RuntimeHostCallInput & {
-      record: RuntimeHostFacadeRecord | undefined;
+      record: PluginRuntimeRecord | undefined;
     },
-  ): Promise<JsonValue | typeof HOST_CALL_UNHANDLED> {
+  ): Promise<JsonValue> {
     const subagentTaskService = await this.getSubagentTaskService();
-    switch (input.method) {
-      case 'subagent.task.start': {
-        const taskParams = readRuntimeSubagentTaskStartParams(
-          input.params,
-          input.method,
-        );
-        return toJsonValue(await subagentTaskService.startTask({
-          pluginId: input.pluginId,
-          pluginDisplayName: input.record?.manifest.name,
-          runtimeKind: input.record?.runtimeKind ?? 'builtin',
-          context: input.context,
-          request: taskParams.request,
-          ...(taskParams.writeBackTarget
-            ? { writeBackTarget: taskParams.writeBackTarget }
-            : {}),
-        }));
-      }
-      case 'subagent.task.list':
-        return toJsonValue(await subagentTaskService.listTasksForPlugin(input.pluginId));
-      case 'subagent.task.get':
-        return toJsonValue(await subagentTaskService.getTaskForPlugin(
-          input.pluginId,
-          requireRuntimeString(input.params, 'taskId', input.method),
-        ));
-      default:
-        return HOST_CALL_UNHANDLED;
+    const baseTaskInput = {
+      pluginId: input.pluginId,
+      pluginDisplayName: input.record?.manifest.name,
+      runtimeKind: input.record?.runtimeKind ?? 'builtin',
+      context: input.context,
+    };
+
+    if (input.method === 'subagent.task.start') {
+      const taskParams = readRuntimeSubagentTaskStartParams(
+        input.params,
+        input.method,
+      );
+      return toJsonValue(await subagentTaskService.startTask({
+        ...baseTaskInput,
+        request: taskParams.request,
+        ...(taskParams.writeBackTarget
+          ? { writeBackTarget: taskParams.writeBackTarget }
+          : {}),
+      }));
     }
+    if (input.method === 'subagent.task.list') {
+      return toJsonValue(await subagentTaskService.listTasksForPlugin(input.pluginId));
+    }
+
+    return toJsonValue(await subagentTaskService.getTaskForPlugin(
+      input.pluginId,
+      requireRuntimeString(input.params, 'taskId', input.method),
+    ));
   }
 
   private async getChatMessageService(): Promise<ChatMessageService> {

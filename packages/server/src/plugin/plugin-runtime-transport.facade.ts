@@ -2,10 +2,8 @@ import type {
   PluginCallContext,
   PluginErrorHookPayload,
   PluginHookName,
-  PluginManifest,
   PluginRouteRequest,
   PluginRouteResponse,
-  PluginRuntimeKind,
   ToolAfterCallHookPayload,
   ToolBeforeCallHookPayload,
 } from '@garlic-claw/shared';
@@ -27,44 +25,20 @@ import {
 } from './plugin-runtime-manifest.helpers';
 import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
 import { readRuntimeTimeoutMs } from './plugin-runtime-input.helpers';
+import type {
+  PluginRuntimeRecord,
+  ToolBeforeCallExecutionResult,
+} from './plugin-runtime.types';
 import { PluginService } from './plugin.service';
 
-type RuntimeTransportRecord = {
-  manifest: PluginManifest;
-  runtimeKind: PluginRuntimeKind;
-  deviceType: string;
-  transport: {
-    executeTool(input: {
-      toolName: string;
-      params: JsonObject;
-      context: PluginCallContext;
-    }): Promise<JsonValue> | JsonValue;
-    invokeHook(input: {
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }): Promise<JsonValue | null | undefined> | JsonValue | null | undefined;
-    invokeRoute(input: {
-      request: PluginRouteRequest;
-      context: PluginCallContext;
-    }): Promise<PluginRouteResponse> | PluginRouteResponse;
-  };
-  governance: {
-    scope: {
-      defaultEnabled: boolean;
-      conversations: Record<string, boolean>;
-    };
-  };
-  activeExecutions: number;
-  maxConcurrentExecutions: number;
-};
+type RuntimeInvocationType = 'tool' | 'route' | 'hook';
 
 @Injectable()
 export class PluginRuntimeTransportFacade {
   constructor(private readonly pluginService: PluginService) {}
 
   async executeTool(input: {
-    records: ReadonlyMap<string, RuntimeTransportRecord>;
+    records: ReadonlyMap<string, PluginRuntimeRecord>;
     pluginId: string;
     toolName: string;
     params: JsonObject;
@@ -73,10 +47,7 @@ export class PluginRuntimeTransportFacade {
     runToolBeforeCallHooks: (input: {
       context: PluginCallContext;
       payload: ToolBeforeCallHookPayload;
-    }) => Promise<
-      | { action: 'continue'; payload: ToolBeforeCallHookPayload }
-      | { action: 'short-circuit'; output: JsonValue }
-    >;
+    }) => Promise<ToolBeforeCallExecutionResult>;
     runToolAfterCallHooks: (input: {
       context: PluginCallContext;
       payload: ToolAfterCallHookPayload;
@@ -112,12 +83,8 @@ export class PluginRuntimeTransportFacade {
     const output = await this.runTimedPluginInvocation({
       record,
       context: input.context,
-      executionType: 'tool',
-      executionMetadata: {
-        toolName: input.toolName,
-      },
-      failureTypePrefix: 'tool',
-      failureMetadata: {
+      type: 'tool',
+      metadata: {
         toolName: input.toolName,
       },
       timeoutMs: readRuntimeTimeoutMs(input.context, 30000),
@@ -151,7 +118,7 @@ export class PluginRuntimeTransportFacade {
   }
 
   async invokeRoute(input: {
-    records: ReadonlyMap<string, RuntimeTransportRecord>;
+    records: ReadonlyMap<string, PluginRuntimeRecord>;
     pluginId: string;
     request: PluginRouteRequest;
     context: PluginCallContext;
@@ -168,13 +135,8 @@ export class PluginRuntimeTransportFacade {
     return this.runTimedPluginInvocation({
       record,
       context: input.context,
-      executionType: 'route',
-      executionMetadata: {
-        method: input.request.method,
-        path: route.path,
-      },
-      failureTypePrefix: 'route',
-      failureMetadata: {
+      type: 'route',
+      metadata: {
         method: input.request.method,
         path: route.path,
       },
@@ -194,7 +156,7 @@ export class PluginRuntimeTransportFacade {
   }
 
   async invokePluginHook(input: {
-    records: ReadonlyMap<string, RuntimeTransportRecord>;
+    records: ReadonlyMap<string, PluginRuntimeRecord>;
     pluginId: string;
     hookName: PluginHookName;
     context: PluginCallContext;
@@ -208,12 +170,8 @@ export class PluginRuntimeTransportFacade {
     return this.runTimedPluginInvocation({
       record,
       context: input.context,
-      executionType: 'hook',
-      executionMetadata: {
-        hookName: input.hookName,
-      },
-      failureTypePrefix: 'hook',
-      failureMetadata: {
+      type: 'hook',
+      metadata: {
         hookName: input.hookName,
       },
       timeoutMs: readRuntimeTimeoutMs(input.context, 10000),
@@ -231,56 +189,11 @@ export class PluginRuntimeTransportFacade {
     });
   }
 
-  private async recordPluginFailureAndDispatch(input: {
-    records: ReadonlyMap<string, RuntimeTransportRecord>;
-    pluginId: string;
-    context: PluginCallContext;
-    type: string;
-    message: string;
-    metadata?: JsonObject;
-    checked?: boolean;
-    skipPluginErrorHook?: boolean;
-    dispatchPluginErrorHook: (payload: PluginErrorHookPayload) => Promise<void>;
-  }): Promise<void> {
-    await recordRuntimePluginFailureAndDispatch({
-      ...input,
-      record: input.records.get(input.pluginId),
-      recordFailure: async (failure) => {
-        await this.pluginService.recordPluginFailure(failure.pluginId, {
-          type: failure.type,
-          message: failure.message,
-          metadata: failure.metadata,
-          checked: failure.checked,
-        });
-      },
-      dispatchPluginErrorHook: input.dispatchPluginErrorHook,
-    });
-  }
-
-  private async runWithPluginExecutionSlot<T>(input: {
-    record: RuntimeTransportRecord;
-    type: 'tool' | 'route' | 'hook';
-    metadata: JsonObject;
-    execute: () => Promise<T>;
-  }): Promise<T> {
-    return runWithRuntimeExecutionSlot({
-      record: input.record,
-      type: input.type,
-      metadata: input.metadata,
-      recordPluginEvent: async (pluginId, event) => {
-        await this.pluginService.recordPluginEvent(pluginId, event);
-      },
-      execute: input.execute,
-    });
-  }
-
   private async runTimedPluginInvocation<T>(input: {
-    record: RuntimeTransportRecord;
+    record: PluginRuntimeRecord;
     context: PluginCallContext;
-    executionType: 'tool' | 'route' | 'hook';
-    executionMetadata: JsonObject;
-    failureTypePrefix: 'tool' | 'route' | 'hook';
-    failureMetadata: JsonObject;
+    type: RuntimeInvocationType;
+    metadata: JsonObject;
     timeoutMs: number;
     timeoutMessage: string;
     skipPluginErrorHook?: boolean;
@@ -289,10 +202,13 @@ export class PluginRuntimeTransportFacade {
     execute: () => Promise<T>;
   }): Promise<T> {
     try {
-      return await this.runWithPluginExecutionSlot({
+      return await runWithRuntimeExecutionSlot({
         record: input.record,
-        type: input.executionType,
-        metadata: input.executionMetadata,
+        type: input.type,
+        metadata: input.metadata,
+        recordPluginEvent: async (pluginId, event) => {
+          await this.pluginService.recordPluginEvent(pluginId, event);
+        },
         execute: () => runPromiseWithTimeout(
           Promise.resolve().then(() => input.execute()),
           input.timeoutMs,
@@ -305,16 +221,25 @@ export class PluginRuntimeTransportFacade {
       }
 
       if (input.recordFailure !== false) {
-        await this.recordPluginFailureAndDispatch({
-          records: new Map([[input.record.manifest.id, input.record]]),
+        const message = error instanceof Error ? error.message : String(error);
+        await recordRuntimePluginFailureAndDispatch({
           pluginId: input.record.manifest.id,
+          record: input.record,
           context: input.context,
-          type: error instanceof Error && error.message.includes('超时')
-            ? `${input.failureTypePrefix}:timeout`
-            : `${input.failureTypePrefix}:error`,
-          message: error instanceof Error ? error.message : String(error),
-          metadata: input.failureMetadata,
+          type: message.includes('超时')
+            ? `${input.type}:timeout`
+            : `${input.type}:error`,
+          message,
+          metadata: input.metadata,
           skipPluginErrorHook: input.skipPluginErrorHook,
+          recordFailure: async (failure) => {
+            await this.pluginService.recordPluginFailure(failure.pluginId, {
+              type: failure.type,
+              message: failure.message,
+              metadata: failure.metadata,
+              checked: failure.checked,
+            });
+          },
           dispatchPluginErrorHook: input.dispatchPluginErrorHook,
         });
       }
