@@ -105,6 +105,7 @@
 - [ ] 不接受只把同等复杂度从大文件拆成更多 `core helper / facade / service`
 - [ ] 作者体验、协议糖和适配复杂度优先外移到 `SDK / adapter / plugin-side facade`
 - [ ] 只有在 `core` 更薄、边界更稳、且总代码更少时，才算这轮减法成立
+- [ ] 重构做法默认顺序是：先删重复、删薄壳、把作者侧复杂度外移；只有少量局部重写能换来 `core` 总量继续下降时，才接受重写
 - 结论校正 2026-04-03：
   - 当前这套功能不应该天然需要现在这套 `core` 体量
   - `packages/server/src` 现在仍有 `32395` 行，`packages/server/src/plugin` 仍有 `16879` 行，这说明边界还没有真正收干净
@@ -174,6 +175,10 @@
   - `plugin.controller.ts` 已删掉与类级别完全重复的方法级 `@UseGuards(RolesGuard)` / `@Roles('admin', 'super_admin')` 样板，并继续删回现有健康快照 helper、非空字符串读取 helper，以及单次 persisted manifest helper
   - `plugin-route.controller.ts` 已删回现有 `readUnknownObject(...)` / `normalizeRoutePath(...)`，并顺手删掉请求体与 header 屏蔽薄壳，不再在 route controller 本地维护同义 helper 副本
   - `plugin-subagent-task-request.helpers.ts` 里重复的 `normalizePositiveInteger(...)` 已删回现有 validation helper
+  - `plugin-runtime-operation-hooks.facade.ts` 已把五组重复的 `records/context/payload/invokeHook` 类型样板压成共享输入类型，`216 -> 147`
+  - `plugin-runtime-subagent.facade.ts` 已把 `executeRequest/runBeforeHooks/runAfterHooks` 里重复的 subagent hook 输入类型样板压成共享输入类型，`243 -> 217`
+  - `plugin-runtime-clone.helpers.ts` 已把 automation/tool/subagent/assistant-output 的重复 clone 骨架并回共享私有函数，`392 -> 387`
+  - 这轮 `plugin runtime` 内部减法后，`packages/server/src/plugin` 已从 `16879` 降到 `16804`，`packages/server/src` 已从 `32395` 降到 `32320`
   - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
   - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
   - 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
@@ -204,14 +209,17 @@
 - `plugin-command.service.ts`: `250 -> 229`
 - `plugin-cron.service.ts`: `244 -> 229`
 - `plugin-route.controller.ts`: `218 -> 180`
+- `plugin-runtime-operation-hooks.facade.ts`: `216 -> 147`
+- `plugin-runtime-subagent.facade.ts`: `243 -> 217`
+- `plugin-runtime-clone.helpers.ts`: `392 -> 387`
 - `builtin-plugin-host-facade.helpers.ts`: `255 -> 0`（已删）
 - `builtin-plugin-host-params.helpers.ts`: `200 -> 0`（已删）
 - `builtin-plugin.types.ts`: `215 -> 31`
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `32395`
-- `packages/server/src/plugin`: `16879`
+- `packages/server/src`: `32320`
+- `packages/server/src/plugin`: `16804`
 - `packages/server/src/chat`: `3862`
 - `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message.helpers.ts`: `152`
@@ -231,6 +239,9 @@
 - `packages/server/src/plugin/builtin/builtin-plugin.types.ts`: `31`
 - `packages/server/src/plugin/plugin-subagent-task-request.helpers.ts`: `160`
 - `packages/server/src/plugin/plugin-runtime.service.ts`: `684`
+- `packages/server/src/plugin/plugin-runtime-operation-hooks.facade.ts`: `147`
+- `packages/server/src/plugin/plugin-runtime-subagent.facade.ts`: `217`
+- `packages/server/src/plugin/plugin-runtime-clone.helpers.ts`: `387`
 - `packages/server/src/plugin/plugin-host.service.ts`: `126`
 
 ## 当前下一步

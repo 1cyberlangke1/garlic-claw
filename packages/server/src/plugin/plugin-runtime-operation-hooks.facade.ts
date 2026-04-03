@@ -38,27 +38,33 @@ import {
   cloneToolBeforeCallHookPayload,
 } from './plugin-runtime-clone.helpers';
 
+type DispatchableOperationHookRecord = {
+  manifest: import('@garlic-claw/shared').PluginManifest;
+  governance: {
+    scope: {
+      defaultEnabled: boolean;
+      conversations: Record<string, boolean>;
+    };
+  };
+};
+
+type InvokeOperationHook = (input: {
+  pluginId: string;
+  hookName: PluginHookName;
+  context: PluginCallContext;
+  payload: JsonValue;
+}) => Promise<JsonValue | null | undefined>;
+
+type OperationHookInput<TPayload> = {
+  records: Iterable<DispatchableOperationHookRecord>;
+  context: PluginCallContext;
+  payload: TPayload;
+  invokeHook: InvokeOperationHook;
+};
+
 @Injectable()
 export class PluginRuntimeOperationHooksFacade {
-  runAutomationBeforeRunHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: AutomationBeforeRunHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runAutomationBeforeRunHooks(input: OperationHookInput<AutomationBeforeRunHookPayload>) {
     return runShortCircuitingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,
@@ -79,25 +85,7 @@ export class PluginRuntimeOperationHooksFacade {
     });
   }
 
-  runAutomationAfterRunHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: AutomationAfterRunHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runAutomationAfterRunHooks(input: OperationHookInput<AutomationAfterRunHookPayload>) {
     return runMutatingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,
@@ -113,25 +101,7 @@ export class PluginRuntimeOperationHooksFacade {
     });
   }
 
-  runToolBeforeCallHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: ToolBeforeCallHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runToolBeforeCallHooks(input: OperationHookInput<ToolBeforeCallHookPayload>) {
     return runShortCircuitingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,
@@ -151,25 +121,7 @@ export class PluginRuntimeOperationHooksFacade {
     });
   }
 
-  runToolAfterCallHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: ToolAfterCallHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runToolAfterCallHooks(input: OperationHookInput<ToolAfterCallHookPayload>) {
     return runMutatingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,
@@ -185,25 +137,7 @@ export class PluginRuntimeOperationHooksFacade {
     });
   }
 
-  runResponseBeforeSendHooks(input: {
-    records: Iterable<{
-      manifest: import('@garlic-claw/shared').PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: ResponseBeforeSendHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: JsonValue;
-    }) => Promise<JsonValue | null | undefined>;
-  }) {
+  runResponseBeforeSendHooks(input: OperationHookInput<ResponseBeforeSendHookPayload>) {
     return runMutatingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,

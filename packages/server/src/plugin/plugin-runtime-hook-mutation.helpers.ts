@@ -9,6 +9,7 @@ import type {
   ChatBeforeModelHookMutateResult,
   ChatBeforeModelRequest,
   ChatBeforeModelHookShortCircuitResult,
+  ChatMessagePart,
   MessageCreatedHookMutateResult,
   MessageCreatedHookPayload,
   MessageReceivedHookPassResult,
@@ -17,6 +18,7 @@ import type {
   MessageReceivedHookShortCircuitResult,
   MessageUpdatedHookMutateResult,
   MessageUpdatedHookPayload,
+  PluginMessageHookInfo,
   ResponseBeforeSendHookMutateResult,
   ResponseBeforeSendHookPayload,
   SubagentAfterRunHookMutateResult,
@@ -119,18 +121,18 @@ export function applyChatBeforeModelHookResult(input: {
   }
 
   if (input.result.action === 'short-circuit') {
-    const normalizedAssistant = normalizeAssistantOutput({
-      assistantContent: input.result.assistantContent,
-      assistantParts: input.result.assistantParts,
-    });
     return {
       action: 'short-circuit' as const,
       request: input.request,
-      assistantContent: normalizedAssistant.assistantContent,
-      assistantParts: normalizedAssistant.assistantParts,
-      providerId: input.result.providerId ?? input.request.providerId,
-      modelId: input.result.modelId ?? input.request.modelId,
-      ...(input.result.reason ? { reason: input.result.reason } : {}),
+      ...buildShortCircuitAssistantSnapshot({
+        assistantContent: input.result.assistantContent,
+        assistantParts: input.result.assistantParts,
+        providerId: input.result.providerId,
+        modelId: input.result.modelId,
+        fallbackProviderId: input.request.providerId,
+        fallbackModelId: input.request.modelId,
+        reason: input.result.reason,
+      }),
     };
   }
 
@@ -152,14 +154,8 @@ export function applyMessageReceivedMutation(
   if ('modelId' in mutation && typeof mutation.modelId === 'string') {
     nextPayload.modelId = mutation.modelId;
   }
-  if ('content' in mutation) {
-    nextPayload.message.content = mutation.content ?? null;
-  }
-  if ('parts' in mutation) {
-    const parts = mutation.parts ?? [];
-    nextPayload.message.parts = mutation.parts === null
-      ? []
-      : cloneChatMessageParts(parts);
+  if ('content' in mutation || 'parts' in mutation) {
+    applyMessageContentMutation(nextPayload.message, mutation);
   }
   if ('modelMessages' in mutation && Array.isArray(mutation.modelMessages)) {
     nextPayload.modelMessages = clonePluginLlmMessages(mutation.modelMessages);
@@ -184,18 +180,18 @@ export function applyMessageReceivedHookResult(input: {
   }
 
   if (input.result.action === 'short-circuit') {
-    const normalizedAssistant = normalizeAssistantOutput({
-      assistantContent: input.result.assistantContent,
-      assistantParts: input.result.assistantParts,
-    });
     return {
       action: 'short-circuit' as const,
       payload: input.payload,
-      assistantContent: normalizedAssistant.assistantContent,
-      assistantParts: normalizedAssistant.assistantParts,
-      providerId: input.result.providerId ?? input.payload.providerId,
-      modelId: input.result.modelId ?? input.payload.modelId,
-      ...(input.result.reason ? { reason: input.result.reason } : {}),
+      ...buildShortCircuitAssistantSnapshot({
+        assistantContent: input.result.assistantContent,
+        assistantParts: input.result.assistantParts,
+        providerId: input.result.providerId,
+        modelId: input.result.modelId,
+        fallbackProviderId: input.payload.providerId,
+        fallbackModelId: input.payload.modelId,
+        reason: input.result.reason,
+      }),
     };
   }
 
@@ -210,16 +206,7 @@ export function applyChatAfterModelMutation(
   mutation: ChatAfterModelHookMutateResult,
 ): ChatAfterModelHookPayload {
   const nextPayload = cloneChatAfterModelPayload(currentPayload);
-
-  if ('assistantContent' in mutation && typeof mutation.assistantContent === 'string') {
-    nextPayload.assistantContent = mutation.assistantContent;
-  }
-  if ('assistantParts' in mutation) {
-    nextPayload.assistantParts = mutation.assistantParts === null
-      ? []
-      : cloneChatMessageParts(mutation.assistantParts ?? []);
-  }
-
+  applyAssistantOutputMutation(nextPayload, mutation);
   return nextPayload;
 }
 
@@ -229,27 +216,11 @@ export function applyMessageCreatedMutation(
 ): MessageCreatedHookPayload {
   const nextPayload = cloneMessageCreatedHookPayload(currentPayload);
 
-  if ('content' in mutation) {
-    nextPayload.message.content = mutation.content ?? null;
-  }
-  if ('parts' in mutation) {
-    const parts = mutation.parts ?? [];
-    nextPayload.message.parts = mutation.parts === null
-      ? []
-      : cloneChatMessageParts(parts);
-  }
+  applyMessageContentMutation(nextPayload.message, mutation);
   if ('modelMessages' in mutation && Array.isArray(mutation.modelMessages)) {
     nextPayload.modelMessages = clonePluginLlmMessages(mutation.modelMessages);
   }
-  if ('provider' in mutation) {
-    nextPayload.message.provider = mutation.provider ?? null;
-  }
-  if ('model' in mutation) {
-    nextPayload.message.model = mutation.model ?? null;
-  }
-  if ('status' in mutation) {
-    nextPayload.message.status = mutation.status ?? undefined;
-  }
+  applyMessageMetadataMutation(nextPayload.message, mutation);
 
   return nextPayload;
 }
@@ -260,24 +231,8 @@ export function applyMessageUpdatedMutation(
 ): MessageUpdatedHookPayload {
   const nextPayload = cloneMessageUpdatedHookPayload(currentPayload);
 
-  if ('content' in mutation) {
-    nextPayload.nextMessage.content = mutation.content ?? null;
-  }
-  if ('parts' in mutation) {
-    const parts = mutation.parts ?? [];
-    nextPayload.nextMessage.parts = mutation.parts === null
-      ? []
-      : cloneChatMessageParts(parts);
-  }
-  if ('provider' in mutation) {
-    nextPayload.nextMessage.provider = mutation.provider ?? null;
-  }
-  if ('model' in mutation) {
-    nextPayload.nextMessage.model = mutation.model ?? null;
-  }
-  if ('status' in mutation) {
-    nextPayload.nextMessage.status = mutation.status ?? undefined;
-  }
+  applyMessageContentMutation(nextPayload.nextMessage, mutation);
+  applyMessageMetadataMutation(nextPayload.nextMessage, mutation);
 
   return nextPayload;
 }
@@ -433,24 +388,98 @@ export function applyResponseBeforeSendMutation(
   if ('modelId' in mutation && typeof mutation.modelId === 'string') {
     nextPayload.modelId = mutation.modelId;
   }
-  if ('assistantContent' in mutation && typeof mutation.assistantContent === 'string') {
-    nextPayload.assistantContent = mutation.assistantContent;
-  }
-  if ('assistantParts' in mutation) {
-    nextPayload.assistantParts = mutation.assistantParts === null
-      ? []
-      : cloneChatMessageParts(mutation.assistantParts ?? []);
-  }
+  applyAssistantOutputMutation(nextPayload, mutation);
   if ('toolCalls' in mutation && Array.isArray(mutation.toolCalls)) {
-    nextPayload.toolCalls = mutation.toolCalls.map((toolCall) => ({
-      ...toolCall,
-    }));
+    nextPayload.toolCalls = cloneObjectArray(mutation.toolCalls);
   }
   if ('toolResults' in mutation && Array.isArray(mutation.toolResults)) {
-    nextPayload.toolResults = mutation.toolResults.map((toolResult) => ({
-      ...toolResult,
-    }));
+    nextPayload.toolResults = cloneObjectArray(mutation.toolResults);
   }
 
   return nextPayload;
+}
+
+function buildShortCircuitAssistantSnapshot(input: {
+  assistantContent: string;
+  assistantParts?: ChatMessagePart[] | null;
+  providerId?: string | null;
+  modelId?: string | null;
+  fallbackProviderId: string;
+  fallbackModelId: string;
+  reason?: string;
+}) {
+  const normalizedAssistant = normalizeAssistantOutput({
+    assistantContent: input.assistantContent,
+    assistantParts: input.assistantParts,
+  });
+
+  return {
+    assistantContent: normalizedAssistant.assistantContent,
+    assistantParts: normalizedAssistant.assistantParts,
+    providerId: input.providerId ?? input.fallbackProviderId,
+    modelId: input.modelId ?? input.fallbackModelId,
+    ...(input.reason ? { reason: input.reason } : {}),
+  };
+}
+
+function applyMessageContentMutation(
+  message: Pick<PluginMessageHookInfo, 'content' | 'parts'>,
+  mutation: {
+    content?: string | null;
+    parts?: ChatMessagePart[] | null;
+  },
+): void {
+  if ('content' in mutation) {
+    message.content = mutation.content ?? null;
+  }
+  if ('parts' in mutation) {
+    message.parts = mutation.parts === null
+      ? []
+      : cloneChatMessageParts(mutation.parts ?? []);
+  }
+}
+
+function applyMessageMetadataMutation(
+  message: Pick<PluginMessageHookInfo, 'provider' | 'model' | 'status'>,
+  mutation: {
+    provider?: string | null;
+    model?: string | null;
+    status?: PluginMessageHookInfo['status'] | null;
+  },
+): void {
+  if ('provider' in mutation) {
+    message.provider = mutation.provider ?? null;
+  }
+  if ('model' in mutation) {
+    message.model = mutation.model ?? null;
+  }
+  if ('status' in mutation) {
+    message.status = mutation.status ?? undefined;
+  }
+}
+
+function applyAssistantOutputMutation(
+  payload: {
+    assistantContent: string;
+    assistantParts: ChatMessagePart[];
+  },
+  mutation: {
+    assistantContent?: string;
+    assistantParts?: ChatMessagePart[] | null;
+  },
+): void {
+  if ('assistantContent' in mutation && typeof mutation.assistantContent === 'string') {
+    payload.assistantContent = mutation.assistantContent;
+  }
+  if ('assistantParts' in mutation) {
+    payload.assistantParts = mutation.assistantParts === null
+      ? []
+      : cloneChatMessageParts(mutation.assistantParts ?? []);
+  }
+}
+
+function cloneObjectArray<T extends object>(values: readonly T[]): T[] {
+  return values.map((value) => ({
+    ...value,
+  }));
 }

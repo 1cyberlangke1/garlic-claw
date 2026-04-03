@@ -39,6 +39,30 @@ import {
   cloneSubagentBeforeRunPayload,
 } from './plugin-runtime-clone.helpers';
 
+type DispatchableSubagentHookRecord = {
+  manifest: PluginManifest;
+  governance: {
+    scope: {
+      defaultEnabled: boolean;
+      conversations: Record<string, boolean>;
+    };
+  };
+};
+
+type InvokeSubagentHook = (input: {
+  pluginId: string;
+  hookName: PluginHookName;
+  context: PluginCallContext;
+  payload: unknown;
+}) => Promise<unknown>;
+
+type SubagentHookInput<TPayload> = {
+  records: Iterable<DispatchableSubagentHookRecord>;
+  context: PluginCallContext;
+  payload: TPayload;
+  invokeHook: InvokeSubagentHook;
+};
+
 @Injectable()
 export class PluginRuntimeSubagentFacade {
   private toolRegistryPromise?: Promise<{
@@ -58,24 +82,11 @@ export class PluginRuntimeSubagentFacade {
   ) {}
 
   async executeRequest(input: {
-    records: Iterable<{
-      manifest: PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
+    records: Iterable<DispatchableSubagentHookRecord>;
     pluginId: string;
     context: PluginCallContext;
     request: PluginSubagentRequest;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: unknown;
-    }) => Promise<unknown>;
+    invokeHook: InvokeSubagentHook;
     runAfterHooks: (input: {
       context: PluginCallContext;
       payload: SubagentAfterRunHookPayload;
@@ -149,25 +160,7 @@ export class PluginRuntimeSubagentFacade {
     return afterRunPayload.result;
   }
 
-  async runBeforeHooks(input: {
-    records: Iterable<{
-      manifest: PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: SubagentBeforeRunHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: unknown;
-    }) => Promise<unknown>;
-  }): Promise<
+  async runBeforeHooks(input: SubagentHookInput<SubagentBeforeRunHookPayload>): Promise<
     | { action: 'continue'; payload: SubagentBeforeRunHookPayload }
     | { action: 'short-circuit'; result: PluginSubagentRunResult }
   > {
@@ -203,25 +196,9 @@ export class PluginRuntimeSubagentFacade {
     });
   }
 
-  async runAfterHooks(input: {
-    records: Iterable<{
-      manifest: PluginManifest;
-      governance: {
-        scope: {
-          defaultEnabled: boolean;
-          conversations: Record<string, boolean>;
-        };
-      };
-    }>;
-    context: PluginCallContext;
-    payload: SubagentAfterRunHookPayload;
-    invokeHook: (input: {
-      pluginId: string;
-      hookName: PluginHookName;
-      context: PluginCallContext;
-      payload: unknown;
-    }) => Promise<unknown>;
-  }): Promise<SubagentAfterRunHookPayload> {
+  async runAfterHooks(
+    input: SubagentHookInput<SubagentAfterRunHookPayload>,
+  ): Promise<SubagentAfterRunHookPayload> {
     return runMutatingHookChain({
       records: listDispatchableHookRecords({
         records: input.records,

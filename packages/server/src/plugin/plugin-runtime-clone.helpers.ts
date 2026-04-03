@@ -56,14 +56,7 @@ export function cloneChatAfterModelPayload(
     providerId: payload.providerId,
     modelId: payload.modelId,
     assistantMessageId: payload.assistantMessageId,
-    assistantContent: payload.assistantContent,
-    assistantParts: cloneChatMessageParts(payload.assistantParts),
-    toolCalls: payload.toolCalls.map((toolCall) => ({
-      ...toolCall,
-    })),
-    toolResults: payload.toolResults.map((toolResult) => ({
-      ...toolResult,
-    })),
+    ...cloneAssistantOutputSnapshot(payload),
   };
 }
 
@@ -148,23 +141,7 @@ export function cloneAutomationBeforeRunPayload(
   payload: AutomationBeforeRunHookPayload,
 ): AutomationBeforeRunHookPayload {
   return {
-    context: {
-      ...payload.context,
-    },
-    automation: {
-      ...payload.automation,
-      trigger: {
-        ...payload.automation.trigger,
-      },
-      actions: cloneAutomationActions(payload.automation.actions),
-      ...(payload.automation.logs
-        ? {
-            logs: payload.automation.logs.map((log: (typeof payload.automation.logs)[number]) => ({
-              ...log,
-            })),
-          }
-        : {}),
-    },
+    ...cloneAutomationHookPayloadBase(payload),
     actions: cloneAutomationActions(payload.actions),
   };
 }
@@ -173,23 +150,7 @@ export function cloneAutomationAfterRunPayload(
   payload: AutomationAfterRunHookPayload,
 ): AutomationAfterRunHookPayload {
   return {
-    context: {
-      ...payload.context,
-    },
-    automation: {
-      ...payload.automation,
-      trigger: {
-        ...payload.automation.trigger,
-      },
-      actions: cloneAutomationActions(payload.automation.actions),
-      ...(payload.automation.logs
-        ? {
-            logs: payload.automation.logs.map((log: (typeof payload.automation.logs)[number]) => ({
-              ...log,
-            })),
-          }
-        : {}),
-    },
+    ...cloneAutomationHookPayloadBase(payload),
     status: payload.status,
     results: cloneJsonValueArray(payload.results),
   };
@@ -199,23 +160,7 @@ export function cloneToolBeforeCallHookPayload(
   payload: ToolBeforeCallHookPayload,
 ): ToolBeforeCallHookPayload {
   return {
-    context: {
-      ...payload.context,
-    },
-    source: {
-      ...payload.source,
-    },
-    ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
-    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-    tool: {
-      ...payload.tool,
-      parameters: {
-        ...payload.tool.parameters,
-      },
-    },
-    params: {
-      ...payload.params,
-    },
+    ...cloneToolHookPayloadBase(payload),
   };
 }
 
@@ -223,23 +168,7 @@ export function cloneToolAfterCallHookPayload(
   payload: ToolAfterCallHookPayload,
 ): ToolAfterCallHookPayload {
   return {
-    context: {
-      ...payload.context,
-    },
-    source: {
-      ...payload.source,
-    },
-    ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
-    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
-    tool: {
-      ...payload.tool,
-      parameters: {
-        ...payload.tool.parameters,
-      },
-    },
-    params: {
-      ...payload.params,
-    },
+    ...cloneToolHookPayloadBase(payload),
     output: toJsonValue(payload.output),
   };
 }
@@ -255,14 +184,7 @@ export function cloneResponseBeforeSendHookPayload(
     assistantMessageId: payload.assistantMessageId,
     providerId: payload.providerId,
     modelId: payload.modelId,
-    assistantContent: payload.assistantContent,
-    assistantParts: cloneChatMessageParts(payload.assistantParts),
-    toolCalls: payload.toolCalls.map((toolCall) => ({
-      ...toolCall,
-    })),
-    toolResults: payload.toolResults.map((toolResult) => ({
-      ...toolResult,
-    })),
+    ...cloneAssistantOutputSnapshot(payload),
   };
 }
 
@@ -270,11 +192,7 @@ export function cloneSubagentBeforeRunPayload(
   payload: SubagentBeforeRunHookPayload,
 ): SubagentBeforeRunHookPayload {
   return {
-    context: {
-      ...payload.context,
-    },
-    pluginId: payload.pluginId,
-    request: cloneSubagentRequest(payload.request),
+    ...cloneSubagentHookPayloadBase(payload),
   };
 }
 
@@ -282,11 +200,7 @@ export function cloneSubagentAfterRunPayload(
   payload: SubagentAfterRunHookPayload,
 ): SubagentAfterRunHookPayload {
   return {
-    context: {
-      ...payload.context,
-    },
-    pluginId: payload.pluginId,
-    request: cloneSubagentRequest(payload.request),
+    ...cloneSubagentHookPayloadBase(payload),
     result: cloneSubagentRunResult(payload.result),
   };
 }
@@ -357,25 +271,15 @@ export function cloneAutomationActions(actions: ActionConfig[]): ActionConfig[] 
 }
 
 export function clonePluginLlmMessages(messages: PluginLlmMessage[]) {
-  return messages.map((message) => ({
-    ...message,
-    content: Array.isArray(message.content)
-      ? message.content.map((part) => ({ ...part }))
-      : message.content,
-  }));
+  return cloneStructuredMessageArray(messages);
 }
 
 export function cloneChatMessages(messages: ChatBeforeModelRequest['messages']) {
-  return messages.map((message: ChatBeforeModelRequest['messages'][number]) => ({
-    ...message,
-    content: Array.isArray(message.content)
-      ? message.content.map((part) => ({ ...part }))
-      : message.content,
-  }));
+  return cloneStructuredMessageArray(messages);
 }
 
 export function cloneChatMessageParts(parts: PluginMessageHookInfo['parts']) {
-  return parts.map((part: PluginMessageHookInfo['parts'][number]) => ({ ...part }));
+  return cloneShallowArray(parts);
 }
 
 export function normalizeAssistantOutput(input: {
@@ -415,4 +319,101 @@ export function normalizeAssistantOutput(input: {
 
 export function cloneJsonValueArray(values: JsonValue[]): JsonValue[] {
   return values.map((value) => toJsonValue(value));
+}
+
+function cloneAssistantOutputSnapshot(input: {
+  assistantContent: string;
+  assistantParts: ChatMessagePart[];
+  toolCalls: ReadonlyArray<{
+    toolCallId: string;
+    toolName: string;
+    input: JsonValue;
+  }>;
+  toolResults: ReadonlyArray<{
+    toolCallId: string;
+    toolName: string;
+    output: JsonValue;
+  }>;
+}) {
+  return {
+    assistantContent: input.assistantContent,
+    assistantParts: cloneChatMessageParts(input.assistantParts),
+    toolCalls: cloneShallowArray(input.toolCalls),
+    toolResults: cloneShallowArray(input.toolResults),
+  };
+}
+
+function cloneAutomationHookPayloadBase(
+  payload: AutomationBeforeRunHookPayload | AutomationAfterRunHookPayload,
+) {
+  return {
+    context: {
+      ...payload.context,
+    },
+    automation: {
+      ...payload.automation,
+      trigger: {
+        ...payload.automation.trigger,
+      },
+      actions: cloneAutomationActions(payload.automation.actions),
+      ...(payload.automation.logs
+        ? {
+            logs: cloneShallowArray(payload.automation.logs),
+          }
+        : {}),
+    },
+  };
+}
+
+function cloneToolHookPayloadBase(
+  payload: ToolBeforeCallHookPayload | ToolAfterCallHookPayload,
+) {
+  return {
+    context: {
+      ...payload.context,
+    },
+    source: {
+      ...payload.source,
+    },
+    ...(payload.pluginId ? { pluginId: payload.pluginId } : {}),
+    ...(payload.runtimeKind ? { runtimeKind: payload.runtimeKind } : {}),
+    tool: {
+      ...payload.tool,
+      parameters: {
+        ...payload.tool.parameters,
+      },
+    },
+    params: {
+      ...payload.params,
+    },
+  };
+}
+
+function cloneSubagentHookPayloadBase(
+  payload: SubagentBeforeRunHookPayload | SubagentAfterRunHookPayload,
+) {
+  return {
+    context: {
+      ...payload.context,
+    },
+    pluginId: payload.pluginId,
+    request: cloneSubagentRequest(payload.request),
+  };
+}
+
+function cloneStructuredMessageArray<T extends { content: unknown }>(
+  messages: readonly T[],
+): T[] {
+  return messages.map((message) => ({
+    ...message,
+    content: Array.isArray(message.content)
+      ? cloneShallowArray(message.content)
+      : message.content,
+  }));
+}
+
+function cloneShallowArray<T extends object>(values: readonly T[]): T[] {
+  return values.map((value) => ({
+    ...value,
+  }));
 }
