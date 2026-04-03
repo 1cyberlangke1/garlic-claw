@@ -44,6 +44,30 @@ export class PluginStateService {
   }
 
   /**
+   * 列出插件状态。
+   * @param pluginId 插件 ID
+   * @param prefix 可选键前缀
+   * @returns 键值对列表
+   */
+  list(
+    pluginId: string,
+    prefix?: string,
+  ): Array<{ key: string; value: JsonValue }> {
+    const pluginState = this.stateByPlugin.get(pluginId);
+    if (!pluginState) {
+      return [];
+    }
+
+    return [...pluginState.entries()]
+      .filter(([key]) => !prefix || key.startsWith(prefix))
+      .sort(([left], [right]) => left.localeCompare(right, 'zh-CN'))
+      .map(([key, value]) => ({
+        key,
+        value,
+      }));
+  }
+
+  /**
    * 删除插件状态。
    * @param pluginId 插件 ID
    * @param key 状态键

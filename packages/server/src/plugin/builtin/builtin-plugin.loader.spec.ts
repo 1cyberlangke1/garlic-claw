@@ -2,23 +2,29 @@ import { BuiltinPluginLoader } from './builtin-plugin.loader';
 
 describe('BuiltinPluginLoader', () => {
   const runtime = {
-    registerPlugin: jest.fn(),
     callHost: jest.fn(),
+    listPlugins: jest.fn(),
+  };
+  const orchestrator = {
+    registerPlugin: jest.fn(),
+    unregisterPlugin: jest.fn(),
   };
 
   let loader: BuiltinPluginLoader;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    runtime.registerPlugin.mockResolvedValue(undefined);
-    loader = new BuiltinPluginLoader(runtime as never);
+    runtime.listPlugins.mockReturnValue([]);
+    orchestrator.registerPlugin.mockResolvedValue(undefined);
+    orchestrator.unregisterPlugin.mockResolvedValue(undefined);
+    loader = new BuiltinPluginLoader(runtime as never, orchestrator as never);
   });
 
   it('registers the default builtin plugins on module init', async () => {
     await loader.onModuleInit();
 
-    expect(runtime.registerPlugin).toHaveBeenCalledTimes(17);
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenCalledTimes(17);
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -28,7 +34,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -38,7 +44,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -48,7 +54,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       4,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -58,7 +64,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       5,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -68,7 +74,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       6,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -78,7 +84,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       7,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -88,7 +94,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       8,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -98,7 +104,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       9,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -108,7 +114,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       10,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -118,7 +124,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       11,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -128,7 +134,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       12,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -138,7 +144,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       13,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -148,7 +154,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       14,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -158,7 +164,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       15,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -168,7 +174,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       16,
       expect.objectContaining({
         manifest: expect.objectContaining({
@@ -178,7 +184,7 @@ describe('BuiltinPluginLoader', () => {
         runtimeKind: 'builtin',
       }),
     );
-    expect(runtime.registerPlugin).toHaveBeenNthCalledWith(
+    expect(orchestrator.registerPlugin).toHaveBeenNthCalledWith(
       17,
       expect.objectContaining({
         manifest: expect.objectContaining({

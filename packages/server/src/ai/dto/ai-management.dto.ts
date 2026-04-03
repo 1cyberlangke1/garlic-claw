@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+import { AI_PROVIDER_MODES, type AiProviderMode } from '@garlic-claw/shared';
 import {
   ArrayMaxSize,
   IsArray,
@@ -33,10 +34,10 @@ export class ModelModalityCapabilitiesDto {
  */
 export class UpsertAiProviderDto {
   /** provider 模式。 */
-  @IsIn(['official', 'compatible'])
-  mode!: 'official' | 'compatible';
+  @IsIn(AI_PROVIDER_MODES)
+  mode!: AiProviderMode;
 
-  /** 官方 driver 或兼容格式。 */
+  /** catalog driver 或协议接入协议族。 */
   @IsString()
   @MaxLength(64)
   driver!: string;

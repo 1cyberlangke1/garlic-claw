@@ -41,10 +41,13 @@ export function getPluginScope(name: string) {
   return request<PluginScopeSettings>(`/plugins/${encodeURIComponent(name)}/scopes`)
 }
 
-export function updatePluginScope(name: string, scope: PluginScopeSettings) {
+export function updatePluginScope(
+  name: string,
+  conversations: PluginScopeSettings['conversations'],
+) {
   return request<PluginScopeSettings>(`/plugins/${encodeURIComponent(name)}/scopes`, {
     method: 'PUT',
-    body: JSON.stringify(scope),
+    body: JSON.stringify({ conversations }),
   })
 }
 

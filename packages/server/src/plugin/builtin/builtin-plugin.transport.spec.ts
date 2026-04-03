@@ -4,12 +4,15 @@ import type {
 } from '@garlic-claw/shared';
 import { createAutomationToolsPlugin } from './automation-tools.plugin';
 import { createConversationTitlePlugin } from './conversation-title.plugin';
+import { createCoreToolsPlugin } from './core-tools.plugin';
 import { createKbContextPlugin } from './kb-context.plugin';
 import { createMemoryContextPlugin } from './memory-context.plugin';
 import { createMemoryToolsPlugin } from './memory-tools.plugin';
+import { createPersonaRouterPlugin } from './persona-router.plugin';
 import { createProviderRouterPlugin } from './provider-router.plugin';
 import { createRouteInspectorPlugin } from './route-inspector.plugin';
 import { createSubagentDelegatePlugin } from './subagent-delegate.plugin';
+import { createToolAuditPlugin } from './tool-audit.plugin';
 import {
   BuiltinPluginTransport,
   type BuiltinPluginDefinition,
@@ -152,6 +155,176 @@ describe('BuiltinPluginTransport', () => {
     ).resolves.toEqual({
       count: 0,
       memories: [],
+    });
+  });
+
+  it('executes local core tools without going through the host facade', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-04-03T10:00:00.000Z'));
+
+    try {
+      const transport = new BuiltinPluginTransport(
+        createCoreToolsPlugin(),
+        hostService as never,
+      );
+
+      const currentTime = await transport.executeTool({
+        toolName: 'getCurrentTime',
+        params: {},
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+        },
+      });
+      const systemInfo = await transport.executeTool({
+        toolName: 'getSystemInfo',
+        params: {},
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+        },
+      });
+      const calculated = await transport.executeTool({
+        toolName: 'calculate',
+        params: {
+          expression: '2 + 3 * 4',
+        },
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+        },
+      });
+      const invalid = await transport.executeTool({
+        toolName: 'calculate',
+        params: {
+          expression: 'Math.max(1, 2)',
+        },
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+        },
+      });
+
+      expect(hostService.call).not.toHaveBeenCalled();
+      expect(currentTime).toEqual({
+        time: '2026-04-03T10:00:00.000Z',
+      });
+      expect(systemInfo).toEqual({
+        platform: process.platform,
+        nodeVersion: process.version,
+        uptime: expect.any(Number),
+        memoryUsage: expect.any(Number),
+      });
+      expect(calculated).toEqual({
+        expression: '2 + 3 * 4',
+        result: 14,
+      });
+      expect(invalid).toEqual({
+        error: '无效的表达式。只允许数字和 +, -, *, /, (, )。',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('records a summarized tool audit through unified storage/log host calls', async () => {
+    hostService.call.mockResolvedValue(true);
+
+    const transport = new BuiltinPluginTransport(
+      createToolAuditPlugin(),
+      hostService as never,
+    );
+
+    await expect(
+      transport.invokeHook({
+        hookName: 'tool:after-call',
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        payload: {
+          context: {
+            source: 'chat-tool',
+            userId: 'user-1',
+            conversationId: 'conversation-1',
+          },
+          source: {
+            kind: 'plugin',
+            id: 'builtin.memory-tools',
+          },
+          pluginId: 'builtin.memory-tools',
+          runtimeKind: 'builtin',
+          tool: {
+            toolId: 'plugin:builtin.memory-tools:save_memory',
+            callName: 'save_memory',
+            name: 'save_memory',
+          },
+          params: {
+            content: '记住我喜欢喝咖啡',
+          },
+          output: {
+            saved: true,
+            id: 'memory-1',
+          },
+        },
+      }),
+    ).resolves.toEqual({
+      action: 'pass',
+    });
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.tool-audit',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'storage.set',
+      params: {
+        key: 'tool.builtin.memory-tools.save_memory.last-call',
+        value: {
+          sourceKind: 'plugin',
+          sourceId: 'builtin.memory-tools',
+          pluginId: 'builtin.memory-tools',
+          runtimeKind: 'builtin',
+          toolId: 'plugin:builtin.memory-tools:save_memory',
+          callName: 'save_memory',
+          toolName: 'save_memory',
+          callSource: 'chat-tool',
+          paramKeys: ['content'],
+          outputKind: 'object',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.tool-audit',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'log.write',
+      params: {
+        level: 'info',
+        type: 'tool:observed',
+        message: '工具 builtin.memory-tools:save_memory 执行完成',
+        metadata: {
+          sourceKind: 'plugin',
+          sourceId: 'builtin.memory-tools',
+          pluginId: 'builtin.memory-tools',
+          runtimeKind: 'builtin',
+          toolId: 'plugin:builtin.memory-tools:save_memory',
+          callName: 'save_memory',
+          toolName: 'save_memory',
+          callSource: 'chat-tool',
+          paramKeys: ['content'],
+          outputKind: 'object',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+      },
     });
   });
 
@@ -680,6 +853,116 @@ describe('BuiltinPluginTransport', () => {
     });
   });
 
+  it('switches persona through the persona router hook', async () => {
+    hostService.call
+      .mockResolvedValueOnce({
+        targetPersonaId: 'persona-writer',
+        switchKeyword: '#writer',
+      })
+      .mockResolvedValueOnce({
+        source: 'conversation',
+        personaId: 'builtin.default-assistant',
+        name: 'Default Assistant',
+      })
+      .mockResolvedValueOnce({
+        id: 'persona-writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+      })
+      .mockResolvedValueOnce({
+        source: 'conversation',
+        personaId: 'persona-writer',
+        prompt: '你是一个偏文学表达的写作助手。',
+      });
+
+    const transport = new BuiltinPluginTransport(
+      createPersonaRouterPlugin(),
+      hostService as never,
+    );
+
+    const result = await transport.invokeHook({
+      hookName: 'chat:before-model',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      payload: {
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+          activePersonaId: 'builtin.default-assistant',
+        },
+        request: {
+          providerId: 'openai',
+          modelId: 'gpt-5.2',
+          systemPrompt: '你是 Garlic Claw',
+          messages: [
+            {
+              role: 'user',
+              content: '请切到写作模式 #writer',
+            },
+          ],
+          availableTools: [],
+        },
+      } satisfies ChatBeforeModelHookPayload,
+    });
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'config.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.current.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(3, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.get',
+      params: {
+        personaId: 'persona-writer',
+      },
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(4, {
+      pluginId: 'builtin.persona-router',
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+      },
+      method: 'persona.activate',
+      params: {
+        personaId: 'persona-writer',
+      },
+    });
+    expect(result).toEqual({
+      action: 'mutate',
+      systemPrompt: '你是一个偏文学表达的写作助手。',
+    });
+  });
+
   it('skips title generation when the conversation already has a custom title', async () => {
     hostService.call
       .mockResolvedValueOnce({
@@ -906,7 +1189,7 @@ describe('BuiltinPluginTransport', () => {
         {
           id: 'openai',
           name: 'OpenAI',
-          mode: 'official',
+          mode: 'catalog',
           driver: 'openai',
           defaultModel: 'gpt-5.2',
           available: true,
@@ -915,7 +1198,7 @@ describe('BuiltinPluginTransport', () => {
       .mockResolvedValueOnce({
         id: 'openai',
         name: 'OpenAI',
-        mode: 'official',
+        mode: 'catalog',
         driver: 'openai',
         defaultModel: 'gpt-5.2',
         available: true,
@@ -1091,7 +1374,7 @@ describe('BuiltinPluginTransport', () => {
         {
           id: 'openai',
           name: 'OpenAI',
-          mode: 'official',
+          mode: 'catalog',
           driver: 'openai',
           defaultModel: 'gpt-5.2',
           available: true,
@@ -1100,7 +1383,7 @@ describe('BuiltinPluginTransport', () => {
       provider: {
         id: 'openai',
         name: 'OpenAI',
-        mode: 'official',
+        mode: 'catalog',
         driver: 'openai',
         defaultModel: 'gpt-5.2',
         available: true,
@@ -1929,6 +2212,102 @@ describe('BuiltinPluginTransport', () => {
       toolCalls: [],
       toolResults: [],
       finishReason: 'stop',
+    });
+  });
+
+  it('exposes background subagent task helpers through the host facade', async () => {
+    hostService.call
+      .mockResolvedValueOnce({
+        targetProviderId: 'openai',
+        targetModelId: 'gpt-5.2-mini',
+      })
+      .mockResolvedValueOnce({
+        id: 'subagent-task-1',
+        pluginId: 'builtin.subagent-delegate',
+        runtimeKind: 'builtin',
+        status: 'queued',
+        requestPreview: '请后台处理这条任务',
+        writeBackStatus: 'pending',
+        requestedAt: '2026-04-03T10:00:00.000Z',
+        startedAt: null,
+        finishedAt: null,
+      });
+
+    const transport = new BuiltinPluginTransport(
+      createSubagentDelegatePlugin(),
+      hostService as never,
+    );
+
+    const result = await transport.executeTool({
+      toolName: 'delegate_summary_background',
+      params: {
+        prompt: '请后台处理这条任务',
+        writeBack: true,
+      },
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+    });
+
+    expect(hostService.call).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.subagent-delegate',
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      method: 'config.get',
+      params: {},
+    });
+    expect(hostService.call).toHaveBeenNthCalledWith(2, {
+      pluginId: 'builtin.subagent-delegate',
+      context: {
+        source: 'plugin',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activeProviderId: 'openai',
+        activeModelId: 'gpt-5.2',
+      },
+      method: 'subagent.task.start',
+      params: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: '请后台处理这条任务',
+              },
+            ],
+          },
+        ],
+        maxSteps: 4,
+        writeBack: {
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+          },
+        },
+      },
+    });
+    expect(result).toEqual({
+      id: 'subagent-task-1',
+      pluginId: 'builtin.subagent-delegate',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请后台处理这条任务',
+      writeBackStatus: 'pending',
+      requestedAt: '2026-04-03T10:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
     });
   });
 

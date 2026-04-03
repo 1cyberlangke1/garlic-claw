@@ -3,7 +3,12 @@ import type {
   PluginConfigSchema,
   PluginManifest,
 } from '@garlic-claw/shared';
+import { PluginEventWriteService } from './plugin-event-write.service';
+import { PluginGovernanceWriteService } from './plugin-governance-write.service';
+import { PluginLifecycleWriteService } from './plugin-lifecycle-write.service';
+import { PluginReadService } from './plugin-read.service';
 import { serializePersistedPluginManifest } from './plugin-manifest.persistence';
+import { PluginStorageService } from './plugin-storage.service';
 import { PluginService } from './plugin.service';
 
 describe('PluginService', () => {
@@ -71,7 +76,21 @@ describe('PluginService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new PluginService(prisma as never);
+    const pluginEventWriteService = new PluginEventWriteService(prisma as never);
+    const pluginReadService = new PluginReadService(prisma as never);
+    const pluginGovernanceWriteService = new PluginGovernanceWriteService(
+      prisma as never,
+      pluginReadService as never,
+    );
+    const pluginLifecycleWriteService = new PluginLifecycleWriteService(prisma as never);
+    const pluginStorageService = new PluginStorageService(prisma as never);
+    service = new PluginService(
+      pluginEventWriteService as never,
+      pluginGovernanceWriteService as never,
+      pluginLifecycleWriteService as never,
+      pluginReadService as never,
+      pluginStorageService as never,
+    );
   });
 
   it('persists manifest governance metadata during plugin registration', async () => {
@@ -569,6 +588,62 @@ describe('PluginService', () => {
         message: 'memory.search timeout',
         metadataJson: JSON.stringify({
           toolName: 'memory.search',
+        }),
+      },
+    });
+  });
+
+  it('records successful health checks as info events and healthy snapshots', async () => {
+    prisma.plugin.findUnique.mockResolvedValue(
+      createPluginRecord({
+        id: 'plugin-1',
+        name: 'builtin.memory-context',
+        status: 'online',
+        healthStatus: 'degraded',
+        failureCount: 2,
+        consecutiveFailures: 2,
+      }),
+    );
+    prisma.plugin.update.mockResolvedValue(
+      createPluginRecord({
+        id: 'plugin-1',
+        name: 'builtin.memory-context',
+        status: 'online',
+        healthStatus: 'healthy',
+        failureCount: 2,
+        consecutiveFailures: 0,
+      }),
+    );
+
+    await expect(
+      service.recordHealthCheck('builtin.memory-context', {
+        ok: true,
+        message: 'gateway ping ok',
+        metadata: {
+          source: 'gateway',
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(prisma.plugin.update).toHaveBeenCalledWith({
+      where: {
+        name: 'builtin.memory-context',
+      },
+      data: expect.objectContaining({
+        healthStatus: 'healthy',
+        consecutiveFailures: 0,
+        lastSuccessAt: expect.any(Date),
+        lastCheckedAt: expect.any(Date),
+      }),
+    });
+    expect(prisma.pluginEvent.create).toHaveBeenCalledWith({
+      data: {
+        pluginId: 'plugin-1',
+        type: 'health:ok',
+        level: 'info',
+        message: 'gateway ping ok',
+        metadataJson: JSON.stringify({
+          source: 'gateway',
         }),
       },
     });

@@ -1,4 +1,9 @@
+import { ChatMessageCompletionService } from './chat-message-completion.service';
+import { ChatMessageGenerationService } from './chat-message-generation.service';
+import { ChatMessageMutationService } from './chat-message-mutation.service';
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
+import { ChatMessagePluginTargetService } from './chat-message-plugin-target.service';
+import { ChatMessageResponseHooksService } from './chat-message-response-hooks.service';
 import { ChatMessageService } from './chat-message.service';
 
 describe('ChatMessageService', () => {
@@ -143,14 +148,22 @@ describe('ChatMessageService', () => {
         }),
       }),
     );
+    const responseHooks = new ChatMessageResponseHooksService(
+      pluginRuntime as never,
+    );
     const orchestration = new ChatMessageOrchestrationService(
       aiProvider as never,
       pluginRuntime as never,
       toolRegistry as never,
       modelInvocation as never,
       skillSession as never,
+      responseHooks as never,
     );
-    service = new ChatMessageService(
+    const completionService = new ChatMessageCompletionService(
+      prisma as never,
+      orchestration as never,
+    );
+    const generationService = new ChatMessageGenerationService(
       prisma as never,
       chatService as never,
       aiProvider as never,
@@ -159,7 +172,24 @@ describe('ChatMessageService', () => {
       modelInvocation as never,
       orchestration as never,
       chatTaskService as never,
+      completionService as never,
       skillCommands as never,
+    );
+    const mutationService = new ChatMessageMutationService(
+      prisma as never,
+      chatService as never,
+      pluginRuntime as never,
+      chatTaskService as never,
+    );
+    const pluginTargetService = new ChatMessagePluginTargetService(
+      prisma as never,
+      chatService as never,
+      pluginRuntime as never,
+    );
+    service = new ChatMessageService(
+      generationService as never,
+      mutationService as never,
+      pluginTargetService as never,
     );
   });
 
@@ -1203,13 +1233,8 @@ describe('ChatMessageService', () => {
       updatedAt: '2026-03-28T10:00:00.000Z',
     });
 
-    expect(chatService.getConversation).toHaveBeenNthCalledWith(
-      1,
-      'user-1',
-      'conversation-2',
-    );
-    expect(chatService.getConversation).toHaveBeenNthCalledWith(
-      2,
+    expect(chatService.getConversation).toHaveBeenCalledTimes(1);
+    expect(chatService.getConversation).toHaveBeenCalledWith(
       'user-1',
       'conversation-2',
     );

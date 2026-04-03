@@ -1,10 +1,17 @@
-import type { JsonValue } from '../../common/types/json-value';
-import { toJsonValue } from '../../common/utils/json-value';
-import type { BuiltinPluginDefinition } from './builtin-plugin.transport';
 import {
   asChatBeforeModelPayload,
-  createChatBeforeModelHookResult,
-} from './builtin-plugin.transport';
+  createChatBeforeModelLineBlockResult,
+  MEMORY_CONTEXT_MANIFEST,
+  MEMORY_CONTEXT_DEFAULT_LIMIT,
+  MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  readLatestUserTextFromMessages,
+  readMemorySearchResults,
+  readPromptBlockConfig,
+  resolvePromptBlockConfig,
+  toHostJsonValue,
+} from '@garlic-claw/plugin-sdk';
+import type { JsonValue } from '../../common/types/json-value';
+import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**
  * 创建记忆上下文注入插件。
@@ -21,37 +28,7 @@ import {
  */
 export function createMemoryContextPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.memory-context',
-      name: '记忆上下文',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '在模型调用前检索并注入用户长期记忆摘要的内建插件。',
-      permissions: ['memory:read', 'config:read'],
-      tools: [],
-      hooks: [
-        {
-          name: 'chat:before-model',
-          description: '在模型调用前补入用户长期记忆摘要',
-        },
-      ],
-      config: {
-        fields: [
-          {
-            key: 'limit',
-            type: 'number',
-            description: '每次检索长期记忆的最大条数',
-            defaultValue: 5,
-          },
-          {
-            key: 'promptPrefix',
-            type: 'string',
-            description: '记忆摘要写入系统提示词时的前缀',
-            defaultValue: '与此用户相关的记忆',
-          },
-        ],
-      },
-    },
+    manifest: MEMORY_CONTEXT_MANIFEST,
     hooks: {
       /**
        * 在模型调用前补入记忆提示词。
@@ -61,15 +38,21 @@ export function createMemoryContextPlugin(): BuiltinPluginDefinition {
        */
       'chat:before-model': async (payload: JsonValue, context) => {
         const hookPayload = asChatBeforeModelPayload(payload);
-        const latestUserText = findLatestUserText(hookPayload.request.messages);
+        const latestUserText = readLatestUserTextFromMessages(hookPayload.request.messages);
         if (!latestUserText) {
           return null;
         }
 
-        const config = readMemoryContextConfig(await context.host.getConfig());
+        const config = resolvePromptBlockConfig(
+          readPromptBlockConfig(await context.host.getConfig()),
+          {
+            limit: MEMORY_CONTEXT_DEFAULT_LIMIT,
+            promptPrefix: MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
+          },
+        );
         const memories = readMemorySearchResults(await context.host.searchMemories(
           latestUserText,
-          config.limit ?? 5,
+          config.limit,
         ));
         if (memories.length === 0) {
           return null;
@@ -78,94 +61,12 @@ export function createMemoryContextPlugin(): BuiltinPluginDefinition {
         const memoryLines = memories.map((memory) =>
           `- [${memory.category ?? 'general'}] ${memory.content ?? ''}`,
         );
-        return toJsonValue(
-          createChatBeforeModelHookResult(
-            hookPayload.request.systemPrompt,
-            `${config.promptPrefix ?? '与此用户相关的记忆'}：\n${memoryLines.join('\n')}`,
-          ),
-        );
+        return toHostJsonValue(createChatBeforeModelLineBlockResult(
+          hookPayload.request.systemPrompt,
+          config.promptPrefix,
+          memoryLines,
+        ));
       },
     },
   };
-}
-
-/**
- * 从聊天消息中提取最近一条用户纯文本。
- * @param messages Hook 输入中的聊天消息
- * @returns 最近一条用户文本；没有时返回空字符串
- */
-function findLatestUserText(
-  messages: Array<{
-    role: 'user' | 'assistant' | 'system' | 'tool';
-    content: string | Array<{ type: string; text?: string }>;
-  }>,
-): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role !== 'user') {
-      continue;
-    }
-    if (typeof message.content === 'string') {
-      return message.content;
-    }
-
-    const text = message.content
-      .filter((part) => part.type === 'text')
-      .map((part) => part.text ?? '')
-      .join('\n')
-      .trim();
-    if (text) {
-      return text;
-    }
-  }
-
-  return '';
-}
-
-function readMemoryContextConfig(value: JsonValue): {
-  limit?: number;
-  promptPrefix?: string;
-} {
-  const object = readJsonObjectValue(value);
-  if (!object) {
-    return {};
-  }
-
-  return {
-    ...(typeof object.limit === 'number' ? { limit: object.limit } : {}),
-    ...(typeof object.promptPrefix === 'string' ? { promptPrefix: object.promptPrefix } : {}),
-  };
-}
-
-function readMemorySearchResults(
-  value: JsonValue,
-): Array<{
-  content?: string;
-  category?: string;
-}> {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.flatMap((entry) => {
-    const object = readJsonObjectValue(entry);
-    if (!object) {
-      return [];
-    }
-
-    return [{
-      ...(typeof object.content === 'string' ? { content: object.content } : {}),
-      ...(typeof object.category === 'string' ? { category: object.category } : {}),
-    }];
-  });
-}
-
-function readJsonObjectValue(
-  value: JsonValue,
-): Record<string, JsonValue> | null {
-  return typeof value === 'object'
-    && value !== null
-    && !Array.isArray(value)
-    ? Object.fromEntries(Object.entries(value))
-    : null;
 }

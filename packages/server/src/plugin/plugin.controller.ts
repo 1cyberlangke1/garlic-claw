@@ -7,6 +7,7 @@ import type {
   PluginEventListResult,
   PluginHealthSnapshot,
   PluginInfo,
+  RemotePluginBootstrapInfo,
   PluginScopeSettings,
   PluginStorageEntry,
 } from '@garlic-claw/shared';
@@ -28,18 +29,23 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { toJsonValue } from '../common/utils/json-value';
 import {
+  CreateRemotePluginBootstrapDto,
   UpdatePluginConfigDto,
   UpdatePluginScopeDto,
   UpdatePluginStorageDto,
 } from './dto/plugin-admin.dto';
 import { PluginAdminService } from './plugin-admin.service';
 import { PluginCronService } from './plugin-cron.service';
+import { buildPluginHealthSnapshot } from './plugin-event.helpers';
 import { describePluginGovernance } from './plugin-governance-policy';
 import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
+import { readNonEmptyString } from './plugin-manifest-normalize-base.helpers';
+import { PluginRemoteBootstrapService } from './plugin-remote-bootstrap.service';
+import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
-type PersistedPluginRecord = Awaited<ReturnType<PluginService['findAll']>>[number];
+const PERSISTED_SUPPORTED_ACTIONS: PluginActionName[] = ['health-check'];
 
 @ApiTags('Plugins')
 @ApiBearerAuth()
@@ -50,19 +56,31 @@ export class PluginController {
   constructor(
     private pluginService: PluginService,
     private pluginRuntime: PluginRuntimeService,
+    private pluginRuntimeOrchestrator: PluginRuntimeOrchestratorService,
     private pluginCronService: PluginCronService,
     private pluginAdmin: PluginAdminService,
+    private pluginRemoteBootstrap: PluginRemoteBootstrapService,
   ) {}
 
   @Get()
   async listPlugins(): Promise<PluginInfo[]> {
     const plugins = await this.pluginService.findAll();
     const runtimePlugins = new Map(
-      this.pluginRuntime.listPlugins().map((plugin) => [plugin.pluginId, plugin] as const),
+      this.pluginRuntime.listPlugins().map((plugin) => [plugin.pluginId, plugin]),
     );
-    return Promise.all(plugins.map(async (p: PersistedPluginRecord) => {
+    return Promise.all(plugins.map(async (p) => {
       const runtimePlugin = runtimePlugins.get(p.name);
-      const manifest = runtimePlugin?.manifest ?? buildPersistedManifest(p);
+      const manifest = runtimePlugin?.manifest ?? parsePersistedPluginManifest(
+        typeof p.manifestJson === 'string' ? p.manifestJson : null,
+        {
+          id: p.name,
+          displayName: p.displayName,
+          description: p.description,
+          version: p.version,
+          runtimeKind: p.runtimeKind,
+        },
+      );
+      const health = buildPluginHealthSnapshot({ plugin: p });
       const governance = describePluginGovernance({
         pluginId: p.name,
         runtimeKind: runtimePlugin?.runtimeKind ?? p.runtimeKind,
@@ -79,10 +97,15 @@ export class PluginController {
           ?? (p.runtimeKind === 'builtin' ? 'builtin' : 'remote'),
         version: manifest.version,
         supportedActions: runtimePlugin?.supportedActions
-          ?? resolvePersistedSupportedActions(),
+          ?? PERSISTED_SUPPORTED_ACTIONS,
         crons: await this.pluginCronService.listCronJobs(p.name),
         manifest,
-        health: serializePluginHealth(p, runtimePlugin?.runtimePressure ?? null),
+        health: runtimePlugin?.runtimePressure
+          ? {
+            ...health,
+            runtimePressure: runtimePlugin.runtimePressure,
+          }
+          : health,
         governance,
         lastSeenAt: p.lastSeenAt ? p.lastSeenAt.toISOString() : null,
         createdAt: p.createdAt.toISOString(),
@@ -100,35 +123,40 @@ export class PluginController {
     }));
   }
 
+  @Post('remote/bootstrap')
+  createRemoteBootstrap(
+    @Body() dto: CreateRemotePluginBootstrapDto,
+  ): Promise<RemotePluginBootstrapInfo> {
+    return this.pluginRemoteBootstrap.issueBootstrap({
+      pluginName: dto.pluginName,
+      deviceType: dto.deviceType,
+      ...(dto.displayName ? { displayName: dto.displayName } : {}),
+      ...(dto.description ? { description: dto.description } : {}),
+      ...(dto.version ? { version: dto.version } : {}),
+    });
+  }
+
   @Delete(':name')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   deletePlugin(@Param('name') name: string) {
     return this.pluginService.deletePlugin(name);
   }
 
   @Get(':name/config')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   getPluginConfig(@Param('name') name: string): Promise<PluginConfigSnapshot> {
     return this.pluginService.getPluginConfig(name);
   }
 
   @Put(':name/config')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   async updatePluginConfig(
     @Param('name') name: string,
     @Body() dto: UpdatePluginConfigDto,
   ): Promise<PluginConfigSnapshot> {
     const result = await this.pluginService.updatePluginConfig(name, dto.values);
-    await this.pluginRuntime.refreshPluginGovernance(name);
+    await this.pluginRuntimeOrchestrator.refreshPluginGovernance(name);
     return result;
   }
 
   @Get(':name/storage')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   listPluginStorage(
     @Param('name') name: string,
     @Query('prefix') prefix?: string,
@@ -137,8 +165,6 @@ export class PluginController {
   }
 
   @Put(':name/storage')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   async setPluginStorage(
     @Param('name') name: string,
     @Body() dto: UpdatePluginStorageDto,
@@ -154,8 +180,6 @@ export class PluginController {
   }
 
   @Delete(':name/storage')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   deletePluginStorage(
     @Param('name') name: string,
     @Query('key') key?: string,
@@ -169,15 +193,11 @@ export class PluginController {
   }
 
   @Get(':name/scopes')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   getPluginScope(@Param('name') name: string): Promise<PluginScopeSettings> {
     return this.pluginService.getPluginScope(name);
   }
 
   @Get(':name/health')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   async getPluginHealth(@Param('name') name: string): Promise<PluginHealthSnapshot> {
     const health = await this.pluginService.getPluginHealth(name);
     const runtimePressure = this.pluginRuntime.getRuntimePressure(name);
@@ -190,8 +210,6 @@ export class PluginController {
   }
 
   @Get(':name/events')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   listPluginEvents(
     @Param('name') name: string,
     @Query('limit') limit?: string,
@@ -213,15 +231,11 @@ export class PluginController {
   }
 
   @Get(':name/crons')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   listPluginCrons(@Param('name') name: string) {
     return this.pluginCronService.listCronJobs(name);
   }
 
   @Delete(':name/crons/:jobId')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   deletePluginCron(
     @Param('name') name: string,
     @Param('jobId') jobId: string,
@@ -230,49 +244,47 @@ export class PluginController {
   }
 
   @Get(':name/sessions')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
-  listPluginConversationSessions(
+  async listPluginConversationSessions(
     @Param('name') name: string,
   ): Promise<PluginConversationSessionInfo[]> {
-    return Promise.resolve(this.pluginRuntime.listConversationSessions(name));
+    return this.pluginRuntime.listConversationSessions(name);
   }
 
   @Delete(':name/sessions/:conversationId')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
-  finishPluginConversationSession(
+  async finishPluginConversationSession(
     @Param('name') name: string,
     @Param('conversationId') conversationId: string,
   ): Promise<boolean> {
-    return Promise.resolve(
-      this.pluginRuntime.finishConversationSessionForGovernance(name, conversationId),
+    return this.pluginRuntime.finishConversationSessionForGovernance(
+      name,
+      conversationId,
     );
   }
 
   @Put(':name/scopes')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   async updatePluginScope(
     @Param('name') name: string,
     @Body() dto: UpdatePluginScopeDto,
   ): Promise<PluginScopeSettings> {
+    const currentScope = await this.pluginService.getPluginScope(name);
     const result = await this.pluginService.updatePluginScope(name, {
-      defaultEnabled: dto.defaultEnabled,
-      conversations: dto.conversations ?? {},
+      defaultEnabled: currentScope.defaultEnabled,
+      conversations: dto.conversations ?? currentScope.conversations,
     });
-    await this.pluginRuntime.refreshPluginGovernance(name);
+    await this.pluginRuntimeOrchestrator.refreshPluginGovernance(name);
     return result;
   }
 
   @Post(':name/actions/:action')
-  @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
   runPluginAction(
     @Param('name') name: string,
     @Param('action') action: string,
   ): Promise<PluginActionResult> {
-    if (!isPluginActionName(action)) {
+    if (
+      action !== 'reload'
+      && action !== 'reconnect'
+      && action !== 'health-check'
+    ) {
       throw new BadRequestException(
         'action 必须是 reload / reconnect / health-check',
       );
@@ -280,81 +292,6 @@ export class PluginController {
 
     return this.pluginAdmin.runAction(name, action);
   }
-}
-
-/**
- * 为离线或未接入运行时的插件合成统一 manifest。
- * @param plugin Prisma 插件记录
- * @returns 统一插件清单
- */
-function buildPersistedManifest(plugin: PersistedPluginRecord): PluginInfo['manifest'] {
-  return parsePersistedPluginManifest(
-    typeof plugin.manifestJson === 'string' ? plugin.manifestJson : null,
-    {
-      id: plugin.name,
-      displayName: plugin.displayName,
-      description: plugin.description,
-      version: plugin.version,
-      runtimeKind: plugin.runtimeKind,
-    },
-  );
-}
-
-/**
- * 序列化插件健康摘要。
- * @param plugin 原始 Prisma 插件记录
- * @returns API 侧健康快照
- */
-function serializePluginHealth(
-  plugin: PersistedPluginRecord,
-  runtimePressure: PluginHealthSnapshot['runtimePressure'] | null = null,
-): PluginHealthSnapshot {
-  const status = plugin.status === 'offline'
-    ? 'offline'
-    : readPersistedHealthStatus(plugin.healthStatus);
-  return {
-    status,
-    failureCount: plugin.failureCount,
-    consecutiveFailures: plugin.consecutiveFailures,
-    lastError: plugin.lastError,
-    lastErrorAt: plugin.lastErrorAt instanceof Date
-      ? plugin.lastErrorAt.toISOString()
-      : null,
-    lastSuccessAt: plugin.lastSuccessAt instanceof Date
-      ? plugin.lastSuccessAt.toISOString()
-      : null,
-    lastCheckedAt: plugin.lastCheckedAt instanceof Date
-      ? plugin.lastCheckedAt.toISOString()
-      : null,
-    ...(runtimePressure ? { runtimePressure } : {}),
-  };
-}
-
-function readPersistedHealthStatus(
-  value: string | null,
-): PluginHealthSnapshot['status'] {
-  switch (value) {
-    case 'healthy':
-    case 'degraded':
-    case 'error':
-    case 'offline':
-    case 'unknown':
-      return value;
-    default:
-      return 'unknown';
-  }
-}
-
-/**
- * 为未接入当前 runtime 的插件记录提供保守治理动作回退。
- * @returns 最小治理动作列表
- */
-function resolvePersistedSupportedActions(): PluginActionName[] {
-  return ['health-check'];
-}
-
-function isPluginActionName(action: string): action is PluginActionName {
-  return action === 'reload' || action === 'reconnect' || action === 'health-check';
 }
 
 /**
@@ -388,9 +325,9 @@ function parsePluginEventQuery(raw: {
     level = raw.level;
   }
 
-  const type = raw.type?.trim() || undefined;
-  const keyword = raw.keyword?.trim() || undefined;
-  const cursor = raw.cursor?.trim() || undefined;
+  const type = readNonEmptyString(raw.type) ?? undefined;
+  const keyword = readNonEmptyString(raw.keyword) ?? undefined;
+  const cursor = readNonEmptyString(raw.cursor) ?? undefined;
 
   return {
     ...(limit !== undefined ? { limit } : {}),

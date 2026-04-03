@@ -7,8 +7,11 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
+import { ToolSettingsService } from '../tool/tool-settings.service';
 import { SkillRegistryService } from './skill-registry.service';
 
 interface ConversationSkillContext {
@@ -16,13 +19,18 @@ interface ConversationSkillContext {
   systemPrompt: string;
   allowedToolNames: string[] | null;
   deniedToolNames: string[];
+  skillPackageToolsEnabled: boolean;
 }
 
 @Injectable()
 export class SkillSessionService {
+  private toolSettingsService: ToolSettingsService | null | undefined;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly skillRegistry: SkillRegistryService,
+    @Optional()
+    private readonly moduleRef?: ModuleRef,
   ) {}
 
   async getConversationSkillStateForUser(
@@ -45,13 +53,9 @@ export class SkillSessionService {
     const skillById = indexSkillsById(skillSummaries);
     const normalizedIds = normalizeSkillIds(activeSkillIds);
     const missingIds = normalizedIds.filter((id) => !skillById.has(id));
-    const disabledIds = normalizedIds.filter((id) => skillById.get(id)?.governance.enabled === false);
 
     if (missingIds.length > 0) {
       throw new NotFoundException(`Unknown skills: ${missingIds.join(', ')}`);
-    }
-    if (disabledIds.length > 0) {
-      throw new ForbiddenException(`Disabled skills: ${disabledIds.join(', ')}`);
     }
 
     await this.persistConversationSkills(conversation.id, normalizedIds);
@@ -79,7 +83,11 @@ export class SkillSessionService {
       parseSkillIds(conversation.skillsJson),
       indexSkillsById(skills),
     );
-    const skillToolNames = collectSkillPackageToolNames(activeSkills);
+    const skillPackageToolsEnabled = this.isSkillPackageToolsEnabled();
+    const skillToolNames = collectSkillPackageToolNames(
+      activeSkills,
+      skillPackageToolsEnabled,
+    );
     const allowedToolNames = collectAllowedToolNames(activeSkills, skillToolNames);
     const deniedToolNames = collectDeniedToolNames(activeSkills);
 
@@ -88,6 +96,7 @@ export class SkillSessionService {
       systemPrompt: buildConversationSkillPrompt(activeSkills, skillToolNames),
       allowedToolNames,
       deniedToolNames,
+      skillPackageToolsEnabled,
     };
   }
 
@@ -144,6 +153,28 @@ export class SkillSessionService {
       },
     });
   }
+
+  private getToolSettingsService(): ToolSettingsService | null {
+    if (this.toolSettingsService === undefined) {
+      if (!this.moduleRef) {
+        this.toolSettingsService = null;
+      } else {
+        try {
+          this.toolSettingsService = this.moduleRef.get(ToolSettingsService, {
+            strict: false,
+          });
+        } catch {
+          this.toolSettingsService = null;
+        }
+      }
+    }
+
+    return this.toolSettingsService ?? null;
+  }
+
+  private isSkillPackageToolsEnabled(): boolean {
+    return this.getToolSettingsService()?.getSourceEnabled('skill', 'active-packages') ?? true;
+  }
 }
 
 function parseSkillIds(rawSkillIds: string | null): string[] {
@@ -172,10 +203,7 @@ function indexSkillsById<T extends { id: string }>(skills: T[]): Map<string, T> 
   return new Map(skills.map((skill) => [skill.id, skill]));
 }
 
-function resolveActiveSkills<T extends {
-  id: string;
-  governance: { enabled: boolean };
-}>(
+function resolveActiveSkills<T extends { id: string }>(
   rawSkillIds: string[],
   skillById: Map<string, T>,
 ): {
@@ -183,7 +211,7 @@ function resolveActiveSkills<T extends {
   activeSkills: T[];
 } {
   const activeSkillIds = normalizeSkillIds(rawSkillIds)
-    .filter((id) => skillById.get(id)?.governance.enabled);
+    .filter((id) => skillById.has(id));
 
   return {
     activeSkillIds,
@@ -273,7 +301,14 @@ function buildConversationSkillPrompt(
   ].join('\n\n');
 }
 
-function collectSkillPackageToolNames(activeSkills: SkillDetail[]): string[] {
+function collectSkillPackageToolNames(
+  activeSkills: SkillDetail[],
+  enabled = true,
+): string[] {
+  if (!enabled) {
+    return [];
+  }
+
   const names = new Set<string>();
   const canReadAssets = activeSkills.some((skill) =>
     (skill.governance.trustLevel === 'asset-read' || skill.governance.trustLevel === 'local-script')

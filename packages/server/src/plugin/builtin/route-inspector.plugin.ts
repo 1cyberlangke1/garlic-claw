@@ -1,14 +1,9 @@
-import type { JsonValue } from '../../common/types/json-value';
-import { toJsonValue } from '../../common/utils/json-value';
-import type { BuiltinPluginDefinition } from './builtin-plugin.transport';
-
-/**
- * Route 探针插件返回的会话摘要。
- */
-interface RouteInspectorConversationSummary {
-  id?: string;
-  title?: string;
-}
+import {
+  createRouteInspectorContextResponse,
+  readConversationSummary,
+  ROUTE_INSPECTOR_MANIFEST,
+} from '@garlic-claw/plugin-sdk';
+import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**
  * 创建一个用于验证插件 Web Route 能力的内建插件。
@@ -25,22 +20,7 @@ interface RouteInspectorConversationSummary {
  */
 export function createRouteInspectorPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.route-inspector',
-      name: '路由探针',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于查看插件 Web Route 可见上下文的内建诊断插件。',
-      permissions: ['conversation:read', 'user:read'],
-      tools: [],
-      routes: [
-        {
-          path: 'inspect/context',
-          methods: ['GET'],
-          description: '返回当前插件路由看到的用户与会话上下文',
-        },
-      ],
-    },
+    manifest: ROUTE_INSPECTOR_MANIFEST,
     routes: {
       /**
        * 返回当前用户、插件和可选会话摘要。
@@ -51,7 +31,10 @@ export function createRouteInspectorPlugin(): BuiltinPluginDefinition {
       'inspect/context': async (_request, context) => {
         const plugin = await context.host.getPluginSelf();
         const user = await context.host.getUser();
-        let conversation: RouteInspectorConversationSummary | null = null;
+        let conversation: {
+          id?: string;
+          title?: string;
+        } | null = null;
         let messageCount = 0;
 
         if (context.callContext.conversationId) {
@@ -60,31 +43,13 @@ export function createRouteInspectorPlugin(): BuiltinPluginDefinition {
           messageCount = Array.isArray(messages) ? messages.length : 0;
         }
 
-        return {
-          status: 200,
-          body: toJsonValue({
-            plugin,
-            user,
-            conversation,
-            messageCount,
-          }),
-        };
+        return createRouteInspectorContextResponse({
+          plugin,
+          user,
+          conversation,
+          messageCount,
+        });
       },
     },
   };
-}
-
-function readConversationSummary(value: JsonValue): RouteInspectorConversationSummary {
-  if (!isJsonObjectValue(value)) {
-    return {};
-  }
-
-  return {
-    ...(typeof value.id === 'string' ? { id: value.id } : {}),
-    ...(typeof value.title === 'string' ? { title: value.title } : {}),
-  };
-}
-
-function isJsonObjectValue(value: JsonValue): value is Record<string, JsonValue> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -12,6 +12,7 @@
     <div class="settings-grid">
       <AiProviderSidebar
         class="settings-sidebar"
+        :catalog="catalog"
         :error="error"
         :loading="loadingProviders"
         :providers="providers"
@@ -23,6 +24,7 @@
 
       <AiProviderModelsPanel
         class="settings-provider-panel"
+        :catalog="catalog"
         :connection-result="connectionResult"
         :discovering-models="discoveringModels"
         :models="selectedModels"

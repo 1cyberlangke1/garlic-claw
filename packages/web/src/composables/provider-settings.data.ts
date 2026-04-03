@@ -3,10 +3,10 @@ import type {
   AiProviderConnectionTestResult,
   AiModelConfig,
   AiModelRouteTarget,
+  AiProviderCatalogItem,
   AiProviderConfig,
   AiProviderSummary,
   DiscoveredAiModel,
-  OfficialProviderCatalogItem,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import * as api from '../api'
@@ -28,6 +28,22 @@ export interface HostModelRoutingOption extends AiModelRouteTarget {
   label: string
 }
 
+interface ProviderModelGroup {
+  provider: AiProviderSummary
+  models: AiModelConfig[]
+}
+
+export interface ProviderModelOptionsInput {
+  providers: AiProviderSummary[]
+  preloadedModelsByProviderId?: Partial<Record<string, AiModelConfig[]>>
+}
+
+export interface ProviderModelOptionsResult {
+  visionOptions: VisionModelOption[]
+  hostModelRoutingOptions: HostModelRoutingOption[]
+  modelsByProviderId: Record<string, AiModelConfig[]>
+}
+
 /**
  * provider 测试连接结果。
  */
@@ -40,7 +56,7 @@ export interface ProviderConnectionResult {
  * 设置页初始化所需的数据快照。
  */
 export interface ProviderSettingsBaseData {
-  catalog: OfficialProviderCatalogItem[]
+  catalog: AiProviderCatalogItem[]
   providers: AiProviderSummary[]
   visionConfig: VisionFallbackConfig
   hostModelRoutingConfig: AiHostModelRoutingConfig
@@ -60,7 +76,7 @@ export interface ProviderSettingsSelectionData {
  */
 export async function loadProviderSettingsBaseData(): Promise<ProviderSettingsBaseData> {
   const [catalog, providers, visionConfig, hostModelRoutingConfig] = await Promise.all([
-    api.listOfficialProviderCatalog(),
+    api.listAiProviderCatalog(),
     api.listAiProviders(),
     api.getVisionFallbackConfig(),
     api.getHostModelRoutingConfig(),
@@ -133,54 +149,53 @@ export async function importDiscoveredProviderModels(
 }
 
 /**
- * 重新构建 Vision Fallback 的模型候选列表。
+ * 一次性加载 provider 相关的视觉与宿主路由候选项。
  * @param providers 当前 provider 摘要列表
- * @returns 可直接绑定到下拉框的候选项
+ * @returns 视觉与宿主路由候选项
  */
-export async function loadVisionModelOptions(
-  providers: AiProviderSummary[],
-): Promise<VisionModelOption[]> {
-  const availableProviders = providers.filter((item) => item.available)
-  const modelGroups = await Promise.all(
-    availableProviders.map(async (provider) => ({
-      provider,
-      models: await listProviderModelsSafely(provider.id),
-    })),
-  )
+export async function loadProviderModelOptions(
+  input: ProviderModelOptionsInput | AiProviderSummary[],
+): Promise<ProviderModelOptionsResult> {
+  const providers = Array.isArray(input) ? input : input.providers
+  const preloadedModelsByProviderId = Array.isArray(input)
+    ? undefined
+    : input.preloadedModelsByProviderId
+  const modelGroups = await loadProviderModelGroups(providers, preloadedModelsByProviderId)
 
-  return modelGroups.flatMap(({ provider, models }) =>
-    models
-      .filter((model) => model.capabilities.input.image)
-      .map((model) => ({
+  return {
+    visionOptions: modelGroups.flatMap(({ provider, models }) =>
+      models
+        .filter((model) => model.capabilities.input.image)
+        .map((model) => ({
+          providerId: provider.id,
+          providerName: provider.name,
+          modelId: model.id,
+          label: `${provider.name} / ${model.name}`,
+        })),
+    ),
+    hostModelRoutingOptions: modelGroups.flatMap(({ provider, models }) =>
+      models.map((model) => ({
         providerId: provider.id,
-        providerName: provider.name,
         modelId: model.id,
         label: `${provider.name} / ${model.name}`,
-      })),
-  )
+        })),
+    ),
+    modelsByProviderId: Object.fromEntries(
+      modelGroups.map(({ provider, models }) => [provider.id, models]),
+    ),
+  }
 }
 
-/**
- * 构建宿主模型路由使用的全量模型候选。
- * @param providers 当前 provider 摘要列表
- * @returns fallback/utility role 可选模型
- */
-export async function loadHostModelRoutingOptions(
+async function loadProviderModelGroups(
   providers: AiProviderSummary[],
-): Promise<HostModelRoutingOption[]> {
+  preloadedModelsByProviderId?: Partial<Record<string, AiModelConfig[]>>,
+): Promise<ProviderModelGroup[]> {
   const availableProviders = providers.filter((item) => item.available)
-  const modelGroups = await Promise.all(
+  return Promise.all(
     availableProviders.map(async (provider) => ({
       provider,
-      models: await listProviderModelsSafely(provider.id),
-    })),
-  )
-
-  return modelGroups.flatMap(({ provider, models }) =>
-    models.map((model) => ({
-      providerId: provider.id,
-      modelId: model.id,
-      label: `${provider.name} / ${model.name}`,
+      models: preloadedModelsByProviderId?.[provider.id]
+        ?? await listProviderModelsSafely(provider.id),
     })),
   )
 }

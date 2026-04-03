@@ -287,7 +287,6 @@ describe('useChatView', () => {
             deny: [],
           },
           governance: {
-            enabled: true,
             trustLevel: 'asset-read',
           },
         },

@@ -33,8 +33,8 @@ export class AiController {
   ) {}
 
   @Get('provider-catalog')
-  listOfficialProviderCatalog() {
-    return this.managementService.listOfficialProviderCatalog();
+  listProviderCatalog() {
+    return this.managementService.listProviderCatalog();
   }
 
   @Get('providers')

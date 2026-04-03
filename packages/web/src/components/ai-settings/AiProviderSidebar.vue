@@ -47,14 +47,14 @@
         >
           <div class="provider-title">
             <strong>{{ provider.name }}</strong>
-            <span class="provider-mode">{{ provider.mode }}</span>
+            <span class="provider-mode">{{ getProviderModeLabel(provider, catalog) }}</span>
           </div>
           <div class="provider-meta">
             <span>{{ provider.id }}</span>
             <span>{{ provider.modelCount }} 模型</span>
           </div>
           <div class="provider-meta">
-            <span>{{ provider.driver }}</span>
+            <span>{{ getProviderDriverLabel(provider, catalog) }}</span>
             <span :class="provider.available ? 'ready' : 'missing'">
               {{ provider.available ? '可用' : '缺少凭据' }}
             </span>
@@ -88,11 +88,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { AiProviderSummary } from '@garlic-claw/shared'
+import type { AiProviderCatalogItem, AiProviderSummary } from '@garlic-claw/shared'
 import { usePagination } from '../../composables/use-pagination'
+import { getProviderDriverLabel, getProviderModeLabel } from './provider-catalog'
 
 const props = defineProps<{
   providers: AiProviderSummary[]
+  catalog: AiProviderCatalogItem[]
   selectedProviderId: string | null
   loading: boolean
   error: string | null

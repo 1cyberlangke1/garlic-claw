@@ -48,7 +48,6 @@ describe('SkillExecutionService', () => {
         deny: [],
       },
       governance: {
-        enabled: true,
         trustLevel: 'local-script',
       },
       assets: [
@@ -147,7 +146,6 @@ describe('SkillExecutionService', () => {
             deny: [],
           },
           governance: {
-            enabled: true,
             trustLevel: 'prompt-only',
           },
           assets: [
@@ -197,7 +195,6 @@ describe('SkillExecutionService', () => {
             deny: [],
           },
           governance: {
-            enabled: true,
             trustLevel: 'local-script',
           },
           assets: [
@@ -223,5 +220,57 @@ describe('SkillExecutionService', () => {
         assetPath: 'templates/task.md',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('removes skill package tool access when the unified skill source is disabled', async () => {
+    skillSession.getConversationSkillContext.mockResolvedValue({
+      activeSkills: [
+        {
+          id: 'project/planner',
+          name: '规划执行',
+          description: '先拆任务，再逐步执行。',
+          tags: ['planning'],
+          sourceKind: 'project',
+          entryPath: 'planner/SKILL.md',
+          promptPreview: '把复杂请求拆成步骤',
+          toolPolicy: {
+            allow: [],
+            deny: [],
+          },
+          governance: {
+            trustLevel: 'local-script',
+          },
+          assets: [
+            {
+              path: 'scripts/echo.mjs',
+              kind: 'script',
+              textReadable: true,
+              executable: true,
+            },
+            {
+              path: 'templates/task.md',
+              kind: 'template',
+              textReadable: true,
+              executable: false,
+            },
+          ],
+          content: 'planner',
+        },
+      ],
+      systemPrompt: '',
+      allowedToolNames: [],
+      deniedToolNames: [],
+      skillPackageToolsEnabled: false,
+    });
+
+    await expect(
+      service.getToolAccess({
+        conversationId: 'conversation-1',
+      }),
+    ).resolves.toEqual({
+      availableSkillIds: ['project/planner'],
+      canReadAssets: false,
+      canRunScripts: false,
+    });
   });
 });

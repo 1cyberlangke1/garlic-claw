@@ -1,3 +1,4 @@
+import { inferModelCapabilities } from './model-capability-inference';
 import type { ModelConfig } from './types/provider.types';
 
 /**
@@ -23,4 +24,24 @@ export function createModelConfig(input: {
     },
     status: 'active',
   };
+}
+
+/**
+ * 按模型 ID 推断能力并创建标准模型配置。
+ */
+export function createInferredModelConfig(input: {
+  modelId: ModelConfig['id'];
+  providerId: ModelConfig['providerId'];
+  baseUrl: string;
+  npm: string;
+  name?: string;
+}): ModelConfig {
+  return createModelConfig({
+    modelId: input.modelId,
+    providerId: input.providerId,
+    name: input.name ?? String(input.modelId),
+    capabilities: inferModelCapabilities(String(input.modelId)),
+    baseUrl: input.baseUrl,
+    npm: input.npm,
+  });
 }

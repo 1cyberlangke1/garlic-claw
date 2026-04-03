@@ -9,11 +9,12 @@
  *
  * 预期行为:
  * - provider 目录显式区分 core 协议族和供应商 preset
- * - 兼容 provider 仅支持 openai / anthropic / gemini
+ * - 协议接入仅支持 openai / anthropic / gemini
  * - 管理操作统一落到配置存储和模型注册表
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { isCatalogProviderMode, type AiProviderSummary } from '@garlic-claw/shared';
 import {
   ConfigManagerService,
   type StoredAiHostModelRoutingConfig,
@@ -21,16 +22,14 @@ import {
   type StoredVisionFallbackConfig,
 } from './config/config-manager.service';
 import {
-  OFFICIAL_PROVIDER_CATALOG,
-  getOfficialProviderCatalogItem,
-  type OfficialProviderCatalogItem,
-} from './official-provider-catalog';
+  PROVIDER_CATALOG,
+  type AiProviderCatalogItem,
+} from './provider-catalog';
+import { resolveProviderCatalogBinding } from './provider-resolution.helpers';
 import { ModelRegistryService } from './registry/model-registry.service';
 import type { ModelCapabilities, ModelConfig } from './types/provider.types';
 import {
   buildManagedModelConfig,
-  toManagedProviderSummary,
-  type ManagedAiProviderSummary,
   type UpsertAiModelInput,
   type UpsertAiProviderInput,
   validateManagedProviderInput,
@@ -44,19 +43,28 @@ export class AiManagementService {
   ) {}
 
   /**
-   * 列出官方 provider 目录。
-   * @returns 官方 provider 元数据
+   * 列出 provider 目录。
+   * @returns provider 目录元数据
    */
-  listOfficialProviderCatalog(): OfficialProviderCatalogItem[] {
-    return OFFICIAL_PROVIDER_CATALOG;
+  listProviderCatalog(): AiProviderCatalogItem[] {
+    return PROVIDER_CATALOG;
   }
 
   /**
    * 列出已配置 provider。
    * @returns provider 摘要列表
    */
-  listProviders(): ManagedAiProviderSummary[] {
-    return this.configManager.listProviders().map(toManagedProviderSummary);
+  listProviders(): AiProviderSummary[] {
+    return this.configManager.listProviders().map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      mode: provider.mode,
+      driver: provider.driver,
+      defaultModel: provider.defaultModel,
+      baseUrl: provider.baseUrl,
+      modelCount: provider.models.length,
+      available: Boolean(provider.apiKey),
+    }));
   }
 
   /**
@@ -84,16 +92,18 @@ export class AiManagementService {
   ): StoredAiProviderConfig {
     validateManagedProviderInput(input);
 
-    const official = input.mode === 'official'
-      ? getOfficialProviderCatalogItem(input.driver)
-      : null;
+    const resolved = resolveProviderCatalogBinding(input.mode, input.driver);
     const stored = this.configManager.upsertProvider(providerId, {
       mode: input.mode,
       driver: input.driver,
       name: input.name,
       apiKey: input.apiKey,
-      baseUrl: input.baseUrl ?? official?.defaultBaseUrl,
-      defaultModel: input.defaultModel ?? official?.defaultModel,
+      baseUrl:
+        input.baseUrl ??
+        (isCatalogProviderMode(input.mode) ? resolved?.defaultBaseUrl : undefined),
+      defaultModel:
+        input.defaultModel ??
+        (isCatalogProviderMode(input.mode) ? resolved?.defaultModel : undefined),
       models: [...input.models],
     });
 

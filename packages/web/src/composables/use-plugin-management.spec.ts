@@ -19,6 +19,7 @@ vi.mock('../api', () => ({
   listPluginConversationSessions: vi.fn(),
   listPluginEvents: vi.fn(),
   listPluginStorage: vi.fn(),
+  updatePluginScope: vi.fn(),
 }))
 
 function createPlugin(
@@ -93,10 +94,17 @@ describe('usePluginManagement', () => {
       values: {},
     })
     vi.mocked(api.getPluginCrons).mockResolvedValue([])
-    vi.mocked(api.getPluginScope).mockResolvedValue({
-      defaultEnabled: true,
-      conversations: {},
-    })
+    vi.mocked(api.getPluginScope)
+      .mockResolvedValueOnce({
+        defaultEnabled: true,
+        conversations: {},
+      })
+      .mockResolvedValueOnce({
+        defaultEnabled: true,
+        conversations: {
+          'conversation-1': false,
+        },
+      })
     vi.mocked(api.getPluginHealth).mockResolvedValue(refreshedHealth)
     vi.mocked(api.listPluginEvents).mockResolvedValue({
       items: [],
@@ -160,10 +168,17 @@ describe('usePluginManagement', () => {
       values: {},
     })
     vi.mocked(api.getPluginCrons).mockResolvedValue([])
-    vi.mocked(api.getPluginScope).mockResolvedValue({
-      defaultEnabled: true,
-      conversations: {},
-    })
+    vi.mocked(api.getPluginScope)
+      .mockResolvedValueOnce({
+        defaultEnabled: true,
+        conversations: {},
+      })
+      .mockResolvedValueOnce({
+        defaultEnabled: true,
+        conversations: {
+          'conversation-1': false,
+        },
+      })
     vi.mocked(api.getPluginHealth).mockResolvedValue({
       status: 'healthy',
       failureCount: 0,
@@ -378,5 +393,77 @@ describe('usePluginManagement', () => {
 
     expect(state.selectedPluginName.value).toBe('builtin.persona-router')
     expect(api.getPluginConfig).toHaveBeenCalledWith('builtin.persona-router')
+  })
+
+  it('saves conversation overrides without sending a private defaultEnabled toggle', async () => {
+    const initialPlugin: PluginInfo = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.demo',
+      displayName: 'Demo Plugin',
+    })
+
+    vi.mocked(api.listPlugins).mockResolvedValue([initialPlugin])
+    vi.mocked(api.getPluginConfig).mockResolvedValue({
+      schema: null,
+      values: {},
+    })
+    vi.mocked(api.getPluginCrons).mockResolvedValue([])
+    vi.mocked(api.getPluginScope)
+      .mockResolvedValueOnce({
+        defaultEnabled: true,
+        conversations: {},
+      })
+      .mockResolvedValueOnce({
+        defaultEnabled: true,
+        conversations: {
+          'conversation-1': false,
+        },
+      })
+    vi.mocked(api.getPluginHealth).mockResolvedValue({
+      status: 'healthy',
+      failureCount: 0,
+      consecutiveFailures: 0,
+      lastError: null,
+      lastErrorAt: null,
+      lastSuccessAt: null,
+      lastCheckedAt: null,
+    })
+    vi.mocked(api.listPluginConversationSessions).mockResolvedValue([])
+    vi.mocked(api.listPluginEvents).mockResolvedValue({
+      items: [],
+      nextCursor: null,
+    })
+    vi.mocked(api.listPluginStorage).mockResolvedValue([])
+    vi.mocked(api.updatePluginScope).mockResolvedValue({
+      defaultEnabled: true,
+      conversations: {
+        'conversation-1': false,
+      },
+    })
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    await state.saveScope({
+      'conversation-1': false,
+    })
+
+    expect(api.updatePluginScope).toHaveBeenCalledWith('builtin.demo', {
+      'conversation-1': false,
+    })
+    expect(state.scopeSettings.value).toEqual({
+      defaultEnabled: true,
+      conversations: {
+        'conversation-1': false,
+      },
+    })
   })
 })

@@ -1,5 +1,8 @@
 import type { ChatMessagePart } from '@garlic-claw/shared';
+import { PluginHostAiFacade } from './plugin-host-ai.facade';
+import { PluginHostConversationFacade } from './plugin-host-conversation.facade';
 import { PluginHostService } from './plugin-host.service';
+import { PluginHostStateFacade } from './plugin-host-state.facade';
 import { PluginStateService } from './plugin-state.service';
 
 describe('PluginHostService', () => {
@@ -63,24 +66,36 @@ describe('PluginHostService', () => {
   };
 
   let stateService: PluginStateService;
+  let hostAiFacade: PluginHostAiFacade;
+  let hostConversationFacade: PluginHostConversationFacade;
+  let hostStateFacade: PluginHostStateFacade;
   let service: PluginHostService;
 
   beforeEach(() => {
     jest.clearAllMocks();
     stateService = new PluginStateService();
-    service = new (PluginHostService as unknown as new (
-      ...args: unknown[]
-    ) => PluginHostService)(
-      memoryService as never,
-      kbService as never,
-      personaService as never,
-      prisma as never,
-      stateService,
-      pluginService as never,
+    hostAiFacade = new PluginHostAiFacade(
       aiModelExecution as never,
       aiProviderService as never,
       aiManagementService as never,
       modelRegistryService as never,
+    );
+    hostConversationFacade = new PluginHostConversationFacade(
+      memoryService as never,
+      kbService as never,
+      personaService as never,
+      prisma as never,
+    );
+    hostStateFacade = new PluginHostStateFacade(
+      pluginService as never,
+      stateService,
+    );
+    service = new (PluginHostService as unknown as new (
+      ...args: unknown[]
+    ) => PluginHostService)(
+      hostAiFacade,
+      hostConversationFacade,
+      hostStateFacade,
     );
   });
 
@@ -423,6 +438,106 @@ describe('PluginHostService', () => {
       query: '咖啡',
       count: 2,
     });
+  });
+
+  it('isolates scoped runtime state by conversation and user context', async () => {
+    await service.call({
+      pluginId: 'memory-tools',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'state.set',
+      params: {
+        scope: 'conversation',
+        key: 'draft.step',
+        value: 'collect-name',
+      },
+    });
+    await service.call({
+      pluginId: 'memory-tools',
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      method: 'state.set',
+      params: {
+        scope: 'user',
+        key: 'profile.locale',
+        value: 'zh-CN',
+      },
+    });
+
+    await expect(
+      service.call({
+        pluginId: 'memory-tools',
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'state.list' as never,
+        params: {
+          scope: 'conversation',
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        key: 'draft.step',
+        value: 'collect-name',
+      },
+    ]);
+    await expect(
+      service.call({
+        pluginId: 'memory-tools',
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'state.list' as never,
+        params: {
+          scope: 'user',
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        key: 'profile.locale',
+        value: 'zh-CN',
+      },
+    ]);
+    await expect(
+      service.call({
+        pluginId: 'memory-tools',
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'state.delete' as never,
+        params: {
+          scope: 'conversation',
+          key: 'draft.step',
+        },
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      service.call({
+        pluginId: 'memory-tools',
+        context: {
+          source: 'chat-tool',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'state.get' as never,
+        params: {
+          scope: 'conversation',
+          key: 'draft.step',
+        },
+      }),
+    ).resolves.toBeNull();
   });
 
   it('returns conversation messages for the current invocation context', async () => {
@@ -936,6 +1051,106 @@ describe('PluginHostService', () => {
     expect(pluginService.deletePluginStorage).toHaveBeenCalledWith(
       'memory-context',
       'cursor.lastMessageId',
+    );
+  });
+
+  it('maps conversation scoped storage to namespaced host kv without leaking scoped keys', async () => {
+    pluginService.setPluginStorage.mockResolvedValue('message-42');
+    pluginService.getPluginStorage.mockResolvedValue('message-42');
+    pluginService.listPluginStorage.mockResolvedValue([
+      {
+        key: '__gc_scope__:conversation:conversation-1:cursor.lastMessageId',
+        value: 'message-42',
+      },
+      {
+        key: 'plugin-only',
+        value: 'ignored',
+      },
+    ]);
+    pluginService.deletePluginStorage.mockResolvedValue(true);
+
+    await expect(
+      service.call({
+        pluginId: 'memory-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'storage.set' as never,
+        params: {
+          scope: 'conversation',
+          key: 'cursor.lastMessageId',
+          value: 'message-42',
+        },
+      }),
+    ).resolves.toBe('message-42');
+    await expect(
+      service.call({
+        pluginId: 'memory-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'storage.get' as never,
+        params: {
+          scope: 'conversation',
+          key: 'cursor.lastMessageId',
+        },
+      }),
+    ).resolves.toBe('message-42');
+    await expect(
+      service.call({
+        pluginId: 'memory-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'storage.list' as never,
+        params: {
+          scope: 'conversation',
+        },
+      }),
+    ).resolves.toEqual([
+      {
+        key: 'cursor.lastMessageId',
+        value: 'message-42',
+      },
+    ]);
+    await expect(
+      service.call({
+        pluginId: 'memory-context',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'storage.delete' as never,
+        params: {
+          scope: 'conversation',
+          key: 'cursor.lastMessageId',
+        },
+      }),
+    ).resolves.toBe(true);
+
+    expect(pluginService.setPluginStorage).toHaveBeenCalledWith(
+      'memory-context',
+      '__gc_scope__:conversation:conversation-1:cursor.lastMessageId',
+      'message-42',
+    );
+    expect(pluginService.getPluginStorage).toHaveBeenCalledWith(
+      'memory-context',
+      '__gc_scope__:conversation:conversation-1:cursor.lastMessageId',
+    );
+    expect(pluginService.listPluginStorage).toHaveBeenCalledWith(
+      'memory-context',
+      '__gc_scope__:conversation:conversation-1:',
+    );
+    expect(pluginService.deletePluginStorage).toHaveBeenCalledWith(
+      'memory-context',
+      '__gc_scope__:conversation:conversation-1:cursor.lastMessageId',
     );
   });
 

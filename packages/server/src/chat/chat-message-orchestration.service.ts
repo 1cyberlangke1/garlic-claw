@@ -3,6 +3,7 @@ import {
   Injectable,
   forwardRef,
 } from '@nestjs/common';
+import { filterAllowedToolNames as filterAuthorAllowedToolNames } from '@garlic-claw/plugin-sdk';
 import type {
   ChatBeforeModelRequest,
   ChatMessagePart,
@@ -20,10 +21,10 @@ import {
   type PreparedChatModelInvocation,
 } from './chat-model-invocation.service';
 import type { ChatRuntimeMessage } from './chat-message-session';
-import {
-  normalizeAssistantMessageOutput,
-} from './message-parts';
+import { createChatLifecycleContext } from './chat-message-common.helpers';
+import { normalizeAssistantMessageOutput } from './message-parts';
 import type { CompletedChatTaskResult } from './chat-task.service';
+import { ChatMessageResponseHooksService } from './chat-message-response-hooks.service';
 
 /** 模型前 Hook 继续执行结果。 */
 export interface AppliedChatBeforeModelContinueResult {
@@ -63,6 +64,7 @@ export class ChatMessageOrchestrationService {
     private readonly toolRegistry: ToolRegistryService,
     private readonly modelInvocation: ChatModelInvocationService,
     private readonly skillSession: SkillSessionService,
+    private readonly responseHooks: ChatMessageResponseHooksService,
   ) {}
 
   buildStreamFactory(input: {
@@ -77,7 +79,7 @@ export class ChatMessageOrchestrationService {
     tools: ChatToolSet;
   }) {
     return (abortSignal: AbortSignal) => {
-      const hookContext = this.createChatLifecycleContext({
+      const hookContext = createChatLifecycleContext({
         userId: input.userId,
         conversationId: input.conversationId,
         activeProviderId: input.activeProviderId,
@@ -128,7 +130,7 @@ export class ChatMessageOrchestrationService {
     const skillContext = await this.skillSession.getConversationSkillContext(
       input.conversationId,
     );
-    const hookContext = this.createChatLifecycleContext({
+    const hookContext = createChatLifecycleContext({
       userId: input.userId,
       conversationId: input.conversationId,
       activeProviderId: input.modelConfig.providerId,
@@ -188,14 +190,16 @@ export class ChatMessageOrchestrationService {
         hookResult.request.providerId,
         hookResult.request.modelId,
       ),
-      buildToolSet: ({ context, allowedToolNames }) =>
-        toolSelection.buildToolSet({
+      buildToolSet: ({ context, allowedToolNames }) => {
+        const availableToolNames = availableTools.map((tool) => tool.name);
+
+        return toolSelection.buildToolSet({
           context,
-          allowedToolNames: filterAllowedToolNames(
-            availableTools.map((tool) => tool.name),
-            allowedToolNames,
-          ),
-        }),
+          allowedToolNames:
+            filterAuthorAllowedToolNames(allowedToolNames, availableToolNames)
+            ?? availableToolNames,
+        });
+      },
     };
   }
 
@@ -206,20 +210,7 @@ export class ChatMessageOrchestrationService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<CompletedChatTaskResult> {
-    const afterModelResult = await this.applyChatAfterModelHooks({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activePersonaId: input.activePersonaId,
-      result: input.result,
-    });
-
-    return this.applyResponseBeforeSendHooks({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activePersonaId: input.activePersonaId,
-      responseSource: input.responseSource,
-      result: afterModelResult,
-    });
+    return this.responseHooks.applyFinalResponseHooks(input);
   }
 
   async runResponseAfterSendHooks(input: {
@@ -229,140 +220,7 @@ export class ChatMessageOrchestrationService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<void> {
-    const currentParts = input.result.parts ?? [];
-    const hookContext = this.createChatLifecycleContext({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activeProviderId: input.result.providerId,
-      activeModelId: input.result.modelId,
-      activePersonaId: input.activePersonaId,
-    });
-
-    await this.pluginRuntime.runResponseAfterSendHooks({
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        responseSource: input.responseSource,
-        assistantMessageId: input.result.assistantMessageId,
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
-        sentAt: new Date().toISOString(),
-      },
-    });
-  }
-
-  private async applyChatAfterModelHooks(input: {
-    userId: string;
-    conversationId: string;
-    activePersonaId: string;
-    result: CompletedChatTaskResult;
-  }): Promise<CompletedChatTaskResult> {
-    const currentParts = input.result.parts ?? [];
-    const patchedPayload = await this.pluginRuntime.runChatAfterModelHooks({
-      context: {
-        source: 'chat-hook',
-        userId: input.userId,
-        conversationId: input.conversationId,
-        activeProviderId: input.result.providerId,
-        activeModelId: input.result.modelId,
-        activePersonaId: input.activePersonaId,
-      },
-      payload: {
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantMessageId: input.result.assistantMessageId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
-      },
-    });
-
-    const normalizedAssistant = normalizeAssistantMessageOutput({
-      content: patchedPayload.assistantContent,
-      parts: patchedPayload.assistantParts,
-    });
-
-    if (
-      normalizedAssistant.content === input.result.content
-      && JSON.stringify(normalizedAssistant.parts) === JSON.stringify(currentParts)
-    ) {
-      return input.result;
-    }
-
-    return {
-      ...input.result,
-      content: normalizedAssistant.content,
-      parts: normalizedAssistant.parts,
-    };
-  }
-
-  private async applyResponseBeforeSendHooks(input: {
-    userId: string;
-    conversationId: string;
-    activePersonaId: string;
-    responseSource: PluginResponseSource;
-    result: CompletedChatTaskResult;
-  }): Promise<CompletedChatTaskResult> {
-    const currentParts = input.result.parts ?? [];
-    const hookContext = this.createChatLifecycleContext({
-      userId: input.userId,
-      conversationId: input.conversationId,
-      activeProviderId: input.result.providerId,
-      activeModelId: input.result.modelId,
-      activePersonaId: input.activePersonaId,
-    });
-    const patchedPayload = await this.pluginRuntime.runResponseBeforeSendHooks({
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        responseSource: input.responseSource,
-        assistantMessageId: input.result.assistantMessageId,
-        providerId: input.result.providerId,
-        modelId: input.result.modelId,
-        assistantContent: input.result.content,
-        assistantParts: currentParts,
-        toolCalls: input.result.toolCalls,
-        toolResults: input.result.toolResults,
-      },
-    });
-
-    const normalizedAssistant = normalizeAssistantMessageOutput({
-      content: patchedPayload.assistantContent,
-      parts: patchedPayload.assistantParts,
-    });
-
-    return {
-      ...input.result,
-      providerId: patchedPayload.providerId,
-      modelId: patchedPayload.modelId,
-      content: normalizedAssistant.content,
-      parts: normalizedAssistant.parts,
-      toolCalls: patchedPayload.toolCalls,
-      toolResults: patchedPayload.toolResults,
-    };
-  }
-
-  private createChatLifecycleContext(input: {
-    source?: PluginCallContext['source'];
-    userId?: string;
-    conversationId: string;
-    activeProviderId?: string;
-    activeModelId?: string;
-    activePersonaId?: string;
-  }) {
-    return {
-      source: input.source ?? ('chat-hook' as const),
-      ...(input.userId ? { userId: input.userId } : {}),
-      conversationId: input.conversationId,
-      ...(input.activeProviderId ? { activeProviderId: input.activeProviderId } : {}),
-      ...(input.activeModelId ? { activeModelId: input.activeModelId } : {}),
-      ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}),
-    };
+    return this.responseHooks.runResponseAfterSendHooks(input);
   }
 }
 
@@ -393,16 +251,4 @@ function filterAvailableTools(
     }
     return true;
   });
-}
-
-function filterAllowedToolNames(
-  availableToolNames: string[],
-  requestedToolNames?: string[],
-): string[] | undefined {
-  if (!requestedToolNames) {
-    return availableToolNames;
-  }
-
-  const availableSet = new Set(availableToolNames);
-  return requestedToolNames.filter((toolName) => availableSet.has(toolName));
 }

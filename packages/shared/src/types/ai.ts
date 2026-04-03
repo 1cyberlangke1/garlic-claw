@@ -1,17 +1,70 @@
 /**
  * provider 模式。
  */
-export type AiProviderMode = 'official' | 'compatible';
+export type AiProviderMode = 'catalog' | 'protocol';
 
 /**
- * 兼容 provider 请求格式。
+ * provider 模式常量表。
  */
-export type CompatibleProviderDriver = 'openai' | 'anthropic' | 'gemini';
+export const AI_PROVIDER_MODES: AiProviderMode[] = ['catalog', 'protocol'];
 
 /**
- * 官方 provider 标识。
+ * 判断值是否为合法 provider 模式。
+ * @param value 待判断的值
+ * @returns 是否为合法 provider 模式
  */
-export type OfficialProviderDriver =
+export function isAiProviderMode(value: string): value is AiProviderMode {
+  return AI_PROVIDER_MODES.includes(value as AiProviderMode);
+}
+
+/**
+ * 判断模式是否为 catalog provider。
+ * @param mode provider 模式
+ * @returns 是否为 catalog provider
+ */
+export function isCatalogProviderMode(mode: AiProviderMode): boolean {
+  return mode === 'catalog';
+}
+
+/**
+ * 判断模式是否为协议接入。
+ * @param mode provider 模式
+ * @returns 是否为协议接入
+ */
+export function isProtocolProviderMode(mode: AiProviderMode): boolean {
+  return mode === 'protocol';
+}
+
+/**
+ * 协议接入协议族。
+ */
+export type ProviderProtocolDriver = 'openai' | 'anthropic' | 'gemini';
+
+/**
+ * 允许的协议接入驱动。
+ */
+export const PROVIDER_PROTOCOL_DRIVERS: ProviderProtocolDriver[] = [
+  'openai',
+  'anthropic',
+  'gemini',
+];
+const PROVIDER_PROTOCOL_DRIVER_SET = new Set<string>(PROVIDER_PROTOCOL_DRIVERS);
+
+/**
+ * 判断给定 driver 是否属于协议接入驱动。
+ * @param driver 待判断的 driver
+ * @returns 是否为协议接入驱动
+ */
+export function isProviderProtocolDriver(
+  driver: string,
+): driver is ProviderProtocolDriver {
+  return PROVIDER_PROTOCOL_DRIVER_SET.has(driver);
+}
+
+/**
+ * provider 目录标识。
+ */
+export type AiProviderCatalogDriver =
   | 'openai'
   | 'anthropic'
   | 'gemini'
@@ -87,21 +140,34 @@ export interface AiModelConfig {
 }
 
 /**
- * 官方 provider 目录项。
+ * provider 目录项。
  */
-export interface OfficialProviderCatalogItem {
-  /** 官方 provider ID。 */
-  id: OfficialProviderDriver;
+export interface AiProviderCatalogItem {
+  /** provider 目录 ID。 */
+  id: AiProviderCatalogDriver;
   /** 目录项分类。 */
   kind: AiProviderCatalogKind;
+  /** 对应的请求协议族。 */
+  protocol: ProviderProtocolDriver;
   /** 显示名称。 */
   name: string;
-  /** SDK 包名。 */
-  npm: string;
   /** 默认 Base URL。 */
   defaultBaseUrl: string;
   /** 推荐默认模型。 */
   defaultModel: string;
+}
+
+/**
+ * 查找 provider 目录项。
+ * @param catalog provider 目录
+ * @param driver provider 目录 ID
+ * @returns 对应元数据，未找到时返回 null
+ */
+export function findAiProviderCatalogItem(
+  catalog: AiProviderCatalogItem[],
+  driver: string,
+): AiProviderCatalogItem | null {
+  return catalog.find((item) => item.id === driver) ?? null;
 }
 
 /**
@@ -114,7 +180,7 @@ export interface AiProviderSummary {
   name: string;
   /** provider 模式。 */
   mode: AiProviderMode;
-  /** 官方 driver 或兼容格式。 */
+  /** catalog driver 或协议协议族。 */
   driver: string;
   /** 默认模型。 */
   defaultModel?: string;
@@ -136,7 +202,7 @@ export interface AiProviderConfig {
   name: string;
   /** provider 模式。 */
   mode: AiProviderMode;
-  /** 官方 driver 或兼容格式。 */
+  /** catalog driver 或协议协议族。 */
   driver: string;
   /** API key。 */
   apiKey?: string;

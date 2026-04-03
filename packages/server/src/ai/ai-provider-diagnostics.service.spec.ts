@@ -7,7 +7,7 @@
  * - 测试连接请求
  *
  * 输出:
- * - 断言模型发现会按 provider 格式发起远程请求
+ * - 断言模型发现会按 provider 协议族发起远程请求
  * - 断言测试连接会实际调用统一模型入口和文本生成
  *
  * 预期行为:
@@ -39,11 +39,11 @@ describe('AiProviderDiagnosticsService', () => {
     global.fetch = fetchMock;
   });
 
-  it('discovers models from an openai-compatible provider', async () => {
+  it('discovers models from an openai protocol provider', async () => {
     configManager.getProviderConfig.mockReturnValue({
       id: 'ds2api',
       name: 'ds2api',
-      mode: 'compatible',
+      mode: 'protocol',
       driver: 'openai',
       apiKey: 'sk-test',
       baseUrl: 'https://example.com/v1',
@@ -80,7 +80,7 @@ describe('AiProviderDiagnosticsService', () => {
     configManager.getProviderConfig.mockReturnValue({
       id: 'openai',
       name: 'OpenAI',
-      mode: 'official',
+      mode: 'catalog',
       driver: 'openai',
       apiKey: 'sk-test',
       baseUrl: 'https://api.openai.com/v1',
@@ -97,11 +97,44 @@ describe('AiProviderDiagnosticsService', () => {
     ]);
   });
 
+  it('discovers models from a catalog preset via its protocol family', async () => {
+    configManager.getProviderConfig.mockReturnValue({
+      id: 'groq',
+      name: 'Groq',
+      mode: 'catalog',
+      driver: 'groq',
+      apiKey: 'groq-key',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      defaultModel: 'llama-3.3-70b-versatile',
+      models: [],
+    });
+    fetchMock.mockResolvedValue(
+      createJsonResponse({
+        data: [{ id: 'llama-3.3-70b-versatile' }],
+      }),
+    );
+
+    const discovered = await service.discoverModels('groq');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.groq.com/openai/v1/models',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          authorization: 'Bearer groq-key',
+        }),
+      }),
+    );
+    expect(discovered).toEqual([
+      { id: 'llama-3.3-70b-versatile', name: 'llama-3.3-70b-versatile' },
+    ]);
+  });
+
   it('tests the provider connection with a real model call', async () => {
     configManager.getProviderConfig.mockReturnValue({
       id: 'ds2api',
       name: 'ds2api',
-      mode: 'compatible',
+      mode: 'protocol',
       driver: 'openai',
       apiKey: 'sk-test',
       baseUrl: 'https://example.com/v1',

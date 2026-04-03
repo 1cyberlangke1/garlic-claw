@@ -94,7 +94,6 @@ describe('SkillDiscoveryService', () => {
           deny: ['automation.run'],
         },
         governance: {
-          enabled: true,
           trustLevel: 'prompt-only',
         },
         assets: [
@@ -132,7 +131,6 @@ describe('SkillDiscoveryService', () => {
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'prompt-only',
         },
         assets: [],

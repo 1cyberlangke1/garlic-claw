@@ -1,13 +1,22 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import type { AiModelConfig, AiProviderConfig } from '@garlic-claw/shared'
+import type {
+  AiModelConfig,
+  AiProviderConfig,
+  AiProviderCatalogItem,
+} from '@garlic-claw/shared'
 import AiProviderModelsPanel from './AiProviderModelsPanel.vue'
+import { coreProviderCatalogFixture } from './provider-test.fixtures'
+
+const catalog: AiProviderCatalogItem[] = [
+  coreProviderCatalogFixture[0],
+]
 
 function createProvider(): AiProviderConfig {
   return {
     id: 'ds2api',
     name: 's2api',
-    mode: 'compatible',
+    mode: 'protocol',
     driver: 'openai',
     baseUrl: 'https://example.com/v1',
     defaultModel: 'deepseek-chat',
@@ -53,6 +62,7 @@ describe('AiProviderModelsPanel', () => {
     const wrapper = mount(AiProviderModelsPanel, {
       props: {
         provider: createProvider(),
+        catalog,
         models: [
           createModel('deepseek-chat'),
           createModel('deepseek-reasoner', true),
@@ -90,5 +100,7 @@ describe('AiProviderModelsPanel', () => {
     expect(wrapper.text()).toContain('第 1 / 1 页')
     expect(wrapper.findAll('.model-item')).toHaveLength(1)
     expect(wrapper.text()).toContain('deepseek-reasoner-search')
+    expect(wrapper.text()).toContain('协议接入')
+    expect(wrapper.text()).toContain('OpenAI 协议接入')
   })
 })

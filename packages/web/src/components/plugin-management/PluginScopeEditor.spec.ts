@@ -61,16 +61,13 @@ describe('PluginScopeEditor', () => {
     expect(wrapper.emitted('save')).toEqual([
       [
         {
-          defaultEnabled: false,
-          conversations: {
-            'conversation-1': true,
-          },
+          'conversation-1': true,
         },
       ],
     ])
   })
 
-  it('emits a direct default-enable toggle without reading unsaved row drafts', async () => {
+  it('does not expose direct default enable/disable controls', () => {
     const wrapper = mount(PluginScopeEditor, {
       props: {
         saving: false,
@@ -105,21 +102,12 @@ describe('PluginScopeEditor', () => {
       },
     })
 
-    await wrapper.get('[data-test="scope-disable-button"]').trigger('click')
-
-    expect(wrapper.emitted('save')).toEqual([
-      [
-        {
-          defaultEnabled: false,
-          conversations: {
-            'conversation-1': true,
-          },
-        },
-      ],
-    ])
+    expect(wrapper.find('[data-test="scope-enable-button"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="scope-disable-button"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('统一工具治理页')
   })
 
-  it('blocks the direct disable action for protected builtin plugins', async () => {
+  it('hides disable conversation options for protected builtin plugins', async () => {
     const wrapper = mount(PluginScopeEditor, {
       props: {
         saving: false,
@@ -153,9 +141,9 @@ describe('PluginScopeEditor', () => {
       },
     })
 
-    await wrapper.get('[data-test="scope-disable-button"]').trigger('click')
+    await wrapper.get('[data-test="scope-add-row-button"]').trigger('click')
 
-    expect(wrapper.emitted('save')).toBeUndefined()
+    expect(wrapper.findAll('option').map((option) => option.text())).toEqual(['启用'])
     expect(wrapper.text()).toContain('基础内建工具属于宿主必需插件，不能禁用。')
   })
 })

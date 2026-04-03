@@ -11,7 +11,7 @@
  * 预期行为:
  * - core 协议族固定为 openai / anthropic / gemini
  * - provider preset 可以有很多
- * - 兼容 provider 只允许 openai / anthropic / gemini
+ * - 协议接入只允许 openai / anthropic / gemini
  * - 视觉转述配置通过统一管理服务读写
  */
 
@@ -49,29 +49,29 @@ describe('AiManagementService', () => {
   });
 
   it('classifies the provider catalog into core protocols and presets', () => {
-    const catalog = service.listOfficialProviderCatalog();
+    const catalog = service.listProviderCatalog();
 
     expect(catalog.filter((item) => item.kind === 'core')).toEqual([
-      expect.objectContaining({ id: 'openai', kind: 'core' }),
-      expect.objectContaining({ id: 'anthropic', kind: 'core' }),
-      expect.objectContaining({ id: 'gemini', kind: 'core' }),
+      expect.objectContaining({ id: 'openai', kind: 'core', protocol: 'openai' }),
+      expect.objectContaining({ id: 'anthropic', kind: 'core', protocol: 'anthropic' }),
+      expect.objectContaining({ id: 'gemini', kind: 'core', protocol: 'gemini' }),
     ]);
     expect(catalog.filter((item) => item.kind === 'preset')).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'groq', kind: 'preset' }),
-        expect.objectContaining({ id: 'openrouter', kind: 'preset' }),
+        expect.objectContaining({ id: 'groq', kind: 'preset', protocol: 'openai' }),
+        expect.objectContaining({ id: 'openrouter', kind: 'preset', protocol: 'openai' }),
       ]),
     );
   });
 
-  it('stores an official provider and registers its configured models', () => {
+  it('stores a catalog provider and registers its configured models', () => {
     configManager.upsertProvider.mockImplementation((providerId, config) => ({
       id: providerId,
       ...config,
     }));
 
     const provider = service.upsertProvider('groq', {
-      mode: 'official',
+      mode: 'catalog',
       driver: 'groq',
       name: 'Groq',
       apiKey: 'groq-key',
@@ -83,7 +83,7 @@ describe('AiManagementService', () => {
     expect(configManager.upsertProvider).toHaveBeenCalledWith(
       'groq',
       expect.objectContaining({
-        mode: 'official',
+        mode: 'catalog',
         driver: 'groq',
         defaultModel: 'llama-3.3-70b',
         models: ['llama-3.3-70b', 'llama-3.1-8b'],
@@ -91,13 +91,13 @@ describe('AiManagementService', () => {
     );
     expect(modelRegistry.register).toHaveBeenCalledTimes(2);
     expect(provider.driver).toBe('groq');
-    expect(provider.mode).toBe('official');
+    expect(provider.mode).toBe('catalog');
   });
 
-  it('rejects compatible providers that are not one of the three allowed formats', () => {
+  it('rejects protocol providers that are not one of the three allowed protocol families', () => {
     expect(() =>
       service.upsertProvider('custom-openrouter', {
-        mode: 'compatible',
+        mode: 'protocol',
         driver: 'openrouter',
         name: 'Custom OpenRouter',
         apiKey: 'test-key',
@@ -105,7 +105,7 @@ describe('AiManagementService', () => {
         defaultModel: 'test-model',
         models: ['test-model'],
       }),
-    ).toThrow('Compatible provider driver must be one of: openai, anthropic, gemini');
+    ).toThrow('Protocol provider driver must be one of: openai, anthropic, gemini');
   });
 
   it('updates model capabilities and returns the refreshed model config', () => {
@@ -122,7 +122,7 @@ describe('AiManagementService', () => {
       api: {
         id: 'llama-3.3-70b',
         url: 'https://api.groq.com/openai/v1',
-        npm: '@ai-sdk/groq',
+        npm: '@ai-sdk/openai',
       },
       status: 'active',
     };
@@ -229,7 +229,7 @@ describe('AiManagementService', () => {
       {
         id: 'openai',
         name: 'OpenAI',
-        mode: 'official',
+        mode: 'catalog',
         driver: 'openai',
         apiKey: '',
         baseUrl: 'https://api.openai.com/v1',
@@ -239,7 +239,7 @@ describe('AiManagementService', () => {
       {
         id: 'groq',
         name: 'Groq',
-        mode: 'official',
+        mode: 'catalog',
         driver: 'groq',
         apiKey: 'groq-key',
         baseUrl: 'https://api.groq.com/openai/v1',
@@ -249,7 +249,7 @@ describe('AiManagementService', () => {
       {
         id: 'ds2api',
         name: 'ds2api',
-        mode: 'compatible',
+        mode: 'protocol',
         driver: 'openai',
         apiKey: '',
         baseUrl: 'https://example.com/v1',

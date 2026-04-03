@@ -1,7 +1,9 @@
 import type { JsonObject } from '@garlic-claw/shared';
+import { DeviceType } from '@garlic-claw/shared';
 import {
   IsBoolean,
   IsDefined,
+  IsEnum,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -29,19 +31,20 @@ export class UpdatePluginConfigDto {
  * 更新插件作用域 DTO。
  *
  * 输入:
- * - `defaultEnabled`: 默认是否启用
  * - `conversations`: 会话级启停覆盖
+ * - `defaultEnabled`: 仅做向后兼容接收，私有 scope 接口不再写这个字段
  *
  * 输出:
  * - 无；仅作为控制器参数约束
  *
  * 预期行为:
- * - 强制默认值为布尔
  * - 允许会话级覆盖缺省
+ * - 兼容旧客户端继续发送 defaultEnabled，但控制器会忽略它
  */
 export class UpdatePluginScopeDto {
+  @IsOptional()
   @IsBoolean()
-  defaultEnabled!: boolean;
+  defaultEnabled?: boolean;
 
   @IsOptional()
   @IsObject()
@@ -69,4 +72,31 @@ export class UpdatePluginStorageDto {
 
   @IsDefined()
   value!: unknown;
+}
+
+/**
+ * 在线生成远程插件接入令牌的 DTO。
+ */
+export class CreateRemotePluginBootstrapDto {
+  @IsString()
+  @IsNotEmpty()
+  pluginName!: string;
+
+  @IsEnum(DeviceType)
+  deviceType!: DeviceType;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  displayName?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  version?: string;
 }

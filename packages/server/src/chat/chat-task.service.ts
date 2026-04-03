@@ -2,8 +2,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   type ChatMessagePart,
-  type ChatMessageStatus,
   type ChatTaskEvent,
+  type ChatTaskStreamPart,
   type ChatTaskStreamSource,
   type PersistedToolCall,
   type PersistedToolResult,
@@ -12,9 +12,9 @@ import {
   isToolResultPart,
 } from './chat.types';
 import {
-  normalizeAssistantMessageOutput,
-  serializeMessageParts,
-} from './message-parts';
+  ChatTaskPersistenceService,
+  type ChatTaskMutableState,
+} from './chat-task-persistence.service';
 
 /** 聊天后台任务启动参数。 */
 export interface StartChatTaskInput {
@@ -87,15 +87,6 @@ interface ActiveChatTask {
   completion: Promise<void>;
 }
 
-interface MutableTaskState {
-  /** 当前累计文本。 */
-  content: string;
-  /** 累计工具调用。 */
-  toolCalls: PersistedToolCall[];
-  /** 累计工具结果。 */
-  toolResults: PersistedToolResult[];
-}
-
 interface ResolvedChatTaskStreamSource {
   /** 实际使用的 provider ID。 */
   providerId: string;
@@ -110,7 +101,10 @@ export class ChatTaskService implements OnModuleInit {
   private readonly logger = new Logger(ChatTaskService.name);
   private readonly tasks = new Map<string, ActiveChatTask>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly taskPersistence: ChatTaskPersistenceService,
+  ) {}
 
   /** 启动模块时清理由旧进程遗留下来的非终态消息。 */
   async onModuleInit(): Promise<void> {
@@ -197,7 +191,7 @@ export class ChatTaskService implements OnModuleInit {
     task: ActiveChatTask,
     input: StartChatTaskInput,
   ): Promise<void> {
-    const state: MutableTaskState = {
+    const state: ChatTaskMutableState = {
       content: '',
       toolCalls: [],
       toolResults: [],
@@ -212,7 +206,12 @@ export class ChatTaskService implements OnModuleInit {
         modelId: streamSource.modelId,
       };
 
-      await this.persistMessageState(resolvedInput, state, 'streaming', null);
+      await this.taskPersistence.persistMessageState(
+        resolvedInput,
+        state,
+        'streaming',
+        null,
+      );
       this.emit(task, {
         type: 'status',
         messageId: input.assistantMessageId,
@@ -220,77 +219,45 @@ export class ChatTaskService implements OnModuleInit {
       });
 
       for await (const part of streamSource.stream.fullStream) {
-        if (isTextDeltaPart(part)) {
-          state.content += part.text;
-          await this.persistMessageState(resolvedInput, state, 'streaming', null);
-          this.emit(task, {
-            type: 'text-delta',
-            messageId: input.assistantMessageId,
-            text: part.text,
-          });
-          continue;
-        }
-
-        if (isToolCallPart(part)) {
-          state.toolCalls.push({
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            input: part.input,
-          });
-          await this.persistMessageState(resolvedInput, state, 'streaming', null);
-          this.emit(task, {
-            type: 'tool-call',
-            messageId: input.assistantMessageId,
-            toolName: part.toolName,
-            input: part.input,
-          });
-          continue;
-        }
-
-        if (isToolResultPart(part)) {
-          state.toolResults.push({
-            toolCallId: part.toolCallId,
-            toolName: part.toolName,
-            output: part.output,
-          });
-          await this.persistMessageState(resolvedInput, state, 'streaming', null);
-          this.emit(task, {
-            type: 'tool-result',
-            messageId: input.assistantMessageId,
-            toolName: part.toolName,
-            output: part.output,
-          });
-          continue;
+        const streamEvent = await this.applyStreamPart(
+          resolvedInput,
+          state,
+          input.assistantMessageId,
+          part,
+        );
+        if (streamEvent) {
+          this.emit(task, streamEvent);
         }
       }
 
       if (task.abortController.signal.aborted) {
-        await this.persistMessageState(resolvedInput, state, 'stopped', null);
-        this.emit(task, {
-          type: 'status',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
-        this.emit(task, {
-          type: 'finish',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
+        await this.finishStoppedTask(task, input.assistantMessageId, resolvedInput, state);
         return;
       }
 
-      await this.persistMessageState(resolvedInput, state, 'completed', null);
-      const completedResult = this.buildCompletedTaskResult(resolvedInput, state);
+      await this.taskPersistence.persistMessageState(
+        resolvedInput,
+        state,
+        'completed',
+        null,
+      );
+      const completedResult = this.taskPersistence.buildCompletedTaskResult(
+        resolvedInput,
+        state,
+      );
       let finalResult = completedResult;
       if (input.onComplete) {
         try {
           const patchedResult = await input.onComplete(completedResult);
           if (
             patchedResult
-            && this.hasCompletedResultPatch(completedResult, patchedResult)
+            && this.taskPersistence.hasCompletedResultPatch(
+              completedResult,
+              patchedResult,
+            )
           ) {
             finalResult = patchedResult;
-            await this.persistCompletedResult(patchedResult);
+            await this.taskPersistence.persistCompletedResult(patchedResult);
             this.emit(task, {
               type: 'message-patch',
               messageId: patchedResult.assistantMessageId,
@@ -308,11 +275,7 @@ export class ChatTaskService implements OnModuleInit {
           );
         }
       }
-      this.emit(task, {
-        type: 'finish',
-        messageId: input.assistantMessageId,
-        status: 'completed',
-      });
+      this.emitTerminalTaskEvent(task, input.assistantMessageId, 'completed');
       if (input.onSent) {
         try {
           await input.onSent(finalResult);
@@ -324,17 +287,7 @@ export class ChatTaskService implements OnModuleInit {
       }
     } catch (error) {
       if (task.abortController.signal.aborted) {
-        await this.persistMessageState(resolvedInput, state, 'stopped', null);
-        this.emit(task, {
-          type: 'status',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
-        this.emit(task, {
-          type: 'finish',
-          messageId: input.assistantMessageId,
-          status: 'stopped',
-        });
+        await this.finishStoppedTask(task, input.assistantMessageId, resolvedInput, state);
         return;
       }
 
@@ -343,50 +296,91 @@ export class ChatTaskService implements OnModuleInit {
       this.logger.error(
         `聊天任务执行失败: ${input.assistantMessageId} - ${errorMessage}`,
       );
-      await this.persistMessageState(resolvedInput, state, 'error', errorMessage);
-      this.emit(task, {
-        type: 'status',
-        messageId: input.assistantMessageId,
-        status: 'error',
-        error: errorMessage,
-      });
-      this.emit(task, {
-        type: 'finish',
-        messageId: input.assistantMessageId,
-        status: 'error',
-      });
+      await this.taskPersistence.persistMessageState(
+        resolvedInput,
+        state,
+        'error',
+        errorMessage,
+      );
+      this.emitTerminalTaskEvent(
+        task,
+        input.assistantMessageId,
+        'error',
+        errorMessage,
+      );
     }
   }
 
-  /** 将当前任务状态写回消息与会话。 */
-  private async persistMessageState(
+  private async applyStreamPart(
     input: StartChatTaskInput,
-    state: MutableTaskState,
-    status: ChatMessageStatus,
-    error: string | null,
+    state: ChatTaskMutableState,
+    messageId: string,
+    part: ChatTaskStreamPart,
+  ): Promise<ChatTaskEvent | null> {
+    if (isTextDeltaPart(part)) {
+      state.content += part.text;
+      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
+      return { type: 'text-delta', messageId, text: part.text };
+    }
+
+    if (isToolCallPart(part)) {
+      state.toolCalls.push({
+        toolCallId: part.toolCallId,
+        toolName: part.toolName,
+        input: part.input,
+      });
+      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
+      return {
+        type: 'tool-call',
+        messageId,
+        toolName: part.toolName,
+        input: part.input,
+      };
+    }
+
+    if (isToolResultPart(part)) {
+      state.toolResults.push({
+        toolCallId: part.toolCallId,
+        toolName: part.toolName,
+        output: part.output,
+      });
+      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
+      return {
+        type: 'tool-result',
+        messageId,
+        toolName: part.toolName,
+        output: part.output,
+      };
+    }
+
+    return null;
+  }
+
+  private async finishStoppedTask(
+    task: ActiveChatTask,
+    messageId: string,
+    input: StartChatTaskInput,
+    state: ChatTaskMutableState,
   ): Promise<void> {
-    await this.prisma.message.update({
-      where: { id: input.assistantMessageId },
-      data: {
-        content: state.content,
-        provider: input.providerId,
-        model: input.modelId,
+    await this.taskPersistence.persistMessageState(input, state, 'stopped', null);
+    this.emitTerminalTaskEvent(task, messageId, 'stopped');
+  }
+
+  private emitTerminalTaskEvent(
+    task: ActiveChatTask,
+    messageId: string,
+    status: 'completed' | 'stopped' | 'error',
+    error?: string,
+  ): void {
+    if (status !== 'completed') {
+      this.emit(task, {
+        type: 'status',
+        messageId,
         status,
-        error,
-        toolCalls: state.toolCalls.length
-          ? JSON.stringify(state.toolCalls)
-          : null,
-        toolResults: state.toolResults.length
-          ? JSON.stringify(state.toolResults)
-          : null,
-      },
-    });
-    await this.prisma.conversation.update({
-      where: { id: input.conversationId },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
+        ...(error ? { error } : {}),
+      });
+    }
+    this.emit(task, { type: 'finish', messageId, status });
   }
 
   /** 向所有订阅者广播事件。 */
@@ -394,84 +388,5 @@ export class ChatTaskService implements OnModuleInit {
     for (const subscriber of task.subscribers) {
       subscriber(event);
     }
-  }
-
-  /**
-   * 根据当前任务状态构造完成回调可消费的最终快照。
-   * @param input 任务启动输入
-   * @param state 当前累计状态
-   * @returns assistant 完成快照
-   */
-  private buildCompletedTaskResult(
-    input: StartChatTaskInput,
-    state: MutableTaskState,
-  ): CompletedChatTaskResult {
-    const normalizedAssistant = normalizeAssistantMessageOutput({
-      content: state.content,
-    });
-
-    return {
-      assistantMessageId: input.assistantMessageId,
-      conversationId: input.conversationId,
-      providerId: input.providerId,
-      modelId: input.modelId,
-      content: normalizedAssistant.content,
-      parts: normalizedAssistant.parts,
-      toolCalls: [...state.toolCalls],
-      toolResults: [...state.toolResults],
-    };
-  }
-
-  /**
-   * 把补丁后的完成态结果再次持久化到消息表。
-   * @param result 补丁后的最终 assistant 快照
-   * @returns 无返回值
-   */
-  private async persistCompletedResult(
-    result: CompletedChatTaskResult,
-  ): Promise<void> {
-    await this.prisma.message.update({
-      where: { id: result.assistantMessageId },
-      data: {
-        content: result.content,
-        partsJson: result.parts.length
-          ? serializeMessageParts(result.parts)
-          : null,
-        provider: result.providerId,
-        model: result.modelId,
-        status: 'completed',
-        error: null,
-        toolCalls: result.toolCalls.length
-          ? JSON.stringify(result.toolCalls)
-          : null,
-        toolResults: result.toolResults.length
-          ? JSON.stringify(result.toolResults)
-          : null,
-      },
-    });
-    await this.prisma.conversation.update({
-      where: { id: result.conversationId },
-      data: {
-        updatedAt: new Date(),
-      },
-    });
-  }
-
-  /**
-   * 判断完成回调是否真的改写了最终 assistant 快照。
-   * @param original 原始完成态结果
-   * @param patched 回调返回的补丁结果
-   * @returns 是否存在可见变更
-   */
-  private hasCompletedResultPatch(
-    original: CompletedChatTaskResult,
-    patched: CompletedChatTaskResult,
-  ): boolean {
-    return original.content !== patched.content
-      || JSON.stringify(original.parts) !== JSON.stringify(patched.parts)
-      || original.providerId !== patched.providerId
-      || original.modelId !== patched.modelId
-      || JSON.stringify(original.toolCalls) !== JSON.stringify(patched.toolCalls)
-      || JSON.stringify(original.toolResults) !== JSON.stringify(patched.toolResults);
   }
 }

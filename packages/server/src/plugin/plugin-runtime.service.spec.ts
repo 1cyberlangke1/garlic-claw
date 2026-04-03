@@ -10,7 +10,16 @@ import { BuiltinPluginTransport } from './builtin/builtin-plugin.transport';
 import { createMessageEntryRecorderPlugin } from './builtin/message-entry-recorder.plugin';
 import { createMessageLifecycleRecorderPlugin } from './builtin/message-lifecycle-recorder.plugin';
 import { createPluginGovernanceRecorderPlugin } from './builtin/plugin-governance-recorder.plugin';
+import { PluginRuntimeAutomationFacade } from './plugin-runtime-automation.facade';
+import { PluginRuntimeBroadcastFacade } from './plugin-runtime-broadcast.facade';
+import { PluginRuntimeGovernanceFacade } from './plugin-runtime-governance.facade';
 import { createResponseRecorderPlugin } from './builtin/response-recorder.plugin';
+import { PluginRuntimeHostFacade } from './plugin-runtime-host.facade';
+import { PluginRuntimeInboundHooksFacade } from './plugin-runtime-inbound-hooks.facade';
+import { PluginRuntimeMessageHooksFacade } from './plugin-runtime-message-hooks.facade';
+import { PluginRuntimeOperationHooksFacade } from './plugin-runtime-operation-hooks.facade';
+import { PluginRuntimeSubagentFacade } from './plugin-runtime-subagent.facade';
+import { PluginRuntimeTransportFacade } from './plugin-runtime-transport.facade';
 import { createToolAuditPlugin } from './builtin/tool-audit.plugin';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { ChatMessageService } from '../chat/chat-message.service';
@@ -116,6 +125,15 @@ describe('PluginRuntimeService', () => {
   };
 
   let service: PluginRuntimeService;
+  let runtimeAutomationFacade: PluginRuntimeAutomationFacade;
+  let runtimeBroadcastFacade: PluginRuntimeBroadcastFacade;
+  let runtimeGovernanceFacade: PluginRuntimeGovernanceFacade;
+  let runtimeHostFacade: PluginRuntimeHostFacade;
+  let runtimeInboundHooksFacade: PluginRuntimeInboundHooksFacade;
+  let runtimeMessageHooksFacade: PluginRuntimeMessageHooksFacade;
+  let runtimeOperationHooksFacade: PluginRuntimeOperationHooksFacade;
+  let runtimeSubagentFacade: PluginRuntimeSubagentFacade;
+  let runtimeTransportFacade: PluginRuntimeTransportFacade;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -183,12 +201,37 @@ describe('PluginRuntimeService', () => {
     });
     subagentTaskService.listTasksForPlugin.mockResolvedValue([]);
     subagentTaskService.getTaskForPlugin.mockResolvedValue(null);
-    service = new PluginRuntimeService(
+    runtimeAutomationFacade = new PluginRuntimeAutomationFacade(
+      cronService as never,
+      moduleRef as never,
+    );
+    runtimeBroadcastFacade = new PluginRuntimeBroadcastFacade();
+    runtimeGovernanceFacade = new PluginRuntimeGovernanceFacade();
+    runtimeHostFacade = new PluginRuntimeHostFacade(
       pluginService as never,
       hostService as never,
-      cronService as never,
+      runtimeAutomationFacade as never,
+      moduleRef as never,
+    );
+    runtimeInboundHooksFacade = new PluginRuntimeInboundHooksFacade();
+    runtimeMessageHooksFacade = new PluginRuntimeMessageHooksFacade();
+    runtimeOperationHooksFacade = new PluginRuntimeOperationHooksFacade();
+    runtimeSubagentFacade = new PluginRuntimeSubagentFacade(
       aiModelExecution as never,
       moduleRef as never,
+    );
+    runtimeTransportFacade = new PluginRuntimeTransportFacade(
+      pluginService as never,
+    );
+    service = new PluginRuntimeService(
+      runtimeBroadcastFacade as never,
+      runtimeGovernanceFacade as never,
+      runtimeHostFacade as never,
+      runtimeInboundHooksFacade as never,
+      runtimeMessageHooksFacade as never,
+      runtimeOperationHooksFacade as never,
+      runtimeSubagentFacade as never,
+      runtimeTransportFacade as never,
     );
   });
 
@@ -221,11 +264,6 @@ describe('PluginRuntimeService', () => {
       transport: createTransport(),
     });
 
-    expect(pluginService.registerPlugin).toHaveBeenCalledWith(
-      'builtin.memory-tools',
-      'builtin',
-      builtinManifest,
-    );
     expect(service.listTools()).toEqual([
       {
         pluginId: 'builtin.memory-tools',
@@ -233,10 +271,6 @@ describe('PluginRuntimeService', () => {
         tool: builtinManifest.tools[0],
       },
     ]);
-    expect(cronService.onPluginRegistered).toHaveBeenCalledWith(
-      'builtin.memory-tools',
-      [],
-    );
   });
 
   it('surfaces transport-declared governance actions in runtime plugin listings', async () => {
@@ -298,47 +332,6 @@ describe('PluginRuntimeService', () => {
       routes: [],
       supportedActions: ['health-check', 'reload'],
     });
-  });
-
-  it('syncs declared cron jobs on register and unregister', async () => {
-    const manifest: PluginManifest = {
-      ...builtinManifest,
-      id: 'builtin.cron-heartbeat',
-      tools: [],
-      hooks: [
-        {
-          name: 'cron:tick',
-        },
-      ],
-      crons: [
-        {
-          name: 'heartbeat',
-          cron: '10s',
-          description: '定时写入插件心跳',
-        },
-      ],
-    };
-
-    await service.registerPlugin({
-      manifest,
-      runtimeKind: 'builtin',
-      transport: createTransport(),
-    });
-    await service.unregisterPlugin('builtin.cron-heartbeat');
-
-    expect(cronService.onPluginRegistered).toHaveBeenCalledWith(
-      'builtin.cron-heartbeat',
-      [
-        {
-          name: 'heartbeat',
-          cron: '10s',
-          description: '定时写入插件心跳',
-        },
-      ],
-    );
-    expect(cronService.onPluginUnregistered).toHaveBeenCalledWith(
-      'builtin.cron-heartbeat',
-    );
   });
 
   it('executes a tool through the owning transport with call context', async () => {
@@ -615,16 +608,6 @@ describe('PluginRuntimeService', () => {
     expect(checkHealth).toHaveBeenCalledTimes(2);
   });
 
-  it('touches plugin heartbeat timestamps through the plugin service', async () => {
-    pluginService.heartbeat.mockResolvedValue(undefined);
-
-    await expect(
-      (service as any).touchPluginHeartbeat('remote.pc-host'),
-    ).resolves.toBeUndefined();
-
-    expect(pluginService.heartbeat).toHaveBeenCalledWith('remote.pc-host');
-  });
-
   it('lists declared routes and invokes them through the owning transport', async () => {
     const invokeRoute = jest.fn().mockResolvedValue({
       status: 200,
@@ -651,17 +634,6 @@ describe('PluginRuntimeService', () => {
         invokeRoute,
       }),
     });
-
-    expect(service.listRoutes()).toEqual([
-      {
-        pluginId: 'builtin.route-inspector',
-        runtimeKind: 'builtin',
-        route: {
-          path: 'inspect/context',
-          methods: ['GET'],
-        },
-      },
-    ]);
 
     await expect(
       service.invokeRoute({
@@ -1714,71 +1686,6 @@ describe('PluginRuntimeService', () => {
     });
   });
 
-  it('dispatches plugin:loaded and plugin:unloaded hooks around runtime lifecycle', async () => {
-    const invokeHook = jest.fn().mockResolvedValue(null);
-    const manifest: PluginManifest = {
-      ...builtinManifest,
-      id: 'builtin.lifecycle-observer',
-      tools: [],
-      hooks: [
-        {
-          name: 'plugin:loaded',
-        },
-        {
-          name: 'plugin:unloaded',
-        },
-      ],
-    };
-
-    await service.registerPlugin({
-      manifest,
-      runtimeKind: 'builtin',
-      transport: createTransport({
-        invokeHook,
-      }),
-    });
-
-    expect(invokeHook).toHaveBeenNthCalledWith(1, {
-      hookName: 'plugin:loaded',
-      context: {
-        source: 'plugin',
-      },
-      payload: {
-        context: {
-          source: 'plugin',
-        },
-        plugin: {
-          id: 'builtin.lifecycle-observer',
-          runtimeKind: 'builtin',
-          deviceType: 'builtin',
-          manifest,
-        },
-        loadedAt: expect.any(String),
-      },
-    });
-
-    await service.unregisterPlugin('builtin.lifecycle-observer');
-
-    expect(invokeHook).toHaveBeenNthCalledWith(2, {
-      hookName: 'plugin:unloaded',
-      context: {
-        source: 'plugin',
-      },
-      payload: {
-        context: {
-          source: 'plugin',
-        },
-        plugin: {
-          id: 'builtin.lifecycle-observer',
-          runtimeKind: 'builtin',
-          deviceType: 'builtin',
-          manifest,
-        },
-        unloadedAt: expect.any(String),
-      },
-    });
-  });
-
   it('applies message:created mutations in sequence', async () => {
     const rewriteHook = jest.fn().mockResolvedValue({
       action: 'mutate',
@@ -2290,21 +2197,20 @@ describe('PluginRuntimeService', () => {
   });
 
   it('filters scoped-out plugins from chat tool exposure', async () => {
-    pluginService.registerPlugin.mockResolvedValueOnce({
-      configSchema: null,
-      resolvedConfig: {},
-      scope: {
-        defaultEnabled: true,
-        conversations: {
-          'conversation-1': false,
-        },
-      },
-    });
-
     await service.registerPlugin({
       manifest: builtinManifest,
       runtimeKind: 'builtin',
       transport: createTransport(),
+      governance: {
+        configSchema: null,
+        resolvedConfig: {},
+        scope: {
+          defaultEnabled: true,
+          conversations: {
+            'conversation-1': false,
+          },
+        },
+      },
     });
 
     expect(
@@ -2324,16 +2230,6 @@ describe('PluginRuntimeService', () => {
   });
 
   it('blocks tool execution when the plugin is disabled in the current conversation', async () => {
-    pluginService.registerPlugin.mockResolvedValueOnce({
-      configSchema: null,
-      resolvedConfig: {},
-      scope: {
-        defaultEnabled: true,
-        conversations: {
-          'conversation-1': false,
-        },
-      },
-    });
     const executeTool = jest.fn();
 
     await service.registerPlugin({
@@ -2342,6 +2238,16 @@ describe('PluginRuntimeService', () => {
       transport: createTransport({
         executeTool,
       }),
+      governance: {
+        configSchema: null,
+        resolvedConfig: {},
+        scope: {
+          defaultEnabled: true,
+          conversations: {
+            'conversation-1': false,
+          },
+        },
+      },
     });
 
     await expect(
@@ -5447,7 +5353,7 @@ describe('PluginRuntimeService', () => {
 
       expect((service as any).listConversationSessions('builtin.idiom-session')).toHaveLength(1);
 
-      pluginService.getGovernanceSnapshot.mockResolvedValueOnce({
+      service.refreshPluginGovernance('builtin.idiom-session', {
         configSchema: null,
         resolvedConfig: {},
         scope: {
@@ -5458,7 +5364,48 @@ describe('PluginRuntimeService', () => {
         },
       });
 
-      await service.refreshPluginGovernance('builtin.idiom-session');
+      expect((service as any).listConversationSessions('builtin.idiom-session')).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('drops active conversation sessions when unregistering the owning plugin', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-03-28T12:00:00.000Z'));
+
+    try {
+      await service.registerPlugin({
+        manifest: {
+          ...builtinManifest,
+          id: 'builtin.idiom-session',
+          permissions: ['conversation:write'],
+          tools: [],
+          hooks: [
+            {
+              name: 'message:received',
+            },
+          ],
+        } as never,
+        runtimeKind: 'builtin',
+        transport: createTransport(),
+      });
+
+      await service.callHost({
+        pluginId: 'builtin.idiom-session',
+        context: {
+          source: 'chat-hook',
+          userId: 'user-1',
+          conversationId: 'conversation-1',
+        },
+        method: 'conversation.session.start' as never,
+        params: {
+          timeoutMs: 60000,
+        },
+      });
+
+      expect((service as any).listConversationSessions('builtin.idiom-session')).toHaveLength(1);
+
+      service.unregisterPlugin('builtin.idiom-session');
 
       expect((service as any).listConversationSessions('builtin.idiom-session')).toEqual([]);
     } finally {
@@ -5917,23 +5864,22 @@ describe('PluginRuntimeService', () => {
       });
     });
 
-    pluginService.registerPlugin.mockResolvedValueOnce({
-      configSchema: null,
-      resolvedConfig: {
-        maxConcurrentExecutions: 1,
-      },
-      scope: {
-        defaultEnabled: true,
-        conversations: {},
-      },
-    });
-
     await service.registerPlugin({
       manifest: builtinManifest,
       runtimeKind: 'builtin',
       transport: createTransport({
         executeTool,
       }),
+      governance: {
+        configSchema: null,
+        resolvedConfig: {
+          maxConcurrentExecutions: 1,
+        },
+        scope: {
+          defaultEnabled: true,
+          conversations: {},
+        },
+      },
     });
 
     const firstCall = service.executeTool({

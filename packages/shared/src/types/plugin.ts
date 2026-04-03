@@ -1,5 +1,5 @@
 import type { ActionConfig, AutomationInfo } from './automation';
-import type { AiModelCapabilities, AiProviderSummary } from './ai';
+import type { AiModelConfig, AiProviderSummary } from './ai';
 import type { ChatMessagePart, ChatMessageStatus } from './chat';
 import type { JsonObject, JsonValue } from './json';
 
@@ -107,6 +107,16 @@ export type PluginInvocationSource =
   | 'subagent'
   | 'plugin';
 
+export const PLUGIN_INVOCATION_SOURCE_VALUES = [
+  'chat-tool',
+  'chat-hook',
+  'cron',
+  'automation',
+  'http-route',
+  'subagent',
+  'plugin',
+] as const satisfies PluginInvocationSource[];
+
 // ---- WebSocket 消息类型 (type 字段) ----
 export const WS_TYPE = {
   AUTH: 'auth',
@@ -153,6 +163,15 @@ export interface AuthPayload {
   token: string;
   pluginName: string;
   deviceType: DeviceType;
+}
+
+/** 远程插件在线接入时返回给作者侧的连接信息。 */
+export interface RemotePluginBootstrapInfo {
+  pluginName: string;
+  deviceType: DeviceType;
+  serverUrl: string;
+  token: string;
+  tokenExpiresIn: string;
 }
 
 /** 插件 Hook 描述。 */
@@ -252,6 +271,9 @@ export interface PluginStorageEntry {
   key: string;
   value: JsonValue;
 }
+
+/** 插件私有状态/存储可绑定的宿主作用域。 */
+export type PluginScopedStateScope = 'plugin' | 'conversation' | 'user';
 
 /** 插件 Route 支持的 HTTP 方法。 */
 export type PluginRouteMethod =
@@ -418,13 +440,10 @@ export type PluginProviderSummary = Pick<
 >;
 
 /** 插件可见的模型安全摘要。 */
-export interface PluginProviderModelSummary {
-  id: string;
-  providerId: string;
-  name: string;
-  capabilities: AiModelCapabilities;
-  status?: 'alpha' | 'beta' | 'active' | 'deprecated';
-}
+export type PluginProviderModelSummary = Pick<
+  AiModelConfig,
+  'id' | 'providerId' | 'name' | 'capabilities' | 'status'
+>;
 
 /** 插件侧统一 LLM 消息。 */
 export interface PluginLlmMessage {
@@ -1267,9 +1286,143 @@ export type PluginHostMethod =
   | 'subagent.task.get'
   | 'subagent.task.list'
   | 'subagent.task.start'
+  | 'state.delete'
   | 'state.get'
+  | 'state.list'
   | 'state.set'
   | 'user.get';
+
+export const PLUGIN_HOST_METHOD_VALUES = [
+  'automation.create',
+  'automation.event.emit',
+  'automation.list',
+  'automation.run',
+  'automation.toggle',
+  'config.get',
+  'cron.delete',
+  'cron.list',
+  'cron.register',
+  'conversation.get',
+  'conversation.session.finish',
+  'conversation.session.get',
+  'conversation.session.keep',
+  'conversation.session.start',
+  'conversation.messages.list',
+  'conversation.title.set',
+  'kb.get',
+  'kb.list',
+  'kb.search',
+  'llm.generate',
+  'llm.generate-text',
+  'log.list',
+  'log.write',
+  'message.send',
+  'message.target.current.get',
+  'memory.search',
+  'memory.save',
+  'persona.activate',
+  'persona.current.get',
+  'persona.get',
+  'persona.list',
+  'plugin.self.get',
+  'provider.current.get',
+  'provider.get',
+  'provider.list',
+  'provider.model.get',
+  'storage.delete',
+  'storage.get',
+  'storage.list',
+  'storage.set',
+  'subagent.run',
+  'subagent.task.get',
+  'subagent.task.list',
+  'subagent.task.start',
+  'state.delete',
+  'state.get',
+  'state.list',
+  'state.set',
+  'user.get',
+] as const satisfies PluginHostMethod[];
+
+export const CONNECTION_SCOPED_PLUGIN_HOST_METHODS = [
+  'config.get',
+  'cron.delete',
+  'cron.list',
+  'cron.register',
+  'kb.get',
+  'kb.list',
+  'kb.search',
+  'log.list',
+  'log.write',
+  'persona.current.get',
+  'persona.get',
+  'persona.list',
+  'plugin.self.get',
+  'provider.current.get',
+  'provider.get',
+  'provider.list',
+  'provider.model.get',
+  'state.delete',
+  'state.get',
+  'state.list',
+  'state.set',
+  'storage.delete',
+  'storage.get',
+  'storage.list',
+  'storage.set',
+] as const satisfies PluginHostMethod[];
+
+export const PLUGIN_HOST_METHOD_PERMISSION_MAP = {
+  'automation.create': 'automation:write',
+  'automation.event.emit': 'automation:write',
+  'automation.list': 'automation:read',
+  'automation.run': 'automation:write',
+  'automation.toggle': 'automation:write',
+  'config.get': 'config:read',
+  'cron.delete': 'cron:write',
+  'cron.list': 'cron:read',
+  'cron.register': 'cron:write',
+  'conversation.get': 'conversation:read',
+  'conversation.session.finish': 'conversation:write',
+  'conversation.session.get': 'conversation:write',
+  'conversation.session.keep': 'conversation:write',
+  'conversation.session.start': 'conversation:write',
+  'conversation.messages.list': 'conversation:read',
+  'conversation.title.set': 'conversation:write',
+  'kb.get': 'kb:read',
+  'kb.list': 'kb:read',
+  'kb.search': 'kb:read',
+  'llm.generate': 'llm:generate',
+  'llm.generate-text': 'llm:generate',
+  'log.list': 'log:read',
+  'log.write': 'log:write',
+  'message.send': 'conversation:write',
+  'message.target.current.get': 'conversation:read',
+  'memory.search': 'memory:read',
+  'memory.save': 'memory:write',
+  'persona.activate': 'persona:write',
+  'persona.current.get': 'persona:read',
+  'persona.get': 'persona:read',
+  'persona.list': 'persona:read',
+  'plugin.self.get': null,
+  'provider.current.get': 'provider:read',
+  'provider.get': 'provider:read',
+  'provider.list': 'provider:read',
+  'provider.model.get': 'provider:read',
+  'storage.delete': 'storage:write',
+  'storage.get': 'storage:read',
+  'storage.list': 'storage:read',
+  'storage.set': 'storage:write',
+  'subagent.run': 'subagent:run',
+  'subagent.task.get': 'subagent:run',
+  'subagent.task.list': 'subagent:run',
+  'subagent.task.start': 'subagent:run',
+  'state.delete': 'state:write',
+  'state.get': 'state:read',
+  'state.list': 'state:read',
+  'state.set': 'state:write',
+  'user.get': 'user:read',
+} as const satisfies Record<PluginHostMethod, PluginPermission | null>;
 
 /** Host API 调用负载。 */
 export interface HostCallPayload {

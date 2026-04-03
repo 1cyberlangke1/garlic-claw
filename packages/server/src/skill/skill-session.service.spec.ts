@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { SkillSessionService } from './skill-session.service';
 
 describe('SkillSessionService', () => {
@@ -13,11 +13,19 @@ describe('SkillSessionService', () => {
     listSkillSummaries: jest.fn(),
     listSkills: jest.fn(),
   };
+  const toolSettings = {
+    getSourceEnabled: jest.fn(),
+  };
+  const moduleRef = {
+    get: jest.fn(),
+  };
 
   let service: SkillSessionService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    moduleRef.get.mockReturnValue(toolSettings);
+    toolSettings.getSourceEnabled.mockReturnValue(undefined);
     skillRegistry.listSkillSummaries.mockResolvedValue([
       {
         id: 'project/planner',
@@ -32,7 +40,6 @@ describe('SkillSessionService', () => {
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'local-script',
         },
         assets: [
@@ -57,7 +64,6 @@ describe('SkillSessionService', () => {
           deny: ['automation.run'],
         },
         governance: {
-          enabled: false,
           trustLevel: 'asset-read',
         },
         assets: [],
@@ -77,7 +83,6 @@ describe('SkillSessionService', () => {
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'local-script',
         },
         assets: [
@@ -103,7 +108,6 @@ describe('SkillSessionService', () => {
           deny: ['automation.run'],
         },
         governance: {
-          enabled: false,
           trustLevel: 'asset-read',
         },
         assets: [],
@@ -113,6 +117,7 @@ describe('SkillSessionService', () => {
     service = new SkillSessionService(
       prisma as never,
       skillRegistry as never,
+      moduleRef as never,
     );
   });
 
@@ -159,11 +164,13 @@ describe('SkillSessionService', () => {
       service.updateConversationSkillStateForUser('user-1', 'conversation-1', [
         'project/planner',
         'project/planner',
+        'project/plugin-operator',
       ]),
     ).resolves.toEqual({
-      activeSkillIds: ['project/planner'],
+      activeSkillIds: ['project/planner', 'project/plugin-operator'],
       activeSkills: [
         expect.objectContaining({ id: 'project/planner' }),
+        expect.objectContaining({ id: 'project/plugin-operator' }),
       ],
     });
 
@@ -172,15 +179,9 @@ describe('SkillSessionService', () => {
         'missing/skill',
       ]),
     ).rejects.toBeInstanceOf(NotFoundException);
-
-    await expect(
-      service.updateConversationSkillStateForUser('user-1', 'conversation-1', [
-        'project/plugin-operator',
-      ]),
-    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('filters disabled active skills from the conversation state and appends skill package tool guidance', async () => {
+  it('keeps discovered active skills in the conversation state and appends skill package tool guidance', async () => {
     prisma.conversation.findUnique
       .mockResolvedValueOnce({
         id: 'conversation-1',
@@ -202,10 +203,13 @@ describe('SkillSessionService', () => {
     await expect(
       service.getConversationSkillStateForUser('user-1', 'conversation-1'),
     ).resolves.toEqual({
-      activeSkillIds: ['project/planner'],
+      activeSkillIds: ['project/planner', 'project/plugin-operator'],
       activeSkills: [
         expect.objectContaining({
           id: 'project/planner',
+        }),
+        expect.objectContaining({
+          id: 'project/plugin-operator',
         }),
       ],
     });
@@ -218,6 +222,9 @@ describe('SkillSessionService', () => {
           expect.objectContaining({
             id: 'project/planner',
           }),
+          expect.objectContaining({
+            id: 'project/plugin-operator',
+          }),
         ],
         allowedToolNames: [
           'kb.search',
@@ -225,8 +232,33 @@ describe('SkillSessionService', () => {
           'skill__asset__read',
           'skill__script__run',
         ],
-        deniedToolNames: [],
+        deniedToolNames: ['automation.run'],
         systemPrompt: expect.stringContaining('skill__script__run'),
+      }),
+    );
+  });
+
+  it('removes skill package tool guidance when the unified skill source is disabled', async () => {
+    toolSettings.getSourceEnabled.mockImplementation((kind: string, id: string) =>
+      kind === 'skill' && id === 'active-packages' ? false : undefined);
+    prisma.conversation.findUnique.mockResolvedValue({
+      id: 'conversation-1',
+      skillsJson: JSON.stringify(['project/planner']),
+    });
+
+    await expect(
+      service.getConversationSkillContext('conversation-1'),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        activeSkills: [
+          expect.objectContaining({
+            id: 'project/planner',
+          }),
+        ],
+        allowedToolNames: ['kb.search'],
+        deniedToolNames: [],
+        systemPrompt: expect.not.stringContaining('skill__asset__list'),
+        skillPackageToolsEnabled: false,
       }),
     );
   });

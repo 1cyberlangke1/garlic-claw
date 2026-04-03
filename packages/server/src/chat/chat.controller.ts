@@ -1,16 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Post,
-  Res,
-  Put,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Res, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -19,25 +7,14 @@ import { ChatMessageService } from './chat-message.service';
 import { ChatService } from './chat.service';
 import { ChatTaskService } from './chat-task.service';
 import { type ChatTaskEvent } from './chat.types';
-import {
-  CreateConversationDto,
-  RetryMessageDto,
-  SendMessageDto,
-  UpdateConversationHostServicesDto,
-  UpdateConversationSkillsDto,
-  UpdateMessageDto,
-} from './dto/chat.dto';
+import { CreateConversationDto, RetryMessageDto, SendMessageDto, UpdateConversationHostServicesDto, UpdateConversationSkillsDto, UpdateMessageDto } from './dto/chat.dto';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
-  constructor(
-    private readonly chatService: ChatService,
-    private readonly chatMessageService: ChatMessageService,
-    private readonly chatTaskService: ChatTaskService,
-  ) {}
+  constructor(private readonly chatService: ChatService, private readonly chatMessageService: ChatMessageService, private readonly chatTaskService: ChatTaskService) {}
 
   @Post('conversations')
   createConversation(
@@ -116,38 +93,14 @@ export class ChatController {
     @Body() dto: SendMessageDto,
     @Res() res: Response,
   ) {
-    prepareSseResponse(res);
-
-    let unsubscribe: () => void = () => undefined;
-    res.on('close', () => {
-      unsubscribe();
-    });
-
-    try {
+    await this.streamTaskEventsOverSse(res, async () => {
       const { userMessage, assistantMessage } =
         await this.chatMessageService.startMessageGeneration(userId, id, dto);
-      writeSse(res, {
-        type: 'message-start',
-        userMessage,
-        assistantMessage,
-      });
-
-      unsubscribe = this.chatTaskService.subscribe(
-        assistantMessage.id,
-        (event: ChatTaskEvent) => {
-          writeSse(res, event);
-        },
-      );
-
-      await this.chatTaskService.waitForTask(assistantMessage.id);
-    } catch (error) {
-      writeSse(res, {
-        type: 'error',
-        error: error instanceof Error ? error.message : '未知错误',
-      });
-    }
-
-    finalizeSse(res);
+      return {
+        assistantMessageId: assistantMessage.id,
+        startPayload: { type: 'message-start' as const, userMessage, assistantMessage },
+      };
+    });
   }
 
   /**
@@ -217,34 +170,39 @@ export class ChatController {
     @Body() dto: RetryMessageDto,
     @Res() res: Response,
   ) {
+    await this.streamTaskEventsOverSse(res, async () => {
+      const assistantMessage = await this.chatMessageService.retryMessageGeneration(
+        userId,
+        id,
+        messageId,
+        dto,
+      );
+      return {
+        assistantMessageId: assistantMessage.id,
+        startPayload: { type: 'message-start' as const, assistantMessage },
+      };
+    });
+  }
+
+  private async streamTaskEventsOverSse(
+    res: Response,
+    startTask: () => Promise<{ assistantMessageId: string; startPayload: object }>,
+  ) {
     prepareSseResponse(res);
 
     let unsubscribe: () => void = () => undefined;
-    res.on('close', () => {
-      unsubscribe();
-    });
+    res.on('close', () => unsubscribe());
 
     try {
-      const assistantMessage =
-        await this.chatMessageService.retryMessageGeneration(
-          userId,
-          id,
-          messageId,
-          dto,
-        );
-      writeSse(res, {
-        type: 'message-start',
-        assistantMessage,
-      });
+      const { assistantMessageId, startPayload } = await startTask();
+      writeSse(res, startPayload);
 
       unsubscribe = this.chatTaskService.subscribe(
-        assistantMessage.id,
-        (event: ChatTaskEvent) => {
-          writeSse(res, event);
-        },
+        assistantMessageId,
+        (event: ChatTaskEvent) => writeSse(res, event),
       );
 
-      await this.chatTaskService.waitForTask(assistantMessage.id);
+      await this.chatTaskService.waitForTask(assistantMessageId);
     } catch (error) {
       writeSse(res, {
         type: 'error',

@@ -17,7 +17,9 @@ import { AuthScopeGuard } from '../auth/guards/auth-scope.guard';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import type { PluginCallContext, PluginRouteRequest } from '@garlic-claw/shared';
+import { readUnknownObject } from '@garlic-claw/shared';
 import { PluginRuntimeService } from './plugin-runtime.service';
+import { normalizeRoutePath } from '@garlic-claw/shared';
 
 const BLOCKED_PLUGIN_REQUEST_HEADERS = new Set([
   'authorization',
@@ -78,8 +80,10 @@ export class PluginRouteController {
     });
 
     res.status(result.status);
-    for (const [header, value] of Object.entries(result.headers ?? {})) {
-      if (isBlockedPluginResponseHeader(header)) {
+    for (const [header, value] of Object.entries(
+      (result.headers ?? {}) as Record<string, string>,
+    )) {
+      if (BLOCKED_PLUGIN_RESPONSE_HEADERS.has(header.toLowerCase())) {
         continue;
       }
       res.setHeader(header, value);
@@ -105,11 +109,6 @@ function readWildcardPath(req: Request): string {
 
   return '';
 }
-
-function normalizeRoutePath(routePath: string): string {
-  return routePath.trim().replace(/^\/+|\/+$/g, '');
-}
-
 /**
  * 把 Express 请求归一化为插件可消费的 Route 请求。
  * @param req Express 请求对象
@@ -127,7 +126,7 @@ function buildRouteRequest(
     method: normalizeRouteMethod(req.method),
     headers: normalizeHeaders(req.headers),
     query: normalizeQueryParams(query),
-    body: normalizeRequestBody(req.body),
+    body: req.body === undefined ? null : toJsonValue(req.body),
   };
 }
 
@@ -182,7 +181,7 @@ function normalizeQueryParams(query: Record<string, unknown>): JsonObject {
 function normalizeHeaders(headers: Request['headers']): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    if (isBlockedPluginRequestHeader(key)) {
+    if (BLOCKED_PLUGIN_REQUEST_HEADERS.has(key.toLowerCase())) {
       continue;
     }
     if (typeof value === 'string') {
@@ -195,48 +194,4 @@ function normalizeHeaders(headers: Request['headers']): Record<string, string> {
   }
 
   return result;
-}
-
-/**
- * 归一化插件 Route 请求体。
- * @param body 原始请求体
- * @returns JSON 请求体；缺失时返回 null
- */
-function normalizeRequestBody(body: unknown): JsonValue | null {
-  if (body === undefined) {
-    return null;
-  }
-
-  return toJsonValue(body);
-}
-
-function readUnknownObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return null;
-  }
-
-  const record: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value)) {
-    record[key] = entry;
-  }
-
-  return record;
-}
-
-/**
- * 判断一个请求头是否不应转发给插件。
- * @param header 请求头名
- * @returns 是否应当屏蔽
- */
-function isBlockedPluginRequestHeader(header: string): boolean {
-  return BLOCKED_PLUGIN_REQUEST_HEADERS.has(header.toLowerCase());
-}
-
-/**
- * 判断一个插件返回头是否不应直接写回客户端。
- * @param header 响应头名
- * @returns 是否应当屏蔽
- */
-function isBlockedPluginResponseHeader(header: string): boolean {
-  return BLOCKED_PLUGIN_RESPONSE_HEADERS.has(header.toLowerCase());
 }

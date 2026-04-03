@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { PluginRuntimeOrchestratorService } from '../plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from '../plugin-runtime.service';
-import type { BuiltinPluginDefinition } from './builtin-plugin.transport';
+import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 import { BuiltinPluginTransport } from './builtin-plugin.transport';
 import { createAutomationRecorderPlugin } from './automation-recorder.plugin';
 import { createAutomationToolsPlugin } from './automation-tools.plugin';
@@ -37,7 +38,10 @@ import { createToolAuditPlugin } from './tool-audit.plugin';
 export class BuiltinPluginLoader implements OnModuleInit {
   private readonly definitions = new Map<string, BuiltinPluginDefinition>();
 
-  constructor(private readonly pluginRuntime: PluginRuntimeService) {}
+  constructor(
+    private readonly pluginRuntime: PluginRuntimeService,
+    private readonly pluginRuntimeOrchestrator: PluginRuntimeOrchestratorService,
+  ) {}
 
   /**
    * 启动时注册默认内建插件。
@@ -81,7 +85,7 @@ export class BuiltinPluginLoader implements OnModuleInit {
       throw new NotFoundException(`Builtin plugin not found: ${pluginId}`);
     }
 
-    await this.pluginRuntime.unregisterPlugin(pluginId);
+    await this.pluginRuntimeOrchestrator.unregisterPlugin(pluginId);
     await this.registerDefinition(definition);
   }
 
@@ -107,7 +111,7 @@ export class BuiltinPluginLoader implements OnModuleInit {
   private async registerDefinition(
     definition: BuiltinPluginDefinition,
   ): Promise<void> {
-    await this.pluginRuntime.registerPlugin({
+    await this.pluginRuntimeOrchestrator.registerPlugin({
       manifest: definition.manifest,
       runtimeKind: 'builtin',
       transport: new BuiltinPluginTransport(definition, {

@@ -1,11 +1,6 @@
 import type { JsonObject } from '../../common/types/json-value';
-import type { CompatibleProviderDriver } from '../official-provider-catalog';
+import type { ProviderProtocolDriver } from '../provider-catalog';
 import type { ModelCapabilities } from '../types';
-
-/**
- * 兼容供应商请求格式。
- */
-export type CompatibleProviderFormat = CompatibleProviderDriver;
 
 /**
  * 自定义供应商注册请求。
@@ -21,8 +16,8 @@ export interface RegisterCustomProviderDto {
   apiKey?: string;
   /** 读取 API Key 的环境变量名。 */
   apiKeyEnv?: string;
-  /** 兼容请求格式，默认 openai。 */
-  format?: CompatibleProviderFormat;
+  /** 协议接入协议族，默认 openai。 */
+  protocol?: ProviderProtocolDriver;
   /** 默认模型 ID。 */
   defaultModel?: string;
   /** 预置模型列表。 */

@@ -50,7 +50,6 @@ describe('SkillController', () => {
     skillRegistry.updateSkillGovernance.mockResolvedValue({
       id: 'project/planner',
       governance: {
-        enabled: true,
         trustLevel: 'local-script',
       },
     });
@@ -62,7 +61,6 @@ describe('SkillController', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         governance: {
-          enabled: true,
           trustLevel: 'local-script',
         },
       }),

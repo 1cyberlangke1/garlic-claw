@@ -702,11 +702,24 @@ describe('ToolRegistryService', () => {
       },
     ]);
     const mcpProvider = createCollectStateProvider('mcp', []);
+    const pluginService = {
+      getPluginScope: jest.fn().mockResolvedValue({
+        defaultEnabled: false,
+        conversations: {},
+      }),
+      updatePluginScope: jest.fn().mockResolvedValue({
+        defaultEnabled: true,
+        conversations: {},
+      }),
+    };
     const service = new ToolRegistryService(
       settings as never,
       createPluginRuntime() as never,
       pluginProvider as never,
       mcpProvider as never,
+      undefined,
+      undefined,
+      pluginService as never,
     );
 
     await expect(
@@ -721,13 +734,194 @@ describe('ToolRegistryService', () => {
       }),
     );
 
+    expect(pluginService.getPluginScope).toHaveBeenCalledWith('builtin.memory-tools');
+    expect(pluginService.updatePluginScope).toHaveBeenCalledWith('builtin.memory-tools', {
+      defaultEnabled: true,
+      conversations: {},
+    });
     expect(settings.setSourceEnabled).toHaveBeenCalledWith(
       'plugin',
       'builtin.memory-tools',
       true,
     );
-    expect(pluginProvider.collectState).toHaveBeenCalledTimes(1);
-    expect(mcpProvider.collectState).toHaveBeenCalledTimes(1);
+    expect(pluginProvider.collectState).toHaveBeenCalledTimes(2);
+    expect(mcpProvider.collectState).toHaveBeenCalledTimes(2);
+  });
+
+  it('syncs MCP runtime state when updating source enabled through unified governance', async () => {
+    const settings = createStatefulSettings();
+    const pluginProvider = createCollectStateProvider('plugin', []);
+    const mcpProvider = createCollectStateProvider('mcp', [
+      {
+        source: {
+          kind: 'mcp',
+          id: 'weather',
+          label: 'weather',
+          enabled: true,
+          health: 'healthy',
+          lastError: null,
+          lastCheckedAt: '2026-04-03T10:00:00.000Z',
+        },
+        name: 'get_forecast',
+        description: '获取天气预报',
+        parameters: {
+          city: {
+            type: 'string',
+            required: true,
+          },
+        },
+      },
+    ]);
+    const mcpService = {
+      setServerEnabled: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ToolRegistryService(
+      settings as never,
+      createPluginRuntime() as never,
+      pluginProvider as never,
+      mcpProvider as never,
+      undefined,
+      mcpService as never,
+    );
+
+    await expect(
+      service.setSourceEnabled('mcp', 'weather', false),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        kind: 'mcp',
+        id: 'weather',
+        enabled: false,
+        totalTools: 1,
+        enabledTools: 0,
+      }),
+    );
+
+    expect(settings.setSourceEnabled).toHaveBeenCalledWith('mcp', 'weather', false);
+    expect(mcpService.setServerEnabled).toHaveBeenCalledWith('weather', false);
+    expect(pluginProvider.collectState).toHaveBeenCalledTimes(2);
+    expect(mcpProvider.collectState).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-collects skill provider state after toggling the unified skill package source', async () => {
+    const settings = createStatefulSettings();
+    const pluginProvider = createCollectStateProvider('plugin', []);
+    const skillProvider = {
+      kind: 'skill' as const,
+      collectState: jest.fn().mockImplementation(async () => {
+        const disabled = settings.getSourceEnabled('skill', 'active-packages') === false;
+
+        return {
+          sources: [
+            {
+              kind: 'skill' as const,
+              id: 'active-packages',
+              label: 'Active Skill Packages',
+              enabled: true,
+              health: 'healthy' as const,
+              lastError: null,
+              lastCheckedAt: null,
+            },
+          ],
+          tools: disabled
+            ? []
+            : [
+                {
+                  source: {
+                    kind: 'skill' as const,
+                    id: 'active-packages',
+                    label: 'Active Skill Packages',
+                    enabled: true,
+                    health: 'healthy' as const,
+                    lastError: null,
+                    lastCheckedAt: null,
+                  },
+                  name: 'asset.list',
+                  description: '列出当前会话 skill package 资产',
+                  parameters: {},
+                },
+              ],
+        };
+      }),
+      listSources: jest.fn(),
+      listTools: jest.fn(),
+      executeTool: jest.fn(),
+    };
+    const service = new ToolRegistryService(
+      settings as never,
+      createPluginRuntime() as never,
+      pluginProvider as never,
+      createCollectStateProvider('mcp', []) as never,
+      skillProvider as never,
+    );
+
+    await expect(
+      service.setSourceEnabled('skill', 'active-packages', false),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        kind: 'skill',
+        id: 'active-packages',
+        enabled: false,
+        totalTools: 0,
+        enabledTools: 0,
+      }),
+    );
+
+    expect(settings.setSourceEnabled).toHaveBeenCalledWith('skill', 'active-packages', false);
+    expect(skillProvider.collectState).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves plugin conversation overrides when updating unified plugin source enabled state', async () => {
+    const settings = createStatefulSettings();
+    const pluginProvider = createCollectStateProvider('plugin', [
+      {
+        source: {
+          kind: 'plugin',
+          id: 'remote.pc-host',
+          label: '电脑助手',
+          enabled: true,
+          health: 'healthy',
+          lastError: null,
+          lastCheckedAt: '2026-04-03T12:00:00.000Z',
+        },
+        name: 'take_screenshot',
+        description: '截图',
+        parameters: {},
+        pluginId: 'remote.pc-host',
+        runtimeKind: 'remote',
+      },
+    ]);
+    const pluginService = {
+      getPluginScope: jest.fn().mockResolvedValue({
+        defaultEnabled: true,
+        conversations: {
+          'conversation-1': false,
+        },
+      }),
+      updatePluginScope: jest.fn().mockResolvedValue({
+        defaultEnabled: false,
+        conversations: {
+          'conversation-1': false,
+        },
+      }),
+    };
+    const service = new ToolRegistryService(
+      settings as never,
+      createPluginRuntime() as never,
+      pluginProvider as never,
+      createCollectStateProvider('mcp', []) as never,
+      undefined,
+      undefined,
+      pluginService as never,
+    );
+
+    await service.setSourceEnabled('plugin', 'remote.pc-host', false);
+
+    expect(pluginService.updatePluginScope).toHaveBeenCalledWith('remote.pc-host', {
+      defaultEnabled: false,
+      conversations: {
+        'conversation-1': false,
+      },
+    });
   });
 
   it('updates tool enabled state from one provider snapshot without re-reading all sources', async () => {

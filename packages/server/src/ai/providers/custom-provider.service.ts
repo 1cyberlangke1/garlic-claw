@@ -10,7 +10,7 @@
  * - 注册后的模型配置
  *
  * 预期行为:
- * - 只支持 openai / anthropic / gemini 三种兼容请求格式
+ * - 只支持 openai / anthropic / gemini 三种协议接入协议族
  * - 为自定义供应商注册统一的 provider 配置和模型配置
  * - 为未显式提供能力的模型做基础能力推断
  */
@@ -25,9 +25,9 @@ import type {
   ProviderId,
 } from '../types';
 import { createProviderId } from '../types';
+import { getProviderProtocolMetadata } from '../provider-protocol.helpers';
 import {
-  discoverCompatibleModels,
-  getCompatibleProviderFormatMetadata,
+  discoverProtocolModels,
 } from './custom-provider.helpers';
 import {
   createCustomModelConfig,
@@ -60,38 +60,48 @@ export class CustomProviderService {
    */
   async registerProvider(dto: RegisterCustomProviderDto): Promise<ProviderConfig> {
     const providerId = createProviderId(dto.id);
-    const format = dto.format ?? 'openai';
-    const metadata = getCompatibleProviderFormatMetadata(format);
+    const protocol = dto.protocol ?? 'openai';
+    const protocolMetadata = getProviderProtocolMetadata(protocol);
 
     if (this.providerRegistry.hasProvider(providerId)) {
       this.logger.warn(`供应商 ${providerId} 已存在，将覆盖注册`);
     }
 
-    const config = createCustomProviderConfig(providerId, dto, metadata.npm);
+    const config = createCustomProviderConfig(providerId, dto, protocolMetadata.npm);
 
     this.providerRegistry.registerProvider(config);
     this.customProviderIds.add(providerId);
 
     const models = dto.models?.length
       ? dto.models.map((modelDto) =>
-          createCustomModelConfig(providerId, modelDto, dto.baseUrl, metadata.npm),
+          createCustomModelConfig(
+            providerId,
+            modelDto,
+            dto.baseUrl,
+            protocolMetadata.npm,
+          ),
         )
       : (
-          await discoverCompatibleModels({
+          await discoverProtocolModels({
             dto,
-            format,
+            protocol,
             resolveApiKey: (item) => this.resolveApiKey(item),
             logDebug: (message) => this.logger.debug(message),
           })
         ).map((item) =>
-          createDiscoveredModelConfig(providerId, item, dto.baseUrl, metadata.npm),
+          createDiscoveredModelConfig(
+            providerId,
+            item,
+            dto.baseUrl,
+            protocolMetadata.npm,
+          ),
         );
 
     for (const model of models) {
       this.modelRegistry.register(model);
     }
 
-    this.logger.log(`已注册自定义供应商 ${providerId}，格式 ${format}`);
+    this.logger.log(`已注册自定义供应商 ${providerId}，协议 ${protocol}`);
     return config;
   }
 

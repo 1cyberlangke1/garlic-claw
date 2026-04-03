@@ -1,35 +1,16 @@
+import {
+  buildMessageReceivedSummary,
+  buildWaitingModelSummary,
+  createPassHookResult,
+  MESSAGE_ENTRY_RECORDER_MANIFEST,
+  persistPluginObservation,
+  readPluginHookPayload,
+} from '@garlic-claw/plugin-sdk';
 import type {
   ChatWaitingModelHookPayload,
   MessageReceivedHookPayload,
 } from '@garlic-claw/shared';
-import type { JsonObject } from '../../common/types/json-value';
-import type { BuiltinPluginDefinition } from './builtin-plugin.transport';
-import { readBuiltinHookPayload } from './builtin-hook-payload.helpers';
-
-/**
- * 收到消息阶段摘要。
- */
-interface MessageReceivedSummary extends JsonObject {
-  conversationId: string;
-  providerId: string;
-  modelId: string;
-  contentLength: number;
-  partsCount: number;
-  userId: string | null;
-}
-
-/**
- * waiting-model 阶段摘要。
- */
-interface WaitingModelSummary extends JsonObject {
-  conversationId: string;
-  assistantMessageId: string;
-  providerId: string;
-  modelId: string;
-  messageCount: number;
-  toolCount: number;
-  userId: string | null;
-}
+import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**
  * 创建收到消息 / waiting-model 记录插件。
@@ -47,99 +28,38 @@ interface WaitingModelSummary extends JsonObject {
  */
 export function createMessageEntryRecorderPlugin(): BuiltinPluginDefinition {
   return {
-    manifest: {
-      id: 'builtin.message-entry-recorder',
-      name: '消息入口记录器',
-      version: '1.0.0',
-      runtime: 'builtin',
-      description: '用于验证 message:received 与 chat:waiting-model 链路的内建插件',
-      permissions: ['log:write', 'storage:write'],
-      tools: [],
-      hooks: [
-        {
-          name: 'message:received',
-          description: '在命令式消息进入 LLM 前记录摘要',
-          priority: 100,
-          filter: {
-            message: {
-              regex: '^/',
-            },
-          },
-        },
-        {
-          name: 'chat:waiting-model',
-          description: '在真正进入模型调用前记录 waiting 摘要',
-        },
-      ],
-    },
+    manifest: MESSAGE_ENTRY_RECORDER_MANIFEST,
     hooks: {
       'message:received': async (payload, { host }) => {
-        const received = readBuiltinHookPayload<MessageReceivedHookPayload>(payload);
+        const received = readPluginHookPayload<MessageReceivedHookPayload>(payload);
         const summary = buildMessageReceivedSummary(received);
 
-        await host.setStorage('message.received.last-entry', summary);
-        await host.writeLog({
-          level: 'info',
-          type: 'message:received:observed',
-          message: `会话 ${received.conversationId} 收到一条待处理用户消息`,
-          metadata: summary,
-        });
+        await persistPluginObservation(
+          host,
+          'message.received.last-entry',
+          summary,
+          'info',
+          `会话 ${received.conversationId} 收到一条待处理用户消息`,
+          'message:received:observed',
+        );
 
-        return {
-          action: 'pass',
-        };
+        return createPassHookResult();
       },
       'chat:waiting-model': async (payload, { host }) => {
-        const waiting = readBuiltinHookPayload<ChatWaitingModelHookPayload>(payload);
+        const waiting = readPluginHookPayload<ChatWaitingModelHookPayload>(payload);
         const summary = buildWaitingModelSummary(waiting);
 
-        await host.setStorage('message.waiting.last-model-request', summary);
-        await host.writeLog({
-          level: 'info',
-          type: 'chat:waiting-model:observed',
-          message: `会话 ${waiting.conversationId} 即将进入模型调用`,
-          metadata: summary,
-        });
+        await persistPluginObservation(
+          host,
+          'message.waiting.last-model-request',
+          summary,
+          'info',
+          `会话 ${waiting.conversationId} 即将进入模型调用`,
+          'chat:waiting-model:observed',
+        );
 
         return undefined;
       },
     },
-  };
-}
-
-/**
- * 构建收到消息阶段摘要。
- * @param payload 收到消息 Hook 载荷
- * @returns 可持久化的摘要
- */
-function buildMessageReceivedSummary(
-  payload: MessageReceivedHookPayload,
-): MessageReceivedSummary {
-  return {
-    conversationId: payload.conversationId,
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    contentLength: payload.message.content?.length ?? 0,
-    partsCount: payload.message.parts.length,
-    userId: payload.context.userId ?? null,
-  };
-}
-
-/**
- * 构建 waiting-model 阶段摘要。
- * @param payload waiting-model Hook 载荷
- * @returns 可持久化的摘要
- */
-function buildWaitingModelSummary(
-  payload: ChatWaitingModelHookPayload,
-): WaitingModelSummary {
-  return {
-    conversationId: payload.conversationId,
-    assistantMessageId: payload.assistantMessageId,
-    providerId: payload.providerId,
-    modelId: payload.modelId,
-    messageCount: payload.request.messages.length,
-    toolCount: payload.request.availableTools.length,
-    userId: payload.context.userId ?? null,
   };
 }

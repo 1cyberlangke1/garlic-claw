@@ -1,12 +1,4 @@
-import type {
-  PluginCommandConflict,
-  PluginCommandConflictEntry,
-  PluginCommandDescriptor,
-  PluginCommandInfo,
-  PluginCommandOverview,
-  PluginHookDescriptor,
-  PluginRuntimeKind,
-} from '@garlic-claw/shared';
+import type { PluginCommandConflict, PluginCommandConflictEntry, PluginCommandDescriptor, PluginCommandInfo, PluginCommandOverview, PluginHookDescriptor } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { describePluginGovernance } from './plugin-governance-policy';
 import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
@@ -18,10 +10,7 @@ type RuntimePluginRecord = ReturnType<PluginRuntimeService['listPlugins']>[numbe
 
 @Injectable()
 export class PluginCommandService {
-  constructor(
-    private readonly pluginService: PluginService,
-    private readonly pluginRuntime: PluginRuntimeService,
-  ) {}
+  constructor(private readonly pluginService: PluginService, private readonly pluginRuntime: PluginRuntimeService) {}
 
   async listOverview(): Promise<PluginCommandOverview> {
     const [persistedPlugins, runtimePlugins] = await Promise.all([
@@ -58,7 +47,7 @@ export class PluginCommandService {
           return conflictDiff;
         }
 
-        const priorityDiff = normalizePriority(left.priority) - normalizePriority(right.priority);
+        const priorityDiff = comparePluginCommandPriority(left, right);
         if (priorityDiff !== 0) {
           return priorityDiff;
         }
@@ -84,9 +73,9 @@ export class PluginCommandService {
     plugin: PersistedPluginRecord,
     runtimePlugin: RuntimePluginRecord | null,
   ): PluginCommandInfo[] {
-    const runtimeKind = readPluginRuntimeKind(
-      runtimePlugin?.runtimeKind ?? plugin.runtimeKind,
-    );
+    const runtimeKind = runtimePlugin?.runtimeKind === 'builtin' || plugin.runtimeKind === 'builtin'
+      ? 'builtin'
+      : 'remote';
     const governance = describePluginGovernance({
       pluginId: plugin.name,
       runtimeKind,
@@ -95,7 +84,7 @@ export class PluginCommandService {
 
     return descriptors.map(({ descriptor, source }) => ({
       ...descriptor,
-      commandId: buildCommandId(plugin.name, descriptor),
+      commandId: `${plugin.name}:${descriptor.canonicalCommand}:${descriptor.kind}`,
       pluginId: plugin.name,
       pluginDisplayName: runtimePlugin?.manifest.name ?? plugin.displayName ?? plugin.name,
       runtimeKind,
@@ -153,9 +142,11 @@ export class PluginCommandService {
     return [...triggerMap.entries()]
       .map(([trigger, relatedCommands]) => ({
         trigger,
-        commands: dedupeByCommandId(relatedCommands)
+        commands: [...new Map(
+          relatedCommands.map((command) => [command.commandId, command]),
+        ).values()]
           .sort((left, right) => {
-            const priorityDiff = normalizePriority(left.priority) - normalizePriority(right.priority);
+            const priorityDiff = comparePluginCommandPriority(left, right);
             if (priorityDiff !== 0) {
               return priorityDiff;
             }
@@ -204,7 +195,7 @@ function extractCommandsFromHooks(hooks: PluginHookDescriptor[]): PluginCommandD
     const nextDescriptor: PluginCommandDescriptor = {
       kind: 'hook-filter',
       canonicalCommand,
-      path: splitCommandPath(canonicalCommand),
+      path: canonicalCommand.slice(1).split(' '),
       aliases: triggers.filter((trigger) => trigger !== canonicalCommand),
       variants: triggers,
       ...(hook.description ? { description: hook.description } : {}),
@@ -229,14 +220,6 @@ function extractCommandsFromHooks(hooks: PluginHookDescriptor[]): PluginCommandD
   return [...descriptors.values()];
 }
 
-function buildCommandId(pluginId: string, descriptor: PluginCommandDescriptor): string {
-  return `${pluginId}:${descriptor.canonicalCommand}:${descriptor.kind}`;
-}
-
-function splitCommandPath(command: string): string[] {
-  return command.replace(/^\//, '').split(/\s+/).filter(Boolean);
-}
-
 function normalizeCommandTrigger(command: string): string | null {
   const normalized = command
     .trim()
@@ -259,26 +242,19 @@ function normalizePriority(priority?: number): number {
   return Math.trunc(priority);
 }
 
+function comparePluginCommandPriority(left: { priority?: number }, right: { priority?: number }): number {
+  return normalizePriority(left.priority) - normalizePriority(right.priority);
+}
+
 function dedupeStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function dedupeByCommandId(commands: PluginCommandInfo[]): PluginCommandInfo[] {
-  return [...new Map(commands.map((command) => [command.commandId, command])).values()];
-}
-
 function cloneCommandDescriptor(command: PluginCommandDescriptor): PluginCommandDescriptor {
   return {
-    kind: command.kind,
-    canonicalCommand: command.canonicalCommand,
+    ...command,
     path: [...command.path],
     aliases: [...command.aliases],
     variants: [...command.variants],
-    ...(command.description ? { description: command.description } : {}),
-    ...(typeof command.priority === 'number' ? { priority: command.priority } : {}),
   };
-}
-
-function readPluginRuntimeKind(value: string | null | undefined): PluginRuntimeKind {
-  return value === 'builtin' ? 'builtin' : 'remote';
 }

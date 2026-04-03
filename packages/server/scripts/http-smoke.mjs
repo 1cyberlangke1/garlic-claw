@@ -163,7 +163,7 @@ async function runSmokeFlow(context) {
   await apiRequest(context, 'PUT', '/ai/providers/local-openai', {
     token: adminToken,
     body: {
-      mode: 'compatible',
+      mode: 'protocol',
       driver: 'openai',
       name: 'Local OpenAI Smoke',
       apiKey: 'smoke-key',

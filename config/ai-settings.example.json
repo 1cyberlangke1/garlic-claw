@@ -1,11 +1,11 @@
 {
-  "version": 1,
-  "updatedAt": "2026-03-26T00:00:00.000Z",
+  "version": 3,
+  "updatedAt": "2026-04-01T00:00:00.000Z",
   "providers": [
     {
       "id": "openai",
       "name": "OpenAI",
-      "mode": "official",
+      "mode": "catalog",
       "driver": "openai",
       "apiKey": "YOUR_OPENAI_API_KEY",
       "baseUrl": "https://api.openai.com/v1",
@@ -17,10 +17,10 @@
     {
       "id": "team-gemini",
       "name": "Team Gemini Compatible",
-      "mode": "compatible",
+      "mode": "protocol",
       "driver": "gemini",
       "apiKey": "YOUR_COMPATIBLE_API_KEY",
-      "baseUrl": "https://your-compatible-endpoint.example.com/v1beta",
+      "baseUrl": "https://your-protocol-endpoint.example.com/v1beta",
       "defaultModel": "gemini-2.0-flash",
       "models": [
         "gemini-2.0-flash"
@@ -33,5 +33,22 @@
     "modelId": "gpt-4o-mini",
     "prompt": "Please describe the uploaded image clearly for a text-only model.",
     "maxDescriptionLength": 400
+  },
+  "hostModelRouting": {
+    "fallbackChatModels": [],
+    "compressionModel": {
+      "providerId": "openai",
+      "modelId": "gpt-4o-mini"
+    },
+    "utilityModelRoles": {
+      "conversationTitle": {
+        "providerId": "openai",
+        "modelId": "gpt-4o-mini"
+      },
+      "pluginGenerateText": {
+        "providerId": "team-gemini",
+        "modelId": "gemini-2.0-flash"
+      }
+    }
   }
 }

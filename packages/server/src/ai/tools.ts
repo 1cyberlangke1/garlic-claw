@@ -2,6 +2,11 @@ import type {
   PluginAvailableToolSummary,
   PluginInvocationSource,
 } from '@garlic-claw/shared';
+import {
+  buildPluginAvailableToolSummary,
+  buildPluginToolCallName,
+  buildPluginToolDescription,
+} from '@garlic-claw/shared';
 import { tool, type Tool } from 'ai';
 import { z } from 'zod';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
@@ -93,13 +98,17 @@ export function getPluginTools(
   const tools: Record<string, Tool> = {};
 
   for (const entry of toolEntries) {
-    const toolName = entry.runtimeKind === 'builtin'
-      ? entry.tool.name
-      : `${entry.pluginId}__${entry.tool.name}`;
+    const toolName = buildPluginToolCallName({
+      pluginId: entry.pluginId,
+      runtimeKind: entry.runtimeKind,
+      toolName: entry.tool.name,
+    });
     tools[toolName] = tool({
-      description: entry.runtimeKind === 'builtin'
-        ? entry.tool.description
-        : `[插件：${entry.pluginId}] ${entry.tool.description}`,
+      description: buildPluginToolDescription({
+        pluginId: entry.pluginId,
+        runtimeKind: entry.runtimeKind,
+        description: entry.tool.description,
+      }),
       inputSchema: paramSchemaToZod(entry.tool.parameters),
       execute: async (args: JsonObject) => {
         try {
@@ -150,16 +159,10 @@ export function getPluginToolSummaries(
     activeProviderId: context.activeProviderId,
     activeModelId: context.activeModelId,
     activePersonaId: context.activePersonaId,
-  }).map((entry) => ({
-    name: entry.runtimeKind === 'builtin'
-      ? entry.tool.name
-      : `${entry.pluginId}__${entry.tool.name}`,
-    description: entry.runtimeKind === 'builtin'
-      ? entry.tool.description
-      : `[插件：${entry.pluginId}] ${entry.tool.description}`,
-    parameters: entry.tool.parameters,
+  }).map((entry) => buildPluginAvailableToolSummary({
     pluginId: entry.pluginId,
     runtimeKind: entry.runtimeKind,
+    tool: entry.tool,
   }));
 }
 

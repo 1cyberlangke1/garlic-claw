@@ -2,8 +2,115 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  AUTOMATION_RECORDER_MANIFEST,
+  AUTOMATION_TOOLS_MANIFEST,
+  CORE_TOOLS_MANIFEST,
+  createAutomationCreatedResult,
+  createAutomationEventDispatchResult,
+  createAutomationListResult,
+  createCalculateErrorResult,
+  createCalculateSuccessResult,
+  createCurrentTimeToolResult,
+  createMemoryRecallToolResult,
+  createMemorySaveToolResult,
+  createRouteInspectorContextResponse,
+  createAutomationRunResult,
+  createSystemInfoToolResult,
+  MEMORY_TOOLS_MANIFEST,
+  createAutomationToggleResult,
+  buildAutomationRunSummary,
+  buildConversationCreatedSummary,
+  buildPluginGovernanceMessage,
+  buildPluginGovernanceSummary,
+  buildConversationTitlePrompt,
+  buildSubagentDelegateRunParams,
+  buildSubagentDelegateTaskParams,
+  buildToolAuditStorageKey,
+  CONVERSATION_TITLE_CONFIG_FIELDS,
+  CONVERSATION_TITLE_MANIFEST,
+  CONVERSATION_TITLE_DEFAULT_TITLE,
+  CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES,
+  CRON_HEARTBEAT_MANIFEST,
+  AUTOMATION_TOOLS_MANIFEST_TOOLS,
+  CORE_TOOLS_MANIFEST_TOOLS,
+  KB_CONTEXT_MANIFEST,
+  KB_CONTEXT_CONFIG_FIELDS,
+  KB_CONTEXT_DEFAULT_LIMIT,
+  KB_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  MEMORY_CONTEXT_MANIFEST,
+  MEMORY_CONTEXT_CONFIG_FIELDS,
+  MEMORY_CONTEXT_DEFAULT_LIMIT,
+  MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  MEMORY_TOOLS_MANIFEST_TOOLS,
+  buildMessageLifecycleSummary,
+  buildMessageReceivedSummary,
+  MESSAGE_ENTRY_RECORDER_MANIFEST,
+  MESSAGE_LIFECYCLE_RECORDER_MANIFEST,
+  buildResponseSendSummary,
+  buildToolAuditSummary,
+  buildWaitingModelSummary,
+  clipContextText,
+  createChatBeforeModelLineBlockResult,
   DeviceType,
   PluginClient,
+  asChatBeforeModelPayload,
+  createSubagentRunSummary,
+  createPluginAuthorTransportExecutor,
+  createPluginHostFacade,
+  createChatBeforeModelHookResult,
+  createPassHookResult,
+  createProviderRouterMutateResult,
+  createProviderRouterShortCircuitResult,
+  createSubagentTaskSummaryResult,
+  createSystemPromptMutateResult,
+  describeJsonValueKind,
+  filterAllowedToolNames,
+  normalizePositiveInteger,
+  parseCommaSeparatedNames,
+  persistPluginObservation,
+  readCurrentPersonaInfo,
+  readCurrentProviderInfo,
+  readPluginCreateAutomationParams,
+  readBooleanFlag,
+  readConversationMessages,
+  readPersonaRouterConfig,
+  readPersonaSummaryInfo,
+  PERSONA_ROUTER_CONFIG_FIELDS,
+  PERSONA_ROUTER_MANIFEST,
+  PLUGIN_GOVERNANCE_RECORDER_MANIFEST,
+  PROVIDER_ROUTER_MANIFEST,
+  PROVIDER_ROUTER_CONFIG_FIELDS,
+  PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY,
+  RESPONSE_RECORDER_MANIFEST,
+  ROUTE_INSPECTOR_MANIFEST,
+  ROUTE_INSPECTOR_MANIFEST_ROUTES,
+  readConversationSummary,
+  readConversationTitleConfig,
+  readMemorySearchResults,
+  readMemorySaveResultId,
+  readOptionalObjectParam,
+  readPromptBlockConfig,
+  readProviderRouterConfig,
+  resolveConversationTitleRuntimeConfig,
+  readOptionalStringParam,
+  readPluginHookPayload,
+  readJsonObjectValue,
+  readLatestUserTextFromMessages,
+  readRequiredStringParam,
+  readRequiredTextValue,
+  readSubagentDelegateConfig,
+  resolvePromptBlockConfig,
+  resolveProviderRouterShortCircuitReply,
+  sameToolNames,
+  readTextGenerationResult,
+  sanitizeConversationTitle,
+  sanitizeOptionalText,
+  shouldGenerateConversationTitle,
+  SUBAGENT_DELEGATE_MANIFEST_TOOLS,
+  SUBAGENT_DELEGATE_MANIFEST,
+  SUBAGENT_DELEGATE_CONFIG_FIELDS,
+  textIncludesKeyword,
+  TOOL_AUDIT_MANIFEST,
 } = require('../dist/index.js');
 
 const WS_TYPE = {
@@ -253,6 +360,1372 @@ test('resolveManifest synthesizes message hook descriptors for commands and grou
         description: undefined,
       },
     ],
+  );
+});
+
+test('PluginClient.fromBootstrap creates a client directly from bootstrap connection info', () => {
+  const client = PluginClient.fromBootstrap({
+    pluginName: 'remote.pc-host',
+    deviceType: DeviceType.API,
+    serverUrl: 'ws://127.0.0.1:23331',
+    token: 'remote-bootstrap-token',
+    tokenExpiresIn: '30d',
+  }, {
+    manifest: {
+      name: 'Remote PC Host',
+      version: '1.0.0',
+      permissions: [],
+      tools: [],
+    },
+  });
+
+  assert.equal(client.options.serverUrl, 'ws://127.0.0.1:23331');
+  assert.equal(client.options.token, 'remote-bootstrap-token');
+  assert.equal(client.options.pluginName, 'remote.pc-host');
+  assert.equal(client.options.deviceType, DeviceType.API);
+  assert.deepEqual(client.resolveManifest(), {
+    id: 'remote.pc-host',
+    name: 'Remote PC Host',
+    version: '1.0.0',
+    runtime: 'remote',
+    description: undefined,
+    permissions: [],
+    tools: [],
+    hooks: [],
+    config: undefined,
+    routes: [],
+  });
+});
+
+test('createPluginHostFacade normalizes host params for author-side host helpers', async () => {
+  const calls = [];
+  const host = createPluginHostFacade({
+    call(method, params) {
+      calls.push({
+        kind: 'call',
+        method,
+        params,
+      });
+      return Promise.resolve({
+        ok: true,
+      });
+    },
+    callHost(method, params = {}) {
+      calls.push({
+        kind: 'callHost',
+        method,
+        params,
+      });
+      return Promise.resolve({
+        ok: true,
+      });
+    },
+  });
+
+  await host.sendMessage({
+    content: 'hello',
+    target: {
+      type: 'conversation',
+      id: 'conversation-1',
+    },
+  });
+  await host.startConversationSession({
+    timeoutMs: 30000,
+    captureHistory: true,
+  });
+  await host.getStorage('draft', {
+    scope: 'conversation',
+  });
+  await host.generate({
+    providerId: 'openai',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'hello',
+          },
+        ],
+      },
+    ],
+  });
+  await host.generateText({
+    prompt: 'ping',
+    maxOutputTokens: 64,
+  });
+
+  assert.deepEqual(calls, [
+    {
+      kind: 'callHost',
+      method: 'message.send',
+      params: {
+        content: 'hello',
+        target: {
+          type: 'conversation',
+          id: 'conversation-1',
+        },
+      },
+    },
+    {
+      kind: 'callHost',
+      method: 'conversation.session.start',
+      params: {
+        timeoutMs: 30000,
+        captureHistory: true,
+      },
+    },
+    {
+      kind: 'call',
+      method: 'storage.get',
+      params: {
+        key: 'draft',
+        scope: 'conversation',
+      },
+    },
+    {
+      kind: 'callHost',
+      method: 'llm.generate',
+      params: {
+        providerId: 'openai',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'hello',
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      kind: 'call',
+      method: 'llm.generate-text',
+      params: {
+        prompt: 'ping',
+        maxOutputTokens: 64,
+      },
+    },
+  ]);
+});
+
+test('plugin-sdk exposes generic hook payload readers and chat:before-model result helpers', () => {
+  const payload = {
+    context: {
+      source: 'chat-hook',
+      conversationId: 'conv-1',
+    },
+    request: {
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      systemPrompt: '你是 Garlic Claw',
+      messages: [
+        {
+          role: 'user',
+          content: '今天我想喝咖啡',
+        },
+      ],
+      availableTools: [],
+    },
+  };
+
+  assert.equal(readPluginHookPayload(payload), payload);
+  assert.equal(asChatBeforeModelPayload(payload), payload);
+  assert.deepEqual(
+    createChatBeforeModelHookResult(
+      payload.request.systemPrompt,
+      '已知用户记忆：\n- [preference] 用户喜欢咖啡',
+    ),
+    {
+      action: 'mutate',
+      systemPrompt: '你是 Garlic Claw\n\n已知用户记忆：\n- [preference] 用户喜欢咖啡',
+    },
+  );
+  assert.deepEqual(
+    createChatBeforeModelHookResult('', '补充系统提示词'),
+    {
+      action: 'mutate',
+      systemPrompt: '补充系统提示词',
+    },
+  );
+  assert.deepEqual(
+    createChatBeforeModelLineBlockResult(
+      payload.request.systemPrompt,
+      '与此用户相关的记忆',
+      ['- [preference] 用户喜欢咖啡'],
+    ),
+    {
+      action: 'mutate',
+      systemPrompt: '你是 Garlic Claw\n\n与此用户相关的记忆：\n- [preference] 用户喜欢咖啡',
+    },
+  );
+  assert.equal(
+    createChatBeforeModelLineBlockResult(payload.request.systemPrompt, '前缀', []),
+    null,
+  );
+});
+
+test('createPluginAuthorTransportExecutor runs author definitions with shared route normalization and governance actions', async () => {
+  const seen = [];
+  const executor = createPluginAuthorTransportExecutor({
+    definition: {
+      manifest: {
+        id: 'plugin.sdk.author-transport',
+        name: 'Author Transport',
+        version: '1.0.0',
+        runtime: 'builtin',
+        permissions: [],
+        tools: [],
+      },
+      tools: {
+        echo(params, context) {
+          seen.push({
+            kind: 'tool',
+            params,
+            callContext: context.callContext,
+          });
+          return {
+            echoed: params.message,
+          };
+        },
+      },
+      hooks: {
+        'chat:before-model'(payload, context) {
+          seen.push({
+            kind: 'hook',
+            payload,
+            callContext: context.callContext,
+          });
+          return {
+            action: 'pass',
+          };
+        },
+      },
+      routes: {
+        'inspect/context': (request, context) => {
+          seen.push({
+            kind: 'route',
+            request,
+            callContext: context.callContext,
+          });
+          return {
+            status: 200,
+            body: {
+              ok: true,
+            },
+          };
+        },
+      },
+    },
+    governance: {
+      reload() {
+        seen.push({
+          kind: 'reload',
+        });
+      },
+    },
+    createExecutionContext(callContext) {
+      return {
+        callContext,
+        host: {
+          tag: 'host',
+        },
+      };
+    },
+  });
+
+  const callContext = {
+    source: 'plugin',
+    conversationId: 'conv-1',
+  };
+  const toolResult = await executor.executeTool({
+    toolName: 'echo',
+    params: {
+      message: 'hello',
+    },
+    context: callContext,
+  });
+  const hookResult = await executor.invokeHook({
+    hookName: 'chat:before-model',
+    payload: {
+      value: 1,
+    },
+    context: callContext,
+  });
+  const routeResult = await executor.invokeRoute({
+    request: {
+      path: '/inspect/context/',
+      method: 'GET',
+      headers: {},
+      query: {},
+      body: null,
+    },
+    context: callContext,
+  });
+
+  await executor.reload();
+
+  assert.deepEqual(toolResult, {
+    echoed: 'hello',
+  });
+  assert.deepEqual(hookResult, {
+    action: 'pass',
+  });
+  assert.deepEqual(routeResult, {
+    status: 200,
+    body: {
+      ok: true,
+    },
+  });
+  assert.deepEqual(executor.listSupportedActions(), [
+    'health-check',
+    'reload',
+  ]);
+  assert.equal((await executor.checkHealth()).ok, true);
+  assert.deepEqual(seen, [
+    {
+      kind: 'tool',
+      params: {
+        message: 'hello',
+      },
+      callContext,
+    },
+    {
+      kind: 'hook',
+      payload: {
+        value: 1,
+      },
+      callContext,
+    },
+    {
+      kind: 'route',
+      request: {
+        path: '/inspect/context/',
+        method: 'GET',
+        headers: {},
+        query: {},
+        body: null,
+      },
+      callContext,
+    },
+    {
+      kind: 'reload',
+    },
+  ]);
+});
+
+test('plugin-sdk exposes shared author-side text helpers for builtin plugins', () => {
+  assert.equal(
+    readLatestUserTextFromMessages([
+      {
+        role: 'system',
+        content: 'system',
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: '第一句',
+          },
+          {
+            type: 'image',
+            imageUrl: 'https://example.com/a.png',
+          },
+          {
+            type: 'text',
+            text: '第二句',
+          },
+        ],
+      },
+    ]),
+    '第一句\n第二句',
+  );
+  assert.equal(
+    readLatestUserTextFromMessages([
+      {
+        role: 'assistant',
+        content: 'assistant',
+      },
+    ]),
+    '',
+  );
+  assert.equal(sanitizeOptionalText('  hello  '), 'hello');
+  assert.equal(sanitizeOptionalText(undefined), '');
+  assert.deepEqual(
+    readPromptBlockConfig({
+      limit: 4,
+      promptPrefix: '相关知识',
+    }),
+    {
+      limit: 4,
+      promptPrefix: '相关知识',
+    },
+  );
+  assert.deepEqual(parseCommaSeparatedNames(' alpha, beta ,, gamma '), [
+    'alpha',
+    'beta',
+    'gamma',
+  ]);
+  assert.equal(parseCommaSeparatedNames('   '), undefined);
+  assert.deepEqual(
+    filterAllowedToolNames(['beta', 'gamma'], ['alpha', 'beta', 'gamma']),
+    ['beta', 'gamma'],
+  );
+  assert.equal(filterAllowedToolNames(undefined, ['alpha']), null);
+  assert.equal(sameToolNames(['alpha', 'beta'], ['alpha', 'beta']), true);
+  assert.equal(sameToolNames(['alpha'], ['beta']), false);
+  assert.equal(clipContextText('  short text  '), 'short text');
+  assert.equal(clipContextText('a'.repeat(250)).length, 240);
+  assert.equal(textIncludesKeyword('请直接回复 #fast', '#fast'), true);
+  assert.equal(textIncludesKeyword('普通消息', ' #fast '), false);
+  assert.deepEqual(
+    resolvePromptBlockConfig({}, {
+      limit: MEMORY_CONTEXT_DEFAULT_LIMIT,
+      promptPrefix: MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
+    }),
+    {
+      limit: MEMORY_CONTEXT_DEFAULT_LIMIT,
+      promptPrefix: MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
+    },
+  );
+  assert.equal(
+    resolveProviderRouterShortCircuitReply('   '),
+    PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY,
+  );
+  assert.deepEqual(createPassHookResult(), {
+    action: 'pass',
+  });
+  assert.deepEqual(createSystemPromptMutateResult('你是写作助手'), {
+    action: 'mutate',
+    systemPrompt: '你是写作助手',
+  });
+});
+
+test('plugin-sdk exposes shared json object readers for author-side plugins', () => {
+  assert.deepEqual(
+    readJsonObjectValue({
+      ok: true,
+      nested: {
+        value: 1,
+      },
+    }),
+    {
+      ok: true,
+      nested: {
+        value: 1,
+      },
+    },
+  );
+  assert.equal(readJsonObjectValue(['not', 'object']), null);
+  assert.equal(readJsonObjectValue(null), null);
+});
+
+test('plugin-sdk exposes shared host result readers for conversation, memory and text generation', () => {
+  assert.deepEqual(
+    readConversationSummary({
+      id: 'conversation-1',
+      title: '标题',
+    }),
+    {
+      id: 'conversation-1',
+      title: '标题',
+    },
+  );
+  assert.deepEqual(
+    readConversationMessages([
+      {
+        role: 'user',
+        content: '你好',
+      },
+      {
+        role: 'assistant',
+        content: '世界',
+      },
+      {
+        ignored: true,
+      },
+    ]),
+    [
+      {
+        role: 'user',
+        content: '你好',
+      },
+      {
+        role: 'assistant',
+        content: '世界',
+      },
+    ],
+  );
+  assert.deepEqual(
+    readTextGenerationResult({
+      text: '生成标题',
+    }),
+    {
+      text: '生成标题',
+    },
+  );
+  assert.deepEqual(
+    readMemorySearchResults([
+      {
+        content: '喝咖啡',
+        category: 'habit',
+        createdAt: '2026-04-03T00:00:00.000Z',
+      },
+      {
+        category: 'note',
+      },
+      null,
+    ]),
+    [
+      {
+        content: '喝咖啡',
+        category: 'habit',
+        createdAt: '2026-04-03T00:00:00.000Z',
+      },
+      {
+        category: 'note',
+      },
+    ],
+  );
+  assert.equal(
+    readMemorySaveResultId({
+      id: 'memory-1',
+      content: '喝咖啡',
+    }),
+    'memory-1',
+  );
+  assert.equal(readMemorySaveResultId(null), null);
+  assert.deepEqual(
+    readConversationTitleConfig({
+      defaultTitle: 'New Chat',
+      maxMessages: 6,
+    }),
+    {
+      defaultTitle: 'New Chat',
+      maxMessages: 6,
+    },
+  );
+  assert.deepEqual(
+    resolveConversationTitleRuntimeConfig({}),
+    {
+      defaultTitle: CONVERSATION_TITLE_DEFAULT_TITLE,
+      maxMessages: CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES,
+    },
+  );
+  assert.deepEqual(
+    readProviderRouterConfig({
+      targetProviderId: 'anthropic',
+      targetModelId: 'claude-3-7-sonnet',
+      allowedToolNames: 'recall_memory',
+      shortCircuitKeyword: '#fast',
+      shortCircuitReply: '直接回复',
+    }),
+    {
+      targetProviderId: 'anthropic',
+      targetModelId: 'claude-3-7-sonnet',
+      allowedToolNames: 'recall_memory',
+      shortCircuitKeyword: '#fast',
+      shortCircuitReply: '直接回复',
+    },
+  );
+  assert.deepEqual(
+    readCurrentProviderInfo({
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+    }),
+    {
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+    },
+  );
+  assert.deepEqual(
+    readPersonaRouterConfig({
+      targetPersonaId: 'persona-writer',
+      switchKeyword: '#writer',
+    }),
+    {
+      targetPersonaId: 'persona-writer',
+      switchKeyword: '#writer',
+    },
+  );
+  assert.deepEqual(
+    readCurrentPersonaInfo({
+      personaId: 'persona-writer',
+    }),
+    {
+      personaId: 'persona-writer',
+    },
+  );
+  assert.deepEqual(
+    readPersonaSummaryInfo({
+      id: 'persona-writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+    }),
+    {
+      id: 'persona-writer',
+      prompt: '你是一个偏文学表达的写作助手。',
+    },
+  );
+  assert.deepEqual(
+    createProviderRouterShortCircuitResult({
+      reply: '直接回复',
+      currentProviderId: 'anthropic',
+      currentModelId: 'claude-3-7-sonnet',
+      requestProviderId: 'openai',
+      requestModelId: 'gpt-5.2',
+    }),
+    {
+      action: 'short-circuit',
+      assistantContent: '直接回复',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      reason: 'matched-short-circuit-keyword',
+    },
+  );
+  assert.deepEqual(
+    createProviderRouterMutateResult({
+      shouldRoute: true,
+      targetProviderId: 'anthropic',
+      targetModelId: 'claude-3-7-sonnet',
+      toolNames: ['recall_memory'],
+    }),
+    {
+      action: 'mutate',
+      providerId: 'anthropic',
+      modelId: 'claude-3-7-sonnet',
+      toolNames: ['recall_memory'],
+    },
+  );
+  assert.equal(
+    buildToolAuditStorageKey({
+      source: {
+        kind: 'plugin',
+        id: 'builtin.memory-tools',
+      },
+      pluginId: 'builtin.memory-tools',
+      tool: {
+        toolId: 'tool-1',
+        callName: 'save_memory',
+        name: 'save_memory',
+        description: '保存记忆',
+        parameters: {},
+      },
+    }),
+    'tool.builtin.memory-tools.save_memory.last-call',
+  );
+  assert.equal(CONVERSATION_TITLE_CONFIG_FIELDS.length, 2);
+  assert.equal(PROVIDER_ROUTER_CONFIG_FIELDS.length, 5);
+  assert.equal(PERSONA_ROUTER_CONFIG_FIELDS.length, 2);
+  assert.equal(MEMORY_CONTEXT_CONFIG_FIELDS[0].defaultValue, MEMORY_CONTEXT_DEFAULT_LIMIT);
+  assert.equal(
+    KB_CONTEXT_CONFIG_FIELDS[1].defaultValue,
+    KB_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  );
+  assert.equal(shouldGenerateConversationTitle(' New Chat ', 'New Chat'), true);
+  assert.equal(shouldGenerateConversationTitle('已生成标题', 'New Chat'), false);
+  assert.match(
+    buildConversationTitlePrompt([
+      {
+        role: 'user',
+        content: '我想做一个咖啡店会员系统',
+      },
+      {
+        role: 'assistant',
+        content: '可以先设计会员等级和积分规则',
+      },
+    ], 4),
+    /用户: 我想做一个咖啡店会员系统/,
+  );
+  assert.equal(
+    sanitizeConversationTitle('「咖啡店会员系统设计」\n补充解释'),
+    '咖啡店会员系统设计',
+  );
+});
+
+test('plugin-sdk exposes shared recorder summary builders for builtin observer plugins', () => {
+  assert.deepEqual(
+    buildAutomationRunSummary({
+      context: {
+        source: 'automation-hook',
+        userId: 'user-1',
+      },
+      automation: {
+        id: 'automation-1',
+        name: '日报推送',
+        trigger: {
+          type: 'cron',
+        },
+        actions: [],
+      },
+      status: 'success',
+      results: [{ ok: true }],
+    }),
+    {
+      automationId: 'automation-1',
+      automationName: '日报推送',
+      status: 'success',
+      triggerType: 'cron',
+      resultCount: 1,
+    },
+  );
+  assert.deepEqual(
+    buildMessageReceivedSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+      },
+      conversationId: 'conversation-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      message: {
+        role: 'user',
+        content: '你好',
+        parts: [{ type: 'text', text: '你好' }],
+      },
+    }),
+    {
+      conversationId: 'conversation-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      contentLength: 2,
+      partsCount: 1,
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildWaitingModelSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+      },
+      conversationId: 'conversation-1',
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      request: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        systemPrompt: '你是 Garlic Claw',
+        messages: [{ role: 'user', content: '你好' }],
+        availableTools: [{ name: 'recall_memory' }],
+      },
+    }),
+    {
+      conversationId: 'conversation-1',
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      messageCount: 1,
+      toolCount: 1,
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildConversationCreatedSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+      },
+      conversation: {
+        id: 'conversation-1',
+        title: '新会话',
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z',
+      },
+    }),
+    {
+      conversationId: 'conversation-1',
+      titleLength: 3,
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildMessageLifecycleSummary(
+      'message:updated',
+      'conversation-1',
+      {
+        id: 'message-1',
+        role: 'assistant',
+        content: '已更新',
+        parts: [{ type: 'text', text: '已更新' }],
+        status: 'completed',
+      },
+      'user-1',
+    ),
+    {
+      eventType: 'message:updated',
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      role: 'assistant',
+      contentLength: 3,
+      partsCount: 1,
+      status: 'completed',
+      userId: 'user-1',
+    },
+  );
+  assert.deepEqual(
+    buildResponseSendSummary({
+      context: {
+        source: 'chat-hook',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      responseSource: 'model',
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      assistantContent: '回复内容',
+      assistantParts: [{ type: 'text', text: '回复内容' }],
+      toolCalls: [{ toolCallId: 'tool-1', toolName: 'recall_memory', input: {} }],
+      toolResults: [{ toolCallId: 'tool-1', toolName: 'recall_memory', output: {} }],
+      sentAt: '2026-04-03T00:00:00.000Z',
+    }),
+    {
+      assistantMessageId: 'assistant-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      responseSource: 'model',
+      contentLength: 4,
+      toolCallCount: 1,
+      toolResultCount: 1,
+      sentAt: '2026-04-03T00:00:00.000Z',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+    },
+  );
+  assert.deepEqual(
+    buildPluginGovernanceSummary({
+      eventType: 'plugin:error',
+      pluginId: 'builtin.tool-audit',
+      runtimeKind: 'builtin',
+      deviceType: 'builtin',
+      occurredAt: '2026-04-03T00:00:00.000Z',
+      errorType: 'timeout',
+      errorMessage: 'tool timeout',
+    }),
+    {
+      eventType: 'plugin:error',
+      pluginId: 'builtin.tool-audit',
+      runtimeKind: 'builtin',
+      deviceType: 'builtin',
+      errorType: 'timeout',
+      errorMessage: 'tool timeout',
+      occurredAt: '2026-04-03T00:00:00.000Z',
+    },
+  );
+  assert.equal(
+    buildPluginGovernanceMessage({
+      eventType: 'plugin:unloaded',
+      pluginId: 'builtin.tool-audit',
+      runtimeKind: 'builtin',
+      deviceType: 'builtin',
+      errorType: null,
+      errorMessage: null,
+      occurredAt: '2026-04-03T00:00:00.000Z',
+    }),
+    '插件 builtin.tool-audit 已卸载',
+  );
+  assert.deepEqual(
+    buildToolAuditSummary({
+      context: {
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+      },
+      source: {
+        kind: 'plugin',
+        id: 'builtin.memory-tools',
+        label: '记忆工具',
+      },
+      tool: {
+        toolId: 'tool-1',
+        callName: 'save_memory',
+        name: 'save_memory',
+        description: '保存记忆',
+        parameters: {
+          content: {
+            type: 'string',
+            required: true,
+          },
+        },
+      },
+      pluginId: 'builtin.memory-tools',
+      runtimeKind: 'builtin',
+      params: {
+        content: '用户喜欢咖啡',
+      },
+      output: {
+        id: 'memory-1',
+      },
+    }),
+    {
+      sourceKind: 'plugin',
+      sourceId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory-tools',
+      runtimeKind: 'builtin',
+      toolId: 'tool-1',
+      callName: 'save_memory',
+      toolName: 'save_memory',
+      callSource: 'chat-tool',
+      paramKeys: ['content'],
+      outputKind: 'object',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+    },
+  );
+});
+
+test('plugin-sdk exposes shared observation persistence helper for builtin observer plugins', async () => {
+  const calls = [];
+  const summary = {
+    conversationId: 'conversation-1',
+    providerId: 'openai',
+  };
+
+  await persistPluginObservation(
+    {
+      async setStorage(key, value) {
+        calls.push({
+          kind: 'storage',
+          key,
+          value,
+        });
+        return value;
+      },
+      async writeLog(input) {
+        calls.push({
+          kind: 'log',
+          input,
+        });
+        return true;
+      },
+    },
+    'message.received.last-entry',
+    summary,
+    'info',
+    '会话 conversation-1 收到一条待处理用户消息',
+    'message:received:observed',
+  );
+
+  assert.deepEqual(calls, [
+    {
+      kind: 'storage',
+      key: 'message.received.last-entry',
+      value: summary,
+    },
+    {
+      kind: 'log',
+      input: {
+        level: 'info',
+        type: 'message:received:observed',
+        message: '会话 conversation-1 收到一条待处理用户消息',
+        metadata: summary,
+      },
+    },
+  ]);
+});
+
+test('plugin-sdk exposes json value kind summaries for author-side audit plugins', () => {
+  assert.equal(describeJsonValueKind(['alpha']), 'array');
+  assert.equal(describeJsonValueKind(null), 'null');
+  assert.equal(describeJsonValueKind({
+    ok: true,
+  }), 'object');
+  assert.equal(describeJsonValueKind('hello'), 'string');
+  assert.equal(describeJsonValueKind(false), 'boolean');
+});
+
+test('plugin-sdk exposes shared json param readers for author-side tool handlers', () => {
+  assert.equal(readRequiredStringParam({
+    name: 'alpha',
+  }, 'name'), 'alpha');
+  assert.equal(readOptionalStringParam({
+    name: 'alpha',
+  }, 'name'), 'alpha');
+  assert.equal(readOptionalStringParam({}, 'name'), null);
+  assert.deepEqual(readOptionalObjectParam({
+    nested: {
+      ok: true,
+    },
+  }, 'nested'), {
+    ok: true,
+  });
+  assert.equal(readOptionalObjectParam({}, 'nested'), undefined);
+
+  assert.throws(() => readRequiredStringParam({}, 'name'), /name 必填/);
+  assert.throws(() => readOptionalStringParam({
+    name: 1,
+  }, 'name'), /name 必须是字符串/);
+  assert.throws(() => readOptionalObjectParam({
+    nested: [],
+  }, 'nested'), /nested 必须是对象/);
+});
+
+test('plugin-sdk exposes shared author-side value readers for builtin and remote plugins', () => {
+  assert.equal(readRequiredTextValue('  hello  ', 'prompt'), 'hello');
+  assert.equal(normalizePositiveInteger(4.8, 2), 4);
+  assert.equal(normalizePositiveInteger(undefined, 2), 2);
+  assert.equal(readBooleanFlag(true, false), true);
+  assert.equal(readBooleanFlag('invalid', true), true);
+  assert.deepEqual(readSubagentDelegateConfig({
+    targetProviderId: 'openai',
+    targetModelId: 'gpt-5.2-mini',
+    allowedToolNames: 'recall_memory,save_memory',
+    maxSteps: 6,
+  }), {
+    targetProviderId: 'openai',
+    targetModelId: 'gpt-5.2-mini',
+    allowedToolNames: 'recall_memory,save_memory',
+    maxSteps: 6,
+  });
+  assert.deepEqual(
+    createSubagentRunSummary({
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      text: 'summary',
+      toolCalls: [],
+      toolResults: [],
+      finishReason: 'stop',
+    }),
+    {
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      text: 'summary',
+      toolCalls: [],
+      toolResults: [],
+      finishReason: 'stop',
+    },
+  );
+  assert.deepEqual(
+    buildSubagentDelegateRunParams({
+      config: {
+        targetProviderId: 'openai',
+        targetModelId: 'gpt-5.2-mini',
+        allowedToolNames: 'recall_memory,save_memory',
+        maxSteps: 6,
+      },
+      prompt: '请结合当前可用工具做一个简短总结',
+    }),
+    {
+      providerId: 'openai',
+      modelId: 'gpt-5.2-mini',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '请结合当前可用工具做一个简短总结',
+            },
+          ],
+        },
+      ],
+      toolNames: ['recall_memory', 'save_memory'],
+      maxSteps: 6,
+    },
+  );
+  assert.deepEqual(
+    buildSubagentDelegateTaskParams({
+      config: {
+        targetProviderId: 'openai',
+        targetModelId: 'gpt-5.2-mini',
+      },
+      prompt: '请后台处理这条任务',
+      shouldWriteBack: true,
+      conversationId: 'conversation-1',
+    }),
+    {
+      providerId: 'openai',
+      modelId: 'gpt-5.2-mini',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '请后台处理这条任务',
+            },
+          ],
+        },
+      ],
+      maxSteps: 4,
+      writeBack: {
+        target: {
+          type: 'conversation',
+          id: 'conversation-1',
+        },
+      },
+    },
+  );
+  assert.deepEqual(
+    createSubagentTaskSummaryResult({
+      id: 'task-1',
+      pluginId: 'builtin.subagent-delegate',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请后台处理这条任务',
+      writeBackStatus: 'pending',
+      requestedAt: '2026-04-03T00:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+    }),
+    {
+      id: 'task-1',
+      pluginId: 'builtin.subagent-delegate',
+      runtimeKind: 'builtin',
+      status: 'queued',
+      requestPreview: '请后台处理这条任务',
+      writeBackStatus: 'pending',
+      requestedAt: '2026-04-03T00:00:00.000Z',
+      startedAt: null,
+      finishedAt: null,
+    },
+  );
+  assert.equal(SUBAGENT_DELEGATE_CONFIG_FIELDS.length, 4);
+
+  assert.throws(() => readRequiredTextValue('', 'prompt'), /prompt 必须是非空字符串/);
+});
+
+test('plugin-sdk exposes shared automation tool param readers for author-side plugins', () => {
+  assert.deepEqual(
+    readPluginCreateAutomationParams({
+      name: '咖啡提醒',
+      triggerType: 'cron',
+      cronInterval: '5m',
+      actions: [
+        {
+          type: 'device_command',
+          plugin: 'builtin.memory-tools',
+          capability: 'save_memory',
+          params: {
+            category: 'habit',
+          },
+        },
+        {
+          type: 'ai_message',
+          message: '提醒喝咖啡',
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+          },
+        },
+      ],
+    }),
+    {
+      name: '咖啡提醒',
+      trigger: {
+        type: 'cron',
+        cron: '5m',
+      },
+      actions: [
+        {
+          type: 'device_command',
+          plugin: 'builtin.memory-tools',
+          capability: 'save_memory',
+          params: {
+            category: 'habit',
+          },
+        },
+        {
+          type: 'ai_message',
+          message: '提醒喝咖啡',
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+          },
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    createAutomationCreatedResult({
+      id: 'automation-1',
+      name: '咖啡提醒',
+    }),
+    {
+      created: true,
+      id: 'automation-1',
+      name: '咖啡提醒',
+    },
+  );
+  assert.deepEqual(
+    createAutomationListResult([
+      {
+        id: 'automation-1',
+        name: '咖啡提醒',
+        trigger: {
+          type: 'cron',
+          cron: '5m',
+        },
+        actions: [],
+        enabled: true,
+        lastRunAt: null,
+        createdAt: '2026-04-03T00:00:00.000Z',
+        updatedAt: '2026-04-03T00:00:00.000Z',
+      },
+    ]),
+    [
+      {
+        id: 'automation-1',
+        name: '咖啡提醒',
+        trigger: {
+          type: 'cron',
+          cron: '5m',
+        },
+        enabled: true,
+        lastRunAt: null,
+      },
+    ],
+  );
+  assert.deepEqual(
+    createAutomationEventDispatchResult({
+      event: 'coffee.ready',
+      matchedAutomationIds: ['automation-1'],
+    }),
+    {
+      event: 'coffee.ready',
+      matchedAutomationIds: ['automation-1'],
+    },
+  );
+  assert.deepEqual(createAutomationToggleResult(null), {
+    error: '未找到自动化',
+  });
+  assert.deepEqual(createAutomationRunResult(null), {
+    error: '未找到自动化或已禁用',
+  });
+  assert.deepEqual(
+    createRouteInspectorContextResponse({
+      plugin: {
+        id: 'builtin.route-inspector',
+      },
+      user: {
+        id: 'user-1',
+      },
+      conversation: {
+        id: 'conversation-1',
+        title: '咖啡偏好总结',
+      },
+      messageCount: 1,
+    }),
+    {
+      status: 200,
+      body: {
+        plugin: {
+          id: 'builtin.route-inspector',
+        },
+        user: {
+          id: 'user-1',
+        },
+        conversation: {
+          id: 'conversation-1',
+          title: '咖啡偏好总结',
+        },
+        messageCount: 1,
+      },
+    },
+  );
+  assert.deepEqual(createMemorySaveToolResult('memory-1'), {
+    saved: true,
+    id: 'memory-1',
+  });
+  assert.deepEqual(
+    createMemoryRecallToolResult([
+      {
+        content: '记住我喜欢喝咖啡',
+        category: 'preference',
+        createdAt: '2026-03-27T09:00:00.000Z',
+      },
+    ]),
+    {
+      count: 1,
+      memories: [
+        {
+          content: '记住我喜欢喝咖啡',
+          category: 'preference',
+          date: '2026-03-27',
+        },
+      ],
+    },
+  );
+  assert.deepEqual(createCurrentTimeToolResult('2026-04-03T10:00:00.000Z'), {
+    time: '2026-04-03T10:00:00.000Z',
+  });
+  assert.deepEqual(
+    createSystemInfoToolResult({
+      platform: 'win32',
+      nodeVersion: 'v22.0.0',
+      uptime: 123,
+      memoryUsage: 456,
+    }),
+    {
+      platform: 'win32',
+      nodeVersion: 'v22.0.0',
+      uptime: 123,
+      memoryUsage: 456,
+    },
+  );
+  assert.deepEqual(createCalculateSuccessResult('2 + 3 * 4', 14), {
+    expression: '2 + 3 * 4',
+    result: 14,
+  });
+  assert.deepEqual(createCalculateErrorResult('表达式计算失败'), {
+    error: '表达式计算失败',
+  });
+  assert.equal(MEMORY_TOOLS_MANIFEST_TOOLS.length, 2);
+  assert.equal(MEMORY_TOOLS_MANIFEST_TOOLS[0].name, 'save_memory');
+  assert.equal(CORE_TOOLS_MANIFEST_TOOLS.length, 3);
+  assert.equal(CORE_TOOLS_MANIFEST_TOOLS[2].name, 'calculate');
+  assert.equal(AUTOMATION_TOOLS_MANIFEST_TOOLS.length, 5);
+  assert.equal(AUTOMATION_TOOLS_MANIFEST_TOOLS[0].name, 'create_automation');
+  assert.equal(SUBAGENT_DELEGATE_MANIFEST_TOOLS.length, 2);
+  assert.equal(SUBAGENT_DELEGATE_MANIFEST_TOOLS[1].name, 'delegate_summary_background');
+  assert.equal(ROUTE_INSPECTOR_MANIFEST_ROUTES.length, 1);
+  assert.equal(ROUTE_INSPECTOR_MANIFEST_ROUTES[0].path, 'inspect/context');
+  assert.equal(AUTOMATION_RECORDER_MANIFEST.id, 'builtin.automation-recorder');
+  assert.equal(MESSAGE_ENTRY_RECORDER_MANIFEST.hooks[0].filter.message.regex, '^/');
+  assert.equal(MESSAGE_LIFECYCLE_RECORDER_MANIFEST.hooks.length, 4);
+  assert.equal(RESPONSE_RECORDER_MANIFEST.hooks[0].name, 'response:after-send');
+  assert.equal(PLUGIN_GOVERNANCE_RECORDER_MANIFEST.hooks[2].name, 'plugin:error');
+  assert.equal(TOOL_AUDIT_MANIFEST.hooks[0].name, 'tool:after-call');
+  assert.equal(CONVERSATION_TITLE_MANIFEST.config.fields[0].key, 'defaultTitle');
+  assert.equal(MEMORY_CONTEXT_MANIFEST.permissions[0], 'memory:read');
+  assert.equal(KB_CONTEXT_MANIFEST.hooks[0].name, 'chat:before-model');
+  assert.equal(PROVIDER_ROUTER_MANIFEST.config.fields[0].key, 'targetProviderId');
+  assert.equal(PERSONA_ROUTER_MANIFEST.config.fields[0].key, 'targetPersonaId');
+  assert.equal(CRON_HEARTBEAT_MANIFEST.crons[0].cron, '10s');
+  assert.equal(CORE_TOOLS_MANIFEST.tools[1].name, 'getSystemInfo');
+  assert.equal(MEMORY_TOOLS_MANIFEST.permissions[1], 'memory:write');
+  assert.equal(AUTOMATION_TOOLS_MANIFEST.tools[4].name, 'run_automation');
+  assert.equal(SUBAGENT_DELEGATE_MANIFEST.config.fields[3].key, 'maxSteps');
+  assert.equal(ROUTE_INSPECTOR_MANIFEST.routes[0].path, 'inspect/context');
+
+  assert.throws(
+    () => readPluginCreateAutomationParams({
+      name: '咖啡提醒',
+      triggerType: 'invalid',
+      actions: [],
+    }),
+    /triggerType 必须是 cron\/manual\/event/,
+  );
+  assert.throws(
+    () => readPluginCreateAutomationParams({
+      name: '咖啡提醒',
+      triggerType: 'cron',
+      cronInterval: '5m',
+      actions: [
+        {
+          type: 'ai_message',
+          target: {
+            type: 'user',
+          },
+        },
+      ],
+    }),
+    /actions\[0\]\.target.type 当前只支持 conversation/,
   );
 });
 

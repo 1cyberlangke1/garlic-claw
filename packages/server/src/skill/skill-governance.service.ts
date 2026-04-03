@@ -23,7 +23,7 @@ interface SkillGovernanceFile {
   skills: Record<string, SkillGovernanceInfo>;
 }
 
-const SKILL_GOVERNANCE_CURRENT_VERSION = 1;
+const SKILL_GOVERNANCE_CURRENT_VERSION = 2;
 
 @Injectable()
 export class SkillGovernanceService {
@@ -54,7 +54,6 @@ export class SkillGovernanceService {
   ): SkillGovernanceInfo {
     const current = this.getSkillGovernance(skillId);
     const next: SkillGovernanceInfo = {
-      enabled: patch.enabled ?? current.enabled,
       trustLevel: patch.trustLevel ?? current.trustLevel,
     };
     this.settings.skills[skillId] = next;
@@ -92,7 +91,6 @@ export class SkillGovernanceService {
 
 function buildDefaultGovernance(): SkillGovernanceInfo {
   return {
-    enabled: true,
     trustLevel: 'prompt-only',
   };
 }
@@ -125,9 +123,8 @@ function readGovernanceInfo(value: unknown): SkillGovernanceInfo | null {
     return null;
   }
 
-  return typeof object.enabled === 'boolean' && isTrustLevel(object.trustLevel)
+  return isTrustLevel(object.trustLevel)
     ? {
-        enabled: object.enabled,
         trustLevel: object.trustLevel,
       }
     : null;

@@ -39,9 +39,9 @@
           <p>其中 {{ restrictedCount }} 个还声明了工具 allow / deny 策略。</p>
         </article>
         <article class="overview-card warning">
-          <span class="overview-label">全局禁用</span>
-          <strong>{{ disabledCount }}</strong>
-          <p>被禁用的 skill 不能再加入任何会话，但目录资产仍可见。</p>
+          <span class="overview-label">本地脚本信任</span>
+          <strong>{{ scriptCapableCount }}</strong>
+          <p>这些 skill 在当前会话激活后，允许通过统一 skill 工具执行本地脚本。</p>
         </article>
       </div>
     </section>
@@ -92,12 +92,6 @@
             <div class="meta-row">
               <span class="meta-chip">{{ skill.id }}</span>
               <span class="meta-chip">{{ skill.sourceKind === 'project' ? '项目' : '用户' }}</span>
-              <span
-                class="meta-chip"
-                :class="skill.governance.enabled ? 'governance-enabled' : 'governance-disabled'"
-              >
-                {{ skill.governance.enabled ? '全局启用' : '全局禁用' }}
-              </span>
               <span class="meta-chip">{{ trustLevelLabel(skill.governance.trustLevel) }}</span>
               <span class="meta-chip">{{ skill.assets.length }} 个资产</span>
               <span v-if="isSkillActive(skill.id)" class="meta-chip active-chip">当前会话已激活</span>
@@ -105,9 +99,6 @@
             <p v-if="skill.tags.length > 0" class="detail-line">标签: {{ skill.tags.join(' · ') }}</p>
             <p class="detail-line">入口: {{ skill.entryPath }}</p>
             <p v-if="skill.assets.length > 0" class="detail-line">资产: {{ skill.assets.map((asset) => asset.path).join(' · ') }}</p>
-            <p v-if="!skill.governance.enabled" class="detail-line warning-text">
-              当前 skill 已被全局禁用，不能再激活到新的会话。
-            </p>
           </article>
         </div>
       </section>
@@ -162,35 +153,16 @@
           <p class="detail-line">{{ selectedSkill.description }}</p>
           <section class="governance-panel">
             <div class="meta-row">
-              <span
-                class="meta-chip"
-                :class="selectedSkill.governance.enabled ? 'governance-enabled' : 'governance-disabled'"
-              >
-                {{ selectedSkill.governance.enabled ? '全局启用' : '全局禁用' }}
-              </span>
               <span class="meta-chip">{{ trustLevelLabel(selectedSkill.governance.trustLevel) }}</span>
               <span class="meta-chip">{{ selectedSkill.assets.length }} 个资产</span>
             </div>
             <p class="detail-line muted-text">
               {{ trustLevelDescription(selectedSkill.governance.trustLevel) }}
             </p>
+            <p class="detail-line muted-text">
+              `skill` 的统一在线启用 / 停用已收敛到工具治理页里的 `Active Skill Packages` source，这里只保留单个 skill 的 trust level。
+            </p>
             <div class="governance-actions">
-              <button
-                type="button"
-                class="toggle-button"
-                :disabled="selectedSkillBusy || selectedSkill.governance.enabled"
-                @click="setSelectedSkillEnabled(true)"
-              >
-                {{ selectedSkillBusy ? '更新中...' : '全局启用' }}
-              </button>
-              <button
-                type="button"
-                class="toggle-button secondary"
-                :disabled="selectedSkillBusy || !selectedSkill.governance.enabled"
-                @click="setSelectedSkillEnabled(false)"
-              >
-                {{ selectedSkillBusy ? '更新中...' : '全局禁用' }}
-              </button>
               <label class="trust-level-field">
                 <span>信任等级</span>
                 <select
@@ -274,7 +246,7 @@ const {
   activeCount,
   restrictedCount,
   packageCount,
-  disabledCount,
+  scriptCapableCount,
   selectSkill,
   toggleSkill,
   clearConversationSkills,
@@ -319,33 +291,15 @@ function isToggleDisabled(skill: SkillDetail): boolean {
     return true
   }
 
-  if (!isSkillActive(skill.id) && !skill.governance.enabled) {
-    return true
-  }
-
   return mutatingSkillId.value === skill.id
 }
 
 function skillToggleLabel(skill: SkillDetail): string {
-  if (!skill.governance.enabled && !isSkillActive(skill.id)) {
-    return '已禁用'
-  }
-
   if (mutatingSkillId.value === skill.id) {
     return '更新中...'
   }
 
-  return isSkillActive(skill.id) ? '停用' : '激活'
-}
-
-function setSelectedSkillEnabled(enabled: boolean) {
-  if (!selectedSkill.value) {
-    return
-  }
-
-  void updateSkillGovernance(selectedSkill.value.id, {
-    enabled,
-  })
+  return isSkillActive(skill.id) ? '移除' : '激活'
 }
 
 function setSelectedSkillTrustLevel(event: Event) {

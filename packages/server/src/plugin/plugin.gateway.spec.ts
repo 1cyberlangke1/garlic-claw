@@ -10,9 +10,11 @@ import { PluginGateway } from './plugin.gateway';
 
 describe('PluginGateway', () => {
   const pluginRuntime = {
+    callHost: jest.fn(),
+  };
+  const pluginRuntimeOrchestrator = {
     registerPlugin: jest.fn(),
     unregisterPlugin: jest.fn(),
-    callHost: jest.fn(),
     touchPluginHeartbeat: jest.fn(),
   };
 
@@ -55,6 +57,7 @@ describe('PluginGateway', () => {
     jest.clearAllMocks();
     gateway = new PluginGateway(
       pluginRuntime as never,
+      pluginRuntimeOrchestrator as never,
       jwtService as never,
       configService as never,
     );
@@ -82,7 +85,7 @@ describe('PluginGateway', () => {
       },
     );
 
-    expect(pluginRuntime.registerPlugin).toHaveBeenCalledWith(
+    expect(pluginRuntimeOrchestrator.registerPlugin).toHaveBeenCalledWith(
       expect.objectContaining({
         manifest: {
           ...remoteManifest,
@@ -100,7 +103,7 @@ describe('PluginGateway', () => {
       }),
     );
     expect(
-      pluginRuntime.registerPlugin.mock.calls[0]?.[0].transport.listSupportedActions(),
+      pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0].transport.listSupportedActions(),
     ).toEqual([
       'health-check',
       'reload',
@@ -150,7 +153,7 @@ describe('PluginGateway', () => {
       },
     );
 
-    expect(pluginRuntime.registerPlugin).toHaveBeenCalledWith(
+    expect(pluginRuntimeOrchestrator.registerPlugin).toHaveBeenCalledWith(
       expect.objectContaining({
         manifest: {
           id: 'remote.pc-host',
@@ -183,7 +186,7 @@ describe('PluginGateway', () => {
     };
 
     await expect(
-      (gateway as any).handlePluginMessage(
+      (gateway as any).handleMessage(
         ws,
         conn,
         {
@@ -194,7 +197,7 @@ describe('PluginGateway', () => {
       ),
     ).resolves.toBeUndefined();
 
-    expect(pluginRuntime.registerPlugin).not.toHaveBeenCalled();
+    expect(pluginRuntimeOrchestrator.registerPlugin).not.toHaveBeenCalled();
     expect(JSON.parse(ws.send.mock.calls[0]?.[0] ?? '{}')).toEqual({
       type: WS_TYPE.ERROR,
       action: 'protocol_error',
@@ -452,7 +455,7 @@ describe('PluginGateway', () => {
       manifest: remoteManifest,
       lastHeartbeatAt: 0,
     };
-    pluginRuntime.touchPluginHeartbeat.mockResolvedValue(undefined);
+    pluginRuntimeOrchestrator.touchPluginHeartbeat.mockResolvedValue(undefined);
 
     await (gateway as any).handleMessage(
       ws,
@@ -464,7 +467,7 @@ describe('PluginGateway', () => {
       },
     );
 
-    expect(pluginRuntime.touchPluginHeartbeat).toHaveBeenCalledWith('remote.pc-host');
+    expect(pluginRuntimeOrchestrator.touchPluginHeartbeat).toHaveBeenCalledWith('remote.pc-host');
     expect(conn.lastHeartbeatAt).toBeGreaterThan(0);
     expect(ws.send).toHaveBeenCalledWith(
       JSON.stringify({
@@ -526,7 +529,7 @@ describe('PluginGateway', () => {
       },
     );
 
-    const registerCall = pluginRuntime.registerPlugin.mock.calls[0]?.[0];
+    const registerCall = pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0];
     const resultPromise = registerCall.transport.executeTool({
       toolName: 'list_directory',
       params: {
@@ -607,7 +610,7 @@ describe('PluginGateway', () => {
       },
     );
 
-    const registerCall = pluginRuntime.registerPlugin.mock.calls[0]?.[0];
+    const registerCall = pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0];
     const resultPromise = registerCall.transport.invokeRoute({
       request: {
         path: 'inspect/context',
@@ -732,7 +735,7 @@ describe('PluginGateway', () => {
 
     await (gateway as any).handleDisconnect(oldConnection);
 
-    expect(pluginRuntime.unregisterPlugin).not.toHaveBeenCalled();
+    expect(pluginRuntimeOrchestrator.unregisterPlugin).not.toHaveBeenCalled();
     expect((gateway as any).connectionByPluginId.get('remote.pc-host')).toBe(newConnection);
   });
 
@@ -762,7 +765,7 @@ describe('PluginGateway', () => {
         type: WS_TYPE.AUTH,
         action: WS_ACTION.AUTH_FAIL,
         payload: {
-          error: '只有管理员可以接入远程插件',
+          error: '只有管理员或专用远程插件令牌可以接入远程插件',
         },
       }),
     );
@@ -793,7 +796,7 @@ describe('PluginGateway', () => {
       },
     );
 
-    const registerCall = pluginRuntime.registerPlugin.mock.calls[0]?.[0];
+    const registerCall = pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0];
     const resultPromise = registerCall.transport.executeTool({
       toolName: 'list_directory',
       params: {

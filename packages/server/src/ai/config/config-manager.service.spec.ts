@@ -24,7 +24,7 @@ describe('ConfigManagerService', () => {
     const service = new ConfigManagerService();
     service.upsertProvider('spec-openai', {
       name: 'Spec OpenAI',
-      mode: 'compatible',
+      mode: 'protocol',
       driver: 'openai',
       apiKey: 'spec-key',
       baseUrl: 'https://spec.example.com/v1',
@@ -109,7 +109,7 @@ describe('ConfigManagerService', () => {
             {
               id: 'legacy-openai',
               name: 'Legacy OpenAI',
-              mode: 'compatible',
+              mode: 'protocol',
               driver: 'openai',
               apiKey: 12345,
               baseUrl: 67890,
@@ -119,7 +119,7 @@ describe('ConfigManagerService', () => {
             {
               id: 999,
               name: 'Broken Provider',
-              mode: 'official',
+              mode: 'catalog',
               driver: 'openai',
               models: ['should-drop'],
             },
@@ -172,7 +172,7 @@ describe('ConfigManagerService', () => {
       {
         id: 'legacy-openai',
         name: 'Legacy OpenAI',
-        mode: 'compatible',
+        mode: 'protocol',
         driver: 'openai',
         models: ['legacy-model'],
       },
@@ -228,7 +228,7 @@ describe('ConfigManagerService', () => {
       {
         id: 'legacy-openai',
         name: 'Legacy OpenAI',
-        mode: 'compatible',
+        mode: 'protocol',
         driver: 'openai',
         models: ['legacy-model'],
       },
@@ -255,5 +255,137 @@ describe('ConfigManagerService', () => {
         },
       },
     });
+  });
+
+  it('infers missing provider mode from catalog driver and baseUrl during migration', () => {
+    fs.mkdirSync(path.dirname(tempSettingsPath), { recursive: true });
+    fs.writeFileSync(
+      tempSettingsPath,
+      JSON.stringify(
+        {
+          version: 2,
+          updatedAt: '2026-03-31T10:00:00.000Z',
+          providers: [
+            {
+              id: 'groq',
+              name: 'Groq',
+              driver: 'groq',
+              apiKey: 'groq-key',
+              baseUrl: 'https://api.groq.com/openai/v1',
+              defaultModel: 'llama-3.3-70b-versatile',
+              models: ['llama-3.3-70b-versatile'],
+            },
+            {
+              id: 'openai',
+              name: 'OpenAI',
+              driver: 'openai',
+              apiKey: 'openai-key',
+              baseUrl: 'https://api.openai.com/v1',
+              defaultModel: 'gpt-4o-mini',
+              models: ['gpt-4o-mini'],
+            },
+            {
+              id: 'proxy-openai',
+              name: 'Proxy OpenAI',
+              driver: 'openai',
+              apiKey: 'proxy-key',
+              baseUrl: 'https://proxy.example.com/v1',
+              defaultModel: 'gpt-4.1',
+              models: ['gpt-4.1'],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
+
+    process.env[envKey] = tempSettingsPath;
+
+    const service = new ConfigManagerService();
+
+    expect(service.listProviders()).toEqual([
+      expect.objectContaining({
+        id: 'groq',
+        mode: 'catalog',
+      }),
+      expect.objectContaining({
+        id: 'openai',
+        mode: 'catalog',
+      }),
+      expect.objectContaining({
+        id: 'proxy-openai',
+        mode: 'protocol',
+      }),
+    ]);
+  });
+
+  it('rewrites legacy official and compatible provider modes during migration', () => {
+    fs.mkdirSync(path.dirname(tempSettingsPath), { recursive: true });
+    fs.writeFileSync(
+      tempSettingsPath,
+      JSON.stringify(
+        {
+          version: 2,
+          updatedAt: '2026-03-31T10:00:00.000Z',
+          providers: [
+            {
+              id: 'openai',
+              name: 'OpenAI',
+              mode: 'official',
+              driver: 'openai',
+              apiKey: 'openai-key',
+              baseUrl: 'https://api.openai.com/v1',
+              defaultModel: 'gpt-4o-mini',
+              models: ['gpt-4o-mini'],
+            },
+            {
+              id: 'proxy-openai',
+              name: 'Proxy OpenAI',
+              mode: 'compatible',
+              driver: 'openai',
+              apiKey: 'proxy-key',
+              baseUrl: 'https://proxy.example.com/v1',
+              defaultModel: 'gpt-4.1',
+              models: ['gpt-4.1'],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
+
+    process.env[envKey] = tempSettingsPath;
+
+    const service = new ConfigManagerService();
+
+    expect(service.listProviders()).toEqual([
+      expect.objectContaining({
+        id: 'openai',
+        mode: 'catalog',
+      }),
+      expect.objectContaining({
+        id: 'proxy-openai',
+        mode: 'protocol',
+      }),
+    ]);
+
+    const persisted = JSON.parse(fs.readFileSync(tempSettingsPath, 'utf-8')) as {
+      providers: Array<{ id: string; mode: string }>;
+    };
+
+    expect(persisted.providers).toEqual([
+      expect.objectContaining({
+        id: 'openai',
+        mode: 'catalog',
+      }),
+      expect.objectContaining({
+        id: 'proxy-openai',
+        mode: 'protocol',
+      }),
+    ]);
   });
 });

@@ -16,13 +16,12 @@ describe('SkillGovernanceService', () => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
 
-  it('defaults to enabled prompt-only governance for undiscovered entries and persists updates', () => {
+  it('defaults to prompt-only governance for undiscovered entries and persists updates', () => {
     const service = new SkillGovernanceService({
       settingsPath,
     });
 
     expect(service.getSkillGovernance('project/planner')).toEqual({
-      enabled: true,
       trustLevel: 'prompt-only',
     });
 
@@ -31,7 +30,6 @@ describe('SkillGovernanceService', () => {
         trustLevel: 'local-script',
       }),
     ).toEqual({
-      enabled: true,
       trustLevel: 'local-script',
     });
 
@@ -39,26 +37,29 @@ describe('SkillGovernanceService', () => {
       settingsPath,
     });
     expect(reloaded.getSkillGovernance('project/planner')).toEqual({
-      enabled: true,
       trustLevel: 'local-script',
     });
   });
 
-  it('can disable a skill without losing the persisted trust level', () => {
-    const service = new SkillGovernanceService({
+  it('ignores legacy enabled fields and keeps the persisted trust level', () => {
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        version: 1,
+        skills: {
+          'project/planner': {
+            enabled: false,
+            trustLevel: 'asset-read',
+          },
+        },
+      }, null, 2),
+      'utf-8',
+    );
+
+    const reloaded = new SkillGovernanceService({
       settingsPath,
     });
-
-    service.updateSkillGovernance('project/planner', {
-      trustLevel: 'asset-read',
-    });
-
-    expect(
-      service.updateSkillGovernance('project/planner', {
-        enabled: false,
-      }),
-    ).toEqual({
-      enabled: false,
+    expect(reloaded.getSkillGovernance('project/planner')).toEqual({
       trustLevel: 'asset-read',
     });
   });
@@ -70,7 +71,6 @@ describe('SkillGovernanceService', () => {
         version: 1,
         skills: {
           'project/planner': {
-            enabled: false,
             trustLevel: 'asset-read',
           },
           'project/broken-enabled': {
@@ -78,7 +78,6 @@ describe('SkillGovernanceService', () => {
             trustLevel: 'prompt-only',
           },
           'project/broken-trust': {
-            enabled: true,
             trustLevel: 'shell-access',
           },
           'project/not-object': 'bad',
@@ -92,15 +91,12 @@ describe('SkillGovernanceService', () => {
     });
 
     expect(service.getSkillGovernance('project/planner')).toEqual({
-      enabled: false,
       trustLevel: 'asset-read',
     });
     expect(service.getSkillGovernance('project/broken-enabled')).toEqual({
-      enabled: true,
       trustLevel: 'prompt-only',
     });
     expect(service.getSkillGovernance('project/broken-trust')).toEqual({
-      enabled: true,
       trustLevel: 'prompt-only',
     });
   });

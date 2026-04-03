@@ -29,7 +29,6 @@ vi.mock('../composables/use-skill-management', () => ({
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'local-script',
         },
         assets: [
@@ -57,7 +56,6 @@ vi.mock('../composables/use-skill-management', () => ({
           deny: [],
         },
         governance: {
-          enabled: true,
           trustLevel: 'local-script',
         },
         assets: [
@@ -85,7 +83,6 @@ vi.mock('../composables/use-skill-management', () => ({
         deny: [],
       },
       governance: {
-        enabled: true,
         trustLevel: 'local-script',
       },
       assets: [
@@ -114,7 +111,6 @@ vi.mock('../composables/use-skill-management', () => ({
             deny: [],
           },
           governance: {
-            enabled: true,
             trustLevel: 'local-script',
           },
         },
@@ -124,7 +120,7 @@ vi.mock('../composables/use-skill-management', () => ({
     activeCount: computed(() => 1),
     restrictedCount: computed(() => 1),
     packageCount: computed(() => 1),
-    disabledCount: computed(() => 0),
+    scriptCapableCount: computed(() => 1),
     mutatingSkillId: ref(null),
     selectSkill: vi.fn(),
     toggleSkill: vi.fn(),
