@@ -18,6 +18,36 @@
   - `默认不再为扩展继续新增核心专用 Prisma schema`
 - 其余长期目标大多还处在“contract 已立住，但 core 还没有减到位”的阶段，不能算完成
 
+## 真正重构执行清单
+
+- [ ] `plugin-runtime.service.ts`
+  - 删除按 hook 名字平铺的入口样板
+  - 收口广播、mutation、subagent 三类重复调度骨架
+  - 文件目标：`678 -> <= 520`
+- [ ] `plugin-runtime-host.facade.ts`
+  - 删除本地大 `if` 分支里的重复读参和重复 `toJsonValue(...)`
+  - 改成按 host capability family 调度
+  - 文件目标：`284 -> 180 ~ 220`
+- [ ] `plugin-runtime-transport.facade.ts`
+  - 合并 `tool / route / hook` 三条链路重复的超时、失败记录、slot 包装
+  - 文件目标：`306 -> 220 ~ 240`
+- [ ] `plugin.gateway.ts`
+  - 只保留 socket 鉴权、连接生命周期、runtime 调度
+  - 文件目标：`364 -> 260 ~ 300`
+- [ ] `plugin.controller.ts`
+  - 只保留 HTTP adapter，不继续堆 query/body 归一化和治理转手样板
+  - 文件目标：`313 -> 220 ~ 260`
+- [ ] `chat-message-generation.service.ts`
+  - 删除消息生成主链里重复的插件前后 Hook、任务启动、错误写回分支
+  - 文件目标：`436 -> 320 ~ 360`
+- [ ] `chat-task.service.ts`
+  - 删除 streaming / finish / stopped 终态分支重复控制流
+  - 文件目标：`360 -> 280 ~ 320`
+- [ ] 每完成一刀都要同时满足：
+  - `packages/server/src` 总量继续下降
+  - `packages/server/src/plugin` 或 `packages/server/src/chat` 总量继续下降
+  - 不能靠新增新的 `core helper / facade / service` 横向转移复杂度
+
 ## 北极星
 
 - [ ] 把 Garlic Claw 收敛成 `内核像 C 一样简单, SDK 像 C++ 有丰富的语法糖`
@@ -275,6 +305,9 @@
 - 这次 gateway payload 切片后，`packages/server/src/plugin` 已继续从 `14182` 降到 `13926`，`packages/server/src` 已继续从 `29659` 降到 `29403`
 - `PluginService` 这层 read/write thin shell 已压成稳定 API 代理层，删除重复转手样板后 `plugin.service.ts` 已从 `314` 降到 `122`
 - 这次 thin shell 切片后，`packages/server/src/plugin` 已继续从 `13926` 降到 `13734`，`packages/server/src` 已继续从 `29403` 降到 `29255`
+- `plugin-runtime.service.ts` 已从“按 hook 名字平铺的大入口壳”压成共享骨架驱动的 runtime 入口，`678 -> 435`
+- `plugin-runtime-host.facade.ts` 已从单条大 `if` 链改成按能力族分发；结构更清楚了，但文件体量还没压到目标区间，后面还要继续收
+- 这次 runtime/host 切片后，`packages/server/src/plugin` 已继续从 `13734` 降到 `13528`，`packages/server/src` 已继续从 `29255` 降到 `29049`
 - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
 - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
 - 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
@@ -282,8 +315,8 @@
 ## 最新行数快照
 
 - 2026-04-03 当前口径：
-  - `packages/server/src`: `29255`
-  - `packages/server/src/plugin`: `13734`
+  - `packages/server/src`: `29049`
+  - `packages/server/src/plugin`: `13528`
   - `packages/server/src/chat`: `3862`
   - `packages/plugin-sdk/src/index.ts`: `5063`
   - `packages/server/src/plugin/plugin.service.ts`: `122`
@@ -327,17 +360,17 @@
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `29255`
-- `packages/server/src/plugin`: `13734`
+- `packages/server/src`: `29049`
+- `packages/server/src/plugin`: `13528`
 - `packages/server/src/chat`: `3862`
 - 当前最大热点：
-  - `packages/server/src/plugin/plugin-runtime.service.ts`: `678`
+  - `packages/server/src/plugin/plugin-runtime.service.ts`: `435`
   - `packages/server/src/plugin/plugin.gateway.ts`: `364`
   - `packages/server/src/plugin/plugin.controller.ts`: `313`
+  - `packages/server/src/plugin/plugin-runtime-host.facade.ts`: `321`
   - `packages/server/src/plugin/plugin-runtime-transport.facade.ts`: `306`
   - `packages/server/src/chat/chat-message-generation.service.ts`: `436`
   - `packages/server/src/chat/chat-task.service.ts`: `360`
-  - `packages/server/src/plugin/plugin-runtime-host.facade.ts`: `284`
   - `packages/server/src/plugin/plugin.service.ts`: `122`
 
 ## 当前下一步
