@@ -9,6 +9,10 @@ import type {
   ToolAfterCallHookPayload,
   ToolBeforeCallHookPayload,
 } from '@garlic-claw/shared';
+import {
+  buildPluginRouteInvocationRequest,
+  buildPluginToolHookPayload,
+} from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { assertRuntimeRecordEnabled, getRuntimeRecordOrThrow } from './plugin-runtime-dispatch.helpers';
@@ -23,7 +27,6 @@ import {
 } from './plugin-runtime-manifest.helpers';
 import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
 import { readRuntimeTimeoutMs } from './plugin-runtime-input.helpers';
-import { normalizeRoutePath } from '@garlic-claw/shared';
 import { PluginService } from './plugin.service';
 
 type RuntimeTransportRecord = {
@@ -83,33 +86,14 @@ export class PluginRuntimeTransportFacade {
     const record = getRuntimeRecordOrThrow(input.records, input.pluginId);
     assertRuntimeRecordEnabled(record, input.context);
     const targetTool = findManifestToolOrThrow(record.manifest, input.toolName);
-    const lifecyclePayload = {
-      context: {
-        ...input.context,
-      },
-      source: {
-        kind: 'plugin' as const,
-        id: input.pluginId,
-        label: record.manifest.name || input.pluginId,
-        pluginId: input.pluginId,
-        runtimeKind: record.runtimeKind,
-      },
+    const lifecyclePayload = buildPluginToolHookPayload({
       pluginId: input.pluginId,
       runtimeKind: record.runtimeKind,
-      tool: {
-        toolId: `plugin:${input.pluginId}:${targetTool.name}`,
-        callName: record.runtimeKind === 'builtin'
-          ? targetTool.name
-          : `${input.pluginId}__${targetTool.name}`,
-        ...targetTool,
-        parameters: {
-          ...targetTool.parameters,
-        },
-      },
-      params: {
-        ...input.params,
-      },
-    };
+      label: record.manifest.name || input.pluginId,
+      tool: targetTool,
+      context: input.context,
+      params: input.params,
+    });
     let toolParams = lifecyclePayload.params;
 
     if (!input.skipLifecycleHooks) {
@@ -199,10 +183,10 @@ export class PluginRuntimeTransportFacade {
       dispatchPluginErrorHook: input.dispatchPluginErrorHook,
       execute: () => Promise.resolve(
         record.transport.invokeRoute({
-          request: {
-            ...input.request,
-            path: normalizeRoutePath(route.path),
-          },
+          request: buildPluginRouteInvocationRequest({
+            request: input.request,
+            path: route.path,
+          }),
           context: input.context,
         }),
       ),

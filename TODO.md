@@ -249,17 +249,25 @@
   - builtin `conversation-title / memory-context / kb-context / provider-router / persona-router / cron-heartbeat / core-tools / memory-tools / automation-tools / subagent-delegate / route-inspector` 的 full manifest 顶层继续外移后，`packages/server/src/plugin` 已继续从 `15839` 降到 `15683`，`packages/server/src` 已继续从 `31355` 降到 `31199`
   - 当前 `packages/server/src/plugin/builtin/*.plugin.ts` 实现文件里，已经不再直接手写 manifest 顶层；剩余手写 manifest 主要只在 transport spec 里做测试夹具
   - `plugin runtime` 的 Hook mutation/Host facade/gateway payload 这批适配层样板继续压缩，并把 host method/source/permission 静态契约表与通用 JSON reader/type-guard 外移到 `shared` 后，`packages/server/src/plugin` 已继续从 `15683` 降到 `15475`，`packages/server/src` 已继续从 `31199` 降到 `30991`
-  - `plugin runtime` 的 clone / hook mutation / validation 这三层纯协议 helper 已整体外移到 `shared`，`toJsonValue(...)` 也已提升到 `packages/shared/src/types/json.ts`
-  - 这次大刀后，`packages/server/src/plugin` 已继续从 `15475` 降到 `14498`，`packages/server/src` 已继续从 `30991` 降到 `29964`
-  - `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
-  - `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
-  - 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
+- `plugin runtime` 的 clone / hook mutation / validation 这三层纯协议 helper 已整体外移到 `shared`，`toJsonValue(...)` 也已提升到 `packages/shared/src/types/json.ts`
+- 这次大刀后，`packages/server/src/plugin` 已继续从 `15475` 降到 `14498`，`packages/server/src` 已继续从 `30991` 降到 `29964`
+- `plugin runtime` 的 conversation session 状态模型与 payload sync 纯逻辑已继续外移到 `shared`，`packages/server/src/plugin/plugin-runtime-session.helpers.ts` 已从 `337` 降到 `170`
+- 这次 session 切片后，`packages/server/src/plugin` 已继续从 `14498` 降到 `14327`，`packages/server/src` 已继续从 `29964` 降到 `29793`
+- `plugin tool` 的命名/描述规则与 tool hook payload 组装已继续外移到 `shared`，`plugin-runtime-transport.facade.ts` 已从 `322` 降到 `306`
+- 这次 tool transport 切片后，`packages/server/src/plugin` 已继续从 `14327` 降到 `14311`，`packages/server/src` 已继续从 `29793` 降到 `29788`
+- `plugin runtime manifest` 的 self info / lifecycle info / error payload / descriptor 查找纯投影已继续外移到 `shared`，`plugin-runtime-manifest.helpers.ts` 已从 `176` 降到 `47`
+- 这次 manifest 切片后，`packages/server/src/plugin` 已继续从 `14311` 降到 `14182`，`packages/server/src` 已继续从 `29788` 降到 `29659`
+- `plugin gateway` 的 payload reader / envelope parser / host call context reader 已整体外移到 `shared`，`plugin-gateway-payload.helpers.ts` 已从 `256` 降到 `0`
+- 这次 gateway payload 切片后，`packages/server/src/plugin` 已继续从 `14182` 降到 `13926`，`packages/server/src` 已继续从 `29659` 降到 `29403`
+- `builtin-plugin.types.ts` 里无人消费的 builtin 别名层已继续删薄，治理 handler 已改成复用 SDK transport governance type
+- `smoke:http` 暴露的 chat/plugin 循环注入缺口已补齐，当前后端启动烟测重新通过
+- 这说明当前已经不只是 `core` 内部横向拆分，但还需要继续找下一批能外移到 `SDK / adapter` 的重复面
 
 ## 最新行数快照
 
 - 2026-04-03 当前口径：
-  - `packages/server/src`: `29964`
-  - `packages/server/src/plugin`: `14498`
+  - `packages/server/src`: `29403`
+  - `packages/server/src/plugin`: `13926`
   - `packages/server/src/chat`: `3862`
   - `packages/plugin-sdk/src/index.ts`: `5063`
 
@@ -302,8 +310,8 @@
 
 ## 当前 core 行数快照
 
-- `packages/server/src`: `29964`
-- `packages/server/src/plugin`: `14498`
+- `packages/server/src`: `29403`
+- `packages/server/src/plugin`: `13926`
 - `packages/server/src/chat`: `3862`
 - `packages/server/src/chat/chat.controller.ts`: `228`
 - `packages/server/src/chat/chat-message.helpers.ts`: `152`
@@ -338,8 +346,10 @@
 - `packages/server/src/plugin/plugin-runtime-subagent.facade.ts`: `217`
 - `packages/server/src/plugin/plugin-runtime-message-hooks.facade.ts`: `95`
 - `packages/server/src/plugin/plugin-runtime-inbound-hooks.facade.ts`: `192`
-- `packages/server/src/plugin/plugin-runtime-session.helpers.ts`: `337`
-- `packages/server/src/plugin/plugin-runtime-transport.facade.ts`: `322`
+- `packages/server/src/plugin/plugin-runtime-session.helpers.ts`: `170`
+- `packages/server/src/plugin/plugin-runtime-transport.facade.ts`: `306`
+- `packages/server/src/plugin/plugin-runtime-manifest.helpers.ts`: `47`
+- `packages/server/src/plugin/plugin-gateway-payload.helpers.ts`: `0`（已移至 `packages/shared/src/plugin-gateway-payload.helpers.ts`）
 - `packages/server/src/plugin/plugin-host.service.ts`: `126`
 
 ## 当前下一步
@@ -377,7 +387,29 @@
 - [x] 这一次切片已确认满足“core 净减少、复杂度外移到 shared”：
   - `packages/server/src` 非空生产代码：`30991 -> 29964`
   - `packages/server/src/plugin` 非空生产代码：`15475 -> 14498`
-- [ ] 下一候选优先查看 `plugin-runtime-session.helpers.ts` 与 `plugin-runtime-transport.facade.ts`，继续判断哪些 session snapshot / route request normalization / transport protocol 纯函数还可外移到 `shared / adapter`
+- [x] 本轮已把 `plugin-runtime-session.helpers.ts` 里的会话状态模型外移到 `shared`：
+  - `ConversationSessionRecord`
+  - `createConversationSessionRecord(...)`
+  - `getActiveConversationSession(...)`
+  - `getOwnedConversationSession(...)`
+  - `getActiveConversationSessionInfo(...)`
+  - `extendConversationSession(...)`
+  - `finishOwnedConversationSession(...)`
+  - `toConversationSessionInfo(...)`
+  - `recordConversationSessionMessage(...)`
+  - `createConversationSessionMessageReceivedPayload(...)`
+  - `syncConversationSessionMessageReceivedPayload(...)`
+  - `listActiveConversationSessionInfos(...)`
+- [x] 这一轮 session 状态模型外移已再次满足“core 净减少、复杂度外移到 shared”：
+  - `packages/server/src` 非空生产代码：`29964 -> 29793`
+  - `packages/server/src/plugin` 非空生产代码：`14498 -> 14327`
+- [x] 本轮已把 `plugin tool` 的命名/描述规则与 tool hook payload 组装外移到 `shared`
+- [x] 本轮已把 `plugin-runtime-manifest.helpers.ts` 里的 self info / lifecycle info / error payload / descriptor 查找纯投影外移到 `shared`
+- [x] 本轮已把 `plugin-gateway-payload.helpers.ts` 整体外移到 `shared`
+- [x] 这三刀继续满足“core 净减少、复杂度外移到 shared”：
+  - `packages/server/src` 非空生产代码：`29793 -> 29403`
+  - `packages/server/src/plugin` 非空生产代码：`14327 -> 13926`
+- [ ] 下一候选优先查看 `plugin-runtime-host.facade.ts`，继续判断哪些 host self info / result projection / host payload reader 纯函数还可外移到 `shared / adapter`
 - [x] 本轮已删掉 `builtin-plugin.types.ts` 里无人消费的 builtin 别名层，并让治理 handler 直接复用 SDK type
 - [x] 本轮已把 `chat-message-completion.service.ts` 的 vision fallback metadata 重复写回并回统一内部持久化入口
 - [x] 本轮已把 `chat-task.service.ts` 的 streaming/stopped 重复控制流并回统一内部流程

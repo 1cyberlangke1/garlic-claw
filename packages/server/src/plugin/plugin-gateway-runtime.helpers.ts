@@ -9,7 +9,7 @@ import {
 import {
   extractPluginCallContext,
   readPluginRouteResponseOrThrow,
-} from './plugin-gateway-payload.helpers';
+} from '@garlic-claw/shared';
 import {
   readPluginGatewayTimeoutMs,
   sendPluginGatewayRequest,

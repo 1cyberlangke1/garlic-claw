@@ -1,25 +1,26 @@
 import {
   CONNECTION_SCOPED_PLUGIN_HOST_METHODS,
-  isJsonObjectValue,
-  isJsonValue,
-  isStringRecord,
   PLUGIN_HOST_METHOD_VALUES,
   PLUGIN_INVOCATION_SOURCE_VALUES,
-  readUnknownObject,
-} from '@garlic-claw/shared';
+} from './types/plugin';
 import type {
   AuthPayload,
   DeviceType,
   ExecuteErrorPayload,
   HostResultPayload,
-  JsonValue,
   PluginCallContext,
   PluginHostMethod,
   PluginRouteResponse,
   RouteResultPayload,
   WsMessage,
-} from '@garlic-claw/shared';
-import type { JsonObject } from '../common/types/json-value';
+} from './types/plugin';
+import type { JsonObject, JsonValue } from './types/json';
+import {
+  isJsonObjectValue,
+  isJsonValue,
+  isStringRecord,
+  readUnknownObject,
+} from './types/json';
 
 export interface ValidatedRegisterPayload {
   manifest: Record<string, unknown>;
@@ -276,11 +277,6 @@ export function isPluginHostMethod(value: unknown): value is PluginHostMethod {
     && (PLUGIN_HOST_METHOD_VALUES as readonly string[]).includes(value);
 }
 
-/**
- * 从远程请求负载中提取插件调用上下文。
- * @param payload 任意协议负载
- * @returns 上下文；不存在时返回 undefined
- */
 export function extractPluginCallContext(
   payload: unknown,
 ): PluginCallContext | undefined {

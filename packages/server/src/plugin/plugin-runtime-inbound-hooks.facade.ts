@@ -1,10 +1,12 @@
 import {
+  ConversationSessionRecord,
   applyChatBeforeModelHookResult,
   applyChatBeforeModelMutation,
   applyMessageReceivedHookResult,
   applyMessageReceivedMutation,
   cloneChatBeforeModelRequest,
   cloneMessageReceivedHookPayload,
+  syncConversationSessionMessageReceivedPayload,
 } from '@garlic-claw/shared';
 import type {
   ChatBeforeModelHookPayload,
@@ -24,8 +26,6 @@ import {
 } from './plugin-runtime-hook-result.helpers';
 import {
   prepareDispatchableConversationSessionMessageReceivedHook,
-  syncConversationSessionMessageReceivedPayload,
-  type ConversationSessionRecord,
 } from './plugin-runtime-session.helpers';
 
 type RuntimeInboundHookRecord = {

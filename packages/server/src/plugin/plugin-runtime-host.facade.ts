@@ -1,5 +1,6 @@
 import { PLUGIN_HOST_METHOD_PERMISSION_MAP } from '@garlic-claw/shared';
 import type {
+  ConversationSessionRecord,
   HostCallPayload,
   PluginActionName,
   PluginCallContext,
@@ -18,7 +19,6 @@ import {
   getConversationSessionInfoForRuntime,
   keepConversationSessionForRuntime,
   startConversationSessionForRuntime,
-  type ConversationSessionRecord,
 } from './plugin-runtime-session.helpers';
 import {
   buildRuntimePluginSelfInfo,

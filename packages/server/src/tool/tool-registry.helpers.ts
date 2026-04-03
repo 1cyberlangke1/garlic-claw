@@ -4,6 +4,10 @@ import type {
   ToolOverview,
   ToolSourceInfo,
 } from '@garlic-claw/shared';
+import {
+  buildPluginToolCallName,
+  buildPluginToolDescription,
+} from '@garlic-claw/shared';
 import type {
   ToolProviderTool,
   ToolRecord,
@@ -27,9 +31,11 @@ export function buildToolId(input: ToolProviderTool): string {
 
 export function buildToolCallName(input: ToolProviderTool): string {
   if (input.source.kind === 'plugin') {
-    return input.runtimeKind === 'builtin'
-      ? input.name
-      : `${input.source.id}__${input.name}`;
+    return buildPluginToolCallName({
+      pluginId: input.source.id,
+      runtimeKind: input.runtimeKind ?? 'remote',
+      toolName: input.name,
+    });
   }
   if (input.source.kind === 'skill') {
     return `skill__${input.name.replace(/\./g, '__')}`;
@@ -40,9 +46,11 @@ export function buildToolCallName(input: ToolProviderTool): string {
 
 export function buildToolDescription(input: ToolProviderTool): string {
   if (input.source.kind === 'plugin') {
-    return input.runtimeKind === 'builtin'
-      ? input.description
-      : `[插件：${input.source.id}] ${input.description}`;
+    return buildPluginToolDescription({
+      pluginId: input.source.id,
+      runtimeKind: input.runtimeKind ?? 'remote',
+      description: input.description,
+    });
   }
   if (input.source.kind === 'skill') {
     return `[Skill] ${input.description}`;

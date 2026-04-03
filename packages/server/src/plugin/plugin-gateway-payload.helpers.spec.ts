@@ -15,7 +15,7 @@ import {
   readRegisterPayload,
   readRouteResultPayload,
   readUnknownObject,
-} from './plugin-gateway-payload.helpers';
+} from '@garlic-claw/shared';
 
 describe('plugin-gateway-payload.helpers', () => {
   it('reads gateway envelope and basic payload shapes safely', () => {

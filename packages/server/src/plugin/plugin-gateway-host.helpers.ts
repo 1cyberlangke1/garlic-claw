@@ -15,7 +15,7 @@ import {
   isConnectionScopedHostMethod,
   readHostCallPayload,
   type PluginGatewayInboundMessage,
-} from './plugin-gateway-payload.helpers';
+} from '@garlic-claw/shared';
 import {
   readPluginGatewayRequestId,
   sendPluginGatewayMessage,

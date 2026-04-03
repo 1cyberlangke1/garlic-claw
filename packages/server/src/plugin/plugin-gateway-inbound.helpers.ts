@@ -2,7 +2,7 @@ import type { WebSocket } from 'ws';
 import {
   readPluginGatewayMessage,
   type PluginGatewayInboundMessage,
-} from './plugin-gateway-payload.helpers';
+} from '@garlic-claw/shared';
 import {
   sendPluginGatewayMessage,
   sendPluginGatewayProtocolError,

@@ -1,7 +1,12 @@
+import {
+  finishOwnedConversationSession,
+  listActiveConversationSessionInfos,
+} from '@garlic-claw/shared';
 import type {
   PluginActionName,
   PluginCallContext,
   PluginCapability,
+  ConversationSessionRecord,
   PluginConversationSessionInfo,
   PluginManifest,
   PluginRuntimePressureSnapshot,
@@ -14,11 +19,6 @@ import {
   listSupportedPluginActions,
 } from './plugin-runtime-record.helpers';
 import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
-import {
-  finishOwnedConversationSession,
-  listActiveConversationSessionInfos,
-  type ConversationSessionRecord,
-} from './plugin-runtime-session.helpers';
 
 interface RuntimeGovernanceRecord {
   manifest: PluginManifest;

@@ -765,7 +765,7 @@ describe('PluginGateway', () => {
         type: WS_TYPE.AUTH,
         action: WS_ACTION.AUTH_FAIL,
         payload: {
-          error: '只有管理员可以接入远程插件',
+          error: '只有管理员或专用远程插件令牌可以接入远程插件',
         },
       }),
     );

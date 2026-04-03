@@ -9,7 +9,7 @@ import type {
   PendingRequest,
   PluginGatewayPayload,
 } from './plugin-gateway-transport.helpers';
-import type { ValidatedRegisterPayload } from './plugin-gateway-payload.helpers';
+import type { ValidatedRegisterPayload } from '@garlic-claw/shared';
 import type { PluginTransport } from './plugin-runtime.types';
 
 export interface PluginGatewayLifecycleConnection {

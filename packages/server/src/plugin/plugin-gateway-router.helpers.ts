@@ -13,7 +13,7 @@ import {
   readRouteResultPayload,
   type PluginGatewayInboundMessage,
   type ValidatedRegisterPayload,
-} from './plugin-gateway-payload.helpers';
+} from '@garlic-claw/shared';
 import {
   sendPluginGatewayProtocolError,
   sendPluginGatewayMessage,

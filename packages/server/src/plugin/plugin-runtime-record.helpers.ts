@@ -1,4 +1,5 @@
 import type {
+  ConversationSessionRecord,
   PluginActionName,
   PluginManifest,
   PluginRuntimePressureSnapshot,
@@ -9,9 +10,6 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import type { JsonObject } from '../common/types/json-value';
-import type {
-  ConversationSessionRecord,
-} from './plugin-runtime-session.helpers';
 import {
   collectDisabledConversationSessionIds,
 } from './plugin-runtime-scope';

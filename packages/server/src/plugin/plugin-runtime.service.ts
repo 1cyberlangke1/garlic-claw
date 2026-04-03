@@ -4,6 +4,7 @@ import type {
   ChatAfterModelHookPayload,
   ChatBeforeModelHookPayload,
   ChatWaitingModelHookPayload,
+  ConversationSessionRecord,
   ConversationCreatedHookPayload,
   HostCallPayload,
   PluginConversationSessionInfo,
@@ -55,9 +56,6 @@ import {
   collectConversationSessionIdsOwnedByPlugin,
   refreshPluginRuntimeRecordGovernance,
 } from './plugin-runtime-record.helpers';
-import {
-  type ConversationSessionRecord,
-} from './plugin-runtime-session.helpers';
 import {
   type PluginGovernanceSnapshot,
 } from './plugin.service';

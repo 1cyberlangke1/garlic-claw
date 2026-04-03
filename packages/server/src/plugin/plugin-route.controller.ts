@@ -17,7 +17,7 @@ import { AuthScopeGuard } from '../auth/guards/auth-scope.guard';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import type { PluginCallContext, PluginRouteRequest } from '@garlic-claw/shared';
-import { readUnknownObject } from './plugin-gateway-payload.helpers';
+import { readUnknownObject } from '@garlic-claw/shared';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { normalizeRoutePath } from '@garlic-claw/shared';
 
