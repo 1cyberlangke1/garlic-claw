@@ -1,5 +1,16 @@
-import type { PluginCallContext } from '@garlic-claw/shared';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  buildConversationMessageSummaries,
+  toConversationSummary,
+  toMemorySummary,
+  toUserSummary,
+  type PluginCallContext,
+} from '@garlic-claw/shared';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import { KbService } from '../kb/kb.service';
@@ -7,18 +18,55 @@ import { MemoryService } from '../memory/memory.service';
 import { PersonaService } from '../persona/persona.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  buildConversationMessageSummaries,
   readHostNumber,
   readHostString,
   requireHostConversationId,
-  requireHostConversationRecord,
   requireHostString,
   requireHostUserId,
-  requireHostUserSummary,
-  toConversationSummary,
-  toMemorySummary,
-} from './plugin-host.helpers';
+} from './plugin-host-request.codec';
 
+export function requireHostConversationRecord(input: {
+  conversation: {
+    id: string;
+    title: string;
+    userId: string;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
+  context: PluginCallContext;
+  method: string;
+}) {
+  if (!input.conversation) {
+    const conversationId = input.context.conversationId ?? 'unknown';
+    throw new NotFoundException(`Conversation not found: ${conversationId}`);
+  }
+
+  if (
+    input.context.userId
+    && input.conversation.userId !== input.context.userId
+  ) {
+    throw new ForbiddenException(`${input.method} 无权访问当前会话`);
+  }
+
+  return input.conversation;
+}
+export function requireHostUserSummary(input: {
+  user: {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
+  userId: string;
+}) {
+  if (!input.user) {
+    throw new NotFoundException(`User not found: ${input.userId}`);
+  }
+
+  return toUserSummary(input.user);
+}
 /**
  * Host API 的会话与用户上下文面。
  *

@@ -24,9 +24,15 @@ describe('ChatMessageGenerationService', () => {
     getCurrentPersona: jest.fn(),
   };
 
+  const runMessageReceivedHooks = jest.fn();
+  const runMessageCreatedHooks = jest.fn();
   const pluginRuntime = {
-    runMessageReceivedHooks: jest.fn(),
-    runMessageCreatedHooks: jest.fn(),
+    runMessageReceivedHooks,
+    runMessageCreatedHooks,
+    runHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
+      hookName === 'message:received'
+        ? runMessageReceivedHooks(input)
+        : runMessageCreatedHooks(input)),
   };
 
   const modelInvocation = {
@@ -44,11 +50,15 @@ describe('ChatMessageGenerationService', () => {
     startTask: jest.fn(),
     stopTask: jest.fn(),
   };
-
-  const completionService = {
+  const mutationService = {
+    createMessage: jest.fn(),
+    createHookedMessage: jest.fn(),
+    createPendingAssistantMessage: jest.fn(),
     completeShortCircuitedAssistant: jest.fn(),
     applyVisionFallbackMetadata: jest.fn(),
-    applyVisionFallbackMetadataToAssistant: jest.fn(),
+    markAssistantStopped: jest.fn(),
+    resetAssistantForRetry: jest.fn(),
+    markAssistantError: jest.fn(),
   };
 
   const skillCommands = {
@@ -67,6 +77,14 @@ describe('ChatMessageGenerationService', () => {
       isDefault: true,
     });
     skillCommands.tryHandleMessage.mockResolvedValue(null);
+    mutationService.markAssistantStopped.mockResolvedValue(undefined);
+    mutationService.resetAssistantForRetry.mockResolvedValue({
+      id: 'assistant-message-1',
+      status: 'pending',
+      provider: 'openai',
+      model: 'gpt-5.2',
+    });
+    mutationService.markAssistantError.mockResolvedValue(undefined);
     service = new ChatMessageGenerationService(
       prisma as never,
       chatService as never,
@@ -76,7 +94,7 @@ describe('ChatMessageGenerationService', () => {
       modelInvocation as never,
       orchestration as never,
       chatTaskService as never,
-      completionService as never,
+      mutationService as never,
       skillCommands as never,
     );
   });
@@ -127,13 +145,10 @@ describe('ChatMessageGenerationService', () => {
       status: 'stopped',
     });
 
-    expect(prisma.message.update).toHaveBeenCalledWith({
-      where: { id: 'assistant-message-1' },
-      data: {
-        status: 'stopped',
-        error: null,
-      },
-    });
+    expect(mutationService.markAssistantStopped).toHaveBeenCalledWith(
+      'assistant-message-1',
+      'conversation-1',
+    );
   });
 
   it('rejects retry when provider and model are both missing', async () => {

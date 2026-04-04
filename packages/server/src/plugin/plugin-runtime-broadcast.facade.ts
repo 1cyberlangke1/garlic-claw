@@ -3,9 +3,9 @@ import type {
   PluginHookName,
   PluginManifest,
 } from '@garlic-claw/shared';
+import { invokeDispatchableHooks } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import type { JsonValue } from '../common/types/json-value';
-import { invokeDispatchableHooks } from './plugin-runtime-dispatch.helpers';
 
 @Injectable()
 export class PluginRuntimeBroadcastFacade {

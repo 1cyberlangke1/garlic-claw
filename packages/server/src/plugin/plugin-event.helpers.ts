@@ -1,61 +1,33 @@
 import type {
+  JsonObject,
+  ListPluginEventOptions,
   PluginEventLevel,
-  PluginEventListResult,
-  PluginHealthSnapshot,
 } from '@garlic-claw/shared';
 import { BadRequestException } from '@nestjs/common';
-import type { JsonObject } from '../common/types/json-value';
-import { parseNullablePluginJsonObject } from './plugin-persistence.helpers';
 import { PrismaService } from '../prisma/prisma.service';
 
-export interface ListPluginEventOptions {
-  limit?: number;
-  level?: PluginEventLevel;
+export function readPluginEventQuery(raw: {
+  limit?: string;
+  level?: string;
   type?: string;
   keyword?: string;
   cursor?: string;
-}
+}): ListPluginEventOptions {
+  const limit = raw.limit ? Number(raw.limit) : undefined;
+  if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
+    throw new BadRequestException('limit 必须是正整数');
+  }
 
-export type NormalizedPluginEventOptions =
-  Required<Pick<ListPluginEventOptions, 'limit'>>
-  & Omit<ListPluginEventOptions, 'limit'>;
-
-export function buildPluginHealthSnapshot(input: {
-  plugin: {
-    status: string;
-    healthStatus: string | null;
-    failureCount: number;
-    consecutiveFailures: number;
-    lastError: string | null;
-    lastErrorAt: Date | null;
-    lastSuccessAt: Date | null;
-    lastCheckedAt: Date | null;
-  };
-}): PluginHealthSnapshot {
-  return {
-    status: input.plugin.status === 'offline'
-      ? 'offline'
-      : parsePluginHealthStatus(input.plugin.healthStatus),
-    failureCount: input.plugin.failureCount,
-    consecutiveFailures: input.plugin.consecutiveFailures,
-    lastError: input.plugin.lastError,
-    lastErrorAt: input.plugin.lastErrorAt?.toISOString() ?? null,
-    lastSuccessAt: input.plugin.lastSuccessAt?.toISOString() ?? null,
-    lastCheckedAt: input.plugin.lastCheckedAt?.toISOString() ?? null,
-  };
-}
-
-export function normalizePluginEventOptions(
-  options: ListPluginEventOptions,
-): NormalizedPluginEventOptions {
-  const limit = Math.min(200, Math.max(1, options.limit ?? 20));
+  if (raw.level && !['info', 'warn', 'error'].includes(raw.level)) {
+    throw new BadRequestException('level 必须是 info / warn / error');
+  }
 
   return {
-    limit,
-    ...(options.level ? { level: options.level } : {}),
-    ...(options.type?.trim() ? { type: options.type.trim() } : {}),
-    ...(options.keyword?.trim() ? { keyword: options.keyword.trim() } : {}),
-    ...(options.cursor?.trim() ? { cursor: options.cursor.trim() } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+    ...(raw.level ? { level: raw.level as PluginEventLevel } : {}),
+    ...(raw.type?.trim() ? { type: raw.type.trim() } : {}),
+    ...(raw.keyword?.trim() ? { keyword: raw.keyword.trim() } : {}),
+    ...(raw.cursor?.trim() ? { cursor: raw.cursor.trim() } : {}),
   };
 }
 
@@ -77,138 +49,6 @@ export async function resolvePluginEventCursor(input: {
     id: event.id,
     createdAt: event.createdAt,
   };
-}
-
-export function buildPluginEventWhere(input: {
-  pluginId: string;
-  options: NormalizedPluginEventOptions;
-  cursorEvent: { id: string; createdAt: Date } | null;
-}): Record<string, unknown> {
-  const where: Record<string, unknown> = {
-    pluginId: input.pluginId,
-  };
-
-  if (input.options.level) {
-    where.level = input.options.level;
-  }
-  if (input.options.type) {
-    where.type = input.options.type;
-  }
-  if (input.options.keyword) {
-    where.OR = [
-      {
-        type: {
-          contains: input.options.keyword,
-        },
-      },
-      {
-        message: {
-          contains: input.options.keyword,
-        },
-      },
-      {
-        metadataJson: {
-          contains: input.options.keyword,
-        },
-      },
-    ];
-  }
-  if (input.cursorEvent) {
-    where.AND = [
-      {
-        OR: [
-          {
-            createdAt: {
-              lt: input.cursorEvent.createdAt,
-            },
-          },
-          {
-            createdAt: input.cursorEvent.createdAt,
-            id: {
-              lt: input.cursorEvent.id,
-            },
-          },
-        ],
-      },
-    ];
-  }
-
-  return where;
-}
-
-export function buildPluginEventFindManyInput(input: {
-  pluginId: string;
-  options: NormalizedPluginEventOptions;
-  cursorEvent: { id: string; createdAt: Date } | null;
-}) {
-  return {
-    where: buildPluginEventWhere(input),
-    orderBy: [
-      {
-        createdAt: 'desc' as const,
-      },
-      {
-        id: 'desc' as const,
-      },
-    ],
-    take: input.options.limit + 1,
-  };
-}
-
-export function parsePluginEventLevel(raw: string): PluginEventLevel {
-  switch (raw) {
-    case 'warn':
-    case 'error':
-      return raw;
-    default:
-      return 'info';
-  }
-}
-
-export function buildPluginEventListResult(input: {
-  events: Array<{
-    id: string;
-    type: string;
-    level: string;
-    message: string;
-    metadataJson: string | null;
-    createdAt: Date;
-  }>;
-  limit: number;
-  onWarn?: (message: string) => void;
-}): PluginEventListResult {
-  const hasMore = input.events.length > input.limit;
-  const items = (hasMore ? input.events.slice(0, input.limit) : input.events).map((event) => ({
-    id: event.id,
-    type: event.type,
-    level: parsePluginEventLevel(event.level),
-    message: event.message,
-    metadata: parseNullablePluginJsonObject({
-      raw: event.metadataJson,
-      label: 'plugin.nullableJsonObject',
-      onWarn: input.onWarn,
-    }),
-    createdAt: event.createdAt.toISOString(),
-  }));
-
-  return {
-    items,
-    nextCursor: hasMore ? input.events[input.limit]?.id ?? null : null,
-  };
-}
-
-export function parsePluginHealthStatus(
-  raw: string | null,
-): PluginHealthSnapshot['status'] {
-  switch (raw) {
-    case 'healthy':
-    case 'degraded':
-    case 'error':
-    case 'offline':
-      return raw;
-    default:
-      return 'unknown';
-  }
 }
 
 export async function createPluginEvent(input: {

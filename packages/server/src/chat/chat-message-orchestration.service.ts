@@ -10,6 +10,12 @@ import type {
   PluginCallContext,
   PluginResponseSource,
 } from '@garlic-claw/shared';
+import {
+  createChatModelLifecycleContext,
+  filterChatAvailableTools,
+  mergeChatSystemPrompts,
+  normalizeAssistantMessageOutput,
+} from '@garlic-claw/shared';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { createStepLimit } from '../ai/sdk-adapter';
 import type { ModelConfig } from '../ai/types/provider.types';
@@ -21,10 +27,7 @@ import {
   type PreparedChatModelInvocation,
 } from './chat-model-invocation.service';
 import type { ChatRuntimeMessage } from './chat-message-session';
-import { createChatLifecycleContext } from './chat-message-common.helpers';
-import { normalizeAssistantMessageOutput } from './message-parts';
 import type { CompletedChatTaskResult } from './chat-task.service';
-import { ChatMessageResponseHooksService } from './chat-message-response-hooks.service';
 
 /** 模型前 Hook 继续执行结果。 */
 export interface AppliedChatBeforeModelContinueResult {
@@ -64,7 +67,6 @@ export class ChatMessageOrchestrationService {
     private readonly toolRegistry: ToolRegistryService,
     private readonly modelInvocation: ChatModelInvocationService,
     private readonly skillSession: SkillSessionService,
-    private readonly responseHooks: ChatMessageResponseHooksService,
   ) {}
 
   buildStreamFactory(input: {
@@ -79,15 +81,18 @@ export class ChatMessageOrchestrationService {
     tools: ChatToolSet;
   }) {
     return (abortSignal: AbortSignal) => {
-      const hookContext = createChatLifecycleContext({
+      const hookContext = createChatModelLifecycleContext({
         userId: input.userId,
         conversationId: input.conversationId,
-        activeProviderId: input.activeProviderId,
-        activeModelId: input.activeModelId,
         activePersonaId: input.activePersonaId,
+        modelConfig: {
+          providerId: input.activeProviderId,
+          id: input.activeModelId,
+        },
       });
 
-      void this.pluginRuntime.runChatWaitingModelHooks({
+      void this.pluginRuntime.runBroadcastHook({
+        hookName: 'chat:waiting-model',
         context: hookContext,
         payload: {
           context: hookContext,
@@ -130,39 +135,41 @@ export class ChatMessageOrchestrationService {
     const skillContext = await this.skillSession.getConversationSkillContext(
       input.conversationId,
     );
-    const hookContext = createChatLifecycleContext({
+    const hookContext = createChatModelLifecycleContext({
       userId: input.userId,
       conversationId: input.conversationId,
-      activeProviderId: input.modelConfig.providerId,
-      activeModelId: input.modelConfig.id,
       activePersonaId: input.activePersonaId,
+      modelConfig: input.modelConfig,
     });
     const toolSelection = await this.toolRegistry.prepareToolSelection({
-      context: {
+      context: createChatModelLifecycleContext({
         source: 'chat-tool',
         userId: input.userId,
         conversationId: input.conversationId,
-        activeProviderId: input.modelConfig.providerId,
-        activeModelId: input.modelConfig.id,
         activePersonaId: input.activePersonaId,
-      },
+        modelConfig: input.modelConfig,
+      }),
     });
-    const availableTools = filterAvailableTools(
+    const availableTools = filterChatAvailableTools(
       toolSelection.availableTools,
       skillContext.allowedToolNames,
       skillContext.deniedToolNames,
     );
-    const hookResult = await this.pluginRuntime.runChatBeforeModelHooks({
+    const hookResult = await this.pluginRuntime.runHook({
+      hookName: 'chat:before-model',
       context: hookContext,
       payload: {
-        context: hookContext,
-        request: {
-          providerId: input.modelConfig.providerId,
-          modelId: input.modelConfig.id,
-          systemPrompt: mergeSystemPrompts(input.systemPrompt, skillContext.systemPrompt),
-          messages: input.messages,
-          availableTools,
-        },
+          context: hookContext,
+          request: {
+            providerId: input.modelConfig.providerId,
+            modelId: input.modelConfig.id,
+            systemPrompt: mergeChatSystemPrompts(
+              input.systemPrompt,
+              skillContext.systemPrompt,
+            ),
+            messages: input.messages,
+            availableTools,
+          },
       },
     });
 
@@ -191,7 +198,9 @@ export class ChatMessageOrchestrationService {
         hookResult.request.modelId,
       ),
       buildToolSet: ({ context, allowedToolNames }) => {
-        const availableToolNames = availableTools.map((tool) => tool.name);
+        const availableToolNames = availableTools.map(
+          (tool: ChatBeforeModelRequest['availableTools'][number]) => tool.name,
+        );
 
         return toolSelection.buildToolSet({
           context,
@@ -210,7 +219,20 @@ export class ChatMessageOrchestrationService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<CompletedChatTaskResult> {
-    return this.responseHooks.applyFinalResponseHooks(input);
+    const afterModelResult = await this.applyChatAfterModelHooks({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      result: input.result,
+    });
+
+    return this.applyResponseBeforeSendHooks({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      responseSource: input.responseSource,
+      result: afterModelResult,
+    });
   }
 
   async runResponseAfterSendHooks(input: {
@@ -220,35 +242,112 @@ export class ChatMessageOrchestrationService {
     responseSource: PluginResponseSource;
     result: CompletedChatTaskResult;
   }): Promise<void> {
-    return this.responseHooks.runResponseAfterSendHooks(input);
+    const hookContext = this.createResultHookContext(input);
+
+    await this.pluginRuntime.runBroadcastHook({
+      hookName: 'response:after-send',
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        responseSource: input.responseSource,
+        ...this.createAssistantHookPayload(input.result),
+        sentAt: new Date().toISOString(),
+      },
+    });
   }
-}
 
-function mergeSystemPrompts(basePrompt: string, appendedPrompt: string): string {
-  if (!appendedPrompt.trim()) {
-    return basePrompt;
+  private async applyChatAfterModelHooks(input: {
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    result: CompletedChatTaskResult;
+  }): Promise<CompletedChatTaskResult> {
+    const currentParts = input.result.parts ?? [];
+    const patchedPayload = await this.pluginRuntime.runHook({
+      hookName: 'chat:after-model',
+      context: this.createResultHookContext(input),
+      payload: this.createAssistantHookPayload(input.result),
+    });
+
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: patchedPayload.assistantContent,
+      parts: patchedPayload.assistantParts,
+    });
+
+    if (
+      normalizedAssistant.content === input.result.content
+      && JSON.stringify(normalizedAssistant.parts) === JSON.stringify(currentParts)
+    ) {
+      return input.result;
+    }
+
+    return {
+      ...input.result,
+      content: normalizedAssistant.content,
+      parts: normalizedAssistant.parts,
+    };
   }
 
-  return basePrompt.trim()
-    ? `${basePrompt}\n\n${appendedPrompt}`
-    : appendedPrompt;
-}
+  private async applyResponseBeforeSendHooks(input: {
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    responseSource: PluginResponseSource;
+    result: CompletedChatTaskResult;
+  }): Promise<CompletedChatTaskResult> {
+    const hookContext = this.createResultHookContext(input);
+    const patchedPayload = await this.pluginRuntime.runHook({
+      hookName: 'response:before-send',
+      context: hookContext,
+      payload: {
+        context: hookContext,
+        responseSource: input.responseSource,
+        ...this.createAssistantHookPayload(input.result),
+      },
+    });
 
-function filterAvailableTools(
-  availableTools: ChatBeforeModelRequest['availableTools'],
-  allowedToolNames: string[] | null,
-  deniedToolNames: string[],
-): ChatBeforeModelRequest['availableTools'] {
-  const allowedSet = allowedToolNames ? new Set(allowedToolNames) : null;
-  const deniedSet = new Set(deniedToolNames);
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: patchedPayload.assistantContent,
+      parts: patchedPayload.assistantParts,
+    });
 
-  return availableTools.filter((tool) => {
-    if (deniedSet.has(tool.name)) {
-      return false;
-    }
-    if (allowedSet && !allowedSet.has(tool.name)) {
-      return false;
-    }
-    return true;
-  });
+    return {
+      ...input.result,
+      providerId: patchedPayload.providerId,
+      modelId: patchedPayload.modelId,
+      content: normalizedAssistant.content,
+      parts: normalizedAssistant.parts,
+      toolCalls: patchedPayload.toolCalls,
+      toolResults: patchedPayload.toolResults,
+    };
+  }
+
+  private createResultHookContext(input: {
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    result: CompletedChatTaskResult;
+  }) {
+    return createChatModelLifecycleContext({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      modelConfig: {
+        providerId: input.result.providerId,
+        id: input.result.modelId,
+      },
+    });
+  }
+
+  private createAssistantHookPayload(result: CompletedChatTaskResult) {
+    return {
+      assistantMessageId: result.assistantMessageId,
+      providerId: result.providerId,
+      modelId: result.modelId,
+      assistantContent: result.content,
+      assistantParts: result.parts ?? [],
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
+    };
+  }
 }

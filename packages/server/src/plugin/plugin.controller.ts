@@ -3,7 +3,6 @@ import type {
   PluginActionResult,
   PluginConfigSnapshot,
   PluginConversationSessionInfo,
-  PluginEventLevel,
   PluginEventListResult,
   PluginHealthSnapshot,
   PluginInfo,
@@ -11,6 +10,7 @@ import type {
   PluginScopeSettings,
   PluginStorageEntry,
 } from '@garlic-claw/shared';
+import { buildPluginHealthSnapshot } from '@garlic-claw/shared';
 import {
   BadRequestException,
   Body,
@@ -36,16 +36,15 @@ import {
 } from './dto/plugin-admin.dto';
 import { PluginAdminService } from './plugin-admin.service';
 import { PluginCronService } from './plugin-cron.service';
-import { buildPluginHealthSnapshot } from './plugin-event.helpers';
-import { describePluginGovernance } from './plugin-governance-policy';
-import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
+import { readPluginEventQuery } from './plugin-event.helpers';
 import { readNonEmptyString } from './plugin-manifest-normalize-base.helpers';
+import { buildMergedPluginView } from './plugin-read.service';
 import { PluginRemoteBootstrapService } from './plugin-remote-bootstrap.service';
 import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
-const PERSISTED_SUPPORTED_ACTIONS: PluginActionName[] = ['health-check'];
+const PLUGIN_ACTIONS: PluginActionName[] = ['reload', 'reconnect', 'health-check'];
 
 @ApiTags('Plugins')
 @ApiBearerAuth()
@@ -70,43 +69,26 @@ export class PluginController {
     );
     return Promise.all(plugins.map(async (p) => {
       const runtimePlugin = runtimePlugins.get(p.name);
-      const manifest = runtimePlugin?.manifest ?? parsePersistedPluginManifest(
-        typeof p.manifestJson === 'string' ? p.manifestJson : null,
-        {
-          id: p.name,
-          displayName: p.displayName,
-          description: p.description,
-          version: p.version,
-          runtimeKind: p.runtimeKind,
-        },
-      );
-      const health = buildPluginHealthSnapshot({ plugin: p });
-      const governance = describePluginGovernance({
-        pluginId: p.name,
-        runtimeKind: runtimePlugin?.runtimeKind ?? p.runtimeKind,
+      const mergedView = buildMergedPluginView({
+        plugin: p,
+        ...(runtimePlugin ? { runtimePlugin } : {}),
       });
+      const health = buildPluginHealthSnapshot({ plugin: p });
       return {
         id: p.id,
         name: p.name,
-        displayName: manifest.name,
-        description: manifest.description,
+        displayName: mergedView.manifest.name,
+        description: mergedView.manifest.description,
         deviceType: p.deviceType,
         status: p.status,
-        connected: runtimePlugins.has(p.name),
-        runtimeKind: runtimePlugin?.runtimeKind
-          ?? (p.runtimeKind === 'builtin' ? 'builtin' : 'remote'),
-        version: manifest.version,
-        supportedActions: runtimePlugin?.supportedActions
-          ?? PERSISTED_SUPPORTED_ACTIONS,
+        connected: mergedView.connected,
+        runtimeKind: mergedView.runtimeKind,
+        version: mergedView.manifest.version,
+        supportedActions: mergedView.supportedActions,
         crons: await this.pluginCronService.listCronJobs(p.name),
-        manifest,
-        health: runtimePlugin?.runtimePressure
-          ? {
-            ...health,
-            runtimePressure: runtimePlugin.runtimePressure,
-          }
-          : health,
-        governance,
+        manifest: mergedView.manifest,
+        health: mergeRuntimePressure(health, mergedView.runtimePressure),
+        governance: mergedView.governance,
         lastSeenAt: p.lastSeenAt ? p.lastSeenAt.toISOString() : null,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
@@ -127,13 +109,7 @@ export class PluginController {
   createRemoteBootstrap(
     @Body() dto: CreateRemotePluginBootstrapDto,
   ): Promise<RemotePluginBootstrapInfo> {
-    return this.pluginRemoteBootstrap.issueBootstrap({
-      pluginName: dto.pluginName,
-      deviceType: dto.deviceType,
-      ...(dto.displayName ? { displayName: dto.displayName } : {}),
-      ...(dto.description ? { description: dto.description } : {}),
-      ...(dto.version ? { version: dto.version } : {}),
-    });
+    return this.pluginRemoteBootstrap.issueBootstrap(dto);
   }
 
   @Delete(':name')
@@ -184,7 +160,7 @@ export class PluginController {
     @Param('name') name: string,
     @Query('key') key?: string,
   ): Promise<boolean> {
-    const normalizedKey = key?.trim();
+    const normalizedKey = readNonEmptyString(key);
     if (!normalizedKey) {
       throw new BadRequestException('key 必填');
     }
@@ -200,33 +176,17 @@ export class PluginController {
   @Get(':name/health')
   async getPluginHealth(@Param('name') name: string): Promise<PluginHealthSnapshot> {
     const health = await this.pluginService.getPluginHealth(name);
-    const runtimePressure = this.pluginRuntime.getRuntimePressure(name);
-    return runtimePressure
-      ? {
-        ...health,
-        runtimePressure,
-      }
-      : health;
+    return mergeRuntimePressure(health, this.pluginRuntime.getRuntimePressure(name));
   }
 
   @Get(':name/events')
   listPluginEvents(
     @Param('name') name: string,
-    @Query('limit') limit?: string,
-    @Query('level') level?: string,
-    @Query('type') type?: string,
-    @Query('keyword') keyword?: string,
-    @Query('cursor') cursor?: string,
+    @Query() query?: Parameters<typeof readPluginEventQuery>[0],
   ): Promise<PluginEventListResult> {
     return this.pluginService.listPluginEvents(
       name,
-      parsePluginEventQuery({
-        limit,
-        level,
-        type,
-        keyword,
-        cursor,
-      }),
+      readPluginEventQuery(query ?? {}),
     );
   }
 
@@ -280,60 +240,19 @@ export class PluginController {
     @Param('name') name: string,
     @Param('action') action: string,
   ): Promise<PluginActionResult> {
-    if (
-      action !== 'reload'
-      && action !== 'reconnect'
-      && action !== 'health-check'
-    ) {
+    if (!PLUGIN_ACTIONS.includes(action as PluginActionName)) {
       throw new BadRequestException(
         'action 必须是 reload / reconnect / health-check',
       );
     }
 
-    return this.pluginAdmin.runAction(name, action);
+    return this.pluginAdmin.runAction(name, action as PluginActionName);
   }
 }
 
-/**
- * 解析插件事件日志查询参数。
- * @param raw 原始查询参数
- * @returns 归一化后的查询对象
- */
-function parsePluginEventQuery(raw: {
-  limit?: string;
-  level?: string;
-  type?: string;
-  keyword?: string;
-  cursor?: string;
-}): {
-  limit?: number;
-  level?: PluginEventLevel;
-  type?: string;
-  keyword?: string;
-  cursor?: string;
-} {
-  const limit = raw.limit ? Number(raw.limit) : undefined;
-  if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
-    throw new BadRequestException('limit 必须是正整数');
-  }
-
-  let level: PluginEventLevel | undefined;
-  if (raw.level) {
-    if (raw.level !== 'info' && raw.level !== 'warn' && raw.level !== 'error') {
-      throw new BadRequestException('level 必须是 info / warn / error');
-    }
-    level = raw.level;
-  }
-
-  const type = readNonEmptyString(raw.type) ?? undefined;
-  const keyword = readNonEmptyString(raw.keyword) ?? undefined;
-  const cursor = readNonEmptyString(raw.cursor) ?? undefined;
-
-  return {
-    ...(limit !== undefined ? { limit } : {}),
-    ...(level ? { level } : {}),
-    ...(type ? { type } : {}),
-    ...(keyword ? { keyword } : {}),
-    ...(cursor ? { cursor } : {}),
-  };
+function mergeRuntimePressure(
+  health: PluginHealthSnapshot,
+  runtimePressure: PluginHealthSnapshot['runtimePressure'] | null | undefined,
+): PluginHealthSnapshot {
+  return runtimePressure ? { ...health, runtimePressure } : health;
 }

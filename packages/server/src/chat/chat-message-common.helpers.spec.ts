@@ -1,8 +1,11 @@
 import {
   assertConversationLlmEnabled,
-  createChatLifecycleContext,
   getOwnedConversationMessage,
 } from './chat-message-common.helpers';
+import {
+  createChatLifecycleContext,
+  createChatModelLifecycleContext,
+} from '@garlic-claw/shared';
 
 describe('chat-message-common.helpers', () => {
   it('creates a normalized chat lifecycle context', () => {
@@ -16,6 +19,28 @@ describe('chat-message-common.helpers', () => {
       }),
     ).toEqual({
       source: 'chat-hook',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      activeProviderId: 'openai',
+      activeModelId: 'gpt-5.2',
+      activePersonaId: 'builtin.default-assistant',
+    });
+  });
+
+  it('creates a normalized chat model lifecycle context', () => {
+    expect(
+      createChatModelLifecycleContext({
+        source: 'chat-tool',
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        activePersonaId: 'builtin.default-assistant',
+        modelConfig: {
+          providerId: 'openai',
+          id: 'gpt-5.2',
+        },
+      }),
+    ).toEqual({
+      source: 'chat-tool',
       userId: 'user-1',
       conversationId: 'conversation-1',
       activeProviderId: 'openai',

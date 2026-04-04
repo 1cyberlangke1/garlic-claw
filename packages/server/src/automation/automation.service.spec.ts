@@ -15,10 +15,16 @@ describe('AutomationService', () => {
     },
   };
 
+  const runAutomationBeforeRunHooks = jest.fn();
+  const runAutomationAfterRunHooks = jest.fn();
   const pluginRuntime = {
     executeTool: jest.fn(),
-    runAutomationBeforeRunHooks: jest.fn(),
-    runAutomationAfterRunHooks: jest.fn(),
+    runAutomationBeforeRunHooks,
+    runAutomationAfterRunHooks,
+    runHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
+      hookName === 'automation:before-run'
+        ? runAutomationBeforeRunHooks(input)
+        : runAutomationAfterRunHooks(input)),
   };
   const chatMessageService = {
     sendPluginMessage: jest.fn(),

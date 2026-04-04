@@ -79,12 +79,19 @@ describe('ToolRegistryService', () => {
   }
 
   function createPluginRuntime() {
+    const runToolBeforeCallHooks = jest.fn().mockImplementation(async (input) => ({
+      action: 'continue',
+      payload: input.payload,
+    }));
+    const runToolAfterCallHooks = jest.fn().mockImplementation(async (input) => input.payload);
+
     return {
-      runToolBeforeCallHooks: jest.fn().mockImplementation(async (input) => ({
-        action: 'continue',
-        payload: input.payload,
-      })),
-      runToolAfterCallHooks: jest.fn().mockImplementation(async (input) => input.payload),
+      runToolBeforeCallHooks,
+      runToolAfterCallHooks,
+      runHook: jest.fn(async ({ hookName, ...input }) =>
+        hookName === 'tool:before-call'
+          ? runToolBeforeCallHooks(input)
+          : runToolAfterCallHooks(input)),
     };
   }
 

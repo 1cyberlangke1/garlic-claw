@@ -1,6 +1,9 @@
+import {
+  restoreModelMessageContent,
+  type UserMessageInput,
+} from '@garlic-claw/shared';
 import type { ChatRuntimeMessage } from './chat-message-session';
 import type { SendMessagePartDto } from './dto/chat.dto';
-import { restoreModelMessageContent, type UserMessageInput } from './message-parts';
 import { DEFAULT_PERSONA_PROMPT } from '../persona/default-persona';
 import { ToolRegistryService } from '../tool/tool-registry.service';
 

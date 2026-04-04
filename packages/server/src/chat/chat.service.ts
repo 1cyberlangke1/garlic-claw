@@ -1,8 +1,12 @@
 import { Inject, ForbiddenException, forwardRef, Injectable, NotFoundException } from '@nestjs/common';
-import type { ConversationHostServices } from '@garlic-claw/shared';
+import {
+  DEFAULT_CONVERSATION_HOST_SERVICES,
+  mergeConversationHostServices,
+  normalizeConversationHostServices,
+  type ConversationHostServices,
+} from '@garlic-claw/shared';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_CONVERSATION_HOST_SERVICES, mergeConversationHostServices, normalizeConversationHostServices } from './chat-host-services';
 import { SkillSessionService } from '../skill/skill-session.service';
 
 @Injectable()
@@ -30,7 +34,8 @@ export class ChatService {
       userId,
       conversationId: conversation.id,
     };
-    await this.pluginRuntime.runConversationCreatedHooks({
+    await this.pluginRuntime.runBroadcastHook({
+      hookName: 'conversation:created',
       context: hookContext,
       payload: {
         context: hookContext,

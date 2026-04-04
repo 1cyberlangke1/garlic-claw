@@ -2,8 +2,8 @@ import type {
   PluginManifest,
   PluginRuntimeKind,
 } from '@garlic-claw/shared';
+import { buildPluginLifecycleHookInfo } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { buildPluginLifecycleHookInfo } from './plugin-runtime-manifest.helpers';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import type { PluginTransport } from './plugin-runtime.types';
 import { PluginCronService } from './plugin-cron.service';
@@ -52,7 +52,8 @@ export class PluginRuntimeOrchestratorService {
       input.manifest.id,
       input.manifest.crons ?? [],
     );
-    await this.pluginRuntime.runPluginLoadedHooks({
+    await this.pluginRuntime.runBroadcastHook({
+      hookName: 'plugin:loaded',
       context: {
         source: 'plugin',
       },
@@ -82,7 +83,8 @@ export class PluginRuntimeOrchestratorService {
       (plugin) => plugin.pluginId === pluginId,
     );
     if (runtimeInfo) {
-      await this.pluginRuntime.runPluginUnloadedHooks({
+      await this.pluginRuntime.runBroadcastHook({
+        hookName: 'plugin:unloaded',
         context: {
           source: 'plugin',
         },

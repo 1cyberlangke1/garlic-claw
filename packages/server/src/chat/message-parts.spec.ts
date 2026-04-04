@@ -19,7 +19,7 @@ import {
   deserializeMessageParts,
   normalizeUserMessageInput,
   serializeMessageParts,
-} from './message-parts';
+} from '@garlic-claw/shared';
 
 describe('message-parts', () => {
   it('normalizes plain text content into a single text part', () => {

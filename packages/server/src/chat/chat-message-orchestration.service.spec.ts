@@ -1,17 +1,31 @@
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
-import { ChatMessageResponseHooksService } from './chat-message-response-hooks.service';
 
 describe('ChatMessageOrchestrationService', () => {
   const aiProvider = {
     getModelConfig: jest.fn(),
   };
 
+  const runChatBeforeModelHooks = jest.fn();
+  const runChatWaitingModelHooks = jest.fn();
+  const runChatAfterModelHooks = jest.fn();
+  const runResponseBeforeSendHooks = jest.fn();
+  const runResponseAfterSendHooks = jest.fn();
   const pluginRuntime = {
-    runChatBeforeModelHooks: jest.fn(),
-    runChatWaitingModelHooks: jest.fn(),
-    runChatAfterModelHooks: jest.fn(),
-    runResponseBeforeSendHooks: jest.fn(),
-    runResponseAfterSendHooks: jest.fn(),
+    runChatBeforeModelHooks,
+    runChatWaitingModelHooks,
+    runChatAfterModelHooks,
+    runResponseBeforeSendHooks,
+    runResponseAfterSendHooks,
+    runHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
+      hookName === 'chat:before-model'
+        ? runChatBeforeModelHooks(input)
+        : hookName === 'chat:after-model'
+          ? runChatAfterModelHooks(input)
+          : runResponseBeforeSendHooks(input)),
+    runBroadcastHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
+      hookName === 'chat:waiting-model'
+        ? runChatWaitingModelHooks(input)
+        : runResponseAfterSendHooks(input)),
   };
 
   const toolRegistry = {
@@ -74,16 +88,12 @@ describe('ChatMessageOrchestrationService', () => {
       allowedToolNames: null,
       deniedToolNames: [],
     });
-    const responseHooks = new ChatMessageResponseHooksService(
-      pluginRuntime as never,
-    );
     service = new ChatMessageOrchestrationService(
       aiProvider as never,
       pluginRuntime as never,
       toolRegistry as never,
       modelInvocation as never,
       skillSession as never,
-      responseHooks as never,
     );
   });
 

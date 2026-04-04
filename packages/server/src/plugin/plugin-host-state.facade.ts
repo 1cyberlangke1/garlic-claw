@@ -1,4 +1,7 @@
-import type { PluginCallContext } from '@garlic-claw/shared';
+import type {
+  PluginCallContext,
+  PluginEventLevel,
+} from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
@@ -8,16 +11,38 @@ import {
   resolvePluginScopedStateTarget,
   stripPluginScopedStatePrefix,
 } from './plugin-scoped-state.helpers';
-import { PluginStateService } from './plugin-state.service';
-import { PluginService } from './plugin.service';
 import {
-  readHostEventLevel,
   readHostNumber,
   readHostObject,
   readHostString,
-  requireHostJsonValue,
   requireHostString,
-} from './plugin-host.helpers';
+} from './plugin-host-request.codec';
+import { PluginStateService } from './plugin-state.service';
+import { PluginService } from './plugin.service';
+
+function requireHostJsonValue(
+  params: JsonObject,
+  key: string,
+  method: string,
+): JsonValue {
+  if (!Object.prototype.hasOwnProperty.call(params, key)) {
+    throw new BadRequestException(`${method} 缺少 ${key}`);
+  }
+
+  return params[key];
+}
+
+function readHostEventLevel(
+  params: JsonObject,
+  key: string,
+): PluginEventLevel {
+  const value = requireHostString(params, key);
+  if (value !== 'info' && value !== 'warn' && value !== 'error') {
+    throw new BadRequestException(`${key} 必须是 info/warn/error`);
+  }
+
+  return value;
+}
 
 /**
  * Host API 的宿主状态面。

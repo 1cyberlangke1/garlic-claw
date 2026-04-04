@@ -1,13 +1,11 @@
 import {
-  assertSubagentRequestInputSupported,
   buildResolvedSubagentAfterRunPayload,
   collectSubagentRunResult,
   buildResolvedSubagentRunResult,
   buildResolvedSubagentRequest,
   buildSubagentRunResult,
-  buildSubagentStreamPreparedInput,
   buildSubagentToolSetRequest,
-} from './plugin-runtime-subagent.helpers';
+} from '@garlic-claw/shared';
 
 describe('plugin-runtime-subagent.helpers', () => {
   it('builds cloned subagent results', () => {
@@ -239,111 +237,6 @@ describe('plugin-runtime-subagent.helpers', () => {
           id: 'plugin-a',
         },
       ],
-    });
-  });
-
-  it('rejects image input when the resolved model lacks image capability', () => {
-    expect(() =>
-      assertSubagentRequestInputSupported({
-        request: {
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  image: 'https://example.com/cat.png',
-                },
-              ],
-            },
-          ],
-        },
-        modelConfig: {
-          capabilities: {
-            input: {
-              text: true,
-              image: false,
-            },
-          },
-        } as never,
-      }),
-    ).toThrow('subagent.run 当前模型不支持图片输入');
-
-    expect(() =>
-      assertSubagentRequestInputSupported({
-        request: {
-          messages: [
-            {
-              role: 'user',
-              content: 'hello',
-            },
-          ],
-        },
-        modelConfig: {
-          capabilities: {
-            input: {
-              text: true,
-              image: false,
-            },
-          },
-        } as never,
-      }),
-    ).not.toThrow();
-  });
-
-  it('builds streamPrepared input from a subagent request snapshot', () => {
-    const prepared = {
-      modelConfig: {
-        providerId: 'openai',
-        id: 'gpt-5.2',
-      },
-      model: {
-        provider: 'openai',
-        modelId: 'gpt-5.2',
-      },
-      sdkMessages: [],
-      sourceSdkMessages: [],
-    } as never;
-    const tools = {
-      recall_memory: {
-        description: '读取记忆',
-      },
-    } as never;
-
-    expect(
-      buildSubagentStreamPreparedInput({
-        prepared,
-        request: {
-          system: '你是子代理',
-          maxSteps: 3,
-          variant: 'balanced',
-          providerOptions: {
-            openai: {
-              reasoningEffort: 'medium',
-            },
-          },
-          headers: {
-            'x-test': '1',
-          },
-          maxOutputTokens: 256,
-        },
-        tools,
-      }),
-    ).toEqual({
-      prepared,
-      system: '你是子代理',
-      tools,
-      stopWhen: expect.anything(),
-      variant: 'balanced',
-      providerOptions: {
-        openai: {
-          reasoningEffort: 'medium',
-        },
-      },
-      headers: {
-        'x-test': '1',
-      },
-      maxOutputTokens: 256,
     });
   });
 

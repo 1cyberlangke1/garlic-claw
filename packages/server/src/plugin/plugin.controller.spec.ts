@@ -521,7 +521,9 @@ describe('PluginController', () => {
       lastCheckedAt: '2026-03-27T12:00:00.000Z',
     });
     await expect(
-      (controller as any).listPluginEvents('builtin.memory-context', '50'),
+      (controller as any).listPluginEvents('builtin.memory-context', {
+        limit: '50',
+      }),
     ).resolves.toEqual({
       items: [
         {
@@ -548,11 +550,13 @@ describe('PluginController', () => {
     await expect(
       (controller as any).listPluginEvents(
         'builtin.memory-context',
-        '100',
-        'error',
-        'tool:error',
-        'memory.search',
-        'event-2',
+        {
+          limit: '100',
+          level: 'error',
+          type: 'tool:error',
+          keyword: 'memory.search',
+          cursor: 'event-2',
+        },
       ),
     ).resolves.toEqual({
       items: [],

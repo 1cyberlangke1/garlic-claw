@@ -7,9 +7,17 @@ import {
   cloneAutomationAfterRunPayload,
   cloneAutomationBeforeRunPayload,
   cloneJsonValueArray,
+  listDispatchableHookRecords,
+  normalizeAutomationAfterRunHookResult,
+  normalizeAutomationBeforeRunHookResult,
+  normalizeResponseBeforeSendHookResult,
+  normalizeToolAfterCallHookResult,
+  normalizeToolBeforeCallHookResult,
   cloneResponseBeforeSendHookPayload,
   cloneToolAfterCallHookPayload,
   cloneToolBeforeCallHookPayload,
+  runMutatingHookChain,
+  runShortCircuitingHookChain,
 } from '@garlic-claw/shared';
 import type {
   AutomationAfterRunHookPayload,
@@ -23,18 +31,6 @@ import type {
 import { Injectable } from '@nestjs/common';
 import type { JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
-import { listDispatchableHookRecords } from './plugin-runtime-dispatch.helpers';
-import {
-  runMutatingHookChain,
-  runShortCircuitingHookChain,
-} from './plugin-runtime-hook-runner.helpers';
-import {
-  normalizeAutomationAfterRunHookResult,
-  normalizeAutomationBeforeRunHookResult,
-  normalizeResponseBeforeSendHookResult,
-  normalizeToolAfterCallHookResult,
-  normalizeToolBeforeCallHookResult,
-} from './plugin-runtime-hook-result.helpers';
 
 type DispatchableOperationHookRecord = {
   manifest: import('@garlic-claw/shared').PluginManifest;

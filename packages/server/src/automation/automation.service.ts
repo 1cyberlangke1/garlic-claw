@@ -202,7 +202,8 @@ export class AutomationService implements OnModuleDestroy {
       userId: automationRecord.userId,
       automationId,
     };
-    const beforeRunResult = await this.pluginRuntime.runAutomationBeforeRunHooks({
+    const beforeRunResult = await this.pluginRuntime.runHook({
+      hookName: 'automation:before-run',
       context: hookContext,
       payload: {
         context: hookContext,
@@ -251,7 +252,8 @@ export class AutomationService implements OnModuleDestroy {
         }
       }
     }
-    const afterRunPayload = await this.pluginRuntime.runAutomationAfterRunHooks({
+    const afterRunPayload = await this.pluginRuntime.runHook({
+      hookName: 'automation:after-run',
       context: hookContext,
       payload: {
         context: hookContext,

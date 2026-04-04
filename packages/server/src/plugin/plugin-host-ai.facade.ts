@@ -1,27 +1,101 @@
 import type {
+  AiUtilityModelRole,
   PluginCallContext,
   PluginLlmGenerateParams,
   PluginLlmGenerateResult,
+  PluginLlmMessage,
+  PluginProviderSummary,
 } from '@garlic-claw/shared';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  buildCurrentHostProviderInfo,
+  buildHostGenerateResult,
+  buildHostGenerateTextResult,
+  findHostProviderSummary,
+  resolveHostProviderModelSummary,
+  resolveHostUtilityRoleForGeneration,
+} from '@garlic-claw/shared';
+import {
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { AiManagementService } from '../ai/ai-management.service';
 import { AiProviderService } from '../ai/ai-provider.service';
 import { ModelRegistryService } from '../ai/registry/model-registry.service';
+import { toAiSdkMessages } from '../chat/sdk-message-converter';
 import {
-  buildCurrentHostProviderInfo,
-  buildHostGenerateExecutionInput,
-  buildHostGenerateResult,
-  buildHostGenerateTextResult,
-  findHostProviderSummaryOrThrow,
-  readHostGenerateParams,
-  readHostLlmMessages,
+  readHostNumber,
+  readHostObject,
+  readHostString,
+  readHostStringRecord,
   requireHostString,
-  resolveHostProviderModelSummary,
-  resolveHostUtilityRoleForGeneration,
-} from './plugin-host.helpers';
+} from './plugin-host-request.codec';
+import { readPluginLlmMessages } from './plugin-llm-payload.helpers';
+
+export function readHostGenerateParams(
+  params: JsonObject,
+  messages: PluginLlmGenerateParams['messages'],
+): PluginLlmGenerateParams {
+  const providerId = readHostString(params, 'providerId') ?? undefined;
+  const modelId = readHostString(params, 'modelId') ?? undefined;
+  const system = readHostString(params, 'system') ?? undefined;
+  const variant = readHostString(params, 'variant') ?? undefined;
+  const providerOptions = readHostObject(params, 'providerOptions') ?? undefined;
+  const headers = readHostStringRecord(params, 'headers') ?? undefined;
+  const maxOutputTokens = readHostNumber(params, 'maxOutputTokens') ?? undefined;
+
+  return {
+    ...(providerId ? { providerId } : {}),
+    ...(modelId ? { modelId } : {}),
+    ...(system ? { system } : {}),
+    ...(variant ? { variant } : {}),
+    ...(providerOptions ? { providerOptions } : {}),
+    ...(headers ? { headers } : {}),
+    ...(typeof maxOutputTokens === 'number' ? { maxOutputTokens } : {}),
+    messages,
+  };
+}
+
+export function readHostLlmMessages(params: JsonObject): PluginLlmMessage[] {
+  return readPluginLlmMessages(params.messages, {
+    arrayLabel: 'messages',
+  });
+}
+
+export function findHostProviderSummaryOrThrow(input: {
+  providers: PluginProviderSummary[];
+  providerId: string;
+  ensureExists?: (providerId: string) => unknown;
+}): PluginProviderSummary {
+  const provider = findHostProviderSummary(input.providers, input.providerId);
+  if (provider) {
+    return provider;
+  }
+
+  input.ensureExists?.(input.providerId);
+  throw new NotFoundException(`Provider "${input.providerId}" not found`);
+}
+
+export function buildHostGenerateExecutionInput(input: {
+  params: PluginLlmGenerateParams;
+  utilityRole?: AiUtilityModelRole;
+}) {
+  return {
+    ...(input.params.providerId ? { providerId: input.params.providerId } : {}),
+    ...(input.params.modelId ? { modelId: input.params.modelId } : {}),
+    ...(input.utilityRole ? { utilityRole: input.utilityRole } : {}),
+    ...(input.params.system ? { system: input.params.system } : {}),
+    ...(input.params.variant ? { variant: input.params.variant } : {}),
+    ...(input.params.providerOptions ? { providerOptions: input.params.providerOptions } : {}),
+    ...(input.params.headers ? { headers: input.params.headers } : {}),
+    ...(typeof input.params.maxOutputTokens === 'number'
+      ? { maxOutputTokens: input.params.maxOutputTokens }
+      : {}),
+    sdkMessages: toAiSdkMessages(input.params.messages),
+  };
+}
 
 /**
  * Host API 的 AI 能力面。

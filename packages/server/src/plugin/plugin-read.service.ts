@@ -1,10 +1,22 @@
 import type {
+  PluginActionName,
   JsonObject,
+  ListPluginEventOptions,
+  PluginEventListResult,
+  PluginGovernanceInfo,
   PluginConfigSnapshot,
   PluginHealthSnapshot,
+  PluginManifest,
+  PluginRuntimeKind,
+  PluginRuntimePressureSnapshot,
   PluginScopeSettings,
   PluginSelfInfo,
-  PluginEventListResult,
+} from '@garlic-claw/shared';
+import {
+  buildPluginEventFindManyInput,
+  buildPluginEventListResult,
+  buildPluginHealthSnapshot,
+  normalizePluginEventOptions,
 } from '@garlic-claw/shared';
 import {
   Injectable,
@@ -12,22 +24,26 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolvePluginEventCursor } from './plugin-event.helpers';
+import { describePluginGovernance } from './plugin-governance-policy';
 import {
-  buildPluginEventFindManyInput,
-  buildPluginEventListResult,
-  buildPluginHealthSnapshot,
-  normalizePluginEventOptions,
-  resolvePluginEventCursor,
-  type ListPluginEventOptions,
-} from './plugin-event.helpers';
+  readPersistedPluginManifestRecord,
+  type PersistedPluginGovernanceRecord,
+} from './plugin-governance.helpers';
 import { buildPluginGovernanceSnapshot } from './plugin-governance.helpers';
 import { parsePluginScope } from './plugin-persistence.helpers';
-import {
-  buildPluginConfigSnapshot,
-  buildPluginSelfInfo,
-  buildResolvedPluginConfig,
-} from './plugin-record-view.helpers';
+import { resolvePluginConfig } from './plugin-persistence.helpers';
 import type { PluginGovernanceSnapshot } from './plugin-lifecycle-write.service';
+
+const PERSISTED_SUPPORTED_ACTIONS: PluginActionName[] = ['health-check'];
+
+export interface RuntimePluginRecordView {
+  pluginId: string;
+  runtimeKind: PluginRuntimeKind;
+  manifest: PluginManifest;
+  supportedActions: PluginActionName[];
+  runtimePressure: PluginRuntimePressureSnapshot;
+}
 
 @Injectable()
 export class PluginReadService {
@@ -132,4 +148,84 @@ export class PluginReadService {
       onWarn: (message) => this.logger.warn(message),
     });
   }
+}
+
+export function buildPluginConfigSnapshot(input: {
+  plugin: PersistedPluginGovernanceRecord;
+  onWarn?: (message: string) => void;
+}): PluginConfigSnapshot {
+  const manifest = readPersistedPluginManifestRecord(input);
+  return {
+    schema: manifest.config ?? null,
+    values: resolvePluginConfig({
+      rawConfig: input.plugin.config,
+      manifest,
+      onWarn: input.onWarn,
+    }),
+  };
+}
+
+export function buildResolvedPluginConfig(input: {
+  plugin: PersistedPluginGovernanceRecord;
+  onWarn?: (message: string) => void;
+}): JsonObject {
+  const manifest = readPersistedPluginManifestRecord(input);
+  return resolvePluginConfig({
+    rawConfig: input.plugin.config,
+    manifest,
+    onWarn: input.onWarn,
+  });
+}
+
+export function buildPluginSelfInfo(input: {
+  plugin: PersistedPluginGovernanceRecord;
+  onWarn?: (message: string) => void;
+}): PluginSelfInfo {
+  const manifest = readPersistedPluginManifestRecord(input);
+  return {
+    id: input.plugin.name,
+    name: manifest.name,
+    runtimeKind: toPluginRuntimeKind(input.plugin.runtimeKind),
+    version: manifest.version || undefined,
+    description: manifest.description ?? undefined,
+    permissions: [...manifest.permissions],
+    ...(manifest.crons ? { crons: [...manifest.crons] } : {}),
+    ...(manifest.commands ? { commands: [...manifest.commands] } : {}),
+    hooks: [...(manifest.hooks ?? [])],
+    routes: [...(manifest.routes ?? [])],
+  };
+}
+
+export function buildMergedPluginView(input: {
+  plugin: PersistedPluginGovernanceRecord;
+  runtimePlugin?: RuntimePluginRecordView | null;
+  onWarn?: (message: string) => void;
+}): {
+  manifest: PluginManifest;
+  runtimeKind: PluginRuntimeKind;
+  governance: PluginGovernanceInfo;
+  connected: boolean;
+  pluginDisplayName: string;
+  supportedActions: PluginActionName[];
+  runtimePressure: PluginRuntimePressureSnapshot | null;
+} {
+  const manifest = input.runtimePlugin?.manifest ?? readPersistedPluginManifestRecord(input);
+  const runtimeKind = input.runtimePlugin?.runtimeKind ?? toPluginRuntimeKind(input.plugin.runtimeKind);
+
+  return {
+    manifest,
+    runtimeKind,
+    governance: describePluginGovernance({
+      pluginId: input.plugin.name,
+      runtimeKind,
+    }),
+    connected: Boolean(input.runtimePlugin),
+    pluginDisplayName: input.runtimePlugin?.manifest.name ?? input.plugin.displayName ?? input.plugin.name,
+    supportedActions: input.runtimePlugin?.supportedActions ?? PERSISTED_SUPPORTED_ACTIONS,
+    runtimePressure: input.runtimePlugin?.runtimePressure ?? null,
+  };
+}
+
+function toPluginRuntimeKind(runtimeKind?: string | null): PluginRuntimeKind {
+  return runtimeKind === 'builtin' ? 'builtin' : 'remote';
 }

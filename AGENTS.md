@@ -11,6 +11,15 @@
 - 如果某次改动已经推进、完成、废弃或重排了 `TODO.md` 中的事项，必须在同一轮里更新 `TODO.md`
 - `TODO.md` 是项目级长期路线，不属于 skill 中间产物；是否提交按用户要求决定，但内容必须保持可读和可持续维护
 
+## 重构目标约束
+
+- 重构任务默认以 `TODO.md` 顶部“规范化目标”为最高执行标准
+- 核心目标不是局部整理，而是让 `packages/server/src` 生产代码持续下降，直到压到 `<= 10000`
+- 不接受把同等复杂度继续留在 `core helper / facade / service`
+- 不做兼容层，不为历史结构保留过渡壳
+- `core` 只保留稳定 contract 和最少量宿主能力；作者侧语法糖、生态兼容和 adapter glue 优先放到 `SDK / adapter`
+- 每一刀都要优先删重复控制流、删中间 owner、删特判路径；只让文件换位置或换名字不算重构完成
+
 ## 执行方式约束
 
 - 如果用户明确要求“不要汇报 / 不要停下 / 一直做直到做无可做 / 做完再说”，则中途禁止阶段性总结、邀功式回报或把一个局部完成点当作停下来的理由
@@ -63,6 +72,10 @@ cd packages/web && npx vue-tsc --noEmit
 - 全局常量：UPPER_SNAKE_CASE
 - 组件文件：PascalCase（`UserProfile.vue`）
 - 服务/工具/类型文件：kebab-case（`auth.service.ts`）
+- 禁止新增泛化的 `helper/helpers` 命名；`helper` 往往意味着职责归属不清，不能作为长期结构
+- 纯转换逻辑优先命名为 `codec / parser / normalizer / mapper`
+- 纯读取或纯投影逻辑优先命名为 `reader / view / summary`
+- 带业务判断、状态协调或副作用的逻辑必须并回明确边界的 `service / facade / module`，不要继续堆进 `helpers.ts`
 
 ## 导入顺序
 
