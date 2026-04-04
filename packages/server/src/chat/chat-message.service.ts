@@ -8,7 +8,6 @@ import type {
 } from '@garlic-claw/shared';
 import { ChatMessageGenerationService } from './chat-message-generation.service';
 import { ChatMessageMutationService } from './chat-message-mutation.service';
-import { ChatMessagePluginTargetService } from './chat-message-plugin-target.service';
 import { type RetryMessageDto, type SendMessageDto, type UpdateMessageDto } from './dto/chat.dto';
 
 @Injectable()
@@ -16,7 +15,6 @@ export class ChatMessageService {
   constructor(
     private readonly generationService: ChatMessageGenerationService,
     private readonly mutationService: ChatMessageMutationService,
-    private readonly pluginTargetService: ChatMessagePluginTargetService,
   ) {}
 
   /** 创建一轮新的用户消息与 assistant 生成任务，输出已落库的用户消息与 assistant 占位消息。 */
@@ -48,7 +46,7 @@ export class ChatMessageService {
   async getCurrentPluginMessageTarget(input: {
     context: PluginCallContext;
   }): Promise<PluginMessageTargetInfo | null> {
-    return this.pluginTargetService.getCurrentPluginMessageTarget(input);
+    return this.mutationService.getCurrentPluginMessageTarget(input);
   }
 
   /** 供插件向当前或指定单用户消息目标发送一条 assistant 消息。 */
@@ -60,6 +58,6 @@ export class ChatMessageService {
     provider?: string | null;
     model?: string | null;
   }): Promise<PluginMessageSendInfo> {
-    return this.pluginTargetService.sendPluginMessage(input);
+    return this.mutationService.sendPluginMessage(input);
   }
 }

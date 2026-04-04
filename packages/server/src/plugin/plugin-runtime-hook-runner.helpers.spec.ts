@@ -1,7 +1,7 @@
 import {
   runMutatingHookChain,
   runShortCircuitingHookChain,
-} from './plugin-runtime-hook-runner.helpers';
+} from '@garlic-claw/shared';
 
 describe('plugin-runtime-hook-runner.helpers', () => {
   it('runs mutating hook chains sequentially and continues after failures', async () => {

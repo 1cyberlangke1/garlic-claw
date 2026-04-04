@@ -1,6 +1,7 @@
 import type {
   JsonObject,
   JsonValue,
+  ListPluginEventOptions,
   PluginConfigSnapshot,
   PluginEventLevel,
   PluginEventListResult,
@@ -10,7 +11,6 @@ import type {
   PluginSelfInfo,
 } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
-import type { ListPluginEventOptions } from './plugin-event.helpers';
 import { PluginEventWriteService } from './plugin-event-write.service';
 import { PluginGovernanceWriteService } from './plugin-governance-write.service';
 import {

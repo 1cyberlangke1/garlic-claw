@@ -1,19 +1,22 @@
 import {
-  buildConversationMessageSummaries,
   buildCurrentHostProviderInfo,
-  buildHostGenerateExecutionInput,
   buildHostGenerateResult,
   buildHostGenerateTextResult,
   buildHostProviderModelSummary,
   findHostProviderSummary,
-  findHostProviderSummaryOrThrow,
-  requireHostConversationRecord,
-  requireHostUserSummary,
   resolveHostProviderModelSummary,
+  resolveHostUtilityRoleForGeneration,
+} from '@garlic-claw/shared';
+import {
+  buildHostGenerateExecutionInput,
+  findHostProviderSummaryOrThrow,
   readHostGenerateParams,
   readHostLlmMessages,
-  resolveHostUtilityRoleForGeneration,
-} from './plugin-host.helpers';
+} from './plugin-host-ai.facade';
+import {
+  buildConversationMessageSummaries,
+} from '@garlic-claw/shared';
+import { requireHostConversationRecord, requireHostUserSummary } from './plugin-host-conversation.facade';
 
 describe('plugin-host.helpers', () => {
   it('reads host generate params', () => {

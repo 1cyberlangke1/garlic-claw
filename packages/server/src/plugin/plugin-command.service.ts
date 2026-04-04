@@ -1,7 +1,6 @@
 import type { PluginCommandConflict, PluginCommandConflictEntry, PluginCommandDescriptor, PluginCommandInfo, PluginCommandOverview, PluginHookDescriptor } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
-import { describePluginGovernance } from './plugin-governance-policy';
-import { parsePersistedPluginManifest } from './plugin-manifest.persistence';
+import { buildMergedPluginView } from './plugin-read.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 import { PluginService } from './plugin.service';
 
@@ -73,44 +72,31 @@ export class PluginCommandService {
     plugin: PersistedPluginRecord,
     runtimePlugin: RuntimePluginRecord | null,
   ): PluginCommandInfo[] {
-    const runtimeKind = runtimePlugin?.runtimeKind === 'builtin' || plugin.runtimeKind === 'builtin'
-      ? 'builtin'
-      : 'remote';
-    const governance = describePluginGovernance({
-      pluginId: plugin.name,
-      runtimeKind,
+    const mergedView = buildMergedPluginView({
+      plugin,
+      ...(runtimePlugin ? { runtimePlugin } : {}),
     });
-    const descriptors = this.resolveCommandDescriptors(plugin, runtimePlugin);
+    const descriptors = this.resolveCommandDescriptors(mergedView.manifest);
 
     return descriptors.map(({ descriptor, source }) => ({
       ...descriptor,
       commandId: `${plugin.name}:${descriptor.canonicalCommand}:${descriptor.kind}`,
       pluginId: plugin.name,
-      pluginDisplayName: runtimePlugin?.manifest.name ?? plugin.displayName ?? plugin.name,
-      runtimeKind,
-      connected: Boolean(runtimePlugin),
+      pluginDisplayName: mergedView.pluginDisplayName,
+      runtimeKind: mergedView.runtimeKind,
+      connected: mergedView.connected,
       defaultEnabled: plugin.defaultEnabled,
       source,
-      governance,
+      governance: mergedView.governance,
       conflictTriggers: [],
     }));
   }
 
-  private resolveCommandDescriptors(
-    plugin: PersistedPluginRecord,
-    runtimePlugin: RuntimePluginRecord | null,
-  ): Array<{
+  private resolveCommandDescriptors(manifest: ReturnType<typeof buildMergedPluginView>['manifest']): Array<{
     descriptor: PluginCommandDescriptor;
     source: PluginCommandInfo['source'];
   }> {
-    const persistedManifest = parsePersistedPluginManifest(plugin.manifestJson, {
-      id: plugin.name,
-      displayName: plugin.displayName,
-      description: plugin.description,
-      version: plugin.version,
-      runtimeKind: plugin.runtimeKind,
-    });
-    const manifestCommands = runtimePlugin?.manifest.commands ?? persistedManifest.commands ?? [];
+    const manifestCommands = manifest.commands ?? [];
     if (manifestCommands.length > 0) {
       return manifestCommands.map((descriptor: PluginCommandDescriptor) => ({
         descriptor: cloneCommandDescriptor(descriptor),
@@ -118,7 +104,7 @@ export class PluginCommandService {
       }));
     }
 
-    const hooks = runtimePlugin?.manifest.hooks ?? persistedManifest.hooks ?? [];
+    const hooks = manifest.hooks ?? [];
     return extractCommandsFromHooks(hooks).map((descriptor: PluginCommandDescriptor) => ({
       descriptor,
       source: 'hook-filter' as const,

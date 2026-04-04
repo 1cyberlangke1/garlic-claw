@@ -11,8 +11,11 @@ describe('ChatService', () => {
     },
   };
 
+  const runConversationCreatedHooks = jest.fn();
   const pluginRuntime = {
-    runConversationCreatedHooks: jest.fn(),
+    runConversationCreatedHooks,
+    runBroadcastHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
+      runConversationCreatedHooks(input)),
   };
 
   const skillSession = {

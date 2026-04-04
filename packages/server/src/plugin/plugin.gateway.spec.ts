@@ -6,7 +6,7 @@ import {
   type RegisterPayload,
 } from '@garlic-claw/shared';
 import { WebSocket } from 'ws';
-import { PluginGateway } from './plugin.gateway';
+import { PluginGateway, resolvePluginGatewayManifest } from './plugin.gateway';
 
 describe('PluginGateway', () => {
   const pluginRuntime = {
@@ -61,6 +61,190 @@ describe('PluginGateway', () => {
       jwtService as never,
       configService as never,
     );
+  });
+
+  it('creates an unauthenticated connection record and closes the socket when auth times out', () => {
+    jest.useFakeTimers();
+    try {
+      const ws = createSocketStub();
+
+      (gateway as any).handleConnection(ws);
+
+      expect((gateway as any).connections.get(ws)).toEqual({
+        ws,
+        pluginName: '',
+        deviceType: '',
+        authenticated: false,
+        manifest: null,
+        lastHeartbeatAt: expect.any(Number),
+      });
+
+      jest.advanceTimersByTime(10_000);
+
+      expect(JSON.parse(ws.send.mock.calls[0]?.[0] ?? '{}')).toEqual({
+        type: WS_TYPE.ERROR,
+        action: WS_ACTION.AUTH_FAIL,
+        payload: {
+          error: '认证超时',
+        },
+      });
+      expect(ws.close).toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('clears auth timeout on close and logs websocket errors through the gateway logger', () => {
+    jest.useFakeTimers();
+    try {
+      const ws = createSocketStub();
+      const loggerError = jest.fn();
+      (gateway as any).logger.error = loggerError;
+
+      (gateway as any).handleConnection(ws);
+
+      getSocketHandler(ws, 'error')(new Error('boom'));
+      getSocketHandler(ws, 'close')();
+      jest.advanceTimersByTime(10_000);
+
+      expect(loggerError).toHaveBeenCalledWith('来自 "" 的 WS 错误：boom');
+      expect((gateway as any).connections.has(ws)).toBe(false);
+      expect(ws.send).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('rejects malformed raw websocket payloads before gateway routing', async () => {
+    const ws = createSocketStub();
+
+    (gateway as any).handleConnection(ws);
+
+    getSocketHandler(ws, 'message')(Buffer.from('{bad-json'));
+    await flushPendingTasks();
+
+    expect(readLastSentMessage(ws)).toEqual({
+      type: WS_TYPE.ERROR,
+      action: 'parse_error',
+      payload: {
+        error: '无效的 JSON',
+      },
+    });
+    closeSocketConnection(ws);
+  });
+
+  it('rejects malformed websocket envelopes before they reach the gateway message router', async () => {
+    const ws = createSocketStub();
+
+    (gateway as any).handleConnection(ws);
+
+    getSocketHandler(ws, 'message')(Buffer.from(JSON.stringify({ type: WS_TYPE.PLUGIN })));
+    await flushPendingTasks();
+
+    expect(readLastSentMessage(ws)).toEqual({
+      type: WS_TYPE.ERROR,
+      action: 'protocol_error',
+      payload: {
+        error: '无效的插件协议消息',
+      },
+    });
+    closeSocketConnection(ws);
+  });
+
+  it('returns protocol errors when downstream plugin message handling throws', async () => {
+    const ws = createSocketStub();
+
+    (gateway as any).handleConnection(ws);
+    Object.assign((gateway as any).connections.get(ws), {
+      authenticated: true,
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+    });
+    pluginRuntimeOrchestrator.registerPlugin.mockRejectedValueOnce(new Error('boom'));
+
+    getSocketHandler(ws, 'message')(
+      Buffer.from(JSON.stringify({
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.REGISTER,
+        payload: {
+          manifest: remoteManifest,
+        },
+      })),
+    );
+    await flushPendingTasks();
+
+    expect(readLastSentMessage(ws)).toEqual({
+      type: WS_TYPE.ERROR,
+      action: 'protocol_error',
+      payload: {
+        error: '插件协议消息处理失败',
+      },
+    });
+    closeSocketConnection(ws);
+  });
+
+  it('rejects unauthenticated websocket plugin messages before routing', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: '',
+      deviceType: '',
+      authenticated: false,
+      manifest: null,
+      lastHeartbeatAt: 0,
+    };
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.REGISTER,
+        payload: {
+          manifest: remoteManifest,
+        },
+      },
+    );
+
+    expect(pluginRuntimeOrchestrator.registerPlugin).not.toHaveBeenCalled();
+    expect(readLastSentMessage(ws)).toEqual({
+      type: WS_TYPE.ERROR,
+      action: WS_ACTION.AUTH_FAIL,
+      payload: {
+        error: '未认证',
+      },
+    });
+  });
+
+  it('rejects malformed auth payloads before authentication runs', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: '',
+      deviceType: '',
+      authenticated: false,
+      manifest: null,
+      lastHeartbeatAt: 0,
+    };
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.AUTH,
+        action: WS_ACTION.AUTHENTICATE,
+        payload: null,
+      },
+    );
+
+    expect(jwtService.verify).not.toHaveBeenCalled();
+    expect(readLastSentMessage(ws)).toEqual({
+      type: WS_TYPE.ERROR,
+      action: 'protocol_error',
+      payload: {
+        error: '无效的认证负载',
+      },
+    });
   });
 
   it('registers a remote plugin manifest into the unified runtime', async () => {
@@ -175,6 +359,15 @@ describe('PluginGateway', () => {
     );
   });
 
+  it('throws when resolving a remote manifest without a manifest body', () => {
+    expect(() =>
+      resolvePluginGatewayManifest({
+        pluginName: 'remote.pc-host',
+        manifest: null,
+      }),
+    ).toThrow('插件注册负载缺少 manifest');
+  });
+
   it('rejects malformed register payloads without throwing from the plugin message handler', async () => {
     const ws = createSocketStub();
     const conn = {
@@ -229,7 +422,7 @@ describe('PluginGateway', () => {
       },
     };
     (gateway as any).activeRequestContexts.set('runtime-request-1', {
-      ws,
+      socket: ws,
       context: payload.context,
     });
 
@@ -329,7 +522,7 @@ describe('PluginGateway', () => {
       conversationId: 'conversation-1',
     };
     (gateway as any).activeRequestContexts.set('runtime-request-invalid-method', {
-      ws,
+      socket: ws,
       context: approvedContext,
     });
 
@@ -580,6 +773,235 @@ describe('PluginGateway', () => {
     });
   });
 
+  it('rejects pending execute requests when the remote plugin returns command errors', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+      authenticated: true,
+      manifest: remoteManifest,
+    };
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.REGISTER,
+        payload: {
+          manifest: remoteManifest,
+        } satisfies RegisterPayload,
+      },
+    );
+
+    const registerCall = pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0];
+    const resultPromise = registerCall.transport.executeTool({
+      toolName: 'list_directory',
+      params: {
+        dirPath: 'C:\\\\',
+      },
+      context: {
+        source: 'automation',
+        userId: 'user-1',
+        automationId: 'automation-1',
+      },
+    });
+    const sentMessage = JSON.parse(ws.send.mock.calls[1]?.[0] ?? '{}');
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.COMMAND,
+        action: WS_ACTION.EXECUTE_ERROR,
+        requestId: sentMessage.requestId,
+        payload: {
+          error: 'remote boom',
+        },
+      },
+    );
+
+    await expect(resultPromise).rejects.toThrow('remote boom');
+  });
+
+  it('sends hook messages through the registered remote transport and resolves the response', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+      authenticated: true,
+      manifest: remoteManifest,
+    };
+    const context = {
+      source: 'chat-hook',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      metadata: {
+        timeoutMs: 1234,
+      },
+    } as const;
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.REGISTER,
+        payload: {
+          manifest: remoteManifest,
+        } satisfies RegisterPayload,
+      },
+    );
+
+    const registerCall = pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0];
+    const resultPromise = registerCall.transport.invokeHook({
+      hookName: 'chat:before-model',
+      context,
+      payload: {
+        message: 'hello',
+      },
+    });
+
+    const sentMessage = readLastSentMessage(ws);
+    expect(sentMessage).toEqual({
+      type: WS_TYPE.PLUGIN,
+      action: WS_ACTION.HOOK_INVOKE,
+      requestId: expect.any(String),
+      payload: {
+        hookName: 'chat:before-model',
+        context,
+        payload: {
+          message: 'hello',
+        },
+      },
+    });
+    expect((gateway as any).activeRequestContexts.get(sentMessage.requestId)?.context).toEqual(context);
+    expect((gateway as any).activeRequestContexts.get(sentMessage.requestId)?.context).not.toBe(context);
+    expect((gateway as any).activeRequestContexts.get(sentMessage.requestId)?.context.metadata)
+      .not.toBe(context.metadata);
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.HOOK_RESULT,
+        requestId: sentMessage.requestId,
+        payload: {
+          data: {
+            action: 'continue',
+          },
+        },
+      },
+    );
+
+    await expect(resultPromise).resolves.toEqual({
+      action: 'continue',
+    });
+  });
+
+  it('rejects pending hook invocations when the remote plugin returns malformed hook results', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+      authenticated: true,
+      manifest: remoteManifest,
+    };
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.REGISTER,
+        payload: {
+          manifest: remoteManifest,
+        } satisfies RegisterPayload,
+      },
+    );
+
+    const registerCall = pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0];
+    const resultPromise = registerCall.transport.invokeHook({
+      hookName: 'chat:before-model',
+      context: {
+        source: 'chat-hook',
+      },
+      payload: {
+        message: 'hello',
+      },
+    });
+    const sentMessage = readLastSentMessage(ws);
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.HOOK_RESULT,
+        requestId: sentMessage.requestId,
+        payload: {
+          bad: true,
+        },
+      },
+    );
+
+    await expect(resultPromise).rejects.toThrow('无效的 Hook 返回负载');
+  });
+
+  it('rejects pending hook invocations when the remote plugin returns hook errors', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+      authenticated: true,
+      manifest: remoteManifest,
+    };
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.REGISTER,
+        payload: {
+          manifest: remoteManifest,
+        } satisfies RegisterPayload,
+      },
+    );
+
+    const registerCall = pluginRuntimeOrchestrator.registerPlugin.mock.calls[0]?.[0];
+    const resultPromise = registerCall.transport.invokeHook({
+      hookName: 'chat:before-model',
+      context: {
+        source: 'chat-hook',
+      },
+      payload: {
+        message: 'hello',
+      },
+    });
+    const sentMessage = readLastSentMessage(ws);
+
+    await (gateway as any).handleMessage(
+      ws,
+      conn,
+      {
+        type: WS_TYPE.PLUGIN,
+        action: WS_ACTION.HOOK_ERROR,
+        requestId: sentMessage.requestId,
+        payload: {
+          error: 'hook boom',
+        },
+      },
+    );
+
+    await expect(resultPromise).rejects.toThrow('hook boom');
+  });
+
   it('sends route messages through the registered remote transport and resolves the response', async () => {
     const ws = createSocketStub();
     const conn = {
@@ -739,6 +1161,77 @@ describe('PluginGateway', () => {
     expect((gateway as any).connectionByPluginId.get('remote.pc-host')).toBe(newConnection);
   });
 
+  it('authenticates remote bootstrap tokens when plugin identity matches the token claims', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: '',
+      deviceType: '',
+      authenticated: false,
+      manifest: null,
+      lastHeartbeatAt: 0,
+    };
+    jwtService.verify.mockReturnValue({
+      role: 'remote_plugin',
+      authKind: 'remote-plugin',
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+    });
+
+    await (gateway as any).handleAuth(ws, conn, {
+      token: 'remote-bootstrap-token',
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+    });
+
+    expect(conn).toEqual(
+      expect.objectContaining({
+        authenticated: true,
+        pluginName: 'remote.pc-host',
+        deviceType: 'pc',
+      }),
+    );
+    expect(JSON.parse(ws.send.mock.calls[0]?.[0] ?? '{}')).toEqual({
+      type: WS_TYPE.AUTH,
+      action: WS_ACTION.AUTH_OK,
+      payload: {},
+    });
+  });
+
+  it('rejects remote bootstrap tokens when the token claims do not match the requested plugin identity', async () => {
+    const ws = createSocketStub();
+    const conn = {
+      ws,
+      pluginName: '',
+      deviceType: '',
+      authenticated: false,
+      manifest: null,
+      lastHeartbeatAt: 0,
+    };
+    jwtService.verify.mockReturnValue({
+      role: 'remote_plugin',
+      authKind: 'remote-plugin',
+      pluginName: 'remote.other-host',
+      deviceType: 'pc',
+    });
+
+    await (gateway as any).handleAuth(ws, conn, {
+      token: 'remote-bootstrap-token',
+      pluginName: 'remote.pc-host',
+      deviceType: 'pc',
+    });
+
+    expect(conn.authenticated).toBe(false);
+    expect(JSON.parse(ws.send.mock.calls[0]?.[0] ?? '{}')).toEqual({
+      type: WS_TYPE.AUTH,
+      action: WS_ACTION.AUTH_FAIL,
+      payload: {
+        error: '远程插件令牌与当前插件标识不匹配',
+      },
+    });
+    expect(ws.close).toHaveBeenCalled();
+  });
+
   it('rejects websocket authentication for non-admin tokens', async () => {
     const ws = createSocketStub();
     const conn = {
@@ -816,6 +1309,35 @@ describe('PluginGateway', () => {
     expect((gateway as any).activeRequestContexts.size).toBe(0);
   });
 
+  it('warns and ignores command messages that do not include request ids', async () => {
+    const ws = createSocketStub();
+    const loggerWarn = jest.fn();
+    (gateway as any).logger.warn = loggerWarn;
+
+    await (gateway as any).handleMessage(
+      ws,
+      {
+        ws,
+        pluginName: 'remote.pc-host',
+        deviceType: 'pc',
+        authenticated: true,
+        manifest: remoteManifest,
+        lastHeartbeatAt: Date.now(),
+      },
+      {
+        type: WS_TYPE.COMMAND,
+        action: WS_ACTION.EXECUTE_ERROR,
+        payload: {
+          error: 'ignored',
+        },
+      },
+    );
+
+    expect(loggerWarn).toHaveBeenCalledWith(
+      '收到缺少 requestId 的插件消息: command/execute_error',
+    );
+  });
+
   it('performs a remote health check by pinging the websocket', async () => {
     const ws = createSocketStub();
     const conn = {
@@ -853,4 +1375,25 @@ function createSocketStub() {
     off: jest.fn(),
     ping: jest.fn(),
   };
+}
+
+function getSocketHandler(ws: ReturnType<typeof createSocketStub>, eventName: string) {
+  const handler = ws.on.mock.calls.find((call) => call[0] === eventName)?.[1];
+  if (typeof handler !== 'function') {
+    throw new Error(`missing socket handler for ${eventName}`);
+  }
+
+  return handler as (...args: unknown[]) => void;
+}
+
+function readLastSentMessage(ws: ReturnType<typeof createSocketStub>) {
+  return JSON.parse(ws.send.mock.calls.at(-1)?.[0] ?? '{}');
+}
+
+async function flushPendingTasks() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+function closeSocketConnection(ws: ReturnType<typeof createSocketStub>) {
+  getSocketHandler(ws, 'close')();
 }

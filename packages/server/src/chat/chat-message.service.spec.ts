@@ -1,9 +1,6 @@
-import { ChatMessageCompletionService } from './chat-message-completion.service';
 import { ChatMessageGenerationService } from './chat-message-generation.service';
 import { ChatMessageMutationService } from './chat-message-mutation.service';
 import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
-import { ChatMessagePluginTargetService } from './chat-message-plugin-target.service';
-import { ChatMessageResponseHooksService } from './chat-message-response-hooks.service';
 import { ChatMessageService } from './chat-message.service';
 
 describe('ChatMessageService', () => {
@@ -33,16 +30,47 @@ describe('ChatMessageService', () => {
     getCurrentPersona: jest.fn(),
   };
 
+  const runMessageReceivedHooks = jest.fn();
+  const runChatBeforeModelHooks = jest.fn();
+  const runChatWaitingModelHooks = jest.fn();
+  const runChatAfterModelHooks = jest.fn();
+  const runMessageCreatedHooks = jest.fn();
+  const runMessageUpdatedHooks = jest.fn();
+  const runMessageDeletedHooks = jest.fn();
+  const runResponseBeforeSendHooks = jest.fn();
+  const runResponseAfterSendHooks = jest.fn();
   const pluginRuntime = {
-    runMessageReceivedHooks: jest.fn(),
-    runChatBeforeModelHooks: jest.fn(),
-    runChatWaitingModelHooks: jest.fn(),
-    runChatAfterModelHooks: jest.fn(),
-    runMessageCreatedHooks: jest.fn(),
-    runMessageUpdatedHooks: jest.fn(),
-    runMessageDeletedHooks: jest.fn(),
-    runResponseBeforeSendHooks: jest.fn(),
-    runResponseAfterSendHooks: jest.fn(),
+    runMessageReceivedHooks,
+    runChatBeforeModelHooks,
+    runChatWaitingModelHooks,
+    runChatAfterModelHooks,
+    runMessageCreatedHooks,
+    runMessageUpdatedHooks,
+    runMessageDeletedHooks,
+    runResponseBeforeSendHooks,
+    runResponseAfterSendHooks,
+    runHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
+      hookName === 'chat:before-model'
+        ? runChatBeforeModelHooks(input)
+        : hookName === 'message:received'
+          ? runMessageReceivedHooks(input)
+          : hookName === 'chat:after-model'
+            ? runChatAfterModelHooks(input)
+            : hookName === 'message:created'
+              ? runMessageCreatedHooks(input)
+              : hookName === 'message:updated'
+                ? runMessageUpdatedHooks(input)
+                : runResponseBeforeSendHooks(input)),
+    runBroadcastHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) => {
+      switch (hookName) {
+        case 'chat:waiting-model':
+          return runChatWaitingModelHooks(input);
+        case 'message:deleted':
+          return runMessageDeletedHooks(input);
+        default:
+          return runResponseAfterSendHooks(input);
+      }
+    }),
   };
 
   const toolRegistry = {
@@ -148,20 +176,19 @@ describe('ChatMessageService', () => {
         }),
       }),
     );
-    const responseHooks = new ChatMessageResponseHooksService(
-      pluginRuntime as never,
-    );
     const orchestration = new ChatMessageOrchestrationService(
       aiProvider as never,
       pluginRuntime as never,
       toolRegistry as never,
       modelInvocation as never,
       skillSession as never,
-      responseHooks as never,
     );
-    const completionService = new ChatMessageCompletionService(
+    const mutationService = new ChatMessageMutationService(
       prisma as never,
+      chatService as never,
+      pluginRuntime as never,
       orchestration as never,
+      chatTaskService as never,
     );
     const generationService = new ChatMessageGenerationService(
       prisma as never,
@@ -172,24 +199,12 @@ describe('ChatMessageService', () => {
       modelInvocation as never,
       orchestration as never,
       chatTaskService as never,
-      completionService as never,
+      mutationService as never,
       skillCommands as never,
-    );
-    const mutationService = new ChatMessageMutationService(
-      prisma as never,
-      chatService as never,
-      pluginRuntime as never,
-      chatTaskService as never,
-    );
-    const pluginTargetService = new ChatMessagePluginTargetService(
-      prisma as never,
-      chatService as never,
-      pluginRuntime as never,
     );
     service = new ChatMessageService(
       generationService as never,
       mutationService as never,
-      pluginTargetService as never,
     );
   });
 
@@ -2509,24 +2524,7 @@ describe('ChatMessageService', () => {
     prisma.message.create
       .mockResolvedValueOnce(userMessage)
       .mockResolvedValueOnce(assistantMessage);
-    prisma.message.update
-      .mockResolvedValueOnce({
-        ...assistantMessage,
-        content: '插件已经直接回复。',
-        partsJson: JSON.stringify([
-          {
-            type: 'text',
-            text: '插件已经直接回复。',
-          },
-        ]),
-        status: 'completed',
-        provider: 'anthropic',
-        model: 'claude-3-7-sonnet',
-        error: null,
-        toolCalls: null,
-        toolResults: null,
-      })
-      .mockResolvedValueOnce(completedAssistantMessage);
+    prisma.message.update.mockResolvedValue(completedAssistantMessage);
     prisma.conversation.update.mockResolvedValue(null);
     pluginRuntime.runChatBeforeModelHooks.mockResolvedValue({
       action: 'short-circuit',
@@ -2663,24 +2661,7 @@ describe('ChatMessageService', () => {
     prisma.message.create
       .mockResolvedValueOnce(userMessage)
       .mockResolvedValueOnce(assistantMessage);
-    prisma.message.update
-      .mockResolvedValueOnce({
-        ...assistantMessage,
-        content: '插件已经直接回复。',
-        partsJson: JSON.stringify([
-          {
-            type: 'text',
-            text: '插件已经直接回复。',
-          },
-        ]),
-        status: 'completed',
-        provider: 'anthropic',
-        model: 'claude-3-7-sonnet',
-        error: null,
-        toolCalls: null,
-        toolResults: null,
-      })
-      .mockResolvedValueOnce(completedAssistantMessage);
+    prisma.message.update.mockResolvedValue(completedAssistantMessage);
     prisma.conversation.update.mockResolvedValue(null);
     pluginRuntime.runChatBeforeModelHooks.mockResolvedValue({
       action: 'short-circuit',

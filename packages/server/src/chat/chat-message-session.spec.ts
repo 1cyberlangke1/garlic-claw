@@ -6,7 +6,7 @@
  * - 新的用户文本/图片 parts
  *
  * 输出:
- * - 可写入数据库的纯文本摘要与 parts JSON
+ * - 可继续交给 mutation owner 持久化的结构化 user 消息
  * - 可传给模型的结构化消息列表
  *
  * 预期行为:
@@ -47,17 +47,15 @@ describe('chat-message-session', () => {
 
     expect(payload.persistedMessage).toEqual({
       content: '帮我看看这张图',
-      partsJson: JSON.stringify([
+      parts: [
         { type: 'text', text: '帮我看看这张图' },
         {
           type: 'image',
           image: 'data:image/png;base64,current',
           mimeType: 'image/png',
         },
-      ]),
+      ],
     });
-
-    expect(payload.searchableContent).toBe('帮我看看这张图');
     expect(payload.modelMessages).toEqual([
       {
         role: 'user',

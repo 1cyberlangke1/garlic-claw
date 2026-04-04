@@ -750,7 +750,8 @@ describe('PluginRuntimeService', () => {
       transport: createTransport(),
     });
 
-    const result = await service.runChatBeforeModelHooks({
+    const result = await service.runHook({
+      hookName: 'chat:before-model',
       context: {
         source: 'chat-hook',
         userId: 'user-1',
@@ -948,7 +949,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runChatBeforeModelHooks({
+      service.runHook({
+        hookName: 'chat:before-model',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -1099,7 +1101,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      (service as any).runMessageReceivedHooks({
+      service.runHook({
+        hookName: 'message:received',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -1258,7 +1261,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      (service as any).runMessageReceivedHooks({
+      service.runHook({
+        hookName: 'message:received',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -1364,7 +1368,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      (service as any).runChatWaitingModelHooks({
+      service.runBroadcastHook({
+        hookName: 'chat:waiting-model',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -1459,7 +1464,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runChatAfterModelHooks({
+      service.runHook({
+        hookName: 'chat:after-model',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -1560,7 +1566,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runChatAfterModelHooks({
+      service.runHook({
+        hookName: 'chat:after-model',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -1641,7 +1648,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runConversationCreatedHooks({
+      service.runBroadcastHook({
+        hookName: 'conversation:created',
         context: {
           source: 'http-route',
           userId: 'user-1',
@@ -1741,7 +1749,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runMessageCreatedHooks({
+      service.runHook({
+        hookName: 'message:created',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -1903,7 +1912,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runAutomationBeforeRunHooks({
+      service.runHook({
+        hookName: 'automation:before-run',
         context: {
           source: 'automation',
           userId: 'user-1',
@@ -1942,7 +1952,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runAutomationAfterRunHooks({
+      service.runHook({
+        hookName: 'automation:after-run',
         context: {
           source: 'automation',
           userId: 'user-1',
@@ -2060,7 +2071,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runResponseBeforeSendHooks({
+      service.runHook({
+        hookName: 'response:before-send',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -2119,7 +2131,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runResponseAfterSendHooks({
+      service.runBroadcastHook({
+        hookName: 'response:after-send',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -2789,7 +2802,8 @@ describe('PluginRuntimeService', () => {
       });
 
       await expect(
-        (service as any).runMessageReceivedHooks({
+        service.runHook({
+          hookName: 'message:received',
           context: {
             source: 'chat-hook',
             userId: 'user-1',
@@ -4581,7 +4595,8 @@ describe('PluginRuntimeService', () => {
       }),
     ).rejects.toThrow('tool exploded');
     await expect(
-      service.runChatBeforeModelHooks({
+      service.runHook({
+        hookName: 'chat:before-model',
         context: {
           source: 'chat-hook',
           userId: 'user-1',
@@ -4742,7 +4757,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runAutomationAfterRunHooks({
+      service.runHook({
+        hookName: 'automation:after-run',
         context: hookContext,
         payload,
       }),
@@ -4847,7 +4863,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runConversationCreatedHooks({
+      service.runBroadcastHook({
+        hookName: 'conversation:created',
         context: conversationContext,
         payload: {
           context: conversationContext,
@@ -4862,7 +4879,8 @@ describe('PluginRuntimeService', () => {
     ).resolves.toBeUndefined();
 
     await expect(
-      service.runMessageCreatedHooks({
+      service.runHook({
+        hookName: 'message:created',
         context: messageContext,
         payload: {
           context: messageContext,
@@ -4909,7 +4927,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runMessageUpdatedHooks({
+      service.runHook({
+        hookName: 'message:updated',
         context: messageContext,
         payload: {
           context: messageContext,
@@ -4972,7 +4991,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runMessageDeletedHooks({
+      service.runBroadcastHook({
+        hookName: 'message:deleted',
         context: messageContext,
         payload: {
           context: messageContext,
@@ -5162,7 +5182,8 @@ describe('PluginRuntimeService', () => {
     hostService.call.mockResolvedValue(true);
 
     await expect(
-      (service as any).runMessageReceivedHooks({
+      service.runHook({
+        hookName: 'message:received',
         context: hookContext,
         payload: {
           context: hookContext,
@@ -5214,7 +5235,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      (service as any).runChatWaitingModelHooks({
+      service.runBroadcastHook({
+        hookName: 'chat:waiting-model',
         context: hookContext,
         payload: {
           context: hookContext,
@@ -5465,7 +5487,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runToolAfterCallHooks({
+      service.runHook({
+        hookName: 'tool:after-call',
         context: callContext,
         payload,
       }),
@@ -5584,7 +5607,8 @@ describe('PluginRuntimeService', () => {
     });
 
     await expect(
-      service.runResponseAfterSendHooks({
+      service.runBroadcastHook({
+        hookName: 'response:after-send',
         context: hookContext,
         payload,
       }),
@@ -5683,7 +5707,8 @@ describe('PluginRuntimeService', () => {
       .mockResolvedValueOnce(true);
 
     await expect(
-      service.runPluginLoadedHooks({
+      service.runBroadcastHook({
+        hookName: 'plugin:loaded',
         context: hookContext,
         payload: {
           context: hookContext,
@@ -5699,7 +5724,8 @@ describe('PluginRuntimeService', () => {
     ).resolves.toBeUndefined();
 
     await expect(
-      service.runPluginUnloadedHooks({
+      service.runBroadcastHook({
+        hookName: 'plugin:unloaded',
         context: hookContext,
         payload: {
           context: hookContext,
@@ -5715,7 +5741,8 @@ describe('PluginRuntimeService', () => {
     ).resolves.toBeUndefined();
 
     await expect(
-      service.runPluginErrorHooks({
+      service.runBroadcastHook({
+        hookName: 'plugin:error',
         context: hookContext,
         payload: {
           context: hookContext,

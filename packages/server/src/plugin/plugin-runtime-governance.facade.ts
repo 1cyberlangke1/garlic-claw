@@ -12,13 +12,12 @@ import type {
   PluginRuntimePressureSnapshot,
   PluginRuntimeKind,
 } from '@garlic-claw/shared';
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { getRuntimeRecordOrThrow, isRuntimeRecordEnabledForContext } from './plugin-runtime-dispatch.helpers';
+import { isRuntimeRecordEnabledForContext } from '@garlic-claw/shared';
 import {
-  buildRuntimePressureSnapshot,
-  listSupportedPluginActions,
-} from './plugin-runtime-record.helpers';
-import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 interface RuntimeGovernanceRecord {
   manifest: PluginManifest;
@@ -38,6 +37,67 @@ interface RuntimeGovernanceRecord {
   };
   activeExecutions: number;
   maxConcurrentExecutions: number;
+}
+
+const PLUGIN_ACTION_ORDER: PluginActionName[] = [
+  'health-check',
+  'reload',
+  'reconnect',
+];
+
+function getRuntimeRecordOrThrow(
+  records: ReadonlyMap<string, RuntimeGovernanceRecord>,
+  pluginId: string,
+): RuntimeGovernanceRecord {
+  const record = records.get(pluginId);
+  if (!record) {
+    throw new NotFoundException(`Plugin not found: ${pluginId}`);
+  }
+
+  return record;
+}
+
+async function runPromiseWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+function buildRuntimePressureSnapshot(input: {
+  activeExecutions: number;
+  maxConcurrentExecutions: number;
+}) {
+  return {
+    activeExecutions: input.activeExecutions,
+    maxConcurrentExecutions: input.maxConcurrentExecutions,
+  };
+}
+
+function listSupportedPluginActions(input: {
+  transport: {
+    listSupportedActions?(): PluginActionName[];
+  };
+}): PluginActionName[] {
+  const actions = input.transport.listSupportedActions?.() ?? ['health-check'];
+  const actionSet = new Set<PluginActionName>(actions);
+
+  return PLUGIN_ACTION_ORDER.filter((action) => actionSet.has(action));
 }
 
 @Injectable()

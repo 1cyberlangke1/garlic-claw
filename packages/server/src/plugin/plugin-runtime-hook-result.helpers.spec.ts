@@ -1,23 +1,23 @@
 import {
   normalizeChatBeforeModelHookResult,
   normalizeMessageReceivedHookResult,
-} from './plugin-runtime-inbound-hook-result.helpers';
+} from '@garlic-claw/shared';
 import {
   normalizeChatAfterModelHookResult,
   normalizeMessageCreatedHookResult,
   normalizeMessageUpdatedHookResult,
-} from './plugin-runtime-message-hook-result.helpers';
+} from '@garlic-claw/shared';
 import {
   normalizeAutomationAfterRunHookResult,
   normalizeAutomationBeforeRunHookResult,
   normalizeResponseBeforeSendHookResult,
   normalizeToolAfterCallHookResult,
   normalizeToolBeforeCallHookResult,
-} from './plugin-runtime-operation-hook-result.helpers';
+} from '@garlic-claw/shared';
 import {
   normalizeSubagentAfterRunHookResult,
   normalizeSubagentBeforeRunHookResult,
-} from './plugin-runtime-subagent-hook-result.helpers';
+} from '@garlic-claw/shared';
 
 describe('plugin-runtime-hook-result.helpers', () => {
   it('normalizes chat hook results', () => {

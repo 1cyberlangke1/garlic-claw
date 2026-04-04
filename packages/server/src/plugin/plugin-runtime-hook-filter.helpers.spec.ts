@@ -3,7 +3,7 @@ import {
   getMessageReceivedText,
   getPluginHookPriority,
   matchesHookFilter,
-} from './plugin-runtime-hook-filter.helpers';
+} from '@garlic-claw/shared';
 
 describe('plugin-runtime-hook-filter.helpers', () => {
   it('normalizes hook priority', () => {

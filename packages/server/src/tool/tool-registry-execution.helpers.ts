@@ -23,7 +23,7 @@ export function buildAiToolSetFromResolvedTools(input: {
   resolvedTools: ResolvedToolRecord[];
   context: PluginCallContext;
   allowedToolNames?: string[];
-  pluginRuntime: Pick<PluginRuntimeService, 'runToolBeforeCallHooks' | 'runToolAfterCallHooks'>;
+  pluginRuntime: Pick<PluginRuntimeService, 'runHook'>;
 }): Record<string, Tool> | undefined {
   const filteredTools = input.allowedToolNames
     ? input.resolvedTools.filter((entry) =>
@@ -62,9 +62,10 @@ async function executeResolvedTool(input: {
   entry: ResolvedToolRecord;
   args: JsonObject;
   context: PluginCallContext;
-  pluginRuntime: Pick<PluginRuntimeService, 'runToolBeforeCallHooks' | 'runToolAfterCallHooks'>;
+  pluginRuntime: Pick<PluginRuntimeService, 'runHook'>;
 }): Promise<JsonValue> {
-  const beforeCallResult = await input.pluginRuntime.runToolBeforeCallHooks({
+  const beforeCallResult = await input.pluginRuntime.runHook({
+    hookName: 'tool:before-call',
     context: input.context,
     payload: buildBeforeCallPayload(input.entry, input.args, input.context),
   });
@@ -79,7 +80,8 @@ async function executeResolvedTool(input: {
     context: input.context,
     skipLifecycleHooks: input.entry.record.source.kind === 'plugin',
   }));
-  const afterCallPayload = await input.pluginRuntime.runToolAfterCallHooks({
+  const afterCallPayload = await input.pluginRuntime.runHook({
+    hookName: 'tool:after-call',
     context: input.context,
     payload: buildAfterCallPayload(input.entry, toolParams, output, input.context),
   });

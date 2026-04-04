@@ -2,29 +2,30 @@ import type {
   PluginCallContext,
   PluginErrorHookPayload,
   PluginHookName,
+  PluginManifest,
   PluginRouteRequest,
   PluginRouteResponse,
+  PluginRuntimeKind,
   ToolAfterCallHookPayload,
   ToolBeforeCallHookPayload,
 } from '@garlic-claw/shared';
 import {
+  buildPluginErrorHookPayloadForRuntimeRecord,
   buildPluginRouteInvocationRequest,
   buildPluginToolHookPayload,
+  findManifestRoute,
+  findManifestTool,
+  isRuntimeRecordEnabledForContext,
+  normalizeRoutePath,
 } from '@garlic-claw/shared';
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
-import { assertRuntimeRecordEnabled, getRuntimeRecordOrThrow } from './plugin-runtime-dispatch.helpers';
-import { recordRuntimePluginFailureAndDispatch } from './plugin-runtime-failure.helpers';
-import {
-  isPluginOverloadedError,
-  runWithRuntimeExecutionSlot,
-} from './plugin-runtime-record.helpers';
-import {
-  findManifestRouteOrThrow,
-  findManifestToolOrThrow,
-} from './plugin-runtime-manifest.helpers';
-import { runPromiseWithTimeout } from './plugin-runtime-timeout.helpers';
-import { readRuntimeTimeoutMs } from './plugin-runtime-input.helpers';
 import type {
   PluginRuntimeRecord,
   ToolBeforeCallExecutionResult,
@@ -32,6 +33,94 @@ import type {
 import { PluginService } from './plugin.service';
 
 type RuntimeInvocationType = 'tool' | 'route' | 'hook';
+type RuntimePluginErrorDispatcher = (input: {
+  context: PluginCallContext;
+  payload: PluginErrorHookPayload;
+}) => Promise<void>;
+
+function findManifestRouteOrThrow(
+  manifest: PluginManifest,
+  method: PluginRouteRequest['method'],
+  path: string,
+) {
+  const route = findManifestRoute(manifest, method, path);
+  if (route) {
+    return route;
+  }
+
+  throw new NotFoundException(
+    `插件 ${manifest.id} 未声明 Route: ${method} ${normalizeRoutePath(path)}`,
+  );
+}
+
+function findManifestToolOrThrow(
+  manifest: PluginManifest,
+  toolName: string,
+) {
+  const tool = findManifestTool(manifest, toolName);
+  if (!tool) {
+    throw new NotFoundException(`Tool not found: ${manifest.id}:${toolName}`);
+  }
+
+  return tool;
+}
+
+function getRuntimeRecordOrThrow(
+  records: ReadonlyMap<string, PluginRuntimeRecord>,
+  pluginId: string,
+): PluginRuntimeRecord {
+  const record = records.get(pluginId);
+  if (!record) {
+    throw new NotFoundException(`Plugin not found: ${pluginId}`);
+  }
+
+  return record;
+}
+
+function assertRuntimeRecordEnabled(
+  record: PluginRuntimeRecord,
+  context: PluginCallContext,
+): void {
+  if (isRuntimeRecordEnabledForContext(record, context)) {
+    return;
+  }
+
+  throw new ForbiddenException(`插件 ${record.manifest.id} 在当前作用域已禁用`);
+}
+
+function readRuntimeTimeoutMs(
+  context: PluginCallContext,
+  fallback: number,
+): number {
+  const raw = context.metadata?.timeoutMs;
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw <= 0) {
+    return fallback;
+  }
+
+  return raw;
+}
+
+async function runPromiseWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
 
 @Injectable()
 export class PluginRuntimeTransportFacade {
@@ -52,7 +141,7 @@ export class PluginRuntimeTransportFacade {
       context: PluginCallContext;
       payload: ToolAfterCallHookPayload;
     }) => Promise<ToolAfterCallHookPayload>;
-    dispatchPluginErrorHook: (payload: PluginErrorHookPayload) => Promise<void>;
+    dispatchPluginErrorHook: RuntimePluginErrorDispatcher;
   }): Promise<JsonValue> {
     const record = getRuntimeRecordOrThrow(input.records, input.pluginId);
     assertRuntimeRecordEnabled(record, input.context);
@@ -122,7 +211,7 @@ export class PluginRuntimeTransportFacade {
     pluginId: string;
     request: PluginRouteRequest;
     context: PluginCallContext;
-    dispatchPluginErrorHook: (payload: PluginErrorHookPayload) => Promise<void>;
+    dispatchPluginErrorHook: RuntimePluginErrorDispatcher;
   }): Promise<PluginRouteResponse> {
     const record = getRuntimeRecordOrThrow(input.records, input.pluginId);
     assertRuntimeRecordEnabled(record, input.context);
@@ -162,7 +251,7 @@ export class PluginRuntimeTransportFacade {
     context: PluginCallContext;
     payload: JsonValue;
     recordFailure?: boolean;
-    dispatchPluginErrorHook: (payload: PluginErrorHookPayload) => Promise<void>;
+    dispatchPluginErrorHook: RuntimePluginErrorDispatcher;
   }): Promise<JsonValue | null | undefined> {
     const record = getRuntimeRecordOrThrow(input.records, input.pluginId);
     assertRuntimeRecordEnabled(record, input.context);
@@ -198,32 +287,31 @@ export class PluginRuntimeTransportFacade {
     timeoutMessage: string;
     skipPluginErrorHook?: boolean;
     recordFailure?: boolean;
-    dispatchPluginErrorHook: (payload: PluginErrorHookPayload) => Promise<void>;
+    dispatchPluginErrorHook: RuntimePluginErrorDispatcher;
     execute: () => Promise<T>;
   }): Promise<T> {
     try {
-      return await runWithRuntimeExecutionSlot({
-        record: input.record,
-        type: input.type,
-        metadata: input.metadata,
-        recordPluginEvent: async (pluginId, event) => {
-          await this.pluginService.recordPluginEvent(pluginId, event);
-        },
-        execute: () => runPromiseWithTimeout(
+      return await this.runWithExecutionSlot(
+        input.record,
+        input.type,
+        input.metadata,
+        () => runPromiseWithTimeout(
           Promise.resolve().then(() => input.execute()),
           input.timeoutMs,
           input.timeoutMessage,
         ),
-      });
+      );
     } catch (error) {
-      if (isPluginOverloadedError(error)) {
+      if (
+        error instanceof HttpException
+        && error.getStatus() === HttpStatus.TOO_MANY_REQUESTS
+      ) {
         throw error;
       }
 
       if (input.recordFailure !== false) {
         const message = error instanceof Error ? error.message : String(error);
-        await recordRuntimePluginFailureAndDispatch({
-          pluginId: input.record.manifest.id,
+        await this.recordFailureAndDispatch({
           record: input.record,
           context: input.context,
           type: message.includes('超时')
@@ -232,18 +320,77 @@ export class PluginRuntimeTransportFacade {
           message,
           metadata: input.metadata,
           skipPluginErrorHook: input.skipPluginErrorHook,
-          recordFailure: async (failure) => {
-            await this.pluginService.recordPluginFailure(failure.pluginId, {
-              type: failure.type,
-              message: failure.message,
-              metadata: failure.metadata,
-              checked: failure.checked,
-            });
-          },
           dispatchPluginErrorHook: input.dispatchPluginErrorHook,
         });
       }
       throw error;
     }
+  }
+
+  private async runWithExecutionSlot<T>(
+    record: PluginRuntimeRecord,
+    type: RuntimeInvocationType,
+    metadata: JsonObject,
+    execute: () => Promise<T>,
+  ): Promise<T> {
+    if (record.activeExecutions >= record.maxConcurrentExecutions) {
+      const message = `插件 ${record.manifest.id} 当前执行并发已达上限，请稍后重试`;
+      await this.pluginService.recordPluginEvent(record.manifest.id, {
+        type: `${type}:overloaded`,
+        level: 'warn',
+        message,
+        metadata: {
+          ...metadata,
+          activeExecutions: record.activeExecutions,
+          maxConcurrentExecutions: record.maxConcurrentExecutions,
+        },
+      });
+      throw new HttpException(message, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    record.activeExecutions += 1;
+    try {
+      return await execute();
+    } finally {
+      record.activeExecutions = Math.max(0, record.activeExecutions - 1);
+    }
+  }
+
+  private async recordFailureAndDispatch(input: {
+    record: Pick<PluginRuntimeRecord, 'manifest' | 'runtimeKind' | 'deviceType'>;
+    context: PluginCallContext;
+    type: string;
+    message: string;
+    metadata?: JsonObject;
+    checked?: boolean;
+    skipPluginErrorHook?: boolean;
+    dispatchPluginErrorHook: RuntimePluginErrorDispatcher;
+  }): Promise<void> {
+    await this.pluginService.recordPluginFailure(input.record.manifest.id, {
+      type: input.type,
+      message: input.message,
+      metadata: input.metadata,
+      checked: input.checked,
+    });
+
+    if (input.skipPluginErrorHook) {
+      return;
+    }
+
+    await input.dispatchPluginErrorHook({
+      context: input.context,
+      payload: buildPluginErrorHookPayloadForRuntimeRecord({
+        pluginId: input.record.manifest.id,
+        context: input.context,
+        type: input.type,
+        message: input.message,
+        metadata: input.metadata,
+        record: input.record as {
+          manifest: PluginManifest;
+          runtimeKind: PluginRuntimeKind;
+          deviceType: string;
+        },
+      }),
+    });
   }
 }

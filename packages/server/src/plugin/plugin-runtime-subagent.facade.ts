@@ -1,41 +1,37 @@
 import {
   applySubagentAfterRunMutation,
   applySubagentBeforeRunMutation,
-  cloneSubagentAfterRunPayload,
-  cloneSubagentBeforeRunPayload,
-} from '@garlic-claw/shared';
-import type {
-  PluginCallContext,
-  PluginManifest,
-  PluginSubagentRequest,
-  PluginSubagentRunResult,
-  PluginHookName,
-  SubagentAfterRunHookPayload,
-  SubagentBeforeRunHookPayload,
-} from '@garlic-claw/shared';
-import type { Tool } from 'ai';
-import { Injectable } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
-import { AiModelExecutionService } from '../ai/ai-model-execution.service';
-import { toAiSdkMessages } from '../chat/sdk-message-converter';
-import { listDispatchableHookRecords } from './plugin-runtime-dispatch.helpers';
-import {
-  runMutatingHookChain,
-  runShortCircuitingHookChain,
-} from './plugin-runtime-hook-runner.helpers';
-import {
-  normalizeSubagentAfterRunHookResult,
-  normalizeSubagentBeforeRunHookResult,
-} from './plugin-runtime-hook-result.helpers';
-import {
-  buildResolvedSubagentRunResult,
-  assertSubagentRequestInputSupported,
   buildResolvedSubagentAfterRunPayload,
-  buildSubagentStreamPreparedInput,
+  buildResolvedSubagentRunResult,
   buildSubagentToolSetRequest,
   collectSubagentRunResult,
-} from './plugin-runtime-subagent.helpers';
-import { resolveCachedRuntimeServicePromise } from './plugin-runtime-module.helpers';
+  cloneSubagentAfterRunPayload,
+  cloneSubagentBeforeRunPayload,
+  hasImagePart,
+  listDispatchableHookRecords,
+  normalizeSubagentAfterRunHookResult,
+  normalizeSubagentBeforeRunHookResult,
+  runMutatingHookChain,
+  runShortCircuitingHookChain,
+  type PluginCallContext,
+  type PluginHookName,
+  type PluginManifest,
+  type PluginSubagentRequest,
+  type PluginSubagentRunResult,
+  type SubagentAfterRunHookPayload,
+  type SubagentBeforeRunHookPayload,
+} from '@garlic-claw/shared';
+import type { Tool } from 'ai';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import type { JsonValue } from '../common/types/json-value';
+import { AiModelExecutionService } from '../ai/ai-model-execution.service';
+import { createStepLimit, type AiSdkToolSet } from '../ai/sdk-adapter';
+import { toAiSdkMessages } from '../chat/sdk-message-converter';
 
 type DispatchableSubagentHookRecord = {
   manifest: PluginManifest;
@@ -51,8 +47,8 @@ type InvokeSubagentHook = (input: {
   pluginId: string;
   hookName: PluginHookName;
   context: PluginCallContext;
-  payload: unknown;
-}) => Promise<unknown>;
+  payload: JsonValue;
+}) => Promise<JsonValue | null | undefined>;
 
 type SubagentHookInput<TPayload> = {
   records: Iterable<DispatchableSubagentHookRecord>;
@@ -60,6 +56,28 @@ type SubagentHookInput<TPayload> = {
   payload: TPayload;
   invokeHook: InvokeSubagentHook;
 };
+
+function resolveCachedServicePromise<T>(input: {
+  current: Promise<T> | undefined;
+  resolve: () => Promise<T | undefined>;
+  cache: (value: Promise<T>) => void;
+  notFoundMessage: string;
+}): Promise<T> {
+  if (input.current) {
+    return input.current;
+  }
+
+  const promise = (async () => {
+    const resolved = await input.resolve();
+    if (!resolved) {
+      throw new NotFoundException(input.notFoundMessage);
+    }
+
+    return resolved;
+  })();
+  input.cache(promise);
+  return promise;
+}
 
 @Injectable()
 export class PluginRuntimeSubagentFacade {
@@ -85,13 +103,10 @@ export class PluginRuntimeSubagentFacade {
     context: PluginCallContext;
     request: PluginSubagentRequest;
     invokeHook: InvokeSubagentHook;
-    runAfterHooks: (input: {
-      context: PluginCallContext;
-      payload: SubagentAfterRunHookPayload;
-    }) => Promise<SubagentAfterRunHookPayload>;
   }): Promise<PluginSubagentRunResult> {
+    const records = [...input.records];
     const beforeRunResult = await this.runBeforeHooks({
-      records: input.records,
+      records,
       context: input.context,
       payload: {
         context: {
@@ -111,11 +126,9 @@ export class PluginRuntimeSubagentFacade {
       request.providerId,
       request.modelId,
     );
-
-    assertSubagentRequestInputSupported({
-      request,
-      modelConfig,
-    });
+    if (hasImagePart(request.messages) && !modelConfig.capabilities.input.image) {
+      throw new BadRequestException('subagent.run 当前模型不支持图片输入');
+    }
 
     const prepared = this.aiModelExecution.prepareResolved({
       modelConfig,
@@ -131,20 +144,24 @@ export class PluginRuntimeSubagentFacade {
     const tools = toolSetRequest
       ? await (await this.getToolRegistry()).buildToolSet(toolSetRequest)
       : undefined;
-    const executed = this.aiModelExecution.streamPrepared(
-      buildSubagentStreamPreparedInput({
-        prepared,
-        request,
-        tools,
-      }),
-    );
+    const executed = this.aiModelExecution.streamPrepared({
+      prepared,
+      system: request.system,
+      tools,
+      stopWhen: createStepLimit(request.maxSteps),
+      variant: request.variant,
+      providerOptions: request.providerOptions,
+      headers: request.headers,
+      maxOutputTokens: request.maxOutputTokens,
+    });
     const result = await collectSubagentRunResult({
       modelConfig,
       fullStream: executed.result.fullStream,
       finishReason: executed.result.finishReason,
     });
 
-    const afterRunPayload = await input.runAfterHooks({
+    const afterRunPayload = await this.runAfterHooks({
+      records,
       context: input.context,
       payload: buildResolvedSubagentAfterRunPayload({
         context: input.context,
@@ -153,6 +170,7 @@ export class PluginRuntimeSubagentFacade {
         modelConfig,
         result,
       }),
+      invokeHook: input.invokeHook,
     });
 
     return afterRunPayload.result;
@@ -171,7 +189,7 @@ export class PluginRuntimeSubagentFacade {
       hookName: 'subagent:before-run',
       context: input.context,
       payload: cloneSubagentBeforeRunPayload(input.payload),
-      invokeHook: (hookInput) => input.invokeHook(hookInput),
+      invokeHook: input.invokeHook,
       normalizeResult: normalizeSubagentBeforeRunHookResult,
       applyMutation: applySubagentBeforeRunMutation,
       buildShortCircuitReturn: ({ payload, result }) => {
@@ -206,14 +224,14 @@ export class PluginRuntimeSubagentFacade {
       hookName: 'subagent:after-run',
       context: input.context,
       payload: cloneSubagentAfterRunPayload(input.payload),
-      invokeHook: (hookInput) => input.invokeHook(hookInput),
+      invokeHook: input.invokeHook,
       normalizeResult: normalizeSubagentAfterRunHookResult,
       applyMutation: applySubagentAfterRunMutation,
     });
   }
 
   private async getToolRegistry() {
-    return resolveCachedRuntimeServicePromise({
+    return resolveCachedServicePromise({
       current: this.toolRegistryPromise,
       resolve: async () => {
         const { ToolRegistryService } = await import('../tool/tool-registry.service');

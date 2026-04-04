@@ -137,6 +137,77 @@ export function toConversationSessionInfo(
   };
 }
 
+export function runOwnedConversationSessionMethod(
+  input:
+    | {
+      sessions: Map<string, ConversationSessionRecord>;
+      pluginId: string;
+      conversationId: string;
+      now: number;
+      sessionMethod: 'start';
+      timeoutMs: number;
+      captureHistory: boolean;
+      metadata?: JsonValue;
+    }
+    | {
+      sessions: Map<string, ConversationSessionRecord>;
+      pluginId: string;
+      conversationId: string;
+      now: number;
+      sessionMethod: 'keep';
+      timeoutMs: number;
+      resetTimeout: boolean;
+    }
+    | {
+      sessions: Map<string, ConversationSessionRecord>;
+      pluginId: string;
+      conversationId: string;
+      now: number;
+      sessionMethod: 'get' | 'finish';
+    },
+): PluginConversationSessionInfo | boolean | null {
+  if (input.sessionMethod === 'start') {
+    const session = createConversationSessionRecord({
+      pluginId: input.pluginId,
+      conversationId: input.conversationId,
+      timeoutMs: input.timeoutMs,
+      captureHistory: input.captureHistory,
+      metadata: input.metadata,
+      now: input.now,
+    });
+    input.sessions.set(input.conversationId, session);
+    return toConversationSessionInfo(session, input.now);
+  }
+
+  if (input.sessionMethod === 'finish') {
+    return finishOwnedConversationSession(
+      input.sessions,
+      input.pluginId,
+      input.conversationId,
+      input.now,
+    );
+  }
+
+  const session = getOwnedConversationSession(
+    input.sessions,
+    input.pluginId,
+    input.conversationId,
+    input.now,
+  );
+  if (!session) {
+    return null;
+  }
+  if (input.sessionMethod === 'keep') {
+    extendConversationSession(session, {
+      timeoutMs: input.timeoutMs,
+      resetTimeout: input.resetTimeout,
+      now: input.now,
+    });
+  }
+
+  return toConversationSessionInfo(session, input.now);
+}
+
 export function recordConversationSessionMessage(
   session: ConversationSessionRecord,
   message: PluginMessageHookInfo,

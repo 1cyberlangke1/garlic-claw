@@ -10,9 +10,19 @@ import {
   normalizeUserMessageInput,
   type PluginCallContext,
   type PluginLlmMessage,
+  type PluginMessageSendInfo,
+  type PluginMessageSendParams,
+  type PluginMessageTargetInfo,
+  type PluginMessageTargetRef,
   serializeMessageParts,
 } from '@garlic-claw/shared';
-import { BadRequestException, Inject, Injectable, forwardRef } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatService } from './chat.service';
@@ -20,6 +30,7 @@ import {
   getOwnedConversationMessage,
   touchConversationTimestamp,
 } from './chat-message-common.helpers';
+import { ChatMessageOrchestrationService } from './chat-message-orchestration.service';
 import { type UpdateMessageDto } from './dto/chat.dto';
 import { mapDtoParts } from './chat-message.helpers';
 import { ChatTaskService } from './chat-task.service';
@@ -39,17 +50,16 @@ type HookableChatMessageInput = CreateChatMessageInput & {
   status: ChatMessageStatus;
 };
 
-export interface ConversationTargetAssistantMessageView {
-  id: string;
-  role: 'assistant';
-  content: string;
-  parts: ChatMessagePart[];
-  provider?: string | null;
-  model?: string | null;
-  status: 'pending' | 'streaming' | 'completed' | 'stopped' | 'error';
-  createdAt: string;
-  updatedAt: string;
-}
+type MessageRecordWithMetadata = { id: string; metadataJson?: string | null } & Record<string, unknown>;
+
+interface ChatVisionFallbackMetadataEntry { text: string; source: 'cache' | 'generated' }
+
+type ShortCircuitedAssistantOutput = {
+  assistantContent: string;
+  assistantParts?: ChatMessagePart[];
+  providerId: string;
+  modelId: string;
+};
 
 @Injectable()
 export class ChatMessageMutationService {
@@ -58,6 +68,7 @@ export class ChatMessageMutationService {
     private readonly chatService: ChatService,
     @Inject(forwardRef(() => PluginRuntimeService))
     private readonly pluginRuntime: PluginRuntimeService,
+    private readonly orchestration: ChatMessageOrchestrationService,
     private readonly chatTaskService: ChatTaskService,
   ) {}
 
@@ -87,8 +98,8 @@ export class ChatMessageMutationService {
         touchConversation: false,
         message: {
           role: 'user',
+          ...input.receivedMessagePayload.message,
           content: input.receivedMessagePayload.message.content ?? '',
-          parts: input.receivedMessagePayload.message.parts,
           status: 'completed',
         },
       });
@@ -109,53 +120,125 @@ export class ChatMessageMutationService {
     };
   }
 
-  async createConversationTargetAssistantMessage(input: {
+  async getCurrentPluginMessageTarget(input: {
     context: PluginCallContext;
-    conversationId: string;
+  }): Promise<PluginMessageTargetInfo | null> {
+    return input.context.conversationId
+      ? this.resolveSendMessageTarget(input.context)
+      : null;
+  }
+
+  async sendPluginMessage(input: {
+    context: PluginCallContext;
+    target?: PluginMessageTargetRef | null;
     content?: string | null;
     parts?: ChatMessagePart[] | null;
     provider?: string | null;
     model?: string | null;
-  }): Promise<ConversationTargetAssistantMessageView> {
-    const normalizedAssistant = normalizeAssistantMessageOutput({
-      content: input.content,
-      parts: input.parts,
-    });
-    if (!normalizedAssistant.content && normalizedAssistant.parts.length === 0) {
-      throw new BadRequestException('message.send 需要非空 content 或 parts');
-    }
+  }): Promise<PluginMessageSendInfo> {
+    const target = await this.resolveSendMessageTarget(input.context, input.target);
+    return {
+      target,
+      ...(await this.createConversationTargetAssistantMessage({
+        ...input,
+        conversationId: target.id,
+      })),
+    };
+  }
 
-    const provider = input.provider ?? input.context.activeProviderId ?? null;
-    const model = input.model ?? input.context.activeModelId ?? null;
-    const { createdMessage } = await this.createHookedStoredMessage({
+  async completeShortCircuitedAssistant(input: {
+    assistantMessageId: string;
+    userId: string;
+    conversationId: string;
+    activePersonaId: string;
+    completion: ShortCircuitedAssistantOutput;
+  }) {
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: input.completion.assistantContent,
+      parts: input.completion.assistantParts,
+    });
+    const finalResult = await this.orchestration.applyFinalResponseHooks({
+      userId: input.userId,
       conversationId: input.conversationId,
-      hookContext: createChatModelLifecycleContext({
-        source: input.context.source,
-        userId: input.context.userId,
+      activePersonaId: input.activePersonaId,
+      responseSource: 'short-circuit',
+      result: {
+        assistantMessageId: input.assistantMessageId,
         conversationId: input.conversationId,
-        activePersonaId: input.context.activePersonaId,
-        modelConfig: { providerId: provider, id: model },
-      }),
-      message: {
-        role: 'assistant',
+        providerId: input.completion.providerId,
+        modelId: input.completion.modelId,
         content: normalizedAssistant.content,
         parts: normalizedAssistant.parts,
-        provider,
-        model,
-        status: 'completed',
+        toolCalls: [],
+        toolResults: [],
       },
     });
-    const createdMessageInfo = createPluginMessageHookInfoFromRecord(createdMessage);
+    const finalAssistantMessage = await this.updateMessageAndTouch(
+      input.assistantMessageId,
+      input.conversationId,
+      {
+        content: finalResult.content,
+        partsJson: finalResult.parts.length
+          ? serializeMessageParts(finalResult.parts)
+          : null,
+        provider: finalResult.providerId,
+        model: finalResult.modelId,
+        status: 'completed',
+        error: null,
+        toolCalls: finalResult.toolCalls.length
+          ? JSON.stringify(finalResult.toolCalls)
+          : null,
+        toolResults: finalResult.toolResults.length
+          ? JSON.stringify(finalResult.toolResults)
+          : null,
+      },
+    );
+    await this.orchestration.runResponseAfterSendHooks({
+      userId: input.userId,
+      conversationId: input.conversationId,
+      activePersonaId: input.activePersonaId,
+      responseSource: 'short-circuit',
+      result: finalResult,
+    });
+    return finalAssistantMessage;
+  }
+
+  async applyVisionFallbackMetadata<
+    TUserMessage extends MessageRecordWithMetadata,
+    TAssistantMessage extends MessageRecordWithMetadata,
+  >(input: {
+    userMessage?: TUserMessage | null;
+    assistantMessage: TAssistantMessage;
+    visionFallbackEntries: ChatVisionFallbackMetadataEntry[];
+  }): Promise<{
+    userMessage: TUserMessage | null;
+    assistantMessage: TAssistantMessage;
+  }> {
+    const userMessage = input.userMessage ?? null;
+    const metadataJson = await this.persistVisionFallbackMetadata(
+      userMessage
+        ? [userMessage.id, input.assistantMessage.id]
+        : [input.assistantMessage.id],
+      input.visionFallbackEntries,
+    );
+    if (!metadataJson) {
+      return {
+        userMessage,
+        assistantMessage: input.assistantMessage,
+      };
+    }
 
     return {
-      ...createdMessageInfo,
-      id: createdMessage.id,
-      role: 'assistant',
-      content: createdMessageInfo.content ?? '',
-      status: (createdMessageInfo.status ??
-        'completed') as ConversationTargetAssistantMessageView['status'],
-      createdAt: createdMessage.createdAt.toISOString(),
-      updatedAt: createdMessage.updatedAt.toISOString(),
+      userMessage: userMessage
+        ? {
+            ...userMessage,
+            metadataJson,
+          } as TUserMessage
+        : null,
+      assistantMessage: {
+        ...input.assistantMessage,
+        metadataJson,
+      } as TAssistantMessage,
     };
   }
 
@@ -201,25 +284,19 @@ export class ChatMessageMutationService {
     messageId: string,
     dto: UpdateMessageDto,
   ) {
-    const { message } = await getOwnedConversationMessage(
-      this.chatService,
+    const { message, hookContext } = await this.prepareOwnedMessageMutation({
       userId,
       conversationId,
       messageId,
-    );
-    await this.chatTaskService.stopTask(messageId);
+    });
 
-    const updated = message.role === 'user'
-      ? normalizeUserMessageInput({
-          content: dto.content,
-          parts: dto.parts ? mapDtoParts(dto.parts) : undefined,
-        })
-      : null;
     const nextMessage: HookableChatMessageInput = message.role === 'user'
       ? {
           role: 'user',
-          content: updated?.content ?? '',
-          parts: updated?.parts ?? [],
+          ...normalizeUserMessageInput({
+            content: dto.content,
+            parts: dto.parts ? mapDtoParts(dto.parts) : undefined,
+          }),
           status: 'completed',
         }
       : {
@@ -230,11 +307,7 @@ export class ChatMessageMutationService {
           model: message.model,
           status: 'completed',
         };
-    const hookContext = createChatLifecycleContext({
-      userId,
-      conversationId,
-    });
-    const updatedPayload = await this.pluginRuntime.runMessageHook({
+    const updatedPayload = await this.pluginRuntime.runHook({
       hookName: 'message:updated',
       context: hookContext,
       payload: {
@@ -273,16 +346,10 @@ export class ChatMessageMutationService {
     conversationId: string,
     messageId: string,
   ) {
-    const { message } = await getOwnedConversationMessage(
-      this.chatService,
+    const { message, hookContext } = await this.prepareOwnedMessageMutation({
       userId,
       conversationId,
       messageId,
-    );
-    await this.chatTaskService.stopTask(messageId);
-    const hookContext = createChatLifecycleContext({
-      userId,
-      conversationId,
     });
     await this.pluginRuntime.runBroadcastHook({
       hookName: 'message:deleted',
@@ -312,6 +379,109 @@ export class ChatMessageMutationService {
     return result;
   }
 
+  private async prepareOwnedMessageMutation(input: {
+    userId: string;
+    conversationId: string;
+    messageId: string;
+  }) {
+    const { message } = await getOwnedConversationMessage(
+      this.chatService,
+      input.userId,
+      input.conversationId,
+      input.messageId,
+    );
+    await this.chatTaskService.stopTask(input.messageId);
+    return {
+      message,
+      hookContext: createChatLifecycleContext({
+        userId: input.userId,
+        conversationId: input.conversationId,
+      }),
+    };
+  }
+
+  private async createConversationTargetAssistantMessage(input: {
+    context: PluginCallContext;
+    conversationId: string;
+    content?: string | null;
+    parts?: ChatMessagePart[] | null;
+    provider?: string | null;
+    model?: string | null;
+  }): Promise<Omit<PluginMessageSendInfo, 'target'>> {
+    const normalizedAssistant = normalizeAssistantMessageOutput({
+      content: input.content,
+      parts: input.parts,
+    });
+    if (!normalizedAssistant.content && normalizedAssistant.parts.length === 0) {
+      throw new BadRequestException('message.send 需要非空 content 或 parts');
+    }
+
+    const provider = input.provider ?? input.context.activeProviderId ?? null;
+    const model = input.model ?? input.context.activeModelId ?? null;
+    const { createdMessage } = await this.createHookedStoredMessage({
+      conversationId: input.conversationId,
+      hookContext: createChatModelLifecycleContext({
+        source: input.context.source,
+        userId: input.context.userId,
+        conversationId: input.conversationId,
+        activePersonaId: input.context.activePersonaId,
+        modelConfig: { providerId: provider, id: model },
+      }),
+      message: {
+        role: 'assistant',
+        ...normalizedAssistant,
+        provider,
+        model,
+        status: 'completed',
+      },
+    });
+    const createdMessageInfo = createPluginMessageHookInfoFromRecord(createdMessage);
+
+    return {
+      ...createdMessageInfo,
+      id: createdMessage.id,
+      role: 'assistant',
+      content: createdMessageInfo.content ?? '',
+      status: (createdMessageInfo.status ?? 'completed') as PluginMessageSendInfo['status'],
+      createdAt: createdMessage.createdAt.toISOString(),
+      updatedAt: createdMessage.updatedAt.toISOString(),
+    };
+  }
+
+  private async resolveSendMessageTarget(
+    context: PluginCallContext,
+    target?: PluginMessageSendParams['target'],
+  ): Promise<PluginMessageTargetInfo> {
+    const conversationId = target?.id ?? context.conversationId;
+    if (target && target.type !== 'conversation') {
+      throw new BadRequestException(`当前不支持消息目标类型 ${target.type}`);
+    }
+    if (!conversationId) {
+      throw new BadRequestException('message.send 需要消息目标上下文');
+    }
+
+    const conversation = context.userId
+      ? await this.chatService.getConversation(context.userId, conversationId)
+      : await this.prisma.conversation.findUnique({
+          where: {
+            id: conversationId,
+          },
+          select: {
+            id: true,
+            title: true,
+          },
+        });
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    return {
+      type: 'conversation',
+      id: conversation.id,
+      label: conversation.title,
+    };
+  }
+
   private async createHookedStoredMessage(input: {
     conversationId: string;
     hookContext: PluginCallContext;
@@ -319,7 +489,7 @@ export class ChatMessageMutationService {
     message: HookableChatMessageInput;
     touchConversation?: boolean;
   }) {
-    const createdMessagePayload = await this.pluginRuntime.runMessageHook({
+    const createdMessagePayload = await this.pluginRuntime.runHook({
       hookName: 'message:created',
       context: input.hookContext,
       payload: createMessageCreatedHookPayload({
@@ -376,6 +546,37 @@ export class ChatMessageMutationService {
       await touchConversationTimestamp(this.prisma, conversationId);
     }
     return created;
+  }
+
+  private async persistVisionFallbackMetadata(
+    messageIds: readonly string[],
+    visionFallbackEntries: ChatVisionFallbackMetadataEntry[],
+  ): Promise<string | null> {
+    if (visionFallbackEntries.length === 0) {
+      return null;
+    }
+
+    const metadataJson = JSON.stringify({
+      visionFallback: {
+        state: 'completed',
+        entries: visionFallbackEntries,
+      },
+    });
+    await (messageIds.length === 1
+      ? this.prisma.message.update({
+          where: { id: messageIds[0] },
+          data: { metadataJson },
+        })
+      : this.prisma.message.updateMany({
+          where: {
+            id: {
+              in: [...messageIds],
+            },
+          },
+          data: { metadataJson },
+        }));
+
+    return metadataJson;
   }
 
 }

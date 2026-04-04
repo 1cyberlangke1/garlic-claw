@@ -22,7 +22,6 @@ import {
   toRuntimeMessages,
   toUserMessageInput,
 } from './chat-message.helpers';
-import { ChatMessageCompletionService } from './chat-message-completion.service';
 import {
   assertConversationLlmEnabled,
   getOwnedConversationMessage,
@@ -54,7 +53,6 @@ export class ChatMessageGenerationService {
     private readonly orchestration: ChatMessageOrchestrationService,
     private readonly chatTaskService: ChatTaskService,
     private readonly mutationService: ChatMessageMutationService,
-    private readonly completionService: ChatMessageCompletionService,
     private readonly skillCommands: SkillCommandService,
   ) {}
 
@@ -103,7 +101,7 @@ export class ChatMessageGenerationService {
           payload: baseReceivedPayload,
           ...skillCommandResult,
         }
-      : await this.pluginRuntime.runInboundHook({
+      : await this.pluginRuntime.runHook({
           hookName: 'message:received',
           context: messageReceivedContext,
           payload: baseReceivedPayload,
@@ -130,7 +128,7 @@ export class ChatMessageGenerationService {
           assistantMessage: await this.runWithAssistantErrorBoundary(
             assistantMessage.id,
             conversationId,
-            () => this.completionService.completeShortCircuitedAssistant({
+            () => this.mutationService.completeShortCircuitedAssistant({
               assistantMessageId: assistantMessage.id,
               userId,
               conversationId,
@@ -252,7 +250,7 @@ export class ChatMessageGenerationService {
         if (beforeModelResult.action === 'short-circuit') {
           return {
             userMessage: input.userMessage ?? null,
-            assistantMessage: await this.completionService.completeShortCircuitedAssistant({
+            assistantMessage: await this.mutationService.completeShortCircuitedAssistant({
               assistantMessageId: input.assistantMessage.id,
               userId: input.userId,
               conversationId: input.conversationId,
@@ -267,7 +265,7 @@ export class ChatMessageGenerationService {
           modelConfig: beforeModelResult.modelConfig,
           messages: beforeModelResult.request.messages,
         });
-        const messageWithMetadata = await this.completionService.applyVisionFallbackMetadata({
+        const messageWithMetadata = await this.mutationService.applyVisionFallbackMetadata({
           userMessage: input.userMessage,
           assistantMessage: input.assistantMessage,
           visionFallbackEntries:

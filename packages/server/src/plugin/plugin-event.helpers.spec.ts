@@ -1,9 +1,9 @@
 import {
   buildPluginEventFindManyInput,
   buildPluginEventListResult,
-} from './plugin-event.helpers';
+} from '@garlic-claw/shared';
 
-describe('plugin-event.helpers', () => {
+describe('plugin-event-view', () => {
   it('builds event query input with filters, cursor, ordering, and take size', () => {
     expect(
       buildPluginEventFindManyInput({

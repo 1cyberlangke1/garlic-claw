@@ -1,9 +1,23 @@
 import {
+  assertPluginGatewayAuthClaims,
+  createPluginGatewayRemoteTransport,
+  handlePluginGatewayCommandMessage,
+  handlePluginGatewayHostCall,
+  handlePluginGatewayInboundRawMessage,
+  handlePluginGatewayMessageEnvelope,
+  handlePluginGatewayPluginMessage,
+  rejectPluginGatewayPendingRequestsForSocket,
+  sendPluginGatewayMessage,
+  type ActiveRequestContext,
   type AuthPayload,
-  type PluginManifest,
+  type PendingRequest,
+  type PluginGatewayVerifiedToken,
   type PluginGatewayInboundMessage,
-  WS_ACTION,
+  type PluginGatewayPayload,
+  type PluginManifest,
+  type ValidatedRegisterPayload,
   DeviceType,
+  WS_ACTION,
   WS_TYPE,
 } from '@garlic-claw/shared';
 import {
@@ -16,86 +30,40 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { WebSocket, WebSocketServer } from 'ws';
-import {
-  attachPluginGatewaySocketHandlers,
-  createPluginGatewayConnectionRecord,
-} from './plugin-gateway-connection.helpers';
-import {
-  resolvePluginGatewayManifest,
-} from './plugin-gateway-context.helpers';
-import { handlePluginGatewayHostCall } from './plugin-gateway-host.helpers';
-import { handlePluginGatewayInboundRawMessage } from './plugin-gateway-inbound.helpers';
-import {
-  authenticatePluginGatewayConnection,
-  disconnectPluginGatewayConnection,
-  registerPluginGatewayConnection,
-} from './plugin-gateway-lifecycle.helpers';
-import {
-  handlePluginGatewayMessageEnvelope,
-  handlePluginGatewayCommandMessage,
-  handlePluginGatewayPluginMessage,
-} from './plugin-gateway-router.helpers';
-import {
-  checkPluginGatewayHealth,
-  createPluginGatewayRemoteTransport,
-  sweepStalePluginGatewayConnections,
-} from './plugin-gateway-runtime.helpers';
-import {
-  rejectPluginGatewayPendingRequestsForSocket,
-  sendPluginGatewayMessage,
-  type ActiveRequestContext,
-  type PendingRequest,
-} from './plugin-gateway-transport.helpers';
+import { normalizePluginManifestCandidate } from './plugin-manifest.persistence';
 import { PluginRuntimeOrchestratorService } from './plugin-runtime-orchestrator.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 
-/**
- * 远程插件心跳扫描间隔。
- */
 const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;
-
-/**
- * 远程插件连接失活阈值。
- */
 const HEARTBEAT_TIMEOUT_MS = 90_000;
-
-/**
- * 协议错误消息 action。
- */
+const AUTH_TIMEOUT_MS = 10_000;
 const PROTOCOL_ERROR_ACTION = 'protocol_error';
 
-/**
- * 远程插件连接状态。
- */
 interface PluginConnection {
-  /** WebSocket 连接。 */
   ws: WebSocket;
-  /** 插件名。 */
   pluginName: string;
-  /** 设备类型。 */
   deviceType: string;
-  /** 是否已认证。 */
   authenticated: boolean;
-  /** 已注册 manifest。 */
   manifest: PluginManifest | null;
-  /** 最近一次收到该连接消息的时间。 */
   lastHeartbeatAt: number;
 }
 
-/**
- * 插件 WebSocket 网关。
- *
- * 输入:
- * - 远程插件的 WebSocket 连接与消息
- *
- * 输出:
- * - 远程插件注册到统一 runtime
- * - Host API 与工具/Hook 调用的双向消息桥接
- *
- * 预期行为:
- * - 网关只负责远程 transport 与协议编解码
- * - 真正的注册、执行与 Hook 调度都交给 PluginRuntimeService
- */
+export function resolvePluginGatewayManifest(input: {
+  pluginName: string;
+  manifest: Record<string, unknown> | null | undefined;
+}): PluginManifest {
+  if (!input.manifest) {
+    throw new Error('插件注册负载缺少 manifest');
+  }
+
+  return normalizePluginManifestCandidate(input.manifest, {
+    id: input.pluginName,
+    displayName: input.pluginName,
+    version: '0.0.0',
+    runtimeKind: 'remote',
+  });
+}
+
 @Injectable()
 export class PluginGateway implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PluginGateway.name);
@@ -117,15 +85,8 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     const port = this.configService.get<number>('WS_PORT', 23331);
     this.wss = new WebSocketServer({ port });
     this.logger.log(`插件 WebSocket 服务器监听端口 ${port}`);
-
-    this.wss.on('connection', (ws: WebSocket) => {
-      this.handleConnection(ws);
-    });
-
-    this.heartbeatInterval = setInterval(
-      () => this.checkHeartbeats(),
-      HEARTBEAT_SWEEP_INTERVAL_MS,
-    );
+    this.wss.on('connection', (ws: WebSocket) => this.handleConnection(ws));
+    this.heartbeatInterval = setInterval(() => this.checkHeartbeats(), HEARTBEAT_SWEEP_INTERVAL_MS);
   }
 
   onModuleDestroy() {
@@ -139,115 +100,100 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     this.wss?.close();
   }
 
-  /**
-   * 主动断开指定远程插件连接。
-   * @param pluginId 插件 ID
-   * @returns 无返回值
-   */
   async disconnectPlugin(pluginId: string): Promise<void> {
     this.getConnectedPluginOrThrow(pluginId).ws.close();
   }
 
-  /**
-   * 对指定远程插件执行一次轻量健康检查。
-   * @param pluginId 插件 ID
-   * @param timeoutMs 超时毫秒数
-   * @returns 健康检查结果
-   */
   async checkPluginHealth(
     pluginId: string,
     timeoutMs = 5000,
   ): Promise<{ ok: boolean }> {
     const connection = this.getConnectedPluginOrThrow(pluginId);
-    return checkPluginGatewayHealth({
-      pluginId,
-      connection,
-      timeoutMs,
+    if (connection.ws.readyState !== WebSocket.OPEN) return { ok: false };
+
+    return new Promise<{ ok: boolean }>((resolve, reject) => {
+      const handlePong = () => {
+        clearTimeout(timer);
+        connection.ws.off('pong', handlePong);
+        resolve({ ok: true });
+      };
+      const timer = setTimeout(() => {
+        connection.ws.off('pong', handlePong);
+        reject(new Error(`插件健康检查超时: ${pluginId}`));
+      }, timeoutMs);
+
+      connection.ws.once('pong', handlePong);
+      connection.ws.ping();
     });
   }
 
-  /**
-   * 接受一个新的 WebSocket 连接。
-   * @param ws WebSocket 连接
-   * @returns 无返回值
-   */
   private handleConnection(ws: WebSocket) {
-    const connection: PluginConnection = createPluginGatewayConnectionRecord(ws);
+    const connection = this.createConnectionRecord(ws);
     this.connections.set(ws, connection);
-    attachPluginGatewaySocketHandlers({
-      ws,
-      connection,
-      onIncomingMessage: (socket, record, raw) => {
-        void handlePluginGatewayInboundRawMessage({
-          ws: socket,
-          raw,
-          protocolErrorAction: PROTOCOL_ERROR_ACTION,
-          handleMessage: (message) => this.handleMessage(socket, record, message),
-          logWarn: (message) => this.logger.warn(message),
-        });
-      },
-      onDisconnect: (record) => {
-        void this.handleDisconnect(record);
-      },
-      onSocketError: (error, record) => {
-        this.logger.error(`来自 "${record.pluginName}" 的 WS 错误：${error.message}`);
-      },
+    const logWarn = (message: string) => this.logger.warn(message);
+
+    const authTimeout = setTimeout(() => {
+      if (connection.authenticated) {
+        return;
+      }
+
+      this.sendSocketMessage(ws, WS_TYPE.ERROR, WS_ACTION.AUTH_FAIL, { error: '认证超时' });
+      ws.close();
+    }, AUTH_TIMEOUT_MS);
+
+    ws.on('message', (raw: Buffer) => {
+      void handlePluginGatewayInboundRawMessage({
+        socket: ws,
+        raw,
+        protocolErrorAction: PROTOCOL_ERROR_ACTION,
+        handleMessage: (message) => this.handleMessage(ws, connection, message),
+        logWarn,
+      });
+    });
+
+    ws.on('close', () => {
+      clearTimeout(authTimeout);
+      void this.handleDisconnect(connection);
+    });
+
+    ws.on('error', (error) => {
+      this.logger.error(`来自 "${connection.pluginName}" 的 WS 错误：${error.message}`);
     });
   }
 
-  /**
-   * 处理一条来自远程插件的消息。
-   * @param ws WebSocket 连接
-   * @param conn 当前连接
-   * @param msg 插件消息
-   * @returns 无返回值
-   */
   private async handleMessage(
     ws: WebSocket,
     conn: PluginConnection,
     msg: PluginGatewayInboundMessage,
   ): Promise<void> {
+    const logWarn = (message: string) => this.logger.warn(message);
     await handlePluginGatewayMessageEnvelope({
-      ws,
+      socket: ws,
       connection: conn,
       msg,
       protocolErrorAction: PROTOCOL_ERROR_ACTION,
       onAuth: (payload) => this.handleAuth(ws, conn, payload),
       onPluginMessage: async (message) => {
         await handlePluginGatewayPluginMessage({
-          ws,
+          socket: ws,
           msg: message,
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
           protocolErrorAction: PROTOCOL_ERROR_ACTION,
-          onRegister: async (payload) => {
-            await registerPluginGatewayConnection({
-              ws,
-              connection: conn,
-              payload,
-              resolveManifest: resolvePluginGatewayManifest,
-              createTransport: () =>
-                createPluginGatewayRemoteTransport({
-                  connection: conn,
-                  pendingRequests: this.pendingRequests,
-                  activeRequestContexts: this.activeRequestContexts,
-                  disconnectPlugin: (pluginId) => this.disconnectPlugin(pluginId),
-                  checkPluginHealth: (pluginId) => this.checkPluginHealth(pluginId),
-                }),
-              registerPlugin: (input) => this.pluginRuntimeOrchestrator.registerPlugin(input),
-              sendMessage: sendPluginGatewayMessage,
-            });
-          },
+          onRegister: (payload) => this.registerPluginConnection(ws, conn, payload),
           onHostCall: (hostCallMessage) =>
             handlePluginGatewayHostCall({
-              ws,
-              connection: conn,
+              socket: ws,
+              connection: {
+                socket: conn.ws,
+                pluginName: conn.pluginName,
+              },
               msg: hostCallMessage,
               activeRequestContexts: this.activeRequestContexts,
               callHost: (input) => this.pluginRuntime.callHost(input),
-              logWarn: (message) => this.logger.warn(message),
+              logWarn,
             }),
-          logWarn: (message) => this.logger.warn(message),
+          logWarn,
         });
       },
       onCommandMessage: async (message) => {
@@ -255,19 +201,14 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
           msg: message,
           pendingRequests: this.pendingRequests,
           activeRequestContexts: this.activeRequestContexts,
-          logWarn: (logMessage) => this.logger.warn(logMessage),
+          logWarn,
         });
       },
       onHeartbeatPing: async () => {
         if (conn.manifest) {
           await this.pluginRuntimeOrchestrator.touchPluginHeartbeat(conn.pluginName);
         }
-        sendPluginGatewayMessage({
-          ws,
-          type: WS_TYPE.HEARTBEAT,
-          action: WS_ACTION.PONG,
-          payload: {},
-        });
+        this.sendSocketMessage(ws, WS_TYPE.HEARTBEAT, WS_ACTION.PONG);
       },
     });
   }
@@ -279,63 +220,136 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     try {
       const secret = this.configService.get<string>('JWT_SECRET', 'fallback-secret');
-      await authenticatePluginGatewayConnection({
-        ws,
-        connection: conn,
-        payload,
-        verifyToken: (token) => this.jwtService.verify<{ role?: string }>(token, { secret }),
-        connectionByPluginId: this.connectionByPluginId,
-        logWarn: (message) => this.logger.warn(message),
-        logInfo: (message) => this.logger.log(message),
-        sendMessage: sendPluginGatewayMessage,
+      const verified = this.jwtService.verify<PluginGatewayVerifiedToken>(payload.token, {
+        secret,
       });
+      assertPluginGatewayAuthClaims({ verified, payload });
+
+      const previousConnection = this.connectionByPluginId.get(payload.pluginName);
+      conn.authenticated = true;
+      conn.pluginName = payload.pluginName;
+      conn.deviceType = payload.deviceType;
+      conn.lastHeartbeatAt = Date.now();
+      this.connectionByPluginId.set(payload.pluginName, conn);
+
+      if (previousConnection && previousConnection.ws !== ws) {
+        this.logger.warn(`插件 "${payload.pluginName}" 已存在旧连接，当前将其替换`);
+        previousConnection.ws.close();
+      }
+
+      this.sendSocketMessage(ws, WS_TYPE.AUTH, WS_ACTION.AUTH_OK);
+      this.logger.log(`Plugin "${payload.pluginName}" authenticated`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid token';
-      sendPluginGatewayMessage({
-        ws,
-        type: WS_TYPE.AUTH,
-        action: WS_ACTION.AUTH_FAIL,
-        payload: { error: message },
-      });
+      this.sendSocketMessage(ws, WS_TYPE.AUTH, WS_ACTION.AUTH_FAIL, { error: message });
       ws.close();
     }
   }
 
-  private async handleDisconnect(conn: PluginConnection): Promise<void> {
-    await disconnectPluginGatewayConnection({
-      connection: conn,
-      connections: this.connections,
-      connectionByPluginId: this.connectionByPluginId,
-      pendingRequests: this.pendingRequests,
-      activeRequestContexts: this.activeRequestContexts,
-      unregisterPlugin: (pluginId) => this.pluginRuntimeOrchestrator.unregisterPlugin(pluginId),
-      rejectPendingRequestsForSocket: rejectPluginGatewayPendingRequestsForSocket,
-      logInfo: (message) => this.logger.log(message),
+  private async registerPluginConnection(
+    ws: WebSocket,
+    connection: PluginConnection,
+    payload: ValidatedRegisterPayload,
+  ): Promise<void> {
+    const manifest = resolvePluginGatewayManifest({
+      pluginName: connection.pluginName,
+      manifest: payload.manifest as unknown as Record<string, unknown>,
     });
+    connection.manifest = manifest;
+
+    await this.pluginRuntimeOrchestrator.registerPlugin({
+      manifest,
+      runtimeKind: 'remote',
+      deviceType: connection.deviceType,
+      transport: createPluginGatewayRemoteTransport({
+        connection,
+        pendingRequests: this.pendingRequests,
+        activeRequestContexts: this.activeRequestContexts,
+        disconnectPlugin: (pluginId: string) => this.disconnectPlugin(pluginId),
+        checkPluginHealth: (pluginId: string) => this.checkPluginHealth(pluginId),
+      }),
+    });
+
+    this.sendSocketMessage(ws, WS_TYPE.PLUGIN, WS_ACTION.REGISTER_OK);
   }
 
-  /**
-   * 扫描远程插件连接，并摘除超时未活跃的连接。
-   */
+  private async handleDisconnect(conn: PluginConnection): Promise<void> {
+    this.connections.delete(conn.ws);
+    rejectPluginGatewayPendingRequestsForSocket({
+      socket: conn.ws,
+      error: new Error('插件连接已断开'),
+      pendingRequests: this.pendingRequests,
+      activeRequestContexts: this.activeRequestContexts,
+    });
+    if (!conn.pluginName) {
+      return;
+    }
+
+    const activeConnection = this.connectionByPluginId.get(conn.pluginName);
+    if (activeConnection?.ws !== conn.ws) {
+      this.logger.log(`插件 "${conn.pluginName}" 的旧连接已断开`);
+      return;
+    }
+
+    this.connectionByPluginId.delete(conn.pluginName);
+    try {
+      await this.pluginRuntimeOrchestrator.unregisterPlugin(conn.pluginName);
+    } catch {
+      return;
+    }
+
+    this.logger.log(`插件 "${conn.pluginName}" 已断开连接`);
+  }
+
   private checkHeartbeats() {
-    sweepStalePluginGatewayConnections({
-      now: Date.now(),
-      heartbeatTimeoutMs: HEARTBEAT_TIMEOUT_MS,
-      connections: this.connections.values(),
-      onStaleConnection: (connection) => {
-        this.logger.warn(
-          `插件 "${connection.pluginName || 'unknown'}" 心跳超时，主动断开连接`,
-        );
-      },
+    const now = Date.now();
+    for (const connection of this.connections.values()) {
+      if (!connection.authenticated) {
+        continue;
+      }
+
+      const lastHeartbeatAt = typeof connection.lastHeartbeatAt === 'number'
+        ? connection.lastHeartbeatAt
+        : now;
+      if (now - lastHeartbeatAt <= HEARTBEAT_TIMEOUT_MS) {
+        continue;
+      }
+
+      this.logger.warn(
+        `插件 "${connection.pluginName || 'unknown'}" 心跳超时，主动断开连接`,
+      );
+      connection.ws.close();
+    }
+  }
+
+  private createConnectionRecord(ws: WebSocket, now = Date.now()): PluginConnection {
+    return {
+      ws,
+      pluginName: '',
+      deviceType: '',
+      authenticated: false,
+      manifest: null,
+      lastHeartbeatAt: now,
+    };
+  }
+
+  private sendSocketMessage(
+    socket: WebSocket,
+    type: string,
+    action: string,
+    payload: PluginGatewayPayload = {},
+  ): void {
+    sendPluginGatewayMessage({
+      socket,
+      type,
+      action,
+      payload,
     });
   }
 
   private getConnectedPluginOrThrow(pluginId: string): PluginConnection {
     const connection = this.connectionByPluginId.get(pluginId);
-    if (!connection) {
-      throw new NotFoundException(`Plugin not connected: ${pluginId}`);
-    }
-
+    if (!connection) throw new NotFoundException(`Plugin not connected: ${pluginId}`);
     return connection;
   }
 }

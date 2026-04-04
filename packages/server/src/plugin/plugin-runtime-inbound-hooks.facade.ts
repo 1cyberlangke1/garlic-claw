@@ -2,10 +2,18 @@ import {
   ConversationSessionRecord,
   applyChatBeforeModelHookResult,
   applyChatBeforeModelMutation,
+  createConversationSessionMessageReceivedPayload,
   applyMessageReceivedHookResult,
   applyMessageReceivedMutation,
   cloneChatBeforeModelRequest,
+  findManifestHookDescriptor,
+  getActiveConversationSession,
+  isRuntimeRecordEnabledForContext,
+  listDispatchableHookRecords,
   cloneMessageReceivedHookPayload,
+  normalizeChatBeforeModelHookResult,
+  normalizeMessageReceivedHookResult,
+  runShortCircuitingHookChain,
   syncConversationSessionMessageReceivedPayload,
 } from '@garlic-claw/shared';
 import type {
@@ -18,15 +26,6 @@ import type {
 import { Injectable } from '@nestjs/common';
 import type { JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
-import { listDispatchableHookRecords } from './plugin-runtime-dispatch.helpers';
-import { runShortCircuitingHookChain } from './plugin-runtime-hook-runner.helpers';
-import {
-  normalizeChatBeforeModelHookResult,
-  normalizeMessageReceivedHookResult,
-} from './plugin-runtime-hook-result.helpers';
-import {
-  prepareDispatchableConversationSessionMessageReceivedHook,
-} from './plugin-runtime-session.helpers';
 
 type RuntimeInboundHookRecord = {
   manifest: PluginManifest;
@@ -153,19 +152,29 @@ export class PluginRuntimeInboundHooksFacade {
     payload: MessageReceivedHookPayload;
     invokeHook: InvokeRuntimeInboundHook;
   }) {
-    const prepared = prepareDispatchableConversationSessionMessageReceivedHook({
-      sessions: input.conversationSessions,
-      records: input.records,
-      context: input.context,
-      payload: input.payload,
-      now: Date.now(),
-    });
-    if (!prepared) {
+    const now = Date.now();
+    const session = getActiveConversationSession(
+      input.conversationSessions,
+      input.payload.conversationId,
+      now,
+    );
+    if (!session) {
       return null;
     }
-    const { session, record: ownerRecord } = prepared;
-
-    let { payload } = prepared;
+    const ownerRecord = input.records.get(session.pluginId);
+    if (
+      !ownerRecord
+      || !isRuntimeRecordEnabledForContext(ownerRecord, input.context)
+      || !findManifestHookDescriptor(ownerRecord.manifest, 'message:received')
+    ) {
+      input.conversationSessions.delete(session.conversationId);
+      return null;
+    }
+    let payload = createConversationSessionMessageReceivedPayload({
+      session,
+      payload: input.payload,
+      now,
+    });
 
     try {
       const rawResult = await input.invokeHook({

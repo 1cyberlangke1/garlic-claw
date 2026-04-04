@@ -1,7 +1,10 @@
+import {
+  normalizeAssistantMessageOutput,
+  serializeMessageParts,
+} from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { touchConversationTimestamp } from './chat-message-common.helpers';
-import { normalizeAssistantMessageOutput, serializeMessageParts } from './message-parts';
 import type {
   CompletedChatTaskResult,
   StartChatTaskInput,

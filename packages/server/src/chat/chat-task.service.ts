@@ -16,83 +16,43 @@ import {
   type ChatTaskMutableState,
 } from './chat-task-persistence.service';
 
-/** 聊天后台任务启动参数。 */
 export interface StartChatTaskInput {
-  /** assistant 消息 ID。 */
   assistantMessageId: string;
-  /** 所属会话 ID。 */
   conversationId: string;
-  /** 实际使用的 provider ID。 */
   providerId: string;
-  /** 实际使用的模型 ID。 */
   modelId: string;
-  /**
-   * 根据任务内部的 abortSignal 创建流。
-   * 输入:
-   * - abortSignal: 主动停止时会触发的信号
-   * 输出:
-   * - 实际使用的 provider/model 与可迭代消费的流源
-   */
   createStream: (abortSignal: AbortSignal) => ResolvedChatTaskStreamSource;
-  /**
-   * 在 assistant 成功完成后执行的回调。
-   * 输入:
-   * - 最终 assistant 内容与工具调用快照
-   * 输出:
-   * - 可选返回一份补丁后的最终 assistant 快照
-   */
   onComplete?: (
     result: CompletedChatTaskResult,
   ) => Promise<CompletedChatTaskResult | void> | CompletedChatTaskResult | void;
-  /**
-   * 在最终回复完成发送后执行的回调。
-   * 输入:
-   * - 已持久化、已发送的最终 assistant 快照
-   * 输出:
-   * - 无返回值
-   */
   onSent?: (
     result: CompletedChatTaskResult,
   ) => Promise<void> | void;
 }
 
-/** 聊天任务完成后的最终 assistant 快照。 */
 export interface CompletedChatTaskResult {
-  /** assistant 消息 ID。 */
   assistantMessageId: string;
-  /** 所属会话 ID。 */
   conversationId: string;
-  /** 实际使用的 provider ID。 */
   providerId: string;
-  /** 实际使用的模型 ID。 */
   modelId: string;
-  /** 最终完整文本。 */
   content: string;
-  /** 最终结构化 parts。 */
   parts: ChatMessagePart[];
-  /** 累计工具调用。 */
   toolCalls: PersistedToolCall[];
-  /** 累计工具结果。 */
   toolResults: PersistedToolResult[];
 }
 
 type ChatTaskSubscriber = (event: ChatTaskEvent) => void;
+type TerminalTaskStatus = 'completed' | 'stopped' | 'error';
 
 interface ActiveChatTask {
-  /** 中止控制器。 */
   abortController: AbortController;
-  /** 事件订阅者集合。 */
   subscribers: Set<ChatTaskSubscriber>;
-  /** 任务完成 Promise。 */
   completion: Promise<void>;
 }
 
 interface ResolvedChatTaskStreamSource {
-  /** 实际使用的 provider ID。 */
   providerId: string;
-  /** 实际使用的模型 ID。 */
   modelId: string;
-  /** 可消费的流源。 */
   stream: ChatTaskStreamSource;
 }
 
@@ -106,7 +66,6 @@ export class ChatTaskService implements OnModuleInit {
     private readonly taskPersistence: ChatTaskPersistenceService,
   ) {}
 
-  /** 启动模块时清理由旧进程遗留下来的非终态消息。 */
   async onModuleInit(): Promise<void> {
     await this.prisma.message.updateMany({
       where: {
@@ -122,7 +81,6 @@ export class ChatTaskService implements OnModuleInit {
     });
   }
 
-  /** 启动一个后台聊天任务。 */
   startTask(input: StartChatTaskInput): void {
     if (this.tasks.has(input.assistantMessageId)) {
       throw new Error(`Chat task already exists for message ${input.assistantMessageId}`);
@@ -147,7 +105,6 @@ export class ChatTaskService implements OnModuleInit {
     this.tasks.set(input.assistantMessageId, task);
   }
 
-  /** 订阅指定消息的后台任务事件，并返回取消订阅函数。 */
   subscribe(messageId: string, subscriber: ChatTaskSubscriber): () => void {
     const task = this.tasks.get(messageId);
     if (!task) {
@@ -160,17 +117,10 @@ export class ChatTaskService implements OnModuleInit {
     };
   }
 
-  /** 等待指定任务结束。 */
   async waitForTask(messageId: string): Promise<void> {
-    const task = this.tasks.get(messageId);
-    if (!task) {
-      return;
-    }
-
-    await task.completion;
+    await this.tasks.get(messageId)?.completion;
   }
 
-  /** 主动停止一个运行中的后台任务，并返回是否真的停止了活动任务。 */
   async stopTask(messageId: string): Promise<boolean> {
     const task = this.tasks.get(messageId);
     if (!task) {
@@ -186,7 +136,6 @@ export class ChatTaskService implements OnModuleInit {
     return this.tasks.has(messageId);
   }
 
-  /** 执行后台任务并持续写回数据库。 */
   private async runTask(
     task: ActiveChatTask,
     input: StartChatTaskInput,
@@ -205,13 +154,7 @@ export class ChatTaskService implements OnModuleInit {
         providerId: streamSource.providerId,
         modelId: streamSource.modelId,
       };
-
-      await this.taskPersistence.persistMessageState(
-        resolvedInput,
-        state,
-        'streaming',
-        null,
-      );
+      await this.taskPersistence.persistMessageState(resolvedInput, state, 'streaming', null);
       this.emit(task, {
         type: 'status',
         messageId: input.assistantMessageId,
@@ -231,80 +174,38 @@ export class ChatTaskService implements OnModuleInit {
       }
 
       if (task.abortController.signal.aborted) {
-        await this.finishStoppedTask(task, input.assistantMessageId, resolvedInput, state);
+        await this.finishTerminalTask(
+          task,
+          input.assistantMessageId,
+          resolvedInput,
+          state,
+          'stopped',
+        );
         return;
       }
 
-      await this.taskPersistence.persistMessageState(
-        resolvedInput,
-        state,
-        'completed',
-        null,
-      );
-      const completedResult = this.taskPersistence.buildCompletedTaskResult(
-        resolvedInput,
-        state,
-      );
-      let finalResult = completedResult;
-      if (input.onComplete) {
-        try {
-          const patchedResult = await input.onComplete(completedResult);
-          if (
-            patchedResult
-            && this.taskPersistence.hasCompletedResultPatch(
-              completedResult,
-              patchedResult,
-            )
-          ) {
-            finalResult = patchedResult;
-            await this.taskPersistence.persistCompletedResult(patchedResult);
-            this.emit(task, {
-              type: 'message-patch',
-              messageId: patchedResult.assistantMessageId,
-              content: patchedResult.content,
-              ...(patchedResult.parts.length > 0
-                ? { parts: patchedResult.parts }
-                : {}),
-            });
-          } else if (patchedResult) {
-            finalResult = patchedResult;
-          }
-        } catch (error) {
-          this.logger.warn(
-            `聊天完成回调执行失败: ${input.assistantMessageId} - ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-      this.emitTerminalTaskEvent(task, input.assistantMessageId, 'completed');
-      if (input.onSent) {
-        try {
-          await input.onSent(finalResult);
-        } catch (error) {
-          this.logger.warn(
-            `聊天发送后回调执行失败: ${input.assistantMessageId} - ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
+      await this.finishCompletedTask(task, input, resolvedInput, state);
     } catch (error) {
       if (task.abortController.signal.aborted) {
-        await this.finishStoppedTask(task, input.assistantMessageId, resolvedInput, state);
+        await this.finishTerminalTask(
+          task,
+          input.assistantMessageId,
+          resolvedInput,
+          state,
+          'stopped',
+        );
         return;
       }
 
-      const errorMessage =
-        error instanceof Error ? error.message : '未知错误';
+      const errorMessage = toErrorMessage(error);
       this.logger.error(
         `聊天任务执行失败: ${input.assistantMessageId} - ${errorMessage}`,
       );
-      await this.taskPersistence.persistMessageState(
-        resolvedInput,
-        state,
-        'error',
-        errorMessage,
-      );
-      this.emitTerminalTaskEvent(
+      await this.finishTerminalTask(
         task,
         input.assistantMessageId,
+        resolvedInput,
+        state,
         'error',
         errorMessage,
       );
@@ -318,58 +219,107 @@ export class ChatTaskService implements OnModuleInit {
     part: ChatTaskStreamPart,
   ): Promise<ChatTaskEvent | null> {
     if (isTextDeltaPart(part)) {
-      state.content += part.text;
-      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
-      return { type: 'text-delta', messageId, text: part.text };
+      return this.persistStreamingPart(input, state, () => {
+        state.content += part.text;
+        return { type: 'text-delta', messageId, text: part.text };
+      });
     }
 
     if (isToolCallPart(part)) {
-      state.toolCalls.push({
-        toolCallId: part.toolCallId,
-        toolName: part.toolName,
-        input: part.input,
+      return this.persistStreamingPart(input, state, () => {
+        state.toolCalls.push({
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          input: part.input,
+        });
+        return {
+          type: 'tool-call',
+          messageId,
+          toolName: part.toolName,
+          input: part.input,
+        };
       });
-      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
-      return {
-        type: 'tool-call',
-        messageId,
-        toolName: part.toolName,
-        input: part.input,
-      };
     }
 
     if (isToolResultPart(part)) {
-      state.toolResults.push({
-        toolCallId: part.toolCallId,
-        toolName: part.toolName,
-        output: part.output,
+      return this.persistStreamingPart(input, state, () => {
+        state.toolResults.push({
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          output: part.output,
+        });
+        return {
+          type: 'tool-result',
+          messageId,
+          toolName: part.toolName,
+          output: part.output,
+        };
       });
-      await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
-      return {
-        type: 'tool-result',
-        messageId,
-        toolName: part.toolName,
-        output: part.output,
-      };
     }
 
     return null;
   }
 
-  private async finishStoppedTask(
+  private async persistStreamingPart(
+    input: StartChatTaskInput,
+    state: ChatTaskMutableState,
+    buildEvent: () => ChatTaskEvent,
+  ): Promise<ChatTaskEvent> {
+    const event = buildEvent();
+    await this.taskPersistence.persistMessageState(input, state, 'streaming', null);
+    return event;
+  }
+
+  private async finishCompletedTask(
+    task: ActiveChatTask,
+    input: StartChatTaskInput,
+    resolvedInput: StartChatTaskInput,
+    state: ChatTaskMutableState,
+  ): Promise<void> {
+    await this.taskPersistence.persistMessageState(resolvedInput, state, 'completed', null);
+    const completedResult = this.taskPersistence.buildCompletedTaskResult(resolvedInput, state);
+    const patchedResult = await this.runTaskCallback(
+      input.assistantMessageId,
+      '聊天完成回调执行失败',
+      input.onComplete ? () => input.onComplete?.(completedResult) : undefined,
+    );
+    const finalResult = patchedResult ?? completedResult;
+    if (
+      patchedResult
+      && this.taskPersistence.hasCompletedResultPatch(completedResult, patchedResult)
+    ) {
+      await this.taskPersistence.persistCompletedResult(patchedResult);
+      this.emit(task, {
+        type: 'message-patch',
+        messageId: patchedResult.assistantMessageId,
+        content: patchedResult.content,
+        ...(patchedResult.parts.length > 0 ? { parts: patchedResult.parts } : {}),
+      });
+    }
+    this.emitTerminalTaskEvent(task, input.assistantMessageId, 'completed');
+    await this.runTaskCallback(
+      input.assistantMessageId,
+      '聊天发送后回调执行失败',
+      input.onSent ? () => input.onSent?.(finalResult) : undefined,
+    );
+  }
+
+  private async finishTerminalTask(
     task: ActiveChatTask,
     messageId: string,
     input: StartChatTaskInput,
     state: ChatTaskMutableState,
+    status: Exclude<TerminalTaskStatus, 'completed'>,
+    error: string | null = null,
   ): Promise<void> {
-    await this.taskPersistence.persistMessageState(input, state, 'stopped', null);
-    this.emitTerminalTaskEvent(task, messageId, 'stopped');
+    await this.taskPersistence.persistMessageState(input, state, status, error);
+    this.emitTerminalTaskEvent(task, messageId, status, error ?? undefined);
   }
 
   private emitTerminalTaskEvent(
     task: ActiveChatTask,
     messageId: string,
-    status: 'completed' | 'stopped' | 'error',
+    status: TerminalTaskStatus,
     error?: string,
   ): void {
     if (status !== 'completed') {
@@ -383,10 +333,29 @@ export class ChatTaskService implements OnModuleInit {
     this.emit(task, { type: 'finish', messageId, status });
   }
 
-  /** 向所有订阅者广播事件。 */
+  private async runTaskCallback<TResult>(
+    messageId: string,
+    failureLabel: string,
+    callback?: () => Promise<TResult | void> | TResult | void,
+  ): Promise<TResult | undefined> {
+    if (!callback) {
+      return undefined;
+    }
+    try {
+      return await callback() as TResult | undefined;
+    } catch (error) {
+      this.logger.warn(`${failureLabel}: ${messageId} - ${toErrorMessage(error)}`);
+      return undefined;
+    }
+  }
+
   private emit(task: ActiveChatTask, event: ChatTaskEvent): void {
     for (const subscriber of task.subscribers) {
       subscriber(event);
     }
   }
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '未知错误';
 }

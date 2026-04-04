@@ -3,8 +3,13 @@ import {
   applyMessageCreatedMutation,
   applyMessageUpdatedMutation,
   cloneChatAfterModelPayload,
+  listDispatchableHookRecords,
   cloneMessageCreatedHookPayload,
   cloneMessageUpdatedHookPayload,
+  normalizeChatAfterModelHookResult,
+  normalizeMessageCreatedHookResult,
+  normalizeMessageUpdatedHookResult,
+  runMutatingHookChain,
 } from '@garlic-claw/shared';
 import type {
   ChatAfterModelHookPayload,
@@ -15,13 +20,6 @@ import type {
 } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import type { JsonValue } from '../common/types/json-value';
-import { listDispatchableHookRecords } from './plugin-runtime-dispatch.helpers';
-import { runMutatingHookChain } from './plugin-runtime-hook-runner.helpers';
-import {
-  normalizeChatAfterModelHookResult,
-  normalizeMessageCreatedHookResult,
-  normalizeMessageUpdatedHookResult,
-} from './plugin-runtime-hook-result.helpers';
 
 type DispatchableMessageHookRecord = {
   manifest: import('@garlic-claw/shared').PluginManifest;

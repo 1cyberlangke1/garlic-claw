@@ -331,4 +331,194 @@ describe('PluginSubagentTaskService', () => {
     const detail = await service.getTaskOrThrow('subagent-task-bad-json');
     expect(detail.result).toBeUndefined();
   });
+
+  it('builds image-only previews from persisted records', async () => {
+    records.push({
+      id: 'subagent-task-image-only',
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: null,
+      runtimeKind: 'remote',
+      userId: null,
+      conversationId: null,
+      status: 'queued',
+      requestJson: JSON.stringify({
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                image: 'data:image/png;base64,abc',
+              },
+            ],
+          },
+        ],
+      }),
+      contextJson: JSON.stringify({
+        source: 'plugin',
+      }),
+      resultJson: null,
+      error: null,
+      providerId: null,
+      modelId: null,
+      writeBackTargetJson: null,
+      writeBackStatus: 'pending',
+      writeBackError: null,
+      writeBackMessageId: null,
+      requestedAt: new Date('2026-03-30T12:00:09.000Z'),
+      startedAt: null,
+      finishedAt: null,
+      createdAt: new Date('2026-03-30T12:00:09.000Z'),
+      updatedAt: new Date('2026-03-30T12:00:09.000Z'),
+    });
+
+    await expect(service.listOverview()).resolves.toEqual({
+      tasks: [
+        expect.objectContaining({
+          id: 'subagent-task-image-only',
+          runtimeKind: 'remote',
+          requestPreview: '包含图片输入的后台子代理任务',
+          writeBackStatus: 'pending',
+        }),
+      ],
+    });
+  });
+
+  it('marks write-back as failed when message.send returns an invalid target payload', async () => {
+    pluginRuntime.callHost.mockResolvedValueOnce({
+      id: 'assistant-message-1',
+      target: {
+        type: 'plugin',
+        id: 'conversation-1',
+      },
+    });
+
+    const startedTask = await service.startTask({
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'builtin',
+      context: {
+        source: 'plugin',
+        conversationId: 'conversation-1',
+      },
+      request: {
+        messages: [
+          {
+            role: 'user',
+            content: '请帮我总结当前对话',
+          },
+        ],
+        maxSteps: 4,
+      },
+      writeBackTarget: {
+        type: 'conversation',
+        id: 'conversation-1',
+      },
+    });
+
+    await jest.runOnlyPendingTimersAsync();
+
+    await expect(service.getTaskOrThrow(startedTask.id)).resolves.toEqual(
+      expect.objectContaining({
+        id: startedTask.id,
+        status: 'completed',
+        writeBackStatus: 'failed',
+        writeBackError: 'message.send 返回值中的 target 不合法',
+      }),
+    );
+  });
+
+  it('clones task inputs before scheduling the background run', async () => {
+    const context = {
+      source: 'plugin' as const,
+      metadata: {
+        nested: {
+          original: 'value',
+        },
+      },
+    };
+    const request = {
+      messages: [
+        {
+          role: 'user' as const,
+          content: '请继续分析',
+        },
+      ],
+      maxSteps: 4,
+    };
+    const writeBackTarget = {
+      type: 'conversation' as const,
+      id: 'conversation-1',
+    };
+
+    const startedTask = await service.startTask({
+      pluginId: 'builtin.subagent-delegate',
+      runtimeKind: 'builtin',
+      context,
+      request,
+      writeBackTarget,
+    });
+
+    context.metadata.nested.original = 'changed';
+    request.messages[0].content = '已被篡改';
+    writeBackTarget.id = 'conversation-2';
+
+    await jest.runOnlyPendingTimersAsync();
+
+    expect(pluginRuntime.executeSubagentRequest).toHaveBeenCalledWith({
+      pluginId: 'builtin.subagent-delegate',
+      context: {
+        source: 'plugin',
+        metadata: {
+          nested: {
+            original: 'value',
+          },
+        },
+      },
+      request: {
+        messages: [
+          {
+            role: 'user',
+            content: '请继续分析',
+          },
+        ],
+        maxSteps: 4,
+      },
+    });
+    expect(pluginRuntime.callHost).toHaveBeenCalledWith({
+      pluginId: 'builtin.subagent-delegate',
+      context: {
+        source: 'plugin',
+        metadata: {
+          nested: {
+            original: 'value',
+          },
+        },
+      },
+      method: 'message.send',
+      params: {
+        target: {
+          type: 'conversation',
+          id: 'conversation-1',
+        },
+        content: '这是后台任务总结',
+        provider: 'openai',
+        model: 'gpt-5.2',
+      },
+    });
+
+    await expect(service.getTaskOrThrow(startedTask.id)).resolves.toEqual(
+      expect.objectContaining({
+        request: {
+          messages: [
+            {
+              role: 'user',
+              content: '请继续分析',
+            },
+          ],
+          maxSteps: 4,
+        },
+      }),
+    );
+  });
 });

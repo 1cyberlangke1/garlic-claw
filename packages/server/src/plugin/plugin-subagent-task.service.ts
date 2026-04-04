@@ -10,14 +10,13 @@ import type {
   PluginSubagentTaskWriteBackStatus,
   PluginRuntimeKind,
 } from '@garlic-claw/shared';
-import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import {
-  cloneJsonValue,
   readPluginMessageSendSummary,
   serializePluginSubagentTaskDetail,
   serializePluginSubagentTaskSummary,
-} from './plugin-subagent-task.helpers';
+} from '@garlic-claw/shared';
+import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { PluginRuntimeService } from './plugin-runtime.service';
 
 export interface StartPluginSubagentTaskInput {
@@ -27,6 +26,18 @@ export interface StartPluginSubagentTaskInput {
   context: PluginCallContext;
   request: PluginSubagentRequest;
   writeBackTarget?: PluginMessageTargetRef | null;
+}
+
+function cloneTaskValue<T>(value: T): T {
+  return structuredClone(value);
+}
+
+function serializeTaskValue(value: unknown): string {
+  return JSON.stringify(cloneTaskValue(value));
+}
+
+function getTaskErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 @Injectable()
@@ -39,6 +50,11 @@ export class PluginSubagentTaskService {
 
   async startTask(input: StartPluginSubagentTaskInput): Promise<PluginSubagentTaskSummary> {
     const requestedAt = new Date();
+    const scheduledContext = cloneTaskValue(input.context);
+    const scheduledRequest = cloneTaskValue(input.request);
+    const scheduledWriteBackTarget = input.writeBackTarget
+      ? cloneTaskValue(input.writeBackTarget)
+      : null;
     const record = await this.prisma.pluginSubagentTask.create({
       data: {
         pluginId: input.pluginId,
@@ -47,12 +63,12 @@ export class PluginSubagentTaskService {
         userId: input.context.userId ?? null,
         conversationId: input.context.conversationId ?? null,
         status: 'queued',
-        requestJson: JSON.stringify(cloneJsonValue(input.request)),
-        contextJson: JSON.stringify(cloneJsonValue(input.context)),
+        requestJson: serializeTaskValue(input.request),
+        contextJson: serializeTaskValue(input.context),
         providerId: input.request.providerId ?? null,
         modelId: input.request.modelId ?? null,
         writeBackTargetJson: input.writeBackTarget
-          ? JSON.stringify(cloneJsonValue(input.writeBackTarget))
+          ? serializeTaskValue(input.writeBackTarget)
           : null,
         writeBackStatus: input.writeBackTarget ? 'pending' : 'skipped',
         requestedAt,
@@ -63,11 +79,9 @@ export class PluginSubagentTaskService {
       void this.runTask({
         taskId: record.id,
         pluginId: input.pluginId,
-        context: cloneJsonValue(input.context),
-        request: cloneJsonValue(input.request),
-        writeBackTarget: input.writeBackTarget
-          ? cloneJsonValue(input.writeBackTarget)
-          : null,
+        context: scheduledContext,
+        request: scheduledRequest,
+        writeBackTarget: scheduledWriteBackTarget,
       });
     }, 0);
 
@@ -149,6 +163,7 @@ export class PluginSubagentTaskService {
         target: input.writeBackTarget,
         result,
       });
+      const resolvedWriteBackTarget = writeBack.target ?? input.writeBackTarget;
 
       await this.prisma.pluginSubagentTask.update({
         where: {
@@ -156,18 +171,16 @@ export class PluginSubagentTaskService {
         },
         data: {
           status: 'completed',
-          resultJson: JSON.stringify(cloneJsonValue(result)),
+          resultJson: serializeTaskValue(result),
           error: null,
           providerId: result.providerId,
           modelId: result.modelId,
-          writeBackTargetJson: writeBack.target
-            ? JSON.stringify(cloneJsonValue(writeBack.target))
-            : input.writeBackTarget
-              ? JSON.stringify(cloneJsonValue(input.writeBackTarget))
-              : null,
+          writeBackTargetJson: resolvedWriteBackTarget
+            ? serializeTaskValue(resolvedWriteBackTarget)
+            : null,
           writeBackStatus: writeBack.status,
-          writeBackError: writeBack.error,
-          writeBackMessageId: writeBack.messageId,
+          writeBackError: writeBack.error ?? null,
+          writeBackMessageId: writeBack.messageId ?? null,
           finishedAt: new Date(),
         },
       });
@@ -178,7 +191,7 @@ export class PluginSubagentTaskService {
         },
         data: {
           status: 'error',
-          error: toErrorMessage(error, '后台子代理任务执行失败'),
+          error: getTaskErrorMessage(error, '后台子代理任务执行失败'),
           writeBackStatus: 'skipped',
           writeBackError: null,
           finishedAt: new Date(),
@@ -231,12 +244,8 @@ export class PluginSubagentTaskService {
         status: 'failed',
         target: input.target,
         messageId: null,
-        error: toErrorMessage(error, '后台子代理结果回写失败'),
+        error: getTaskErrorMessage(error, '后台子代理结果回写失败'),
       };
     }
   }
-}
-
-function toErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
 }
