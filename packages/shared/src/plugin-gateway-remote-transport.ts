@@ -17,9 +17,8 @@ import type {
   PluginActionName,
   PluginCallContext,
   PluginHookName,
-  PluginRouteRequest,
-  PluginRouteResponse,
 } from './types/plugin';
+import type { PluginRouteRequest, PluginRouteResponse } from './types/plugin-route';
 import { WS_ACTION, WS_TYPE } from './types/plugin';
 
 export interface PluginGatewayRemoteConnection {

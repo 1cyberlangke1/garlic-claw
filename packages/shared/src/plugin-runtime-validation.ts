@@ -1,4 +1,4 @@
-import type { PluginLlmMessage } from './types/plugin';
+import type { PluginLlmMessage } from './types/plugin-ai';
 
 export function normalizePositiveInteger(
   value: number | undefined,

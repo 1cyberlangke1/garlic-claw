@@ -1,11 +1,11 @@
 import {
   buildToolAuditStorageKey,
   buildToolAuditSummary,
-  createPassHookResult,
   persistPluginObservation,
-  readPluginHookPayload,
   TOOL_AUDIT_MANIFEST,
-} from '@garlic-claw/plugin-sdk';
+  createPassHookResult,
+  readPluginHookPayload,
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { ToolAfterCallHookPayload } from '@garlic-claw/shared';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 

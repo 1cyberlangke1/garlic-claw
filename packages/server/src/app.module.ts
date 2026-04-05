@@ -14,6 +14,7 @@ import { McpModule } from './mcp/mcp.module';
 import { PluginModule } from './plugin/plugin.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StartupWarmupService } from './startup/startup-warmup.service';
+import { ToolModule } from './tool/tool.module';
 import { UserModule } from './user/user.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { UserModule } from './user/user.module';
     UserModule,
     ChatModule,
     PluginModule,
+    ToolModule,
     MemoryModule,
     PersonaModule,
     AutomationModule,

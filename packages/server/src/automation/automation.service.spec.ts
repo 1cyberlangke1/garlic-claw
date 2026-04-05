@@ -1,3 +1,4 @@
+import { ModuleRef } from '@nestjs/core';
 import { AutomationService } from './automation.service';
 
 describe('AutomationService', () => {
@@ -29,11 +30,16 @@ describe('AutomationService', () => {
   const chatMessageService = {
     sendPluginMessage: jest.fn(),
   };
+  const moduleRef = {
+    get: jest.fn(),
+  };
 
   let service: AutomationService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    moduleRef.get.mockImplementation((token: { name?: string }) =>
+      token?.name === 'PluginRuntimeService' ? pluginRuntime : null);
     pluginRuntime.runAutomationBeforeRunHooks.mockImplementation(
       async ({ payload }: { payload: unknown }) => ({
         action: 'continue',
@@ -45,8 +51,8 @@ describe('AutomationService', () => {
     );
     service = new AutomationService(
       prisma as never,
-      pluginRuntime as never,
       chatMessageService as never,
+      moduleRef as unknown as ModuleRef,
     );
   });
 

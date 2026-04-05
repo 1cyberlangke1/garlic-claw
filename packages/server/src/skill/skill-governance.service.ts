@@ -10,7 +10,7 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { resolveConfigFilePath } from '../ai/config/config-path.util';
+import { resolveConfigFilePath } from '../common/config/config-path.util';
 
 export const SKILL_GOVERNANCE_OPTIONS = 'SKILL_GOVERNANCE_OPTIONS';
 

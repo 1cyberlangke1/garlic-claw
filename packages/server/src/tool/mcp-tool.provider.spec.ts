@@ -1,3 +1,4 @@
+import { ModuleRef } from '@nestjs/core';
 import type { PluginCallContext } from '@garlic-claw/shared';
 import { McpToolProvider } from './mcp-tool.provider';
 
@@ -72,7 +73,10 @@ describe('McpToolProvider', () => {
         weather: 'sunny',
       }),
     };
-    const provider = new McpToolProvider(mcpService as never);
+    const moduleRef = {
+      get: jest.fn().mockReturnValue(mcpService),
+    };
+    const provider = new McpToolProvider(moduleRef as unknown as ModuleRef);
 
     const tools = await provider.listTools(context);
 
@@ -120,6 +124,7 @@ describe('McpToolProvider', () => {
       },
     });
     expect(mcpService.getToolingSnapshot).toHaveBeenCalledTimes(1);
+    expect(moduleRef.get).toHaveBeenCalled();
     expect(mcpService.listServerStatuses).not.toHaveBeenCalled();
     expect(mcpService.listToolDescriptors).not.toHaveBeenCalled();
   });

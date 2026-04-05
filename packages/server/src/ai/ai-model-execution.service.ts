@@ -35,10 +35,10 @@ import { AiProviderService } from './ai-provider.service';
 import { ConfigManagerService } from './config/config-manager.service';
 import type { ModelConfig } from './types/provider.types';
 import {
-  resolveChatModelInvocationRequestOptions,
-  type ChatModelInvocationRequestOptionsInput,
-} from '../chat/chat-model-invocation-options';
-import { normalizeChatModelInvocationMessages } from '../chat/chat-model-invocation-message-normalizer';
+  resolveAiModelExecutionRequestOptions,
+  type AiModelExecutionRequestOptionsInput,
+} from './ai-model-request-options';
+import { normalizeAiModelExecutionMessages } from './ai-model-message-normalizer';
 
 /**
  * 统一准备执行时的输入。
@@ -82,7 +82,7 @@ export interface PreparedAiModelExecution {
  * 已准备执行载荷时的流式输入。
  */
 export interface StreamPreparedAiModelExecutionInput
-  extends ChatModelInvocationRequestOptionsInput {
+  extends AiModelExecutionRequestOptionsInput {
   /** 已准备好的执行载荷。 */
   prepared: PreparedAiModelExecution;
   /** 是否启用聊天 fallback model 链。 */
@@ -160,7 +160,7 @@ export class AiModelExecutionService {
         input.modelConfig.id as string,
       ),
       sourceSdkMessages: input.sdkMessages,
-      sdkMessages: normalizeChatModelInvocationMessages({
+      sdkMessages: normalizeAiModelExecutionMessages({
         modelConfig: input.modelConfig,
         sdkMessages: input.sdkMessages,
       }),
@@ -173,7 +173,7 @@ export class AiModelExecutionService {
    * @returns 统一准备载荷与最终生成结果
    */
   async generateText(
-    input: PrepareAiModelExecutionInput & ChatModelInvocationRequestOptionsInput & {
+    input: PrepareAiModelExecutionInput & AiModelExecutionRequestOptionsInput & {
       allowFallbackChatModels?: boolean;
       system?: string;
     },
@@ -204,7 +204,7 @@ export class AiModelExecutionService {
       prepared: PreparedAiModelExecution;
       allowFallbackChatModels?: boolean;
       system?: string;
-    } & ChatModelInvocationRequestOptionsInput,
+    } & AiModelExecutionRequestOptionsInput,
   ): Promise<
     PreparedAiModelExecution & {
       result: Awaited<ReturnType<typeof runGenerateText>>;
@@ -214,7 +214,7 @@ export class AiModelExecutionService {
       input.prepared,
       input.allowFallbackChatModels === true,
       async (prepared) => {
-        const requestOptions = resolveChatModelInvocationRequestOptions({
+        const requestOptions = resolveAiModelExecutionRequestOptions({
           modelConfig: prepared.modelConfig,
           requestOptions: input,
         });
@@ -247,7 +247,7 @@ export class AiModelExecutionService {
       input.prepared,
       input.allowFallbackChatModels === true,
       (prepared) => {
-        const requestOptions = resolveChatModelInvocationRequestOptions({
+        const requestOptions = resolveAiModelExecutionRequestOptions({
           modelConfig: prepared.modelConfig,
           requestOptions: input,
         });

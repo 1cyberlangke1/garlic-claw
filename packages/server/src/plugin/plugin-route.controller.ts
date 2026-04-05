@@ -16,10 +16,14 @@ import { AnyAuthGuard } from '../auth/guards/any-auth.guard';
 import { AuthScopeGuard } from '../auth/guards/auth-scope.guard';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
-import type { PluginCallContext, PluginRouteRequest } from '@garlic-claw/shared';
-import { readUnknownObject } from '@garlic-claw/shared';
+import {
+  type PluginCallContext,
+  type PluginRouteRequest,
+  PLUGIN_ROUTE_METHOD_VALUES,
+  normalizeRoutePath,
+  readUnknownObject,
+} from '@garlic-claw/shared';
 import { PluginRuntimeService } from './plugin-runtime.service';
-import { normalizeRoutePath } from '@garlic-claw/shared';
 
 const BLOCKED_PLUGIN_REQUEST_HEADERS = new Set([
   'authorization',
@@ -32,14 +36,6 @@ const BLOCKED_PLUGIN_RESPONSE_HEADERS = new Set([
   'set-cookie',
   'transfer-encoding',
 ]);
-
-const PLUGIN_ROUTE_METHODS: PluginRouteRequest['method'][] = [
-  'GET',
-  'POST',
-  'PUT',
-  'PATCH',
-  'DELETE',
-];
 
 @ApiTags('Plugin Routes')
 @ApiBearerAuth()
@@ -153,7 +149,7 @@ function readConversationId(
 }
 
 function normalizeRouteMethod(method: string): PluginRouteRequest['method'] {
-  const matchedMethod = PLUGIN_ROUTE_METHODS.find((candidate) => candidate === method);
+  const matchedMethod = PLUGIN_ROUTE_METHOD_VALUES.find((candidate) => candidate === method);
   if (matchedMethod) {
     return matchedMethod;
   }

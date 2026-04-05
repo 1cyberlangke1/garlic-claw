@@ -15,6 +15,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'node:fs';
+import { resolveConfigFilePath } from '../../common/config/config-path.util';
 import type { JsonValue } from '../../common/types/json-value';
 import type {
   AiSettingsFile,
@@ -23,7 +24,6 @@ import type {
   StoredVisionFallbackConfig,
 } from './config-manager.types';
 import { normalizeAiSettingsFile } from './config-manager.loader';
-import { resolveConfigFilePath } from './config-path.util';
 
 export type {
   AiSettingsFile,

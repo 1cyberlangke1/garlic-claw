@@ -1,19 +1,16 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
-  forwardRef,
+  NotFoundException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type { Message } from '@prisma/client';
 import {
-  createMessageReceivedHookPayload,
   createChatModelLifecycleContext,
   type ChatBeforeModelRequest,
 } from '@garlic-claw/shared';
-import { AiProviderService } from '../ai/ai-provider.service';
-import type { ModelConfig } from '../ai/types/provider.types';
+import { AiProviderService, type ModelConfig } from '../ai';
 import { PersonaService } from '../persona/persona.service';
-import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SkillCommandService } from '../skill/skill-command.service';
 import {
@@ -42,18 +39,19 @@ type ResolvedPersonaPrompt = { systemPrompt: string; activePersonaId: string };
 
 @Injectable()
 export class ChatMessageGenerationService {
+  private pluginChatRuntimePromise?: Promise<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatService: ChatService,
     private readonly aiProvider: AiProviderService,
     private readonly personaService: PersonaService,
-    @Inject(forwardRef(() => PluginRuntimeService))
-    private readonly pluginRuntime: PluginRuntimeService,
     private readonly modelInvocation: ChatModelInvocationService,
     private readonly orchestration: ChatMessageOrchestrationService,
     private readonly chatTaskService: ChatTaskService,
     private readonly mutationService: ChatMessageMutationService,
     private readonly skillCommands: SkillCommandService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async startMessageGeneration(
@@ -72,40 +70,24 @@ export class ChatMessageGenerationService {
     });
     const initialModelConfig = this.aiProvider.getModelConfig(dto.provider, dto.model);
     const resolvedPersona = await this.buildSystemPrompt(conversationId);
-    const messageReceivedContext = createChatModelLifecycleContext({
+    const skillCommandResult = await this.skillCommands.tryHandleMessage({
+      userId,
+      conversationId,
+      messageText: payload.persistedMessage.content ?? '',
+    });
+    const receivedMessageResult = await (await this.getPluginChatRuntime()).applyMessageReceived({
       userId,
       conversationId,
       activePersonaId: resolvedPersona.activePersonaId,
       modelConfig: initialModelConfig,
-    });
-    const baseReceivedPayload = createMessageReceivedHookPayload({
-      context: messageReceivedContext,
-      conversationId,
-      providerId: initialModelConfig.providerId,
-      modelId: initialModelConfig.id,
       message: {
         role: 'user',
         content: payload.persistedMessage.content,
         parts: payload.persistedMessage.parts,
       },
       modelMessages: payload.modelMessages,
+      skillCommandResult,
     });
-    const skillCommandResult = await this.skillCommands.tryHandleMessage({
-      userId,
-      conversationId,
-      messageText: baseReceivedPayload.message.content ?? '',
-    });
-    const receivedMessageResult = skillCommandResult
-      ? {
-          action: 'short-circuit' as const,
-          payload: baseReceivedPayload,
-          ...skillCommandResult,
-        }
-      : await this.pluginRuntime.runHook({
-          hookName: 'message:received',
-          context: messageReceivedContext,
-          payload: baseReceivedPayload,
-        });
     const modelConfig = this.aiProvider.getModelConfig(
       receivedMessageResult.payload.providerId,
       receivedMessageResult.payload.modelId,
@@ -371,5 +353,28 @@ export class ChatMessageGenerationService {
       systemPrompt: currentPersona.prompt || CHAT_SYSTEM_PROMPT,
       activePersonaId: currentPersona.personaId,
     };
+  }
+
+  private async getPluginChatRuntime(): Promise<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade> {
+    if (this.pluginChatRuntimePromise) {
+      return this.pluginChatRuntimePromise;
+    }
+
+    this.pluginChatRuntimePromise = (async () => {
+      const { PluginChatRuntimeFacade } = await import('../plugin/plugin-chat-runtime.facade');
+      const resolved = this.moduleRef.get<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade>(
+        PluginChatRuntimeFacade,
+        {
+          strict: false,
+        },
+      );
+      if (!resolved) {
+        throw new NotFoundException('PluginChatRuntimeFacade is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginChatRuntimePromise;
   }
 }

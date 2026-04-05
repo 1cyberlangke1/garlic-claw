@@ -1,18 +1,18 @@
 import {
+  PROVIDER_ROUTER_MANIFEST,
   asChatBeforeModelPayload,
   createPassHookResult,
   createProviderRouterMutateResult,
   createProviderRouterShortCircuitResult,
-  readCurrentProviderInfo,
   filterAllowedToolNames,
   parseCommaSeparatedNames,
-  PROVIDER_ROUTER_MANIFEST,
+  readCurrentProviderInfo,
   readLatestUserTextFromMessages,
   readProviderRouterConfig,
   sameToolNames,
   sanitizeOptionalText,
   textIncludesKeyword,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**

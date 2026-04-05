@@ -1,11 +1,13 @@
 import type {
   PluginCallContext,
+} from './types/plugin';
+import type {
   PluginSubagentRequest,
   PluginSubagentRunResult,
   PluginSubagentToolCall,
   PluginSubagentToolResult,
   SubagentAfterRunHookPayload,
-} from './types/plugin';
+} from './types/plugin-ai';
 import { toJsonValue } from './types/json';
 import {
   clonePluginSubagentToolCalls,

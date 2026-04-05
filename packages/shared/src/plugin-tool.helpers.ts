@@ -1,14 +1,16 @@
 import { normalizeRoutePath } from './plugin-runtime-validation.helpers';
 import type { JsonObject } from './types/json';
 import type {
-  PluginAvailableToolSummary,
-  PluginCallContext,
-  PluginCapability,
-  PluginRouteRequest,
-  PluginRuntimeKind,
   ToolBeforeCallHookPayload,
   ToolHookSourceInfo,
+} from './types/plugin-operation';
+import type {
+  PluginCallContext,
+  PluginCapability,
+  PluginRuntimeKind,
 } from './types/plugin';
+import type { PluginRouteRequest } from './types/plugin-route';
+import type { PluginAvailableToolSummary } from './types/plugin-ai';
 
 export function buildPluginToolCallName(input: {
   pluginId: string;

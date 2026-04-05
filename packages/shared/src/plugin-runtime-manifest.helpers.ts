@@ -1,18 +1,19 @@
 import type { JsonObject } from './types/json';
 import type {
+  PluginErrorHookPayload,
+  PluginLifecycleHookInfo,
+} from './types/plugin-lifecycle';
+import type {
   PluginActionName,
   PluginCallContext,
-  PluginErrorHookPayload,
   PluginCapability,
   PluginHookDescriptor,
   PluginHookName,
-  PluginLifecycleHookInfo,
   PluginManifest,
-  PluginRouteDescriptor,
-  PluginRouteRequest,
   PluginRuntimeKind,
   PluginSelfInfo,
 } from './types/plugin';
+import type { PluginRouteDescriptor, PluginRouteRequest } from './types/plugin-route';
 import { normalizeRoutePath } from './plugin-runtime-validation.helpers';
 
 export function buildPluginLifecycleHookInfo(input: {

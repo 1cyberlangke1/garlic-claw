@@ -1,19 +1,19 @@
 import type { PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
-import { SkillExecutionService } from '../skill/skill-execution.service';
+import type { SkillExecutionService } from '../skill/skill-execution.service';
 import type { ToolProvider, ToolProviderState, ToolProviderTool } from './tool.types';
 
 @Injectable()
 export class SkillToolProvider implements ToolProvider {
   readonly kind = 'skill' as const;
+  private skillExecutionPromise?: Promise<SkillExecutionService>;
 
-  constructor(
-    private readonly skillExecution: SkillExecutionService,
-  ) {}
+  constructor(private readonly moduleRef: ModuleRef) {}
 
   async collectState(context?: PluginCallContext): Promise<ToolProviderState> {
-    const access = await this.skillExecution.getToolAccess(context);
+    const access = await (await this.getSkillExecution()).getToolAccess(context);
     if (!context?.conversationId || access.availableSkillIds.length === 0) {
       return {
         sources: [],
@@ -126,12 +126,12 @@ export class SkillToolProvider implements ToolProvider {
 
     switch (input.tool.name) {
       case 'asset.list':
-        return await this.skillExecution.listAssetsForConversation(
+        return await (await this.getSkillExecution()).listAssetsForConversation(
           conversationId,
           this.readOptionalString(input.params, 'skillId') ?? undefined,
         );
       case 'asset.read':
-        return await this.skillExecution.readAssetForConversation({
+        return await (await this.getSkillExecution()).readAssetForConversation({
           conversationId,
           skillId: this.requireString(input.params, 'skillId'),
           assetPath: this.requireString(input.params, 'path'),
@@ -140,7 +140,7 @@ export class SkillToolProvider implements ToolProvider {
             : {}),
         });
       case 'script.run':
-        return await this.skillExecution.runScriptForConversation({
+        return await (await this.getSkillExecution()).runScriptForConversation({
           conversationId,
           skillId: this.requireString(input.params, 'skillId'),
           assetPath: this.requireString(input.params, 'path'),
@@ -156,6 +156,26 @@ export class SkillToolProvider implements ToolProvider {
       default:
         throw new BadRequestException(`Unsupported skill tool: ${input.tool.name}`);
     }
+  }
+
+  private async getSkillExecution(): Promise<SkillExecutionService> {
+    if (this.skillExecutionPromise) {
+      return this.skillExecutionPromise;
+    }
+
+    this.skillExecutionPromise = (async () => {
+      const { SkillExecutionService } = await import('../skill/skill-execution.service');
+      const resolved = this.moduleRef.get<SkillExecutionService>(SkillExecutionService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new BadRequestException('SkillExecutionService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.skillExecutionPromise;
   }
 
   private readOptionalString(params: JsonObject, key: string): string | null {

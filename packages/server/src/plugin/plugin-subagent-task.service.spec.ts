@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { PluginSubagentTaskService } from './plugin-subagent-task.service';
 
 describe('PluginSubagentTaskService', () => {
@@ -15,6 +16,9 @@ describe('PluginSubagentTaskService', () => {
   const pluginRuntime = {
     executeSubagentRequest: jest.fn(),
     callHost: jest.fn(),
+  };
+  const moduleRef = {
+    get: jest.fn(),
   };
 
   let service: PluginSubagentTaskService;
@@ -108,10 +112,11 @@ describe('PluginSubagentTaskService', () => {
       createdAt: '2026-03-30T12:00:05.000Z',
       updatedAt: '2026-03-30T12:00:05.000Z',
     });
+    moduleRef.get.mockReturnValue(pluginRuntime);
 
     service = new PluginSubagentTaskService(
       prisma as never,
-      pluginRuntime as never,
+      moduleRef as unknown as ModuleRef,
     );
   });
 

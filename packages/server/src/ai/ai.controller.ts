@@ -12,6 +12,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AiProviderDiagnosticsService } from './ai-provider-diagnostics.service';
 import { AiManagementService } from './ai-management.service';
+import { ConfigManagerService } from './config';
 import {
   SetDefaultModelDto,
   TestAiProviderConnectionDto,
@@ -30,6 +31,7 @@ export class AiController {
   constructor(
     private readonly managementService: AiManagementService,
     private readonly diagnosticsService: AiProviderDiagnosticsService,
+    private readonly configManager: ConfigManagerService,
   ) {}
 
   @Get('provider-catalog')
@@ -116,22 +118,22 @@ export class AiController {
 
   @Get('vision-fallback')
   getVisionFallbackConfig() {
-    return this.managementService.getVisionFallbackConfig();
+    return this.configManager.getVisionFallbackConfig();
   }
 
   @Put('vision-fallback')
   updateVisionFallbackConfig(@Body() dto: UpdateVisionFallbackDto) {
-    return this.managementService.updateVisionFallbackConfig(dto);
+    return this.configManager.updateVisionFallbackConfig(dto);
   }
 
   @Get('host-model-routing')
   getHostModelRoutingConfig() {
-    return this.managementService.getHostModelRoutingConfig();
+    return this.configManager.getHostModelRoutingConfig();
   }
 
   @Put('host-model-routing')
   updateHostModelRoutingConfig(@Body() dto: UpdateHostModelRoutingDto) {
-    return this.managementService.updateHostModelRoutingConfig({
+    return this.configManager.updateHostModelRoutingConfig({
       fallbackChatModels: dto.fallbackChatModels ?? [],
       ...(dto.compressionModel
         ? { compressionModel: dto.compressionModel }

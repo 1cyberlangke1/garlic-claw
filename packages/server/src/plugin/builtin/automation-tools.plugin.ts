@@ -7,7 +7,7 @@ import {
   createAutomationToggleResult,
   readPluginCreateAutomationParams,
   readRequiredStringParam,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { JsonObject, JsonValue } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 

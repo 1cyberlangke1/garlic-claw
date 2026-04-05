@@ -17,9 +17,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { isCatalogProviderMode, type AiProviderSummary } from '@garlic-claw/shared';
 import {
   ConfigManagerService,
-  type StoredAiHostModelRoutingConfig,
   type StoredAiProviderConfig,
-  type StoredVisionFallbackConfig,
 } from './config/config-manager.service';
 import {
   PROVIDER_CATALOG,
@@ -132,16 +130,39 @@ export class AiManagementService {
   listModels(providerId: string): ModelConfig[] {
     const provider = this.getProvider(providerId);
 
-    return provider.models.map((modelId) => {
-      const existing = this.modelRegistry.getModel(providerId, modelId);
-      if (existing) {
-        return existing;
-      }
+    return provider.models.map((modelId) =>
+      this.modelRegistry.getOrRegisterModel(
+        providerId,
+        modelId,
+        () => buildManagedModelConfig(provider, modelId),
+      ),
+    );
+  }
 
-      const built = buildManagedModelConfig(provider, modelId);
-      this.modelRegistry.register(built);
-      return built;
-    });
+  /**
+   * 获取单个 provider 模型。
+   * @param providerId provider ID
+   * @param modelId 模型 ID
+   * @returns 模型配置
+   */
+  getProviderModel(providerId: string, modelId: string): ModelConfig {
+    this.getProvider(providerId);
+
+    const model = this.modelRegistry.getModel(providerId, modelId);
+    if (model) {
+      return model;
+    }
+
+    const listedModel = this.listModels(providerId).find(
+      (item) => String(item.id) === modelId,
+    );
+    if (!listedModel) {
+      throw new NotFoundException(
+        `Model "${modelId}" is not configured for provider "${providerId}"`,
+      );
+    }
+
+    return listedModel;
   }
 
   /**
@@ -250,45 +271,6 @@ export class AiManagementService {
 
     return model;
   }
-
-  /**
-   * 获取视觉转述配置。
-   * @returns 视觉转述配置
-   */
-  getVisionFallbackConfig(): StoredVisionFallbackConfig {
-    return this.configManager.getVisionFallbackConfig();
-  }
-
-  /**
-   * 更新视觉转述配置。
-   * @param config 新配置
-   * @returns 写入后的配置
-   */
-  updateVisionFallbackConfig(
-    config: StoredVisionFallbackConfig,
-  ): StoredVisionFallbackConfig {
-    return this.configManager.updateVisionFallbackConfig(config);
-  }
-
-  /**
-   * 获取宿主模型路由配置。
-   * @returns 当前宿主模型路由配置
-   */
-  getHostModelRoutingConfig(): StoredAiHostModelRoutingConfig {
-    return this.configManager.getHostModelRoutingConfig();
-  }
-
-  /**
-   * 更新宿主模型路由配置。
-   * @param config 新配置
-   * @returns 写入后的配置
-   */
-  updateHostModelRoutingConfig(
-    config: StoredAiHostModelRoutingConfig,
-  ): StoredAiHostModelRoutingConfig {
-    return this.configManager.updateHostModelRoutingConfig(config);
-  }
-
   /**
    * 将 provider 下的模型注册到模型注册表。
    * @param provider provider 配置

@@ -4,24 +4,15 @@ import type {
   PluginRouteMethod,
 } from '@garlic-claw/shared';
 import {
+  PLUGIN_MANIFEST_COMMAND_KIND_VALUES,
+  PLUGIN_ROUTE_METHOD_VALUES,
+} from '@garlic-claw/shared';
+import {
   isOneOf,
   readArray,
   readRecord,
   readStringArray,
 } from './plugin-manifest-normalize-base.helpers';
-
-const PLUGIN_ROUTE_METHODS: PluginRouteMethod[] = [
-  'GET',
-  'POST',
-  'PUT',
-  'PATCH',
-  'DELETE',
-];
-
-const PLUGIN_COMMAND_KINDS: PluginCommandDescriptor['kind'][] = [
-  'command',
-  'group-help',
-];
 
 export function readPluginRouteDescriptor(value: unknown): PluginRouteDescriptor | null {
   const record = readRecord(value);
@@ -47,7 +38,7 @@ export function readPluginCommandDescriptor(
   const record = readRecord(value);
   if (
     !record
-    || !isOneOf(record.kind, PLUGIN_COMMAND_KINDS)
+    || !isOneOf(record.kind, PLUGIN_MANIFEST_COMMAND_KIND_VALUES)
     || typeof record.canonicalCommand !== 'string'
   ) {
     return null;
@@ -77,5 +68,5 @@ export function readPluginCommandDescriptor(
 }
 
 function readPluginRouteMethod(value: unknown): PluginRouteMethod | null {
-  return isOneOf(value, PLUGIN_ROUTE_METHODS) ? value : null;
+  return isOneOf(value, PLUGIN_ROUTE_METHOD_VALUES) ? value : null;
 }

@@ -1,11 +1,11 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthModule } from '../auth/auth.module';
 import { KbModule } from '../kb/kb.module';
 import { PersonaModule } from '../persona/persona.module';
-import { ToolModule } from '../tool/tool.module';
 import { BuiltinPluginLoader } from './builtin/builtin-plugin.loader';
 import { PluginAdminService } from './plugin-admin.service';
+import { PluginChatRuntimeFacade } from './plugin-chat-runtime.facade';
 import { PluginCommandController } from './plugin-command.controller';
 import { PluginCommandService } from './plugin-command.service';
 import { PluginCronService } from './plugin-cron.service';
@@ -45,10 +45,10 @@ import { PluginService } from './plugin.service';
     AuthModule,
     KbModule,
     PersonaModule,
-    forwardRef(() => ToolModule),
   ],
   providers: [
     PluginService,
+    PluginChatRuntimeFacade,
     PluginEventWriteService,
     PluginGovernanceWriteService,
     PluginLifecycleWriteService,
@@ -78,10 +78,6 @@ import { PluginService } from './plugin.service';
     PluginAdminService,
     PluginCommandService,
     PluginSubagentTaskService,
-    {
-      provide: 'PLUGIN_SUBAGENT_TASK_SERVICE',
-      useExisting: PluginSubagentTaskService,
-    },
   ],
   controllers: [
     PluginController,
@@ -91,6 +87,7 @@ import { PluginService } from './plugin.service';
   ],
   exports: [
     PluginService,
+    PluginChatRuntimeFacade,
     PluginEventWriteService,
     PluginGovernanceWriteService,
     PluginLifecycleWriteService,

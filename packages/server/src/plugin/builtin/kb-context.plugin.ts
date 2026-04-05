@@ -2,14 +2,14 @@ import {
   asChatBeforeModelPayload,
   clipContextText,
   createChatBeforeModelLineBlockResult,
-  KB_CONTEXT_MANIFEST,
   KB_CONTEXT_DEFAULT_LIMIT,
   KB_CONTEXT_DEFAULT_PROMPT_PREFIX,
+  KB_CONTEXT_MANIFEST,
   readLatestUserTextFromMessages,
   readPromptBlockConfig,
   resolvePromptBlockConfig,
-  toHostJsonValue,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
+import { toHostJsonValue } from '@garlic-claw/plugin-sdk/host';
 import type { JsonValue } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 

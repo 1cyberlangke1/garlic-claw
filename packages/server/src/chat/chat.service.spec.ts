@@ -11,27 +11,29 @@ describe('ChatService', () => {
     },
   };
 
-  const runConversationCreatedHooks = jest.fn();
-  const pluginRuntime = {
-    runConversationCreatedHooks,
-    runBroadcastHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
-      runConversationCreatedHooks(input)),
+  const pluginChatRuntime = {
+    dispatchConversationCreated: jest.fn(),
   };
 
   const skillSession = {
     getConversationSkillStateForUser: jest.fn(),
     updateConversationSkillStateForUser: jest.fn(),
   };
+  const moduleRef = {
+    get: jest.fn(),
+  };
 
   let service: ChatService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    pluginRuntime.runConversationCreatedHooks.mockResolvedValue(undefined);
+    pluginChatRuntime.dispatchConversationCreated.mockResolvedValue(undefined);
+    moduleRef.get.mockImplementation((token: { name?: string }) =>
+      token?.name === 'PluginChatRuntimeFacade' ? pluginChatRuntime : null);
     service = new ChatService(
       prisma as never,
-      pluginRuntime as never,
       skillSession as never,
+      moduleRef as never,
     );
   });
 
@@ -55,24 +57,13 @@ describe('ChatService', () => {
       createdAt: new Date('2026-03-28T10:00:00.000Z'),
       updatedAt: new Date('2026-03-28T10:00:00.000Z'),
     });
-    expect(pluginRuntime.runConversationCreatedHooks).toHaveBeenCalledWith({
-      context: {
-        source: 'http-route',
-        userId: 'user-1',
-        conversationId: 'conversation-1',
-      },
-      payload: {
-        context: {
-          source: 'http-route',
-          userId: 'user-1',
-          conversationId: 'conversation-1',
-        },
-        conversation: {
-          id: 'conversation-1',
-          title: '新的对话',
-          createdAt: '2026-03-28T10:00:00.000Z',
-          updatedAt: '2026-03-28T10:00:00.000Z',
-        },
+    expect(pluginChatRuntime.dispatchConversationCreated).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversation: {
+        id: 'conversation-1',
+        title: '新的对话',
+        createdAt: new Date('2026-03-28T10:00:00.000Z'),
+        updatedAt: new Date('2026-03-28T10:00:00.000Z'),
       },
     });
   });

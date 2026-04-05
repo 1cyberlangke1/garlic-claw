@@ -16,9 +16,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
-import type { ModelConfig } from '../ai/types/provider.types';
-import { ImageToTextService } from '../ai/vision/image-to-text.service';
-import { ImageTranscriptionCacheService } from '../ai/vision/image-transcription-cache.service';
+import { AiVisionService, type ModelConfig } from '../ai';
 import type { ChatRuntimeMessage } from './chat-message-session';
 
 interface VisionFallbackTraceEntry {
@@ -35,10 +33,7 @@ export interface ChatMessageTransformResult {
 
 @Injectable()
 export class ChatMessageTransformService {
-  constructor(
-    private readonly imageCache: ImageTranscriptionCacheService,
-    private readonly imageToText: ImageToTextService,
-  ) {}
+  constructor(private readonly aiVision: AiVisionService) {}
 
   /**
    * 按模型能力转换消息列表。
@@ -119,21 +114,12 @@ export class ChatMessageTransformService {
     part: { type: 'text'; text: string };
     trace: VisionFallbackTraceEntry | null;
   }> {
-    const cached = await this.imageCache.findTranscription(conversationId, image);
-    if (cached) {
-      return {
-        part: {
-          type: 'text',
-          text: `[图片描述: ${cached}]`,
-        },
-        trace: {
-          text: cached,
-          source: 'cache',
-        },
-      };
-    }
-
-    if (!this.imageToText.hasVisionFallback()) {
+    const resolved = await this.aiVision.resolveImageText(
+      conversationId,
+      image,
+      mimeType,
+    );
+    if (!resolved.text || !resolved.source) {
       return {
         part: {
           type: 'text',
@@ -143,26 +129,14 @@ export class ChatMessageTransformService {
       };
     }
 
-    const transcription = await this.imageToText.imageToText(
-      image,
-      mimeType ?? 'image/png',
-    );
-
-    await this.imageCache.saveTranscription({
-      conversationId,
-      image,
-      mimeType,
-      transcription,
-    });
-
     return {
       part: {
         type: 'text',
-        text: `[图片描述: ${transcription}]`,
+        text: `[图片描述: ${resolved.text}]`,
       },
       trace: {
-        text: transcription,
-        source: 'generated',
+        text: resolved.text,
+        source: resolved.source,
       },
     };
   }

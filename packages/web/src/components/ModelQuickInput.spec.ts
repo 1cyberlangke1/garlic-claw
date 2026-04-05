@@ -1,9 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ModelQuickInput from './ModelQuickInput.vue'
-import * as api from '../api'
+import * as aiApi from '@/features/ai-settings/api/ai'
 
-vi.mock('../api', () => ({
+vi.mock('@/features/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn(),
   listAiModels: vi.fn(),
 }))
@@ -52,11 +52,11 @@ describe('ModelQuickInput', () => {
   })
 
   it('keeps suggestions from healthy providers when one provider model list fails', async () => {
-    vi.mocked(api.listAiProviders).mockResolvedValue([
+    vi.mocked(aiApi.listAiProviders).mockResolvedValue([
       createProvider('broken-provider'),
       createProvider('healthy-provider'),
     ])
-    vi.mocked(api.listAiModels).mockImplementation(async (providerId: string) => {
+    vi.mocked(aiApi.listAiModels).mockImplementation(async (providerId: string) => {
       if (providerId === 'broken-provider') {
         throw new Error('provider offline')
       }
@@ -79,7 +79,7 @@ describe('ModelQuickInput', () => {
   })
 
   it('falls back to an empty suggestion list when provider loading fails', async () => {
-    vi.mocked(api.listAiProviders).mockRejectedValue(new Error('providers unavailable'))
+    vi.mocked(aiApi.listAiProviders).mockRejectedValue(new Error('providers unavailable'))
 
     const wrapper = mount(ModelQuickInput)
 

@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type { PluginCallContext } from '@garlic-claw/shared';
 import type { JsonObject } from '../common/types/json-value';
-import { McpService } from '../mcp/mcp.service';
+import type { McpService } from '../mcp/mcp.service';
 import type { ToolProvider, ToolProviderState, ToolProviderTool } from './tool.types';
 
 const mcpSupportedActions: Array<'health-check' | 'reload' | 'reconnect'> = [
@@ -13,11 +14,12 @@ const mcpSupportedActions: Array<'health-check' | 'reload' | 'reconnect'> = [
 @Injectable()
 export class McpToolProvider implements ToolProvider {
   readonly kind = 'mcp' as const;
+  private mcpServicePromise?: Promise<McpService>;
 
-  constructor(private readonly mcpService: McpService) {}
+  constructor(private readonly moduleRef: ModuleRef) {}
 
   async collectState(_context?: PluginCallContext): Promise<ToolProviderState> {
-    const snapshot = this.mcpService.getToolingSnapshot();
+    const snapshot = (await this.getMcpService()).getToolingSnapshot();
     const sources = snapshot.statuses.map((status) => ({
       kind: 'mcp' as const,
       id: status.name,
@@ -71,11 +73,31 @@ export class McpToolProvider implements ToolProvider {
     context: PluginCallContext;
     skipLifecycleHooks?: boolean;
   }) {
-    return this.mcpService.callTool({
+    return this.getMcpService().then((mcpService) => mcpService.callTool({
       serverName: input.tool.source.id,
       toolName: input.tool.name,
       arguments: input.params,
-    });
+    }));
+  }
+
+  private async getMcpService(): Promise<McpService> {
+    if (this.mcpServicePromise) {
+      return this.mcpServicePromise;
+    }
+
+    this.mcpServicePromise = (async () => {
+      const { McpService } = await import('../mcp/mcp.service');
+      const resolved = this.moduleRef.get<McpService>(McpService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new BadRequestException('McpService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.mcpServicePromise;
   }
 
   private schemaToParams(schema: unknown): ToolProviderTool['parameters'] {

@@ -1,9 +1,11 @@
 import {
-  createPluginAuthorTransportExecutor,
-  createPluginHostFacade,
   type PluginAuthorTransportExecutor,
+  createPluginAuthorTransportExecutor,
+} from '@garlic-claw/plugin-sdk/authoring';
+import {
+  createPluginHostFacade,
   type PluginHostFacadeMethods,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/host';
 import type {
   HostCallPayload,
   PluginCallContext,

@@ -7,11 +7,11 @@ import type {
   PluginProviderSummary,
 } from '@garlic-claw/shared';
 import {
+  buildHostProviderModelSummary,
   buildCurrentHostProviderInfo,
   buildHostGenerateResult,
   buildHostGenerateTextResult,
   findHostProviderSummary,
-  resolveHostProviderModelSummary,
   resolveHostUtilityRoleForGeneration,
 } from '@garlic-claw/shared';
 import {
@@ -20,10 +20,11 @@ import {
 } from '@nestjs/common';
 import type { JsonObject, JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
-import { AiModelExecutionService } from '../ai/ai-model-execution.service';
-import { AiManagementService } from '../ai/ai-management.service';
-import { AiProviderService } from '../ai/ai-provider.service';
-import { ModelRegistryService } from '../ai/registry/model-registry.service';
+import {
+  AiManagementService,
+  AiModelExecutionService,
+  AiProviderService,
+} from '../ai';
 import { toAiSdkMessages } from '../chat/sdk-message-converter';
 import {
   readHostNumber,
@@ -120,7 +121,6 @@ export class PluginHostAiFacade {
     private readonly aiModelExecution: AiModelExecutionService,
     private readonly aiProviderService: AiProviderService,
     private readonly aiManagementService: AiManagementService,
-    private readonly modelRegistryService: ModelRegistryService,
   ) {}
 
   getCurrentProvider(context: PluginCallContext): JsonValue {
@@ -154,18 +154,11 @@ export class PluginHostAiFacade {
   getProviderModel(params: JsonObject): JsonValue {
     const providerId = requireHostString(params, 'providerId');
     const modelId = requireHostString(params, 'modelId');
-    const model = resolveHostProviderModelSummary({
-      registryModel: this.modelRegistryService.getModel(providerId, modelId) ?? undefined,
-      listedModels: this.aiManagementService.listModels(providerId),
-      modelId,
-    });
-    if (!model) {
-      throw new NotFoundException(
-        `Model "${modelId}" not found for provider "${providerId}"`,
-      );
-    }
-
-    return toJsonValue(model);
+    return toJsonValue(
+      buildHostProviderModelSummary(
+        this.aiManagementService.getProviderModel(providerId, modelId),
+      ),
+    );
   }
 
   async generateText(

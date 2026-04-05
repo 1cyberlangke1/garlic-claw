@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,14 +18,23 @@ const router = createRouter({
     },
     {
       path: '/',
-      component: () => import('../views/AppLayout.vue'),
+      name: 'chat-shell',
+      component: () => import('@/features/chat/layouts/ChatWorkbenchLayout.vue'),
       meta: { requiresAuth: true },
       children: [
         {
           path: '',
           name: 'chat',
-          component: () => import('../views/ChatView.vue'),
+          component: () => import('@/features/chat/views/ChatView.vue'),
         },
+      ],
+    },
+    {
+      path: '/',
+      name: 'admin-shell',
+      component: () => import('@/features/admin/layouts/AdminConsoleLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
         {
           path: 'devices',
           redirect: { name: 'plugins' },
@@ -33,47 +42,47 @@ const router = createRouter({
         {
           path: 'plugins',
           name: 'plugins',
-          component: () => import('../views/PluginsView.vue'),
+          component: () => import('@/features/plugins/views/PluginsView.vue'),
         },
         {
           path: 'personas',
           name: 'persona-settings',
-          component: () => import('../views/PersonaSettingsView.vue'),
+          component: () => import('@/features/personas/views/PersonaSettingsView.vue'),
         },
         {
           path: 'tools',
           name: 'tools',
-          component: () => import('../views/ToolsView.vue'),
+          component: () => import('@/features/tools/views/ToolsView.vue'),
         },
         {
           path: 'skills',
           name: 'skills',
-          component: () => import('../views/SkillsView.vue'),
+          component: () => import('@/features/skills/views/SkillsView.vue'),
         },
         {
           path: 'commands',
           name: 'commands',
-          component: () => import('../views/CommandsView.vue'),
+          component: () => import('@/features/commands/views/CommandsView.vue'),
         },
         {
           path: 'subagents',
           name: 'subagent-tasks',
-          component: () => import('../views/SubagentTasksView.vue'),
+          component: () => import('@/features/subagents/views/SubagentTasksView.vue'),
         },
         {
           path: 'api-keys',
           name: 'api-keys',
-          component: () => import('../views/ApiKeysView.vue'),
+          component: () => import('@/features/api-keys/views/ApiKeysView.vue'),
         },
         {
           path: 'automations',
           name: 'automations',
-          component: () => import('../views/AutomationsView.vue'),
+          component: () => import('@/features/automations/views/AutomationsView.vue'),
         },
         {
           path: 'ai',
           name: 'ai-settings',
-          component: () => import('../views/ProviderSettings.vue'),
+          component: () => import('@/features/ai-settings/views/ProviderSettings.vue'),
         },
       ],
     },

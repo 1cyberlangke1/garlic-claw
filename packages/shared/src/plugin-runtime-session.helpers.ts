@@ -1,8 +1,8 @@
+import type { MessageReceivedHookPayload } from './types/plugin-ai';
 import type {
-  MessageReceivedHookPayload,
   PluginConversationSessionInfo,
   PluginMessageHookInfo,
-} from './types/plugin';
+} from './types/plugin-chat';
 import type { JsonValue } from './types/json';
 import { toJsonValue } from './types/json';
 import {

@@ -1,9 +1,9 @@
 import {
   buildResponseSendSummary,
   persistPluginObservation,
-  readPluginHookPayload,
   RESPONSE_RECORDER_MANIFEST,
-} from '@garlic-claw/plugin-sdk';
+  readPluginHookPayload,
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { ResponseAfterSendHookPayload } from '@garlic-claw/shared';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 

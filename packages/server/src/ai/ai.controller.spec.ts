@@ -35,6 +35,12 @@ describe('AiController', () => {
     discoverModels: jest.fn(),
     testConnection: jest.fn(),
   };
+  const configManager = {
+    getVisionFallbackConfig: jest.fn(),
+    updateVisionFallbackConfig: jest.fn(),
+    getHostModelRoutingConfig: jest.fn(),
+    updateHostModelRoutingConfig: jest.fn(),
+  };
 
   let controller: AiController;
 
@@ -43,6 +49,7 @@ describe('AiController', () => {
     controller = new AiController(
       managementService as never,
       diagnosticsService as never,
+      configManager as never,
     );
   });
 
@@ -81,7 +88,7 @@ describe('AiController', () => {
     );
   });
 
-  it('forwards vision fallback updates to the management service', () => {
+  it('forwards vision fallback updates to the config manager', () => {
     const dto = {
       enabled: true,
       providerId: 'openai',
@@ -90,10 +97,10 @@ describe('AiController', () => {
 
     controller.updateVisionFallbackConfig(dto);
 
-    expect(managementService.updateVisionFallbackConfig).toHaveBeenCalledWith(dto);
+    expect(configManager.updateVisionFallbackConfig).toHaveBeenCalledWith(dto);
   });
 
-  it('forwards host model routing updates to the management service', () => {
+  it('forwards host model routing updates to the config manager', () => {
     const dto = {
       fallbackChatModels: [
         {
@@ -111,7 +118,7 @@ describe('AiController', () => {
 
     controller.updateHostModelRoutingConfig(dto as never);
 
-    expect(managementService.updateHostModelRoutingConfig).toHaveBeenCalledWith(dto);
+    expect(configManager.updateHostModelRoutingConfig).toHaveBeenCalledWith(dto);
   });
 
   it('forwards model discovery requests to the diagnostics service', async () => {

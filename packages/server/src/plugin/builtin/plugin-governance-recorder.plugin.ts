@@ -4,7 +4,7 @@ import {
   PLUGIN_GOVERNANCE_RECORDER_MANIFEST,
   persistPluginObservation,
   readPluginHookPayload,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type {
   PluginErrorHookPayload,
   PluginLoadedHookPayload,
