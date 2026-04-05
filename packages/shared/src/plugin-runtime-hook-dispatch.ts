@@ -1,5 +1,4 @@
 import type {
-  MessageReceivedHookPayload,
   PluginCallContext,
   PluginHookDescriptor,
   PluginHookName,
@@ -8,6 +7,7 @@ import type {
   PluginScopeSettings,
 } from './types/plugin';
 import type { JsonValue } from './types/json';
+import type { MessageReceivedHookPayload } from './types/plugin-ai';
 import { toJsonValue } from './types/json';
 import { findManifestHookDescriptor } from './plugin-runtime-manifest.helpers';
 import {

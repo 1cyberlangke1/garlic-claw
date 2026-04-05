@@ -5,7 +5,6 @@ import {
 import type { ChatRuntimeMessage } from './chat-message-session';
 import type { SendMessagePartDto } from './dto/chat.dto';
 import { DEFAULT_PERSONA_PROMPT } from '../persona/default-persona';
-import { ToolRegistryService } from '../tool/tool-registry.service';
 
 export const CHAT_SYSTEM_PROMPT = DEFAULT_PERSONA_PROMPT;
 
@@ -86,73 +85,6 @@ export function hasActiveAssistantMessage(
       message.role === 'assistant' &&
       (message.status === 'pending' || message.status === 'streaming'),
   );
-}
-
-/**
- * 按需构造聊天工具集合。
- * @param supportsToolCall 模型是否支持工具调用
- * @param pluginRuntime 统一插件运行时
- * @param userId 当前用户 ID
- * @param conversationId 当前对话 ID
- * @returns 工具集合；模型不支持时返回 undefined
- */
-export async function buildChatToolSet(params: {
-  supportsToolCall: boolean;
-  toolRegistry: ToolRegistryService;
-  userId: string;
-  conversationId: string;
-  activeProviderId: string;
-  activeModelId: string;
-  activePersonaId?: string;
-  allowedToolNames?: string[];
-}) {
-  if (!params.supportsToolCall) {
-    return undefined;
-  }
-
-  return params.toolRegistry.buildToolSet({
-    context: createChatToolContext(params),
-    allowedToolNames: params.allowedToolNames,
-  });
-}
-
-/**
- * 列出聊天模型前 Hook 可见的工具摘要。
- * @param pluginRuntime 统一插件运行时
- * @param userId 当前用户 ID
- * @param conversationId 当前对话 ID
- * @param activeProviderId 当前 provider ID
- * @param activeModelId 当前 model ID
- * @returns 当前聊天链路可见的工具摘要列表
- */
-export async function listChatAvailableTools(params: {
-  toolRegistry: ToolRegistryService;
-  userId: string;
-  conversationId: string;
-  activeProviderId: string;
-  activeModelId: string;
-  activePersonaId?: string;
-}) {
-  return params.toolRegistry.listAvailableToolSummaries({
-    context: createChatToolContext(params),
-  });
-}
-
-function createChatToolContext(input: {
-  userId: string;
-  conversationId: string;
-  activeProviderId: string;
-  activeModelId: string;
-  activePersonaId?: string;
-}) {
-  return {
-    userId: input.userId,
-    conversationId: input.conversationId,
-    source: 'chat-tool' as const,
-    activeProviderId: input.activeProviderId,
-    activeModelId: input.activeModelId,
-    activePersonaId: input.activePersonaId,
-  };
 }
 
 /**

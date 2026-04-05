@@ -1,3 +1,4 @@
+import { ModuleRef } from '@nestjs/core';
 import { BadRequestException } from '@nestjs/common';
 import { ToolAdminService } from './tool-admin.service';
 
@@ -13,15 +14,27 @@ describe('ToolAdminService', () => {
     reloadServer: jest.fn(),
     reconnectServer: jest.fn(),
   };
+  const moduleRef = {
+    get: jest.fn(),
+  };
 
   let service: ToolAdminService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    moduleRef.get.mockImplementation((token: { name?: string }) => {
+      if (token?.name === 'PluginAdminService') {
+        return pluginAdmin;
+      }
+      if (token?.name === 'McpService') {
+        return mcpService;
+      }
+
+      return null;
+    });
     service = new ToolAdminService(
       toolRegistry as never,
-      pluginAdmin as never,
-      mcpService as never,
+      moduleRef as unknown as ModuleRef,
     );
   });
 

@@ -1,7 +1,8 @@
 import type { ChatMessagePart } from './chat-message-parts';
 import { readPluginMessageTargetInfoValue, readPluginSubagentRequestValue } from './plugin-subagent-task';
 import type { JsonObject, JsonValue } from './types/json';
-import type { PluginMessageTargetInfo, PluginMessageTargetRef, PluginSubagentRequest } from './types/plugin';
+import type { PluginSubagentRequest } from './types/plugin-ai';
+import type { PluginMessageTargetInfo, PluginMessageTargetRef } from './types/plugin-chat';
 
 function requireJsonObjectValue(value: JsonValue, label: string): JsonObject {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {

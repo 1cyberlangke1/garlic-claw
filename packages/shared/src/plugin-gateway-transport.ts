@@ -5,14 +5,12 @@ import type {
   ExecuteResultPayload,
   HookInvokePayload,
   HookResultPayload,
-  HostCallPayload,
-  HostResultPayload,
   PluginCallContext,
   RegisterPayload,
-  RouteInvokePayload,
-  RouteResultPayload,
   WsMessage,
 } from './types/plugin';
+import type { HostCallPayload, HostResultPayload } from './types/plugin-host';
+import type { RouteInvokePayload, RouteResultPayload } from './types/plugin-route';
 import type { JsonValue } from './types/json';
 
 const OPEN_SOCKET_READY_STATE = 1;

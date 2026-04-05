@@ -2,15 +2,17 @@ import { normalizePositiveInteger } from './plugin-runtime-validation';
 import { isJsonObjectValue, isStringRecord, toJsonValue } from './types/json';
 import type {
   PluginCallContext,
-  PluginLlmMessage,
-  PluginMessageTargetInfo,
   PluginRuntimeKind,
-  PluginSubagentRequest,
-  PluginSubagentRunResult,
   PluginSubagentTaskDetail,
   PluginSubagentTaskSummary,
 } from './types/plugin';
 import type { JsonValue } from './types/json';
+import type {
+  PluginLlmMessage,
+  PluginSubagentRequest,
+  PluginSubagentRunResult,
+} from './types/plugin-ai';
+import type { PluginMessageTargetInfo } from './types/plugin-chat';
 
 export function readPluginMessageSendSummary(value: JsonValue): {
   id: string;

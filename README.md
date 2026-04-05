@@ -7,6 +7,11 @@ Garlic Claw 是一个带设备控制、自动化和多提供商聊天能力的 A
 - 后端：NestJS 11 + Prisma + AI SDK v6
 - 前端：Vue 3 + Vite + Pinia
 - 插件：WebSocket + `@garlic-claw/plugin-sdk`
+  - SDK 入口已拆成：
+    - `@garlic-claw/plugin-sdk/client`
+    - `@garlic-claw/plugin-sdk/host`
+    - `@garlic-claw/plugin-sdk/authoring`
+  - 根入口仍保留兼容导出，但新代码优先使用子路径入口
 - AI provider：
   - core 协议族：
     - `openai` -> `@ai-sdk/openai`

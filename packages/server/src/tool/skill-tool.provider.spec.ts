@@ -1,3 +1,4 @@
+import { ModuleRef } from '@nestjs/core';
 import type { PluginCallContext } from '@garlic-claw/shared';
 import { SkillToolProvider } from './skill-tool.provider';
 
@@ -38,7 +39,10 @@ describe('SkillToolProvider', () => {
         timedOut: false,
       }),
     };
-    const provider = new SkillToolProvider(skillExecution as never);
+    const moduleRef = {
+      get: jest.fn().mockReturnValue(skillExecution),
+    };
+    const provider = new SkillToolProvider(moduleRef as unknown as ModuleRef);
 
     const tools = await provider.listTools(context);
 

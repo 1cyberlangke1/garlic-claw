@@ -1,4 +1,5 @@
-import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type { Tool } from 'ai';
 import type {
   PluginAvailableToolSummary,
@@ -6,9 +7,9 @@ import type {
   ToolOverview,
   ToolSourceInfo,
 } from '@garlic-claw/shared';
-import { McpService } from '../mcp/mcp.service';
-import { PluginService } from '../plugin/plugin.service';
-import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
+import type { McpService } from '../mcp/mcp.service';
+import type { PluginService } from '../plugin/plugin.service';
+import type { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { McpToolProvider } from './mcp-tool.provider';
 import { PluginToolProvider } from './plugin-tool.provider';
 import { SkillToolProvider } from './skill-tool.provider';
@@ -31,18 +32,16 @@ import type {
 
 @Injectable()
 export class ToolRegistryService {
+  private pluginRuntimePromise?: Promise<PluginRuntimeService>;
+  private pluginServicePromise?: Promise<PluginService>;
+  private mcpServicePromise?: Promise<McpService | null>;
+
   constructor(
     private readonly settings: ToolSettingsService,
-    @Inject(forwardRef(() => PluginRuntimeService))
-    private readonly pluginRuntime: PluginRuntimeService,
-    @Inject(forwardRef(() => PluginToolProvider))
     private readonly pluginToolProvider: PluginToolProvider,
-    @Inject(forwardRef(() => McpToolProvider))
     private readonly mcpToolProvider: McpToolProvider,
-    @Inject(forwardRef(() => SkillToolProvider))
     private readonly skillToolProvider?: SkillToolProvider,
-    private readonly mcpService?: McpService,
-    private readonly pluginService?: PluginService,
+    private readonly moduleRef?: ModuleRef,
   ) {}
 
   async listTools(input: ToolFilterInput): Promise<ToolRecord[]> {
@@ -75,9 +74,12 @@ export class ToolRegistryService {
       throw new NotFoundException(`Tool source not found: ${kind}:${id}`);
     }
 
-    if (kind === 'plugin' && this.pluginService) {
-      const currentScope = await this.pluginService.getPluginScope(id);
-      await this.pluginService.updatePluginScope(id, {
+    const pluginService = kind === 'plugin'
+      ? await this.getPluginService()
+      : null;
+    if (kind === 'plugin' && pluginService) {
+      const currentScope = await pluginService.getPluginScope(id);
+      await pluginService.updatePluginScope(id, {
         ...currentScope,
         defaultEnabled: enabled,
       });
@@ -93,8 +95,11 @@ export class ToolRegistryService {
     }
 
     this.settings.setSourceEnabled(kind, id, enabled);
-    if (kind === 'mcp' && this.mcpService) {
-      await this.mcpService.setServerEnabled(id, enabled);
+    const mcpService = kind === 'mcp'
+      ? await this.getMcpService()
+      : null;
+    if (kind === 'mcp' && mcpService) {
+      await mcpService.setServerEnabled(id, enabled);
       const updatedState = await this.collectProviderState();
       const updated = this.buildOverviewFromProviderState(updatedState).sources.find((source) =>
         source.kind === kind && source.id === id);
@@ -176,6 +181,7 @@ export class ToolRegistryService {
     }) => Record<string, Tool> | undefined;
   }> {
     const resolvedTools = await this.resolveTools(input);
+    const pluginRuntime = await this.getPluginRuntime();
 
     return {
       availableTools: resolvedTools.map((entry) => buildAvailableToolSummary(entry.record)),
@@ -183,7 +189,7 @@ export class ToolRegistryService {
         resolvedTools,
         context: options.context,
         allowedToolNames: options.allowedToolNames,
-        pluginRuntime: this.pluginRuntime,
+        pluginRuntime,
       }),
     };
   }
@@ -258,6 +264,67 @@ export class ToolRegistryService {
         };
       }),
     );
+  }
+
+  private async getPluginRuntime(): Promise<PluginRuntimeService> {
+    if (this.pluginRuntimePromise) {
+      return this.pluginRuntimePromise;
+    }
+
+    this.pluginRuntimePromise = (async () => {
+      const { PluginRuntimeService } = await import('../plugin/plugin-runtime.service');
+      const resolved = this.moduleRef?.get(PluginRuntimeService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new NotFoundException('PluginRuntimeService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginRuntimePromise;
+  }
+
+  private async getPluginService(): Promise<PluginService | null> {
+    if (!this.moduleRef) {
+      return null;
+    }
+    if (this.pluginServicePromise) {
+      return this.pluginServicePromise;
+    }
+
+    this.pluginServicePromise = (async () => {
+      const { PluginService } = await import('../plugin/plugin.service');
+      const resolved = this.moduleRef?.get(PluginService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new NotFoundException('PluginService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginServicePromise;
+  }
+
+  private async getMcpService(): Promise<McpService | null> {
+    if (!this.moduleRef) {
+      return null;
+    }
+    if (this.mcpServicePromise) {
+      return this.mcpServicePromise;
+    }
+
+    this.mcpServicePromise = (async () => {
+      const { McpService } = await import('../mcp/mcp.service');
+      return this.moduleRef?.get(McpService, {
+        strict: false,
+      }) ?? null;
+    })();
+
+    return this.mcpServicePromise;
   }
 
   private toResolvedToolRecord(

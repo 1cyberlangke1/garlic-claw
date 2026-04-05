@@ -1,11 +1,11 @@
 import {
   buildMessageReceivedSummary,
   buildWaitingModelSummary,
-  createPassHookResult,
   MESSAGE_ENTRY_RECORDER_MANIFEST,
   persistPluginObservation,
+  createPassHookResult,
   readPluginHookPayload,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type {
   ChatWaitingModelHookPayload,
   MessageReceivedHookPayload,

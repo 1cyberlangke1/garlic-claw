@@ -1,23 +1,32 @@
 import type {
   AutomationAfterRunHookPayload,
   AutomationBeforeRunHookPayload,
+  ResponseAfterSendHookPayload,
+  ResponseBeforeSendHookPayload,
+  ToolAfterCallHookPayload,
+  ToolBeforeCallHookPayload,
+} from './types/plugin-operation';
+import type { PluginCallContext } from './types/plugin';
+import type {
   ChatAfterModelHookPayload,
   ChatBeforeModelHookPayload,
   ChatWaitingModelHookPayload,
+  MessageReceivedHookPayload,
+  PluginSubagentRunResult,
+  SubagentAfterRunHookPayload,
+  SubagentBeforeRunHookPayload,
+} from './types/plugin-ai';
+import type {
   ConversationCreatedHookPayload,
   MessageCreatedHookPayload,
   MessageDeletedHookPayload,
-  MessageReceivedHookPayload,
   MessageUpdatedHookPayload,
-  PluginCallContext,
-  PluginSubagentRunResult,
-  ResponseAfterSendHookPayload,
-  ResponseBeforeSendHookPayload,
-  SubagentAfterRunHookPayload,
-  SubagentBeforeRunHookPayload,
-  ToolAfterCallHookPayload,
-  ToolBeforeCallHookPayload,
-} from './types/plugin';
+} from './types/plugin-chat';
+import type {
+  PluginErrorHookPayload,
+  PluginLoadedHookPayload,
+  PluginUnloadedHookPayload,
+} from './types/plugin-lifecycle';
 
 export type HookPayloadInput<TPayload> = {
   context: PluginCallContext;
@@ -89,9 +98,9 @@ export type BroadcastHookFamily = {
 };
 
 export type LifecycleBroadcastHookFamily = {
-  'plugin:loaded': HookSpec<import('./types/plugin').PluginLoadedHookPayload, void>;
-  'plugin:unloaded': HookSpec<import('./types/plugin').PluginUnloadedHookPayload, void>;
-  'plugin:error': HookSpec<import('./types/plugin').PluginErrorHookPayload, void>;
+  'plugin:loaded': HookSpec<PluginLoadedHookPayload, void>;
+  'plugin:unloaded': HookSpec<PluginUnloadedHookPayload, void>;
+  'plugin:error': HookSpec<PluginErrorHookPayload, void>;
 };
 
 export type AllBroadcastHookFamily =

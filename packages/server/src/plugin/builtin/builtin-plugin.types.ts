@@ -1,8 +1,8 @@
 import type {
   PluginAuthorDefinition,
   PluginAuthorTransportGovernanceHandlers,
-  PluginHostFacadeMethods,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
+import type { PluginHostFacadeMethods } from '@garlic-claw/plugin-sdk/host';
 import type {
   HostCallPayload,
   PluginCallContext,

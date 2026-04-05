@@ -8,17 +8,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { McpService } from '../mcp/mcp.service';
-import { PluginAdminService } from '../plugin/plugin-admin.service';
+import { ModuleRef } from '@nestjs/core';
+import type { McpService } from '../mcp/mcp.service';
+import type { PluginAdminService } from '../plugin/plugin-admin.service';
 import type { ToolSourceKind } from './tool.types';
 import { ToolRegistryService } from './tool-registry.service';
 
 @Injectable()
 export class ToolAdminService {
+  private pluginAdminPromise?: Promise<PluginAdminService>;
+  private mcpServicePromise?: Promise<McpService>;
+
   constructor(
     private readonly toolRegistry: ToolRegistryService,
-    private readonly pluginAdmin: PluginAdminService,
-    private readonly mcpService: McpService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async runSourceAction(
@@ -35,7 +38,8 @@ export class ToolAdminService {
     }
 
     if (kind === 'plugin') {
-      const result = await this.pluginAdmin.runAction(sourceId, action);
+      const pluginAdmin = await this.getPluginAdmin();
+      const result = await pluginAdmin.runAction(sourceId, action);
       return {
         accepted: result.accepted,
         action: result.action,
@@ -65,8 +69,9 @@ export class ToolAdminService {
     sourceId: string,
     action: PluginActionName,
   ): Promise<ToolSourceActionResult> {
+    const mcpService = await this.getMcpService();
     if (action === 'reload') {
-      await this.mcpService.reloadServer(sourceId);
+      await mcpService.reloadServer(sourceId);
       return {
         accepted: true,
         action,
@@ -77,7 +82,7 @@ export class ToolAdminService {
     }
 
     if (action === 'reconnect') {
-      await this.mcpService.reconnectServer(sourceId);
+      await mcpService.reconnectServer(sourceId);
       return {
         accepted: true,
         action,
@@ -91,7 +96,7 @@ export class ToolAdminService {
       throw new BadRequestException(`MCP source does not support action: ${action}`);
     }
 
-    const status = this.mcpService.listServerStatuses().find((entry) => entry.name === sourceId);
+    const status = mcpService.listServerStatuses().find((entry) => entry.name === sourceId);
     if (!status) {
       throw new NotFoundException(`MCP source not found: ${sourceId}`);
     }
@@ -109,5 +114,45 @@ export class ToolAdminService {
       sourceId,
       message,
     };
+  }
+
+  private async getPluginAdmin(): Promise<PluginAdminService> {
+    if (this.pluginAdminPromise) {
+      return this.pluginAdminPromise;
+    }
+
+    this.pluginAdminPromise = (async () => {
+      const { PluginAdminService } = await import('../plugin/plugin-admin.service');
+      const resolved = this.moduleRef.get<PluginAdminService>(PluginAdminService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new NotFoundException('PluginAdminService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginAdminPromise;
+  }
+
+  private async getMcpService(): Promise<McpService> {
+    if (this.mcpServicePromise) {
+      return this.mcpServicePromise;
+    }
+
+    this.mcpServicePromise = (async () => {
+      const { McpService } = await import('../mcp/mcp.service');
+      const resolved = this.moduleRef.get<McpService>(McpService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new NotFoundException('McpService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.mcpServicePromise;
   }
 }

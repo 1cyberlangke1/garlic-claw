@@ -4,6 +4,37 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./authoring": {
+      "types": "./dist/authoring/index.d.ts",
+      "default": "./dist/authoring/index.js"
+    },
+    "./host": {
+      "types": "./dist/host/index.d.ts",
+      "default": "./dist/host/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "default": "./dist/client/index.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "authoring": [
+        "dist/authoring/index.d.ts"
+      ],
+      "host": [
+        "dist/host/index.d.ts"
+      ],
+      "client": [
+        "dist/client/index.d.ts"
+      ]
+    }
+  },
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test test/*.test.js"

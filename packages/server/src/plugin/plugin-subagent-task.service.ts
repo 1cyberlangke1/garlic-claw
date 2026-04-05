@@ -2,22 +2,23 @@ import type {
   PluginCallContext,
   PluginMessageTargetInfo,
   PluginMessageTargetRef,
+  PluginRuntimeKind,
   PluginSubagentRequest,
   PluginSubagentRunResult,
   PluginSubagentTaskDetail,
   PluginSubagentTaskOverview,
   PluginSubagentTaskSummary,
   PluginSubagentTaskWriteBackStatus,
-  PluginRuntimeKind,
 } from '@garlic-claw/shared';
 import {
   readPluginMessageSendSummary,
   serializePluginSubagentTaskDetail,
   serializePluginSubagentTaskSummary,
 } from '@garlic-claw/shared';
-import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import type { JsonValue } from '../common/types/json-value';
 import { PrismaService } from '../prisma/prisma.service';
-import { PluginRuntimeService } from './plugin-runtime.service';
 
 export interface StartPluginSubagentTaskInput {
   pluginId: string;
@@ -42,10 +43,31 @@ function getTaskErrorMessage(error: unknown, fallback: string): string {
 
 @Injectable()
 export class PluginSubagentTaskService {
+  private pluginRuntimePromise?: Promise<{
+    executeSubagentRequest: (input: {
+      pluginId: string;
+      context: PluginCallContext;
+      request: PluginSubagentRequest;
+    }) => Promise<PluginSubagentRunResult>;
+    callHost: (input: {
+      pluginId: string;
+      context: PluginCallContext;
+      method: 'message.send';
+      params: {
+        target: {
+          type: PluginMessageTargetRef['type'];
+          id: string;
+        };
+        content: string;
+        provider?: string;
+        model?: string;
+      };
+    }) => Promise<JsonValue>;
+  }>;
+
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(forwardRef(() => PluginRuntimeService))
-    private readonly pluginRuntime: PluginRuntimeService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async startTask(input: StartPluginSubagentTaskInput): Promise<PluginSubagentTaskSummary> {
@@ -141,6 +163,7 @@ export class PluginSubagentTaskService {
     request: PluginSubagentRequest;
     writeBackTarget: PluginMessageTargetRef | null;
   }): Promise<void> {
+    const pluginRuntime = await this.getPluginRuntime();
     await this.prisma.pluginSubagentTask.update({
       where: {
         id: input.taskId,
@@ -152,7 +175,7 @@ export class PluginSubagentTaskService {
     });
 
     try {
-      const result = await this.pluginRuntime.executeSubagentRequest({
+      const result = await pluginRuntime.executeSubagentRequest({
         pluginId: input.pluginId,
         context: input.context,
         request: input.request,
@@ -218,7 +241,8 @@ export class PluginSubagentTaskService {
     }
 
     try {
-      const sent = readPluginMessageSendSummary(await this.pluginRuntime.callHost({
+      const pluginRuntime = await this.getPluginRuntime();
+      const sent = readPluginMessageSendSummary(await pluginRuntime.callHost({
         pluginId: input.pluginId,
         context: input.context,
         method: 'message.send',
@@ -247,5 +271,45 @@ export class PluginSubagentTaskService {
         error: getTaskErrorMessage(error, '后台子代理结果回写失败'),
       };
     }
+  }
+
+  private async getPluginRuntime() {
+    if (this.pluginRuntimePromise) {
+      return this.pluginRuntimePromise;
+    }
+
+    this.pluginRuntimePromise = (async () => {
+      const { PluginRuntimeService } = await import('./plugin-runtime.service');
+      const resolved = this.moduleRef.get<{
+        executeSubagentRequest: (input: {
+          pluginId: string;
+          context: PluginCallContext;
+          request: PluginSubagentRequest;
+        }) => Promise<PluginSubagentRunResult>;
+        callHost: (input: {
+          pluginId: string;
+          context: PluginCallContext;
+          method: 'message.send';
+          params: {
+            target: {
+              type: PluginMessageTargetRef['type'];
+              id: string;
+            };
+            content: string;
+            provider?: string;
+            model?: string;
+          };
+        }) => Promise<JsonValue>;
+      }>(PluginRuntimeService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new NotFoundException('PluginRuntimeService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginRuntimePromise;
   }
 }

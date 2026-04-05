@@ -1,3 +1,4 @@
+import { ModuleRef } from '@nestjs/core';
 import { PluginToolProvider } from './plugin-tool.provider';
 
 describe('PluginToolProvider', () => {
@@ -47,10 +48,19 @@ describe('PluginToolProvider', () => {
         },
       ]),
     };
-    const provider = new PluginToolProvider(
-      pluginRuntime as never,
-      pluginService as never,
-    );
+    const moduleRef = {
+      get: jest.fn((token: { name?: string }) => {
+        if (token?.name === 'PluginRuntimeService') {
+          return pluginRuntime;
+        }
+        if (token?.name === 'PluginService') {
+          return pluginService;
+        }
+
+        return undefined;
+      }),
+    };
+    const provider = new PluginToolProvider(moduleRef as unknown as ModuleRef);
 
     await expect(provider.listSources()).resolves.toEqual([
       {

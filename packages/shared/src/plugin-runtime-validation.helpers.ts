@@ -1,5 +1,6 @@
 import { isJsonObjectValue } from './types/json';
 import type { JsonValue } from './types/json';
+import { CHAT_MESSAGE_STATUS_VALUES } from './types/chat';
 import type { PluginHookFilterDescriptor } from './types/plugin';
 
 export { hasImagePart, normalizePositiveInteger } from './plugin-runtime-validation';
@@ -9,11 +10,8 @@ export function isStringArray(value: JsonValue | undefined): value is string[] {
 }
 
 export function isChatMessageStatus(value: JsonValue): boolean {
-  return value === 'pending'
-    || value === 'streaming'
-    || value === 'completed'
-    || value === 'stopped'
-    || value === 'error';
+  return typeof value === 'string'
+    && CHAT_MESSAGE_STATUS_VALUES.some((status) => status === value);
 }
 
 export function isChatMessagePartArray(value: JsonValue): boolean {

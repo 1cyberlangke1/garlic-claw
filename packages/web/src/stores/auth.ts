@@ -1,6 +1,10 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import * as api from '../api'
+import {
+  getMe,
+  login as loginRequest,
+  register as registerRequest,
+} from '@/features/auth/api/auth'
 
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref(localStorage.getItem('accessToken') || '')
@@ -9,7 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!accessToken.value)
 
   async function login(username: string, password: string) {
-    const data = await api.login(username, password)
+    const data = await loginRequest(username, password)
     accessToken.value = data.accessToken
     localStorage.setItem('accessToken', data.accessToken)
     localStorage.setItem('refreshToken', data.refreshToken)
@@ -17,7 +21,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function register(username: string, email: string, password: string) {
-    const data = await api.register(username, email, password)
+    const data = await registerRequest(username, email, password)
     accessToken.value = data.accessToken
     localStorage.setItem('accessToken', data.accessToken)
     localStorage.setItem('refreshToken', data.refreshToken)
@@ -26,7 +30,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function fetchUser() {
     try {
-      user.value = await api.getMe()
+      user.value = await getMe()
     } catch {
       logout()
     }

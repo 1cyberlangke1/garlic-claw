@@ -34,7 +34,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AiModelCapabilities } from '@garlic-claw/shared'
-import * as api from '../api'
+import {
+  listAiModels,
+  listAiProviders,
+} from '@/features/ai-settings/api/ai'
 
 /**
  * 自动补全建议项。
@@ -91,12 +94,12 @@ watch(
 
 async function loadAllModels() {
   try {
-    const providers = await api.listAiProviders()
+    const providers = await listAiProviders()
     const availableProviders = providers.filter((provider) => provider.available)
     const suggestionGroups = await Promise.all(
       availableProviders.map(async (provider) => {
         try {
-          const models = await api.listAiModels(provider.id)
+          const models = await listAiModels(provider.id)
           return models.map((model) => ({
             providerId: provider.id,
             modelId: model.id,

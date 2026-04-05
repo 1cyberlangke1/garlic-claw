@@ -1,3 +1,4 @@
+import { ModuleRef } from '@nestjs/core';
 import { ChatMessageMutationService } from './chat-message-mutation.service';
 
 describe('ChatMessageMutationService', () => {
@@ -17,19 +18,10 @@ describe('ChatMessageMutationService', () => {
     getConversation: jest.fn(),
   };
 
-  const runMessageCreatedHooks = jest.fn();
-  const runMessageUpdatedHooks = jest.fn();
-  const runMessageDeletedHooks = jest.fn();
-  const pluginRuntime = {
-    runMessageCreatedHooks,
-    runMessageUpdatedHooks,
-    runMessageDeletedHooks,
-    runHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
-      hookName === 'message:created'
-        ? runMessageCreatedHooks(input)
-        : runMessageUpdatedHooks(input)),
-    runBroadcastHook: jest.fn(async ({ hookName, ...input }: { hookName: string }) =>
-      runMessageDeletedHooks(input)),
+  const pluginChatRuntime = {
+    applyMessageCreated: jest.fn(),
+    applyMessageUpdated: jest.fn(),
+    dispatchMessageDeleted: jest.fn(),
   };
 
   const chatTaskService = {
@@ -40,18 +32,23 @@ describe('ChatMessageMutationService', () => {
     applyFinalResponseHooks: jest.fn(),
     runResponseAfterSendHooks: jest.fn(),
   };
+  const moduleRef = {
+    get: jest.fn(),
+  };
 
   let service: ChatMessageMutationService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    runMessageCreatedHooks.mockImplementation(
+    moduleRef.get.mockImplementation((token: { name?: string }) =>
+      token?.name === 'PluginChatRuntimeFacade' ? pluginChatRuntime : null);
+    pluginChatRuntime.applyMessageCreated.mockImplementation(
       async ({ payload }: { payload: unknown }) => payload,
     );
-    pluginRuntime.runMessageUpdatedHooks.mockImplementation(
+    pluginChatRuntime.applyMessageUpdated.mockImplementation(
       async ({ payload }: { payload: unknown }) => payload,
     );
-    pluginRuntime.runMessageDeletedHooks.mockResolvedValue(undefined);
+    pluginChatRuntime.dispatchMessageDeleted.mockResolvedValue(undefined);
     orchestration.applyFinalResponseHooks.mockImplementation(
       async ({ result }: { result: unknown }) => result,
     );
@@ -61,14 +58,14 @@ describe('ChatMessageMutationService', () => {
     service = new ChatMessageMutationService(
       prisma as never,
       chatService as never,
-      pluginRuntime as never,
       orchestration as never,
       chatTaskService as never,
+      moduleRef as unknown as ModuleRef,
     );
   });
 
   it('startGenerationTurn persists a hook-mutated user message and pending assistant', async () => {
-    runMessageCreatedHooks.mockResolvedValue({
+    pluginChatRuntime.applyMessageCreated.mockResolvedValue({
       context: {
         source: 'chat',
         userId: 'user-1',
@@ -207,7 +204,7 @@ describe('ChatMessageMutationService', () => {
   });
 
   it('createHookedStoredMessage persists a hook-mutated assistant message', async () => {
-    runMessageCreatedHooks.mockResolvedValue({
+    pluginChatRuntime.applyMessageCreated.mockResolvedValue({
       context: {
         source: 'plugin',
         userId: 'user-1',
@@ -341,7 +338,7 @@ describe('ChatMessageMutationService', () => {
       title: '当前会话',
       messages: [],
     });
-    runMessageCreatedHooks.mockResolvedValue({
+    pluginChatRuntime.applyMessageCreated.mockResolvedValue({
       context: {
         source: 'cron',
         userId: 'user-1',
@@ -468,7 +465,7 @@ describe('ChatMessageMutationService', () => {
       title: 'Plugin Target',
       messages: [],
     });
-    runMessageCreatedHooks.mockResolvedValue({
+    pluginChatRuntime.applyMessageCreated.mockResolvedValue({
       context: {
         source: 'cron',
         userId: 'user-1',
@@ -831,7 +828,7 @@ describe('ChatMessageMutationService', () => {
         },
       ],
     });
-    pluginRuntime.runMessageUpdatedHooks.mockResolvedValue({
+    pluginChatRuntime.applyMessageUpdated.mockResolvedValue({
       context: {
         source: 'chat-hook',
         userId: 'user-1',
@@ -886,43 +883,37 @@ describe('ChatMessageMutationService', () => {
       ],
     } as never);
 
-    expect(pluginRuntime.runMessageUpdatedHooks).toHaveBeenCalledWith({
-      context: {
+    expect(pluginChatRuntime.applyMessageUpdated).toHaveBeenCalledWith({
+      hookContext: {
         source: 'chat-hook',
         userId: 'user-1',
         conversationId: 'conversation-1',
       },
-      payload: {
-        context: {
-          source: 'chat-hook',
-          userId: 'user-1',
-          conversationId: 'conversation-1',
-        },
-        conversationId: 'conversation-1',
-        messageId: 'message-1',
-        currentMessage: {
-          id: 'message-1',
-          role: 'user',
-          content: '旧内容',
-          parts: [
-            {
-              type: 'text',
-              text: '旧内容',
-            },
-          ],
-          status: 'completed',
-        },
-        nextMessage: {
-          role: 'user',
-          content: '用户输入的新内容',
-          parts: [
-            {
-              type: 'text',
-              text: '用户输入的新内容',
-            },
-          ],
-          status: 'completed',
-        },
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      currentMessage: {
+        id: 'message-1',
+        role: 'user',
+        content: '旧内容',
+        partsJson: JSON.stringify([
+          {
+            type: 'text',
+            text: '旧内容',
+          },
+        ]),
+        status: 'completed',
+      },
+      nextMessage: {
+        role: 'user',
+        content: '用户输入的新内容',
+        parts: [
+          {
+            type: 'text',
+            text: '用户输入的新内容',
+          },
+        ],
+        hasImages: false,
+        status: 'completed',
       },
     });
     expect(prisma.message.update).toHaveBeenCalledWith({
@@ -962,30 +953,22 @@ describe('ChatMessageMutationService', () => {
 
     await service.deleteMessage('user-1', 'conversation-1', 'message-1');
 
-    expect(pluginRuntime.runMessageDeletedHooks).toHaveBeenCalledWith({
-      context: {
+    expect(pluginChatRuntime.dispatchMessageDeleted).toHaveBeenCalledWith({
+      hookContext: {
         source: 'chat-hook',
         userId: 'user-1',
         conversationId: 'conversation-1',
       },
-      payload: {
-        context: {
-          source: 'chat-hook',
-          userId: 'user-1',
-          conversationId: 'conversation-1',
-        },
-        conversationId: 'conversation-1',
-        messageId: 'message-1',
-        message: {
-          id: 'message-1',
-          role: 'assistant',
-          content: '待删除消息',
-          parts: [],
-          provider: 'openai',
-          model: 'gpt-5.2',
-          status: 'completed',
-        },
-      },
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+      message: expect.objectContaining({
+        id: 'message-1',
+        role: 'assistant',
+        content: '待删除消息',
+        provider: 'openai',
+        model: 'gpt-5.2',
+        status: 'completed',
+      }),
     });
     expect(prisma.message.delete).toHaveBeenCalledWith({
       where: { id: 'message-1' },

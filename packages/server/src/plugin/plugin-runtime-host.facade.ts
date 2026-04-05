@@ -61,7 +61,7 @@ function resolveCachedModuleService<T>(input: {
 @Injectable()
 export class PluginRuntimeHostFacade {
   private chatMessageService?: ChatMessageService;
-  private subagentTaskService?: PluginSubagentTaskServicePort;
+  private subagentTaskServicePromise?: Promise<PluginSubagentTaskServicePort>;
 
   constructor(
     private readonly pluginService: PluginService,
@@ -179,7 +179,7 @@ export class PluginRuntimeHostFacade {
       });
     }
 
-    const subagentTaskService = this.getSubagentTaskService();
+    const subagentTaskService = await this.getSubagentTaskService();
     if (subagentCall.subagentMethod === 'list') {
       return subagentTaskService.listTasksForPlugin(input.pluginId);
     }
@@ -214,18 +214,26 @@ export class PluginRuntimeHostFacade {
     });
   }
 
-  private getSubagentTaskService(): PluginSubagentTaskServicePort {
-    return resolveCachedModuleService({
-      current: this.subagentTaskService,
-      resolve: () =>
-        this.moduleRef.get<PluginSubagentTaskServicePort>(
-          'PLUGIN_SUBAGENT_TASK_SERVICE',
-          { strict: false },
-        ),
-      cache: (value) => {
-        this.subagentTaskService = value;
-      },
-      notFoundMessage: 'PluginSubagentTaskService is not available',
-    });
+  private async getSubagentTaskService(): Promise<PluginSubagentTaskServicePort> {
+    if (this.subagentTaskServicePromise) {
+      return this.subagentTaskServicePromise;
+    }
+
+    this.subagentTaskServicePromise = (async () => {
+      const { PluginSubagentTaskService } = await import('./plugin-subagent-task.service');
+      const resolved = this.moduleRef.get<PluginSubagentTaskServicePort>(
+        PluginSubagentTaskService,
+        {
+          strict: false,
+        },
+      );
+      if (!resolved) {
+        throw new NotFoundException('PluginSubagentTaskService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.subagentTaskServicePromise;
   }
 }

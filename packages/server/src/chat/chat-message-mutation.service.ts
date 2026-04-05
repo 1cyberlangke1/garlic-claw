@@ -1,8 +1,6 @@
 import {
   createChatModelLifecycleContext,
   createChatLifecycleContext,
-  createMessageCreatedHookPayload,
-  createPluginMessageHookInfo,
   createPluginMessageHookInfoFromRecord,
   normalizeAssistantMessageOutput,
   type ChatMessagePart,
@@ -18,12 +16,10 @@ import {
 } from '@garlic-claw/shared';
 import {
   BadRequestException,
-  Inject,
   Injectable,
   NotFoundException,
-  forwardRef,
 } from '@nestjs/common';
-import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatService } from './chat.service';
 import {
@@ -63,13 +59,14 @@ type ShortCircuitedAssistantOutput = {
 
 @Injectable()
 export class ChatMessageMutationService {
+  private pluginChatRuntimePromise?: Promise<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatService: ChatService,
-    @Inject(forwardRef(() => PluginRuntimeService))
-    private readonly pluginRuntime: PluginRuntimeService,
     private readonly orchestration: ChatMessageOrchestrationService,
     private readonly chatTaskService: ChatTaskService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async startGenerationTurn(input: {
@@ -307,16 +304,12 @@ export class ChatMessageMutationService {
           model: message.model,
           status: 'completed',
         };
-    const updatedPayload = await this.pluginRuntime.runHook({
-      hookName: 'message:updated',
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        conversationId,
-        messageId,
-        currentMessage: createPluginMessageHookInfoFromRecord(message),
-        nextMessage: createPluginMessageHookInfo(nextMessage),
-      },
+    const updatedPayload = await (await this.getPluginChatRuntime()).applyMessageUpdated({
+      hookContext,
+      conversationId,
+      messageId,
+      currentMessage: message,
+      nextMessage,
     });
 
     const nextPersistedMessage = updatedPayload.nextMessage;
@@ -351,15 +344,11 @@ export class ChatMessageMutationService {
       conversationId,
       messageId,
     });
-    await this.pluginRuntime.runBroadcastHook({
-      hookName: 'message:deleted',
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        conversationId,
-        messageId,
-        message: createPluginMessageHookInfoFromRecord(message),
-      },
+    await (await this.getPluginChatRuntime()).dispatchMessageDeleted({
+      hookContext,
+      conversationId,
+      messageId,
+      message,
     });
     await this.prisma.message.delete({ where: { id: messageId } });
     await touchConversationTimestamp(this.prisma, conversationId);
@@ -489,18 +478,11 @@ export class ChatMessageMutationService {
     message: HookableChatMessageInput;
     touchConversation?: boolean;
   }) {
-    const createdMessagePayload = await this.pluginRuntime.runHook({
-      hookName: 'message:created',
-      context: input.hookContext,
-      payload: createMessageCreatedHookPayload({
-        context: input.hookContext,
-        conversationId: input.conversationId,
-        message: input.message,
-        modelMessages: input.modelMessages ?? [{
-          role: input.message.role,
-          content: input.message.parts,
-        }],
-      }),
+    const createdMessagePayload = await (await this.getPluginChatRuntime()).applyMessageCreated({
+      hookContext: input.hookContext,
+      conversationId: input.conversationId,
+      message: input.message,
+      modelMessages: input.modelMessages,
     });
 
     return {
@@ -577,6 +559,29 @@ export class ChatMessageMutationService {
         }));
 
     return metadataJson;
+  }
+
+  private async getPluginChatRuntime(): Promise<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade> {
+    if (this.pluginChatRuntimePromise) {
+      return this.pluginChatRuntimePromise;
+    }
+
+    this.pluginChatRuntimePromise = (async () => {
+      const { PluginChatRuntimeFacade } = await import('../plugin/plugin-chat-runtime.facade');
+      const resolved = this.moduleRef.get<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade>(
+        PluginChatRuntimeFacade,
+        {
+          strict: false,
+        },
+      );
+      if (!resolved) {
+        throw new NotFoundException('PluginChatRuntimeFacade is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginChatRuntimePromise;
   }
 
 }

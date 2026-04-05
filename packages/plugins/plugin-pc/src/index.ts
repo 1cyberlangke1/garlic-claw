@@ -1,4 +1,6 @@
-import { DeviceType, PluginClient, type PluginCapability } from '@garlic-claw/plugin-sdk';
+import type { PluginCapability } from '@garlic-claw/shared';
+import { DeviceType } from '@garlic-claw/shared';
+import { PluginClient } from '@garlic-claw/plugin-sdk/client';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';

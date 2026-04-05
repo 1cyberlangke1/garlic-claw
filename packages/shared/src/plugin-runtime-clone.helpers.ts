@@ -1,24 +1,28 @@
 import type {
   AutomationAfterRunHookPayload,
   AutomationBeforeRunHookPayload,
+  ResponseBeforeSendHookPayload,
+  ToolAfterCallHookPayload,
+  ToolBeforeCallHookPayload,
+} from './types/plugin-operation';
+import type {
   ChatAfterModelHookPayload,
   ChatBeforeModelRequest,
-  MessageCreatedHookPayload,
   MessageReceivedHookPayload,
-  MessageUpdatedHookPayload,
-  PluginConversationSessionInfo,
   PluginLlmMessage,
-  PluginMessageHookInfo,
   PluginSubagentRequest,
   PluginSubagentRunResult,
   PluginSubagentToolCall,
   PluginSubagentToolResult,
-  ResponseBeforeSendHookPayload,
   SubagentAfterRunHookPayload,
   SubagentBeforeRunHookPayload,
-  ToolAfterCallHookPayload,
-  ToolBeforeCallHookPayload,
-} from './types/plugin';
+} from './types/plugin-ai';
+import type {
+  MessageCreatedHookPayload,
+  MessageUpdatedHookPayload,
+  PluginConversationSessionInfo,
+  PluginMessageHookInfo,
+} from './types/plugin-chat';
 import type { ActionConfig } from './types/automation';
 import type { ChatMessagePart } from './types/chat';
 import type { JsonValue } from './types/json';

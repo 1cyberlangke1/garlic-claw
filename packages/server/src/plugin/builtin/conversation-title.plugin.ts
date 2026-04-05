@@ -8,7 +8,7 @@ import {
   resolveConversationTitleRuntimeConfig,
   sanitizeConversationTitle,
   shouldGenerateConversationTitle,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { JsonValue } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 

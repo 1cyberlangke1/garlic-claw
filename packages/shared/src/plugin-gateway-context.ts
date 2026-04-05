@@ -1,5 +1,6 @@
 import { isConnectionScopedHostMethod } from './plugin-gateway-payload.helpers';
-import type { PluginCallContext, PluginHostMethod } from './types/plugin';
+import type { PluginCallContext } from './types/plugin';
+import type { PluginHostMethod } from './types/plugin-host';
 import type {
   ActiveRequestContext,
   PluginGatewaySocketRef,

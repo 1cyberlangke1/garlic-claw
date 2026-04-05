@@ -7,7 +7,7 @@ import {
   readSubagentDelegateConfig,
   readRequiredTextValue,
   SUBAGENT_DELEGATE_MANIFEST,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**

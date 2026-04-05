@@ -1,3 +1,4 @@
+import { ModuleRef } from '@nestjs/core';
 import type { PluginCallContext } from '@garlic-claw/shared';
 import { ToolRegistryService } from './tool-registry.service';
 import type { ToolProvider, ToolProviderTool } from './tool.types';
@@ -95,6 +96,50 @@ describe('ToolRegistryService', () => {
     };
   }
 
+  function createRegistryService(options: {
+    settings: {
+      getSourceEnabled: jest.Mock;
+      getToolEnabled: jest.Mock;
+      setSourceEnabled?: jest.Mock;
+      setToolEnabled?: jest.Mock;
+    };
+    pluginRuntime?: ReturnType<typeof createPluginRuntime>;
+    pluginProvider?: ToolProvider;
+    mcpProvider?: ToolProvider;
+    skillProvider?: ToolProvider;
+    mcpService?: {
+      setServerEnabled?: jest.Mock;
+    } | null;
+    pluginService?: {
+      getPluginScope: jest.Mock;
+      updatePluginScope: jest.Mock;
+    } | null;
+  }) {
+    const moduleRef = {
+      get: jest.fn((token: { name?: string }) => {
+        if (token?.name === 'PluginRuntimeService') {
+          return options.pluginRuntime ?? null;
+        }
+        if (token?.name === 'PluginService') {
+          return options.pluginService ?? null;
+        }
+        if (token?.name === 'McpService') {
+          return options.mcpService ?? null;
+        }
+
+        return null;
+      }),
+    };
+
+    return new ToolRegistryService(
+      options.settings as never,
+      (options.pluginProvider ?? createProvider('plugin', [])) as never,
+      (options.mcpProvider ?? createProvider('mcp', [])) as never,
+      options.skillProvider as never,
+      moduleRef as unknown as ModuleRef,
+    );
+  }
+
   it('merges plugin and mcp tools into unified summaries with stable ids and call names', async () => {
     const pluginProvider = createProvider('plugin', [
       {
@@ -156,15 +201,15 @@ describe('ToolRegistryService', () => {
         },
       },
     ]);
-    const service = new ToolRegistryService(
-      {
+    const service = createRegistryService({
+      settings: {
         getSourceEnabled: jest.fn(),
         getToolEnabled: jest.fn(),
-      } as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      mcpProvider as never,
-    );
+      },
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+      mcpProvider,
+    });
 
     await expect(
       service.listAvailableToolSummaries({
@@ -251,16 +296,14 @@ describe('ToolRegistryService', () => {
         },
       },
     ]);
-    const service = new ToolRegistryService(
-      {
+    const service = createRegistryService({
+      settings: {
         getSourceEnabled: jest.fn(),
         getToolEnabled: jest.fn(),
-      } as never,
-      createPluginRuntime() as never,
-      createProvider('plugin', []) as never,
-      createProvider('mcp', []) as never,
-      skillProvider as never,
-    );
+      },
+      pluginRuntime: createPluginRuntime(),
+      skillProvider,
+    });
 
     await expect(
       service.listAvailableToolSummaries({
@@ -370,15 +413,15 @@ describe('ToolRegistryService', () => {
       ],
       mcpExecuteTool,
     );
-    const service = new ToolRegistryService(
-      {
+    const service = createRegistryService({
+      settings: {
         getSourceEnabled: jest.fn(),
         getToolEnabled: jest.fn(),
-      } as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      mcpProvider as never,
-    );
+      },
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+      mcpProvider,
+    });
 
     const toolSet = await service.buildToolSet({
       context,
@@ -436,13 +479,13 @@ describe('ToolRegistryService', () => {
     const pluginExecuteTool = jest.fn().mockResolvedValue({
       saved: true,
     });
-    const service = new ToolRegistryService(
-      {
+    const service = createRegistryService({
+      settings: {
         getSourceEnabled: jest.fn(),
         getToolEnabled: jest.fn(),
-      } as never,
-      createPluginRuntime() as never,
-      createProvider(
+      },
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider: createProvider(
         'plugin',
         [
           {
@@ -468,9 +511,8 @@ describe('ToolRegistryService', () => {
           },
         ],
         pluginExecuteTool,
-      ) as never,
-      createProvider('mcp', []) as never,
-    );
+      ),
+    });
 
     const selection = await service.prepareToolSelection({
       context,
@@ -533,17 +575,16 @@ describe('ToolRegistryService', () => {
         runtimeKind: 'builtin',
       },
     ]);
-    const service = new ToolRegistryService(
-      {
+    const service = createRegistryService({
+      settings: {
         getSourceEnabled: jest.fn().mockImplementation((kind: string, id: string) =>
           kind === 'plugin' && id === 'builtin.memory-tools' ? false : undefined),
         getToolEnabled: jest.fn().mockImplementation((toolId: string) =>
           toolId === 'plugin:builtin.memory-tools:save_memory' ? false : undefined),
-      } as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      createProvider('mcp', []) as never,
-    );
+      },
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+    });
 
     await expect(service.listSources()).resolves.toEqual([
       expect.objectContaining({
@@ -582,14 +623,13 @@ describe('ToolRegistryService', () => {
         audited: true,
       },
     }));
-    const service = new ToolRegistryService(
-      {
+    const service = createRegistryService({
+      settings: {
         getSourceEnabled: jest.fn(),
         getToolEnabled: jest.fn(),
-      } as never,
-      pluginRuntime as never,
-      createProvider('plugin', []) as never,
-      createProvider('mcp', [
+      },
+      pluginRuntime,
+      mcpProvider: createProvider('mcp', [
         {
           source: {
             kind: 'mcp',
@@ -609,8 +649,8 @@ describe('ToolRegistryService', () => {
             },
           },
         },
-      ], mcpExecuteTool) as never,
-    );
+      ], mcpExecuteTool),
+    });
 
     const toolSet = await service.buildToolSet({
       context,
@@ -719,15 +759,13 @@ describe('ToolRegistryService', () => {
         conversations: {},
       }),
     };
-    const service = new ToolRegistryService(
-      settings as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      mcpProvider as never,
-      undefined,
-      undefined,
-      pluginService as never,
-    );
+    const service = createRegistryService({
+      settings,
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+      mcpProvider,
+      pluginService,
+    });
 
     await expect(
       service.setSourceEnabled('plugin', 'builtin.memory-tools', true),
@@ -782,14 +820,13 @@ describe('ToolRegistryService', () => {
     const mcpService = {
       setServerEnabled: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new ToolRegistryService(
-      settings as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      mcpProvider as never,
-      undefined,
-      mcpService as never,
-    );
+    const service = createRegistryService({
+      settings,
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+      mcpProvider,
+      mcpService,
+    });
 
     await expect(
       service.setSourceEnabled('mcp', 'weather', false),
@@ -853,13 +890,13 @@ describe('ToolRegistryService', () => {
       listTools: jest.fn(),
       executeTool: jest.fn(),
     };
-    const service = new ToolRegistryService(
-      settings as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      createCollectStateProvider('mcp', []) as never,
-      skillProvider as never,
-    );
+    const service = createRegistryService({
+      settings,
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+      mcpProvider: createCollectStateProvider('mcp', []),
+      skillProvider,
+    });
 
     await expect(
       service.setSourceEnabled('skill', 'active-packages', false),
@@ -911,15 +948,13 @@ describe('ToolRegistryService', () => {
         },
       }),
     };
-    const service = new ToolRegistryService(
-      settings as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      createCollectStateProvider('mcp', []) as never,
-      undefined,
-      undefined,
-      pluginService as never,
-    );
+    const service = createRegistryService({
+      settings,
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+      mcpProvider: createCollectStateProvider('mcp', []),
+      pluginService,
+    });
 
     await service.setSourceEnabled('plugin', 'remote.pc-host', false);
 
@@ -956,12 +991,12 @@ describe('ToolRegistryService', () => {
       },
     ]);
     const mcpProvider = createCollectStateProvider('mcp', []);
-    const service = new ToolRegistryService(
-      settings as never,
-      createPluginRuntime() as never,
-      pluginProvider as never,
-      mcpProvider as never,
-    );
+    const service = createRegistryService({
+      settings,
+      pluginRuntime: createPluginRuntime(),
+      pluginProvider,
+      mcpProvider,
+    });
 
     await expect(
       service.setToolEnabled('plugin:builtin.memory-tools:save_memory', true),

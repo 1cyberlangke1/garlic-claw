@@ -1,17 +1,23 @@
-import { Inject, ForbiddenException, forwardRef, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import {
   DEFAULT_CONVERSATION_HOST_SERVICES,
   mergeConversationHostServices,
   normalizeConversationHostServices,
   type ConversationHostServices,
 } from '@garlic-claw/shared';
-import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SkillSessionService } from '../skill/skill-session.service';
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly prisma: PrismaService, @Inject(forwardRef(() => PluginRuntimeService)) private readonly pluginRuntime: PluginRuntimeService, private readonly skillSession: SkillSessionService) {}
+  private pluginChatRuntimePromise?: Promise<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade>;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly skillSession: SkillSessionService,
+    private readonly moduleRef: ModuleRef,
+  ) {}
 
   /**
    * 创建新对话。
@@ -29,22 +35,13 @@ export class ChatService {
       },
     });
 
-    const hookContext = {
-      source: 'http-route' as const,
+    await (await this.getPluginChatRuntime()).dispatchConversationCreated({
       userId,
-      conversationId: conversation.id,
-    };
-    await this.pluginRuntime.runBroadcastHook({
-      hookName: 'conversation:created',
-      context: hookContext,
-      payload: {
-        context: hookContext,
-        conversation: {
-          id: conversation.id,
-          title: conversation.title,
-          createdAt: conversation.createdAt.toISOString(),
-          updatedAt: conversation.updatedAt.toISOString(),
-        },
+      conversation: {
+        id: conversation.id,
+        title: conversation.title,
+        createdAt: conversation.createdAt,
+        updatedAt: conversation.updatedAt,
       },
     });
 
@@ -193,5 +190,28 @@ export class ChatService {
     }
 
     return conversation as Exclude<T, null>;
+  }
+
+  private async getPluginChatRuntime(): Promise<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade> {
+    if (this.pluginChatRuntimePromise) {
+      return this.pluginChatRuntimePromise;
+    }
+
+    this.pluginChatRuntimePromise = (async () => {
+      const { PluginChatRuntimeFacade } = await import('../plugin/plugin-chat-runtime.facade');
+      const resolved = this.moduleRef.get<import('../plugin/plugin-chat-runtime.facade').PluginChatRuntimeFacade>(
+        PluginChatRuntimeFacade,
+        {
+        strict: false,
+        },
+      );
+      if (!resolved) {
+        throw new NotFoundException('PluginChatRuntimeFacade is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginChatRuntimePromise;
   }
 }

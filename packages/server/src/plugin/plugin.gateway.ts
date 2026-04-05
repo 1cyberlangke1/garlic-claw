@@ -109,7 +109,9 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
     timeoutMs = 5000,
   ): Promise<{ ok: boolean }> {
     const connection = this.getConnectedPluginOrThrow(pluginId);
-    if (connection.ws.readyState !== WebSocket.OPEN) return { ok: false };
+    if (connection.ws.readyState !== WebSocket.OPEN) {
+      return { ok: false };
+    }
 
     return new Promise<{ ok: boolean }>((resolve, reject) => {
       const handlePong = () => {
@@ -349,7 +351,9 @@ export class PluginGateway implements OnModuleInit, OnModuleDestroy {
 
   private getConnectedPluginOrThrow(pluginId: string): PluginConnection {
     const connection = this.connectionByPluginId.get(pluginId);
-    if (!connection) throw new NotFoundException(`Plugin not connected: ${pluginId}`);
+    if (!connection) {
+      throw new NotFoundException(`Plugin not connected: ${pluginId}`);
+    }
     return connection;
   }
 }

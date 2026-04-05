@@ -31,10 +31,7 @@ describe('PluginHostService', () => {
   const aiManagementService = {
     listProviders: jest.fn(),
     getProvider: jest.fn(),
-  };
-
-  const modelRegistryService = {
-    getModel: jest.fn(),
+    getProviderModel: jest.fn(),
   };
 
   const prisma = {
@@ -78,7 +75,6 @@ describe('PluginHostService', () => {
       aiModelExecution as never,
       aiProviderService as never,
       aiManagementService as never,
-      modelRegistryService as never,
     );
     hostConversationFacade = new PluginHostConversationFacade(
       memoryService as never,

@@ -1,10 +1,10 @@
 import {
-  Inject,
   Injectable,
   Logger,
-  forwardRef,
   OnModuleDestroy,
+  NotFoundException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import type {
   ActionConfig,
   AutomationActionTargetRef,
@@ -15,7 +15,7 @@ import type {
 import { ChatMessageService } from '../chat/chat-message.service';
 import type { JsonValue } from '../common/types/json-value';
 import { toJsonValue } from '../common/utils/json-value';
-import { PluginRuntimeService } from '../plugin/plugin-runtime.service';
+import type { PluginRuntimeService } from '../plugin/plugin-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface CronEntry {
@@ -27,12 +27,12 @@ interface CronEntry {
 export class AutomationService implements OnModuleDestroy {
   private readonly logger = new Logger(AutomationService.name);
   private readonly cronJobs = new Map<string, CronEntry>();
+  private pluginRuntimePromise?: Promise<PluginRuntimeService>;
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(forwardRef(() => PluginRuntimeService))
-    private readonly pluginRuntime: PluginRuntimeService,
     private readonly chatMessageService: ChatMessageService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async restoreCronJobsOnStartup() {
@@ -202,7 +202,8 @@ export class AutomationService implements OnModuleDestroy {
       userId: automationRecord.userId,
       automationId,
     };
-    const beforeRunResult = await this.pluginRuntime.runHook({
+    const pluginRuntime = await this.getPluginRuntime();
+    const beforeRunResult = await pluginRuntime.runHook({
       hookName: 'automation:before-run',
       context: hookContext,
       payload: {
@@ -221,7 +222,7 @@ export class AutomationService implements OnModuleDestroy {
       for (const action of beforeRunResult.payload.actions) {
         try {
           if (action.type === 'device_command' && action.plugin && action.capability) {
-            const result = await this.pluginRuntime.executeTool({
+            const result = await pluginRuntime.executeTool({
               pluginId: action.plugin,
               toolName: action.capability,
               params: action.params || {},
@@ -252,7 +253,7 @@ export class AutomationService implements OnModuleDestroy {
         }
       }
     }
-    const afterRunPayload = await this.pluginRuntime.runHook({
+    const afterRunPayload = await pluginRuntime.runHook({
       hookName: 'automation:after-run',
       context: hookContext,
       payload: {
@@ -326,6 +327,26 @@ export class AutomationService implements OnModuleDestroy {
     }
 
     return target;
+  }
+
+  private async getPluginRuntime(): Promise<PluginRuntimeService> {
+    if (this.pluginRuntimePromise) {
+      return this.pluginRuntimePromise;
+    }
+
+    this.pluginRuntimePromise = (async () => {
+      const { PluginRuntimeService } = await import('../plugin/plugin-runtime.service');
+      const resolved = this.moduleRef.get<PluginRuntimeService>(PluginRuntimeService, {
+        strict: false,
+      });
+      if (!resolved) {
+        throw new NotFoundException('PluginRuntimeService is not available');
+      }
+
+      return resolved;
+    })();
+
+    return this.pluginRuntimePromise;
   }
 
   // --- Cron 计划 ---

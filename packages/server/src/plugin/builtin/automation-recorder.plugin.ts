@@ -1,10 +1,10 @@
 import {
   AUTOMATION_RECORDER_MANIFEST,
   buildAutomationRunSummary,
-  createPassHookResult,
   persistPluginObservation,
+  createPassHookResult,
   readPluginHookPayload,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { AutomationAfterRunHookPayload } from '@garlic-claw/shared';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 

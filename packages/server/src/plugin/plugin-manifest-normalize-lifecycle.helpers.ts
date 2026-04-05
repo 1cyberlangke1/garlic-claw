@@ -6,6 +6,10 @@ import type {
   PluginMessageKind,
 } from '@garlic-claw/shared';
 import {
+  PLUGIN_HOOK_NAME_VALUES,
+  PLUGIN_MESSAGE_KIND_VALUES,
+} from '@garlic-claw/shared';
+import {
   isJsonValue,
   isOneOf,
   readArray,
@@ -13,38 +17,9 @@ import {
   readStringArray,
 } from './plugin-manifest-normalize-base.helpers';
 
-const PLUGIN_HOOK_NAMES: PluginHookDescriptor['name'][] = [
-  'message:received',
-  'chat:before-model',
-  'chat:waiting-model',
-  'chat:after-model',
-  'conversation:created',
-  'message:created',
-  'message:updated',
-  'message:deleted',
-  'automation:before-run',
-  'automation:after-run',
-  'subagent:before-run',
-  'subagent:after-run',
-  'tool:before-call',
-  'tool:after-call',
-  'response:before-send',
-  'response:after-send',
-  'plugin:loaded',
-  'plugin:unloaded',
-  'plugin:error',
-  'cron:tick',
-];
-
-const PLUGIN_MESSAGE_KINDS: PluginMessageKind[] = [
-  'text',
-  'image',
-  'mixed',
-];
-
 export function readPluginHookDescriptor(value: unknown): PluginHookDescriptor | null {
   const record = readRecord(value);
-  if (!record || !isOneOf(record.name, PLUGIN_HOOK_NAMES)) {
+  if (!record || !isOneOf(record.name, PLUGIN_HOOK_NAME_VALUES)) {
     return null;
   }
 
@@ -159,5 +134,5 @@ function readHookRegex(
 }
 
 function readPluginMessageKind(value: unknown): PluginMessageKind | null {
-  return isOneOf(value, PLUGIN_MESSAGE_KINDS) ? value : null;
+  return isOneOf(value, PLUGIN_MESSAGE_KIND_VALUES) ? value : null;
 }

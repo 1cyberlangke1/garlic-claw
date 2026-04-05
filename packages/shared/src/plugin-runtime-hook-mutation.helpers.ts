@@ -3,32 +3,36 @@ import type {
   AutomationAfterRunHookPayload,
   AutomationBeforeRunHookMutateResult,
   AutomationBeforeRunHookPayload,
+  ResponseBeforeSendHookMutateResult,
+  ResponseBeforeSendHookPayload,
+  ToolAfterCallHookMutateResult,
+  ToolAfterCallHookPayload,
+  ToolBeforeCallHookMutateResult,
+  ToolBeforeCallHookPayload,
+} from './types/plugin-operation';
+import type {
   ChatAfterModelHookMutateResult,
   ChatAfterModelHookPayload,
   ChatBeforeModelHookPassResult,
   ChatBeforeModelHookMutateResult,
   ChatBeforeModelRequest,
   ChatBeforeModelHookShortCircuitResult,
-  MessageCreatedHookMutateResult,
-  MessageCreatedHookPayload,
   MessageReceivedHookPassResult,
   MessageReceivedHookMutateResult,
   MessageReceivedHookPayload,
   MessageReceivedHookShortCircuitResult,
-  MessageUpdatedHookMutateResult,
-  MessageUpdatedHookPayload,
-  PluginMessageHookInfo,
-  ResponseBeforeSendHookMutateResult,
-  ResponseBeforeSendHookPayload,
   SubagentAfterRunHookMutateResult,
   SubagentAfterRunHookPayload,
   SubagentBeforeRunHookMutateResult,
   SubagentBeforeRunHookPayload,
-  ToolAfterCallHookMutateResult,
-  ToolAfterCallHookPayload,
-  ToolBeforeCallHookMutateResult,
-  ToolBeforeCallHookPayload,
-} from './types/plugin';
+} from './types/plugin-ai';
+import type {
+  MessageCreatedHookMutateResult,
+  MessageCreatedHookPayload,
+  MessageUpdatedHookMutateResult,
+  MessageUpdatedHookPayload,
+  PluginMessageHookInfo,
+} from './types/plugin-chat';
 import type { ChatMessagePart } from './types/chat';
 import { isJsonObjectValue, toJsonValue } from './types/json';
 import {

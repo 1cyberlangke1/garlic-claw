@@ -1,7 +1,7 @@
 import {
   CRON_HEARTBEAT_MANIFEST,
   readPluginHookPayload,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
 import type { PluginCronTickPayload } from '@garlic-claw/shared';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 

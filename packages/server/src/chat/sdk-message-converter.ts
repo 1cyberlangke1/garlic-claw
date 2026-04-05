@@ -12,7 +12,7 @@
  * - 将 data URL 图片在最后一层转成二进制
  */
 
-import type { AiSdkMessage } from '../ai/sdk-adapter';
+import type { AiSdkMessage } from '../ai';
 import { toAiSdkImageInput } from '../common/utils/ai-sdk-image';
 import type { ChatRuntimeMessage } from './chat-message-session';
 

@@ -19,18 +19,19 @@
 import { Injectable } from '@nestjs/common';
 import {
   AiModelExecutionService,
+  type AiModelExecutionRequestOptionsInput,
   type PreparedAiModelExecution,
+  type AiSdkStopCondition,
+  type AiSdkToolSet,
+  type ModelConfig,
   type StreamPreparedAiModelExecutionInput,
-} from '../ai/ai-model-execution.service';
-import type { AiSdkStopCondition, AiSdkToolSet } from '../ai/sdk-adapter';
-import type { ModelConfig } from '../ai/types/provider.types';
+} from '../ai';
 import { toAiSdkMessages } from './sdk-message-converter';
 import type { ChatRuntimeMessage } from './chat-message-session';
 import {
   ChatMessageTransformService,
   type ChatMessageTransformResult,
 } from './chat-message-transform.service';
-import type { ChatModelInvocationRequestOptionsInput } from './chat-model-invocation-options';
 
 /**
  * 统一准备调用时的输入。
@@ -69,7 +70,7 @@ export interface PreparedChatModelInvocation extends PreparedAiModelExecution {
  * 已准备调用载荷时的流式输入。
  */
 export interface StreamPreparedChatModelInvocationInput
-  extends ChatModelInvocationRequestOptionsInput {
+  extends AiModelExecutionRequestOptionsInput {
   /** 已准备好的调用载荷。 */
   prepared: PreparedChatModelInvocation;
   /** 可选系统提示词。 */
@@ -139,7 +140,7 @@ export class ChatModelInvocationService {
    * @returns 统一准备载荷与最终生成结果
    */
   async generateText(
-    input: PrepareChatModelInvocationInput & ChatModelInvocationRequestOptionsInput & {
+    input: PrepareChatModelInvocationInput & AiModelExecutionRequestOptionsInput & {
       system?: string;
     },
   ): Promise<

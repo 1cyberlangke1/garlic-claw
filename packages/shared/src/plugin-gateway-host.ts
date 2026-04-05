@@ -4,10 +4,8 @@ import {
 } from './plugin-gateway-payload.helpers';
 import { WS_ACTION, WS_TYPE } from './types/plugin';
 import type { JsonObject, JsonValue } from './types/json';
-import type {
-  PluginCallContext,
-  PluginHostMethod,
-} from './types/plugin';
+import type { PluginCallContext } from './types/plugin';
+import type { PluginHostMethod } from './types/plugin-host';
 import {
   readPluginGatewayRequestId,
   sendPluginGatewayMessage,

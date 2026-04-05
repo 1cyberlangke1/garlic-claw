@@ -16,9 +16,9 @@
 
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as fs from 'fs';
+import { resolveConfigFilePath } from '../../common/config/config-path.util';
 import type { JsonObject, JsonValue } from '../../common/types/json-value';
 import type { ModelCapabilities } from '../types/provider.types';
-import { resolveConfigFilePath } from './config-path.util';
 import { normalizeModelCapabilitiesEntry } from './model-capabilities-normalizer';
 
 /**

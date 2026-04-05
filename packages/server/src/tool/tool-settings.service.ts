@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { Injectable, Logger } from '@nestjs/common';
-import { resolveConfigFilePath } from '../ai/config/config-path.util';
+import { resolveConfigFilePath } from '../common/config/config-path.util';
 import type { ToolSourceKind } from './tool.types';
 
 interface ToolSettingsFile {

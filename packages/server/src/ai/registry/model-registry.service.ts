@@ -303,6 +303,28 @@ export class ModelRegistryService implements OnModuleInit {
     this.registerModel(config);
   }
 
+  /**
+   * 获取模型；未命中时按回调构建并注册。
+   * @param providerId provider ID
+   * @param modelId 模型 ID
+   * @param buildConfig 缺失时的模型构建函数
+   * @returns 已存在或新注册的模型配置
+   */
+  getOrRegisterModel(
+    providerId: ProviderId | string,
+    modelId: ModelId | string,
+    buildConfig: () => ModelConfig,
+  ): ModelConfig {
+    const existing = this.getModel(providerId, modelId);
+    if (existing) {
+      return existing;
+    }
+
+    const built = buildConfig();
+    this.registerModel(built);
+    return this.getModel(providerId, modelId) ?? built;
+  }
+
   getModelCount(): number {
     return this.models.size;
   }

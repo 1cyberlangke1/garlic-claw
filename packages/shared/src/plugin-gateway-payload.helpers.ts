@@ -1,19 +1,19 @@
 import {
-  CONNECTION_SCOPED_PLUGIN_HOST_METHODS,
-  PLUGIN_HOST_METHOD_VALUES,
   PLUGIN_INVOCATION_SOURCE_VALUES,
 } from './types/plugin';
 import type {
   AuthPayload,
   DeviceType,
   ExecuteErrorPayload,
-  HostResultPayload,
   PluginCallContext,
-  PluginHostMethod,
-  PluginRouteResponse,
-  RouteResultPayload,
   WsMessage,
 } from './types/plugin';
+import {
+  CONNECTION_SCOPED_PLUGIN_HOST_METHODS,
+  PLUGIN_HOST_METHOD_VALUES,
+} from './types/plugin-host';
+import type { HostResultPayload, PluginHostMethod } from './types/plugin-host';
+import type { PluginRouteResponse, RouteResultPayload } from './types/plugin-route';
 import type { JsonObject, JsonValue } from './types/json';
 import {
   isJsonObjectValue,

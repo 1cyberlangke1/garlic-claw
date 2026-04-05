@@ -1,12 +1,16 @@
 import { deserializeMessageParts } from './chat-message-parts';
 import type {
-  ChatBeforeModelRequest,
-  MessageCreatedHookPayload,
-  MessageReceivedHookPayload,
   PluginCallContext,
-  PluginLlmMessage,
-  PluginMessageHookInfo,
 } from './types/plugin';
+import type {
+  ChatBeforeModelRequest,
+  MessageReceivedHookPayload,
+  PluginLlmMessage,
+} from './types/plugin-ai';
+import type {
+  MessageCreatedHookPayload,
+  PluginMessageHookInfo,
+} from './types/plugin-chat';
 
 export function createChatLifecycleContext(input: {
   source?: PluginCallContext['source'];

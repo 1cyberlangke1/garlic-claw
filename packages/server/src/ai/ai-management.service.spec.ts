@@ -22,6 +22,7 @@ describe('AiManagementService', () => {
   const modelRegistry = {
     register: jest.fn(),
     getModel: jest.fn(),
+    getOrRegisterModel: jest.fn((_providerId, _modelId, buildConfig) => buildConfig()),
     listModels: jest.fn(),
     unregisterModel: jest.fn(),
     updateModelCapabilities: jest.fn(),
@@ -32,10 +33,6 @@ describe('AiManagementService', () => {
     getProviderConfig: jest.fn(),
     upsertProvider: jest.fn(),
     removeProvider: jest.fn(),
-    getVisionFallbackConfig: jest.fn(),
-    updateVisionFallbackConfig: jest.fn(),
-    getHostModelRoutingConfig: jest.fn(),
-    updateHostModelRoutingConfig: jest.fn(),
   };
 
   let service: AiManagementService;
@@ -146,82 +143,79 @@ describe('AiManagementService', () => {
     expect(updated).toBe(modelConfig);
   });
 
-  it('reads and writes vision fallback config through the config manager', () => {
-    configManager.getVisionFallbackConfig.mockReturnValue({
-      enabled: false,
-    });
-    configManager.updateVisionFallbackConfig.mockImplementation((value) => value);
-
-    expect(service.getVisionFallbackConfig()).toEqual({ enabled: false });
-
-    const updated = service.updateVisionFallbackConfig({
-      enabled: true,
-      providerId: 'openai',
-      modelId: 'gpt-4o',
-      prompt: 'describe',
-      maxDescriptionLength: 300,
+  it('hydrates provider models through the model registry when listing models', () => {
+    configManager.getProviderConfig.mockReturnValue({
+      id: 'groq',
+      name: 'Groq',
+      mode: 'catalog',
+      driver: 'groq',
+      apiKey: 'groq-key',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      defaultModel: 'llama-3.3-70b',
+      models: ['llama-3.3-70b', 'llama-3.1-8b'],
     });
 
-    expect(configManager.updateVisionFallbackConfig).toHaveBeenCalledWith({
-      enabled: true,
-      providerId: 'openai',
-      modelId: 'gpt-4o',
-      prompt: 'describe',
-      maxDescriptionLength: 300,
-    });
-    expect(updated.enabled).toBe(true);
+    const models = service.listModels('groq');
+
+    expect(modelRegistry.getOrRegisterModel).toHaveBeenCalledTimes(2);
+    expect(modelRegistry.getOrRegisterModel).toHaveBeenNthCalledWith(
+      1,
+      'groq',
+      'llama-3.3-70b',
+      expect.any(Function),
+    );
+    expect(modelRegistry.getOrRegisterModel).toHaveBeenNthCalledWith(
+      2,
+      'groq',
+      'llama-3.1-8b',
+      expect.any(Function),
+    );
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'llama-3.3-70b',
+        providerId: 'groq',
+      }),
+      expect.objectContaining({
+        id: 'llama-3.1-8b',
+        providerId: 'groq',
+      }),
+    ]);
   });
 
-  it('reads and writes host model routing config through the config manager', () => {
-    configManager.getHostModelRoutingConfig.mockReturnValue({
-      fallbackChatModels: [],
-      utilityModelRoles: {},
+  it('returns a provider model through the management boundary', () => {
+    const modelConfig: ModelConfig = {
+      id: 'llama-3.3-70b',
+      providerId: 'groq',
+      name: 'llama-3.3-70b',
+      capabilities: {
+        reasoning: true,
+        toolCall: true,
+        input: { text: true, image: false },
+        output: { text: true, image: false },
+      },
+      api: {
+        id: 'llama-3.3-70b',
+        url: 'https://api.groq.com/openai/v1',
+        npm: '@ai-sdk/openai',
+      },
+      status: 'active',
+    };
+    configManager.getProviderConfig.mockReturnValue({
+      id: 'groq',
+      name: 'Groq',
+      mode: 'catalog',
+      driver: 'groq',
+      apiKey: 'groq-key',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      defaultModel: 'llama-3.3-70b',
+      models: ['llama-3.3-70b'],
     });
-    configManager.updateHostModelRoutingConfig.mockImplementation((value) => value);
+    modelRegistry.getModel.mockReturnValue(modelConfig);
 
-    expect(service.getHostModelRoutingConfig()).toEqual({
-      fallbackChatModels: [],
-      utilityModelRoles: {},
-    });
+    const model = service.getProviderModel('groq', 'llama-3.3-70b');
 
-    const updated = service.updateHostModelRoutingConfig({
-      fallbackChatModels: [
-        {
-          providerId: 'anthropic',
-          modelId: 'claude-3-7-sonnet',
-        },
-      ],
-      compressionModel: {
-        providerId: 'openai',
-        modelId: 'gpt-4.1-mini',
-      },
-      utilityModelRoles: {
-        conversationTitle: {
-          providerId: 'openai',
-          modelId: 'gpt-4.1-mini',
-        },
-      },
-    });
-
-    expect(configManager.updateHostModelRoutingConfig).toHaveBeenCalledWith({
-      fallbackChatModels: [
-        {
-          providerId: 'anthropic',
-          modelId: 'claude-3-7-sonnet',
-        },
-      ],
-      compressionModel: {
-        providerId: 'openai',
-        modelId: 'gpt-4.1-mini',
-      },
-      utilityModelRoles: {
-        conversationTitle: {
-          providerId: 'openai',
-          modelId: 'gpt-4.1-mini',
-        },
-      },
-    });
-    expect(updated.compressionModel?.modelId).toBe('gpt-4.1-mini');
+    expect(modelRegistry.getModel).toHaveBeenCalledWith('groq', 'llama-3.3-70b');
+    expect(model).toBe(modelConfig);
   });
 
   it('marks providers as unavailable when credentials are missing', () => {

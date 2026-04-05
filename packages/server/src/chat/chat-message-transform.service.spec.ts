@@ -19,24 +19,15 @@ import type { ModelConfig } from '../ai/types/provider.types';
 import { ChatMessageTransformService } from './chat-message-transform.service';
 
 describe('ChatMessageTransformService', () => {
-  const imageCache = {
-    findTranscription: jest.fn(),
-    saveTranscription: jest.fn(),
-  };
-
-  const imageToText = {
-    hasVisionFallback: jest.fn(),
-    imageToText: jest.fn(),
+  const aiVision = {
+    resolveImageText: jest.fn(),
   };
 
   let service: ChatMessageTransformService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new ChatMessageTransformService(
-      imageCache as never,
-      imageToText as never,
-    );
+    service = new ChatMessageTransformService(aiVision as never);
   });
 
   it('replaces unsupported image parts with cached or generated descriptions', async () => {
@@ -57,9 +48,10 @@ describe('ChatMessageTransformService', () => {
       },
     } satisfies ModelConfig;
 
-    imageCache.findTranscription.mockResolvedValueOnce(null);
-    imageToText.hasVisionFallback.mockReturnValue(true);
-    imageToText.imageToText.mockResolvedValue('图片里是一只猫');
+    aiVision.resolveImageText.mockResolvedValueOnce({
+      text: '图片里是一只猫',
+      source: 'generated',
+    });
 
     const transformed = await service.transformMessages('conversation-1', [
       {
@@ -75,20 +67,11 @@ describe('ChatMessageTransformService', () => {
       },
     ], model);
 
-    expect(imageCache.findTranscription).toHaveBeenCalledWith(
+    expect(aiVision.resolveImageText).toHaveBeenCalledWith(
       'conversation-1',
-      'data:image/png;base64,abc123',
-    );
-    expect(imageToText.imageToText).toHaveBeenCalledWith(
       'data:image/png;base64,abc123',
       'image/png',
     );
-    expect(imageCache.saveTranscription).toHaveBeenCalledWith({
-      conversationId: 'conversation-1',
-      image: 'data:image/png;base64,abc123',
-      mimeType: 'image/png',
-      transcription: '图片里是一只猫',
-    });
     expect(transformed).toEqual({
       messages: [
         {
@@ -128,7 +111,10 @@ describe('ChatMessageTransformService', () => {
       },
     } satisfies ModelConfig;
 
-    imageCache.findTranscription.mockResolvedValueOnce('图片里是一只猫');
+    aiVision.resolveImageText.mockResolvedValueOnce({
+      text: '图片里是一只猫',
+      source: 'cache',
+    });
 
     const transformed = await service.transformMessages('conversation-1', [
       {
@@ -143,7 +129,6 @@ describe('ChatMessageTransformService', () => {
       },
     ], model);
 
-    expect(imageToText.imageToText).not.toHaveBeenCalled();
     expect(transformed.visionFallback).toEqual({
       entries: [
         {
@@ -172,9 +157,15 @@ describe('ChatMessageTransformService', () => {
       },
     } satisfies ModelConfig;
 
-    imageCache.findTranscription
-      .mockResolvedValueOnce('历史图片描述')
-      .mockResolvedValueOnce('当前图片描述');
+    aiVision.resolveImageText
+      .mockResolvedValueOnce({
+        text: '历史图片描述',
+        source: 'cache',
+      })
+      .mockResolvedValueOnce({
+        text: '当前图片描述',
+        source: 'cache',
+      });
 
     const transformed = await service.transformMessages('conversation-1', [
       {
@@ -251,9 +242,7 @@ describe('ChatMessageTransformService', () => {
       },
     } satisfies ModelConfig;
 
-    imageCache.findTranscription.mockResolvedValueOnce(null);
-    imageToText.hasVisionFallback.mockReturnValue(true);
-    imageToText.imageToText.mockRejectedValue(new Error('vision provider unavailable'));
+    aiVision.resolveImageText.mockRejectedValue(new Error('vision provider unavailable'));
 
     await expect(
       service.transformMessages(
@@ -273,6 +262,5 @@ describe('ChatMessageTransformService', () => {
         model,
       ),
     ).rejects.toThrow('vision provider unavailable');
-    expect(imageCache.saveTranscription).not.toHaveBeenCalled();
   });
 });

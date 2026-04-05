@@ -1,15 +1,16 @@
 import {
+  PERSONA_ROUTER_MANIFEST,
   asChatBeforeModelPayload,
   createPassHookResult,
   createSystemPromptMutateResult,
-  PERSONA_ROUTER_MANIFEST,
   readCurrentPersonaInfo,
   readLatestUserTextFromMessages,
   readPersonaRouterConfig,
   readPersonaSummaryInfo,
   sanitizeOptionalText,
   textIncludesKeyword,
-} from '@garlic-claw/plugin-sdk';
+} from '@garlic-claw/plugin-sdk/authoring';
+import type { JsonValue } from '../../common/types/json-value';
 import type { BuiltinPluginDefinition } from './builtin-plugin.types';
 
 /**
@@ -53,10 +54,10 @@ export function createPersonaRouterPlugin(): BuiltinPluginDefinition {
         }
 
         const targetPersona = readPersonaSummaryInfo(
-          await context.host.getPersona(targetPersonaId),
+          (await context.host.getPersona(targetPersonaId)) as unknown as JsonValue,
         );
         const activatedPersona = readPersonaSummaryInfo(
-          await context.host.activatePersona(targetPersonaId),
+          (await context.host.activatePersona(targetPersonaId)) as unknown as JsonValue,
         );
         const prompt = sanitizeOptionalText(activatedPersona.prompt)
           || sanitizeOptionalText(targetPersona.prompt);

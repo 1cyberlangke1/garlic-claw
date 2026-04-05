@@ -1,12 +1,12 @@
 import { toJsonValue } from './types/json';
 import type { JsonValue } from './types/json';
 import type { AiUtilityModelRole } from './types/ai';
+import type { PluginCallContext } from './types/plugin';
 import type {
-  PluginCallContext,
   PluginLlmGenerateParams,
   PluginLlmGenerateResult,
   PluginProviderSummary,
-} from './types/plugin';
+} from './types/plugin-ai';
 
 export function resolveHostUtilityRoleForGeneration(
   pluginId: string,
