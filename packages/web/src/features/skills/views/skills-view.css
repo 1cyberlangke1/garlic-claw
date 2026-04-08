@@ -1,14 +1,14 @@
 .skills-page,
-.skill-hero,
-.skill-list-panel,
-.skill-detail-panel,
-.skill-hero-header,
-.skills-layout,
-.panel-header,
-.skill-card-top,
-.overview-grid,
-.meta-row,
-.hero-actions {
+.skills-page .skill-hero,
+.skills-page .skill-list-panel,
+.skills-page .skill-detail-panel,
+.skills-page .skill-hero-header,
+.skills-page .skills-layout,
+.skills-page .panel-header,
+.skills-page .skill-card-top,
+.skills-page .overview-grid,
+.skills-page .meta-row,
+.skills-page .hero-actions {
   display: flex;
   gap: 0.9rem;
 }
@@ -18,46 +18,46 @@
   min-height: 0;
 }
 
-.skill-hero,
-.skill-list-panel,
-.skill-detail-panel {
+.skills-page .skill-hero,
+.skills-page .skill-list-panel,
+.skills-page .skill-detail-panel {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) * 1.2);
   background: var(--bg-card);
   padding: 1rem;
 }
 
-.skill-hero,
-.skill-list-panel,
-.skill-detail-panel,
-.skill-list,
-.active-skill-list {
+.skills-page .skill-hero,
+.skills-page .skill-list-panel,
+.skills-page .skill-detail-panel,
+.skills-page .skill-list,
+.skills-page .active-skill-list {
   display: flex;
   flex-direction: column;
 }
 
-.skill-hero-header,
-.panel-header,
-.skill-card-top {
+.skills-page .skill-hero-header,
+.skills-page .panel-header,
+.skills-page .skill-card-top {
   justify-content: space-between;
 }
 
-.hero-kicker,
-.panel-kicker,
-.overview-label {
+.skills-page .hero-kicker,
+.skills-page .panel-kicker,
+.skills-page .overview-label {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
 
-.overview-grid {
+.skills-page .overview-grid {
   margin-top: 1rem;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
-.overview-card {
+.skills-page .overview-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.85rem;
@@ -66,55 +66,55 @@
   gap: 0.35rem;
 }
 
-.skills-layout {
+.skills-page .skills-layout {
   align-items: flex-start;
 }
 
-.skill-list-panel {
+.skills-page .skill-list-panel {
   flex: 1 1 0;
   min-width: 0;
 }
 
-.skill-detail-panel {
+.skills-page .skill-detail-panel {
   width: 420px;
   flex-shrink: 0;
 }
 
-.skill-search {
+.skills-page .skill-search {
   margin: 1rem 0 0.75rem;
 }
 
-.skill-list,
-.active-skill-list {
+.skills-page .skill-list,
+.skills-page .active-skill-list {
   gap: 0.75rem;
 }
 
-.skill-card,
-.active-skill-card,
-.skill-preview {
+.skills-page .skill-card,
+.skills-page .active-skill-card,
+.skills-page .skill-preview {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.9rem;
 }
 
-.governance-panel,
-.asset-section,
-.asset-card {
+.skills-page .governance-panel,
+.skills-page .asset-section,
+.skills-page .asset-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
-.skill-card {
+.skills-page .skill-card {
   cursor: pointer;
 }
 
-.skill-card.active {
+.skills-page .skill-card.active {
   border-color: rgba(76, 189, 255, 0.4);
   background: rgba(76, 189, 255, 0.05);
 }
 
-.toggle-button,
-.hero-button {
+.skills-page .toggle-button,
+.skills-page .hero-button {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0.35rem 0.8rem;
@@ -123,22 +123,22 @@
   cursor: pointer;
 }
 
-.toggle-button.secondary,
-.hero-button.secondary {
+.skills-page .toggle-button.secondary,
+.skills-page .hero-button.secondary {
   color: var(--text-muted);
 }
 
-.toggle-button:disabled,
-.hero-button:disabled {
+.skills-page .toggle-button:disabled,
+.skills-page .hero-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.meta-row {
+.skills-page .meta-row {
   flex-wrap: wrap;
 }
 
-.meta-chip {
+.skills-page .meta-chip {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0.25rem 0.6rem;
@@ -146,36 +146,36 @@
   color: var(--text-muted);
 }
 
-.meta-chip.active-chip {
+.skills-page .meta-chip.active-chip {
   border-color: rgba(89, 207, 155, 0.35);
   color: var(--success);
 }
 
-.meta-chip.governance-enabled {
+.skills-page .meta-chip.governance-enabled {
   border-color: rgba(76, 189, 255, 0.3);
   color: var(--accent);
 }
 
-.meta-chip.governance-disabled {
+.skills-page .meta-chip.governance-disabled {
   border-color: rgba(255, 107, 107, 0.35);
   color: var(--danger);
 }
 
-.detail-line,
-.empty-state {
+.skills-page .detail-line,
+.skills-page .empty-state {
   color: var(--text-muted);
 }
 
-.muted-text {
+.skills-page .muted-text {
   color: var(--text-muted);
 }
 
-.warning-text {
+.skills-page .warning-text {
   color: #b77c15;
 }
 
-.governance-panel,
-.asset-section {
+.skills-page .governance-panel,
+.skills-page .asset-section {
   display: grid;
   gap: 0.8rem;
   margin-top: 1rem;
@@ -183,8 +183,8 @@
   background: color-mix(in srgb, var(--bg-card) 92%, var(--accent) 8%);
 }
 
-.governance-actions,
-.asset-header {
+.skills-page .governance-actions,
+.skills-page .asset-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -192,14 +192,14 @@
   gap: 0.75rem;
 }
 
-.trust-level-field {
+.skills-page .trust-level-field {
   display: grid;
   gap: 0.35rem;
   color: var(--text-muted);
   font-size: 0.82rem;
 }
 
-.trust-level-field select {
+.skills-page .trust-level-field select {
   min-width: 160px;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -208,50 +208,50 @@
   padding: 0.4rem 0.75rem;
 }
 
-.asset-list {
+.skills-page .asset-list {
   display: grid;
   gap: 0.75rem;
 }
 
-.asset-card {
+.skills-page .asset-card {
   display: grid;
   gap: 0.55rem;
   padding: 0.75rem;
   background: rgba(255, 255, 255, 0.02);
 }
 
-.empty-state.compact {
+.skills-page .empty-state.compact {
   padding: 0;
 }
 
-.markdown-preview {
+.skills-page .markdown-preview {
   margin-top: 1rem;
   color: var(--text);
 }
 
-.markdown-preview :deep(h1),
-.markdown-preview :deep(h2),
-.markdown-preview :deep(h3) {
+.skills-page .markdown-preview h1,
+.skills-page .markdown-preview h2,
+.skills-page .markdown-preview h3 {
   margin-top: 0.8rem;
   margin-bottom: 0.45rem;
 }
 
-.markdown-preview :deep(p),
-.markdown-preview :deep(li) {
+.skills-page .markdown-preview p,
+.skills-page .markdown-preview li {
   line-height: 1.6;
 }
 
 @media (max-width: 1100px) {
-  .skills-layout {
+  .skills-page .skills-layout {
     flex-direction: column;
   }
 
-  .skill-detail-panel {
+  .skills-page .skill-detail-panel {
     width: 100%;
   }
 
-  .governance-actions,
-  .asset-header {
+  .skills-page .governance-actions,
+  .skills-page .asset-header {
     align-items: flex-start;
   }
 }

@@ -137,6 +137,9 @@
   - contract freeze
   - `shared / plugin-sdk / server(plugin/tool/chat/ai) / web` 这一轮重写
   - 测试体系拆分、旧结构清退和阶段性最终验收
+- 2026-04-07：`packages/web/src/features/plugins/composables/use-plugin-management.ts` 已拆为 `usePluginList / usePluginConfig / usePluginEvents / usePluginStorage / usePluginCrons + plugin-management.module.ts`，插件管理页的前端热点职责已从单文件聚合中迁出。
+- 2026-04-07：`packages/web/src/features/skills/views/SkillsView.vue` 已拆分为 `SkillsList / SkillCard / SkillDetailPanel / SkillActiveStateToggle / SkillConversationBinding`，页面文件已压到 200 行以内并保持现有行为。
+- 2026-04-07：新增 `packages/web/src/components/GenericListView.vue`，收敛搜索/过滤/分页/行点击与可扩展单元格插槽，支撑 Commands / Tools / SubagentTasks 统一列表形态复用。
 - 这不等于“整体重构完成”。
 - 详细过程、阶段记录和验收流水账只保留在：
   - `task_plan.md`
