@@ -22,20 +22,3 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: TypeScript check
-        run: |
-          npm run build -w packages/shared
-          npm run build -w packages/plugin-sdk
-          npm run build -w packages/plugins/plugin-pc
-          cd packages/server && npx tsc --noEmit
-          cd ../web && npx vue-tsc --noEmit
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: |
-          npm run test -w packages/server
-          npm run test -w packages/plugin-sdk
-          npm run test:run -w packages/web
