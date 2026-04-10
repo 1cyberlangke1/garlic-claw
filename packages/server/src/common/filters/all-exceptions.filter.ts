@@ -7,6 +7,12 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import {
+  createErrorResponse,
+  isStandardResponse,
+  resolveDefaultErrorMessage,
+  toMessageString,
+} from '../http/api-response';
 
 /**
  * 判断异常响应体是否携带 message 字段。
@@ -15,7 +21,7 @@ import type { Response } from 'express';
  */
 function hasExceptionMessage(
   value: object,
-): value is { message?: string | object } {
+): value is { message?: unknown } {
   return 'message' in value;
 }
 
@@ -24,7 +30,7 @@ function hasExceptionMessage(
  * @param value 异常响应对象
  * @returns 可返回给客户端的 message
  */
-function readExceptionMessage(value: object): string | object {
+function readExceptionMessage(value: object): unknown {
   if (!hasExceptionMessage(value) || value.message === undefined) {
     return value;
   }
@@ -41,22 +47,34 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message: string | object = 'Internal server error';
+    let message: unknown;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
-      message = typeof res === 'string' ? res : readExceptionMessage(res);
+
+      if (isStandardResponse(res)) {
+        message = res.message;
+      } else if (typeof res === 'string') {
+        message = res;
+      } else if (res && typeof res === 'object') {
+        message = readExceptionMessage(res);
+      } else {
+        message = res;
+      }
     } else if (exception instanceof Error) {
       this.logger.error(exception.message, exception.stack);
+      message = exception.message;
     } else {
       this.logger.error('Unknown exception', String(exception));
+      message = String(exception);
     }
 
-    response.status(status).json({
-      statusCode: status,
-      message,
-      timestamp: new Date().toISOString(),
-    });
+    response.status(status).json(
+      createErrorResponse(
+        status,
+        toMessageString(message, resolveDefaultErrorMessage(status)),
+      ),
+    );
   }
 }
