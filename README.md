@@ -51,8 +51,9 @@ packages/
 config/
   ai-settings.example.json   AI provider / model / vision fallback 示例配置
 tools/
-  start-dev.bat              开发模式一键启动
-  stop-dev.bat               开发模式一键关闭
+  一键启停脚本.py            开发模式主入口
+  start-dev.bat              兼容旧入口
+  stop-dev.bat               兼容旧入口
 ```
 
 ## 配置方式
@@ -113,16 +114,36 @@ cd ../..
 
 ### 开发模式一键启停
 
+开发脚本默认会先做一次引导构建，再进入开发态 watch：
+
+- `shared` / `plugin-sdk` / `server` 先做 bootstrap build
+- 后端再进入 `tsc --watch + node --watch`
+- 前端进入 `vite` dev server
+
+这是开发模式，不是生产模式。
+
 启动前后端：
 
 ```bash
-cmd /c tools\start-dev.bat
+python tools/一键启停脚本.py
 ```
 
 关闭前后端：
 
 ```bash
-cmd /c tools\stop-dev.bat
+python tools/一键启停脚本.py --stop
+```
+
+查看状态：
+
+```bash
+python tools/一键启停脚本.py --status
+```
+
+前台尾随日志并用 `Ctrl+C` 停止：
+
+```bash
+python tools/一键启停脚本.py --tail-logs
 ```
 
 默认地址：
@@ -195,16 +216,23 @@ catalog provider 现在分成两层：
 
 ## 类型检查与构建
 
-项目使用 SWC 开发编译，提交前必须手动跑类型检查。
+项目使用 SWC 开发编译，提交前必须显式跑 lint 和类型检查。
 
 ```bash
-cd packages/shared && npm run build
-cd packages/plugin-sdk && npm run build
-cd packages/server && npx tsc --noEmit
+npm run lint
+npm run typecheck
+
 cd packages/server && npm test -- --runInBand
 cd packages/server && npm run build
-cd packages/web && npx vue-tsc --noEmit
 cd packages/web && npm run build
+```
+
+如果只想检查单个包：
+
+```bash
+npm run typecheck -w packages/server
+npm run typecheck -w packages/web
+npm run lint -w packages/server
 ```
 
 ## 主要能力

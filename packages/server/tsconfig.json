@@ -13,7 +13,8 @@
       "ai": ["src/types/ai-sdk-stubs"],
       "@ai-sdk/openai": ["src/types/ai-sdk-stubs"],
       "@ai-sdk/anthropic": ["src/types/ai-sdk-stubs"],
-      "@ai-sdk/google": ["src/types/ai-sdk-stubs"]
+      "@ai-sdk/google": ["src/types/ai-sdk-stubs"],
+      "yaml": ["../../node_modules/yaml/dist/index.d.ts"]
     }
   },
   "files": ["src/main.ts"],

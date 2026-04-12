@@ -18,10 +18,13 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import re
+import shutil
 import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -48,6 +51,7 @@ LEGACY_PID_MAP = {
 }
 
 DEFAULT_SERVICE_ORDER = ['backend_tsc', 'backend_app', 'web']
+ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
 
 
 def styleText(code: str, text: str) -> str:
@@ -92,6 +96,116 @@ def head(message: str) -> None:
     """输出标题。"""
     line = '-' * 50
     print(styleText('1;35', f'\n{line}\n  {message}\n{line}'))
+
+
+def supportsInteractiveStatus() -> bool:
+    """判断当前终端是否适合展示单行状态。"""
+    return sys.stdout.isatty()
+
+
+def formatStatusLine(
+    symbol: str,
+    message: str,
+    *,
+    colorCode: str,
+    width: int,
+    result: str = '',
+) -> str:
+    """格式化单行状态输出。"""
+    body = message.ljust(width)
+    if result:
+        body = f'{body} {result}'
+    return f' {styleText(colorCode, symbol)} {body}'
+
+
+def startSingleLineStatus(message: str, *, width: int) -> None:
+    """开始输出单行状态。"""
+    line = formatStatusLine('-', message, colorCode='33', width=width)
+    if supportsInteractiveStatus():
+        print(line, end='\r', flush=True)
+        return
+    print(line)
+
+
+def finishSingleLineStatus(
+    message: str,
+    *,
+    width: int,
+    result: str,
+    success: bool = True,
+) -> None:
+    """结束单行状态输出。"""
+    symbol = 'OK' if success else 'XX'
+    colorCode = '32' if success else '31'
+    line = formatStatusLine(
+        symbol,
+        message,
+        colorCode=colorCode,
+        width=width,
+        result=result,
+    )
+    if supportsInteractiveStatus():
+        print(f'\r\033[2K{line}', flush=True)
+        return
+    print(line)
+
+
+def commandExists(name: str) -> bool:
+    """判断命令是否存在于 PATH。"""
+    return shutil.which(name) is not None
+
+
+def findFirstCommand(names: list[str]) -> str | None:
+    """返回首个可用命令路径。"""
+    for name in names:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
+def ensureGitHooksEnabled() -> bool:
+    """确保当前仓库启用 .githooks。"""
+    gitHooksDir = ROOT / '.githooks'
+    if not gitHooksDir.exists():
+        return False
+
+    gitCommand = findFirstCommand(['git.exe', 'git'])
+    if gitCommand is None:
+        warn('未找到 git，跳过启用 .githooks。')
+        return False
+
+    result = subprocess.run(
+        [gitCommand, 'config', '--local', 'core.hooksPath'],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+    )
+    currentPath = result.stdout.strip() if result.returncode == 0 else ''
+    if currentPath == '.githooks':
+        return False
+
+    updateResult = subprocess.run(
+        [gitCommand, 'config', '--local', 'core.hooksPath', '.githooks'],
+        cwd=ROOT,
+        check=False,
+    )
+    if updateResult.returncode != 0:
+        warn('设置 core.hooksPath 为 .githooks 失败。')
+        return False
+
+    if not IS_WINDOWS:
+        for hookFile in gitHooksDir.iterdir():
+            if hookFile.is_file():
+                subprocess.run(
+                    ['chmod', '+x', str(hookFile)],
+                    cwd=ROOT,
+                    check=False,
+                )
+
+    info('已启用当前仓库 .githooks。')
+    return True
 
 
 def ensureRuntimeDirs() -> None:
@@ -378,6 +492,142 @@ def truncateLogFile(logPath: Path) -> None:
     logPath.write_text('', encoding='utf-8')
 
 
+def quoteCommandArgument(value: str) -> str:
+    """为 PowerShell 命令参数做最小转义。"""
+    return "'" + value.replace("'", "''") + "'"
+
+
+def relayLogOutput(prefix: str, line: str) -> None:
+    """带前缀输出 relay 日志。"""
+    try:
+        sys.stdout.write(f'[{prefix}] {line}')
+        sys.stdout.flush()
+    except UnicodeEncodeError:
+        safe = f'[{prefix}] {line}'.encode(
+            sys.stdout.encoding or 'utf-8',
+            errors='replace',
+        ).decode(sys.stdout.encoding or 'utf-8')
+        sys.stdout.write(safe)
+        sys.stdout.flush()
+
+
+def relayProcessOutput(
+    service: dict[str, Any],
+    *,
+    mergeStreams: bool,
+) -> int:
+    """以前台 relay 方式运行服务并同步落盘日志。"""
+    stdoutPath = Path(service['stdoutPath'])
+    stderrPath = Path(service['stderrPath'])
+    truncateLogFile(stdoutPath)
+    truncateLogFile(stderrPath)
+
+    popenArgs: dict[str, Any] = {
+        'cwd': str(service['cwd']),
+        'stdin': subprocess.DEVNULL,
+        'text': True,
+        'encoding': 'utf-8',
+        'errors': 'replace',
+        'bufsize': 1,
+    }
+    if mergeStreams:
+        popenArgs['stdout'] = subprocess.PIPE
+        popenArgs['stderr'] = subprocess.STDOUT
+    else:
+        popenArgs['stdout'] = subprocess.PIPE
+        popenArgs['stderr'] = subprocess.PIPE
+
+    process = subprocess.Popen(
+        normalizeCommand(list(service['command'])),
+        **popenArgs,
+    )
+
+    stdoutLabel = str(service.get('stdoutLabel', service.get('name', 'stdout')))
+    stderrLabel = str(service.get('stderrLabel', service.get('name', 'stderr')))
+
+    def forwardStream(stream, logPath: Path, prefix: str) -> None:
+        if stream is None:
+            return
+        with logPath.open('a', encoding='utf-8') as logFile:
+            for line in stream:
+                relayLogOutput(prefix, line)
+                logFile.write(ANSI_ESCAPE_RE.sub('', line))
+                logFile.flush()
+
+    stdoutThread = threading.Thread(
+        target=forwardStream,
+        args=(process.stdout, stdoutPath, stdoutLabel),
+        daemon=True,
+    )
+    stdoutThread.start()
+
+    stderrThread: threading.Thread | None = None
+    if not mergeStreams:
+        stderrThread = threading.Thread(
+            target=forwardStream,
+            args=(process.stderr, stderrPath, stderrLabel),
+            daemon=True,
+        )
+        stderrThread.start()
+
+    stdoutThread.join()
+    if stderrThread is not None:
+        stderrThread.join()
+    return process.wait()
+
+
+def buildRelayCommand(service: dict[str, Any]) -> list[str]:
+    """构建 relay 子进程命令。"""
+    relayScript = Path(__file__).resolve()
+    relayPayload = {
+        'name': str(service.get('name', 'service')),
+        'cwd': str(service['cwd']),
+        'command': list(service['command']),
+        'stdoutPath': str(service['stdoutPath']),
+        'stderrPath': str(service['stderrPath']),
+        'stdoutLabel': str(service.get('stdoutLabel', service.get('name', 'stdout'))),
+        'stderrLabel': str(service.get('stderrLabel', service.get('name', 'stderr'))),
+        'mergeStreams': bool(service.get('mergeStreams', False)),
+    }
+    payloadJson = json.dumps(relayPayload, ensure_ascii=False)
+    return [
+        sys.executable,
+        str(relayScript),
+        '__relay__',
+        payloadJson,
+    ]
+
+
+def startRelayManagedProcess(service: dict[str, Any]) -> subprocess.Popen[str]:
+    """启动 relay 受管进程。"""
+    relayCommand = buildRelayCommand(service)
+    popenArgs: dict[str, Any] = {
+        'cwd': str(ROOT),
+        'stdin': subprocess.DEVNULL,
+        'text': True,
+    }
+    if IS_WINDOWS:
+        popenArgs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        popenArgs['start_new_session'] = True
+    return subprocess.Popen(relayCommand, **popenArgs)
+
+
+def runRelayFromArgs(argv: list[str]) -> int:
+    """从 CLI 参数运行 relay 模式。"""
+    if len(argv) < 3 or argv[1] != '__relay__':
+        return -1
+
+    payload = json.loads(argv[2])
+    if not isinstance(payload, dict):
+        raise RuntimeError('relay 参数格式错误')
+
+    return relayProcessOutput(
+        payload,
+        mergeStreams=bool(payload.get('mergeStreams', False)),
+    )
+
+
 def startManagedProcess(service: dict[str, Any]) -> subprocess.Popen[str]:
     """启动受管后台进程。
 
@@ -598,3 +848,9 @@ def stopServices(
                 stopped.append((source, pid))
 
     return stopped
+
+
+if __name__ == '__main__':
+    relayExitCode = runRelayFromArgs(sys.argv)
+    if relayExitCode >= 0:
+        raise SystemExit(relayExitCode)
