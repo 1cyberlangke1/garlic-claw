@@ -16,7 +16,6 @@ import json
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -51,8 +50,44 @@ WEB_STDOUT = LOG_DIR / 'web-vite.log'
 WEB_STDERR = LOG_DIR / 'web-vite.err.log'
 
 
+def 获取状态输出宽度(messages: list[str]) -> int:
+    if not messages:
+        return 0
+    return max(len(message) for message in messages)
+
+
 def 计算文件哈希(path: Path) -> str:
     return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def 获取依赖描述文件列表() -> list[Path]:
+    packageFiles = [ROOT / 'package.json']
+    packageFiles.extend(sorted((ROOT / 'packages').glob('*/package.json')))
+    packageFiles.extend(sorted((ROOT / 'packages' / 'plugins').glob('*/package.json')))
+    return [path for path in packageFiles if path.exists()]
+
+
+def 计算依赖指纹(lockPath: Path) -> dict[str, Any]:
+    descriptorFiles = 获取依赖描述文件列表()
+    fileHashes = [
+        {
+            'path': str(path.relative_to(ROOT)).replace('\\', '/'),
+            'hash': 计算文件哈希(path),
+        }
+        for path in descriptorFiles
+    ]
+
+    combinedHash = hashlib.md5()
+    combinedHash.update(计算文件哈希(lockPath).encode('utf-8'))
+    for item in fileHashes:
+        combinedHash.update(item['path'].encode('utf-8'))
+        combinedHash.update(item['hash'].encode('utf-8'))
+
+    return {
+        'lockHash': 计算文件哈希(lockPath),
+        'descriptorFiles': fileHashes,
+        'combinedHash': combinedHash.hexdigest(),
+    }
 
 
 def 读取安装状态() -> dict[str, Any]:
@@ -93,26 +128,43 @@ def 确保npm依赖已安装() -> bool:
     if not lockPath.exists():
         return True
 
-    currentHash = 计算文件哈希(lockPath)
+    dependencyFingerprint = 计算依赖指纹(lockPath)
     installState = 读取安装状态()
-    savedHash = installState.get('package_lock_hash')
+    savedHash = installState.get('dependency_fingerprint')
 
-    if nodeModulesPath.exists() and savedHash == currentHash:
+    if savedHash is None:
+        savedHash = installState.get('package_lock_hash')
+
+    if nodeModulesPath.exists() and savedHash == dependencyFingerprint['combinedHash']:
         return True
 
-    print('[依赖检查] 检测到 package-lock.json 变化或 node_modules 缺失，正在执行 npm install...')
+    statusMessage = '安装根目录 npm 依赖'
+    width = 获取状态输出宽度([statusMessage])
+    common.startSingleLineStatus(statusMessage, width=width)
     result = subprocess.run(
         common.normalizeCommand(['npm', 'install']),
         cwd=ROOT,
         check=False,
     )
     if result.returncode != 0:
-        print('npm install 失败。')
+        common.finishSingleLineStatus(
+            statusMessage,
+            width=width,
+            result='(失败)',
+            success=False,
+        )
         return False
 
-    installState['package_lock_hash'] = currentHash
+    installState['package_lock_hash'] = dependencyFingerprint['lockHash']
+    installState['dependency_fingerprint'] = dependencyFingerprint['combinedHash']
+    installState['dependency_descriptor_files'] = dependencyFingerprint['descriptorFiles']
     保存安装状态(installState)
-    print('npm install 完成。')
+    common.finishSingleLineStatus(
+        statusMessage,
+        width=width,
+        result='(完成)',
+        success=True,
+    )
     return True
 
 
@@ -155,6 +207,9 @@ def createDevServices() -> dict[str, dict[str, Any]]:
             ],
             'stdoutPath': str(SERVER_TSC_STDOUT),
             'stderrPath': str(SERVER_TSC_STDERR),
+            'stdoutLabel': '后端编译器',
+            'stderrLabel': '后端编译器',
+            'mergeStreams': False,
         },
         'backend_app': {
             'name': '后端应用',
@@ -162,6 +217,9 @@ def createDevServices() -> dict[str, dict[str, Any]]:
             'command': ['node', '--watch', 'dist/main.js'],
             'stdoutPath': str(SERVER_APP_STDOUT),
             'stderrPath': str(SERVER_APP_STDERR),
+            'stdoutLabel': '后端',
+            'stderrLabel': '后端',
+            'mergeStreams': False,
             'port': SERVER_PORT,
         },
         'web': {
@@ -179,6 +237,9 @@ def createDevServices() -> dict[str, dict[str, Any]]:
             ],
             'stdoutPath': str(WEB_STDOUT),
             'stderrPath': str(WEB_STDERR),
+            'stdoutLabel': '前端',
+            'stderrLabel': '前端',
+            'mergeStreams': False,
             'port': WEB_PORT,
         },
     }
@@ -239,19 +300,83 @@ def 确保端口空闲() -> bool:
     return True
 
 
+def 执行启动前预检() -> bool:
+    checks: list[tuple[str, bool, str]] = []
+
+    npmPath = common.findFirstCommand(['npm.cmd', 'npm.exe', 'npm'])
+    checks.append(
+        (
+            '检查 npm 命令',
+            npmPath is not None,
+            npmPath or '未找到 npm，请确认 Node.js 已安装并已加入 PATH。',
+        )
+    )
+
+    nodePath = common.findFirstCommand(['node.exe', 'node'])
+    checks.append(
+        (
+            '检查 node 命令',
+            nodePath is not None,
+            nodePath or '未找到 node，请确认 Node.js 已安装并已加入 PATH。',
+        )
+    )
+
+    requiredPaths = [
+        ('检查 package-lock.json', ROOT / 'package-lock.json'),
+        ('检查 server tsconfig.build.json', SERVER_DIR / 'tsconfig.build.json'),
+        ('检查 Prisma schema', SERVER_DIR / 'prisma' / 'schema.prisma'),
+        ('检查 web vite.config.ts', WEB_DIR / 'vite.config.ts'),
+    ]
+    for label, path in requiredPaths:
+        checks.append(
+            (
+                label,
+                path.exists(),
+                str(path),
+            )
+        )
+
+    statusWidth = 获取状态输出宽度([label for label, _, _ in checks])
+    for label, passed, detail in checks:
+        common.startSingleLineStatus(label, width=statusWidth)
+        common.finishSingleLineStatus(
+            label,
+            width=statusWidth,
+            result='(通过)' if passed else '(失败)',
+            success=passed,
+        )
+        if passed:
+            continue
+        print(detail)
+        return False
+
+    return True
+
+
 def 执行构建步骤() -> bool:
     steps = createBuildSteps()
-    total = len(steps)
-    for index, (label, command) in enumerate(steps, start=1):
-        print(f'[{index}/{total}] 正在{label}...')
+    statusWidth = 获取状态输出宽度([label for label, _ in steps])
+    for label, command in steps:
+        common.startSingleLineStatus(label, width=statusWidth)
         result = subprocess.run(
             common.normalizeCommand(command),
             cwd=ROOT,
             check=False,
         )
         if result.returncode != 0:
-            print(f'{label}失败。')
+            common.finishSingleLineStatus(
+                label,
+                width=statusWidth,
+                result='(失败)',
+                success=False,
+            )
             return False
+        common.finishSingleLineStatus(
+            label,
+            width=statusWidth,
+            result='(完成)',
+            success=True,
+        )
     return True
 
 
@@ -288,6 +413,9 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
         return 1
 
     common.ensureRuntimeDirs()
+    common.ensureGitHooksEnabled()
+    if not 执行启动前预检():
+        return 1
     确保env文件()
     if not 确保npm依赖已安装():
         return 1
@@ -301,30 +429,64 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
     try:
         for index, (serviceName, service) in enumerate(services.items(), start=1):
             print(f'[{index}/{len(services)}] 正在启动{service["name"]}...')
-            process = common.startManagedProcess(service)
+            process = common.startRelayManagedProcess(service) if tailLogs else common.startManagedProcess(service)
             startedProcesses.append(process)
             startedServices[serviceName] = 记录已启动服务(serviceName, service, process)
 
         保存受管状态(startedServices)
 
+        portStatusWidth = 获取状态输出宽度(
+            [
+                f'等待{service["name"]}端口就绪'
+                for service in startedServices.values()
+                if isinstance(service.get('port'), int)
+            ]
+        )
         for serviceName, service in startedServices.items():
             port = service.get('port')
             if not isinstance(port, int):
                 continue
             timeoutSeconds = getPortWaitTimeoutSeconds(serviceName)
+            statusLabel = f'等待{service["name"]}端口就绪'
+            common.startSingleLineStatus(statusLabel, width=portStatusWidth)
             if not common.waitForPort(port, timeoutSeconds):
+                common.finishSingleLineStatus(
+                    statusLabel,
+                    width=portStatusWidth,
+                    result=f'(失败, {timeoutSeconds}s)',
+                    success=False,
+                )
                 print(f'{service["name"]} 未在 {timeoutSeconds} 秒内打开端口 {port}。')
                 return 启动失败清理(startedServices)
+            common.finishSingleLineStatus(
+                statusLabel,
+                width=portStatusWidth,
+                result=f'(端口 {port})',
+                success=True,
+            )
 
-        print('正在检查后端 HTTP 健康状态...')
-        if not http服务是否就绪(f'http://127.0.0.1:{SERVER_PORT}', timeoutSeconds=30):
-            print('后端 HTTP 健康检查未通过。')
-            return 启动失败清理(startedServices)
-
-        print('正在检查前端 HTTP 健康状态...')
-        if not http服务是否就绪(f'http://127.0.0.1:{WEB_PORT}', timeoutSeconds=30):
-            print('前端 HTTP 健康检查未通过。')
-            return 启动失败清理(startedServices)
+        httpChecks = [
+            ('检查后端 HTTP 健康状态', f'http://127.0.0.1:{SERVER_PORT}'),
+            ('检查前端 HTTP 健康状态', f'http://127.0.0.1:{WEB_PORT}'),
+        ]
+        httpStatusWidth = 获取状态输出宽度([label for label, _ in httpChecks])
+        for label, url in httpChecks:
+            common.startSingleLineStatus(label, width=httpStatusWidth)
+            if not http服务是否就绪(url, timeoutSeconds=30):
+                common.finishSingleLineStatus(
+                    label,
+                    width=httpStatusWidth,
+                    result='(失败)',
+                    success=False,
+                )
+                print(f'{label}未通过。')
+                return 启动失败清理(startedServices)
+            common.finishSingleLineStatus(
+                label,
+                width=httpStatusWidth,
+                result='(通过)',
+                success=True,
+            )
 
         print()
         print('开发服务已启动：')
@@ -333,7 +495,7 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
         print(f'- 状态文件：{STATE_FILE}')
         print(f'- 日志目录：{LOG_DIR}')
         if tailLogs:
-            print('- 运行模式：前台尾随日志（按 Ctrl+C 停止开发环境）')
+            print('- 运行模式：前台 relay 日志（按 Ctrl+C 停止开发环境）')
         else:
             print('- 运行模式：后台启动后自动退出脚本')
             print('- 如需前台看日志：python tools\\一键启停脚本.py --tail-logs')
@@ -342,8 +504,6 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
         if not tailLogs:
             return 0
 
-        stopEvent = threading.Event()
-        tailThreads = 启动日志尾随线程(stopEvent)
         try:
             while True:
                 time.sleep(1)
@@ -355,10 +515,6 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
             print()
             print('收到中断信号，正在停止开发环境...')
             return stop()
-        finally:
-            stopEvent.set()
-            for thread in tailThreads:
-                thread.join(timeout=1)
     except Exception as exc:
         print(f'开发服务启动失败：{exc}')
         return 启动失败清理(startedServices)
@@ -376,57 +532,6 @@ def 启动失败清理(services: dict[str, dict[str, Any]]) -> int:
     print(f'- {WEB_STDOUT}')
     print(f'- {WEB_STDERR}')
     return 1
-
-
-def 输出日志前缀(prefix: str, line: str) -> None:
-    try:
-        sys.stdout.write(f'[{prefix}] {line}')
-        sys.stdout.flush()
-    except UnicodeEncodeError:
-        safe = f'[{prefix}] {line}'.encode(
-            sys.stdout.encoding or 'utf-8',
-            errors='replace',
-        ).decode(sys.stdout.encoding or 'utf-8')
-        sys.stdout.write(safe)
-        sys.stdout.flush()
-
-
-def 尾随日志(prefix: str, path: Path, stopEvent: threading.Event) -> None:
-    position = 0
-    while not stopEvent.is_set():
-        if not path.exists():
-            time.sleep(0.2)
-            continue
-        with path.open('r', encoding='utf-8', errors='replace') as logFile:
-            logFile.seek(position)
-            while not stopEvent.is_set():
-                line = logFile.readline()
-                if line:
-                    position = logFile.tell()
-                    输出日志前缀(prefix, line)
-                    continue
-                time.sleep(0.2)
-
-
-def 启动日志尾随线程(stopEvent: threading.Event) -> list[threading.Thread]:
-    configs = [
-        ('后端编译器', SERVER_TSC_STDOUT),
-        ('后端编译器', SERVER_TSC_STDERR),
-        ('后端', SERVER_APP_STDOUT),
-        ('后端', SERVER_APP_STDERR),
-        ('前端', WEB_STDOUT),
-        ('前端', WEB_STDERR),
-    ]
-    threads: list[threading.Thread] = []
-    for prefix, path in configs:
-        thread = threading.Thread(
-            target=尾随日志,
-            args=(prefix, path, stopEvent),
-            daemon=True,
-        )
-        thread.start()
-        threads.append(thread)
-    return threads
 
 
 def stop() -> int:
