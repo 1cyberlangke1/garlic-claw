@@ -8,7 +8,9 @@
           <p>统一查看插件工具与 MCP 工具源的健康、开关状态和最小治理动作。</p>
         </div>
         <div class="tool-hero-side">
-          <button type="button" class="hero-action" @click="refreshAll()">刷新全部</button>
+          <button type="button" class="hero-action" title="刷新全部" @click="refreshAll()">
+            <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
+          </button>
           <div class="hero-note">
             <span class="hero-note-label">统一工具层</span>
             <strong>{{ heroHeadline }}</strong>
@@ -36,84 +38,90 @@
 
     <div class="plugins-layout">
       <aside class="plugin-sidebar tool-sidebar">
-        <div class="sidebar-header">
+        <div class="sidebar-header tool-sources-header">
           <div class="sidebar-header-copy">
             <span class="sidebar-kicker">Tool Sources</span>
-            <h2>工具源</h2>
+            <div class="sidebar-header-title-row">
+              <h2>工具源</h2>
+              <button type="button" class="ghost-button refresh-button" title="刷新" @click="refreshAll()">
+                <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
+              </button>
+            </div>
             <p>按 source 管理当前统一工具可见性。</p>
           </div>
-          <button type="button" class="ghost-button" @click="refreshAll()">刷新</button>
         </div>
 
-        <div v-if="!loading && sources.length > 0" class="sidebar-tools">
-          <input
-            v-model="sourceSearchKeyword"
-            data-test="tool-source-search"
-            type="text"
-            placeholder="搜索 source id、标签或错误摘要"
-          >
-        </div>
+        <div class="tool-sidebar-body">
+          <div v-if="!loading && sources.length > 0" class="sidebar-tools">
+            <input
+              v-model="sourceSearchKeyword"
+              data-test="tool-source-search"
+              type="text"
+              placeholder="搜索 source id、标签或错误摘要"
+            >
+          </div>
 
-        <div v-if="!loading && sources.length > 0" class="sidebar-results">
-          <span class="sidebar-results-text">
-            匹配 {{ filteredSourceCount }} / {{ sources.length }}
-            <span v-if="sources.length > 0">
-              · 第 {{ sourcePage }} / {{ sourcePageCount }} 页
-              · 显示 {{ sourceRangeStart }}-{{ sourceRangeEnd }} 项
-            </span>
-          </span>
-        </div>
-
-        <div v-if="loading" class="sidebar-state">加载中...</div>
-        <div v-else-if="sources.length === 0" class="sidebar-state">
-          当前还没有可治理的工具源。
-        </div>
-        <div v-else-if="pagedSources.length === 0" class="sidebar-state">
-          当前搜索下没有匹配工具源。
-        </div>
-        <div v-else class="source-list">
-          <button
-            v-for="source in pagedSources"
-            :key="buildSourceKey(source)"
-            type="button"
-            class="source-item"
-            :class="{ active: buildSourceKey(source) === selectedSourceKey }"
-            @click="selectSource(source.kind, source.id)"
-          >
-            <div class="source-item-top">
-              <strong>{{ source.label }}</strong>
-              <span class="runtime-badge">{{ source.kind === 'plugin' ? '插件' : 'MCP' }}</span>
-            </div>
-            <div class="source-item-meta">
-              <span class="meta-chip">
-                <span class="health-dot" :class="source.health" />
-                {{ healthText(source.health) }}
+          <div v-if="!loading && sources.length > 0" class="sidebar-results">
+            <span class="sidebar-results-text">
+              匹配 {{ filteredSourceCount }} / {{ sources.length }}
+              <span v-if="sources.length > 0">
+                · 第 {{ sourcePage }} / {{ sourcePageCount }} 页
+                · 显示 {{ sourceRangeStart }}-{{ sourceRangeEnd }} 项
               </span>
-              <span class="meta-chip">{{ source.enabled ? '已启用' : '已禁用' }}</span>
-              <span class="meta-chip">{{ source.enabledTools }} / {{ source.totalTools }} 工具</span>
-            </div>
-            <p v-if="source.lastError" class="source-item-issue">{{ source.lastError }}</p>
-            <p class="source-item-desc">{{ source.id }}</p>
-          </button>
-        </div>
+            </span>
+          </div>
 
-        <div v-if="sources.length > 0" class="sidebar-pagination">
-          <button
-            type="button"
-            class="ghost-button"
-            :disabled="!canGoPrevSourcePage"
-            @click="goPrevSourcePage"
-          >
-            上一页
-          </button>
-          <button
-            type="button"
-            class="ghost-button"
-            :disabled="!canGoNextSourcePage"
-            @click="goNextSourcePage"
-          >
-            下一页
-          </button>
+          <div v-if="loading" class="sidebar-state">加载中...</div>
+          <div v-else-if="sources.length === 0" class="sidebar-state">
+            当前还没有可治理的工具源。
+          </div>
+          <div v-else-if="pagedSources.length === 0" class="sidebar-state">
+            当前搜索下没有匹配工具源。
+          </div>
+          <div v-else class="source-list">
+            <button
+              v-for="source in pagedSources"
+              :key="buildSourceKey(source)"
+              type="button"
+              class="source-item"
+              :class="{ active: buildSourceKey(source) === selectedSourceKey }"
+              @click="selectSource(source.kind, source.id)"
+            >
+              <div class="source-item-top">
+                <strong>{{ source.label }}</strong>
+                <span class="runtime-badge">{{ source.kind === 'plugin' ? '插件' : 'MCP' }}</span>
+              </div>
+              <div class="source-item-meta">
+                <span class="meta-chip">
+                  <span class="health-dot" :class="source.health" />
+                  {{ healthText(source.health) }}
+                </span>
+                <span class="meta-chip">{{ source.enabled ? '已启用' : '已禁用' }}</span>
+                <span class="meta-chip">{{ source.enabledTools }} / {{ source.totalTools }} 工具</span>
+              </div>
+              <p v-if="source.lastError" class="source-item-issue">{{ source.lastError }}</p>
+              <p class="source-item-desc">{{ source.id }}</p>
+            </button>
+          </div>
+
+          <div v-if="sources.length > 0" class="sidebar-pagination">
+            <button
+              type="button"
+              class="ghost-button"
+              :disabled="!canGoPrevSourcePage"
+              @click="goPrevSourcePage"
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              class="ghost-button"
+              :disabled="!canGoNextSourcePage"
+              @click="goNextSourcePage"
+            >
+              下一页
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -128,27 +136,41 @@
             <div class="source-overview-actions">
               <button
                 type="button"
-                class="hero-action"
-                :disabled="mutatingSourceKey === buildSourceKey(selectedSource)"
-                @click="setSourceEnabled(selectedSource, !selectedSource.enabled)"
-              >
-                {{ mutatingSourceKey === buildSourceKey(selectedSource)
+                class="ghost-button action-icon-button"
+                :title="mutatingSourceKey === buildSourceKey(selectedSource)
                   ? '更新中...'
                   : selectedSource.enabled
                     ? '禁用源'
-                    : '启用源' }}
+                    : '启用源'"
+                :disabled="mutatingSourceKey === buildSourceKey(selectedSource)"
+                @click="setSourceEnabled(selectedSource, !selectedSource.enabled)"
+              >
+                <Icon
+                  :icon="mutatingSourceKey === buildSourceKey(selectedSource)
+                    ? refreshBold
+                    : selectedSource.enabled
+                      ? forbiddenCircleBold
+                      : playCircleBold"
+                  class="action-icon"
+                  aria-hidden="true"
+                />
               </button>
               <button
                 v-for="action in sourceActions(selectedSource)"
                 :key="action"
                 type="button"
-                class="ghost-button"
+                class="ghost-button action-icon-button"
+                :title="runningActionKey === `${buildSourceKey(selectedSource)}:${action}`
+                  ? pendingActionLabel(action)
+                  : actionLabel(action)"
                 :disabled="runningActionKey === `${buildSourceKey(selectedSource)}:${action}`"
                 @click="runSourceAction(selectedSource, action)"
               >
-                {{ runningActionKey === `${buildSourceKey(selectedSource)}:${action}`
-                  ? pendingActionLabel(action)
-                  : actionLabel(action) }}
+                <Icon
+                  :icon="actionIcon(action)"
+                  class="action-icon"
+                  aria-hidden="true"
+                />
               </button>
             </div>
           </div>
@@ -191,40 +213,15 @@
                 type="text"
                 placeholder="搜索 call name、tool id 或描述"
               >
-              <div class="filter-chips">
-                <button
-                  type="button"
-                  class="filter-chip"
-                  :class="{ active: toolFilter === 'all' }"
-                  @click="toolFilter = 'all'"
-                >
-                  全部
-                </button>
-                <button
-                  type="button"
-                  class="filter-chip"
-                  :class="{ active: toolFilter === 'enabled' }"
-                  @click="toolFilter = 'enabled'"
-                >
-                  已启用
-                </button>
-                <button
-                  type="button"
-                  class="filter-chip"
-                  :class="{ active: toolFilter === 'disabled' }"
-                  @click="toolFilter = 'disabled'"
-                >
-                  已禁用
-                </button>
-                <button
-                  type="button"
-                  class="filter-chip"
-                  :class="{ active: toolFilter === 'attention' }"
-                  @click="toolFilter = 'attention'"
-                >
-                  需关注
-                </button>
-              </div>
+              <SegmentedSwitch
+                v-model="toolFilter"
+                :options="[
+                  { value: 'all', label: '全部' },
+                  { value: 'enabled', label: '已启用' },
+                  { value: 'disabled', label: '已禁用' },
+                  { value: 'attention', label: '需关注' },
+                ]"
+              />
             </div>
           </div>
 
@@ -248,22 +245,31 @@
               class="tool-card"
             >
               <div class="tool-card-top">
-                <div>
+                <div class="tool-card-header">
                   <strong>{{ tool.callName }}</strong>
-                  <p>{{ tool.description }}</p>
+                  <button
+                    type="button"
+                    class="ghost-button action-icon-button"
+                    :title="mutatingToolId === tool.toolId
+                      ? '更新中...'
+                      : tool.enabled
+                        ? '禁用'
+                        : '启用'"
+                    :disabled="mutatingToolId === tool.toolId"
+                    @click="setToolEnabled(tool, !tool.enabled)"
+                  >
+                    <Icon
+                      :icon="mutatingToolId === tool.toolId
+                        ? refreshBold
+                        : tool.enabled
+                          ? forbiddenCircleBold
+                          : playCircleBold"
+                      class="action-icon"
+                      aria-hidden="true"
+                    />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  class="ghost-button"
-                  :disabled="mutatingToolId === tool.toolId"
-                  @click="setToolEnabled(tool, !tool.enabled)"
-                >
-                  {{ mutatingToolId === tool.toolId
-                    ? '更新中...'
-                    : tool.enabled
-                      ? '禁用'
-                      : '启用' }}
-                </button>
+                <p>{{ tool.description }}</p>
               </div>
               <div class="tool-card-meta">
                 <span class="meta-chip">{{ tool.enabled ? '已启用' : '已禁用' }}</span>
@@ -313,7 +319,14 @@
 
 <script setup lang="ts">
 import type { PluginActionName, ToolInfo, ToolSourceInfo } from '@garlic-claw/shared'
+import checkReadBold from '@iconify-icons/solar/check-read-bold'
+import forbiddenCircleBold from '@iconify-icons/solar/forbidden-circle-bold'
+import playCircleBold from '@iconify-icons/solar/play-circle-bold'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import restartBold from '@iconify-icons/solar/restart-bold'
+import { Icon } from '@iconify/vue'
 import { computed } from 'vue'
+import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
 import { useToolManagement } from '@/features/tools/composables/use-tool-management'
 
@@ -436,6 +449,17 @@ function pendingActionLabel(action: PluginActionName): string {
       return '重连中...'
     default:
       return '检查中...'
+  }
+}
+
+function actionIcon(action: PluginActionName) {
+  switch (action) {
+    case 'reload':
+      return refreshBold
+    case 'reconnect':
+      return restartBold
+    default:
+      return checkReadBold
   }
 }
 

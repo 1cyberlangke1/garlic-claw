@@ -239,7 +239,7 @@
 .sidebar-pagination {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 18px;
   flex-wrap: wrap;
 }
 
