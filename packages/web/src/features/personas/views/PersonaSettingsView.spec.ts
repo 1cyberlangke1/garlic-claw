@@ -17,7 +17,7 @@ const selectedPersona = ref<PluginPersonaSummary | null>({
 const currentPersona = ref<PluginPersonaCurrentInfo | null>({
   source: 'conversation',
   personaId: 'builtin.default-assistant',
-  name: 'Default Assistant',
+  name: '默认助手',
   prompt: 'default prompt',
   description: 'default description',
   isDefault: true,
@@ -32,7 +32,7 @@ vi.mock('../composables/use-persona-settings', () => ({
     personas: ref<PluginPersonaSummary[]>([
       {
         id: 'builtin.default-assistant',
-        name: 'Default Assistant',
+        name: '默认助手',
         prompt: 'default prompt',
         description: 'default description',
         isDefault: true,
