@@ -9,19 +9,21 @@
       <div class="mcp-config-actions">
         <button
           type="button"
-          class="ghost-button"
+          class="ghost-button action-icon-button"
+          title="刷新配置"
           :disabled="loading"
           @click="refresh(selectedServerName)"
         >
-          {{ loading ? '刷新中...' : '刷新配置' }}
+          <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
         </button>
         <button
           type="button"
-          class="hero-action"
+          class="ghost-button action-icon-button"
           data-test="mcp-new-button"
+          title="新增 Server"
           @click="startCreate"
         >
-          新增 Server
+          <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -85,7 +87,9 @@
               <span>Env</span>
               <p>支持直接值或 `${VAR_NAME}` 占位符。</p>
             </div>
-            <button type="button" class="ghost-button" @click="addEnvRow">新增变量</button>
+            <button type="button" class="ghost-button action-icon-button" title="新增变量" @click="addEnvRow">
+              <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
+            </button>
           </div>
 
           <div v-if="envRows.length === 0" class="sidebar-state">
@@ -97,26 +101,29 @@
               :key="entry.id"
               class="mcp-env-row"
             >
-              <input
-                :data-test="`mcp-env-key-${index}`"
-                v-model="entry.key"
-                type="text"
-                placeholder="TAVILY_API_KEY"
-              >
-              <input
-                :data-test="`mcp-env-value-${index}`"
-                v-model="entry.value"
-                type="text"
-                placeholder="${TAVILY_API_KEY}"
-              >
-              <button
-                type="button"
-                class="ghost-button"
-                :disabled="envRows.length === 1"
-                @click="removeEnvRow(index)"
-              >
-                删除
-              </button>
+              <div class="mcp-env-inputs">
+                <input
+                  :data-test="`mcp-env-key-${index}`"
+                  v-model="entry.key"
+                  type="text"
+                  placeholder="TAVILY_API_KEY"
+                >
+                <input
+                  :data-test="`mcp-env-value-${index}`"
+                  v-model="entry.value"
+                  type="text"
+                  placeholder="${TAVILY_API_KEY}"
+                >
+                <button
+                  type="button"
+                  class="ghost-button action-icon-button danger-icon-button"
+                  title="删除"
+                  :disabled="envRows.length === 1"
+                  @click="removeEnvRow(index)"
+                >
+                  <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -126,19 +133,21 @@
             type="submit"
             class="hero-action"
             data-test="mcp-save-button"
+            :title="saving ? '保存中...' : isCreating ? '创建 Server' : '保存修改'"
             :disabled="saving"
           >
-            {{ saving ? '保存中...' : isCreating ? '创建 Server' : '保存修改' }}
+            <Icon :icon="disketteBold" class="action-icon" aria-hidden="true" />
           </button>
           <button
             v-if="!isCreating && selectedServer"
             type="button"
-            class="ghost-button danger"
+            class="ghost-button danger-icon-button"
             data-test="mcp-delete-button"
+            :title="deleting ? '删除中...' : '删除 Server'"
             :disabled="deleting"
             @click="removeSelectedServer"
           >
-            {{ deleting ? '删除中...' : '删除 Server' }}
+            <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
           </button>
         </div>
       </form>
@@ -147,6 +156,11 @@
 </template>
 
 <script setup lang="ts">
+import addCircleBold from '@iconify-icons/solar/add-circle-bold'
+import disketteBold from '@iconify-icons/solar/diskette-bold'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalistic-bold'
+import { Icon } from '@iconify/vue'
 import { ref, watch } from 'vue'
 import type { McpServerConfig } from '@garlic-claw/shared'
 import { useMcpConfigManagement } from '@/features/tools/composables/use-mcp-config-management'
@@ -427,10 +441,92 @@ function envCount(env: Record<string, string>): number {
 
 .mcp-env-row {
   align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mcp-env-inputs {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 8px 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid rgba(133, 163, 199, 0.14);
+  border-radius: 12px;
+  background: rgba(9, 17, 29, 0.42);
+  align-items: center;
+}
+
+.mcp-env-inputs input {
+  grid-column: 1;
+  border-radius: 8px;
+  background: rgba(11, 21, 35, 0.9);
+  padding: 0.65rem 0.82rem;
+}
+
+.mcp-env-inputs button {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+.refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 10px;
+}
+
+.refresh-button .refresh-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.refresh-label {
+  font-size: 0.9rem;
+}
+
+.action-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.hero-action .action-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.action-icon-button .action-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.danger-icon-button {
+  color: #ffd1d1;
 }
 
 .danger {
   color: #ffd1d1;
+}
+
+.mcp-config-panel .action-icon,
+.mcp-config-panel .refresh-icon {
+  width: 18px;
+  height: 18px;
 }
 
 @media (max-width: 1080px) {
