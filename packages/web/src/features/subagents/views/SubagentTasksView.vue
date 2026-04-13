@@ -8,7 +8,14 @@
           <p>统一查看插件发起的后台子代理任务、完成态结果和消息回写状态。</p>
         </div>
         <div class="task-hero-side">
-          <button type="button" class="hero-action" @click="refreshAll()">刷新全部</button>
+          <button
+            type="button"
+            class="hero-action icon-only"
+            title="刷新全部"
+            @click="refreshAll()"
+          >
+            <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
+          </button>
           <div class="hero-note">
             <span class="hero-note-label">当前任务面</span>
             <strong>{{ heroHeadline }}</strong>
@@ -40,7 +47,14 @@
           <h2>任务账本</h2>
           <p>按插件、模型和状态查看后台子代理任务，不再让结果只停留在运行时内存里。</p>
         </div>
-        <button type="button" class="ghost-button" @click="refreshAll()">刷新</button>
+        <button
+          type="button"
+          class="ghost-button icon-only"
+          title="刷新"
+          @click="refreshAll()"
+        >
+          <Icon :icon="refreshBold" class="ghost-button-icon" aria-hidden="true" />
+        </button>
       </div>
 
       <div class="panel-controls">
@@ -50,48 +64,7 @@
           type="text"
           placeholder="搜索插件、请求摘要、结果摘要或模型"
         >
-        <div class="filter-chips">
-          <button
-            type="button"
-            class="filter-chip"
-            :class="{ active: filter === 'all' }"
-            @click="filter = 'all'"
-          >
-            全部
-          </button>
-          <button
-            type="button"
-            class="filter-chip"
-            :class="{ active: filter === 'running' }"
-            @click="filter = 'running'"
-          >
-            运行中
-          </button>
-          <button
-            type="button"
-            class="filter-chip"
-            :class="{ active: filter === 'completed' }"
-            @click="filter = 'completed'"
-          >
-            已完成
-          </button>
-          <button
-            type="button"
-            class="filter-chip"
-            :class="{ active: filter === 'error' }"
-            @click="filter = 'error'"
-          >
-            失败
-          </button>
-          <button
-            type="button"
-            class="filter-chip"
-            :class="{ active: filter === 'writeback-failed' }"
-            @click="filter = 'writeback-failed'"
-          >
-            回写失败
-          </button>
-        </div>
+        <SegmentedSwitch v-model="filter" :options="filterOptions" />
       </div>
 
       <div class="sidebar-results">
@@ -182,6 +155,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Icon } from '@iconify/vue'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import { usePluginSubagentTasks } from '../composables/use-plugin-subagent-tasks'
 
 const {
@@ -246,6 +222,14 @@ const overviewCards = computed(() => [
     tone: errorTaskCount.value > 0 ? 'warning' : 'neutral',
   },
 ])
+
+const filterOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'running', label: '运行中' },
+  { value: 'completed', label: '已完成' },
+  { value: 'error', label: '失败' },
+  { value: 'writeback-failed', label: '回写失败' },
+]
 
 function statusLabel(status: 'queued' | 'running' | 'completed' | 'error') {
   switch (status) {
@@ -430,6 +414,22 @@ function formatTime(iso: string) {
 
 .link-button {
   align-self: flex-start;
+}
+
+.hero-action.icon-only,
+.ghost-button.icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.hero-action-icon,
+.ghost-button-icon {
+  width: 18px;
+  height: 18px;
 }
 
 @media (max-width: 980px) {

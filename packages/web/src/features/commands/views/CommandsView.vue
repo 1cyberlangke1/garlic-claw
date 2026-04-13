@@ -8,7 +8,14 @@
           <p>统一查看插件消息命令、冲突触发词和对应插件治理入口。</p>
         </div>
         <div class="command-hero-side">
-          <button type="button" class="hero-action" @click="refreshAll()">刷新全部</button>
+          <button
+            type="button"
+            class="hero-action icon-only"
+            title="刷新全部"
+            @click="refreshAll()"
+          >
+            <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
+          </button>
           <div class="hero-note">
             <span class="hero-note-label">当前命令面</span>
             <strong>{{ heroHeadline }}</strong>
@@ -41,7 +48,14 @@
             <h2>命令目录</h2>
             <p>按插件查看 slash 命令、别名、保护状态和冲突提示。</p>
           </div>
-          <button type="button" class="ghost-button" @click="refreshAll()">刷新</button>
+          <button
+            type="button"
+            class="ghost-button icon-only"
+            title="刷新"
+            @click="refreshAll()"
+          >
+            <Icon :icon="refreshBold" class="ghost-button-icon" aria-hidden="true" />
+          </button>
         </div>
 
         <div class="panel-controls">
@@ -51,40 +65,7 @@
             type="text"
             placeholder="搜索插件、命令、别名或说明"
           >
-          <div class="filter-chips">
-            <button
-              type="button"
-              class="filter-chip"
-              :class="{ active: filter === 'all' }"
-              @click="filter = 'all'"
-            >
-              全部
-            </button>
-            <button
-              type="button"
-              class="filter-chip"
-              :class="{ active: filter === 'conflict' }"
-              @click="filter = 'conflict'"
-            >
-              冲突
-            </button>
-            <button
-              type="button"
-              class="filter-chip"
-              :class="{ active: filter === 'protected' }"
-              @click="filter = 'protected'"
-            >
-              受保护
-            </button>
-            <button
-              type="button"
-              class="filter-chip"
-              :class="{ active: filter === 'offline' }"
-              @click="filter = 'offline'"
-            >
-              离线
-            </button>
-          </div>
+          <SegmentedSwitch v-model="filter" :options="filterOptions" />
         </div>
 
         <div class="sidebar-results">
@@ -203,6 +184,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Icon } from '@iconify/vue'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import { usePluginCommandManagement } from '../composables/use-plugin-command-management'
 
 const {
@@ -257,6 +241,13 @@ const overviewCards = computed(() => [
     tone: attentionCommandCount.value > 0 ? 'warning' : 'neutral',
   },
 ])
+
+const filterOptions = [
+  { value: 'all', label: '全部' },
+  { value: 'conflict', label: '冲突' },
+  { value: 'protected', label: '受保护' },
+  { value: 'offline', label: '离线' },
+]
 
 function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   return source === 'manifest' ? 'manifest' : 'hook filter'
@@ -405,6 +396,22 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 
 .link-button {
   align-self: flex-start;
+}
+
+.hero-action.icon-only,
+.ghost-button.icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.hero-action-icon,
+.ghost-button-icon {
+  width: 18px;
+  height: 18px;
 }
 
 @media (max-width: 1100px) {
