@@ -112,6 +112,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=False,
             verify_images='docker-compose.yml',
             test=False,
+            kill_ports=None,
+            kill_managed_ports=False,
             action=None,
             prod=False,
             tail_logs=False,
@@ -141,6 +143,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=False,
             verify_images=None,
             test=True,
+            kill_ports=None,
+            kill_managed_ports=False,
             action=None,
             prod=False,
             tail_logs=False,
@@ -158,6 +162,68 @@ class DevLauncherEntryTests(unittest.TestCase):
         self.assertEqual(result, 0)
         runScriptTests.assert_called_once_with()
 
+    def testMainRoutesKillManagedPortsBeforeNormalActions(self) -> None:
+        """`--kill-managed-ports` 应优先走受管端口清理分支。"""
+        launcher = loadModule('dev_launcher_main_kill_managed_ports', LAUNCHER_PATH)
+        args = argparse.Namespace(
+            start=False,
+            restart=False,
+            stop=False,
+            status=False,
+            verify_images=None,
+            test=False,
+            kill_ports=None,
+            kill_managed_ports=True,
+            action=None,
+            prod=False,
+            tail_logs=False,
+            log=False,
+            logs=False,
+            build=False,
+        )
+
+        with (
+            mock.patch.object(launcher, 'parseArgs', return_value=args),
+            mock.patch.object(launcher, 'killManagedPorts', return_value=0) as killManagedPorts,
+            mock.patch.object(launcher.dev_runtime, '启动开发服务') as startDev,
+        ):
+            result = launcher.main()
+
+        self.assertEqual(result, 0)
+        killManagedPorts.assert_called_once_with([23330, 23331, 23333])
+        startDev.assert_not_called()
+
+    def testMainRoutesKillPortsBeforeNormalActions(self) -> None:
+        """`--kill-port` 应优先走按端口清理分支。"""
+        launcher = loadModule('dev_launcher_main_kill_ports', LAUNCHER_PATH)
+        args = argparse.Namespace(
+            start=False,
+            restart=False,
+            stop=False,
+            status=False,
+            verify_images=None,
+            test=False,
+            kill_ports=[23330, 23333],
+            kill_managed_ports=False,
+            action=None,
+            prod=False,
+            tail_logs=False,
+            log=False,
+            logs=False,
+            build=False,
+        )
+
+        with (
+            mock.patch.object(launcher, 'parseArgs', return_value=args),
+            mock.patch.object(launcher, 'killManagedPorts', return_value=0) as killManagedPorts,
+            mock.patch.object(launcher.dev_runtime, '启动开发服务') as startDev,
+        ):
+            result = launcher.main()
+
+        self.assertEqual(result, 0)
+        killManagedPorts.assert_called_once_with([23330, 23333])
+        startDev.assert_not_called()
+
     def testMainRoutesActionTestRunsScriptTests(self) -> None:
         """位置动作 `test` 应直接触发脚本回归测试入口。"""
         launcher = loadModule('dev_launcher_main_action_test', LAUNCHER_PATH)
@@ -168,6 +234,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=False,
             verify_images=None,
             test=False,
+            kill_ports=None,
+            kill_managed_ports=False,
             action='test',
             prod=False,
             tail_logs=False,
@@ -195,6 +263,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=False,
             verify_images=None,
             test=False,
+            kill_ports=None,
+            kill_managed_ports=False,
             action=None,
             prod=True,
             tail_logs=False,
@@ -224,6 +294,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=True,
             verify_images=None,
             test=False,
+            kill_ports=None,
+            kill_managed_ports=False,
             action=None,
             prod=True,
             tail_logs=False,
@@ -251,6 +323,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=False,
             verify_images=None,
             test=False,
+            kill_ports=None,
+            kill_managed_ports=False,
             action=None,
             prod=False,
             tail_logs=False,
@@ -280,6 +354,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=True,
             verify_images=None,
             test=False,
+            kill_ports=None,
+            kill_managed_ports=False,
             action=None,
             prod=False,
             tail_logs=False,
@@ -309,6 +385,8 @@ class DevLauncherEntryTests(unittest.TestCase):
             status=False,
             verify_images=None,
             test=False,
+            kill_ports=None,
+            kill_managed_ports=False,
             action='start',
             prod=False,
             tail_logs=True,
@@ -474,6 +552,57 @@ class DevRuntimeTests(unittest.TestCase):
 
 class ProcessRuntimeTests(unittest.TestCase):
     """公共脚本工具回归测试。"""
+
+    def testKillPortsOnlyStopsSpecifiedPorts(self) -> None:
+        """按端口清理应只处理传入端口，并对重复 PID 去重。"""
+        common = loadModule('process_runtime_kill_ports', COMMON_PATH)
+        killEvents: list[tuple[str, int]] = []
+
+        def fakeKillPid(pid: int, source: str) -> bool:
+            killEvents.append((source, pid))
+            return True
+
+        def fakeFindPortPids(port: int) -> list[int]:
+            mapping = {
+                23330: [100, 200],
+                23331: [200, 300],
+            }
+            return mapping.get(port, [])
+
+        stopped = common.killPorts(
+            [23330, 23331],
+            killPid=fakeKillPid,
+            findPortPidsFn=fakeFindPortPids,
+        )
+
+        self.assertEqual(
+            killEvents,
+            [
+                ('port:23330', 100),
+                ('port:23330', 200),
+                ('port:23331', 300),
+            ],
+        )
+        self.assertEqual(stopped, killEvents)
+
+    def testStopServicesHonorsExplicitEmptyPortList(self) -> None:
+        """统一关闭逻辑在传入空端口列表时不应回退到默认端口。"""
+        common = loadModule('process_runtime_stop_services_empty_ports', COMMON_PATH)
+        killEvents: list[tuple[str, int]] = []
+
+        def fakeKillPid(pid: int, source: str) -> bool:
+            killEvents.append((source, pid))
+            return True
+
+        stopped = common.stopServices(
+            state={'services': {'backend_app': {'pid': 200}}},
+            ports=[],
+            killPid=fakeKillPid,
+            findPortPidsFn=lambda _port: [999],
+        )
+
+        self.assertEqual(killEvents, [('backend_app', 200)])
+        self.assertEqual(stopped, [('backend_app', 200)])
 
     def testWindowsPidProbeTreatsAccessDeniedAsStillRunning(self) -> None:
         """Windows 下 OpenProcess 返回 Access Denied 时应视为进程仍存在。"""

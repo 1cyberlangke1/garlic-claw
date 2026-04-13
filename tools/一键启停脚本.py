@@ -84,6 +84,19 @@ def runScriptTests() -> int:
     return result.returncode
 
 
+def killManagedPorts(ports: list[int]) -> int:
+    normalizedPorts = list(dict.fromkeys(ports))
+    killed = runtime.killPorts(normalizedPorts)
+    if not killed:
+        print(f"未发现占用端口 {', '.join(str(port) for port in normalizedPorts)} 的监听进程。")
+        return 0
+
+    print("已按端口清理以下进程：")
+    for source, pid in killed:
+        print(f"- {source} -> PID {pid}")
+    return 0
+
+
 def parseArgs() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Garlic Claw 开发/生产环境一键启停脚本")
     group = parser.add_mutually_exclusive_group()
@@ -117,6 +130,18 @@ def parseArgs() -> argparse.Namespace:
         action="store_true",
         help="运行脚本回归测试",
     )
+    parser.add_argument(
+        "--kill-port",
+        type=int,
+        action="append",
+        dest="kill_ports",
+        help="按端口清理监听进程，可重复传入多个端口",
+    )
+    parser.add_argument(
+        "--kill-managed-ports",
+        action="store_true",
+        help="清理受管开发端口（23330/23331/23333）的监听进程",
+    )
     parser.add_argument("action", nargs="?", help="可选动作")
     parser.add_argument(
         "--prod",
@@ -140,6 +165,10 @@ def main() -> int:
         return runScriptTests()
     if args.verify_images:
         return verifyImages(Path(args.verify_images))
+    if args.kill_managed_ports:
+        return killManagedPorts(list(DEFAULT_PORTS))
+    if args.kill_ports:
+        return killManagedPorts(args.kill_ports)
 
     action = args.action or "restart"
     if action == "test":

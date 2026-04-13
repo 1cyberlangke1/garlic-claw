@@ -78,8 +78,10 @@ cp .env.example .env
 - JWT 配置
 - 启动期 bootstrap 管理员账号
 - 运行时管理员覆盖
+- 远程插件接入覆盖（可选）
 
 不再通过环境变量配置 AI provider。
+如果 MCP 或自定义 provider 需要从环境变量读取密钥，再按需自行追加到 `.env`。
 
 ### 2. AI 配置：统一放在 `config/ai-settings.json`
 
