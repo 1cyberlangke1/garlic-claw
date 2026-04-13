@@ -829,7 +829,8 @@ def stopServices(
     """
     killPid = killPid or terminateProcess
     findPortPidsFn = findPortPidsFn or findPortPids
-    ports = ports or list(DEFAULT_PORTS)
+    if ports is None:
+        ports = list(DEFAULT_PORTS)
 
     services = state.get('services', {})
     stopped: list[tuple[str, int]] = []
@@ -856,6 +857,43 @@ def stopServices(
                 seenPids.add(pid)
                 stopped.append((source, pid))
 
+    return stopped
+
+
+def killPorts(
+    ports: list[int],
+    *,
+    killPid: Callable[[int, str], bool] | None = None,
+    findPortPidsFn: Callable[[int], list[int]] | None = None,
+) -> list[tuple[str, int]]:
+    """只按指定端口清理监听进程。
+
+    输入:
+    - ports: 需要清理的端口列表
+    - killPid: 可注入的 PID 关闭函数，便于测试
+    - findPortPidsFn: 可注入的端口查询函数，便于测试
+
+    输出:
+    - 实际尝试关闭的 `(source, pid)` 列表
+
+    预期行为:
+    - 不依赖状态文件
+    - 仅处理传入端口上的监听 PID
+    - 对重复 PID 去重，避免多端口映射到同一进程时重复关闭
+    """
+    killPid = killPid or terminateProcess
+    findPortPidsFn = findPortPidsFn or findPortPids
+
+    stopped: list[tuple[str, int]] = []
+    seenPids: set[int] = set()
+    for port in ports:
+        for pid in findPortPidsFn(port):
+            if pid <= 0 or pid in seenPids:
+                continue
+            source = f'port:{port}'
+            if killPid(pid, source):
+                seenPids.add(pid)
+                stopped.append((source, pid))
     return stopped
 
 
