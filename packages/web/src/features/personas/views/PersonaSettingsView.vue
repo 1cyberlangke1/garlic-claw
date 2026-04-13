@@ -295,7 +295,10 @@ const sourceLabelMap = {
 }
 
 .persona-grid {
+  display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
+  gap: 18px;
+  min-height: 0;
 }
 
 .section-header {
@@ -307,9 +310,13 @@ const sourceLabelMap = {
   color: var(--text-muted);
 }
 
+.persona-list-card {
+  align-content: start;
+}
+
 .persona-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .persona-list-item {
