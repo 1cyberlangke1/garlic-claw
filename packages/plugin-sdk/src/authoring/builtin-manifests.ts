@@ -3,9 +3,7 @@ import type {
   PluginManifest,
   PluginRouteDescriptor,
 } from '@garlic-claw/shared';
-import {
-  CONVERSATION_TITLE_CONFIG_FIELDS,
-} from './conversation-helpers';
+import { CONVERSATION_TITLE_CONFIG_FIELDS } from './conversation-helpers';
 import {
   PERSONA_ROUTER_CONFIG_FIELDS,
   PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY,
@@ -24,6 +22,7 @@ export const MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX = '与此用户相关的记忆
 export const KB_CONTEXT_DEFAULT_LIMIT = 3;
 export const KB_CONTEXT_DEFAULT_PROMPT_PREFIX = '与当前问题相关的系统知识';
 export const SUBAGENT_DELEGATE_DEFAULT_MAX_STEPS = 4;
+
 export const MEMORY_CONTEXT_CONFIG_FIELDS = [
   {
     key: 'limit',
@@ -147,8 +146,7 @@ export const CORE_TOOLS_MANIFEST_TOOLS: NonNullable<PluginManifest['tools']> = [
 
 const AUTOMATION_CREATE_TOOL_CAPABILITY: PluginCapability = {
   name: 'create_automation',
-  description:
-    '创建自动化规则。支持 cron 计划（例如 "5m"、"1h"、"30s"）和设备命令。当用户要求设置重复任务或自动化操作时使用此工具。',
+  description: '创建自动化规则。支持 cron 计划（例如 "5m"、"1h"、"30s"）和设备命令。当用户要求设置重复任务或自动化操作时使用此工具。',
   parameters: {
     name: {
       type: 'string',
