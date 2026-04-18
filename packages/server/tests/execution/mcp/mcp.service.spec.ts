@@ -110,4 +110,12 @@ describe('McpService', () => {
     await expect(service.callTool({ serverName: 'weather', toolName: 'get_forecast', arguments: {} })).rejects.toThrow('MCP 服务器 "weather" 已禁用');
     expect(client.callTool).not.toHaveBeenCalled();
   });
+
+  it('disconnects all MCP clients when the module is destroyed', async () => {
+    const disconnectAllSpy = jest.spyOn(service as any, 'disconnectAllClients').mockResolvedValue(undefined);
+
+    await service.onModuleDestroy();
+
+    expect(disconnectAllSpy).toHaveBeenCalledTimes(1);
+  });
 });

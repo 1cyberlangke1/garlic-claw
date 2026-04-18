@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { McpConfigSnapshot, JsonObject, JsonValue, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { McpConfigStoreService } from './mcp-config-store.service';
 
@@ -18,13 +18,15 @@ const MCP_TOOL_CALL_TIMEOUT = 10000;
 const MCP_MAX_RETRIES = 2;
 
 @Injectable()
-export class McpService implements OnModuleInit {
+export class McpService implements OnModuleDestroy, OnModuleInit {
   readonly clients = new Map<string, McpClientSession>();
   readonly serverRecords = new Map<string, McpServerRuntimeRecord>();
 
   constructor(private readonly configService: ConfigService, private readonly mcpConfigStoreService: McpConfigStoreService) {}
 
   async onModuleInit(): Promise<void> { await this.reloadServersFromConfig(); }
+
+  async onModuleDestroy(): Promise<void> { await this.disconnectAllClients(); }
 
   getSnapshot(): McpConfigSnapshot { return this.mcpConfigStoreService.getSnapshot(); }
 
