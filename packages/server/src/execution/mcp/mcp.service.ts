@@ -3,6 +3,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { McpConfigSnapshot, JsonObject, JsonValue, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
 import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as path from 'node:path';
 import { McpConfigStoreService } from './mcp-config-store.service';
 
 type McpServerHealthStatus = 'healthy' | 'error' | 'unknown';
@@ -125,7 +126,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     for (let attempt = 1; attempt <= MCP_MAX_RETRIES; attempt++) {
       try {
         const client = new Client({ name: `garlic-claw-${input.name}`, version: '0.1.0' }, { capabilities: {} });
-        await withTimeout(client.connect(new StdioClientTransport({ command: input.config.command, args: input.config.args, env: this.buildTransportEnv(input.config) })), MCP_CONNECT_TIMEOUT, `连接 MCP 服务器 "${input.name}"`);
+        await withTimeout(client.connect(new StdioClientTransport(this.buildTransportConfig(input.config))), MCP_CONNECT_TIMEOUT, `连接 MCP 服务器 "${input.name}"`);
         const toolsResponse = await withTimeout(client.listTools(), MCP_TOOL_CALL_TIMEOUT, `获取 MCP 服务器 "${input.name}" 工具列表`) as McpToolListResponse;
         return { client, tools: (toolsResponse.tools ?? []).map((tool): McpToolDescriptor => ({ serverName: input.name, name: tool.name, description: tool.description, inputSchema: tool.inputSchema })) };
       } catch (error) {
@@ -142,6 +143,14 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   }
 
   private async closeClient(client: McpClientSession): Promise<void> { try { await client.close(); } catch { /* ignore close cleanup errors */ } }
+
+  private buildTransportConfig(config: McpServerConfig): { command: string; args: string[]; env: Record<string, string> } {
+    return {
+      command: process.execPath,
+      args: [resolveMcpStdioLauncherPath(), config.command, ...config.args],
+      env: this.buildTransportEnv(config),
+    };
+  }
 
   private buildTransportEnv(config: McpServerConfig): Record<string, string> {
     const transportEnv = Object.fromEntries(Object.entries(process.env).flatMap(([key, value]) => value !== undefined ? [[key, value]] : [])) as Record<string, string>;
@@ -189,4 +198,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: strin
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`操作超时: ${operation} (${timeoutMs}ms)`)), timeoutMs)),
   ]);
+}
+
+function resolveMcpStdioLauncherPath(): string {
+  return path.join(__dirname, 'mcp-stdio-launcher.js');
 }

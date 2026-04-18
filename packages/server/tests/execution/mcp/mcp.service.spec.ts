@@ -118,4 +118,19 @@ describe('McpService', () => {
 
     expect(disconnectAllSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('routes stdio MCP servers through the local launcher process', () => {
+    const config = createServer('weather');
+
+    const transport = (service as any).buildTransportConfig(config) as {
+      args: string[];
+      command: string;
+      env: Record<string, string>;
+    };
+
+    expect(transport.command).toBe(process.execPath);
+    expect(transport.args[0]).toMatch(/mcp-stdio-launcher\.js$/);
+    expect(transport.args.slice(1)).toEqual(['npx', '-y', 'weather-mcp']);
+    expect(typeof transport.env).toBe('object');
+  });
 });

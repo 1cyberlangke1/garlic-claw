@@ -110,6 +110,7 @@ describe('AiModelExecutionService', () => {
     expect(mockCreateOpenAI).toHaveBeenCalledWith({
       apiKey: 'test-openai-key',
       baseURL: 'https://api.openai.com/v1',
+      fetch: expect.any(Function),
       name: 'openai',
     });
     expect(mockOpenAiChat).toHaveBeenCalledWith('gpt-5.4');
@@ -385,6 +386,59 @@ describe('AiModelExecutionService', () => {
       },
       system: 'You are streaming',
     }));
+  });
+
+  it('normalizes streamed tool calls for openai-compatible providers when the endpoint omits id and type', async () => {
+    const service = createService();
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => new Response(
+      [
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"","tool_calls":[{"function":{"name":"weather_search","arguments":""}}]}}]}\n',
+        '\n',
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"city\\":\\"Shanghai\\"}"}}]}}]}\n',
+        '\n',
+        'data: [DONE]\n',
+        '\n',
+      ].join(''),
+      {
+        headers: {
+          'content-type': 'text/event-stream',
+        },
+        status: 200,
+      },
+    )) as typeof fetch;
+
+    try {
+      await service.streamText({
+        messages: [
+          {
+            content: '帮我查天气',
+            role: 'user',
+          },
+        ],
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+      });
+
+      const createOpenAiCalls = mockCreateOpenAI.mock.calls as unknown as Array<
+        [{ fetch?: typeof fetch }]
+      >;
+      const openAiOptions = createOpenAiCalls[0]?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      expect(typeof openAiOptions?.fetch).toBe('function');
+
+      const response = await openAiOptions?.fetch?.('https://example.com/v1/chat/completions');
+      const content = await response?.text();
+
+      expect(content).toContain('"type":"function"');
+      expect(content).toContain('"name":"weather_search"');
+      expect(content).toContain('"arguments":"{\\"city\\":\\"Shanghai\\"}"');
+      expect(content).toContain('"index":0');
+      expect(content).toMatch(/"id":"gc-openai-tool-call-[^"]+"/);
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });
 

@@ -38,6 +38,11 @@ interface AiExecutionTarget {
 
 export interface AiModelExecutionStreamResult { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string; }
 
+type OpenAiCompatibleToolCallIdState = {
+  generatedIds: Map<string, string>;
+  streamId: string;
+};
+
 const localRequire = createRequire(__filename);
 
 @Injectable()
@@ -194,7 +199,12 @@ export class AiModelExecutionService {
       };
       return createGoogleGenerativeAI({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl })(target.modelId) as unknown as LanguageModel;
     }
-    return createOpenAI({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl, name: target.provider.id }).chat(target.modelId) as unknown as LanguageModel;
+    return createOpenAI({
+      apiKey: target.provider.apiKey as string,
+      baseURL: target.provider.baseUrl,
+      fetch: createOpenAiCompatibleFetch(target.provider.id),
+      name: target.provider.id,
+    }).chat(target.modelId) as unknown as LanguageModel;
   }
 }
 
@@ -269,4 +279,187 @@ function toAiSdkImageInput(image: string): string | ArrayBuffer {
   if (!matched) {throw new Error('Unsupported image data URL');}
   const binary = Buffer.from(matched[2], 'base64');
   return binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
+}
+
+function createOpenAiCompatibleFetch(providerId: string): typeof fetch {
+  const baseFetch = globalThis.fetch.bind(globalThis);
+  return async (input, init) => {
+    const response = await baseFetch(input, init);
+    return normalizeOpenAiCompatibleStreamResponse(response, providerId);
+  };
+}
+
+function normalizeOpenAiCompatibleStreamResponse(
+  response: Response,
+  providerId: string,
+): Response {
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  if (!response.body || !contentType.includes('text/event-stream')) {
+    return response;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+
+  const state: OpenAiCompatibleToolCallIdState = {
+    generatedIds: new Map<string, string>(),
+    streamId: sanitizeOpenAiCompatibleIdFragment(`${providerId}-${crypto.randomUUID()}`),
+  };
+  const reader = response.body.getReader();
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let buffered = '';
+
+  const transformedBody = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        const tail = buffered + decoder.decode();
+        if (tail.length > 0) {
+          controller.enqueue(encoder.encode(normalizeOpenAiCompatibleSseLines(tail, state, true)));
+        }
+        controller.close();
+        return;
+      }
+
+      buffered += decoder.decode(value, { stream: true });
+      const lastNewlineIndex = buffered.lastIndexOf('\n');
+      if (lastNewlineIndex < 0) {
+        return;
+      }
+
+      const completeChunk = buffered.slice(0, lastNewlineIndex + 1);
+      buffered = buffered.slice(lastNewlineIndex + 1);
+      controller.enqueue(
+        encoder.encode(normalizeOpenAiCompatibleSseLines(completeChunk, state, false)),
+      );
+    },
+    async cancel(reason) {
+      await reader.cancel(reason);
+    },
+  });
+
+  return new Response(transformedBody, {
+    headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
+}
+
+function normalizeOpenAiCompatibleSseLines(
+  chunk: string,
+  state: OpenAiCompatibleToolCallIdState,
+  flushTail: boolean,
+): string {
+  const lines = chunk.split('\n');
+  if (!flushTail && !chunk.endsWith('\n')) {
+    lines.pop();
+  }
+
+  return lines.map((line) => normalizeOpenAiCompatibleSseLine(line, state)).join('\n');
+}
+
+function normalizeOpenAiCompatibleSseLine(
+  line: string,
+  state: OpenAiCompatibleToolCallIdState,
+): string {
+  const trimmedLine = line.endsWith('\r') ? line.slice(0, -1) : line;
+  if (!trimmedLine.startsWith('data:')) {
+    return trimmedLine;
+  }
+
+  const payload = trimmedLine.slice(5).trimStart();
+  if (!payload || payload === '[DONE]') {
+    return `data: ${payload}`;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return trimmedLine;
+  }
+
+  const normalized = normalizeOpenAiCompatibleChunkPayload(parsed, state);
+  return normalized === parsed
+    ? trimmedLine
+    : `data: ${JSON.stringify(normalized)}`;
+}
+
+function normalizeOpenAiCompatibleChunkPayload(
+  payload: unknown,
+  state: OpenAiCompatibleToolCallIdState,
+): unknown {
+  if (!isRecord(payload) || !Array.isArray(payload.choices)) {
+    return payload;
+  }
+
+  let changed = false;
+  const nextChoices = payload.choices.map((choice, choiceIndex) => {
+    if (!isRecord(choice) || !isRecord(choice.delta) || !Array.isArray(choice.delta.tool_calls)) {
+      return choice;
+    }
+
+    let choiceChanged = false;
+    const nextToolCalls = choice.delta.tool_calls.map((toolCall, toolIndex) => {
+      if (!isRecord(toolCall)) {
+        return toolCall;
+      }
+
+      let nextToolCall = toolCall;
+      const nextIndex = typeof nextToolCall.index === 'number' ? nextToolCall.index : toolIndex;
+      if (nextToolCall.index !== nextIndex) {
+        nextToolCall = { ...nextToolCall, index: nextIndex };
+        choiceChanged = true;
+      }
+
+      if (isRecord(nextToolCall.function) && nextToolCall.type !== 'function') {
+        nextToolCall = nextToolCall === toolCall
+          ? { ...nextToolCall, type: 'function' }
+          : { ...nextToolCall, type: 'function' };
+        choiceChanged = true;
+      }
+
+      if (typeof nextToolCall.id !== 'string' || nextToolCall.id.trim().length === 0) {
+        const toolCallKey = `${choiceIndex}:${nextIndex}`;
+        const nextId = state.generatedIds.get(toolCallKey)
+          ?? `gc-openai-tool-call-${state.streamId}-${choiceIndex}-${nextIndex}`;
+        state.generatedIds.set(toolCallKey, nextId);
+        nextToolCall = nextToolCall === toolCall
+          ? { ...nextToolCall, id: nextId }
+          : { ...nextToolCall, id: nextId };
+        choiceChanged = true;
+      }
+
+      return nextToolCall;
+    });
+
+    if (!choiceChanged) {
+      return choice;
+    }
+
+    changed = true;
+    return {
+      ...choice,
+      delta: {
+        ...choice.delta,
+        tool_calls: nextToolCalls,
+      },
+    };
+  });
+
+  return changed
+    ? {
+        ...payload,
+        choices: nextChoices,
+      }
+    : payload;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sanitizeOpenAiCompatibleIdFragment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/g, '-');
 }
