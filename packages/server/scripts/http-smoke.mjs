@@ -52,7 +52,7 @@ async function main() {
   const skillRoot = path.join(SERVER_DIR, 'skills', SKILL_DIR_NAME);
   const fakeOpenAi = await startFakeOpenAiServer();
   const smokeSkillId = 'project/.smoke-http-flow';
-  const mcpScriptPath = path.join(tempDir, 'failing-mcp.cjs');
+  const mcpScriptPath = path.join(tempDir, 'working-mcp.cjs');
   const remotePluginScriptPath = path.join(tempDir, 'remote-route-plugin.cjs');
   const serverFiles = {
     aiSettingsPath: path.join(tempDir, 'ai-settings.server.json'),
@@ -99,7 +99,7 @@ async function main() {
       assertWebRoutesMatchServerRoutes(serverRoutes, webRoutes);
     });
     await prepareProjectSkill(skillRoot);
-    await prepareMcpFailScript(mcpScriptPath);
+    await prepareWorkingMcpScript(mcpScriptPath);
     await prepareRemoteRoutePluginScript(remotePluginScriptPath);
 
     if (cli.proxyOrigin) {
@@ -109,6 +109,7 @@ async function main() {
     } else {
       console.log('-> build server');
       await runTypescriptBuild();
+      await verifyRequiredBuildArtifacts();
 
       console.log('-> prisma db push');
       await runCommand(process.execPath, [
@@ -937,6 +938,23 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(snapshot.servers.some((entry) => entry.name === state.mcpName), 'Expected MCP list to include created server');
   });
 
+  await runStep('tools.overview.after-mcp-create', async () => {
+    const overview = await getJson(apiBase, '/tools/overview');
+    ensure(
+      overview.sources.some((entry) => entry.kind === 'mcp' && entry.id === state.mcpName && entry.health === 'healthy' && entry.totalTools > 0),
+      'Expected tools overview to include a healthy MCP source with discovered tools',
+    );
+    ensure(
+      overview.tools.some((entry) => entry.sourceKind === 'mcp' && entry.sourceId === state.mcpName && entry.callName === `${state.mcpName}__echo_weather`),
+      'Expected tools overview to include the discovered MCP tool',
+    );
+  });
+
+  await runStep('tools.source.action.mcp.health-check', async () => {
+    const result = await postJson(apiBase, `/tools/sources/mcp/${encodeURIComponent(state.mcpName)}/actions/health-check`);
+    ensure(result.accepted === true && result.message.includes('passed'), 'Expected MCP source health-check to succeed');
+  });
+
   await runStep('mcp.servers.put', async () => {
     const server = await putJson(apiBase, `/mcp/servers/${state.mcpName}`, {
       body: {
@@ -1153,11 +1171,39 @@ async function prepareProjectSkill(skillRoot) {
   ].join('\n'), 'utf8');
 }
 
-async function prepareMcpFailScript(filePath) {
+async function prepareWorkingMcpScript(filePath) {
   await fsPromises.writeFile(filePath, [
-    'process.stdin.resume();',
-    "setTimeout(() => process.exit(1), 50);",
+    "const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');",
+    "const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');",
+    "const z = require('zod/v4');",
+    "const server = new McpServer({ name: 'smoke-working-mcp', version: '1.0.0' });",
+    "server.registerTool('echo_weather', {",
+    "  description: 'Echo weather city for smoke verification',",
+    "  inputSchema: { city: z.string() },",
+    "}, async ({ city }) => ({",
+    "  content: [{ type: 'text', text: `weather:${city}` }],",
+    '}));',
+    'const transport = new StdioServerTransport();',
+    'transport.onerror = (error) => {',
+    "  if (error && (error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED')) { process.exit(0); }",
+    '};',
+    'server.connect(transport).catch((error) => {',
+    '  console.error(error);',
+    '  process.exit(1);',
+    '});',
   ].join('\n'), 'utf8');
+}
+
+async function verifyRequiredBuildArtifacts() {
+  const requiredFiles = [
+    path.join(SERVER_DIR, 'dist', 'src', 'main.js'),
+    path.join(SERVER_DIR, 'dist', 'src', 'execution', 'mcp', 'mcp-stdio-launcher.js'),
+  ];
+
+  for (const filePath of requiredFiles) {
+    const exists = await fsPromises.stat(filePath).then(() => true).catch(() => false);
+    ensure(exists, `Expected build artifact to exist: ${path.relative(SERVER_DIR, filePath)}`);
+  }
 }
 
 async function prepareRemoteRoutePluginScript(filePath) {

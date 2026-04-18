@@ -3,6 +3,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { McpConfigSnapshot, JsonObject, JsonValue, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
 import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { McpConfigStoreService } from './mcp-config-store.service';
 
@@ -194,12 +195,35 @@ function readMcpToolParameters(schema: unknown): Record<string, PluginParamSchem
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null; }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`操作超时: ${operation} (${timeoutMs}ms)`)), timeoutMs)),
-  ]);
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`操作超时: ${operation} (${timeoutMs}ms)`));
+    }, timeoutMs);
+    timer.unref();
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function resolveMcpStdioLauncherPath(): string {
-  return path.join(__dirname, 'mcp-stdio-launcher.js');
+  const directPath = path.join(__dirname, 'mcp-stdio-launcher.js');
+  if (fs.existsSync(directPath)) {
+    return directPath;
+  }
+
+  const distPath = path.resolve(__dirname, '../../../dist/src/execution/mcp/mcp-stdio-launcher.js');
+  if (fs.existsSync(distPath)) {
+    return distPath;
+  }
+
+  return directPath;
 }

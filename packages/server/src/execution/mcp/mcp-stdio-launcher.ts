@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 let child: ChildProcessWithoutNullStreams | null = null;
@@ -10,7 +12,16 @@ function main(): void {
     return;
   }
 
-  child = spawn(command, args, {
+  let launchTarget: { command: string; args: string[] };
+  try {
+    launchTarget = resolveLaunchTarget(command, args);
+  } catch (error) {
+    reportLaunchFailure(error);
+    process.exitCode = 1;
+    return;
+  }
+
+  child = spawn(launchTarget.command, launchTarget.args, {
     env: process.env,
     shell: false,
     stdio: 'pipe',
@@ -21,7 +32,8 @@ function main(): void {
   bindChildOutput();
   bindSignals();
 
-  child.once('error', () => {
+  child.once('error', (error) => {
+    reportLaunchFailure(error);
     shutdown(1);
   });
   child.once('exit', (code, signal) => {
@@ -128,4 +140,41 @@ function shutdown(exitCode: number, signal?: NodeJS.Signals): void {
   process.exit(exitCode);
 }
 
-main();
+function reportLaunchFailure(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    process.stderr.write(`MCP stdio launcher failed: ${message}\n`);
+  } catch {
+    // ignore stderr write failure during shutdown
+  }
+}
+
+export function resolveLaunchTarget(command: string, args: string[]): { command: string; args: string[] } {
+  if (process.platform !== 'win32') {
+    return { command, args: [...args] };
+  }
+
+  if (command === 'npm' || command === 'npx') {
+    return {
+      command: process.execPath,
+      args: [resolveBundledNpmCli(command), ...args],
+    };
+  }
+
+  return { command, args: [...args] };
+}
+
+function resolveBundledNpmCli(command: 'npm' | 'npx'): string {
+  const cliFileName = command === 'npx' ? 'npx-cli.js' : 'npm-cli.js';
+  const nodeDir = path.dirname(process.execPath);
+  const candidate = path.join(nodeDir, 'node_modules', 'npm', 'bin', cliFileName);
+  if (fs.existsSync(candidate)) {
+    return candidate;
+  }
+
+  throw new Error(`无法解析 ${command} CLI 入口: ${candidate}`);
+}
+
+if (require.main === module) {
+  main();
+}
