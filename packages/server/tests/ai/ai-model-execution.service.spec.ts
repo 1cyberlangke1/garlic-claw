@@ -1,5 +1,6 @@
 import { AiProviderSettingsService } from '../../src/ai-management/ai-provider-settings.service';
 const mockGenerateText = jest.fn();
+const mockIsLoopFinished = jest.fn(() => 'loop-finished-stop');
 const mockStreamText = jest.fn();
 const mockOpenAiChat = jest.fn(() => ({ id: 'mock-openai-model' }));
 const mockCreateOpenAI = jest.fn(() => ({ chat: mockOpenAiChat }));
@@ -10,6 +11,7 @@ const mockCreateGoogleGenerativeAI = jest.fn(() => mockGeminiModel);
 
 jest.mock('ai', () => ({
   generateText: mockGenerateText,
+  isLoopFinished: mockIsLoopFinished,
   streamText: mockStreamText,
 }));
 
@@ -385,6 +387,32 @@ describe('AiModelExecutionService', () => {
         temperature: 0.1,
       },
       system: 'You are streaming',
+    }));
+  });
+
+  it('enables multi-step tool loops for tool-enabled streams through the ai sdk stop condition', async () => {
+    const service = createService();
+
+    service.streamText({
+      messages: [
+        {
+          content: '帮我先查天气再总结',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      tools: {
+        weather_search: {} as never,
+      },
+    } as never);
+
+    expect(mockIsLoopFinished).toHaveBeenCalledTimes(1);
+    expect(mockStreamText).toHaveBeenCalledWith(expect.objectContaining({
+      stopWhen: 'loop-finished-stop',
+      tools: {
+        weather_search: {},
+      },
     }));
   });
 

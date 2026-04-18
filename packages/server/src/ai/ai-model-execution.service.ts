@@ -2,7 +2,7 @@ import type { JsonObject, JsonValue, PluginLlmMessage, PluginLlmTransportMode } 
 import { Injectable } from '@nestjs/common';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, streamText, type LanguageModel, type ModelMessage, type Tool } from 'ai';
+import { generateText, isLoopFinished, streamText, type LanguageModel, type ModelMessage, type Tool } from 'ai';
 import { createRequire } from 'node:module';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
 import type { StoredAiProviderConfig } from '../ai-management/ai-management.types';
@@ -77,7 +77,6 @@ export class AiModelExecutionService {
 
   streamText(input: AiModelExecutionRequest & {
     abortSignal?: AbortSignal;
-    stopWhen?: Parameters<typeof streamText>[0]['stopWhen'];
     tools?: Record<string, Tool>;
   }): AiModelExecutionStreamResult {
     let lastError: unknown;
@@ -175,7 +174,6 @@ export class AiModelExecutionService {
   private startTextStream(
     input: AiModelExecutionRequest & {
       abortSignal?: AbortSignal;
-      stopWhen?: Parameters<typeof streamText>[0]['stopWhen'];
       tools?: Record<string, Tool>;
     },
     target: AiExecutionTarget,
@@ -184,7 +182,7 @@ export class AiModelExecutionService {
       ...this.buildExecutionInput(input, target),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       includeRawChunks: true,
-      ...(input.stopWhen ? { stopWhen: input.stopWhen } : {}),
+      ...(input.tools ? { stopWhen: isLoopFinished() } : {}),
       ...(input.tools ? { tools: input.tools } : {}),
     } as Parameters<typeof streamText>[0]);
   }

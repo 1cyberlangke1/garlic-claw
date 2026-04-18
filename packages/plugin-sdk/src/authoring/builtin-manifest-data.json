@@ -4,7 +4,6 @@
     "memoryContextPromptPrefix": "与此用户相关的记忆",
     "kbContextLimit": 3,
     "kbContextPromptPrefix": "与当前问题相关的系统知识",
-    "subagentDelegateMaxSteps": 4,
     "conversationTitleDefaultTitle": "New Chat",
     "conversationTitleMaxMessages": 4,
     "providerRouterDefaultShortCircuitReply": "本轮请求已由 provider-router 直接处理。"
@@ -52,12 +51,6 @@
       "key": "allowedToolNames",
       "type": "string",
       "description": "允许子代理使用的工具名列表，使用英文逗号分隔"
-    },
-    {
-      "key": "maxSteps",
-      "type": "number",
-      "description": "子代理最多允许多少轮工具调用",
-      "defaultValue": 4
     }
   ],
   "conversationTitleConfigFields": [
@@ -665,12 +658,6 @@
           "key": "allowedToolNames",
           "type": "string",
           "description": "允许子代理使用的工具名列表，使用英文逗号分隔"
-        },
-        {
-          "key": "maxSteps",
-          "type": "number",
-          "description": "子代理最多允许多少轮工具调用",
-          "defaultValue": 4
         }
       ]
     }

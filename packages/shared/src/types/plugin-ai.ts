@@ -57,7 +57,6 @@ export interface PluginSubagentRunParams {
   providerOptions?: JsonObject;
   headers?: Record<string, string>;
   maxOutputTokens?: number;
-  maxSteps?: number;
 }
 
 /** 后台子代理任务状态。 */
@@ -113,7 +112,6 @@ export interface PluginSubagentRequest {
   providerOptions?: JsonObject;
   headers?: Record<string, string>;
   maxOutputTokens?: number;
-  maxSteps: number;
 }
 
 /** 插件可见的当前 provider 上下文摘要。 */
@@ -159,7 +157,6 @@ export interface SubagentBeforeRunHookMutateResult {
   providerOptions?: JsonObject | null;
   headers?: Record<string, string> | null;
   maxOutputTokens?: number | null;
-  maxSteps?: number | null;
 }
 
 /** 子代理运行前 Hook 直接短路本轮执行。 */

@@ -106,7 +106,6 @@ describe('PluginController subagent task routes', () => {
             content: '请帮我总结当前对话',
           },
         ],
-        maxSteps: 4,
       },
       context: {
         source: 'plugin',

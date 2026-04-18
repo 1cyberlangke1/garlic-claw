@@ -1593,7 +1593,6 @@ test('execution context exposes background subagent task host APIs', async () =>
             content: '请帮我总结当前对话',
           },
         ],
-        maxSteps: 4,
       },
       context: {
         source: 'plugin',
@@ -1628,7 +1627,6 @@ test('execution context exposes background subagent task host APIs', async () =>
         content: '请帮我总结当前对话',
       },
     ],
-    maxSteps: 4,
     writeBack: {
       target: {
         type: 'conversation',

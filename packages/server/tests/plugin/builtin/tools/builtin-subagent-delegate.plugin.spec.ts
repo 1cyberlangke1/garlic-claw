@@ -19,7 +19,6 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       host: {
         getConfig: jest.fn().mockResolvedValue({
           allowedToolNames: 'memory.search,web.search',
-          maxSteps: 4,
           targetModelId: 'gpt-5.4',
           targetProviderId: 'openai',
         }),
@@ -28,7 +27,6 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
     } as never);
 
     expect(runSubagent).toHaveBeenCalledWith({
-      maxSteps: 4,
       messages: [
         {
           content: [{ text: 'Summarize this thread', type: 'text' }],
@@ -65,7 +63,6 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       },
       host: {
         getConfig: jest.fn().mockResolvedValue({
-          maxSteps: 3,
           targetModelId: 'gpt-5.4',
           targetProviderId: 'openai',
         }),
@@ -74,7 +71,6 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
     } as never);
 
     expect(startSubagentTask).toHaveBeenCalledWith({
-      maxSteps: 3,
       messages: [
         {
           content: [{ text: 'Summarize this thread', type: 'text' }],

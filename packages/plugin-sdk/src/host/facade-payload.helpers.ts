@@ -71,7 +71,6 @@ export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): Js
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.headers ? { headers: toHostJsonValue(input.headers) } : {}),
     ...(typeof input.maxOutputTokens === "number" ? { maxOutputTokens: input.maxOutputTokens } : {}),
-    ...(typeof input.maxSteps === "number" ? { maxSteps: input.maxSteps } : {}),
   };
 }
 
@@ -86,7 +85,6 @@ export function buildPluginStartSubagentTaskParams(input: PluginSubagentTaskStar
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.headers ? { headers: toHostJsonValue(input.headers) } : {}),
     ...(typeof input.maxOutputTokens === "number" ? { maxOutputTokens: input.maxOutputTokens } : {}),
-    ...(typeof input.maxSteps === "number" ? { maxSteps: input.maxSteps } : {}),
     ...(input.writeBack ? { writeBack: toHostJsonValue(input.writeBack) } : {}),
   };
 }

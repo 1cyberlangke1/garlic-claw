@@ -5,7 +5,6 @@ export interface PluginSubagentDelegateConfig {
   targetProviderId?: string;
   targetModelId?: string;
   allowedToolNames?: string;
-  maxSteps?: number;
 }
 const BUILTIN_MANIFEST_DATA = builtinManifestData;
 
@@ -15,7 +14,6 @@ export const MEMORY_CONTEXT_DEFAULT_LIMIT = BUILTIN_MANIFEST_DATA.defaults.memor
 export const MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX = BUILTIN_MANIFEST_DATA.defaults.memoryContextPromptPrefix;
 export const KB_CONTEXT_DEFAULT_LIMIT = BUILTIN_MANIFEST_DATA.defaults.kbContextLimit;
 export const KB_CONTEXT_DEFAULT_PROMPT_PREFIX = BUILTIN_MANIFEST_DATA.defaults.kbContextPromptPrefix;
-export const SUBAGENT_DELEGATE_DEFAULT_MAX_STEPS = BUILTIN_MANIFEST_DATA.defaults.subagentDelegateMaxSteps;
 export const MEMORY_CONTEXT_CONFIG_FIELDS = BUILTIN_MANIFEST_DATA.memoryContextConfigFields as PluginConfigFields;
 export const KB_CONTEXT_CONFIG_FIELDS = BUILTIN_MANIFEST_DATA.kbContextConfigFields as PluginConfigFields;
 export const SUBAGENT_DELEGATE_CONFIG_FIELDS = BUILTIN_MANIFEST_DATA.subagentDelegateConfigFields as PluginConfigFields;

@@ -1,7 +1,7 @@
 import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, JsonObject, JsonValue, PluginSubagentRunParams, PluginSubagentRunResult, PluginSubagentTaskStartParams, PluginSubagentTaskSummary, TriggerConfig } from "@garlic-claw/shared";
 import { toHostJsonValue } from "../host";
-import { pickOptionalNumberFields, pickOptionalStringFields, readOptionalObjectParam, readOptionalStringParam, readRequiredStringParam, sanitizeOptionalText, parseCommaSeparatedNames, readJsonObjectValue, normalizePositiveInteger } from "./index";
-import { PluginSubagentDelegateConfig, SUBAGENT_DELEGATE_DEFAULT_MAX_STEPS } from "./builtin-manifests";
+import { pickOptionalStringFields, readOptionalObjectParam, readOptionalStringParam, readRequiredStringParam, sanitizeOptionalText, parseCommaSeparatedNames, readJsonObjectValue } from "./index";
+import { PluginSubagentDelegateConfig } from "./builtin-manifests";
 export function readMemorySearchResults(value: JsonValue): Array<{ content?: string; category?: string; createdAt?: string }> {
   return Array.isArray(value)
     ? value.flatMap((entry) => {
@@ -18,7 +18,6 @@ export function readSubagentDelegateConfig(value: unknown): PluginSubagentDelega
   const object = readJsonObjectValue(value);
   return {
     ...pickOptionalStringFields(object, ["targetProviderId", "targetModelId", "allowedToolNames"] as const),
-    ...pickOptionalNumberFields(object, ["maxSteps"] as const),
   };
 }
 export function buildSubagentDelegateRunParams(input: { config: PluginSubagentDelegateConfig; prompt: string }): PluginSubagentRunParams {
@@ -124,7 +123,6 @@ function buildSubagentDelegateBaseParams(input: { config: PluginSubagentDelegate
     ...(sanitizeOptionalText(input.config.targetModelId) ? { modelId: sanitizeOptionalText(input.config.targetModelId) } : {}),
     messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
     ...(toolNames ? { toolNames } : {}),
-    maxSteps: normalizePositiveInteger(input.config.maxSteps, SUBAGENT_DELEGATE_DEFAULT_MAX_STEPS),
   };
 }
 function readPluginAutomationActionsParam(params: JsonObject): ActionConfig[] {
