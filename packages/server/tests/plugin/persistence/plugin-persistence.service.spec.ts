@@ -69,6 +69,20 @@ describe('PluginPersistenceService', () => {
         limit: 8,
       },
     });
+    expect(service.getPluginLlmPreference('builtin.ping')).toEqual({
+      mode: 'inherit',
+      modelId: null,
+      providerId: null,
+    });
+    expect(service.updatePluginLlmPreference('builtin.ping', {
+      mode: 'override',
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+    })).toEqual({
+      mode: 'override',
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+    });
     expect(service.getPluginScope('builtin.ping')).toEqual({
       defaultEnabled: true,
       conversations: {},
@@ -91,9 +105,40 @@ describe('PluginPersistenceService', () => {
     });
     expect(service.getPluginOrThrow('builtin.ping')).toMatchObject({
       createdAt: expect.any(String),
+      llmPreference: {
+        mode: 'override',
+        modelId: 'deepseek-reasoner',
+        providerId: 'ds2api',
+      },
       status: 'offline',
       updatedAt: expect.any(String),
     });
+  });
+
+  it('rejects incomplete plugin llm override values', () => {
+    const service = new PluginPersistenceService();
+
+    service.upsertPlugin({
+      connected: true,
+      defaultEnabled: true,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'builtin.ping',
+        name: 'Builtin Ping',
+        permissions: [],
+        runtime: 'builtin',
+        tools: [],
+        version: '1.0.0',
+      },
+      pluginId: 'builtin.ping',
+    });
+
+    expect(() => service.updatePluginLlmPreference('builtin.ping', {
+      mode: 'override',
+      modelId: null,
+      providerId: 'openai',
+    })).toThrow(BadRequestException);
   });
 
   it('rejects deleting connected plugins and deletes offline plugins', () => {

@@ -142,6 +142,14 @@ export interface PluginConfigSnapshot {
   values: JsonObject;
 }
 
+export type PluginLlmPreferenceMode = 'inherit' | 'override';
+
+export interface PluginLlmPreference {
+  mode: PluginLlmPreferenceMode;
+  providerId: string | null;
+  modelId: string | null;
+}
+
 export interface PluginScopeSettings {
   defaultEnabled: boolean;
   conversations: Record<string, boolean>;

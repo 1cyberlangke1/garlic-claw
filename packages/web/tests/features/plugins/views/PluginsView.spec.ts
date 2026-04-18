@@ -94,6 +94,7 @@ vi.mock('@/features/plugins/composables/use-plugin-management', () => {
       loading: ref(false),
       detailLoading: ref(false),
       savingConfig: ref(false),
+      savingLlmPreference: ref(false),
       savingStorage: ref(false),
       savingScope: ref(false),
       eventLoading: ref(false),
@@ -107,6 +108,13 @@ vi.mock('@/features/plugins/composables/use-plugin-management', () => {
       selectedPluginName: ref(plugin.value?.name ?? null),
       selectedPlugin: computed(() => plugin.value),
       configSnapshot: shallowRef(null),
+      llmPreference: shallowRef({
+        mode: 'inherit',
+        modelId: null,
+        providerId: null,
+      }),
+      llmProviders: shallowRef([]),
+      llmOptions: shallowRef([]),
       conversationSessions: shallowRef([]),
       cronJobs: shallowRef([]),
       scopeSettings: shallowRef(null),
@@ -129,6 +137,7 @@ vi.mock('@/features/plugins/composables/use-plugin-management', () => {
       deleteCronJob: vi.fn(),
       finishConversationSession: vi.fn(),
       saveConfig: vi.fn(),
+      saveLlmPreference: vi.fn(),
       saveStorageEntry: vi.fn(),
       saveScope: vi.fn(),
       runAction: vi.fn(),
@@ -146,7 +155,9 @@ describe('PluginsView', () => {
           PluginAttentionPanel: { template: '<div />' },
           PluginSidebar: { template: '<div />' },
           PluginConfigForm: { template: '<div />' },
+          PluginLlmPreferencePanel: { template: '<div>插件模型策略</div>' },
           PluginScopeEditor: { template: '<div />' },
+          ToolGovernancePanel: { template: '<div>插件工具治理</div>' },
           PluginEventLog: { template: '<div />' },
           PluginStoragePanel: {
             props: ['prefix'],
@@ -181,6 +192,8 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可消费并改写模型结果')
     expect(wrapper.text()).toContain('可定时执行任务')
     expect(wrapper.text()).toContain('可暴露宿主内 JSON Route')
+    expect(wrapper.text()).toContain('插件模型策略')
+    expect(wrapper.text()).toContain('插件工具治理')
     expect(wrapper.text()).toContain('最后检查')
     expect(wrapper.text()).toContain('并发占用')
     expect(wrapper.text()).toContain('2 / 6')

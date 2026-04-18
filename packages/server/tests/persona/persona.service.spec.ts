@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import YAML from 'yaml'
 import { DEFAULT_PERSONA_PROMPT } from '../../src/persona/default-persona'
 import { PersonaService } from '../../src/persona/persona.service'
-import { PersonaStoreService } from '../../src/persona/persona-store.service'
+import { PersonaStoreService, resolvePersonaStorageRoot } from '../../src/persona/persona-store.service'
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service'
 
 describe('PersonaService', () => {
@@ -248,5 +248,30 @@ describe('PersonaService', () => {
         id: 'persona.analyst',
       }),
     )
+  })
+
+  it('resolves the default persona directory to the repository root persona folder', () => {
+    const originalPersonaPath = process.env.GARLIC_CLAW_PERSONAS_PATH
+    const originalJestWorkerId = process.env.JEST_WORKER_ID
+
+    delete process.env.GARLIC_CLAW_PERSONAS_PATH
+    delete process.env.JEST_WORKER_ID
+
+    try {
+      expect(resolvePersonaStorageRoot()).toBe(
+        path.resolve(__dirname, '..', '..', '..', '..', 'persona'),
+      )
+    } finally {
+      if (originalPersonaPath) {
+        process.env.GARLIC_CLAW_PERSONAS_PATH = originalPersonaPath
+      } else {
+        delete process.env.GARLIC_CLAW_PERSONAS_PATH
+      }
+      if (originalJestWorkerId) {
+        process.env.JEST_WORKER_ID = originalJestWorkerId
+      } else {
+        delete process.env.JEST_WORKER_ID
+      }
+    }
   })
 })

@@ -2,6 +2,7 @@ import { defineComponent, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  PluginLlmPreference,
   PluginConversationSessionInfo,
   PluginHealthSnapshot,
   PluginInfo,
@@ -67,6 +68,13 @@ function createDetailSnapshot(input: {
       defaultEnabled: true,
       conversations: input.conversations ?? {},
     },
+    llmPreference: {
+      mode: 'inherit',
+      modelId: null,
+      providerId: null,
+    } satisfies PluginLlmPreference,
+    llmProviders: [],
+    llmOptions: [],
     healthSnapshot: input.healthSnapshot ?? {
       status: 'healthy',
       failureCount: 0,

@@ -48,11 +48,28 @@
             :saving="savingConfig"
             @save="saveConfig"
           />
+          <PluginLlmPreferencePanel
+            :preference="llmPreference"
+            :providers="llmProviders"
+            :options="llmOptions"
+            :saving="savingLlmPreference"
+            @save="saveLlmPreference"
+          />
           <PluginScopeEditor
             :plugin="selectedPlugin"
             :scope="scopeSettings"
             :saving="savingScope"
             @save="saveScope"
+          />
+          <ToolGovernancePanel
+            class="detail-span"
+            :source-id="selectedPlugin.name"
+            source-kind="plugin"
+            title="插件工具治理"
+            description="当前插件声明的宿主工具都在这里控制启用状态和治理动作。"
+            :show-source-list="false"
+            empty-title="当前插件没有工具源"
+            empty-description="这个插件目前没有暴露宿主工具，或尚未连上运行时。"
           />
           <PluginEventLog
             class="detail-span"
@@ -113,6 +130,7 @@ import PluginConversationSessionList from '@/features/plugins/components/PluginC
 import PluginCronList from '@/features/plugins/components/PluginCronList.vue'
 import PluginDetailOverview from '@/features/plugins/components/PluginDetailOverview.vue'
 import PluginEventLog from '@/features/plugins/components/PluginEventLog.vue'
+import PluginLlmPreferencePanel from '@/features/plugins/components/PluginLlmPreferencePanel.vue'
 import PluginPageHero from '@/features/plugins/components/PluginPageHero.vue'
 import PluginRouteList from '@/features/plugins/components/PluginRouteList.vue'
 import PluginScopeEditor from '@/features/plugins/components/PluginScopeEditor.vue'
@@ -123,6 +141,7 @@ import {
   pluginAttentionWeight,
 } from '@/features/plugins/composables/plugin-management.helpers'
 import { usePluginManagement } from '@/features/plugins/composables/use-plugin-management'
+import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
 
 const route = useRoute()
 const preferredPluginName = computed(() => {
@@ -136,6 +155,7 @@ const {
   loading,
   detailLoading,
   savingConfig,
+  savingLlmPreference,
   savingStorage,
   savingScope,
   eventLoading,
@@ -150,6 +170,9 @@ const {
   selectedPluginName,
   selectedPlugin,
   configSnapshot,
+  llmPreference,
+  llmProviders,
+  llmOptions,
   conversationSessions,
   cronJobs,
   scopeSettings,
@@ -169,6 +192,7 @@ const {
   deleteCronJob,
   finishConversationSession,
   saveConfig,
+  saveLlmPreference,
   saveStorageEntry,
   saveScope,
   runAction,

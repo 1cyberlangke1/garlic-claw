@@ -58,7 +58,7 @@ async function main() {
     aiSettingsPath: path.join(tempDir, 'ai-settings.server.json'),
     automationsPath: path.join(tempDir, 'automations.server.json'),
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
-    mcpConfigPath: path.join(tempDir, 'mcp.server.json'),
+    mcpConfigPath: path.join(tempDir, 'mcp', 'mcp.json'),
     personasPath: path.join(tempDir, 'persona'),
     subagentTasksPath: path.join(tempDir, 'subagent-tasks.server.json'),
   };
@@ -596,6 +596,23 @@ async function runHttpFlow(apiBase, state, input) {
       },
     });
     ensure(config.values.limit === 6, 'Expected plugin config update to persist');
+  });
+
+  await runStep('plugins.llm-preference.get', async () => {
+    const preference = await getJson(apiBase, '/plugins/builtin.memory-context/llm-preference');
+    ensure(preference.mode === 'inherit', 'Expected plugin llm preference to default to inherit');
+  });
+
+  await runStep('plugins.llm-preference.put', async () => {
+    const preference = await putJson(apiBase, '/plugins/builtin.memory-context/llm-preference', {
+      body: {
+        mode: 'override',
+        modelId: state.modelId,
+        providerId: state.providerId,
+      },
+    });
+    ensure(preference.mode === 'override', 'Expected plugin llm preference update to persist');
+    ensure(preference.providerId === state.providerId && preference.modelId === state.modelId, 'Expected plugin llm preference to store provider/model');
   });
 
   await runStep('plugins.scopes.get', async () => {

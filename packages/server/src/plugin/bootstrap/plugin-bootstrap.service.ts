@@ -50,6 +50,7 @@ export class PluginBootstrapService {
       deviceType: input.deviceType ?? existing?.deviceType,
       governance: governance.governance,
       lastSeenAt: new Date().toISOString(),
+      llmPreference: existing?.llmPreference,
       manifest,
       pluginId: manifest.id,
     });

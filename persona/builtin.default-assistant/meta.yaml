@@ -35,5 +35,5 @@ customErrorMessage: null
 isDefault: true
 
 # 创建时间与更新时间通常由系统维护；手动编辑时建议保持 ISO 时间格式。
-createdAt: '2026-04-10T00:00:00.000Z'
-updatedAt: '2026-04-10T00:00:00.000Z'
+createdAt: 2026-04-10T00:00:00.000Z
+updatedAt: 2026-04-10T00:00:00.000Z

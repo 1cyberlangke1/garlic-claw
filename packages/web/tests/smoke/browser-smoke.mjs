@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { shouldDeleteBrowserSmokeProvider } from './browser-smoke-provider-cleanup.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +40,7 @@ async function main() {
   const page = await context.newPage();
   let accessToken = '';
   let createdConversationId = null;
+  let initialProviderIds = new Set();
 
   try {
     await page.goto('/login', { waitUntil: 'networkidle' });
@@ -49,18 +51,22 @@ async function main() {
       return token || null;
     }, '等待登录 token');
     assert.ok(accessToken, '登录后未拿到 accessToken');
+    initialProviderIds = new Set((await requestJson('/ai/providers', {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => [])).map((provider) => provider.id));
     await page.goto('/', { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
     await cleanupSmokeArtifacts(accessToken, {
       conversationId: null,
+      initialProviderIds,
       prefix: PREFIX,
       providerId: PROVIDER_ID,
     });
 
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
     createdConversationId = await runChatFlow(page, accessToken);
-    await verifyToolsPage(page);
+    await verifyMcpPage(page);
     await verifyPluginsPage(page);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
@@ -70,6 +76,7 @@ async function main() {
     await Promise.allSettled([
       cleanupSmokeArtifacts(accessToken, {
         conversationId: createdConversationId,
+        initialProviderIds,
         prefix: PREFIX,
         providerId: PROVIDER_ID,
       }),
@@ -218,12 +225,10 @@ async function runChatFlow(page, accessToken) {
   return conversation.id;
 }
 
-async function verifyToolsPage(page) {
-  await page.goto('/tools', { waitUntil: 'networkidle' });
-  await expectText(page, '工具治理');
-  await expectText(page, '工具总数');
-  const sourceItems = page.locator('.source-item');
-  assert.ok(await sourceItems.count() > 0, '工具页未加载任何 source');
+async function verifyMcpPage(page) {
+  await page.goto('/mcp', { waitUntil: 'networkidle' });
+  await expectText(page, 'MCP 管理');
+  await expectText(page, 'MCP 工具治理');
   await expectText(page, 'MCP 配置');
   const configPath = (await page.locator('.mcp-config-path').textContent())?.trim() ?? '';
   assert.ok(configPath.length > 0, 'MCP 配置区未展示配置路径');
@@ -321,13 +326,27 @@ async function cleanupSmokeArtifacts(accessToken, input) {
 
   try {
     const providers = await requestJson('/ai/providers', { headers }).catch(() => []);
-    for (const provider of providers.filter((item) =>
-      item.id === input.providerId || item.id?.startsWith(SMOKE_PREFIX_ROOT))) {
+    for (const provider of providers) {
+      const detail = await requestJson(`/ai/providers/${encodeURIComponent(provider.id)}`, {
+        headers,
+      }).catch(() => null);
+      if (!detail) {
+        continue;
+      }
+      if (!shouldDeleteBrowserSmokeProvider({
+        configuredProviderId: input.providerId,
+        initialProviderIds: input.initialProviderIds,
+        providerApiKey: typeof detail.apiKey === 'string' ? detail.apiKey : '',
+        providerId: provider.id,
+        smokePrefixRoot: SMOKE_PREFIX_ROOT,
+      })) {
+        continue;
+      }
       await requestJson(`/ai/providers/${encodeURIComponent(provider.id)}`, {
         headers,
         method: 'DELETE',
       }).catch(() => undefined);
-    }
+    } 
   } catch {}
 
   const [providers, automations, conversations] = await Promise.all([

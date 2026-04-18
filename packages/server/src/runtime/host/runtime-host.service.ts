@@ -65,7 +65,7 @@ export class RuntimeHostService implements OnModuleInit {
     const readPersonaId = (params: RuntimeHostCallInput['params']) => readRequiredString(params, 'personaId');
     const readUserId = (context: RuntimeHostCallInput['context']) => requireContextField(context, 'userId');
     const runStoreMutation = (surface: 'state' | 'storage', action: 'deleteStoreValue' | 'getStoreValue' | 'listStoreValues' | 'setStoreValue', input: RuntimeHostCallInput) => this.runtimeHostPluginRuntimeService[action](surface, input.pluginId, input.context, input.params);
-    const createLlmHandler = (method: 'llm.generate' | 'llm.generate-text') => ({ context, params, pluginId }: RuntimeHostCallInput) => this.executeLlmGenerate(pluginId, context, params, method);
+    const createLlmHandler = (method: 'llm.generate' | 'llm.generate-text') => ({ context, params, plugin }: RuntimeHostCallInput) => this.executeLlmGenerate(plugin, context, params, method);
 
     const handlers: Record<RuntimeHostMethod, RuntimeHostCallHandler> = {
       'automation.create': ({ context, params }) => this.automationService.create(readUserId(context), params),
@@ -130,8 +130,8 @@ export class RuntimeHostService implements OnModuleInit {
     return handlers;
   }
 
-  private async executeLlmGenerate(pluginId: string, context: RuntimeHostCallInput['context'], params: JsonObject, method: 'llm.generate' | 'llm.generate-text'): Promise<JsonValue> {
-    const request = readRuntimeHostLlmRequest({ context, method, params, pluginId });
+  private async executeLlmGenerate(plugin: RegisteredPluginRecord, context: RuntimeHostCallInput['context'], params: JsonObject, method: 'llm.generate' | 'llm.generate-text'): Promise<JsonValue> {
+    const request = readRuntimeHostLlmRequest({ context, method, params, plugin });
     const result = await this.aiModelExecutionService.generateText({
       allowFallbackChatModels: true,
       headers: request.headers,
@@ -184,7 +184,7 @@ function readRuntimeHostLlmRequest(input: {
   context: RuntimeHostCallInput['context'];
   method: 'llm.generate' | 'llm.generate-text';
   params: JsonObject;
-  pluginId: string;
+  plugin: RegisteredPluginRecord;
 }): {
   headers?: Record<string, string>;
   maxOutputTokens?: number;
@@ -197,9 +197,11 @@ function readRuntimeHostLlmRequest(input: {
   variant?: string;
 } {
   const headers = readJsonObject(input.params.headers);
-  const modelId = readOptionalString(input.params, 'modelId') ?? (input.pluginId === 'builtin.conversation-title' ? input.context.activeModelId : undefined);
+  const pluginModelId = input.plugin.llmPreference.mode === 'override' ? input.plugin.llmPreference.modelId ?? undefined : undefined;
+  const pluginProviderId = input.plugin.llmPreference.mode === 'override' ? input.plugin.llmPreference.providerId ?? undefined : undefined;
+  const modelId = readOptionalString(input.params, 'modelId') ?? pluginModelId ?? input.context.activeModelId;
   const providerOptions = readJsonObject(input.params.providerOptions);
-  const providerId = readOptionalString(input.params, 'providerId') ?? (input.pluginId === 'builtin.conversation-title' ? input.context.activeProviderId : undefined);
+  const providerId = readOptionalString(input.params, 'providerId') ?? pluginProviderId ?? input.context.activeProviderId;
   const system = readOptionalString(input.params, 'system');
   const transportMode = readTransportMode(input.params);
   const variant = readOptionalString(input.params, 'variant');

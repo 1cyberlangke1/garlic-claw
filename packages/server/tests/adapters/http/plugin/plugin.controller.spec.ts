@@ -9,11 +9,13 @@ describe('PluginController', () => {
   const pluginPersistenceService = {
     deletePlugin: jest.fn(),
     getPluginConfig: jest.fn(),
+    getPluginLlmPreference: jest.fn(),
     getPluginOrThrow: jest.fn(),
     getPluginScope: jest.fn(),
     listPluginEvents: jest.fn(),
     recordPluginEvent: jest.fn(),
     updatePluginConfig: jest.fn(),
+    updatePluginLlmPreference: jest.fn(),
     updatePluginScope: jest.fn(),
     upsertPlugin: jest.fn(),
   };
@@ -264,8 +266,18 @@ describe('PluginController', () => {
     pluginPersistenceService.getPluginConfig.mockReturnValue({
       values: { limit: 8 },
     });
+    pluginPersistenceService.getPluginLlmPreference.mockReturnValue({
+      mode: 'inherit',
+      modelId: null,
+      providerId: null,
+    });
     pluginPersistenceService.updatePluginConfig.mockReturnValue({
       values: { limit: 6 },
+    });
+    pluginPersistenceService.updatePluginLlmPreference.mockReturnValue({
+      mode: 'override',
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
     });
     pluginPersistenceService.getPluginScope.mockReturnValueOnce({
       defaultEnabled: true,
@@ -287,6 +299,20 @@ describe('PluginController', () => {
     } as never)).toEqual({
       values: { limit: 6 },
     });
+    expect(controller.getPluginLlmPreference('builtin.memory-context')).toEqual({
+      mode: 'inherit',
+      modelId: null,
+      providerId: null,
+    });
+    expect(controller.updatePluginLlmPreference('builtin.memory-context', {
+      mode: 'override',
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+    } as never)).toEqual({
+      mode: 'override',
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+    });
     expect(controller.getPluginScope('builtin.memory-context')).toEqual({
       defaultEnabled: true,
       conversations: { 'conversation-1': false },
@@ -300,6 +326,11 @@ describe('PluginController', () => {
     expect(pluginPersistenceService.updatePluginConfig).toHaveBeenCalledWith('builtin.memory-context', {
       limit: 6,
     });
+    expect(pluginPersistenceService.updatePluginLlmPreference).toHaveBeenCalledWith('builtin.memory-context', {
+      mode: 'override',
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+    });
     expect(pluginPersistenceService.updatePluginScope).toHaveBeenCalledWith('builtin.memory-context', {
       conversations: { 'conversation-1': true },
     });
@@ -308,6 +339,16 @@ describe('PluginController', () => {
       message: 'Updated plugin config for builtin.memory-context',
       metadata: { keys: ['limit'] },
       type: 'plugin:config.updated',
+    });
+    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory-context', {
+      level: 'info',
+      message: 'Updated plugin llm preference for builtin.memory-context',
+      metadata: {
+        mode: 'override',
+        modelId: 'deepseek-reasoner',
+        providerId: 'ds2api',
+      },
+      type: 'plugin:llm-preference.updated',
     });
     expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory-context', {
       level: 'info',

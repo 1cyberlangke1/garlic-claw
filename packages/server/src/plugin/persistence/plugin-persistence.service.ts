@@ -1,4 +1,4 @@
-import type { JsonObject, ListPluginEventOptions, PluginEventLevel, PluginEventListResult, PluginEventRecord, PluginConfigSnapshot, PluginGovernanceInfo, PluginManifest, PluginStatus, PluginScopeSettings } from '@garlic-claw/shared';
+import type { JsonObject, ListPluginEventOptions, PluginConfigSnapshot, PluginEventLevel, PluginEventListResult, PluginEventRecord, PluginGovernanceInfo, PluginLlmPreference, PluginManifest, PluginScopeSettings, PluginStatus } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PLUGIN_STATUS } from '../plugin.constants';
 import { createPluginConfigSnapshot } from './plugin-read-model';
@@ -12,6 +12,7 @@ export interface RegisteredPluginRecord {
   deviceType?: string;
   governance: PluginGovernanceInfo;
   lastSeenAt: string | null;
+  llmPreference: PluginLlmPreference;
   manifest: PluginManifest;
   pluginId: string;
   status: PluginStatus;
@@ -19,8 +20,8 @@ export interface RegisteredPluginRecord {
 }
 
 type UpsertPluginRecordInput =
-  Omit<RegisteredPluginRecord, 'createdAt' | 'status' | 'updatedAt'>
-  & Partial<Pick<RegisteredPluginRecord, 'createdAt' | 'status' | 'updatedAt'>>;
+  Omit<RegisteredPluginRecord, 'createdAt' | 'llmPreference' | 'status' | 'updatedAt'>
+  & Partial<Pick<RegisteredPluginRecord, 'createdAt' | 'llmPreference' | 'status' | 'updatedAt'>>;
 type PluginEventInput = { level: PluginEventLevel; message: string; metadata?: JsonObject; type: string };
 
 @Injectable()
@@ -36,6 +37,7 @@ export class PluginPersistenceService {
   }
 
   getPluginConfig(pluginId: string): PluginConfigSnapshot { return createPluginConfigSnapshot(this.readMutableRecord(pluginId)); }
+  getPluginLlmPreference(pluginId: string): PluginLlmPreference { return { ...this.readMutableRecord(pluginId).llmPreference }; }
   getPluginScope(pluginId: string): PluginScopeSettings { return toPluginScopeSettings(this.readMutableRecord(pluginId)); }
 
   listPluginEvents(pluginId: string, options: ListPluginEventOptions = {}): PluginEventListResult {
@@ -106,6 +108,7 @@ export class PluginPersistenceService {
       conversationScopes: record.conversationScopes ?? {},
       createdAt: existing?.createdAt ?? record.createdAt ?? now,
       status: record.status ?? (record.connected ? PLUGIN_STATUS.ONLINE : PLUGIN_STATUS.OFFLINE),
+      llmPreference: normalizePluginLlmPreference(record.llmPreference ?? existing?.llmPreference),
       updatedAt: record.updatedAt ?? now,
     });
   }
@@ -137,6 +140,17 @@ export class PluginPersistenceService {
     }));
   }
 
+  updatePluginLlmPreference(pluginId: string, preference: PluginLlmPreference): PluginLlmPreference {
+    const current = this.readMutableRecord(pluginId);
+    const normalizedPreference = normalizePluginLlmPreference(preference);
+    this.writeRecord({
+      ...current,
+      llmPreference: normalizedPreference,
+      updatedAt: new Date().toISOString(),
+    });
+    return { ...normalizedPreference };
+  }
+
   private readMutableRecord(pluginId: string): RegisteredPluginRecord { const record = this.records.get(pluginId); if (!record) {throw new NotFoundException(`Plugin not found: ${pluginId}`);} return record; }
 
   private writeRecord(record: RegisteredPluginRecord): RegisteredPluginRecord {
@@ -152,6 +166,26 @@ export function cloneRegisteredPluginRecord(record: RegisteredPluginRecord): Reg
 
 function toPluginScopeSettings(record: RegisteredPluginRecord): PluginScopeSettings {
   return { defaultEnabled: record.defaultEnabled, conversations: { ...(record.conversationScopes ?? {}) } };
+}
+
+export function normalizePluginLlmPreference(preference?: PluginLlmPreference | null): PluginLlmPreference {
+  if (!preference || preference.mode === 'inherit') {
+    return {
+      mode: 'inherit',
+      modelId: null,
+      providerId: null,
+    };
+  }
+  const providerId = preference.providerId?.trim();
+  const modelId = preference.modelId?.trim();
+  if (!providerId || !modelId) {
+    throw new BadRequestException('插件模型覆盖必须同时指定 providerId 和 modelId');
+  }
+  return {
+    mode: 'override',
+    modelId,
+    providerId,
+  };
 }
 
 export function validatePluginConfig(manifest: PluginManifest, values: JsonObject): void {

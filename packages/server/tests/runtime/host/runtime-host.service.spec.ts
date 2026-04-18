@@ -498,7 +498,7 @@ describe('RuntimeHostService', () => {
   });
 
   it('generates text and assistant output through runtime-owned llm host methods', async () => {
-    const { pluginBootstrapService, runtimeHostLlmService, service } = createFixture({
+    const { pluginBootstrapService, pluginPersistenceService, runtimeHostLlmService, service } = createFixture({
       permissions: ['llm:generate'],
     });
     pluginBootstrapService.registerPlugin({
@@ -632,6 +632,93 @@ describe('RuntimeHostService', () => {
     expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(2, expect.objectContaining({
       transportMode: 'stream-collect',
     }));
+
+    await expect(
+      service.call({
+        context: {
+          activeModelId: 'gpt-5.4',
+          activeProviderId: 'openai',
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'llm.generate-text',
+        params: {
+          prompt: '请总结当前插件行为',
+        },
+        pluginId: 'builtin.memory-context',
+      }),
+    ).resolves.toEqual({
+      metadata: {
+        customBlocks: [
+          {
+            id: 'custom-field:reasoning_content',
+            kind: 'text',
+            source: {
+              key: 'reasoning_content',
+              origin: 'ai-sdk.response-body',
+              providerId: 'openai',
+            },
+            state: 'done',
+            text: '先生成标题再输出正文',
+            title: 'Reasoning Content',
+          },
+        ],
+      },
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'Generated: 请总结当前插件行为',
+    });
+
+    pluginPersistenceService.updatePluginLlmPreference('builtin.memory-context', {
+      mode: 'override',
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+    });
+
+    await expect(
+      service.call({
+        context: {
+          activeModelId: 'gpt-5.4',
+          activeProviderId: 'openai',
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'llm.generate-text',
+        params: {
+          prompt: '请总结当前插件行为',
+        },
+        pluginId: 'builtin.memory-context',
+      }),
+    ).resolves.toEqual({
+      metadata: {
+        customBlocks: [
+          {
+            id: 'custom-field:reasoning_content',
+            kind: 'text',
+            source: {
+              key: 'reasoning_content',
+              origin: 'ai-sdk.response-body',
+              providerId: 'ds2api',
+            },
+            state: 'done',
+            text: '先生成标题再输出正文',
+            title: 'Reasoning Content',
+          },
+        ],
+      },
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+      text: 'Generated: 请总结当前插件行为',
+    });
+
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    }));
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      modelId: 'deepseek-reasoner',
+      providerId: 'ds2api',
+    }));
   });
 
   it('persists conversation, persona, memory and log data in runtime-owned stores', async () => {
@@ -727,9 +814,10 @@ function createFixture(input?: {
   const subagentStorePath = path.join(os.tmpdir(), `gc-server-host-subagent-${Date.now()}-${Math.random()}.json`);
   process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH = subagentStorePath;
   subagentTaskStorePaths.push(subagentStorePath);
+  const pluginPersistenceService = new PluginPersistenceService();
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),
-    new PluginPersistenceService(),
+    pluginPersistenceService,
   );
   const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
   const runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
@@ -858,6 +946,7 @@ function createFixture(input?: {
   });
 
   return {
+    pluginPersistenceService,
     pluginBootstrapService,
     runtimeHostConversationMessageService,
     runtimeHostLlmService,

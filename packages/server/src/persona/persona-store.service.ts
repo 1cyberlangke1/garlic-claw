@@ -56,7 +56,7 @@ export class PersonaStoreService {
   }
 }
 
-function resolvePersonaStorageRoot(): string {
+export function resolvePersonaStorageRoot(): string {
   if (process.env.GARLIC_CLAW_PERSONAS_PATH) {
     return path.resolve(process.env.GARLIC_CLAW_PERSONAS_PATH)
   }
@@ -67,7 +67,32 @@ function resolvePersonaStorageRoot(): string {
       `personas.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     )
   }
-  return path.join(process.cwd(), 'persona')
+  return path.join(resolveProjectRoot(), 'persona')
+}
+
+function resolveProjectRoot(): string {
+  return findProjectRoot(process.cwd())
+    ?? findProjectRoot(__dirname)
+    ?? process.cwd()
+}
+
+function findProjectRoot(startPath: string): string | null {
+  let currentPath = path.resolve(startPath)
+
+  while (true) {
+    if (
+      fs.existsSync(path.join(currentPath, 'package.json'))
+      && fs.existsSync(path.join(currentPath, 'packages', 'server'))
+    ) {
+      return currentPath
+    }
+
+    const parentPath = path.dirname(currentPath)
+    if (parentPath === currentPath) {
+      return null
+    }
+    currentPath = parentPath
+  }
 }
 
 function loadPersonaStore(storageRoot: string): StoredPersonaRecord[] {
