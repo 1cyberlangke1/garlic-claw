@@ -1,85 +1,173 @@
 # Garlic Claw TODO
 
 > 本文件只保留当前仍有效的项目级真相。
-> 已完成流水只写摘要；细节过程留在 `task_plan.md / progress.md / findings.md`。
+> 已完成旧流水只保留摘要；本轮实现细节放 `task_plan.md / progress.md / findings.md`。
 
 ## 已完成摘要
 
-### N8-N10 摘要
-
 - `packages/shared` 已收口为 type-only，共享契约已对齐。
 - `packages/server/src` 已压到 `8494`，Windows 与 WSL 内部目录的 fresh 构建、测试、后端 smoke、前端浏览器 smoke、独立 judge 都已通过。
-- 测试目录已统一收口到 `tests/`，浏览器 smoke 已补齐登录、聊天、provider、plugins、tools/mcp、automation 的真实主链路覆盖与副作用清理。
-- 文档分层、跨平台约束、WSL 内部测试约束、无绝对路径约束已同步到 `AGENTS.md`。
+- 认证主链已收口为单密钥登录；`users/me / register / dev-login / refresh / role / API Key` 主链路已删除。
+- 聊天链路已支持 provider 自定义扩展块，前端默认折叠展示；插件侧已支持显式 `transportMode: 'generate' | 'stream-collect'`。
+- 文档分层、跨平台约束、无绝对路径约束、测试目录规范已同步到 `AGENTS.md`。
 
-## 当前阶段：N11 [已完成]
+## 当前阶段：[已完成] N12 Persona 重构（AstrBot 方向）
 
 ### 目标
 
-- 移除当前用户名 / 密码 / 注册 / dev-login / refresh / 用户资料 / 角色 / 用户管理整套登录体系。
-- 改成单用户共享密钥登录：
-  - 登录页只输入一个密钥
-  - 密钥来自环境变量
-  - 浏览器登录态默认保留 `30d`
-  - 保留时长可由环境变量配置
-- 不再区分普通用户、管理员、超级管理员。
-- 一并移除 API Key 体系。
-- 保留插件系统、远程插件 bootstrap 与现有插件扩展能力，不把认证改动扩散成插件协议改造。
+- 把当前 `persona = 会话标签 + 插件改 prompt` 的模式，重构为接近 AstrBot 的独立 persona 资源系统。
+- persona 变成服务端一等资源，而不是 `builtin.persona-router` 这类插件的附属配置。
+- 聊天主链由服务端统一消费 persona，不再把 persona prompt owner 放在普通 `chat:before-model` 插件上。
+- 重构后 persona 至少具备以下能力：
+  - 独立持久化
+  - 列表 / 详情 / 新增 / 编辑 / 删除
+  - 应用到当前对话
+  - 默认 persona 回退
+  - persona prompt 注入
+  - begin dialogs 注入
+  - 按 persona 约束 skills
+  - 按 persona 约束 tools
+  - persona 专属错误消息
 
-### 当前设计边界
+### 当前问题
 
-- 当前产品定位已收敛为单用户、自托管控制台，不再保留多用户模型。
-- 登录态目标是“输入一次密钥后，在配置的有效期内重新打开浏览器无需再次输入”。
-- 前端认证状态应收口为“是否已登录”，不再维护 `user / role / isAdmin / isSuperAdmin`。
-- 后端鉴权应收口为“是否已通过单密钥登录”，不再保留基于角色的鉴权分层。
-- `users/me`、用户列表、改角色、删用户、注册、dev-login、refresh、API Key 管理页与对应 HTTP 边界都应删除。
+- 当前 persona 主体只存在于 `RuntimeHostUserContextService` 的内存 `Map` 中，不是独立持久化资源。
+- 当前 Web 人设页只能“查看 + 应用到当前对话”，不能管理 persona 资源本身。
+- 当前聊天主链不会直接消费 persona 配置；`activePersonaId` 主要只是传给 Hook 上下文。
+- 当前若把 persona 逻辑继续放在 `chat:before-model` 插件里，会和其它改 `systemPrompt` 的插件产生 owner 冲突。
+- 当前 Hook 链顺序虽然稳定，但主要依赖 `priority + pluginId`；不能把 persona 主语义继续寄托在普通插件顺序上。
 
-### 阶段计划
+### 设计边界
 
-- [x] 盘点并删除前后端所有对用户实体、角色判断、API Key 的真实依赖点。
-- [x] 设计并落地单密钥登录边界：
-  - 服务端读取登录密钥环境变量
-  - 服务端读取登录态 TTL 环境变量，默认 `30d`
-  - 登录成功后发放持久登录态
-- [x] 收口前端登录与路由守卫：
-  - 登录页改为单输入框
-  - 删除注册页与用户资料恢复链路
-  - 所有管理页统一改为“只要求已登录”
-- [x] 删除服务端多用户与角色相关边界：
-  - `auth`
-  - `user`
-  - `api-key`
-  - 依赖 `RolesGuard / CurrentUser('role') / users/me` 的 HTTP 控制器与测试
-- [x] fresh 跑受影响构建、测试、后端 smoke、前端浏览器 smoke，并在 Windows 与 WSL 内部目录都完成验证。
-- [x] 发独立 judge，确认这轮不是“把用户系统换壳留下”，而是真正删掉旧认证模型。
+- persona 必须从“插件 owner”迁回服务端主链 owner。
+- 不以“安装顺序”作为语义顺序；如需顺序，只用显式规则。
+- 第一轮不做新的复杂 prompt DSL；先完成 persona 独立资源化与服务端统一组装。
+- 第一轮不要求完全复刻 AstrBot 所有历史兼容细节，但要复刻其核心能力模型：
+  - persona prompt
+  - begin dialogs
+  - skills 白名单 / 空列表禁用 / `null` 表示全量
+  - tools 白名单 / 空列表禁用 / `null` 表示全量
+  - custom error message
+- 允许保留 `builtin.persona-router` 作为“辅助自动切换策略插件”，但它不再是 persona 主链 owner。
+- 不新增 `helper / helpers` 命名、目录或抽象层。
+
+### 实现计划
+
+#### P1. Persona 资源中心
+
+- 新增服务端 persona store 与 manager，独立于 `RuntimeHostUserContextService`。
+- 采用当前项目已有的务实持久化方式：
+  - 首轮落到 `packages/server/tmp/personas.server.json`
+  - 测试环境走隔离测试文件
+- persona 数据模型至少包含：
+  - `id`
+  - `name`
+  - `description`
+  - `prompt`
+  - `beginDialogs`
+  - `toolNames`
+  - `skillIds`
+  - `customErrorMessage`
+  - `isDefault`
+  - `createdAt`
+  - `updatedAt`
+- 提供默认 persona 种子，替代现在硬编码在 `RuntimeHostUserContextService` 里的单条默认记录。
+
+#### P2. HTTP 与共享契约
+
+- 扩展 shared persona 契约，区分：
+  - summary
+  - detail
+  - current
+- 扩展 `/personas` HTTP 边界：
+  - `GET /personas`
+  - `GET /personas/:personaId`
+  - `POST /personas`
+  - `PUT /personas/:personaId`
+  - `DELETE /personas/:personaId`
+  - `GET /personas/current`
+  - `PUT /personas/current`
+- 保持现有插件 host persona API 可用：
+  - `persona.list`
+  - `persona.get`
+  - `persona.current.get`
+  - `persona.activate`
+
+#### P3. 聊天主链统一消费 persona
+
+- `ConversationMessagePlanningService` 统一解析当前会话 persona。
+- 在模型调用前由服务端统一完成：
+  - persona prompt 注入
+  - begin dialogs 注入
+  - persona skill 限制
+  - persona tool 限制
+- persona prompt 与 skill prompt 的组合规则由服务端固定，不再由 persona 插件直接覆盖。
+- `chat:before-model` 仍可存在，但 persona 相关 owner 从中移出。
+
+#### P4. 错误与会话行为
+
+- 聊天主链失败时，如果当前 persona 配置了 `customErrorMessage`，优先返回该消息。
+- 对话记录继续保存 `activePersonaId`，但它引用的是 persona store 中的独立资源。
+- 当前 persona 被删除时，已有对话回退到默认 persona，而不是留下悬空 ID。
+
+#### P5. 前端人设页升级
+
+- `PersonaSettingsView` 从“应用页”升级成“管理 + 应用”页。
+- 前端支持：
+  - persona 列表
+  - 创建
+  - 编辑
+  - 删除
+  - 设置为默认 / 标识默认
+  - 应用到当前对话
+- 页面文案不再把 `builtin.persona-router` 作为人设主入口。
+- 如保留自动切换插件，只把它作为可选增强入口显示。
+
+#### P6. 兼容与清理
+
+- `RuntimeHostUserContextService` 中 persona 相关 owner 迁走，只保留真正属于 user context 的内容。
+- `builtin.persona-router` 从“主 owner”降级为“策略插件”：
+  - 只负责根据规则切换 `activePersonaId`
+  - 不再直接成为 persona prompt 主组装者
+- 清理旧的人设页、旧文档、旧测试中“persona 主要靠插件改 prompt”的表述。
 
 ### 验收标准
 
-- 前端只保留单密钥登录入口；浏览器关闭后在 TTL 内重新打开仍可直接进入系统。
-- 仓库内不再存在面向 Web 登录主链路的：
-  - 用户注册
-  - 用户角色
-  - `users/me`
-  - API Key 管理
-- 插件系统、远程插件 bootstrap、聊天主链路、现有 smoke 主流程保持可运行。
-- 提交前必须 fresh 跑完受影响测试与 smoke，并拿到独立 judge `PASS`。
+- persona 成为独立持久化资源，不再只存在于运行时内存。
+- 前端可直接创建、编辑、删除、查看和应用 persona。
+- 新对话与无 persona 对话会稳定回退到默认 persona。
+- 模型调用前，服务端会统一注入 persona prompt 与 begin dialogs。
+- persona 可真实约束 skills 与 tools，而不是只展示字段。
+- persona 专属错误消息在请求失败时能真实生效。
+- 当前 persona 主链不再依赖 `builtin.persona-router` 才能成立。
+- 受影响测试、构建与 smoke 必须 fresh 通过。
 
-### 最新验收结果
+### 当前验收命令（阶段内持续维护）
 
-- Windows fresh 通过：
-  - `packages/server`: `npm test -- --runInBand`、`npm run build`
-  - `packages/web`: `npm run test:run`、`npm run build`
-  - root: `npm run smoke:web-ui`、`npm run smoke:server`、`npm run lint`
-  - Python: `python -m unittest tools.scripts.test_runtime_scripts`、`python -m ruff check tools/scripts/dev_runtime.py tools/scripts/test_runtime_scripts.py`、`python -m mypy tools/scripts/dev_runtime.py tools/scripts/test_runtime_scripts.py`
-- WSL 内部目录 `/home/test/garlic-claw-wsl-internal` fresh 通过：
-  - `python3 -m unittest tools.scripts.test_runtime_scripts`
-  - `npm run smoke:server`
-  - 输出文件：`other/test-logs/2026-04-17-n11/wsl-env.log`、`wsl-runtime-tests.log`、`wsl-smoke-server.log`
-- 独立 judge 已给出 `PASS`
-  - 结论来源：agent `019d99c4-d7b8-77a0-adec-af2a03b381bd`
-- 运行态清理已复核：
-  - 旧测试残留的 `packages/server/tmp` provider / conversation / skill 数据已清掉
-  - 额外执行 `python tools/start_launcher.py restart` 后复核，`openai` provider 不会被启动流程自动写回
+- `packages/server`: persona 相关定向 `jest`
+- `packages/web`: persona 相关定向 `vitest`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: 受影响测试
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- 如人设页有真实 UI 改动，再补 `npm run smoke:web-ui`
+
+### 当前结论
+
+- 新鲜验收已通过：
+  - `packages/shared`: `npm run build`
+  - `packages/server`: persona 相关定向 `jest`
+  - `packages/server`: `npm run build`
+  - `packages/web`: persona 相关定向 `vitest`
+  - `packages/web`: `npm run build`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run lint`
+- 独立 judge 已通过：
+  - agent `019d9f0c-fe7c-7e73-980f-bdaac5151964`
+  - 结论：`PASS`
+  - 未发现“persona owner 只是换壳平移”或新的阻断项
 
 ## 固定约束
 
@@ -87,4 +175,4 @@
 - WSL 测试必须在 WSL 内部目录执行；如当前环境本身就在 Linux / WSL 内部目录则忽略迁移动作。
 - 提交前 / 修改完成后必须实际跑所有受影响冒烟测试，直到通过才能继续。
 - 测试新增的持久副作用必须清理，不提交 provider、会话记录、聊天记录等测试残留。
-- 不接受保留多用户兼容壳、角色兼容壳或 API Key 过渡壳。
+- 不接受把 persona 复杂度继续藏在普通插件顺序或隐式 prompt 覆盖里。

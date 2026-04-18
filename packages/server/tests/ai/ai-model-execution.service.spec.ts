@@ -5,6 +5,8 @@ const mockOpenAiChat = jest.fn(() => ({ id: 'mock-openai-model' }));
 const mockCreateOpenAI = jest.fn(() => ({ chat: mockOpenAiChat }));
 const mockAnthropicModel = jest.fn(() => ({ id: 'mock-anthropic-model' }));
 const mockCreateAnthropic = jest.fn(() => mockAnthropicModel);
+const mockGeminiModel = jest.fn(() => ({ id: 'mock-gemini-model' }));
+const mockCreateGoogleGenerativeAI = jest.fn(() => mockGeminiModel);
 
 jest.mock('ai', () => ({
   generateText: mockGenerateText,
@@ -17,6 +19,10 @@ jest.mock('@ai-sdk/openai', () => ({
 
 jest.mock('@ai-sdk/anthropic', () => ({
   createAnthropic: mockCreateAnthropic,
+}));
+
+jest.mock('@ai-sdk/google', () => ({
+  createGoogleGenerativeAI: mockCreateGoogleGenerativeAI,
 }));
 
 import * as fs from 'node:fs';
@@ -47,6 +53,10 @@ describe('AiModelExecutionService', () => {
           type: 'text-delta',
         };
       })(),
+      totalUsage: Promise.resolve({
+        inputTokens: 3,
+        outputTokens: 5,
+      }),
     });
   });
 
@@ -86,6 +96,7 @@ describe('AiModelExecutionService', () => {
       system: 'You are a vision assistant',
       variant: 'reasoning-high',
     })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.response-body',
       finishReason: 'stop',
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -128,6 +139,145 @@ describe('AiModelExecutionService', () => {
     ]);
   });
 
+  it('extracts non-stream custom blocks from the provider response body', async () => {
+    const service = createService();
+    mockGenerateText.mockResolvedValueOnce({
+      finishReason: 'stop',
+      response: {
+        body: {
+          choices: [
+            {
+              finish_reason: 'stop',
+              index: 0,
+              message: {
+                content: '你好',
+                reasoning_content: '先输出问候语',
+                role: 'assistant',
+              },
+            },
+          ],
+          id: 'chatcmpl-1',
+          model: 'deepseek-reasoner',
+          object: 'chat.completion',
+        },
+      },
+      text: '你好',
+      usage: {
+        inputTokens: 3,
+        outputTokens: 5,
+      },
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: '你好',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.response-body',
+      customBlocks: [
+        {
+          key: 'reasoning_content',
+          kind: 'text',
+          value: '先输出问候语',
+        },
+      ],
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: '你好',
+      usage: {
+        inputTokens: 3,
+        outputTokens: 5,
+      },
+    });
+  });
+
+  it.each([
+    ['openai', 'deepseek-reasoner'],
+    ['anthropic', 'claude-3-7-sonnet'],
+    ['gemini', 'gemini-2.5-pro'],
+  ] as const)('collects streamed text, usage and custom blocks for %s when transportMode=stream-collect', async (providerId, modelId) => {
+    const service = createService();
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield {
+          rawValue: {
+            choices: [
+              {
+                delta: {
+                  reasoning_content: '先分析问题，',
+                },
+              },
+            ],
+          },
+          type: 'raw',
+        };
+        yield {
+          rawValue: {
+            choices: [
+              {
+                delta: {
+                  reasoning_content: '再组织答案',
+                },
+              },
+            ],
+          },
+          type: 'raw',
+        };
+        yield {
+          text: 'streamed ',
+          type: 'text-delta',
+        };
+        yield {
+          text: 'response',
+          type: 'text-delta',
+        };
+      })(),
+      totalUsage: Promise.resolve({
+        inputTokens: 4,
+        outputTokens: 6,
+      }),
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId,
+      providerId,
+      transportMode: 'stream-collect',
+    } as any)).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.raw',
+      customBlocks: [
+        {
+          key: 'reasoning_content',
+          kind: 'text',
+          value: '先分析问题，再组织答案',
+        },
+      ],
+      finishReason: 'stop',
+      modelId,
+      providerId,
+      text: 'streamed response',
+      usage: {
+        inputTokens: 4,
+        outputTokens: 6,
+      },
+    });
+
+    expect(mockGenerateText).not.toHaveBeenCalled();
+    expect(mockStreamText).toHaveBeenCalledTimes(1);
+  });
+
   it('retries chat generation with configured fallback chat models when the primary call fails', async () => {
     const service = createService();
     mockGenerateText
@@ -152,6 +302,7 @@ describe('AiModelExecutionService', () => {
       modelId: 'claude-3-7-sonnet',
       providerId: 'anthropic',
     })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.response-body',
       finishReason: 'stop',
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -181,6 +332,10 @@ describe('AiModelExecutionService', () => {
             type: 'text-delta',
           };
         })(),
+        totalUsage: Promise.resolve({
+          inputTokens: 1,
+          outputTokens: 2,
+        }),
       });
 
     const streamed = service.streamText({
@@ -223,6 +378,7 @@ describe('AiModelExecutionService', () => {
       headers: {
         'x-trace-id': 'trace-stream-1',
       },
+      includeRawChunks: true,
       maxOutputTokens: 64,
       providerOptions: {
         temperature: 0.1,
@@ -251,6 +407,15 @@ function createService(): AiModelExecutionService {
     mode: 'protocol',
     models: ['claude-3-7-sonnet'],
     name: 'Anthropic',
+  });
+  settingsService.upsertProvider('gemini', {
+    apiKey: 'test-gemini-key',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    defaultModel: 'gemini-2.5-pro',
+    driver: 'gemini',
+    mode: 'protocol',
+    models: ['gemini-2.5-pro'],
+    name: 'Google Gemini',
   });
   settingsService.updateHostModelRoutingConfig({
     fallbackChatModels: [

@@ -417,6 +417,7 @@ test('createPluginHostFacade normalizes host params for author-side host helpers
   });
   await host.generate({
     providerId: 'openai',
+    transportMode: 'stream-collect',
     messages: [
       {
         role: 'user',
@@ -432,6 +433,7 @@ test('createPluginHostFacade normalizes host params for author-side host helpers
   await host.generateText({
     prompt: 'ping',
     maxOutputTokens: 64,
+    transportMode: 'stream-collect',
   });
 
   assert.deepEqual(calls, [
@@ -467,6 +469,7 @@ test('createPluginHostFacade normalizes host params for author-side host helpers
       method: 'llm.generate',
       params: {
         providerId: 'openai',
+        transportMode: 'stream-collect',
         messages: [
           {
             role: 'user',
@@ -486,6 +489,7 @@ test('createPluginHostFacade normalizes host params for author-side host helpers
       params: {
         prompt: 'ping',
         maxOutputTokens: 64,
+        transportMode: 'stream-collect',
       },
     },
   ]);

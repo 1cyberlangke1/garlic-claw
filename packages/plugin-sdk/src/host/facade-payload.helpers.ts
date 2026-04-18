@@ -56,6 +56,7 @@ export function buildPluginGenerateParams(input: PluginLlmGenerateParams): JsonO
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.headers ? { headers: input.headers } : {}),
     ...(typeof input.maxOutputTokens === "number" ? { maxOutputTokens: input.maxOutputTokens } : {}),
+    ...(input.transportMode ? { transportMode: input.transportMode } : {}),
   };
 }
 
@@ -100,6 +101,7 @@ export function buildPluginGenerateTextParams(input: PluginGenerateTextParams): 
     ...(typeof input.maxOutputTokens === "number" ? { maxOutputTokens: input.maxOutputTokens } : {}),
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.headers ? { headers: input.headers } : {}),
+    ...(input.transportMode ? { transportMode: input.transportMode } : {}),
   };
 }
 

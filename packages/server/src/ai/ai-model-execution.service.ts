@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue, PluginLlmMessage } from '@garlic-claw/shared';
+import type { JsonObject, JsonValue, PluginLlmMessage, PluginLlmTransportMode } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -6,6 +6,7 @@ import { generateText, streamText, type LanguageModel, type ModelMessage, type T
 import { createRequire } from 'node:module';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
 import type { StoredAiProviderConfig } from '../ai-management/ai-management.types';
+import { readAssistantRawCustomBlocks, readAssistantResponseCustomBlocks, type AssistantCustomBlockEntry } from '../runtime/host/runtime-host-values';
 
 export interface AiModelExecutionRequest {
   allowFallbackChatModels?: boolean;
@@ -16,10 +17,19 @@ export interface AiModelExecutionRequest {
   providerId?: string;
   providerOptions?: JsonObject;
   system?: string;
+  transportMode?: PluginLlmTransportMode;
   variant?: string;
 }
 
-export interface AiModelExecutionResult { finishReason?: string | null; modelId: string; providerId: string; text: string; usage?: JsonValue; }
+export interface AiModelExecutionResult {
+  customBlocks?: AssistantCustomBlockEntry[];
+  customBlockOrigin?: 'ai-sdk.raw' | 'ai-sdk.response-body';
+  finishReason?: string | null;
+  modelId: string;
+  providerId: string;
+  text: string;
+  usage?: JsonValue;
+}
 
 interface AiExecutionTarget {
   modelId: string;
@@ -35,11 +45,18 @@ export class AiModelExecutionService {
   constructor(private readonly aiProviderSettingsService: AiProviderSettingsService = new AiProviderSettingsService()) {}
 
   async generateText(input: AiModelExecutionRequest): Promise<AiModelExecutionResult> {
+    if (input.transportMode === 'stream-collect') {
+      return this.collectStreamedTextResult(input);
+    }
     let lastError: unknown;
     for (const target of this.buildExecutionTargets(input)) {
       try {
         const result = await generateText(this.buildExecutionInput(input, target) as Parameters<typeof generateText>[0]);
         return {
+          ...(result.response?.body
+            ? { customBlocks: readAssistantResponseCustomBlocks(result.response.body) }
+            : {}),
+          customBlockOrigin: 'ai-sdk.response-body',
           finishReason: typeof result.finishReason === 'string' ? result.finishReason : null,
           modelId: target.modelId,
           providerId: target.provider.id,
@@ -61,12 +78,7 @@ export class AiModelExecutionService {
     let lastError: unknown;
     for (const target of this.buildExecutionTargets(input)) {
       try {
-        const result = streamText({
-          ...this.buildExecutionInput(input, target),
-          ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-          ...(input.stopWhen ? { stopWhen: input.stopWhen } : {}),
-          ...(input.tools ? { tools: input.tools } : {}),
-        } as Parameters<typeof streamText>[0]);
+        const result = this.startTextStream(input, target);
 
         return {
           finishReason: result.finishReason,
@@ -79,6 +91,45 @@ export class AiModelExecutionService {
       }
     }
     throw readExecutionError(lastError, 'AI text streaming failed');
+  }
+
+  private async collectStreamedTextResult(input: AiModelExecutionRequest): Promise<AiModelExecutionResult> {
+    let lastError: unknown;
+    for (const target of this.buildExecutionTargets(input)) {
+      try {
+        const result = this.startTextStream(input, target);
+        let text = '';
+        let customBlocks: AssistantCustomBlockEntry[] = [];
+
+        for await (const part of result.fullStream) {
+          if (part.type === 'text-delta') {
+            text += part.text;
+            continue;
+          }
+          if (part.type === 'raw') {
+            customBlocks = applyAssistantCustomBlockUpdates(
+              customBlocks,
+              readAssistantRawCustomBlocks(part),
+            );
+          }
+        }
+
+        const usage = await readCollectedUsage(result);
+
+        return {
+          ...(customBlocks.length > 0 ? { customBlocks } : {}),
+          customBlockOrigin: 'ai-sdk.raw',
+          finishReason: readFinishReason(await result.finishReason),
+          modelId: target.modelId,
+          providerId: target.provider.id,
+          text,
+          ...(usage !== undefined ? { usage } : {}),
+        };
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw readExecutionError(lastError, 'AI text generation failed');
   }
 
   private buildExecutionTargets(input: AiModelExecutionRequest): AiExecutionTarget[] {
@@ -116,6 +167,23 @@ export class AiModelExecutionService {
     };
   }
 
+  private startTextStream(
+    input: AiModelExecutionRequest & {
+      abortSignal?: AbortSignal;
+      stopWhen?: Parameters<typeof streamText>[0]['stopWhen'];
+      tools?: Record<string, Tool>;
+    },
+    target: AiExecutionTarget,
+  ): ReturnType<typeof streamText> {
+    return streamText({
+      ...this.buildExecutionInput(input, target),
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      includeRawChunks: true,
+      ...(input.stopWhen ? { stopWhen: input.stopWhen } : {}),
+      ...(input.tools ? { tools: input.tools } : {}),
+    } as Parameters<typeof streamText>[0]);
+  }
+
   private createLanguageModel(target: AiExecutionTarget): LanguageModel {
     if (target.provider.driver === 'anthropic') {
       return createAnthropic({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl })(target.modelId) as unknown as LanguageModel;
@@ -128,6 +196,40 @@ export class AiModelExecutionService {
     }
     return createOpenAI({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl, name: target.provider.id }).chat(target.modelId) as unknown as LanguageModel;
   }
+}
+
+function applyAssistantCustomBlockUpdates(
+  currentBlocks: AssistantCustomBlockEntry[],
+  updates: AssistantCustomBlockEntry[],
+): AssistantCustomBlockEntry[] {
+  if (updates.length === 0) {
+    return currentBlocks;
+  }
+
+  const nextBlocks = [...currentBlocks];
+  for (const update of updates) {
+    const blockIndex = nextBlocks.findIndex((entry) => entry.key === update.key);
+    if (blockIndex < 0) {
+      nextBlocks.push(update);
+      continue;
+    }
+    nextBlocks[blockIndex] = update.kind === 'text'
+      ? {
+          key: update.key,
+          kind: 'text',
+          value: `${nextBlocks[blockIndex]?.kind === 'text' ? nextBlocks[blockIndex].value : ''}${update.value}`,
+        }
+      : update;
+  }
+  return nextBlocks;
+}
+
+function readFinishReason(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+async function readCollectedUsage(result: ReturnType<typeof streamText>): Promise<JsonValue | undefined> {
+  return await result.totalUsage as unknown as JsonValue;
 }
 
 function buildExecutionMessages(messages: PluginLlmMessage[]): ModelMessage[] {

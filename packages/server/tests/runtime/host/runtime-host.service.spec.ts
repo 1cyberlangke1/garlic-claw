@@ -11,6 +11,8 @@ import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builti
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
 import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin-persistence.service';
+import { PersonaService } from '../../../src/persona/persona.service';
+import { PersonaStoreService } from '../../../src/persona/persona-store.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../src/runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gateway/runtime-gateway-remote-transport.service';
 import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
@@ -64,11 +66,12 @@ describe('RuntimeHostService', () => {
       pluginBootstrapService,
       new RuntimeGatewayRemoteTransportService(runtimeGatewayConnectionLifecycleService),
     );
+    const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
     const runtimeHostService = new RuntimeHostService(
       pluginBootstrapService,
       {} as never,
       {} as never,
-      new RuntimeHostConversationRecordService(),
+      runtimeHostConversationRecordService,
       {} as never,
       new AiManagementService(new AiProviderSettingsService()),
       new RuntimeHostKnowledgeService(),
@@ -76,6 +79,7 @@ describe('RuntimeHostService', () => {
       new RuntimeHostPluginRuntimeService(),
       {} as never,
       new RuntimeHostUserContextService(),
+      new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
     );
 
     (builtinPluginRegistryService as unknown as {
@@ -494,7 +498,7 @@ describe('RuntimeHostService', () => {
   });
 
   it('generates text and assistant output through runtime-owned llm host methods', async () => {
-    const { pluginBootstrapService, service } = createFixture({
+    const { pluginBootstrapService, runtimeHostLlmService, service } = createFixture({
       permissions: ['llm:generate'],
     });
     pluginBootstrapService.registerPlugin({
@@ -521,10 +525,27 @@ describe('RuntimeHostService', () => {
           modelId: 'gpt-5.2',
           prompt: '请为这段对话生成标题',
           providerId: 'openai',
+          transportMode: 'stream-collect',
         },
         pluginId: 'builtin.memory-context',
       }),
     ).resolves.toEqual({
+      metadata: {
+        customBlocks: [
+          {
+            id: 'custom-field:reasoning_content',
+            kind: 'text',
+            source: {
+              key: 'reasoning_content',
+              origin: 'ai-sdk.raw',
+              providerId: 'openai',
+            },
+            state: 'done',
+            text: '先生成标题再输出正文',
+            title: 'Reasoning Content',
+          },
+        ],
+      },
       modelId: 'gpt-5.2',
       providerId: 'openai',
       text: 'Generated: 请为这段对话生成标题',
@@ -552,13 +573,46 @@ describe('RuntimeHostService', () => {
             },
           ],
           system: '你是一个总结助手',
+          transportMode: 'stream-collect',
         },
         pluginId: 'builtin.conversation-title',
       }),
     ).resolves.toEqual({
       finishReason: 'stop',
+      metadata: {
+        customBlocks: [
+          {
+            id: 'custom-field:reasoning_content',
+            kind: 'text',
+            source: {
+              key: 'reasoning_content',
+              origin: 'ai-sdk.raw',
+              providerId: 'anthropic',
+            },
+            state: 'done',
+            text: '先生成标题再输出正文',
+            title: 'Reasoning Content',
+          },
+        ],
+      },
       message: {
         content: 'Generated: 请总结这段对话',
+        metadata: {
+          customBlocks: [
+            {
+              id: 'custom-field:reasoning_content',
+              kind: 'text',
+              source: {
+                key: 'reasoning_content',
+                origin: 'ai-sdk.raw',
+                providerId: 'anthropic',
+              },
+              state: 'done',
+              text: '先生成标题再输出正文',
+              title: 'Reasoning Content',
+            },
+          ],
+        },
         role: 'assistant',
       },
       modelId: 'claude-3-7-sonnet',
@@ -571,6 +625,13 @@ describe('RuntimeHostService', () => {
         outputTokens: 18,
       },
     });
+
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      transportMode: 'stream-collect',
+    }));
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      transportMode: 'stream-collect',
+    }));
   });
 
   it('persists conversation, persona, memory and log data in runtime-owned stores', async () => {
@@ -692,7 +753,15 @@ function createFixture(input?: {
       messages: Array<{ content: unknown }>;
       modelId?: string;
       providerId?: string;
+      transportMode?: string;
     }) => ({
+      customBlocks: [
+        {
+          key: 'reasoning_content',
+          kind: 'text',
+          value: '先生成标题再输出正文',
+        } as const,
+      ],
       finishReason: 'stop',
       modelId: input.modelId ?? 'gpt-5.2',
       providerId: input.providerId ?? 'openai',
@@ -701,6 +770,9 @@ function createFixture(input?: {
         inputTokens: 7,
         outputTokens: 18,
       },
+      ...(input.transportMode === 'stream-collect'
+        ? { customBlockOrigin: 'ai-sdk.raw' as const }
+        : { customBlockOrigin: 'ai-sdk.response-body' as const }),
     })),
   };
   const readStubLlmText = (request: { messages: Array<{ content: unknown }> }) => {
@@ -788,6 +860,7 @@ function createFixture(input?: {
   return {
     pluginBootstrapService,
     runtimeHostConversationMessageService,
+    runtimeHostLlmService,
     runtimeHostSubagentRunnerService,
     service: (() => {
       const runtimeHostPluginDispatchService = { registerHostCaller: jest.fn() } as never;
@@ -803,6 +876,7 @@ function createFixture(input?: {
         new RuntimeHostPluginRuntimeService(),
         runtimeHostSubagentRunnerService,
         new RuntimeHostUserContextService(),
+        new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
       );
       service.onModuleInit();
       return service;

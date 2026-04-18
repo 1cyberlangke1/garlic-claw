@@ -17,6 +17,9 @@ export interface PluginLlmMessage {
   content: string | ChatMessagePart[];
 }
 
+/** 插件侧显式指定的底层调用传输模式。 */
+export type PluginLlmTransportMode = 'generate' | 'stream-collect';
+
 /** 插件侧统一 LLM 生成请求。 */
 export interface PluginLlmGenerateParams {
   providerId?: string;
@@ -27,6 +30,7 @@ export interface PluginLlmGenerateParams {
   providerOptions?: JsonObject;
   headers?: Record<string, string>;
   maxOutputTokens?: number;
+  transportMode?: PluginLlmTransportMode;
 }
 
 /** 插件侧统一 LLM 生成结果。 */

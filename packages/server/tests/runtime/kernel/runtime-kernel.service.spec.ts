@@ -7,6 +7,8 @@ import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builti
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
 import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin-persistence.service';
+import { PersonaService } from '../../../src/persona/persona.service';
+import { PersonaStoreService } from '../../../src/persona/persona-store.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../src/runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gateway/runtime-gateway-remote-transport.service';
 import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
@@ -397,6 +399,7 @@ function createService() {
     new RuntimeHostPluginRuntimeService(),
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
+    new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();
   return {

@@ -59,6 +59,7 @@ async function main() {
     automationsPath: path.join(tempDir, 'automations.server.json'),
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
     mcpConfigPath: path.join(tempDir, 'mcp.server.json'),
+    personasPath: path.join(tempDir, 'persona'),
     subagentTasksPath: path.join(tempDir, 'subagent-tasks.server.json'),
   };
   const state = {
@@ -67,8 +68,10 @@ async function main() {
     automationSubagentTaskId: null,
     bootstrapTokens: null,
     conversationId: null,
+    defaultPersonaId: null,
     firstAssistantMessageId: null,
     firstUserMessageId: null,
+    managedPersonaId: 'smoke-persona',
     memoryId: null,
     mcpName: 'smoke-mcp',
     modelId: 'smoke-model',
@@ -142,6 +145,7 @@ async function main() {
       flowSuffix: state.userAlias,
       mcpCommand: process.execPath,
       mcpScriptPath,
+      personasPath: serverFiles.personasPath,
       remotePluginScriptPath,
       smokeSkillId,
     });
@@ -174,6 +178,8 @@ async function main() {
 async function runHttpFlow(apiBase, state, input) {
   const adminHeaders = () => createBearerHeaders(readTokens(state.adminTokens).accessToken);
   const userHeaders = adminHeaders;
+  const managedPersonaDirectory = path.join(input.personasPath, encodeURIComponent(state.managedPersonaId));
+  const managedPersonaAvatarPath = path.join(managedPersonaDirectory, 'avatar.svg');
 
   await runStep('ai.provider-catalog', async () => {
     const catalog = await getJson(apiBase, '/ai/provider-catalog');
@@ -374,23 +380,98 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('personas.list', async () => {
     const personas = await getJson(apiBase, '/personas');
     ensure(Array.isArray(personas) && personas.length > 0, 'Expected personas list to be non-empty');
-    state.personaId = personas[0].id;
+    state.defaultPersonaId = personas.find((entry) => entry.isDefault)?.id ?? personas[0].id;
+    state.personaId = state.defaultPersonaId;
   });
 
   await runStep('personas.current.get', async () => {
     const persona = await getJson(apiBase, `/personas/current?conversationId=${state.conversationId}`, { headers: userHeaders() });
     ensure(typeof persona.personaId === 'string', 'Expected current persona payload');
+    ensure(persona.personaId === state.defaultPersonaId, 'Expected conversation to use default persona before custom activation');
+  });
+
+  await runStep('personas.create', async () => {
+    const persona = await postJson(apiBase, '/personas', {
+      body: {
+        beginDialogs: [
+          { content: '先给出结构化提纲。', role: 'assistant' },
+        ],
+        customErrorMessage: '烟测 persona 暂时不可用',
+        description: '用于后端烟测的人设',
+        id: state.managedPersonaId,
+        name: 'Smoke Persona',
+        prompt: '你是一个用于后端烟测的 persona。',
+        skillIds: [input.smokeSkillId],
+        toolNames: [],
+      },
+      headers: userHeaders(),
+    });
+    ensure(persona.id === state.managedPersonaId, 'Expected persona create to persist requested id');
+  });
+
+  await runStep('personas.avatar.prepare', async () => {
+    await fsPromises.mkdir(managedPersonaDirectory, { recursive: true });
+    await fsPromises.writeFile(
+      managedPersonaAvatarPath,
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#111"/><text x="8" y="11" fill="#fff" font-size="8" text-anchor="middle">S</text></svg>',
+      'utf8',
+    );
+  });
+
+  await runStep('personas.avatar.get', async () => {
+    const avatar = await getJson(apiBase, `/personas/${state.managedPersonaId}/avatar`);
+    ensure(typeof avatar === 'string' && avatar.includes('<svg'), 'Expected persona avatar endpoint to return svg content');
+  });
+
+  await runStep('personas.get', async () => {
+    const persona = await getJson(apiBase, `/personas/${state.managedPersonaId}`);
+    ensure(persona.id === state.managedPersonaId, 'Expected persona detail to match created persona');
+    ensure(persona.beginDialogs?.[0]?.content === '先给出结构化提纲。', 'Expected persona detail to include begin dialogs');
+  });
+
+  await runStep('personas.update', async () => {
+    const persona = await putJson(apiBase, `/personas/${state.managedPersonaId}`, {
+      body: {
+        beginDialogs: [
+          { content: '先列出两个候选方案。', role: 'assistant' },
+        ],
+        customErrorMessage: '更新后的烟测 persona 暂时不可用',
+        description: '更新后的烟测 persona',
+        name: 'Smoke Persona Updated',
+        prompt: '你是更新后的后端烟测 persona。',
+        skillIds: [],
+        toolNames: [input.smokeSkillId],
+      },
+      headers: userHeaders(),
+    });
+    ensure(persona.name === 'Smoke Persona Updated', 'Expected persona update to persist latest name');
+    ensure(persona.toolNames?.includes(input.smokeSkillId), 'Expected persona update to persist latest tool names');
   });
 
   await runStep('personas.current.put', async () => {
     const persona = await putJson(apiBase, '/personas/current', {
       body: {
         conversationId: state.conversationId,
-        personaId: state.personaId,
+        personaId: state.managedPersonaId,
       },
       headers: userHeaders(),
     });
-    ensure(persona.personaId === state.personaId, 'Expected persona activation to persist');
+    state.personaId = persona.personaId;
+    ensure(persona.personaId === state.managedPersonaId, 'Expected persona activation to persist');
+    ensure(persona.source === 'conversation', 'Expected persona activation to report conversation source');
+  });
+
+  await runStep('personas.delete', async () => {
+    const result = await deleteJson(apiBase, `/personas/${state.managedPersonaId}`, { headers: userHeaders() });
+    ensure(result.deletedPersonaId === state.managedPersonaId, 'Expected persona delete response to include deleted id');
+    ensure(result.fallbackPersonaId === state.defaultPersonaId, 'Expected persona delete to report default fallback');
+    ensure(result.reassignedConversationCount >= 1, 'Expected persona delete to reassign the smoke conversation');
+    state.personaId = result.fallbackPersonaId;
+  });
+
+  await runStep('personas.current.get.after-delete', async () => {
+    const persona = await getJson(apiBase, `/personas/current?conversationId=${state.conversationId}`, { headers: userHeaders() });
+    ensure(persona.personaId === state.defaultPersonaId, 'Expected current persona to fall back to default after delete');
   });
 
   await runStep('chat.messages.send', async () => {
@@ -1183,6 +1264,7 @@ async function startBackend(port, wsPort, databaseUrl, files) {
       GARLIC_CLAW_AUTOMATIONS_PATH: files.automationsPath,
       GARLIC_CLAW_CONVERSATIONS_PATH: files.conversationsPath,
       GARLIC_CLAW_MCP_CONFIG_PATH: files.mcpConfigPath,
+      GARLIC_CLAW_PERSONAS_PATH: files.personasPath,
       GARLIC_CLAW_SUBAGENT_TASKS_PATH: files.subagentTasksPath,
       JWT_SECRET: 'smoke-jwt-secret',
       NODE_ENV: 'test',
