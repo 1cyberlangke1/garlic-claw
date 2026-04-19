@@ -11,7 +11,6 @@ function createPlugin(
     name: input.name,
     displayName: input.displayName ?? input.name,
     description: input.description,
-    deviceType: input.deviceType ?? 'builtin',
     status: input.status ?? 'online',
     connected: input.connected ?? true,
     defaultEnabled: input.defaultEnabled ?? true,
@@ -33,6 +32,7 @@ function createPlugin(
     lastSeenAt: input.lastSeenAt ?? null,
     createdAt: input.createdAt ?? '2026-03-28T00:00:00.000Z',
     updatedAt: input.updatedAt ?? '2026-03-28T00:00:00.000Z',
+    remote: input.remote ?? null,
   }
 }
 
@@ -159,10 +159,27 @@ describe('PluginSidebar', () => {
             name: 'remote.error',
             displayName: 'Error Plugin',
             description: 'error',
-            deviceType: 'api',
             status: 'error',
             connected: false,
             runtimeKind: 'remote',
+            remote: {
+              access: {
+                accessKey: 'smoke-access-key',
+                serverUrl: 'ws://127.0.0.1:23331',
+              },
+              descriptor: {
+                auth: {
+                  mode: 'required',
+                },
+                capabilityProfile: 'query',
+                remoteEnvironment: 'api',
+              },
+              metadataCache: {
+                lastSyncedAt: null,
+                manifestHash: null,
+                status: 'cached',
+              },
+            },
             health: {
               status: 'error',
               failureCount: 3,
@@ -210,10 +227,27 @@ describe('PluginSidebar', () => {
             name: 'remote.error',
             displayName: 'Error Plugin',
             description: 'remote plugin',
-            deviceType: 'api',
             status: 'error',
             connected: false,
             runtimeKind: 'remote',
+            remote: {
+              access: {
+                accessKey: 'smoke-access-key',
+                serverUrl: 'ws://127.0.0.1:23331',
+              },
+              descriptor: {
+                auth: {
+                  mode: 'required',
+                },
+                capabilityProfile: 'query',
+                remoteEnvironment: 'api',
+              },
+              metadataCache: {
+                lastSyncedAt: null,
+                manifestHash: null,
+                status: 'cached',
+              },
+            },
             health: {
               status: 'error',
               failureCount: 2,
@@ -271,10 +305,27 @@ describe('PluginSidebar', () => {
             name: 'remote.error',
             displayName: 'Error Plugin',
             description: 'remote plugin',
-            deviceType: 'api',
             status: 'error',
             connected: false,
             runtimeKind: 'remote',
+            remote: {
+              access: {
+                accessKey: 'smoke-access-key',
+                serverUrl: 'ws://127.0.0.1:23331',
+              },
+              descriptor: {
+                auth: {
+                  mode: 'required',
+                },
+                capabilityProfile: 'query',
+                remoteEnvironment: 'api',
+              },
+              metadataCache: {
+                lastSyncedAt: null,
+                manifestHash: null,
+                status: 'cached',
+              },
+            },
             health: {
               status: 'error',
               failureCount: 2,
@@ -415,10 +466,27 @@ describe('PluginSidebar', () => {
             name: 'remote.pc-host',
             displayName: 'PC Host',
             description: 'remote plugin',
-            deviceType: 'api',
             status: 'online',
             connected: true,
             runtimeKind: 'remote',
+            remote: {
+              access: {
+                accessKey: 'smoke-access-key',
+                serverUrl: 'ws://127.0.0.1:23331',
+              },
+              descriptor: {
+                auth: {
+                  mode: 'required',
+                },
+                capabilityProfile: 'query',
+                remoteEnvironment: 'api',
+              },
+              metadataCache: {
+                lastSyncedAt: null,
+                manifestHash: null,
+                status: 'cached',
+              },
+            },
             health: {
               status: 'healthy',
               failureCount: 0,
@@ -485,10 +553,27 @@ describe('PluginSidebar', () => {
             name: 'remote.pc-host',
             displayName: 'PC Host',
             description: 'remote plugin',
-            deviceType: 'api',
             status: 'online',
             connected: true,
             runtimeKind: 'remote',
+            remote: {
+              access: {
+                accessKey: 'smoke-access-key',
+                serverUrl: 'ws://127.0.0.1:23331',
+              },
+              descriptor: {
+                auth: {
+                  mode: 'required',
+                },
+                capabilityProfile: 'query',
+                remoteEnvironment: 'api',
+              },
+              metadataCache: {
+                lastSyncedAt: null,
+                manifestHash: null,
+                status: 'cached',
+              },
+            },
             health: {
               status: 'healthy',
               failureCount: 0,

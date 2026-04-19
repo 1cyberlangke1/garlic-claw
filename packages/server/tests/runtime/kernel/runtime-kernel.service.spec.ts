@@ -27,15 +27,10 @@ describe('RuntimePluginGovernanceService', () => {
     const fixture = createService();
     const { runtimeGatewayConnectionLifecycleService, runtimeHostPluginDispatchService, service } = fixture;
 
+    seedRemotePlugin(fixture);
+
     runtimeGatewayConnectionLifecycleService.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -63,6 +58,7 @@ describe('RuntimePluginGovernanceService', () => {
         ],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
 
     const toolPromise = runtimeHostPluginDispatchService.executeTool({
@@ -150,6 +146,7 @@ describe('RuntimePluginGovernanceService', () => {
       'health-check',
       'reload',
       'reconnect',
+      'refresh-metadata',
     ]);
   });
 
@@ -288,17 +285,12 @@ describe('RuntimePluginGovernanceService', () => {
   });
 
   it('performs remote health checks through the remote transport ping path', async () => {
-    const { runtimeGatewayConnectionLifecycleService, service } = createService();
+    const fixture = createService();
+    const { runtimeGatewayConnectionLifecycleService, service } = fixture;
 
+    seedRemotePlugin(fixture);
     runtimeGatewayConnectionLifecycleService.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -309,6 +301,7 @@ describe('RuntimePluginGovernanceService', () => {
         tools: [],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
     runtimeGatewayConnectionLifecycleService.probePluginHealth = jest.fn().mockResolvedValue({ ok: false });
 
@@ -320,12 +313,116 @@ describe('RuntimePluginGovernanceService', () => {
     ).resolves.toEqual({
       accepted: true,
       action: 'health-check',
-        pluginId: 'remote.echo',
-        message: '插件健康检查失败',
-      });
+      pluginId: 'remote.echo',
+      message: '插件健康检查失败',
+    });
     expect(runtimeGatewayConnectionLifecycleService.probePluginHealth).toHaveBeenCalledWith('remote.echo');
   });
+
+  it('refreshes remote metadata cache after the plugin reconnects with a changed manifest', async () => {
+    const fixture = createService();
+    const { pluginBootstrapService, runtimeGatewayConnectionLifecycleService, service } = fixture;
+
+    seedRemotePlugin(fixture);
+    runtimeGatewayConnectionLifecycleService.registerRemotePlugin({
+      connectionId: 'conn-1',
+      fallback: {
+        id: 'remote.echo',
+        name: 'Remote Echo',
+        runtime: 'remote',
+      },
+      manifest: {
+        description: 'initial manifest',
+        permissions: [],
+        tools: [],
+        version: '1.0.0',
+      } as never,
+      remoteEnvironment: 'api',
+    });
+
+    const initialPlugin = pluginBootstrapService.getPlugin('remote.echo');
+    const initialLastSyncedAt = initialPlugin.remote?.metadataCache.lastSyncedAt;
+    const initialManifestHash = initialPlugin.remote?.metadataCache.manifestHash;
+
+    await expect(
+      service.runPluginAction({
+        action: 'refresh-metadata',
+        pluginId: 'remote.echo',
+      }),
+    ).resolves.toEqual({
+      accepted: true,
+      action: 'refresh-metadata',
+      pluginId: 'remote.echo',
+      message: '已请求远程插件重新同步元数据',
+    });
+    expect(pluginBootstrapService.getPlugin('remote.echo')).toMatchObject({
+      connected: false,
+      status: 'offline',
+    });
+
+    runtimeGatewayConnectionLifecycleService.openConnection({
+      connectionId: 'conn-2',
+    });
+    runtimeGatewayConnectionLifecycleService.authenticateConnection({
+      accessKey: 'smoke-access-key',
+      connectionId: 'conn-2',
+      pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
+    });
+    runtimeGatewayConnectionLifecycleService.registerRemotePlugin({
+      connectionId: 'conn-2',
+      fallback: {
+        id: 'remote.echo',
+        name: 'Remote Echo',
+        runtime: 'remote',
+      },
+      manifest: {
+        description: 'refreshed manifest',
+        permissions: [],
+        tools: [],
+        version: '1.0.1',
+      } as never,
+      remoteEnvironment: 'api',
+    });
+
+    const refreshedPlugin = pluginBootstrapService.getPlugin('remote.echo');
+    expect(refreshedPlugin).toMatchObject({
+      connected: true,
+      remote: {
+        metadataCache: {
+          status: 'cached',
+        },
+      },
+    });
+    expect(refreshedPlugin.remote?.metadataCache.lastSyncedAt).not.toBe(initialLastSyncedAt);
+    expect(refreshedPlugin.remote?.metadataCache.manifestHash).not.toBe(initialManifestHash);
+  });
 });
+
+function seedRemotePlugin(input: ReturnType<typeof createService>) {
+  input.pluginBootstrapService.upsertRemotePlugin({
+    access: {
+      accessKey: 'smoke-access-key',
+      serverUrl: 'ws://127.0.0.1:23331',
+    },
+    displayName: 'Remote Echo',
+    pluginName: 'remote.echo',
+    remote: {
+      auth: {
+        mode: 'required',
+      },
+      capabilityProfile: 'query',
+      remoteEnvironment: 'api',
+    },
+    version: '1.0.0',
+  });
+  input.runtimeGatewayConnectionLifecycleService.authenticateConnection({
+    accessKey: 'smoke-access-key',
+    connectionId: 'conn-1',
+    pluginName: 'remote.echo',
+    remoteEnvironment: 'api',
+  });
+}
 
 function createService() {
   const builtinPluginRegistryService = new BuiltinPluginRegistryService();

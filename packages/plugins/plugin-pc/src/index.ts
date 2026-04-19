@@ -1,5 +1,5 @@
 import type { PluginCapability } from '@garlic-claw/shared';
-import { DEVICE_TYPE, PluginClient } from '@garlic-claw/plugin-sdk/client';
+import { PluginClient, REMOTE_ENVIRONMENT } from '@garlic-claw/plugin-sdk/client';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -16,11 +16,11 @@ function writePluginPcLog(message: string): void {
 
 // --- 配置 ---
 const SERVER_URL = process.env.WS_URL ?? 'ws://localhost:23331';
-const TOKEN = process.env.PLUGIN_TOKEN ?? '';
+const ACCESS_KEY = process.env.PLUGIN_ACCESS_KEY ?? '';
 
-if (!TOKEN) {
-  process.stderr.write('错误：PLUGIN_TOKEN 环境变量是必需的。\n');
-  process.stderr.write('从服务器获取 JWT 令牌（登录）并设置 PLUGIN_TOKEN=<token>\n');
+if (!ACCESS_KEY) {
+  process.stderr.write('错误：PLUGIN_ACCESS_KEY 环境变量是必需的。\n');
+  process.stderr.write('请先在宿主管理页或 `/api/plugins/:pluginId/remote-access` 中配置远程接入 key。\n');
   process.exit(1);
 }
 
@@ -67,10 +67,10 @@ const capabilities: PluginCapability[] = [
 
 // --- 创建并连接客户端 ---
 const client = new PluginClient({
+  accessKey: ACCESS_KEY,
+  remoteEnvironment: REMOTE_ENVIRONMENT.API,
   serverUrl: SERVER_URL,
-  token: TOKEN,
   pluginName: `pc-${os.hostname()}`,
-  deviceType: DEVICE_TYPE.PC,
   manifest: {
     name: '电脑助手',
     version: '1.0.0',

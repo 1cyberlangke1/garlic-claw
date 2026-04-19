@@ -1,4 +1,4 @@
-import { type HostCallPayload, type JsonObject, type JsonValue, type MessageReceivedHookPayload, type MessageReceivedHookResult, type PluginCallContext, type PluginHookDescriptor, type PluginHookMessageFilter, type PluginConversationSessionInfo, type PluginConversationSessionKeepParams, type PluginConversationSessionStartParams, type PluginCommandDescriptor, type PluginHookName, type PluginManifest, type PluginRouteRequest, type PluginRouteResponse, type RemotePluginBootstrapInfo, type WsMessage } from "@garlic-claw/shared";
+import { type HostCallPayload, type JsonObject, type JsonValue, type MessageReceivedHookPayload, type MessageReceivedHookResult, type PluginCallContext, type PluginHookDescriptor, type PluginHookMessageFilter, type PluginConversationSessionInfo, type PluginConversationSessionKeepParams, type PluginConversationSessionStartParams, type PluginCommandDescriptor, type PluginHookName, type PluginManifest, type PluginRouteRequest, type PluginRouteResponse, type RemotePluginConnectionInfo, type WsMessage } from "@garlic-claw/shared";
 import WebSocket from "ws";
 import type { PluginClientOptions, PluginManifestInput } from "./index";
 import { buildCanonicalCommandPath, buildCommandVariants, normalizeCommandAliases, normalizeCommandSegment, renderCommandGroupHelp, type CommandSegmentDescriptor, type CommandTreeGroupNode } from "../utils/command-match";
@@ -45,23 +45,31 @@ export class PluginClient {
   private readonly pendingHostCalls = new Map<string, { resolve: (value: JsonValue) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private readonly options: Required<PluginClientOptions> & { manifest: PluginManifestInput };
+  private readonly options: Omit<Required<PluginClientOptions>, "accessKey" | "manifest"> & {
+    accessKey: string | null;
+    manifest: PluginManifestInput;
+  };
   constructor(options: PluginClientOptions) {
     this.options = {
       autoReconnect: true,
       reconnectInterval: 5000,
       heartbeatInterval: 20000,
-      manifest: {},
       ...options,
+      accessKey: options.accessKey ?? null,
+      manifest: options.manifest ?? {},
     };
   }
-  static fromBootstrap(bootstrap: RemotePluginBootstrapInfo, options: Omit<PluginClientOptions, "serverUrl" | "token" | "pluginName" | "deviceType"> = {}): PluginClient {
+  static fromRemoteAccess(remoteAccess: RemotePluginConnectionInfo, options: Omit<PluginClientOptions, "serverUrl" | "pluginName" | "remoteEnvironment" | "accessKey"> = {}): PluginClient {
     return new PluginClient({
       ...options,
-      serverUrl: bootstrap.serverUrl,
-      token: bootstrap.token,
-      pluginName: bootstrap.pluginName,
-      deviceType: bootstrap.deviceType,
+      serverUrl: remoteAccess.serverUrl,
+      pluginName: remoteAccess.pluginName,
+      remoteEnvironment: remoteAccess.remote.remoteEnvironment,
+      accessKey: remoteAccess.accessKey,
+      manifest: {
+        ...(options.manifest ?? {}),
+        remote: options.manifest?.remote ?? remoteAccess.remote,
+      },
     });
   }
   onCommand(capabilityName: string, handler: CommandHandler) {
@@ -216,9 +224,9 @@ export class PluginClient {
   }
   private authenticate() {
     this.send(WS_TYPE.AUTH, WS_ACTION.AUTHENTICATE, {
-      token: this.options.token,
+      ...(typeof this.options.accessKey !== "undefined" ? { accessKey: this.options.accessKey } : {}),
       pluginName: this.options.pluginName,
-      deviceType: this.options.deviceType,
+      remoteEnvironment: this.options.remoteEnvironment,
     });
   }
   private registerManifest() {
@@ -657,6 +665,13 @@ export class PluginClient {
       description: this.options.manifest.description,
       permissions: this.options.manifest.permissions ?? [],
       tools: this.options.manifest.tools ?? [],
+      remote: this.options.manifest.remote ?? {
+        remoteEnvironment: this.options.remoteEnvironment,
+        auth: {
+          mode: this.options.accessKey ? "required" : "none",
+        },
+        capabilityProfile: "query",
+      },
       ...(commands.length > 0 ? { commands } : {}),
       hooks,
       config: this.options.manifest.config,
@@ -736,7 +751,7 @@ export class PluginClient {
   }
 }
 export { type PluginCapability, type PluginCronDescriptor, type PluginCronJobSummary, type PluginHookName, type PluginHookMessageFilter, type PluginRouteDescriptor, type PluginRouteRequest, type PluginRouteResponse } from "@garlic-claw/shared";
-export { DEVICE_TYPE } from "./plugin-client.constants";
+export { REMOTE_ENVIRONMENT } from "./plugin-client.constants";
 function getMessagePipelineSpecificity(entry: InternalMessageListener | InternalCommandRegistration): number {
   return entry.kind === "listener" ? computeFilterSpecificity(entry.filter) : entry.path.length;
 }

@@ -7,7 +7,6 @@ function createPlugin(input: Partial<PluginInfo> & Pick<PluginInfo, 'id' | 'name
   return {
     displayName: input.displayName ?? input.name,
     description: input.description,
-    deviceType: input.deviceType ?? 'builtin',
     status: input.status ?? 'online',
     connected: input.connected ?? true,
     defaultEnabled: input.defaultEnabled ?? true,
@@ -36,6 +35,7 @@ function createPlugin(input: Partial<PluginInfo> & Pick<PluginInfo, 'id' | 'name
     lastSeenAt: input.lastSeenAt ?? null,
     createdAt: input.createdAt ?? '2026-03-30T00:00:00.000Z',
     updatedAt: input.updatedAt ?? '2026-03-30T00:00:00.000Z',
+    remote: input.remote ?? null,
     ...input,
   }
 }

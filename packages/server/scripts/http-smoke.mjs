@@ -60,6 +60,7 @@ async function main() {
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
     mcpConfigPath: path.join(tempDir, 'mcp', 'mcp.json'),
     personasPath: path.join(tempDir, 'persona'),
+    pluginStatePath: path.join(tempDir, 'plugins.server.json'),
     subagentTasksPath: path.join(tempDir, 'subagent-tasks.server.json'),
   };
   const state = {
@@ -77,9 +78,12 @@ async function main() {
     modelId: 'smoke-model',
     personaId: null,
     providerId: 'smoke-openai',
-    remotePluginId: 'remote.smoke-http',
+    remotePluginAutomationId: null,
+    remotePluginId: 'remote.smoke-iot-light',
     remotePluginHandle: null,
     remotePluginCronId: null,
+    remotePluginInitialManifestHash: null,
+    remotePluginInitialSyncedAt: null,
     retriedAssistantMessageId: null,
     skillId: smokeSkillId,
     toolId: null,
@@ -147,6 +151,7 @@ async function main() {
       mcpCommand: process.execPath,
       mcpScriptPath,
       personasPath: serverFiles.personasPath,
+      remotePluginServerUrl: cli.proxyOrigin ? 'ws://127.0.0.1:23331' : `ws://127.0.0.1:${wsPort}`,
       remotePluginScriptPath,
       smokeSkillId,
     });
@@ -725,15 +730,32 @@ async function runHttpFlow(apiBase, state, input) {
     });
   });
 
-  await runStep('plugins.remote.bootstrap', async () => {
-    const bootstrap = await postJson(apiBase, '/plugins/remote/bootstrap', {
+  await runStep('plugins.remote.access', async () => {
+    const plugin = await putJson(apiBase, `/plugins/${state.remotePluginId}/remote-access`, {
       body: {
-        deviceType: 'pc',
-        pluginName: state.remotePluginId,
+        access: {
+          accessKey: 'smoke-remote-access-key',
+          serverUrl: input.remotePluginServerUrl,
+        },
+        displayName: 'Smoke IoT Light',
+        remote: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'actuate',
+          remoteEnvironment: 'iot',
+        },
+        version: '1.0.0',
       },
     });
-    state.remoteBootstrap = bootstrap;
-    ensure(bootstrap.pluginName === state.remotePluginId, 'Expected remote bootstrap payload');
+    ensure(plugin.id === state.remotePluginId, 'Expected remote plugin slot to be upserted');
+  });
+
+  await runStep('plugins.remote.connection', async () => {
+    const remoteConnection = await getJson(apiBase, `/plugins/${state.remotePluginId}/remote-connection`);
+    state.remoteConnection = remoteConnection;
+    ensure(remoteConnection.pluginName === state.remotePluginId, 'Expected remote connection payload');
+    ensure(remoteConnection.accessKey === 'smoke-remote-access-key', 'Expected remote connection to expose persisted access key');
   });
 
   await runStep('plugins.remote.health.offline', async () => {
@@ -742,13 +764,76 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('plugins.remote.connect', async () => {
-    state.remotePluginHandle = await startRemoteRoutePlugin(input.remotePluginScriptPath, state.remoteBootstrap);
+    state.remotePluginHandle = await startRemoteRoutePlugin(input.remotePluginScriptPath, state.remoteConnection);
     await waitForPluginHealth(apiBase, state.remotePluginId, true);
   });
 
   await runStep('plugins.remote.health.online', async () => {
     const health = await getJson(apiBase, `/plugins/${state.remotePluginId}/health`);
     ensure(health?.status === 'healthy', 'Expected connected remote plugin health to be healthy');
+  });
+
+  await runStep('plugins.remote.metadata.cached.initial', async () => {
+    const plugins = await getJson(apiBase, '/plugins');
+    const plugin = plugins.find((entry) => entry.name === state.remotePluginId);
+    ensure(plugin?.remote?.metadataCache?.status === 'cached', 'Expected remote plugin metadata cache to be cached after first registration');
+    ensure(typeof plugin.remote.metadataCache.lastSyncedAt === 'string', 'Expected remote plugin metadata cache lastSyncedAt');
+    ensure(typeof plugin.remote.metadataCache.manifestHash === 'string', 'Expected remote plugin metadata cache manifestHash');
+    state.remotePluginInitialSyncedAt = plugin.remote.metadataCache.lastSyncedAt;
+    state.remotePluginInitialManifestHash = plugin.remote.metadataCache.manifestHash;
+  });
+
+  await runStep('plugins.remote.automation.create', async () => {
+    const automation = await postJson(apiBase, '/automations', {
+      body: {
+        actions: [
+          {
+            capability: 'light.turnOn',
+            params: {},
+            plugin: state.remotePluginId,
+            type: 'device_command',
+          },
+          {
+            capability: 'light.getState',
+            params: {},
+            plugin: state.remotePluginId,
+            type: 'device_command',
+          },
+          {
+            capability: 'light.turnOff',
+            params: {},
+            plugin: state.remotePluginId,
+            type: 'device_command',
+          },
+        ],
+        name: 'Smoke Remote IoT Light Automation',
+        trigger: {
+          type: 'manual',
+        },
+      },
+      headers: userHeaders(),
+    });
+    state.remotePluginAutomationId = automation.id;
+    ensure(typeof state.remotePluginAutomationId === 'string', 'Expected remote plugin automation id');
+  });
+
+  await runStep('plugins.remote.tool.run', async () => {
+    const result = await postJson(apiBase, `/automations/${state.remotePluginAutomationId}/run`, {
+      headers: userHeaders(),
+    });
+    ensure(result.status === 'success', 'Expected remote IoT automation run to succeed');
+    const turnOn = result.results.find((entry) => entry.plugin === state.remotePluginId && entry.capability === 'light.turnOn');
+    const getState = result.results.find((entry) => entry.plugin === state.remotePluginId && entry.capability === 'light.getState');
+    const turnOff = result.results.find((entry) => entry.plugin === state.remotePluginId && entry.capability === 'light.turnOff');
+    ensure(turnOn?.result?.isOn === true, 'Expected remote IoT light.turnOn result');
+    ensure(getState?.result?.isOn === true, 'Expected remote IoT light.getState to observe on state');
+    ensure(turnOff?.result?.isOn === false, 'Expected remote IoT light.turnOff result');
+  });
+
+  await runStep('plugins.remote.automation.delete', async () => {
+    const deleted = await deleteJson(apiBase, `/automations/${state.remotePluginAutomationId}`, { headers: userHeaders() });
+    ensure(deleted.count === 1, 'Expected remote IoT automation deletion count');
+    state.remotePluginAutomationId = null;
   });
 
   await runStep('plugins.routes.get.success', async () => {
@@ -851,20 +936,45 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(deleted === true, 'Expected deleting created plugin session to succeed');
   });
 
-  await runStep('plugins.remote.action', async () => {
-    const result = await postJson(apiBase, `/plugins/${state.remotePluginId}/actions/reconnect`);
-    ensure(result.accepted === true, 'Expected remote plugin reconnect action to be accepted');
+  await runStep('plugins.remote.action.refresh-metadata', async () => {
+    const result = await postJson(apiBase, `/plugins/${state.remotePluginId}/actions/refresh-metadata`);
+    ensure(result.accepted === true, 'Expected remote plugin refresh-metadata action to be accepted');
   });
 
   await runStep('plugins.remote.health.disconnected', async () => {
     await waitForPluginHealth(apiBase, state.remotePluginId, false);
     const health = await getJson(apiBase, `/plugins/${state.remotePluginId}/health`);
-    ensure(health?.status === 'offline', 'Expected reconnect action to disconnect remote plugin');
+    ensure(health?.status === 'offline', 'Expected refresh-metadata action to disconnect remote plugin before re-register');
   });
 
   await runStep('plugins.remote.stop-client', async () => {
     await state.remotePluginHandle?.stop?.();
     state.remotePluginHandle = null;
+  });
+
+  await runStep('plugins.remote.reconnect.after-refresh', async () => {
+    state.remotePluginHandle = await startRemoteRoutePlugin(
+      input.remotePluginScriptPath,
+      state.remoteConnection,
+      'refresh-v2',
+    );
+    await waitForPluginHealth(apiBase, state.remotePluginId, true);
+  });
+
+  await runStep('plugins.remote.metadata.cached.refreshed', async () => {
+    const plugins = await getJson(apiBase, '/plugins');
+    const plugin = plugins.find((entry) => entry.name === state.remotePluginId);
+    ensure(plugin?.remote?.metadataCache?.status === 'cached', 'Expected remote plugin metadata cache to remain cached after refresh');
+    ensure(typeof plugin.remote.metadataCache.lastSyncedAt === 'string', 'Expected refreshed metadata cache lastSyncedAt');
+    ensure(typeof plugin.remote.metadataCache.manifestHash === 'string', 'Expected refreshed metadata cache manifestHash');
+    ensure(plugin.remote.metadataCache.lastSyncedAt !== state.remotePluginInitialSyncedAt, 'Expected refresh-metadata to update lastSyncedAt');
+    ensure(plugin.remote.metadataCache.manifestHash !== state.remotePluginInitialManifestHash, 'Expected refresh-metadata to update manifestHash');
+  });
+
+  await runStep('plugins.remote.stop-client.after-refresh', async () => {
+    await state.remotePluginHandle?.stop?.();
+    state.remotePluginHandle = null;
+    await waitForPluginHealth(apiBase, state.remotePluginId, false);
   });
 
   await runStep('plugins.remote.delete', async () => {
@@ -1218,16 +1328,38 @@ async function prepareRemoteRoutePluginScript(filePath) {
   await fsPromises.writeFile(filePath, [
     "const { PluginClient } = require('@garlic-claw/plugin-sdk/client');",
     '',
-    "const bootstrap = JSON.parse(process.env.SMOKE_REMOTE_BOOTSTRAP || '{}');",
+    "const remoteConnection = JSON.parse(process.env.SMOKE_REMOTE_CONNECTION || '{}');",
+    "const remoteVariant = process.env.SMOKE_REMOTE_VARIANT || 'base';",
+    "const manifestVersion = remoteVariant === 'refresh-v2' ? '1.0.1' : '1.0.0';",
+    "const manifestDescription = remoteVariant === 'refresh-v2'",
+    "  ? 'Temporary remote IoT light plugin for HTTP smoke verification (refreshed manifest).'",
+    "  : 'Temporary remote IoT light plugin for HTTP smoke verification.';",
+    'const lightState = { isOn: false };',
     '',
-    'const client = PluginClient.fromBootstrap(bootstrap, {',
+    'const client = PluginClient.fromRemoteAccess(remoteConnection, {',
     '  autoReconnect: false,',
     '  manifest: {',
-    "    name: 'Smoke Route Plugin',",
-    "    version: '1.0.0',",
-    "    description: 'Temporary remote route plugin for HTTP smoke verification.',",
+    "    name: 'Smoke IoT Light Plugin',",
+    '    version: manifestVersion,',
+    '    description: manifestDescription,',
     "    permissions: ['memory:write', 'cron:write', 'conversation:write'],",
-    '    tools: [],',
+    '    tools: [',
+    '      {',
+    "        name: 'light.getState',",
+    "        description: 'Read the current IoT light state.',",
+    '        parameters: {},',
+    '      },',
+    '      {',
+    "        name: 'light.turnOn',",
+    "        description: 'Turn on the IoT light.',",
+    '        parameters: {},',
+    '      },',
+    '      {',
+    "        name: 'light.turnOff',",
+    "        description: 'Turn off the IoT light.',",
+    '        parameters: {},',
+    '      },',
+    '    ],',
     '    hooks: [],',
     '    routes: [',
     '      {',
@@ -1243,6 +1375,10 @@ async function prepareRemoteRoutePluginScript(filePath) {
     '    ],',
     '  },',
     '});',
+    '',
+    "client.onCommand('light.getState', async () => ({ isOn: lightState.isOn }));",
+    "client.onCommand('light.turnOn', async () => { lightState.isOn = true; return { isOn: true }; });",
+    "client.onCommand('light.turnOff', async () => { lightState.isOn = false; return { isOn: false }; });",
     '',
     "client.onRoute('inspect/context', async (request, context) => ({",
     '  status: 200,',
@@ -1336,6 +1472,7 @@ async function startBackend(port, wsPort, databaseUrl, files) {
       GARLIC_CLAW_CONVERSATIONS_PATH: files.conversationsPath,
       GARLIC_CLAW_MCP_CONFIG_PATH: files.mcpConfigPath,
       GARLIC_CLAW_PERSONAS_PATH: files.personasPath,
+      GARLIC_CLAW_PLUGIN_STATE_PATH: files.pluginStatePath,
       GARLIC_CLAW_SUBAGENT_TASKS_PATH: files.subagentTasksPath,
       JWT_SECRET: 'smoke-jwt-secret',
       NODE_ENV: 'test',
@@ -1597,13 +1734,14 @@ async function waitForSubagentTaskCompletion(apiBase, taskId) {
   throw new Error(`Timed out waiting for subagent task ${taskId} to complete`);
 }
 
-async function startRemoteRoutePlugin(scriptPath, bootstrap) {
+async function startRemoteRoutePlugin(scriptPath, remoteConnection, variant = 'base') {
   const logs = [];
   const child = spawn(process.execPath, [scriptPath], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
-      SMOKE_REMOTE_BOOTSTRAP: JSON.stringify(bootstrap),
+      SMOKE_REMOTE_CONNECTION: JSON.stringify(remoteConnection),
+      SMOKE_REMOTE_VARIANT: variant,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

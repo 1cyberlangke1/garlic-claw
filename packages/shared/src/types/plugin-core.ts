@@ -94,7 +94,11 @@ export type PluginInvocationSource =
   | 'subagent'
   | 'plugin';
 
-export type PluginActionName = 'reload' | 'reconnect' | 'health-check';
+export type PluginActionName =
+  | 'reload'
+  | 'reconnect'
+  | 'health-check'
+  | 'refresh-metadata';
 
 export interface PluginParamSchema {
   type: 'string' | 'number' | 'boolean' | 'object' | 'array';
@@ -102,20 +106,44 @@ export interface PluginParamSchema {
   required?: boolean;
 }
 
-export type DeviceType = 'builtin' | 'pc' | 'mobile' | 'iot' | 'api';
+export type PluginRemoteEnvironment = 'api' | 'iot';
 
-export interface AuthPayload {
-  token: string;
-  pluginName: string;
-  deviceType: DeviceType;
+export type PluginAuthMode = 'none' | 'optional' | 'required';
+
+export type PluginCapabilityProfile = 'query' | 'actuate' | 'hybrid';
+
+export interface PluginRemoteAuthDescriptor {
+  mode: PluginAuthMode;
 }
 
-export interface RemotePluginBootstrapInfo {
+export interface PluginRemoteDescriptor {
+  remoteEnvironment: PluginRemoteEnvironment;
+  auth: PluginRemoteAuthDescriptor;
+  capabilityProfile: PluginCapabilityProfile;
+}
+
+export interface PluginRemoteAccessConfig {
+  serverUrl: string | null;
+  accessKey: string | null;
+}
+
+export interface PluginRemoteMetadataCacheInfo {
+  status: 'empty' | 'cached';
+  lastSyncedAt: string | null;
+  manifestHash: string | null;
+}
+
+export interface AuthPayload {
+  accessKey?: string | null;
   pluginName: string;
-  deviceType: DeviceType;
+  remoteEnvironment: PluginRemoteEnvironment;
+}
+
+export interface RemotePluginConnectionInfo {
+  pluginName: string;
+  remote: PluginRemoteDescriptor;
   serverUrl: string;
-  token: string;
-  tokenExpiresIn: string;
+  accessKey: string | null;
 }
 
 export interface PluginHookDescriptor {

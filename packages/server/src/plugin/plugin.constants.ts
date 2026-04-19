@@ -1,12 +1,26 @@
-import type { DeviceType, PluginStatus } from '@garlic-claw/shared';
+import type {
+  PluginAuthMode,
+  PluginCapabilityProfile,
+  PluginRemoteEnvironment,
+  PluginStatus,
+} from '@garlic-claw/shared';
 
-export const DEVICE_TYPE = {
+export const REMOTE_ENVIRONMENT = {
   API: 'api',
-  BUILTIN: 'builtin',
   IOT: 'iot',
-  MOBILE: 'mobile',
-  PC: 'pc',
-} as const satisfies Record<string, DeviceType>;
+} as const satisfies Record<string, PluginRemoteEnvironment>;
+
+export const PLUGIN_AUTH_MODE = {
+  NONE: 'none',
+  OPTIONAL: 'optional',
+  REQUIRED: 'required',
+} as const satisfies Record<string, PluginAuthMode>;
+
+export const PLUGIN_CAPABILITY_PROFILE = {
+  ACTUATE: 'actuate',
+  HYBRID: 'hybrid',
+  QUERY: 'query',
+} as const satisfies Record<string, PluginCapabilityProfile>;
 
 export const PLUGIN_STATUS = {
   ERROR: 'error',

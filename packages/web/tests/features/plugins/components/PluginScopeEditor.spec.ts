@@ -74,7 +74,6 @@ describe('PluginScopeEditor', () => {
         plugin: {
           id: 'plugin-1',
           name: 'builtin.memory-context',
-          deviceType: 'builtin',
           status: 'online',
           connected: true,
           defaultEnabled: true,
@@ -93,6 +92,7 @@ describe('PluginScopeEditor', () => {
           lastSeenAt: null,
           createdAt: '2026-03-30T00:00:00.000Z',
           updatedAt: '2026-03-30T00:00:00.000Z',
+          remote: null,
         },
         scope: {
           defaultEnabled: true,
@@ -115,7 +115,6 @@ describe('PluginScopeEditor', () => {
         plugin: {
           id: 'plugin-1',
           name: 'builtin.core-tools',
-          deviceType: 'builtin',
           status: 'online',
           connected: true,
           defaultEnabled: true,
@@ -135,6 +134,7 @@ describe('PluginScopeEditor', () => {
           lastSeenAt: null,
           createdAt: '2026-03-30T00:00:00.000Z',
           updatedAt: '2026-03-30T00:00:00.000Z',
+          remote: null,
         },
         scope: {
           defaultEnabled: true,

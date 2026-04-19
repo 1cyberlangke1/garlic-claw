@@ -1,7 +1,5 @@
 import type { WsMessage } from '@garlic-claw/shared';
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../runtime/gateway/runtime-gateway-remote-transport.service';
 import { RuntimeHostService } from '../../../runtime/host/runtime-host.service';
@@ -19,8 +17,6 @@ import { WS_ACTION, WS_TYPE } from './plugin-gateway.constants';
 export class PluginGatewayWsInboundService {
   private readonly logger = new Logger(PluginGatewayWsInboundService.name);
   constructor(
-    private readonly configService: ConfigService,
-    private readonly jwtService: JwtService,
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
     private readonly runtimeGatewayRemoteTransportService: RuntimeGatewayRemoteTransportService,
     private readonly runtimeHostService: RuntimeHostService,
@@ -61,19 +57,11 @@ export class PluginGatewayWsInboundService {
       return createWsReply(WS_TYPE.ERROR, 'protocol_error', { error: '无效的认证负载' });
     }
     try {
-      const claims = this.jwtService.verify(authPayload.token, {
-        secret: this.configService.get<string>('JWT_SECRET', 'fallback-secret'),
-      }) as Record<string, unknown>;
       this.runtimeGatewayConnectionLifecycleService.authenticateConnection({
-        claims: {
-          authKind: typeof claims.authKind === 'string' ? claims.authKind : undefined,
-          deviceType: typeof claims.deviceType === 'string' ? claims.deviceType : undefined,
-          pluginName: typeof claims.pluginName === 'string' ? claims.pluginName : undefined,
-          role: typeof claims.role === 'string' ? claims.role : undefined,
-        },
+        accessKey: authPayload.accessKey ?? null,
         connectionId,
-        deviceType: authPayload.deviceType,
         pluginName: authPayload.pluginName,
+        remoteEnvironment: authPayload.remoteEnvironment,
       });
       return createWsReply(WS_TYPE.AUTH, WS_ACTION.AUTH_OK, {});
     } catch (error) {
@@ -121,11 +109,10 @@ export class PluginGatewayWsInboundService {
     }
     try {
       this.runtimeGatewayConnectionLifecycleService.registerRemotePlugin({
-        claims: connection.claims ?? {},
         connectionId,
-        deviceType: connection.deviceType ?? connection.pluginId,
         fallback: { id: connection.pluginId, name: registerPayload.manifest.name, runtime: 'remote' },
         manifest: registerPayload.manifest,
+        remoteEnvironment: connection.remoteEnvironment ?? 'api',
       });
       return { flushOutbound: true, reply: createWsReply(WS_TYPE.PLUGIN, WS_ACTION.REGISTER_OK, {}) };
     } catch (error) {

@@ -1,7 +1,10 @@
-import { type PluginActionName, type PluginHostMethod, type PluginManifest } from '@garlic-claw/shared';
+import { type PluginActionName, type PluginHostMethod, type PluginManifest, type PluginRemoteEnvironment } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PluginBootstrapService, type RegisterPluginInput } from '../../plugin/bootstrap/plugin-bootstrap.service';
-import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
+import type {
+  RegisteredPluginRecord,
+  RegisteredPluginRemoteRecord,
+} from '../../plugin/persistence/plugin-persistence.service';
 import { CONNECTION_SCOPED_PLUGIN_HOST_METHODS } from '../host/runtime-host.constants';
 import type { RuntimeGatewayAuthClaims, RuntimeGatewayConnectionRecord } from './runtime-gateway.types';
 
@@ -9,11 +12,11 @@ const CONNECTION_SCOPED_METHODS = new Set<PluginHostMethod>(CONNECTION_SCOPED_PL
 
 export interface RegisterRemotePluginInput extends RegisterPluginInput {
   connectionId: string;
-  claims: RuntimeGatewayAuthClaims;
   fallback: RegisterPluginInput['fallback'] & { runtime?: PluginManifest['runtime']; };
+  remoteEnvironment: PluginRemoteEnvironment;
 }
 
-const DEFAULT_SUPPORTED_ACTIONS: PluginActionName[] = ['health-check', 'reload', 'reconnect'];
+const DEFAULT_SUPPORTED_ACTIONS: PluginActionName[] = ['health-check', 'reload', 'reconnect', 'refresh-metadata'];
 
 @Injectable()
 export class RuntimeGatewayConnectionLifecycleService {
@@ -36,9 +39,9 @@ export class RuntimeGatewayConnectionLifecycleService {
       authenticated: false,
       claims: null,
       connectionId,
-      deviceType: null,
       lastHeartbeatAt: input?.seenAt ?? new Date().toISOString(),
       pluginId: null,
+      remoteEnvironment: null,
       ...(input?.remoteAddress ? { remoteAddress: input.remoteAddress } : {}),
     };
     this.connections.set(connectionId, record);
@@ -46,23 +49,29 @@ export class RuntimeGatewayConnectionLifecycleService {
   }
 
   authenticateConnection(input: {
+    accessKey: string | null;
     connectionId: string;
-    claims: RuntimeGatewayAuthClaims;
-    deviceType: string;
     pluginName: string;
+    remoteEnvironment: PluginRemoteEnvironment;
     seenAt?: string;
   }): RuntimeGatewayConnectionRecord {
-    validateConnectionClaims(input.claims, input.pluginName, input.deviceType);
+    const plugin = this.pluginBootstrapService.getPlugin(input.pluginName);
+    const remote = validateRemotePluginAuthentication(plugin, input.remoteEnvironment, input.accessKey);
+    const claims: RuntimeGatewayAuthClaims = {
+      authMode: remote.descriptor.auth.mode,
+      pluginName: input.pluginName,
+      remoteEnvironment: remote.descriptor.remoteEnvironment,
+    };
 
     const previousConnectionId = this.connectionByPluginId.get(input.pluginName) ?? null;
     if (previousConnectionId && previousConnectionId !== input.connectionId) {this.disconnectConnection(previousConnectionId);}
 
     return this.updateConnection(input.connectionId, {
       authenticated: true,
-      claims: { ...input.claims },
-      deviceType: input.deviceType,
+      claims,
       lastHeartbeatAt: input.seenAt ?? new Date().toISOString(),
       pluginId: input.pluginName,
+      remoteEnvironment: remote.descriptor.remoteEnvironment,
     });
   }
 
@@ -74,20 +83,46 @@ export class RuntimeGatewayConnectionLifecycleService {
 
   registerRemotePlugin(input: RegisterRemotePluginInput): RegisteredPluginRecord {
     const pluginName = input.fallback.id;
-    const deviceType = input.deviceType ?? input.fallback.id;
     const connection = this.getConnection(input.connectionId);
-    if (!connection || !connection.authenticated || connection.pluginId !== pluginName) {this.authenticateConnection({ claims: input.claims, connectionId: input.connectionId, deviceType, pluginName });}
+    if (!connection || !connection.authenticated || connection.pluginId !== pluginName) {
+      throw new Error(`Gateway connection is not authenticated for plugin ${pluginName}`);
+    }
+    const configured = this.pluginBootstrapService.getPlugin(pluginName);
+    const remote = validateRemotePluginAuthentication(
+      configured,
+      input.remoteEnvironment,
+      configured.remote?.access.accessKey ?? null,
+    );
+    const syncedAt = new Date().toISOString();
+    const manifest = {
+      ...input.manifest,
+      remote: remote.descriptor,
+      runtime: 'remote' as const,
+    };
 
     const registered = this.pluginBootstrapService.registerPlugin({
-      deviceType,
+      connected: true,
       fallback: {
         ...input.fallback,
+        remote: remote.descriptor,
         runtime: 'remote',
       },
       governance: input.governance,
-      manifest: input.manifest,
+      manifest,
+      remote: {
+        access: { ...remote.access },
+        descriptor: structuredClone(remote.descriptor),
+        metadataCache: {
+          lastSyncedAt: syncedAt,
+          manifestHash: createManifestHash(manifest),
+          status: 'cached',
+        },
+      },
     });
-    this.updateConnection(input.connectionId, { deviceType, pluginId: pluginName });
+    this.updateConnection(input.connectionId, {
+      pluginId: pluginName,
+      remoteEnvironment: remote.descriptor.remoteEnvironment,
+    });
     return { ...registered, manifest: { ...registered.manifest, runtime: 'remote' } };
   }
 
@@ -115,7 +150,9 @@ export class RuntimeGatewayConnectionLifecycleService {
   disconnectConnection(connectionId: string): RegisteredPluginRecord | null {
     const pluginId = this.removeConnectionState(connectionId)?.pluginId ?? null;
     this.connectionDrain?.(connectionId);
-    return pluginId && this.pluginBootstrapService.listPlugins().some((plugin) => plugin.pluginId === pluginId) ? this.pluginBootstrapService.markPluginOffline(pluginId) : null;
+    return pluginId && this.pluginBootstrapService.listPlugins().some((plugin) => plugin.pluginId === pluginId)
+      ? this.pluginBootstrapService.markPluginOffline(pluginId)
+      : null;
   }
 
   disconnectPlugin(pluginId: string) {
@@ -166,10 +203,46 @@ export function isConnectionScopedHostMethod(method: PluginHostMethod): boolean 
 
 export function readDefaultRemotePluginActions(): PluginActionName[] { return DEFAULT_SUPPORTED_ACTIONS.slice(); }
 
-function cloneConnectionRecord(connection: RuntimeGatewayConnectionRecord): RuntimeGatewayConnectionRecord { return { ...connection, claims: connection.claims ? { ...connection.claims } : null }; }
+function cloneConnectionRecord(connection: RuntimeGatewayConnectionRecord): RuntimeGatewayConnectionRecord {
+  return { ...connection, claims: connection.claims ? { ...connection.claims } : null };
+}
 
-function validateConnectionClaims(claims: RuntimeGatewayAuthClaims, pluginName: string, deviceType: string): void {
-  const isRemotePluginToken = claims.role === 'remote_plugin' && claims.authKind === 'remote-plugin';
-  if (!isRemotePluginToken) {throw new Error('Only remote-plugin token can register a remote plugin');}
-  if (isRemotePluginToken && (claims.pluginName !== pluginName || claims.deviceType !== deviceType)) {throw new Error('Remote plugin token does not match plugin identity');}
+function validateRemotePluginAuthentication(
+  plugin: RegisteredPluginRecord,
+  remoteEnvironment: PluginRemoteEnvironment,
+  accessKey: string | null,
+): RegisteredPluginRemoteRecord {
+  if (plugin.manifest.runtime !== 'remote' || !plugin.remote) {
+    throw new Error(`Plugin ${plugin.pluginId} is not configured as a remote plugin`);
+  }
+  if (plugin.remote.descriptor.remoteEnvironment !== remoteEnvironment) {
+    throw new Error('Remote plugin environment does not match configured plugin slot');
+  }
+  const expectedAccessKey = plugin.remote.access.accessKey;
+  switch (plugin.remote.descriptor.auth.mode) {
+    case 'none':
+      return plugin.remote;
+    case 'optional':
+      if (!expectedAccessKey) {
+        return plugin.remote;
+      }
+      if (expectedAccessKey !== (accessKey ?? null)) {
+        throw new Error('Remote plugin access key does not match configured plugin slot');
+      }
+      return plugin.remote;
+    case 'required':
+      if (!expectedAccessKey) {
+        throw new Error(`Remote plugin ${plugin.pluginId} is missing a configured access key`);
+      }
+      if (expectedAccessKey !== (accessKey ?? null)) {
+        throw new Error('Remote plugin access key does not match configured plugin slot');
+      }
+      return plugin.remote;
+    default:
+      throw new Error('Unsupported remote plugin auth mode');
+  }
+}
+
+function createManifestHash(manifest: Partial<PluginManifest>): string {
+  return Buffer.from(JSON.stringify(manifest), 'utf-8').toString('base64url');
 }

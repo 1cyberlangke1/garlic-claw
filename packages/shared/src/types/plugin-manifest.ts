@@ -10,6 +10,9 @@ import type {
   PluginConfigSchema,
   PluginHookDescriptor,
   PluginParamSchema,
+  PluginRemoteAccessConfig,
+  PluginRemoteDescriptor,
+  PluginRemoteMetadataCacheInfo,
   PluginRuntimeKind,
 } from './plugin-core';
 
@@ -26,6 +29,7 @@ export interface PluginManifest {
   hooks?: PluginHookDescriptor[];
   config?: PluginConfigSchema;
   routes?: PluginRouteDescriptor[];
+  remote?: PluginRemoteDescriptor;
 }
 
 export interface RegisterPayload {
@@ -115,7 +119,6 @@ export interface PluginInfo {
   name: string;
   displayName?: string;
   description?: string;
-  deviceType: string;
   status: string;
   connected: boolean;
   defaultEnabled: boolean;
@@ -129,6 +132,11 @@ export interface PluginInfo {
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;
+  remote?: {
+    descriptor: PluginRemoteDescriptor;
+    access: PluginRemoteAccessConfig;
+    metadataCache: PluginRemoteMetadataCacheInfo;
+  } | null;
 }
 
 export type PluginStatus = 'online' | 'offline' | 'error';

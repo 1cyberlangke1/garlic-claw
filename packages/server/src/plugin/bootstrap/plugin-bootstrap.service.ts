@@ -1,14 +1,56 @@
-import type { DeviceType, JsonValue, PluginCapability, PluginCommandDescriptor, PluginConfigConditionValue, PluginConfigNodeSchema, PluginConfigOptionSchema, PluginConfigRenderType, PluginConfigSchema, PluginCronDescriptor, PluginHookDescriptor, PluginManifest, PluginPermission, PluginRouteDescriptor, PluginRuntimeKind, RemotePluginBootstrapInfo } from '@garlic-claw/shared';
+import type {
+  JsonValue,
+  PluginCapability,
+  PluginCommandDescriptor,
+  PluginConfigConditionValue,
+  PluginConfigNodeSchema,
+  PluginConfigOptionSchema,
+  PluginConfigRenderType,
+  PluginConfigSchema,
+  PluginCronDescriptor,
+  PluginHookDescriptor,
+  PluginManifest,
+  PluginPermission,
+  PluginRemoteAccessConfig,
+  PluginRemoteDescriptor,
+  RemotePluginConnectionInfo,
+  PluginRouteDescriptor,
+  PluginRuntimeKind,
+} from '@garlic-claw/shared';
 import { Injectable, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { BuiltinPluginRegistryService } from '../builtin/builtin-plugin-registry.service';
 import { PluginGovernanceService, type PluginGovernanceOverrides } from '../governance/plugin-governance.service';
-import { PluginPersistenceService, type RegisteredPluginRecord } from '../persistence/plugin-persistence.service';
+import {
+  PluginPersistenceService,
+  type RegisteredPluginRecord,
+  type RegisteredPluginRemoteRecord,
+} from '../persistence/plugin-persistence.service';
 
-export interface RegisterPluginInput { deviceType?: string; fallback: PluginManifestFallback; governance?: PluginGovernanceOverrides; manifest?: Partial<PluginManifest> | null; }
-export interface CreateRemotePluginBootstrapInput { description?: string; deviceType: DeviceType; displayName?: string; pluginName: string; version?: string; }
-export interface PluginManifestFallback { description?: string; id: string; name?: string; runtime?: PluginRuntimeKind; version?: string; }
+export interface RegisterPluginInput {
+  connected?: boolean;
+  fallback: PluginManifestFallback;
+  governance?: PluginGovernanceOverrides;
+  manifest?: Partial<PluginManifest> | null;
+  remote?: RegisteredPluginRemoteRecord | null;
+}
+
+export interface UpsertRemotePluginInput {
+  access: PluginRemoteAccessConfig;
+  description?: string;
+  displayName?: string;
+  pluginName: string;
+  remote: PluginRemoteDescriptor;
+  version?: string;
+}
+
+export interface PluginManifestFallback {
+  description?: string;
+  id: string;
+  name?: string;
+  remote?: PluginRemoteDescriptor;
+  runtime?: PluginRuntimeKind;
+  version?: string;
+}
 
 @Injectable()
 export class PluginBootstrapService {
@@ -17,10 +59,6 @@ export class PluginBootstrapService {
     private readonly pluginPersistenceService: PluginPersistenceService,
     @Optional()
     private readonly builtinPluginRegistryService?: BuiltinPluginRegistryService,
-    @Optional()
-    private readonly configService?: ConfigService,
-    @Optional()
-    private readonly jwtService?: JwtService,
   ) {}
 
   getPlugin(pluginId: string): RegisteredPluginRecord { return this.pluginPersistenceService.getPluginOrThrow(pluginId); }
@@ -41,18 +79,57 @@ export class PluginBootstrapService {
     const manifest = normalizePluginManifest(input.manifest, input.fallback);
     const existing = this.pluginPersistenceService.findPlugin(manifest.id);
     const governance = this.pluginGovernanceService.createState({ manifest, overrides: input.governance });
+    const remote = normalizeRemoteRecord(manifest, input.remote ?? existing?.remote ?? null);
 
     return this.pluginPersistenceService.upsertPlugin({
-      connected: true,
+      connected: input.connected ?? true,
       configValues: existing?.configValues,
       conversationScopes: existing?.conversationScopes,
       defaultEnabled: existing?.defaultEnabled ?? governance.defaultEnabled,
-      deviceType: input.deviceType ?? existing?.deviceType,
       governance: governance.governance,
-      lastSeenAt: new Date().toISOString(),
+      lastSeenAt: input.connected === false ? existing?.lastSeenAt ?? null : new Date().toISOString(),
       llmPreference: existing?.llmPreference,
       manifest,
       pluginId: manifest.id,
+      remote,
+    });
+  }
+
+  upsertRemotePlugin(input: UpsertRemotePluginInput): RegisteredPluginRecord {
+    const normalized = normalizeRemotePluginInput(input);
+    const existing = this.pluginPersistenceService.findPlugin(normalized.pluginName);
+    const cachedManifest = existing?.manifest.runtime === 'remote'
+      ? existing.manifest
+      : null;
+
+    return this.registerPlugin({
+      connected: false,
+      fallback: {
+        description: normalized.description,
+        id: normalized.pluginName,
+        name: normalized.displayName ?? normalized.pluginName,
+        remote: normalized.remote,
+        runtime: 'remote',
+        version: normalized.version,
+      },
+      manifest: cachedManifest ?? {
+        id: normalized.pluginName,
+        name: normalized.displayName ?? normalized.pluginName,
+        permissions: [],
+        remote: normalized.remote,
+        runtime: 'remote',
+        tools: [],
+        version: normalized.version ?? '0.0.0',
+      },
+      remote: {
+        access: normalized.access,
+        descriptor: normalized.remote,
+        metadataCache: existing?.remote?.metadataCache ?? {
+          lastSyncedAt: null,
+          manifestHash: null,
+          status: 'empty',
+        },
+      },
     });
   }
 
@@ -61,55 +138,8 @@ export class PluginBootstrapService {
     return this.registerBuiltinDefinition(this.builtinPluginRegistryService.getDefinition(pluginId)).pluginId;
   }
 
-  issueRemoteBootstrap(input: CreateRemotePluginBootstrapInput): RemotePluginBootstrapInfo {
-    if (!this.configService || !this.jwtService) {
-      throw new Error('Remote bootstrap dependencies are unavailable');
-    }
-    const normalized = normalizeRemoteBootstrapInput(input);
-    const tokenExpiresIn = this.configService.get('REMOTE_PLUGIN_TOKEN_EXPIRES_IN', '30d');
-
-    this.registerPlugin({
-      deviceType: normalized.deviceType,
-      fallback: {
-        description: normalized.description,
-        id: normalized.pluginName,
-        name: normalized.displayName ?? normalized.pluginName,
-        runtime: 'remote',
-        version: normalized.version,
-      },
-      manifest: {
-        permissions: [],
-        runtime: 'remote',
-        tools: [],
-        version: normalized.version ?? '0.0.0',
-      },
-    });
-
-    return {
-      deviceType: normalized.deviceType,
-      pluginName: normalized.pluginName,
-      serverUrl: this.resolveRemotePluginServerUrl(),
-      token: this.jwtService.sign({
-        authKind: 'remote-plugin',
-        deviceType: normalized.deviceType,
-        pluginName: normalized.pluginName,
-        role: 'remote_plugin',
-      }, {
-        secret: this.configService.get('JWT_SECRET', 'fallback-secret'),
-        expiresIn: readJwtExpiresIn(tokenExpiresIn),
-      }),
-      tokenExpiresIn,
-    };
-  }
-
-  touchHeartbeat(pluginId: string, seenAt: string = new Date().toISOString()): RegisteredPluginRecord { return this.pluginPersistenceService.touchHeartbeat(pluginId, seenAt); }
-
-  private resolveRemotePluginServerUrl(): string {
-    if (!this.configService) {return 'ws://127.0.0.1:23331';}
-    const explicitUrl = this.configService.get('REMOTE_PLUGIN_WS_URL');
-    if (explicitUrl?.trim()) {return explicitUrl.trim();}
-    const port = this.configService.get('WS_PORT', 23331);
-    return `ws://127.0.0.1:${port}`;
+  touchHeartbeat(pluginId: string, seenAt: string = new Date().toISOString()): RegisteredPluginRecord {
+    return this.pluginPersistenceService.touchHeartbeat(pluginId, seenAt);
   }
 
   private registerBuiltinDefinition(
@@ -128,25 +158,20 @@ export class PluginBootstrapService {
   }
 }
 
-function readJwtExpiresIn(value: string): number | JwtTimeSpan {
-  if (/^\d+$/.test(value)) {return Number(value);}
-  if (/^\d+(ms|s|m|h|d|w|y)$/.test(value)) {return value as JwtTimeSpan;}
-  return '30d';
-}
-
-type JwtTimeSpan =
-  | `${number}ms`
-  | `${number}s`
-  | `${number}m`
-  | `${number}h`
-  | `${number}d`
-  | `${number}w`
-  | `${number}y`;
-
-function normalizeRemoteBootstrapInput(
-  input: CreateRemotePluginBootstrapInput,
-): CreateRemotePluginBootstrapInput {
-  return { ...(input.description?.trim() ? { description: input.description.trim() } : {}), deviceType: input.deviceType, ...(input.displayName?.trim() ? { displayName: input.displayName.trim() } : {}), pluginName: input.pluginName.trim(), ...(input.version?.trim() ? { version: input.version.trim() } : {}) };
+function normalizeRemotePluginInput(
+  input: UpsertRemotePluginInput,
+): UpsertRemotePluginInput {
+  return {
+    access: {
+      accessKey: input.access.accessKey?.trim() ? input.access.accessKey.trim() : null,
+      serverUrl: input.access.serverUrl?.trim() ? input.access.serverUrl.trim() : null,
+    },
+    ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+    ...(input.displayName?.trim() ? { displayName: input.displayName.trim() } : {}),
+    pluginName: input.pluginName.trim(),
+    remote: structuredClone(input.remote),
+    ...(input.version?.trim() ? { version: input.version.trim() } : {}),
+  };
 }
 
 export function normalizePluginManifest(
@@ -175,11 +200,31 @@ export function normalizePluginManifest(
   if (routes.length > 0) {manifest.routes = routes;}
   const config = readConfig(source?.config);
   if (config) {manifest.config = config;}
+  const remote = readRemoteDescriptor(source?.remote) ?? fallback.remote;
+  if (manifest.runtime === 'remote' && remote) {
+    manifest.remote = structuredClone(remote);
+  }
 
   return manifest;
 }
 
-function readManifestRecord(value: unknown): Record<string, unknown> | null { return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null; }
+export function buildRemotePluginConnectionInfo(record: RegisteredPluginRecord): RemotePluginConnectionInfo {
+  if (!record.remote) {
+    throw new Error(`Plugin ${record.pluginId} is not a remote plugin`);
+  }
+  return {
+    accessKey: record.remote.access.accessKey,
+    pluginName: record.pluginId,
+    remote: structuredClone(record.remote.descriptor),
+    serverUrl: record.remote.access.serverUrl ?? '',
+  };
+}
+
+function readManifestRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
 
 function readNonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') {return null;}
@@ -187,13 +232,46 @@ function readNonEmptyString(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
-function readRuntimeKind(value: unknown): PluginRuntimeKind | null { return value === 'local' || value === 'remote' ? value : null; }
+function readRuntimeKind(value: unknown): PluginRuntimeKind | null {
+  return value === 'local' || value === 'remote' ? value : null;
+}
 
-function readManifestArray<T>(value: unknown): T[] { return Array.isArray(value) ? [...value] as T[] : []; }
+function readManifestArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? [...value] as T[] : [];
+}
 
 function readConfig(value: unknown): PluginConfigSchema | null {
   const node = readConfigNode(value);
   return node?.type === 'object' ? node : null;
+}
+
+function readRemoteDescriptor(value: unknown): PluginRemoteDescriptor | null {
+  const record = readManifestRecord(value);
+  if (!record) {
+    return null;
+  }
+  const remoteEnvironment = record.remoteEnvironment === 'api' || record.remoteEnvironment === 'iot'
+    ? record.remoteEnvironment
+    : null;
+  const capabilityProfile = record.capabilityProfile === 'query'
+    || record.capabilityProfile === 'actuate'
+    || record.capabilityProfile === 'hybrid'
+    ? record.capabilityProfile
+    : null;
+  const authRecord = readManifestRecord(record.auth);
+  const authMode = authRecord?.mode === 'none'
+    || authRecord?.mode === 'optional'
+    || authRecord?.mode === 'required'
+    ? authRecord.mode
+    : null;
+  if (!remoteEnvironment || !capabilityProfile || !authMode) {
+    return null;
+  }
+  return {
+    auth: { mode: authMode },
+    capabilityProfile,
+    remoteEnvironment,
+  };
 }
 
 function readConfigNode(value: unknown): PluginConfigNodeSchema | null {
@@ -334,4 +412,29 @@ function isJsonValue(value: unknown): value is JsonValue {
     return Object.values(value).every((item) => typeof item !== 'undefined' && isJsonValue(item));
   }
   return false;
+}
+
+function normalizeRemoteRecord(
+  manifest: PluginManifest,
+  remote: RegisteredPluginRemoteRecord | null,
+): RegisteredPluginRemoteRecord | null {
+  if (manifest.runtime !== 'remote') {
+    return null;
+  }
+  const descriptor = manifest.remote ?? remote?.descriptor;
+  if (!descriptor) {
+    return null;
+  }
+  return {
+    access: {
+      accessKey: remote?.access.accessKey ?? null,
+      serverUrl: remote?.access.serverUrl ?? null,
+    },
+    descriptor,
+    metadataCache: remote?.metadataCache ?? {
+      lastSyncedAt: null,
+      manifestHash: null,
+      status: 'empty',
+    },
+  };
 }

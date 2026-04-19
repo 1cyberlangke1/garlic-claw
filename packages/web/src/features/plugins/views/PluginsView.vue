@@ -43,6 +43,16 @@
         />
 
         <div class="detail-grid">
+          <PluginRemoteSummaryPanel
+            v-if="selectedPlugin.remote"
+            :plugin="selectedPlugin"
+          />
+          <PluginRemoteAccessPanel
+            v-if="selectedPlugin.remote"
+            :plugin="selectedPlugin"
+            :saving="savingRemoteAccess"
+            @save="saveRemoteAccess"
+          />
           <PluginConfigForm
             :snapshot="configSnapshot"
             :saving="savingConfig"
@@ -133,6 +143,8 @@ import PluginDetailOverview from '@/features/plugins/components/PluginDetailOver
 import PluginEventLog from '@/features/plugins/components/PluginEventLog.vue'
 import PluginLlmPreferencePanel from '@/features/plugins/components/PluginLlmPreferencePanel.vue'
 import PluginPageHero from '@/features/plugins/components/PluginPageHero.vue'
+import PluginRemoteAccessPanel from '@/features/plugins/components/PluginRemoteAccessPanel.vue'
+import PluginRemoteSummaryPanel from '@/features/plugins/components/PluginRemoteSummaryPanel.vue'
 import PluginRouteList from '@/features/plugins/components/PluginRouteList.vue'
 import PluginScopeEditor from '@/features/plugins/components/PluginScopeEditor.vue'
 import PluginSidebar from '@/features/plugins/components/PluginSidebar.vue'
@@ -158,6 +170,7 @@ const {
   detailLoading,
   savingConfig,
   savingLlmPreference,
+  savingRemoteAccess,
   savingStorage,
   savingScope,
   eventLoading,
@@ -195,6 +208,7 @@ const {
   finishConversationSession,
   saveConfig,
   saveLlmPreference,
+  saveRemoteAccess,
   saveStorageEntry,
   saveScope,
   runAction,
@@ -314,6 +328,10 @@ const ACTION_LABELS: Record<PluginActionName, {
   reconnect: {
     label: '请求重连',
     pendingLabel: '重连中...',
+  },
+  'refresh-metadata': {
+    label: '刷新元数据',
+    pendingLabel: '刷新中...',
   },
 }
 

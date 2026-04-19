@@ -169,8 +169,12 @@ function actionLabel(action: PluginActionName): string {
       return '重载插件'
     case 'reconnect':
       return '请求重连'
+    case 'refresh-metadata':
+      return '刷新元数据'
     case 'health-check':
       return '健康检查'
+    default:
+      return '执行动作'
   }
 }
 
@@ -180,8 +184,12 @@ function pendingActionLabel(action: PluginActionName): string {
       return '重载中...'
     case 'reconnect':
       return '重连中...'
+    case 'refresh-metadata':
+      return '刷新中...'
     case 'health-check':
       return '检查中...'
+    default:
+      return '执行中...'
   }
 }
 </script>

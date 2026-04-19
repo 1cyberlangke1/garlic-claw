@@ -23,7 +23,6 @@ export function buildPluginInfo(record: RegisteredPluginRecord, supportedActions
     defaultEnabled: record.defaultEnabled,
     createdAt: record.createdAt,
     ...(record.manifest.description ? { description: record.manifest.description } : {}),
-    deviceType: record.deviceType ?? record.pluginId,
     displayName: record.manifest.name,
     governance: record.governance,
     health: {
@@ -44,6 +43,11 @@ export function buildPluginInfo(record: RegisteredPluginRecord, supportedActions
     supportedActions,
     updatedAt: record.updatedAt,
     version: record.manifest.version,
+    remote: record.remote ? {
+      access: { ...record.remote.access },
+      descriptor: structuredClone(record.remote.descriptor),
+      metadataCache: { ...record.remote.metadataCache },
+    } : null,
   };
 }
 
@@ -59,12 +63,18 @@ export function buildPluginSelfSummary(record: RegisteredPluginRecord): JsonObje
     connected: record.connected,
     defaultEnabled: record.defaultEnabled,
     ...(record.manifest.description ? { description: record.manifest.description } : {}),
-    ...(record.deviceType ? { deviceType: record.deviceType } : {}),
     governance: record.governance as unknown as JsonObject,
     id: record.manifest.id,
     lastSeenAt: record.lastSeenAt,
     name: record.manifest.name,
     permissions: [...record.manifest.permissions],
+    ...(record.remote ? {
+      remote: {
+        access: { ...record.remote.access },
+        descriptor: structuredClone(record.remote.descriptor),
+        metadataCache: { ...record.remote.metadataCache },
+      } as unknown as JsonObject,
+    } : {}),
     runtimeKind: record.manifest.runtime,
     version: record.manifest.version,
     ...capabilities,

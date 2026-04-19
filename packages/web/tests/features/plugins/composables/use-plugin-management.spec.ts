@@ -29,7 +29,6 @@ function createPlugin(
     name: input.name,
     displayName: input.displayName ?? input.name,
     description: input.description,
-    deviceType: input.deviceType ?? 'builtin',
     status: input.status ?? 'online',
     connected: input.connected ?? true,
     defaultEnabled: input.defaultEnabled ?? true,
@@ -49,6 +48,7 @@ function createPlugin(
     lastSeenAt: input.lastSeenAt ?? null,
     createdAt: input.createdAt ?? '2026-03-28T00:00:00.000Z',
     updatedAt: input.updatedAt ?? '2026-03-28T00:00:00.000Z',
+    remote: input.remote ?? null,
   }
 }
 

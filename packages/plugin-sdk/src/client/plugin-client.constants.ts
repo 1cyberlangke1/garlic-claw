@@ -1,8 +1,8 @@
 import type {
   ChatMessageStatus,
-  DeviceType,
   PluginHookName,
   PluginInvocationSource,
+  PluginRemoteEnvironment,
   PluginRouteMethod,
 } from '@garlic-claw/shared';
 
@@ -10,13 +10,10 @@ export const CHAT_MESSAGE_STATUS_VALUES = [
   'pending', 'streaming', 'completed', 'stopped', 'error',
 ] as const satisfies ChatMessageStatus[];
 
-export const DEVICE_TYPE = {
+export const REMOTE_ENVIRONMENT = {
   API: 'api',
-  BUILTIN: 'builtin',
   IOT: 'iot',
-  MOBILE: 'mobile',
-  PC: 'pc',
-} as const satisfies Record<string, DeviceType>;
+} as const satisfies Record<string, PluginRemoteEnvironment>;
 
 export const PLUGIN_HOOK_NAME_VALUES = [
   'message:received', 'conversation:history-rewrite', 'chat:before-model', 'chat:waiting-model', 'chat:after-model', 'conversation:created',

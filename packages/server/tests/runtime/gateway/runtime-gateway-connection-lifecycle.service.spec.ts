@@ -7,21 +7,21 @@ import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gatew
 describe('Runtime gateway owners', () => {
   it('registers remote plugins against authenticated connections', () => {
     const service = createService();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.openConnection({
       connectionId: 'conn-1',
       remoteAddress: '127.0.0.1',
       seenAt: '2026-04-10T00:00:00.000Z',
     });
-    service.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+    service.authenticateConnection({
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
+      pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
+    });
+    service.registerRemotePlugin({
+      connectionId: 'conn-1',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -32,14 +32,20 @@ describe('Runtime gateway owners', () => {
         tools: [],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
 
     expect(service.getConnection('conn-1')).toMatchObject({
       authenticated: true,
+      claims: {
+        authMode: 'required',
+        pluginName: 'remote.echo',
+        remoteEnvironment: 'api',
+      },
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       pluginId: 'remote.echo',
       remoteAddress: '127.0.0.1',
+      remoteEnvironment: 'api',
     });
     expect(service.getSnapshot()).toEqual({
       authenticatedConnectionCount: 1,
@@ -53,20 +59,16 @@ describe('Runtime gateway owners', () => {
 
   it('replaces older plugin connections and clears their authorized contexts', () => {
     const service = createService();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.openConnection({
       connectionId: 'conn-1',
     });
     service.authenticateConnection({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
     });
     void service.createPendingRequest({
       action: 'hook_invoke',
@@ -86,15 +88,10 @@ describe('Runtime gateway owners', () => {
       connectionId: 'conn-2',
     });
     service.authenticateConnection({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-2',
-      deviceType: 'desktop',
       pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
     });
 
     expect(service.getConnection('conn-1')).toBeNull();
@@ -102,25 +99,22 @@ describe('Runtime gateway owners', () => {
       authenticated: true,
       connectionId: 'conn-2',
       pluginId: 'remote.echo',
+      remoteEnvironment: 'api',
     });
   });
 
   it('resolves connection-scoped and authorized host call contexts', () => {
     const service = createService();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.openConnection({
       connectionId: 'conn-1',
     });
     service.authenticateConnection({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
     });
     void service.createPendingRequest({
       action: 'execute',
@@ -179,20 +173,20 @@ describe('Runtime gateway owners', () => {
 
   it('disconnects stale connections during heartbeat sweeps', () => {
     const service = createService();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.openConnection({
       connectionId: 'conn-1',
       seenAt: '2026-04-10T00:00:00.000Z',
     });
-    service.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+    service.authenticateConnection({
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
+      pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
+    });
+    service.registerRemotePlugin({
+      connectionId: 'conn-1',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -203,6 +197,7 @@ describe('Runtime gateway owners', () => {
         tools: [],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
     service.touchConnectionHeartbeat('conn-1', '2026-04-10T00:00:00.000Z');
 
@@ -225,20 +220,20 @@ describe('Runtime gateway owners', () => {
   it('closes active remote sockets when disconnecting plugins', () => {
     const service = createService();
     const closeConnection = jest.fn();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.registerConnectionCloser(closeConnection);
     service.openConnection({
       connectionId: 'conn-1',
     });
-    service.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+    service.authenticateConnection({
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
+      pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
+    });
+    service.registerRemotePlugin({
+      connectionId: 'conn-1',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -249,6 +244,7 @@ describe('Runtime gateway owners', () => {
         tools: [],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
 
     service.disconnectPlugin('remote.echo');
@@ -267,19 +263,19 @@ describe('Runtime gateway owners', () => {
 
   it('creates remote transport requests and settles pending results', async () => {
     const service = createService();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.openConnection({
       connectionId: 'conn-1',
     });
-    service.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+    service.authenticateConnection({
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
+      pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
+    });
+    service.registerRemotePlugin({
+      connectionId: 'conn-1',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -290,6 +286,7 @@ describe('Runtime gateway owners', () => {
         tools: [],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
 
     const transport = service.createRemoteTransport('remote.echo');
@@ -347,19 +344,19 @@ describe('Runtime gateway owners', () => {
 
   it('settles remote hook and route requests through the gateway transport', async () => {
     const service = createService();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.openConnection({
       connectionId: 'conn-1',
     });
-    service.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+    service.authenticateConnection({
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
+      pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
+    });
+    service.registerRemotePlugin({
+      connectionId: 'conn-1',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -376,6 +373,7 @@ describe('Runtime gateway owners', () => {
         tools: [],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
 
     const transport = service.createRemoteTransport('remote.echo');
@@ -473,19 +471,19 @@ describe('Runtime gateway owners', () => {
 
   it('rejects pending remote requests when the connection drops', async () => {
     const service = createService();
+    service.upsertRemotePlugin(createRemotePluginSlot());
 
     service.openConnection({
       connectionId: 'conn-1',
     });
-    service.registerRemotePlugin({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+    service.authenticateConnection({
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
+      pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
+    });
+    service.registerRemotePlugin({
+      connectionId: 'conn-1',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -496,6 +494,7 @@ describe('Runtime gateway owners', () => {
         tools: [],
         version: '1.0.0',
       } as never,
+      remoteEnvironment: 'api',
     });
 
     const transport = service.createRemoteTransport('remote.echo');
@@ -517,6 +516,25 @@ describe('Runtime gateway owners', () => {
   });
 });
 
+function createRemotePluginSlot() {
+  return {
+    access: {
+      accessKey: 'smoke-access-key',
+      serverUrl: 'ws://127.0.0.1:23331',
+    },
+    displayName: 'Remote Echo',
+    pluginName: 'remote.echo',
+    remote: {
+      auth: {
+        mode: 'required' as const,
+      },
+      capabilityProfile: 'query' as const,
+      remoteEnvironment: 'api' as const,
+    },
+    version: '1.0.0',
+  };
+}
+
 function createService() {
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),
@@ -532,6 +550,8 @@ function createService() {
     connections: Map<string, { authenticated: boolean }>;
   };
   return {
+    upsertRemotePlugin: (input: Parameters<PluginBootstrapService['upsertRemotePlugin']>[0]) =>
+      pluginBootstrapService.upsertRemotePlugin(input),
     authenticateConnection: (input: Parameters<RuntimeGatewayConnectionLifecycleService['authenticateConnection']>[0]) =>
       runtimeGatewayConnectionLifecycleService.authenticateConnection(input),
     checkHeartbeats: (input: Parameters<RuntimeGatewayConnectionLifecycleService['checkHeartbeats']>[0]) =>

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { BadRequestException } from '@nestjs/common';
 import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin-persistence.service';
 
@@ -139,6 +142,44 @@ describe('PluginPersistenceService', () => {
       modelId: null,
       providerId: 'openai',
     })).toThrow(BadRequestException);
+  });
+
+  it('uses explicit plugin state path when configured', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-claw-plugin-state-'));
+    const storagePath = path.join(tempRoot, 'plugins.server.json');
+    process.env.GARLIC_CLAW_PLUGIN_STATE_PATH = storagePath;
+
+    try {
+      const service = new PluginPersistenceService();
+
+      service.upsertPlugin({
+        connected: true,
+        defaultEnabled: true,
+        governance: { canDisable: true },
+        lastSeenAt: null,
+        manifest: {
+          id: 'builtin.explicit-path',
+          name: 'Explicit Path',
+          permissions: [],
+          runtime: 'local',
+          tools: [],
+          version: '1.0.0',
+        },
+        pluginId: 'builtin.explicit-path',
+      });
+
+      expect(fs.existsSync(storagePath)).toBe(true);
+      expect(JSON.parse(fs.readFileSync(storagePath, 'utf8'))).toMatchObject({
+        records: [
+          expect.objectContaining({
+            pluginId: 'builtin.explicit-path',
+          }),
+        ],
+      });
+    } finally {
+      delete process.env.GARLIC_CLAW_PLUGIN_STATE_PATH;
+      fs.rmSync(tempRoot, { force: true, recursive: true });
+    }
   });
 
   it('rejects config values that are outside declared options', () => {
