@@ -196,8 +196,10 @@ describe('ChatMessageList', () => {
     expect(summary.text()).toContain('上下文压缩')
     expect(summary.text()).toContain('覆盖 3 条消息')
     expect(displayMessage.text()).toContain('摘要')
+    expect(displayMessage.text()).toContain('仅展示，不进入 LLM 上下文')
     expect(displayMessage.text()).toContain('压缩后的历史摘要')
     expect(displayMessage.classes()).toContain('display')
+    expect(displayMessage.find('.message-context-visibility.excluded').exists()).toBe(true)
     expect(displayMessage.find('.message-role-avatar-image').exists()).toBe(false)
     expect(displayMessage.find('.retry-text').exists()).toBe(false)
     expect(displayMessage.html().indexOf('message-annotation-context-compaction')).toBeLessThan(

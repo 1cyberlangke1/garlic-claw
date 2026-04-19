@@ -58,7 +58,7 @@ async function main() {
     aiSettingsPath: path.join(tempDir, 'ai-settings.server.json'),
     automationsPath: path.join(tempDir, 'automations.server.json'),
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
-    mcpConfigPath: path.join(tempDir, 'mcp', 'mcp.json'),
+    mcpConfigPath: path.join(tempDir, 'mcp', 'servers'),
     personasPath: path.join(tempDir, 'persona'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
     skillGovernancePath: path.join(tempDir, 'skill-governance.server.json'),
@@ -71,6 +71,9 @@ async function main() {
     automationId: null,
     automationSubagentTaskId: null,
     bootstrapTokens: null,
+    commandAssistantMessageId: null,
+    commandAssistantText: null,
+    commandUserMessageId: null,
     conversationId: null,
     defaultPersonaId: null,
     firstAssistantMessageId: null,
@@ -519,6 +522,39 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(firstAssistant?.content === state.firstAssistantText, 'Expected first assistant message to persist generated content');
   });
 
+  await runStep('chat.messages.command', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '/compact',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.commandAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    state.commandUserMessageId = startEvent?.userMessage?.id ?? null;
+    ensure(typeof state.commandAssistantMessageId === 'string', 'Expected command message-start assistant id');
+    ensure(typeof state.commandUserMessageId === 'string', 'Expected command message-start user id');
+    ensure(startEvent?.assistantMessage?.role === 'display', 'Expected slash command result to persist as display message');
+    ensure(startEvent?.userMessage?.role === 'display', 'Expected slash command input to persist as display message');
+    state.commandAssistantText = assertCompletedSse(events);
+    ensure(finishEvent?.status === 'completed', 'Expected slash command SSE to finish');
+    ensure(input.fakeOpenAi.readChatCompletions().length === 0, 'Expected slash command short-circuit to avoid model requests');
+  });
+
+  await runStep('chat.conversation.get.after-command', async () => {
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const commandUser = conversation.messages.find((entry) => entry.id === state.commandUserMessageId);
+    const commandAssistant = conversation.messages.find((entry) => entry.id === state.commandAssistantMessageId);
+    ensure(commandUser?.role === 'display', 'Expected slash command input to persist as display in conversation detail');
+    ensure(commandUser?.content === '/compact', 'Expected slash command input content to persist for display');
+    ensure(commandAssistant?.role === 'display', 'Expected slash command result to persist as display in conversation detail');
+    ensure(commandAssistant?.content === state.commandAssistantText, 'Expected slash command result content to persist');
+  });
+
   await runStep('skills.governance.allow', async () => {
     const detail = await putJson(apiBase, `/skills/${encodeURIComponent(input.smokeSkillId)}/governance`, {
       body: {
@@ -555,6 +591,7 @@ async function runHttpFlow(apiBase, state, input) {
       && readLatestUserText(entry.body?.messages).includes('请加载 smoke-http-flow 技能'));
     ensure(firstRequest, 'Expected first skill loop request to reach fake OpenAI');
     ensure(requestIncludesToolName(firstRequest.body, 'skill'), 'Expected allowed skill governance to expose native skill tool');
+    ensure(!containsText(firstRequest.body?.messages ?? [], '/compact'), 'Expected slash command display messages to stay out of model context');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'skill'));
     ensure(toolResultRequest, 'Expected skill loop to issue a follow-up request with tool results');
 

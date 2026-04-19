@@ -569,16 +569,17 @@ describe('ConversationMessageLifecycleService', () => {
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
     expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
-      { content: '/compact', role: 'user', status: 'completed' },
+      { content: '/compact', role: 'display', status: 'completed' },
       {
         content: '已压缩上下文，覆盖 2 条历史消息。',
         model: 'context-compaction-command',
         provider: 'system',
-        role: 'assistant',
+        role: 'display',
         status: 'completed',
       },
     ]);
-    expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
+    expect(started.userMessage).toMatchObject({ role: 'display' });
+    expect(started.assistantMessage).toMatchObject({ role: 'display' });
   });
 
   it('still allows plugin message commands when llm auto reply is turned off', async () => {
@@ -600,7 +601,10 @@ describe('ConversationMessageLifecycleService', () => {
       startAndWait(service, conversationTaskService, { content: '/compress' }, 'user-1'),
     ).resolves.toMatchObject({
       assistantMessage: expect.objectContaining({
-        role: 'assistant',
+        role: 'display',
+      }),
+      userMessage: expect.objectContaining({
+        role: 'display',
       }),
     });
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();

@@ -9,7 +9,7 @@ import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-l
 describe('McpService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';
   const configService = { get: jest.fn() };
-  let tempConfigPath: string;
+  let tempConfigRoot: string;
   let tempLogRoot: string;
 
   let service: McpService;
@@ -29,10 +29,10 @@ describe('McpService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env[envKey];
-    tempConfigPath = path.join(os.tmpdir(), `mcp.service.spec-${Date.now()}-${Math.random()}`, 'mcp.json');
+    tempConfigRoot = path.join(os.tmpdir(), `mcp.service.spec-${Date.now()}-${Math.random()}`, 'servers');
     tempLogRoot = path.join(os.tmpdir(), `mcp.service.logs-${Date.now()}-${Math.random()}`);
-    fs.rmSync(path.dirname(tempConfigPath), { recursive: true, force: true });
-    process.env[envKey] = tempConfigPath;
+    fs.rmSync(path.dirname(tempConfigRoot), { recursive: true, force: true });
+    process.env[envKey] = tempConfigRoot;
     process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
     service = new McpService(
       configService as never,
@@ -44,7 +44,7 @@ describe('McpService', () => {
   afterEach(() => {
     delete process.env[envKey];
     delete process.env.GARLIC_CLAW_LOG_ROOT;
-    fs.rmSync(path.dirname(tempConfigPath), { recursive: true, force: true });
+    fs.rmSync(path.dirname(tempConfigRoot), { recursive: true, force: true });
     fs.rmSync(tempLogRoot, { recursive: true, force: true });
   });
 

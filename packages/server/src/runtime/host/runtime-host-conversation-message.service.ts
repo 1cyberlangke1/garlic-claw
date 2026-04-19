@@ -28,7 +28,13 @@ export class RuntimeHostConversationMessageService {
 
   async createMessageWithHooks(conversationId: string, input: MessageWriteInput, userId?: string, kernelOverride?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<Record<string, unknown>> {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
-    return this.createMessage(conversation.id, await this.applyMessageCreatedHooks(conversation, input, kernelOverride));
+    if (input.role === 'display') {
+      return this.createMessage(conversation.id, input);
+    }
+    const hookableInput: ConversationMessageWriteInput = input.role === 'assistant'
+      ? { ...input, role: 'assistant' }
+      : { ...input, role: 'user' };
+    return this.createMessage(conversation.id, await this.applyMessageCreatedHooks(conversation, hookableInput, kernelOverride));
   }
 
   async deleteMessage(conversationId: string, messageId: string, userId?: string): Promise<JsonValue> {
@@ -87,7 +93,7 @@ export class RuntimeHostConversationMessageService {
     return next;
   }
 
-  private async applyMessageCreatedHooks(conversation: { activePersonaId?: string; id: string; title: string; userId: string }, message: MessageWriteInput, kernelOverride?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<MessageWriteInput> {
+  private async applyMessageCreatedHooks(conversation: { activePersonaId?: string; id: string; title: string; userId: string }, message: ConversationMessageWriteInput, kernelOverride?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<ConversationMessageWriteInput> {
     const kernel = kernelOverride ?? this.runtimeHostPluginDispatchService;
     if (!kernel) {return message;}
     return applyMutatingDispatchableHooks({
@@ -130,7 +136,8 @@ export class RuntimeHostConversationMessageService {
   }
 }
 
-type MessageWriteInput = { content?: string; metadata?: ChatMessageMetadata | null; model?: string | null; parts?: ChatMessagePart[]; provider?: string | null; role: 'assistant' | 'user'; status: 'completed' | 'pending'; target?: { id: string; label: string; type: 'conversation' } };
+type MessageWriteInput = { content?: string; metadata?: ChatMessageMetadata | null; model?: string | null; parts?: ChatMessagePart[]; provider?: string | null; role: 'assistant' | 'display' | 'user'; status: 'completed' | 'pending'; target?: { id: string; label: string; type: 'conversation' } };
+type ConversationMessageWriteInput = MessageWriteInput & { role: 'assistant' | 'user' };
 type MessagePatch = { content?: string; error?: string | null; metadata?: ChatMessageMetadata | null; model?: string | null; parts?: ChatMessagePart[]; provider?: string | null; status?: ChatMessageStatus; toolCalls?: JsonValue[] | null; toolResults?: JsonValue[] | null };
 type HookMessage = { content: string; model: string | null; parts: ChatMessagePart[]; provider: string | null; role: 'assistant' | 'user'; status: JsonValue };
 

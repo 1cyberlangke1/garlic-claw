@@ -8,133 +8,137 @@ import type {
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
 
-type LegacyMcpConfigFile = {
-  mcpServers?: Record<string, { args: string[]; command: string; env?: Record<string, string> }>;
-  servers?: McpServerConfig[];
-  [key: string]: unknown;
+type StoredMcpServerFile = Partial<McpServerConfig> & {
+  name?: string;
 };
 
 @Injectable()
 export class McpConfigStoreService {
-  private readonly configPath = resolveMcpConfigFilePath();
-  private readonly reportedConfigPath = readReportedMcpConfigPath(this.configPath);
-  private config = this.loadConfig();
+  private readonly configRootPath = resolveMcpConfigRootPath();
+  private readonly reportedConfigPath = readReportedMcpConfigPath(this.configRootPath);
+  private servers = this.loadServers();
 
   getSnapshot(): McpConfigSnapshot {
     return {
       configPath: this.reportedConfigPath,
-      servers: this.config.servers.map(cloneServerConfig),
+      servers: this.servers.map(cloneServerConfig),
     };
   }
 
   getServer(name: string): McpServerConfig | null {
-    return this.config.servers.find((entry) => entry.name === name) ?? null;
+    return this.servers.find((entry) => entry.name === name) ?? null;
   }
 
   saveServer(server: McpServerConfig, previousName?: string): McpServerConfig {
-    const nextServers = this.config.servers.filter((entry) => entry.name !== (previousName ?? server.name));
-    nextServers.push(cloneServerConfig(server));
-    this.config.servers = nextServers.sort((left, right) => left.name.localeCompare(right.name));
-    this.saveConfig();
+    fs.mkdirSync(this.configRootPath, { recursive: true });
+    fs.writeFileSync(
+      resolveServerFilePath(this.configRootPath, server.name),
+      JSON.stringify(serializeServer(server), null, 2),
+      'utf-8',
+    );
+
+    if (previousName && previousName !== server.name) {
+      fs.rmSync(resolveServerFilePath(this.configRootPath, previousName), { force: true });
+    }
+
+    this.servers = this.upsertServer(server, previousName);
     return cloneServerConfig(server);
   }
 
   deleteServer(name: string): McpServerDeleteResult {
-    const before = this.config.servers.length;
-    this.config.servers = this.config.servers.filter((entry) => entry.name !== name);
-    if (before === this.config.servers.length) {
+    const current = this.getServer(name);
+    if (!current) {
       throw new NotFoundException(`MCP server not found: ${name}`);
     }
-    this.saveConfig();
+
+    fs.rmSync(resolveServerFilePath(this.configRootPath, name), { force: true });
+    this.servers = this.servers.filter((entry) => entry.name !== name);
     return { deleted: true, name };
   }
 
-  private loadConfig(): { raw: LegacyMcpConfigFile; servers: McpServerConfig[] } {
+  private loadServers(): McpServerConfig[] {
     try {
-      fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
-      if (!fs.existsSync(this.configPath)) {
-        const initial = { raw: { mcpServers: {} }, servers: [] as McpServerConfig[] };
-        fs.writeFileSync(this.configPath, JSON.stringify(initial.raw, null, 2), 'utf-8');
-        return initial;
-      }
-      const raw = JSON.parse(fs.readFileSync(this.configPath, 'utf-8')) as LegacyMcpConfigFile;
-      return { raw, servers: readServers(raw) };
+      fs.mkdirSync(this.configRootPath, { recursive: true });
+      return fs.readdirSync(this.configRootPath, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.json'))
+        .map((entry) => readServerFile(path.join(this.configRootPath, entry.name)))
+        .filter((server): server is McpServerConfig => server !== null)
+        .sort((left, right) => left.name.localeCompare(right.name));
     } catch {
-      return { raw: { mcpServers: {} }, servers: [] };
+      return [];
     }
   }
 
-  private saveConfig(): void {
-    fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
-    const raw = {
-      ...this.config.raw,
-      mcpServers: Object.fromEntries(this.config.servers.map((server) => [
-        server.name,
-        {
-          command: server.command,
-          args: [...server.args],
-          eventLog: normalizeEventLogSettings(server.eventLog),
-          ...(Object.keys(server.env).length > 0 ? { env: { ...server.env } } : {}),
-        },
-      ])),
-    };
-    fs.writeFileSync(this.configPath, JSON.stringify(raw, null, 2), 'utf-8');
-    this.config.raw = raw;
+  private upsertServer(server: McpServerConfig, previousName?: string): McpServerConfig[] {
+    const nextServers = this.servers.filter((entry) => entry.name !== (previousName ?? server.name));
+    nextServers.push(cloneServerConfig(server));
+    return nextServers.sort((left, right) => left.name.localeCompare(right.name));
   }
 }
 
-function readServers(raw: LegacyMcpConfigFile): McpServerConfig[] {
-  if (raw.mcpServers && typeof raw.mcpServers === 'object') {
-    return Object.entries(raw.mcpServers)
-      .filter(([, value]) => value && typeof value.command === 'string' && Array.isArray(value.args))
-      .map(([name, value]) => ({
-        name,
-        command: value.command,
-        args: [...value.args],
-        env: { ...(value.env ?? {}) },
-        eventLog: normalizeEventLogSettings((value as { eventLog?: McpServerConfig['eventLog'] }).eventLog),
-      }))
-      .sort((left, right) => left.name.localeCompare(right.name));
+function readServerFile(filePath: string): McpServerConfig | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as StoredMcpServerFile;
+    const fallbackName = decodeURIComponent(path.basename(filePath, path.extname(filePath)));
+    return toServerConfig(raw, fallbackName);
+  } catch {
+    return null;
   }
-
-  return Array.isArray(raw.servers)
-    ? raw.servers
-      .filter((entry): entry is McpServerConfig => Boolean(
-        entry
-        && typeof entry.name === 'string'
-        && typeof entry.command === 'string'
-        && Array.isArray(entry.args)
-        && typeof entry.env === 'object'
-        && entry.env !== null,
-      ))
-      .map(cloneServerConfig)
-      .sort((left, right) => left.name.localeCompare(right.name))
-    : [];
 }
 
-function cloneServerConfig(server: McpServerConfig): McpServerConfig {
+function toServerConfig(raw: StoredMcpServerFile, fallbackName: string): McpServerConfig | null {
+  const name = typeof raw.name === 'string' && raw.name.trim().length > 0
+    ? raw.name.trim()
+    : fallbackName;
+  const command = typeof raw.command === 'string' ? raw.command.trim() : '';
+  if (!name || !command || !Array.isArray(raw.args)) {
+    return null;
+  }
+
+  const env = typeof raw.env === 'object' && raw.env !== null ? raw.env : {};
   return {
-    ...server,
+    name,
+    command,
+    args: raw.args.filter((value): value is string => typeof value === 'string'),
+    env: Object.fromEntries(
+      Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    ),
+    eventLog: normalizeEventLogSettings(raw.eventLog),
+  };
+}
+
+function serializeServer(server: McpServerConfig): McpServerConfig {
+  return {
+    name: server.name,
+    command: server.command,
     args: [...server.args],
     env: { ...server.env },
     eventLog: normalizeEventLogSettings(server.eventLog),
   };
 }
 
-function resolveMcpConfigFilePath(): string {
+function cloneServerConfig(server: McpServerConfig): McpServerConfig {
+  return serializeServer(server);
+}
+
+function resolveMcpConfigRootPath(): string {
   if (process.env.GARLIC_CLAW_MCP_CONFIG_PATH) {
     return path.resolve(process.env.GARLIC_CLAW_MCP_CONFIG_PATH);
   }
 
-  return path.join(resolveProjectRoot(), 'mcp', 'mcp.json');
+  return path.join(resolveProjectRoot(), 'mcp', 'servers');
 }
 
-function readReportedMcpConfigPath(configPath: string): string {
+function readReportedMcpConfigPath(configRootPath: string): string {
   if (process.env.GARLIC_CLAW_MCP_CONFIG_PATH) {
-    return configPath;
+    return configRootPath;
   }
 
-  return 'mcp/mcp.json';
+  return 'mcp/servers';
+}
+
+function resolveServerFilePath(configRootPath: string, serverName: string): string {
+  return path.join(configRootPath, `${encodeURIComponent(serverName)}.json`);
 }
 
 function resolveProjectRoot(): string {

@@ -33,6 +33,13 @@
           <div class="message-main">
             <div class="message-body">
               <div class="message-meta">
+                <span
+                  v-if="isNonContextMessage(row.message)"
+                  class="message-context-visibility excluded"
+                  title="这条消息仅用于前端展示，不会进入默认 LLM 上下文"
+                >
+                  仅展示，不进入 LLM 上下文
+                </span>
                 <span class="message-status" :class="row.message.status">
                   {{ statusLabelMap[row.message.status] }}
                 </span>
@@ -611,6 +618,10 @@ function readRoleTitle(message: ChatMessage): string {
 
 function shouldRenderAssistantAvatar(message: ChatMessage): boolean {
   return message.role === "assistant";
+}
+
+function isNonContextMessage(message: ChatMessage): boolean {
+  return message.role === "display";
 }
 
 function readAssistantPersonaAlt(): string {

@@ -159,8 +159,22 @@
 .message-status,
 .message-model,
 .message-model-detail,
+.message-context-visibility,
 .editor-note {
   font-size: 12px;
+}
+
+.message-context-visibility {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed rgba(89, 207, 155, 0.38);
+  background: rgba(89, 207, 155, 0.12);
+  color: #c9ffe2;
+  overflow-wrap: anywhere;
+}
+
+.message-context-visibility.excluded {
+  box-shadow: inset 0 0 0 1px rgba(89, 207, 155, 0.08);
 }
 
 .message-status {
