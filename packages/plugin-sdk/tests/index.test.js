@@ -1,12 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const DEVICE_TYPE = {
+const REMOTE_ENVIRONMENT = {
   API: 'api',
-  BUILTIN: 'builtin',
   IOT: 'iot',
-  MOBILE: 'mobile',
-  PC: 'pc',
 };
 const { PluginClient } = require('../dist/client/index.js');
 const { createPluginHostFacade } = require('../dist/host/index.js');
@@ -74,7 +71,14 @@ const {
   readOptionalObjectParam,
   readPromptBlockConfig,
   readProviderRouterConfig,
+  readContextCompactionConfig,
+  resolveContextCompactionRuntimeConfig,
   resolveConversationTitleRuntimeConfig,
+  CONTEXT_COMPACTION_CONFIG_SCHEMA,
+  CONTEXT_COMPACTION_DEFAULT_MODE,
+  CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT,
+  CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS,
+  CONTEXT_COMPACTION_DEFAULT_THRESHOLD,
   readOptionalStringParam,
   readPluginHookPayload,
   readJsonObjectValue,
@@ -110,10 +114,10 @@ const WS_ACTION = {
 
 function createClient(manifest = {}) {
   return new PluginClient({
+    accessKey: 'test-access-key',
+    remoteEnvironment: REMOTE_ENVIRONMENT.API,
     serverUrl: 'ws://localhost:23331',
-    token: 'test-token',
     pluginName: 'plugin.sdk.test',
-    deviceType: DEVICE_TYPE.API,
     manifest,
   });
 }
@@ -341,13 +345,18 @@ test('resolveManifest synthesizes message hook descriptors for commands and grou
   );
 });
 
-test('PluginClient.fromBootstrap creates a client directly from bootstrap connection info', () => {
-  const client = PluginClient.fromBootstrap({
+test('PluginClient.fromRemoteAccess creates a client directly from remote connection info', () => {
+  const client = PluginClient.fromRemoteAccess({
+    accessKey: 'remote-access-key',
     pluginName: 'remote.pc-host',
-    deviceType: DEVICE_TYPE.API,
+    remote: {
+      auth: {
+        mode: 'required',
+      },
+      capabilityProfile: 'query',
+      remoteEnvironment: REMOTE_ENVIRONMENT.API,
+    },
     serverUrl: 'ws://127.0.0.1:23331',
-    token: 'remote-bootstrap-token',
-    tokenExpiresIn: '30d',
   }, {
     manifest: {
       name: 'Remote PC Host',
@@ -358,9 +367,9 @@ test('PluginClient.fromBootstrap creates a client directly from bootstrap connec
   });
 
   assert.equal(client.options.serverUrl, 'ws://127.0.0.1:23331');
-  assert.equal(client.options.token, 'remote-bootstrap-token');
+  assert.equal(client.options.accessKey, 'remote-access-key');
   assert.equal(client.options.pluginName, 'remote.pc-host');
-  assert.equal(client.options.deviceType, DEVICE_TYPE.API);
+  assert.equal(client.options.remoteEnvironment, REMOTE_ENVIRONMENT.API);
   assert.deepEqual(client.resolveManifest(), {
     id: 'remote.pc-host',
     name: 'Remote PC Host',
@@ -368,6 +377,13 @@ test('PluginClient.fromBootstrap creates a client directly from bootstrap connec
     runtime: 'remote',
     description: undefined,
     permissions: [],
+    remote: {
+      auth: {
+        mode: 'required',
+      },
+      capabilityProfile: 'query',
+      remoteEnvironment: REMOTE_ENVIRONMENT.API,
+    },
     tools: [],
     hooks: [],
     config: undefined,
@@ -886,6 +902,30 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(PROVIDER_ROUTER_CONFIG_SCHEMA.items.routing.type, 'object');
   assert.equal(PROVIDER_ROUTER_CONFIG_SCHEMA.items.tools.items.allowedToolNames.type, 'list');
   assert.equal(PROVIDER_ROUTER_CONFIG_SCHEMA.items.shortCircuit.collapsed, true);
+  assert.deepEqual(
+    readContextCompactionConfig({
+      mode: 'manual',
+      keepRecentMessages: 3,
+      reservedTokens: 4096,
+    }),
+    {
+      mode: 'manual',
+      keepRecentMessages: 3,
+      reservedTokens: 4096,
+    },
+  );
+  const contextCompactionRuntimeConfig = resolveContextCompactionRuntimeConfig({});
+  assert.equal(contextCompactionRuntimeConfig.allowAutoContinue, true);
+  assert.equal(contextCompactionRuntimeConfig.compressionThreshold, CONTEXT_COMPACTION_DEFAULT_THRESHOLD);
+  assert.equal(contextCompactionRuntimeConfig.enabled, true);
+  assert.equal(contextCompactionRuntimeConfig.keepRecentMessages, CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT);
+  assert.equal(contextCompactionRuntimeConfig.mode, CONTEXT_COMPACTION_DEFAULT_MODE);
+  assert.equal(contextCompactionRuntimeConfig.reservedTokens, CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS);
+  assert.equal(contextCompactionRuntimeConfig.showCoveredMarker, true);
+  assert.equal(typeof contextCompactionRuntimeConfig.summaryPrompt, 'string');
+  assert.ok(contextCompactionRuntimeConfig.summaryPrompt.length > 0);
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.mode.type, 'string');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.keepRecentMessages.type, 'int');
   assert.deepEqual(
     readCurrentProviderInfo({
       providerId: 'openai',

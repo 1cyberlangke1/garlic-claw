@@ -2,6 +2,7 @@ import type { JsonObject } from './json';
 import type {
   PluginCallContext,
   PluginManifest,
+  PluginRemoteDescriptor,
   PluginRuntimeKind,
 } from './plugin';
 
@@ -9,7 +10,7 @@ import type {
 export interface PluginLifecycleHookInfo {
   id: string;
   runtimeKind: PluginRuntimeKind;
-  deviceType: string;
+  remote: PluginRemoteDescriptor | null;
   manifest: PluginManifest | null;
 }
 

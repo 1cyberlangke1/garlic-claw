@@ -24,9 +24,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: false,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: null,
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: null,
+        remoteEnvironment: null,
       },
     });
 
@@ -66,9 +66,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
       message: {
         action: WS_ACTION.AUTHENTICATE,
         payload: {
-          deviceType: 'desktop',
+          accessKey: 'smoke-access-key',
           pluginName: 'remote.echo',
-          token: 'token-1',
+          remoteEnvironment: 'api',
         },
         type: WS_TYPE.AUTH,
       } as never,
@@ -77,15 +77,10 @@ describe('PluginGatewayWsModule inbound handling', () => {
     expect(
       fixture.runtimeGatewayConnectionLifecycleService.authenticateConnection,
     ).toHaveBeenCalledWith({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
+      accessKey: 'smoke-access-key',
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       pluginName: 'remote.echo',
+      remoteEnvironment: 'api',
     });
     expect(result).toEqual({
       reply: {
@@ -108,7 +103,7 @@ describe('PluginGatewayWsModule inbound handling', () => {
       } as never,
     });
 
-    expect(fixture.jwtService.verify).not.toHaveBeenCalled();
+    expect(fixture.runtimeGatewayConnectionLifecycleService.authenticateConnection).not.toHaveBeenCalled();
     expect(result).toEqual({
       reply: {
         action: 'protocol_error',
@@ -125,15 +120,14 @@ describe('PluginGatewayWsModule inbound handling', () => {
       gatewayConnection: {
         authenticated: true,
         claims: {
-          authKind: 'remote-plugin',
-          deviceType: 'desktop',
+          authMode: 'required',
           pluginName: 'remote.echo',
-          role: 'remote_plugin',
+          remoteEnvironment: 'api',
         },
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
 
@@ -154,14 +148,7 @@ describe('PluginGatewayWsModule inbound handling', () => {
     });
 
     expect(fixture.runtimeGatewayConnectionLifecycleService.registerRemotePlugin).toHaveBeenCalledWith({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -173,6 +160,7 @@ describe('PluginGatewayWsModule inbound handling', () => {
         tools: [],
         version: '1.0.0',
       },
+      remoteEnvironment: 'api',
     });
     expect(result).toEqual({
       flushOutbound: true,
@@ -189,15 +177,14 @@ describe('PluginGatewayWsModule inbound handling', () => {
       gatewayConnection: {
         authenticated: true,
         claims: {
-          authKind: 'remote-plugin',
-          deviceType: 'desktop',
+          authMode: 'required',
           pluginName: 'remote.echo',
-          role: 'remote_plugin',
+          remoteEnvironment: 'api',
         },
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
 
@@ -228,9 +215,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
 
@@ -261,9 +248,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
 
@@ -300,9 +287,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
     fixture.runtimeGatewayRemoteTransportService.resolveHostCallContext.mockReturnValue({
@@ -350,9 +337,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
 
@@ -385,9 +372,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
 
@@ -416,9 +403,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
 
@@ -449,9 +436,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
     });
     const loggerWarn = jest.fn();
@@ -483,9 +470,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: false,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: null,
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: null,
+        remoteEnvironment: null,
       },
       openConnectionId: 'conn-1',
     });
@@ -493,7 +480,11 @@ describe('PluginGatewayWsModule inbound handling', () => {
     fixture.service.handleConnection(socket as never, '127.0.0.1');
     await fixture.service['handleRawMessage']('conn-1', JSON.stringify({
       action: WS_ACTION.AUTHENTICATE,
-      payload: { deviceType: 'desktop', pluginName: 'remote.echo', token: 'token-1' },
+      payload: {
+        accessKey: 'smoke-access-key',
+        pluginName: 'remote.echo',
+        remoteEnvironment: 'api',
+      },
       type: WS_TYPE.AUTH,
     }));
 
@@ -510,15 +501,14 @@ describe('PluginGatewayWsModule inbound handling', () => {
       gatewayConnection: {
         authenticated: true,
         claims: {
-          authKind: 'remote-plugin',
-          deviceType: 'desktop',
+          authMode: 'required',
           pluginName: 'remote.echo',
-          role: 'remote_plugin',
+          remoteEnvironment: 'api',
         },
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
       openConnectionId: 'conn-1',
       outboundMessages: [{ action: WS_ACTION.PONG, payload: {}, type: WS_TYPE.HEARTBEAT }],
@@ -550,9 +540,9 @@ describe('PluginGatewayWsModule inbound handling', () => {
         authenticated: true,
         claims: null,
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-11T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
       openConnectionId: 'conn-1',
     });
@@ -590,14 +580,6 @@ function createFixture(input?: {
   const configService = {
     get: jest.fn((_key: string, fallback?: string) => input?.wsPort ?? fallback),
   };
-  const jwtService = {
-    verify: jest.fn().mockReturnValue({
-      authKind: 'remote-plugin',
-      deviceType: 'desktop',
-      pluginName: 'remote.echo',
-      role: 'remote_plugin',
-    }),
-  };
   const runtimeGatewayConnectionLifecycleService = {
     authenticateConnection: jest.fn(),
     checkHeartbeats: jest.fn().mockReturnValue([]),
@@ -619,15 +601,12 @@ function createFixture(input?: {
     call: jest.fn(),
   };
   const pluginGatewayWsInboundService = new PluginGatewayWsInboundService(
-    configService as never,
-    jwtService as never,
     runtimeGatewayConnectionLifecycleService as never,
     runtimeGatewayRemoteTransportService as never,
     runtimeHostService as never,
   );
 
   return {
-    jwtService,
     pluginGatewayWsInboundService,
     runtimeGatewayConnectionLifecycleService,
     runtimeGatewayRemoteTransportService,

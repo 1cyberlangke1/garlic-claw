@@ -3,6 +3,7 @@ export * from "./builtin-manifests";
 export * from "./builtin-observers";
 export * from "./builtin-results";
 export * from "./conversation-helpers";
+export * from "./context-compaction";
 export * from "./prompt-helpers";
 export * from "./router-helpers";
 export * from "./transport";

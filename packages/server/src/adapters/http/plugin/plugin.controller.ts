@@ -1,10 +1,10 @@
-import { type DeviceType, type JsonObject, type JsonValue, type PluginActionName, type PluginCommandOverview, type PluginLlmPreference, type PluginSubagentTaskDetail, type PluginSubagentTaskOverview } from '@garlic-claw/shared';
+import { type JsonObject, type JsonValue, type PluginActionName, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentTaskDetail, type PluginSubagentTaskOverview } from '@garlic-claw/shared';
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/http-auth';
 import { buildPluginCommandConflicts, buildPluginInfo, listPluginCommands } from '../../../plugin/persistence/plugin-read-model';
 import { PluginPersistenceService } from '../../../plugin/persistence/plugin-persistence.service';
-import { PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
+import { buildRemotePluginConnectionInfo, PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from '../../../runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../runtime/host/runtime-host-plugin-runtime.service';
@@ -12,7 +12,16 @@ import { RuntimeHostSubagentRunnerService } from '../../../runtime/host/runtime-
 import { RuntimePluginGovernanceService } from '../../../runtime/kernel/runtime-plugin-governance.service';
 import { readPluginEventQuery, readPluginRouteInvocation, writePluginRouteResponse } from '../http-request.codec';
 
-interface CreateRemotePluginBootstrapDto { description?: string; deviceType: DeviceType; displayName?: string; pluginName: string; version?: string; }
+interface UpsertRemotePluginDto {
+  access: {
+    accessKey?: string | null;
+    serverUrl?: string | null;
+  };
+  description?: string;
+  displayName?: string;
+  remote: PluginRemoteDescriptor;
+  version?: string;
+}
 interface UpdatePluginConfigDto { values: JsonObject; }
 interface UpdatePluginLlmPreferenceDto extends PluginLlmPreference {}
 interface UpdatePluginScopeDto { defaultEnabled?: boolean; conversations?: Record<string, boolean>; }
@@ -32,8 +41,26 @@ export class PluginController {
   @Get('plugins/:pluginId/health')
   getPluginHealth(@Param('pluginId') pluginId: string) { return this.runtimePluginGovernanceService.readPluginHealthSnapshot(pluginId); }
 
-  @Post('plugins/remote/bootstrap')
-  createRemoteBootstrap(@Body() dto: CreateRemotePluginBootstrapDto) { return this.pluginBootstrapService.issueRemoteBootstrap(dto); }
+  @Get('plugins/:pluginId/remote-connection')
+  getRemotePluginConnection(@Param('pluginId') pluginId: string) {
+    return buildRemotePluginConnectionInfo(this.pluginBootstrapService.getPlugin(pluginId));
+  }
+
+  @Put('plugins/:pluginId/remote-access')
+  upsertRemotePlugin(@Param('pluginId') pluginId: string, @Body() dto: UpsertRemotePluginDto) {
+    const record = this.pluginBootstrapService.upsertRemotePlugin({
+      access: {
+        accessKey: dto.access?.accessKey ?? null,
+        serverUrl: dto.access?.serverUrl ?? null,
+      },
+      description: dto.description,
+      displayName: dto.displayName,
+      pluginName: pluginId,
+      remote: dto.remote,
+      version: dto.version,
+    });
+    return buildPluginInfo(record, this.runtimePluginGovernanceService.listSupportedActions(record.pluginId));
+  }
 
   @Delete('plugins/:pluginId')
   deletePlugin(@Param('pluginId') pluginId: string) {
@@ -146,6 +173,6 @@ export class PluginController {
 }
 
 function readPluginActionName(action: string): PluginActionName {
-  if (action === 'health-check' || action === 'reload' || action === 'reconnect') {return action;}
-  throw new BadRequestException('action 必须是 reload / reconnect / health-check');
+  if (action === 'health-check' || action === 'reload' || action === 'reconnect' || action === 'refresh-metadata') {return action;}
+  throw new BadRequestException('action 必须是 reload / reconnect / health-check / refresh-metadata');
 }

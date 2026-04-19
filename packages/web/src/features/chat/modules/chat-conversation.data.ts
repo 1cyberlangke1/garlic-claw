@@ -4,6 +4,7 @@ import type {
   UpdateMessagePayload,
 } from '@garlic-claw/shared'
 import {
+  compactConversationContext,
   createConversation,
   deleteConversation,
   deleteConversationMessage,
@@ -14,6 +15,7 @@ import {
   stopConversationMessage,
   updateConversationMessage,
 } from '@/features/chat/api/chat'
+import type { ConversationContextCompactionResult } from '@/features/chat/api/chat'
 import { dbMessageToChat } from '@/features/chat/store/chat-store.helpers'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
 
@@ -75,4 +77,14 @@ export async function stopConversationMessageRecord(
   messageId: string,
 ): Promise<{ message: string }> {
   return stopConversationMessage(conversationId, messageId)
+}
+
+export function compactConversationContextRecord(
+  conversationId: string,
+  payload: {
+    providerId?: string | null
+    modelId?: string | null
+  },
+): Promise<ConversationContextCompactionResult> {
+  return compactConversationContext(conversationId, payload)
 }

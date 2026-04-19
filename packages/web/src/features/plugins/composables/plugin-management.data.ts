@@ -8,6 +8,7 @@ import type {
   PluginHealthSnapshot,
   PluginInfo,
   PluginLlmPreference,
+  PluginRemoteDescriptor,
   PluginScopeSettings,
   PluginStorageEntry,
   PluginCronJobSummary,
@@ -35,6 +36,7 @@ import {
   setPluginStorage,
   updatePluginConfig,
   updatePluginLlmPreference,
+  updatePluginRemoteAccess,
   updatePluginScope,
 } from '@/features/plugins/api/plugins'
 import { getErrorMessage } from '@/utils/error'
@@ -171,6 +173,22 @@ export function runPluginActionRequest(
   action: PluginActionName,
 ) {
   return runPluginAction(pluginName, action)
+}
+
+export function savePluginRemoteAccess(
+  pluginName: string,
+  payload: {
+    access: {
+      accessKey: string | null
+      serverUrl: string | null
+    }
+    description?: string
+    displayName?: string
+    remote: PluginRemoteDescriptor
+    version?: string
+  },
+) {
+  return updatePluginRemoteAccess(pluginName, payload)
 }
 
 export function deletePluginRecord(pluginName: string) {

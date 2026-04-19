@@ -1,4 +1,10 @@
-import type { DeviceType, PluginCapability, PluginManifest, PluginRouteDescriptor } from '@garlic-claw/shared';
+import type {
+  PluginCapability,
+  PluginManifest,
+  PluginRemoteEnvironment,
+  PluginRouteDescriptor,
+  RemotePluginConnectionInfo,
+} from '@garlic-claw/shared';
 export interface PluginManifestInput {
   name?: string;
   version?: string;
@@ -9,15 +15,17 @@ export interface PluginManifestInput {
   hooks?: NonNullable<PluginManifest["hooks"]>;
   config?: PluginManifest["config"];
   routes?: PluginRouteDescriptor[];
+  remote?: PluginManifest['remote'];
 }
 export interface PluginClientOptions {
   serverUrl: string;
-  token: string;
   pluginName: string;
-  deviceType: DeviceType;
+  remoteEnvironment: PluginRemoteEnvironment;
+  accessKey?: string | null;
   manifest?: PluginManifestInput;
   autoReconnect?: boolean;
   reconnectInterval?: number;
   heartbeatInterval?: number;
 }
-export { DEVICE_TYPE, PluginClient } from './plugin-client';
+export type { RemotePluginConnectionInfo };
+export { PluginClient, REMOTE_ENVIRONMENT } from './plugin-client';

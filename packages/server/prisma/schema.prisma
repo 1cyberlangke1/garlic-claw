@@ -124,7 +124,6 @@ model Plugin {
   id                 String   @id
   name               String   @unique
   displayName        String?  @map("display_name")
-  deviceType         String   @default("pc") @map("device_type")
   runtimeKind        String   @default("remote") @map("runtime_kind")
   description        String?
   status             String   @default("offline") // online | offline | error

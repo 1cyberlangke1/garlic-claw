@@ -1,5 +1,5 @@
-import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, HostCallPayload, JsonObject, JsonValue, PluginCronDescriptor, PluginCronJobSummary, PluginEventLevel, PluginEventListResult, PluginEventQuery, PluginKbEntryDetail, PluginKbEntrySummary, PluginMessageSendInfo, PluginMessageSendParams, PluginMessageTargetInfo, PluginPersonaCurrentInfo, PluginPersonaSummary, PluginProviderCurrentInfo, PluginProviderModelSummary, PluginProviderSummary, PluginScopedStateScope, PluginSelfInfo, PluginSubagentTaskDetail, PluginSubagentTaskStartParams, PluginSubagentTaskSummary, PluginConversationSessionInfo, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginMessageHookInfo, PluginLlmGenerateParams, PluginLlmGenerateResult, PluginLlmGenerateTextResult, PluginLlmTransportMode, PluginSubagentRunParams, PluginSubagentRunResult, TriggerConfig } from "@garlic-claw/shared";
-import { buildPluginConversationSessionKeepParams, buildPluginConversationSessionStartParams, buildPluginCreateAutomationParams, buildPluginGenerateParams, buildPluginGenerateTextParams, buildPluginMessageSendParams, buildPluginRegisterCronParams, buildPluginRunSubagentParams, buildPluginStartSubagentTaskParams, toScopedStateParams } from "./facade-payload.helpers";
+import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, HostCallPayload, JsonObject, JsonValue, PluginConversationHistoryPreviewParams, PluginConversationHistoryPreviewResult, PluginConversationHistoryReplaceParams, PluginConversationHistoryReplaceResult, PluginConversationHistorySnapshot, PluginCronDescriptor, PluginCronJobSummary, PluginEventLevel, PluginEventListResult, PluginEventQuery, PluginKbEntryDetail, PluginKbEntrySummary, PluginMessageSendInfo, PluginMessageSendParams, PluginMessageTargetInfo, PluginPersonaCurrentInfo, PluginPersonaSummary, PluginProviderCurrentInfo, PluginProviderModelSummary, PluginProviderSummary, PluginScopedStateScope, PluginSelfInfo, PluginSubagentTaskDetail, PluginSubagentTaskStartParams, PluginSubagentTaskSummary, PluginConversationSessionInfo, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginMessageHookInfo, PluginLlmGenerateParams, PluginLlmGenerateResult, PluginLlmGenerateTextResult, PluginLlmTransportMode, PluginSubagentRunParams, PluginSubagentRunResult, TriggerConfig } from "@garlic-claw/shared";
+import { buildPluginConversationHistoryPreviewParams, buildPluginConversationHistoryReplaceParams, buildPluginConversationSessionKeepParams, buildPluginConversationSessionStartParams, buildPluginCreateAutomationParams, buildPluginGenerateParams, buildPluginGenerateTextParams, buildPluginMessageSendParams, buildPluginRegisterCronParams, buildPluginRunSubagentParams, buildPluginStartSubagentTaskParams, toScopedStateParams } from "./facade-payload.helpers";
 import { toHostJsonValue } from "./host-json-value.codec";
 export interface PluginScopedStateOptions { scope?: PluginScopedStateScope; }
 export interface PluginGenerateTextParams { prompt: string; system?: string; providerId?: string; modelId?: string; variant?: string; maxOutputTokens?: number; providerOptions?: JsonObject; headers?: Record<string, string>; transportMode?: PluginLlmTransportMode; }
@@ -19,6 +19,9 @@ export interface PluginHostFacade {
   getProvider(providerId: string): Promise<PluginProviderSummary>;
   getProviderModel(providerId: string, modelId: string): Promise<PluginProviderModelSummary>;
   getConversation(): Promise<JsonValue>;
+  getConversationHistory(): Promise<PluginConversationHistorySnapshot>;
+  previewConversationHistory(input?: PluginConversationHistoryPreviewParams): Promise<PluginConversationHistoryPreviewResult>;
+  replaceConversationHistory(input: PluginConversationHistoryReplaceParams): Promise<PluginConversationHistoryReplaceResult>;
   getCurrentMessageTarget(): Promise<PluginMessageTargetInfo | null>;
   sendMessage(input: PluginMessageSendParams): Promise<PluginMessageSendInfo>;
   conversationSession: PluginConversationSessionController;
@@ -87,6 +90,9 @@ export function createPluginHostFacade(input: PluginHostFacadeFactoryInput): Plu
     getProvider: callHostByKey<PluginProviderSummary>("provider.get", "providerId"),
     getProviderModel: (providerId, modelId) => callHost<PluginProviderModelSummary>("provider.model.get", { providerId, modelId }),
     getConversation: () => call("conversation.get", {}),
+    getConversationHistory: callHostNoArgs<PluginConversationHistorySnapshot>("conversation.history.get"),
+    previewConversationHistory: (inputParams = {}) => callHost<PluginConversationHistoryPreviewResult>("conversation.history.preview", buildPluginConversationHistoryPreviewParams(inputParams)),
+    replaceConversationHistory: (inputParams) => callHost<PluginConversationHistoryReplaceResult>("conversation.history.replace", buildPluginConversationHistoryReplaceParams(inputParams)),
     getCurrentMessageTarget: callHostNoArgs<PluginMessageTargetInfo | null>("message.target.current.get"),
     sendMessage: (params) => callHost<PluginMessageSendInfo>("message.send", buildPluginMessageSendParams(params)),
     startConversationSession: (params) => (conversationSessionController ? conversationSessionController.start(params) : callHost<PluginConversationSessionInfo>("conversation.session.start", buildPluginConversationSessionStartParams(params))),

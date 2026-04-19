@@ -17,15 +17,14 @@ describe('PluginGatewayWsModule connection lifecycle', () => {
       currentConnection: {
         authenticated: true,
         claims: {
-          authKind: 'remote-plugin',
-          deviceType: 'desktop',
+          authMode: 'required',
           pluginName: 'remote.echo',
-          role: 'remote_plugin',
+          remoteEnvironment: 'api',
         },
         connectionId: 'conn-1',
-        deviceType: 'desktop',
         lastHeartbeatAt: '2026-04-12T00:00:00.000Z',
         pluginId: 'remote.echo',
+        remoteEnvironment: 'api',
       },
       outboundMessages: [{
         action: WS_ACTION.REGISTER_OK,
@@ -40,9 +39,9 @@ describe('PluginGatewayWsModule connection lifecycle', () => {
       toString: () => JSON.stringify({
         action: WS_ACTION.AUTHENTICATE,
         payload: {
-          deviceType: 'desktop',
+          accessKey: 'smoke-access-key',
           pluginName: 'remote.echo',
-          token: 'token-1',
+          remoteEnvironment: 'api',
         },
         type: WS_TYPE.AUTH,
       }),
@@ -67,14 +66,7 @@ describe('PluginGatewayWsModule connection lifecycle', () => {
       remoteAddress: '127.0.0.1',
     });
     expect(fixture.runtimeGatewayConnectionLifecycleService.registerRemotePlugin).toHaveBeenCalledWith({
-      claims: {
-        authKind: 'remote-plugin',
-        deviceType: 'desktop',
-        pluginName: 'remote.echo',
-        role: 'remote_plugin',
-      },
       connectionId: 'conn-1',
-      deviceType: 'desktop',
       fallback: {
         id: 'remote.echo',
         name: 'Remote Echo',
@@ -86,6 +78,7 @@ describe('PluginGatewayWsModule connection lifecycle', () => {
         tools: [],
         version: '1.0.0',
       },
+      remoteEnvironment: 'api',
     });
     expect(fixture.socket.send).toHaveBeenNthCalledWith(1, JSON.stringify({
       action: WS_ACTION.AUTH_OK,
@@ -161,14 +154,6 @@ function createFixture(input?: {
   } as unknown as WebSocket & {
     emit(event: 'close' | 'error' | 'message', value?: unknown): void;
   };
-  const jwtService = {
-    verify: jest.fn().mockReturnValue({
-      authKind: 'remote-plugin',
-      deviceType: 'desktop',
-      pluginName: 'remote.echo',
-      role: 'remote_plugin',
-    }),
-  };
   const runtimeGatewayConnectionLifecycleService = {
     authenticateConnection: jest.fn(),
     disconnectConnection: jest.fn(),
@@ -179,9 +164,9 @@ function createFixture(input?: {
             authenticated: true,
             claims: null,
             connectionId: 'conn-1',
-            deviceType: 'desktop',
             lastHeartbeatAt: '2026-04-12T00:00:00.000Z',
             pluginId: null,
+            remoteEnvironment: null,
             ...input.currentConnection,
           }
         : null,
@@ -190,9 +175,9 @@ function createFixture(input?: {
       authenticated: false,
       claims: null,
       connectionId: 'conn-1',
-      deviceType: null,
       lastHeartbeatAt: '2026-04-12T00:00:00.000Z',
       pluginId: null,
+      remoteEnvironment: null,
     }),
     registerRemotePlugin: jest.fn(),
   };
@@ -202,11 +187,9 @@ function createFixture(input?: {
     settlePendingRequest: jest.fn(),
   };
   const pluginGatewayWsInboundService = new PluginGatewayWsInboundService(
-    { get: jest.fn() } as never,
-    jwtService as never,
     runtimeGatewayConnectionLifecycleService as never,
     runtimeGatewayRemoteTransportService as never,
-    { callHost: jest.fn() } as never,
+    { call: jest.fn() } as never,
   );
 
   return {

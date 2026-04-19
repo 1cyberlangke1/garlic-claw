@@ -32,13 +32,17 @@ export function readAuthPayload(value: unknown): AuthPayload {
   const invalidMessage = '无效的认证负载';
   const record = readRecord(value, invalidMessage);
   if (
-    typeof record.token !== 'string'
-    || typeof record.pluginName !== 'string'
-    || typeof record.deviceType !== 'string'
+    typeof record.pluginName !== 'string'
+    || (record.accessKey !== undefined && record.accessKey !== null && typeof record.accessKey !== 'string')
+    || (record.remoteEnvironment !== 'api' && record.remoteEnvironment !== 'iot')
   ) {
     throw new Error(invalidMessage);
   }
-  return record as unknown as AuthPayload;
+  return {
+    ...(typeof record.accessKey === 'string' || record.accessKey === null ? { accessKey: record.accessKey } : {}),
+    pluginName: record.pluginName,
+    remoteEnvironment: record.remoteEnvironment,
+  };
 }
 
 export function readHostCallPayload(value: unknown): HostCallPayload {

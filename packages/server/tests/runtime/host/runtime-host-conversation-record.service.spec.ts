@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../../src/auth/single-user-auth';
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
 
@@ -141,6 +141,97 @@ describe('RuntimeHostConversationRecordService', () => {
       context: expect.objectContaining({ source: 'http-route', userId: 'user-1' }),
       hookName: 'conversation:created',
     }));
+  });
+
+  it('reads, previews and replaces conversation history with annotation metadata and revision protection', () => {
+    process.env[envKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'History Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as {
+      revision: string;
+    };
+
+    const replaced = service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '你好',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'message-1',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  coveredCount: 2,
+                  role: 'summary',
+                },
+                owner: 'builtin.context-compaction',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+          parts: [
+            {
+              text: '你好',
+              type: 'text',
+            },
+          ],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+      ],
+    }) as {
+      changed: boolean;
+      messages: Array<Record<string, unknown>>;
+      revision: string;
+    };
+
+    expect(replaced.changed).toBe(true);
+    expect(replaced.messages).toEqual([
+      expect.objectContaining({
+        content: '你好',
+        id: 'message-1',
+        metadata: {
+          annotations: [
+            {
+              data: {
+                coveredCount: 2,
+                role: 'summary',
+              },
+              owner: 'builtin.context-compaction',
+              type: 'context-compaction',
+              version: '1',
+            },
+          ],
+        },
+        parts: [
+          {
+            text: '你好',
+            type: 'text',
+          },
+        ],
+        role: 'assistant',
+      }),
+    ]);
+
+    const preview = service.previewConversationHistory(conversationId, {}) as {
+      estimatedTokens: number;
+      messageCount: number;
+      textBytes: number;
+    };
+    const expectedTextBytes = Buffer.byteLength('assistant\n你好', 'utf8');
+    expect(preview).toEqual({
+      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+      messageCount: 1,
+      textBytes: expectedTextBytes,
+    });
+
+    expect(() => service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [],
+    })).toThrow(ConflictException);
   });
 
   it('deletes persisted legacy user conversations that no longer符合单用户模型', () => {

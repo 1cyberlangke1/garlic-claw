@@ -105,7 +105,6 @@ const connectionResult: AiProviderConnectionTestResult = {
 const pluginInfo: PluginInfo = {
   id: 'plugin-1',
   name: 'plugin-pc',
-  deviceType: 'pc',
   status: 'online',
   connected: true,
   defaultEnabled: true,
@@ -114,6 +113,11 @@ const pluginInfo: PluginInfo = {
     name: 'plugin-pc',
     version: '1.0.0',
     runtime: 'remote',
+    remote: {
+      remoteEnvironment: 'api',
+      auth: { mode: 'required' },
+      capabilityProfile: 'query',
+    },
     permissions: [],
     tools: [
       {
@@ -122,6 +126,22 @@ const pluginInfo: PluginInfo = {
         parameters: {},
       },
     ],
+  },
+  remote: {
+    descriptor: {
+      remoteEnvironment: 'api',
+      auth: { mode: 'required' },
+      capabilityProfile: 'query',
+    },
+    access: {
+      serverUrl: 'ws://127.0.0.1:23331',
+      accessKey: 'plugin-key',
+    },
+    metadataCache: {
+      status: 'cached',
+      lastSyncedAt: '2026-03-26T00:00:00.000Z',
+      manifestHash: 'manifest-hash',
+    },
   },
   supportedActions: ['health-check', 'reload'],
   lastSeenAt: '2026-03-26T00:00:00.000Z',

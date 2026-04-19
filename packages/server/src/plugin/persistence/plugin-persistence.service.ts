@@ -1,7 +1,32 @@
-import type { JsonObject, JsonValue, ListPluginEventOptions, PluginConfigNodeSchema, PluginConfigSnapshot, PluginEventLevel, PluginEventListResult, PluginEventRecord, PluginGovernanceInfo, PluginLlmPreference, PluginManifest, PluginScopeSettings, PluginStatus } from '@garlic-claw/shared';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type {
+  JsonObject,
+  JsonValue,
+  ListPluginEventOptions,
+  PluginConfigNodeSchema,
+  PluginConfigSnapshot,
+  PluginEventLevel,
+  PluginEventListResult,
+  PluginEventRecord,
+  PluginGovernanceInfo,
+  PluginLlmPreference,
+  PluginManifest,
+  PluginRemoteAccessConfig,
+  PluginRemoteDescriptor,
+  PluginRemoteMetadataCacheInfo,
+  PluginScopeSettings,
+  PluginStatus,
+} from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PLUGIN_STATUS } from '../plugin.constants';
 import { createPluginConfigSnapshot } from './plugin-read-model';
+
+export interface RegisteredPluginRemoteRecord {
+  access: PluginRemoteAccessConfig;
+  descriptor: PluginRemoteDescriptor;
+  metadataCache: PluginRemoteMetadataCacheInfo;
+}
 
 export interface RegisteredPluginRecord {
   connected: boolean;
@@ -9,14 +34,18 @@ export interface RegisteredPluginRecord {
   conversationScopes?: Record<string, boolean>;
   createdAt: string;
   defaultEnabled: boolean;
-  deviceType?: string;
   governance: PluginGovernanceInfo;
   lastSeenAt: string | null;
   llmPreference: PluginLlmPreference;
   manifest: PluginManifest;
   pluginId: string;
+  remote?: RegisteredPluginRemoteRecord | null;
   status: PluginStatus;
   updatedAt: string;
+}
+
+interface PluginPersistenceFile {
+  records: RegisteredPluginRecord[];
 }
 
 type UpsertPluginRecordInput =
@@ -29,6 +58,13 @@ export class PluginPersistenceService {
   private eventSequence = 0;
   private readonly events = new Map<string, PluginEventRecord[]>();
   private readonly records = new Map<string, RegisteredPluginRecord>();
+  private readonly storagePath = resolvePluginStatePath();
+
+  constructor() {
+    for (const record of loadPersistedPluginRecords(this.storagePath)) {
+      this.records.set(record.pluginId, cloneRegisteredPluginRecord(record));
+    }
+  }
 
   findPlugin(pluginId: string): RegisteredPluginRecord | null { const record = this.records.get(pluginId); return record ? cloneRegisteredPluginRecord(record) : null; }
 
@@ -85,6 +121,7 @@ export class PluginPersistenceService {
       throw new BadRequestException(`Plugin ${current.pluginId} is still connected`);
     }
     this.records.delete(pluginId);
+    this.persistRecords();
     return cloneRegisteredPluginRecord(current);
   }
 
@@ -102,6 +139,8 @@ export class PluginPersistenceService {
   upsertPlugin(record: UpsertPluginRecordInput): RegisteredPluginRecord {
     const now = new Date().toISOString();
     const existing = this.records.get(record.pluginId);
+    const remote = normalizeRegisteredPluginRemote(record.manifest, record.remote ?? existing?.remote ?? null);
+    const manifest = normalizePersistedPluginManifest(record.manifest, remote?.descriptor ?? null);
     return this.writeRecord({
       ...record,
       configValues: record.configValues ?? {},
@@ -109,6 +148,8 @@ export class PluginPersistenceService {
       createdAt: existing?.createdAt ?? record.createdAt ?? now,
       status: record.status ?? (record.connected ? PLUGIN_STATUS.ONLINE : PLUGIN_STATUS.OFFLINE),
       llmPreference: normalizePluginLlmPreference(record.llmPreference ?? existing?.llmPreference),
+      manifest,
+      remote,
       updatedAt: record.updatedAt ?? now,
     });
   }
@@ -156,12 +197,84 @@ export class PluginPersistenceService {
   private writeRecord(record: RegisteredPluginRecord): RegisteredPluginRecord {
     const nextRecord = cloneRegisteredPluginRecord(record);
     this.records.set(record.pluginId, nextRecord);
+    this.persistRecords();
     return cloneRegisteredPluginRecord(nextRecord);
+  }
+
+  private persistRecords(): void {
+    fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
+    fs.writeFileSync(this.storagePath, JSON.stringify({
+      records: [...this.records.values()].map((record) => cloneRegisteredPluginRecord(record)),
+    } satisfies PluginPersistenceFile, null, 2), 'utf-8');
   }
 }
 
 export function cloneRegisteredPluginRecord(record: RegisteredPluginRecord): RegisteredPluginRecord {
   return structuredClone(record);
+}
+
+function normalizeRegisteredPluginRemote(
+  manifest: PluginManifest,
+  remote: RegisteredPluginRemoteRecord | null | undefined,
+): RegisteredPluginRemoteRecord | null {
+  if (manifest.runtime !== 'remote') {
+    return null;
+  }
+  const descriptor = remote?.descriptor ?? manifest.remote ?? {
+    auth: { mode: 'required' },
+    capabilityProfile: 'query',
+    remoteEnvironment: 'api',
+  };
+  return {
+    access: {
+      accessKey: remote?.access.accessKey ?? null,
+      serverUrl: remote?.access.serverUrl ?? null,
+    },
+    descriptor,
+    metadataCache: {
+      lastSyncedAt: remote?.metadataCache.lastSyncedAt ?? null,
+      manifestHash: remote?.metadataCache.manifestHash ?? null,
+      status: remote?.metadataCache.status ?? 'empty',
+    },
+  };
+}
+
+function normalizePersistedPluginManifest(
+  manifest: PluginManifest,
+  descriptor: PluginRemoteDescriptor | null,
+): PluginManifest {
+  if (manifest.runtime !== 'remote') {
+    return structuredClone(manifest);
+  }
+  return {
+    ...structuredClone(manifest),
+    remote: descriptor ?? manifest.remote,
+  };
+}
+
+function loadPersistedPluginRecords(storagePath: string): RegisteredPluginRecord[] {
+  try {
+    fs.mkdirSync(path.dirname(storagePath), { recursive: true });
+    if (!fs.existsSync(storagePath)) {
+      return [];
+    }
+    const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as Partial<PluginPersistenceFile>;
+    return Array.isArray(parsed.records)
+      ? parsed.records.map((record) => cloneRegisteredPluginRecord(record))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function resolvePluginStatePath(): string {
+  if (process.env.GARLIC_CLAW_PLUGIN_STATE_PATH) {
+    return process.env.GARLIC_CLAW_PLUGIN_STATE_PATH;
+  }
+  if (process.env.JEST_WORKER_ID) {
+    return path.join(process.cwd(), 'tmp', `plugins.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  }
+  return path.join(process.cwd(), 'tmp', 'plugins.server.json');
 }
 
 function toPluginScopeSettings(record: RegisteredPluginRecord): PluginScopeSettings {

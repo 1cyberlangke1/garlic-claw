@@ -5,5 +5,5 @@ test('client subpath exposes PluginClient', async () => {
   const clientModule = require('../dist/client/index.js');
 
   assert.equal(typeof clientModule.PluginClient, 'function');
-  assert.equal(typeof clientModule.PluginClient.fromBootstrap, 'function');
+  assert.equal(typeof clientModule.PluginClient.fromRemoteAccess, 'function');
 });

@@ -5,8 +5,9 @@ import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-per
 import { RuntimeGatewayConnectionLifecycleService } from '../gateway/runtime-gateway-connection-lifecycle.service';
 
 const BUILTIN_PLUGIN_ACTIONS: PluginActionName[] = ['health-check', 'reload'];
-const REMOTE_PLUGIN_ACTIONS: PluginActionName[] = ['health-check', 'reload', 'reconnect'];
+const REMOTE_PLUGIN_ACTIONS: PluginActionName[] = ['health-check', 'reload', 'reconnect', 'refresh-metadata'];
 const REMOTE_PLUGIN_ACTION_MESSAGES = {
+  'refresh-metadata': '已请求远程插件重新同步元数据',
   reconnect: '已请求远程插件重连',
   reload: '已触发远程插件重连',
 } as const;
@@ -46,7 +47,7 @@ export class RuntimePluginGovernanceService {
       this.pluginBootstrapService.reloadBuiltin(input.pluginId);
       return createAcceptedActionResult(input.pluginId, input.action, '已重新装载本地插件');
     }
-    if (plugin.manifest.runtime !== 'remote' || (input.action !== 'reload' && input.action !== 'reconnect')) {
+    if (plugin.manifest.runtime !== 'remote' || (input.action !== 'reload' && input.action !== 'reconnect' && input.action !== 'refresh-metadata')) {
       throw new BadRequestException(`Plugin ${input.pluginId} does not support action ${input.action}`);
     }
     this.runtimeGatewayConnectionLifecycleService.disconnectPlugin(input.pluginId);

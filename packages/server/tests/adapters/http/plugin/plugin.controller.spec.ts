@@ -1,10 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { PluginController } from '../../../../src/adapters/http/plugin/plugin.controller';
-import { DEVICE_TYPE } from '../../../../src/plugin/plugin.constants';
 
 describe('PluginController', () => {
   const pluginBootstrapService = {
-    issueRemoteBootstrap: jest.fn(),
+    getPlugin: jest.fn(),
+    upsertRemotePlugin: jest.fn(),
   };
   const pluginPersistenceService = {
     deletePlugin: jest.fn(),
@@ -68,7 +68,6 @@ describe('PluginController', () => {
         connected: true,
         defaultEnabled: true,
         createdAt: '2026-03-26T00:00:00.000Z',
-        deviceType: 'builtin',
         governance: { canDisable: true },
         lastSeenAt: null,
         manifest: {
@@ -81,6 +80,7 @@ describe('PluginController', () => {
           version: '1.0.0',
         },
         pluginId: 'builtin.memory-context',
+        remote: null,
         status: 'online',
         updatedAt: '2026-03-26T01:00:00.000Z',
       },
@@ -88,7 +88,6 @@ describe('PluginController', () => {
         connected: false,
         defaultEnabled: true,
         createdAt: '2026-03-27T00:00:00.000Z',
-        deviceType: 'desktop',
         governance: { canDisable: true },
         lastSeenAt: null,
         manifest: {
@@ -96,11 +95,36 @@ describe('PluginController', () => {
           name: 'Remote Echo',
           description: 'Remote plugin',
           permissions: [],
+          remote: {
+            auth: {
+              mode: 'required',
+            },
+            capabilityProfile: 'query',
+            remoteEnvironment: 'api',
+          },
           runtime: 'remote',
           tools: [],
           version: '1.0.0',
         },
         pluginId: 'remote.echo',
+        remote: {
+          access: {
+            accessKey: 'smoke-access-key',
+            serverUrl: 'ws://127.0.0.1:23331',
+          },
+          descriptor: {
+            auth: {
+              mode: 'required',
+            },
+            capabilityProfile: 'query',
+            remoteEnvironment: 'api',
+          },
+          metadataCache: {
+            lastSyncedAt: null,
+            manifestHash: null,
+            status: 'empty',
+          },
+        },
         status: 'offline',
         updatedAt: '2026-03-27T01:00:00.000Z',
       },
@@ -110,7 +134,6 @@ describe('PluginController', () => {
         connected: true,
         defaultEnabled: true,
         createdAt: '2026-03-26T00:00:00.000Z',
-        deviceType: 'builtin',
         governance: { canDisable: true },
         lastSeenAt: null,
         manifest: {
@@ -123,6 +146,7 @@ describe('PluginController', () => {
           version: '1.0.0',
         },
         pluginId: 'builtin.memory-context',
+        remote: null,
         status: 'online',
         updatedAt: '2026-03-26T01:00:00.000Z',
       },
@@ -134,7 +158,6 @@ describe('PluginController', () => {
         defaultEnabled: true,
         createdAt: '2026-03-26T00:00:00.000Z',
         description: 'Memory plugin',
-        deviceType: 'builtin',
         displayName: 'Memory Context',
         governance: { canDisable: true },
         health: {
@@ -158,6 +181,7 @@ describe('PluginController', () => {
           version: '1.0.0',
         },
         name: 'builtin.memory-context',
+        remote: null,
         runtimeKind: 'local',
         status: 'online',
         supportedActions: ['health-check', 'reload'],
@@ -169,7 +193,6 @@ describe('PluginController', () => {
         defaultEnabled: true,
         createdAt: '2026-03-27T00:00:00.000Z',
         description: 'Remote plugin',
-        deviceType: 'desktop',
         displayName: 'Remote Echo',
         governance: { canDisable: true },
         health: {
@@ -188,11 +211,36 @@ describe('PluginController', () => {
           name: 'Remote Echo',
           description: 'Remote plugin',
           permissions: [],
+          remote: {
+            auth: {
+              mode: 'required',
+            },
+            capabilityProfile: 'query',
+            remoteEnvironment: 'api',
+          },
           runtime: 'remote',
           tools: [],
           version: '1.0.0',
         },
         name: 'remote.echo',
+        remote: {
+          access: {
+            accessKey: 'smoke-access-key',
+            serverUrl: 'ws://127.0.0.1:23331',
+          },
+          descriptor: {
+            auth: {
+              mode: 'required',
+            },
+            capabilityProfile: 'query',
+            remoteEnvironment: 'api',
+          },
+          metadataCache: {
+            lastSyncedAt: null,
+            manifestHash: null,
+            status: 'empty',
+          },
+        },
         runtimeKind: 'remote',
         status: 'offline',
         supportedActions: ['health-check', 'reload'],
@@ -217,13 +265,65 @@ describe('PluginController', () => {
     ]);
   });
 
-  it('issues remote bootstrap tokens and delegates plugin actions', async () => {
-    pluginBootstrapService.issueRemoteBootstrap.mockReturnValue({
-      deviceType: DEVICE_TYPE.PC,
-      pluginName: 'remote.echo',
-      serverUrl: 'ws://127.0.0.1:23331',
-      token: 'signed-token',
-      tokenExpiresIn: '30d',
+  it('upserts remote access config, reads remote connection info and delegates plugin actions', async () => {
+    pluginBootstrapService.upsertRemotePlugin.mockReturnValue({
+      connected: false,
+      defaultEnabled: true,
+      createdAt: '2026-03-27T00:00:00.000Z',
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'remote.echo',
+        name: 'Remote Echo',
+        permissions: [],
+        remote: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+        runtime: 'remote',
+        tools: [],
+        version: '1.0.0',
+      },
+      pluginId: 'remote.echo',
+      remote: {
+        access: {
+          accessKey: 'smoke-access-key',
+          serverUrl: 'ws://127.0.0.1:23331',
+        },
+        descriptor: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+        metadataCache: {
+          lastSyncedAt: null,
+          manifestHash: null,
+          status: 'empty',
+        },
+      },
+      status: 'offline',
+      updatedAt: '2026-03-27T01:00:00.000Z',
+    });
+    pluginBootstrapService.getPlugin.mockReturnValue({
+      pluginId: 'remote.echo',
+      remote: {
+        access: {
+          accessKey: 'smoke-access-key',
+          serverUrl: 'ws://127.0.0.1:23331',
+        },
+        descriptor: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+      },
     });
     runtimePluginGovernanceService.readPluginHealthSnapshot.mockReturnValue({
       status: 'healthy',
@@ -236,20 +336,66 @@ describe('PluginController', () => {
     });
     runtimePluginGovernanceService.runPluginAction.mockResolvedValue({
       accepted: true,
-      action: 'reload',
+      action: 'refresh-metadata',
       pluginId: 'remote.echo',
-      message: '已触发远程插件重连',
+      message: '已刷新远程插件元数据缓存',
     });
 
-    expect(controller.createRemoteBootstrap({
-      deviceType: DEVICE_TYPE.PC,
+    expect(controller.upsertRemotePlugin('remote.echo', {
+      access: {
+        accessKey: 'smoke-access-key',
+        serverUrl: 'ws://127.0.0.1:23331',
+      },
+      displayName: 'Remote Echo',
+      remote: {
+        auth: {
+          mode: 'required',
+        },
+        capabilityProfile: 'query',
+        remoteEnvironment: 'api',
+      },
+      version: '1.0.0',
+    } as never)).toMatchObject({
+      id: 'remote.echo',
+      remote: {
+        access: {
+          accessKey: 'smoke-access-key',
+          serverUrl: 'ws://127.0.0.1:23331',
+        },
+        descriptor: {
+          remoteEnvironment: 'api',
+        },
+      },
+      runtimeKind: 'remote',
+    });
+    expect(pluginBootstrapService.upsertRemotePlugin).toHaveBeenCalledWith({
+      access: {
+        accessKey: 'smoke-access-key',
+        serverUrl: 'ws://127.0.0.1:23331',
+      },
+      description: undefined,
+      displayName: 'Remote Echo',
       pluginName: 'remote.echo',
-    })).toEqual({
-      deviceType: DEVICE_TYPE.PC,
+      remote: {
+        auth: {
+          mode: 'required',
+        },
+        capabilityProfile: 'query',
+        remoteEnvironment: 'api',
+      },
+      version: '1.0.0',
+    });
+    expect(controller.getRemotePluginConnection('remote.echo')).toEqual({
+      accessKey: 'smoke-access-key',
       pluginName: 'remote.echo',
+      remote: {
+        auth: {
+          mode: 'required',
+        },
+        capabilityProfile: 'query',
+        remoteEnvironment: 'api',
+      },
       serverUrl: 'ws://127.0.0.1:23331',
-      token: 'signed-token',
-      tokenExpiresIn: '30d',
     });
     expect(controller.getPluginHealth('remote.echo')).toEqual({
       status: 'healthy',
@@ -261,21 +407,21 @@ describe('PluginController', () => {
       lastCheckedAt: '2026-03-28T00:05:00.000Z',
     });
     await expect(
-      controller.runPluginAction('remote.echo', 'reload'),
+      controller.runPluginAction('remote.echo', 'refresh-metadata'),
     ).resolves.toEqual({
       accepted: true,
-      action: 'reload',
+      action: 'refresh-metadata',
       pluginId: 'remote.echo',
-      message: '已触发远程插件重连',
+      message: '已刷新远程插件元数据缓存',
     });
     expect(runtimePluginGovernanceService.runPluginAction).toHaveBeenCalledWith({
-      action: 'reload',
+      action: 'refresh-metadata',
       pluginId: 'remote.echo',
     });
     expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('remote.echo', {
       level: 'info',
-      message: '已触发远程插件重连',
-      type: 'governance:reload',
+      message: '已刷新远程插件元数据缓存',
+      type: 'governance:refresh-metadata',
     });
   });
 

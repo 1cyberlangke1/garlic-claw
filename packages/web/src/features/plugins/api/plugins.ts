@@ -12,6 +12,7 @@ import type {
   PluginHealthSnapshot,
   PluginInfo,
   PluginLlmPreference,
+  PluginRemoteDescriptor,
   PluginRouteMethod,
   PluginScopeSettings,
   PluginStorageEntry,
@@ -144,6 +145,22 @@ export function deletePluginStorage(name: string, key: string) {
 
 export function runPluginAction(name: string, action: PluginActionName) {
   return post<PluginActionResult>(`/plugins/${encodeURIComponent(name)}/actions/${action}`)
+}
+
+export function updatePluginRemoteAccess(
+  name: string,
+  payload: {
+    access: {
+      accessKey: string | null
+      serverUrl: string | null
+    }
+    description?: string
+    displayName?: string
+    remote: PluginRemoteDescriptor
+    version?: string
+  },
+) {
+  return put<PluginInfo>(`/plugins/${encodeURIComponent(name)}/remote-access`, payload)
 }
 
 export interface PluginLlmRouteOption {

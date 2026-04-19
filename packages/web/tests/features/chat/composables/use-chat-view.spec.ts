@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as chatViewData from '@/features/chat/composables/chat-view.data'
 import { useChatView } from '@/features/chat/composables/use-chat-view'
 
+const notify = vi.fn()
+
 vi.mock('@/features/chat/composables/chat-view.data', () => ({
   loadModelCapabilities: vi.fn(),
   loadVisionFallbackEnabled: vi.fn(),
@@ -11,6 +13,12 @@ vi.mock('@/features/chat/composables/chat-view.data', () => ({
   saveConversationHostServices: vi.fn(),
   loadConversationSkillState: vi.fn(),
   saveConversationSkills: vi.fn(),
+}))
+
+vi.mock('@/stores/ui', () => ({
+  useUiStore: () => ({
+    notify,
+  }),
 }))
 
 function createModelConfig(inputImage: boolean, id = inputImage ? 'image-model' : 'text-only-model') {
@@ -83,6 +91,7 @@ describe('useChatView', () => {
     vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
       createModelConfig(false, 'text-only-model').capabilities,
     )
+    notify.mockReset()
   })
 
   it('shows a fallback notice when pending images target a text-only model', async () => {
@@ -301,5 +310,29 @@ describe('useChatView', () => {
 
     expect(state.conversationSkillState.value?.activeSkillIds).toEqual([])
     expect(chatViewData.saveConversationSkills).toHaveBeenCalledWith('conversation-1', [])
+  })
+
+  it('triggers manual context compaction and reports the result through the UI store', async () => {
+    const chat = createChatStub({
+      compactContext: vi.fn().mockResolvedValue({
+        compacted: true,
+        coveredMessageCount: 2,
+      }),
+    })
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    await state.compactConversationContext()
+
+    expect(chat.compactContext).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledWith('已压缩上下文，覆盖 2 条历史消息。', 'success')
+    expect(state.compacting.value).toBe(false)
   })
 })

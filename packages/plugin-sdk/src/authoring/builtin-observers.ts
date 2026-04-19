@@ -85,12 +85,12 @@ export function buildResponseSendSummary(payload: ResponseAfterSendHookPayload) 
     conversationId: payload.context.conversationId ?? null,
   };
 }
-export function buildPluginGovernanceSummary(input: { eventType: string; pluginId: string; runtimeKind: string; deviceType: string; occurredAt: string; errorType?: string; errorMessage?: string }) {
+export function buildPluginGovernanceSummary(input: { eventType: string; pluginId: string; runtimeKind: string; remoteEnvironment: string | null; occurredAt: string; errorType?: string; errorMessage?: string }) {
   return {
     eventType: input.eventType,
     pluginId: input.pluginId,
     runtimeKind: input.runtimeKind,
-    deviceType: input.deviceType,
+    remoteEnvironment: input.remoteEnvironment,
     errorType: input.errorType ?? null,
     errorMessage: input.errorMessage ?? null,
     occurredAt: input.occurredAt,

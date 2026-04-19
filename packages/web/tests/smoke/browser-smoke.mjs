@@ -30,9 +30,15 @@ const MODEL_ID = `${PREFIX}-model`;
 const SHADOW_MODEL_ID = `${PREFIX}-shadow-model`;
 const AUTOMATION_NAME = `${PREFIX}-automation`;
 const AUTOMATION_MESSAGE = `${PREFIX} automation message`;
+const REMOTE_PLUGIN_ID = `${PREFIX}-remote-iot-light`;
 
 async function main() {
   const fakeOpenAi = await startFakeOpenAiServer();
+  const tempRoot = path.join(PROJECT_ROOT, 'other', 'tmp');
+  await fsPromises.mkdir(tempRoot, { recursive: true });
+  const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'browser-smoke-'));
+  const remotePluginScriptPath = path.join(tempDir, 'remote-plugin.cjs');
+  await prepareRemotePluginScript(remotePluginScriptPath);
   const serviceSession = await ensureDevServices();
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -42,6 +48,7 @@ async function main() {
   let accessToken = '';
   let createdConversationId = null;
   let initialProviderIds = new Set();
+  let remotePluginHandle = null;
 
   try {
     await page.goto('/login', { waitUntil: 'networkidle' });
@@ -68,7 +75,7 @@ async function main() {
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
     createdConversationId = await runChatFlow(page, accessToken);
     await verifyMcpPage(page);
-    await verifyPluginsPage(page);
+    remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
 
@@ -81,9 +88,11 @@ async function main() {
         prefix: PREFIX,
         providerId: PROVIDER_ID,
       }),
+      remotePluginHandle?.stop?.() ?? Promise.resolve(),
       context.close(),
       browser.close(),
       fakeOpenAi.close(),
+      fsPromises.rm(tempDir, { recursive: true, force: true }),
       serviceSession.stop(),
     ]);
   }
@@ -192,10 +201,12 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await page.getByText(PROVIDER_NAME, { exact: false }).first().click();
   const contextLengthInput = page.locator(`[data-test="context-length-input-${MODEL_ID}"]`);
   await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  const currentContextLengthValue = Number(await contextLengthInput.inputValue());
+  const targetContextLength = currentContextLengthValue === 65536 ? 65537 : 65536;
   await contextLengthInput.evaluate((node, value) => {
     node.value = value;
     node.dispatchEvent(new Event('input', { bubbles: true }));
-  }, '65536');
+  }, String(targetContextLength));
   const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
   await waitFor(async () => (await saveButton.isDisabled()) ? null : true, '等待上下文长度保存按钮可用');
   await saveButton.click();
@@ -204,7 +215,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     const models = await requestJson(`/ai/providers/${PROVIDER_ID}/models`, {
       headers: createAuthHeaders(accessToken),
     }).catch(() => []);
-    return models.find((model) => model.id === MODEL_ID)?.contextLength === 65536 ? true : null;
+    return models.find((model) => model.id === MODEL_ID)?.contextLength === targetContextLength ? true : null;
   }, '等待上下文长度持久化');
 
   await page.getByRole('button', { name: '编辑' }).click();
@@ -306,8 +317,9 @@ async function verifyMcpPage(page) {
   await page.locator('[data-test="mcp-command-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
-async function verifyPluginsPage(page) {
-  await page.goto('/plugins', { waitUntil: 'networkidle' });
+async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
+  const remotePluginHandle = await createCachedRemotePluginFixture(accessToken, remotePluginScriptPath)
+  await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'networkidle' });
   await expectText(page, '已接入插件');
   let pluginItems = page.locator('.plugin-item');
   if (await pluginItems.count() === 0) {
@@ -319,6 +331,17 @@ async function verifyPluginsPage(page) {
     }
   }
   assert.ok(await pluginItems.count() > 0, '插件页未加载任何插件条目');
+  await expectText(page, '远程接入');
+  await expectText(page, '远程接入配置');
+  await expectText(page, 'IoT 远程插件');
+  await expectText(page, '必须 Key');
+  await expectText(page, '控制型');
+  await expectText(page, '已有缓存');
+  await expectText(page, '高风险');
+  await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('[data-test="plugin-remote-access-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('[data-test="plugin-remote-access-key"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  return remotePluginHandle
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {
@@ -394,6 +417,16 @@ async function cleanupSmokeArtifacts(accessToken, input) {
   } catch {}
 
   try {
+    const plugins = await requestJson('/plugins', { headers }).catch(() => []);
+    for (const plugin of plugins.filter((item) => item.name?.startsWith(input.prefix))) {
+      await requestJson(`/plugins/${encodeURIComponent(plugin.name)}`, {
+        headers,
+        method: 'DELETE',
+      }).catch(() => undefined);
+    }
+  } catch {}
+
+  try {
     const providers = await requestJson('/ai/providers', { headers }).catch(() => []);
     for (const provider of providers) {
       const detail = await requestJson(`/ai/providers/${encodeURIComponent(provider.id)}`, {
@@ -418,10 +451,11 @@ async function cleanupSmokeArtifacts(accessToken, input) {
     } 
   } catch {}
 
-  const [providers, automations, conversations] = await Promise.all([
+  const [providers, automations, conversations, plugins] = await Promise.all([
     requestJson('/ai/providers', { headers }).catch(() => []),
     requestJson('/automations', { headers }).catch(() => []),
     requestJson('/chat/conversations', { headers }).catch(() => []),
+    requestJson('/plugins', { headers }).catch(() => []),
   ]);
   assert.ok(
     providers.every((provider) => !provider.id?.startsWith(SMOKE_PREFIX_ROOT)),
@@ -434,6 +468,10 @@ async function cleanupSmokeArtifacts(accessToken, input) {
   assert.ok(
     conversations.every((conversation) => !conversation.title?.startsWith(input.prefix)),
     '清理后仍残留 smoke conversation',
+  );
+  assert.ok(
+    plugins.every((plugin) => !plugin.name?.startsWith(input.prefix)),
+    '清理后仍残留 smoke plugin',
   );
 }
 
@@ -587,6 +625,117 @@ async function isPortListening(port) {
       resolve(false);
     });
   });
+}
+
+async function createCachedRemotePluginFixture(accessToken, remotePluginScriptPath) {
+  const headers = createAuthHeaders(accessToken)
+  await requestJson(`/plugins/${encodeURIComponent(REMOTE_PLUGIN_ID)}/remote-access`, {
+    body: {
+      access: {
+        accessKey: 'smoke-remote-access-key',
+        serverUrl: 'ws://127.0.0.1:23331',
+      },
+      displayName: 'Smoke UI Remote Light',
+      remote: {
+        auth: {
+          mode: 'required',
+        },
+        capabilityProfile: 'actuate',
+        remoteEnvironment: 'iot',
+      },
+      version: '1.0.0',
+    },
+    headers,
+    method: 'PUT',
+  })
+
+  const remoteConnection = await requestJson(`/plugins/${encodeURIComponent(REMOTE_PLUGIN_ID)}/remote-connection`, {
+    headers,
+  })
+  const remotePluginHandle = await startRemotePluginFixture(remotePluginScriptPath, remoteConnection)
+  await waitForPluginHealthStatus(accessToken, REMOTE_PLUGIN_ID, 'healthy')
+  await remotePluginHandle.stop()
+  await waitForPluginHealthStatus(accessToken, REMOTE_PLUGIN_ID, 'offline')
+  return remotePluginHandle
+}
+
+async function waitForPluginHealthStatus(accessToken, pluginId, expectedStatus) {
+  return waitFor(async () => {
+    const health = await requestJson(`/plugins/${encodeURIComponent(pluginId)}/health`, {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => null)
+    return health?.status === expectedStatus ? health : null
+  }, `等待插件健康状态切换为 ${expectedStatus}`)
+}
+
+async function prepareRemotePluginScript(filePath) {
+  await fsPromises.writeFile(filePath, [
+    "const { PluginClient } = require('@garlic-claw/plugin-sdk/client');",
+    '',
+    "const remoteConnection = JSON.parse(process.env.SMOKE_REMOTE_CONNECTION || '{}');",
+    'const client = PluginClient.fromRemoteAccess(remoteConnection, {',
+    '  autoReconnect: false,',
+    '  manifest: {',
+    "    name: 'Smoke UI Remote Light',",
+    "    version: '1.0.0',",
+    "    description: 'Temporary remote IoT light plugin for browser smoke verification.',",
+    "    permissions: ['conversation:write'],",
+    '    tools: [',
+    '      {',
+    "        name: 'light.turnOn',",
+    "        description: 'Turn on the smoke UI light.',",
+    '        parameters: {},',
+    '      },',
+    '    ],',
+    '    hooks: [],',
+    '    routes: [',
+    '      {',
+    "        path: 'inspect/context',",
+    "        methods: ['GET'],",
+    "        description: 'Inspect route for browser smoke verification.',",
+    '      },',
+    '    ],',
+    '  },',
+    '});',
+    '',
+    "client.onCommand('light.turnOn', async () => ({ isOn: true }));",
+    "client.onRoute('inspect/context', async () => ({ status: 200, body: { ok: true } }));",
+    '',
+    'client.connect();',
+    '',
+    'const shutdown = async () => {',
+    '  await client.disconnect();',
+    '  setTimeout(() => process.exit(0), 10);',
+    '};',
+    '',
+    "process.on('SIGINT', shutdown);",
+    "process.on('SIGTERM', shutdown);",
+  ].join('\n'), 'utf8')
+}
+
+async function startRemotePluginFixture(scriptPath, remoteConnection) {
+  const child = spawn(process.execPath, [scriptPath], {
+    cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      SMOKE_REMOTE_CONNECTION: JSON.stringify(remoteConnection),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  return {
+    child,
+    async stop() {
+      if (child.exitCode !== null) {
+        return
+      }
+      child.kill()
+      await Promise.race([
+        new Promise((resolve) => child.once('exit', resolve)),
+        delay(5_000).then(() => undefined),
+      ])
+    },
+  }
 }
 
 async function startFakeOpenAiServer() {

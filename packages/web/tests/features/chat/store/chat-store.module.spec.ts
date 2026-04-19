@@ -4,6 +4,7 @@ import type { Conversation } from '@garlic-claw/shared'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
 
 vi.mock('@/features/chat/modules/chat-conversation.data', () => ({
+  compactConversationContextRecord: vi.fn(),
   createConversationRecord: vi.fn(),
   deleteConversationMessageRecord: vi.fn(),
   deleteConversationRecord: vi.fn(),
@@ -730,5 +731,61 @@ describe('createChatStoreModule', () => {
     expect(store.selectedProvider.value).toBeNull()
     expect(store.selectedModel.value).toBeNull()
     expect(store.messages.value).toEqual([])
+  })
+
+  it('runs manual context compaction and refreshes the current conversation state', async () => {
+    vi.mocked(chatConversationData.compactConversationContextRecord).mockResolvedValue({
+      compacted: true,
+      coveredMessageCount: 2,
+    })
+    vi.mocked(chatConversationData.loadConversationList).mockResolvedValue([
+      {
+        id: 'conversation-1',
+        title: '压缩后的会话',
+        createdAt: '2026-04-19T10:00:00.000Z',
+        updatedAt: '2026-04-19T10:05:00.000Z',
+        _count: { messages: 2 },
+      },
+    ] satisfies Conversation[])
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      {
+        id: 'summary-1',
+        role: 'assistant',
+        content: '压缩后的历史摘要',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'openai',
+        model: 'gpt-5.4',
+      },
+    ])
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.selectedProvider.value = 'openai'
+    store.selectedModel.value = 'gpt-5.4'
+
+    await expect(store.compactContext()).resolves.toEqual({
+      compacted: true,
+      coveredMessageCount: 2,
+    })
+
+    expect(chatConversationData.compactConversationContextRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+      },
+    )
+    expect(chatConversationData.loadConversationList).toHaveBeenCalledTimes(1)
+    expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'summary-1',
+        content: '压缩后的历史摘要',
+      }),
+    ])
   })
 })

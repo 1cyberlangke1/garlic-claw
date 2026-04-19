@@ -24,6 +24,8 @@ import {
   prepareChatImageUpload,
   measureDataUrlBytes,
 } from '@/utils/chat-image-upload'
+import { getErrorMessage } from '@/utils/error'
+import { useUiStore } from '@/stores/ui'
 
 /**
  * 待发送图片。
@@ -55,8 +57,10 @@ export interface UploadNotice {
  * - 上传预算、模型能力读取与发送逻辑统一收口
  */
 export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
+  const uiStore = useUiStore()
   const inputText = ref('')
   const pendingImages = ref<PendingImage[]>([])
+  const compacting = ref(false)
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
   const conversationHostServices = ref<ConversationHostServices | null>(null)
   const conversationSkillState = ref<ConversationSkillState | null>(null)
@@ -491,8 +495,47 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     await updateConversationSkills(activeSkillIds.filter((activeId) => activeId !== skillId))
   }
 
+  async function compactConversationContext() {
+    if (!chat.currentConversationId || compacting.value) {
+      return
+    }
+    compacting.value = true
+    try {
+      const result = await chat.compactContext()
+      if (!result) {
+        return
+      }
+      if (result.compacted) {
+        const coveredCount = result.coveredMessageCount ?? 0
+        uiStore.notify(
+          coveredCount > 0
+            ? `已压缩上下文，覆盖 ${coveredCount} 条历史消息。`
+            : '已完成上下文压缩。',
+          'success',
+        )
+        return
+      }
+      const reasonLabelMap: Record<string, string> = {
+        disabled: '当前压缩插件已关闭。',
+        'threshold-not-reached': '当前上下文还未达到自动压缩阈值。',
+        'not-enough-history': '当前历史还不足以生成稳定摘要。',
+        'empty-summary': '压缩模型没有返回有效摘要。',
+        'invalid-history': '当前历史结构异常，暂时无法压缩。',
+      }
+      uiStore.notify(
+        result.reason ? (reasonLabelMap[result.reason] ?? '本次未执行上下文压缩。') : '本次未执行上下文压缩。',
+        'success',
+      )
+    } catch (error) {
+      uiStore.notify(getErrorMessage(error, '执行上下文压缩失败'), 'error')
+    } finally {
+      compacting.value = false
+    }
+  }
+
   return {
     inputText,
+    compacting,
     pendingImages,
     selectedCapabilities,
     conversationHostServices,
@@ -514,6 +557,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     setConversationLlmEnabled,
     setConversationSessionEnabled,
     removeConversationSkill,
+    compactConversationContext,
   }
 }
 

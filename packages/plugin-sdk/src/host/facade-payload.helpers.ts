@@ -1,4 +1,4 @@
-import type { ActionConfig, JsonObject, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentRunParams, PluginSubagentTaskStartParams, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, JsonObject, PluginConversationHistoryPreviewParams, PluginConversationHistoryReplaceParams, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentRunParams, PluginSubagentTaskStartParams, TriggerConfig } from "@garlic-claw/shared";
 
 import type { PluginGenerateTextParams, PluginScopedStateOptions } from "./facade";
 import { toHostJsonValue } from "./host-json-value.codec";
@@ -100,6 +100,23 @@ export function buildPluginGenerateTextParams(input: PluginGenerateTextParams): 
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.headers ? { headers: input.headers } : {}),
     ...(input.transportMode ? { transportMode: input.transportMode } : {}),
+  };
+}
+
+export function buildPluginConversationHistoryPreviewParams(
+  input: PluginConversationHistoryPreviewParams = {},
+): JsonObject {
+  return {
+    ...(input.messages ? { messages: toHostJsonValue(input.messages) } : {}),
+  };
+}
+
+export function buildPluginConversationHistoryReplaceParams(
+  input: PluginConversationHistoryReplaceParams,
+): JsonObject {
+  return {
+    expectedRevision: input.expectedRevision,
+    messages: toHostJsonValue(input.messages),
   };
 }
 

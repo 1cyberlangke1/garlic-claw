@@ -10,7 +10,6 @@ function createSelectedPlugin(permissions: string[]): PluginInfo {
     name: 'builtin.demo',
     displayName: 'Demo Plugin',
     description: 'demo',
-    deviceType: 'builtin',
     status: 'online',
     connected: true,
     defaultEnabled: true,
@@ -75,6 +74,7 @@ function createSelectedPlugin(permissions: string[]): PluginInfo {
     lastSeenAt: '2026-03-28T00:00:00.000Z',
     createdAt: '2026-03-28T00:00:00.000Z',
     updatedAt: '2026-03-28T00:00:00.000Z',
+    remote: null,
   }
 }
 

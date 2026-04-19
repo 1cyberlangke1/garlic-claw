@@ -4,12 +4,14 @@ import type {
   PluginConfigSnapshot,
   PluginInfo,
   PluginLlmPreference,
+  PluginRemoteDescriptor,
   PluginScopeSettings,
 } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
 import {
   savePluginConfig as savePluginConfigRequest,
   savePluginLlmPreference as savePluginLlmPreferenceRequest,
+  savePluginRemoteAccess as savePluginRemoteAccessRequest,
   savePluginScope as savePluginScopeRequest,
   type PluginLlmRouteOption,
   toErrorMessage,
@@ -26,6 +28,7 @@ export interface UsePluginConfigOptions {
 export function usePluginConfig(options: UsePluginConfigOptions) {
   const savingConfig = ref(false)
   const savingLlmPreference = ref(false)
+  const savingRemoteAccess = ref(false)
   const savingScope = ref(false)
   const configSnapshot = shallowRef<PluginConfigSnapshot | null>(null)
   const llmPreference = shallowRef<PluginLlmPreference | null>(null)
@@ -112,9 +115,40 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     }
   }
 
+  async function saveRemoteAccess(payload: {
+    access: {
+      accessKey: string | null
+      serverUrl: string | null
+    }
+    description?: string
+    displayName?: string
+    remote: PluginRemoteDescriptor
+    version?: string
+  }) {
+    if (!options.selectedPlugin.value) {
+      return
+    }
+
+    const pluginName = options.selectedPlugin.value.name
+    savingRemoteAccess.value = true
+    options.error.value = null
+    options.notice.value = null
+    try {
+      await savePluginRemoteAccessRequest(pluginName, payload)
+      options.notice.value = '远程接入配置已保存'
+      await options.reloadPluginListSilently()
+      await options.refreshSelectedDetails(pluginName)
+    } catch (caughtError) {
+      options.error.value = toErrorMessage(caughtError, '保存远程接入配置失败')
+    } finally {
+      savingRemoteAccess.value = false
+    }
+  }
+
   return {
     savingConfig,
     savingLlmPreference,
+    savingRemoteAccess,
     savingScope,
     configSnapshot,
     llmPreference,
@@ -125,6 +159,7 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     clearDetailState,
     saveConfig,
     saveLlmPreference,
+    saveRemoteAccess,
     saveScope,
   }
 }

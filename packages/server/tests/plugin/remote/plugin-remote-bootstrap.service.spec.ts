@@ -1,12 +1,10 @@
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
-import { DEVICE_TYPE } from '../../../src/plugin/plugin.constants';
 import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin-persistence.service';
 
-describe('PluginBootstrapService remote bootstrap', () => {
-  it('exposes ConfigService and JwtService in constructor metadata for Nest injection', () => {
+describe('PluginBootstrapService remote access', () => {
+  it('exposes builtin registry in constructor metadata for Nest injection', () => {
     expect(
       Reflect.getMetadata('design:paramtypes', PluginBootstrapService).map((entry: unknown) =>
         typeof entry === 'function' ? entry.name : String(entry),
@@ -15,50 +13,80 @@ describe('PluginBootstrapService remote bootstrap', () => {
       'PluginGovernanceService',
       'PluginPersistenceService',
       'BuiltinPluginRegistryService',
-      'ConfigService',
-      'JwtService',
     ]);
   });
 
-  it('issues a remote bootstrap token and registers a placeholder remote plugin', () => {
+  it('upserts a remote plugin slot and persists static access config', () => {
     const service = new PluginBootstrapService(
       new PluginGovernanceService(),
       new PluginPersistenceService(),
-      undefined,
-      {
-        get: (key: string, fallback?: unknown) => {
-          switch (key) {
-            case 'JWT_SECRET':
-              return 'secret';
-            case 'REMOTE_PLUGIN_TOKEN_EXPIRES_IN':
-              return '30d';
-            case 'REMOTE_PLUGIN_WS_URL':
-              return 'ws://127.0.0.1:23331';
-            default:
-              return fallback;
-          }
-        },
-      } as ConfigService,
-      {
-        sign: () => 'signed-token',
-      } as unknown as JwtService,
+      new BuiltinPluginRegistryService(),
     );
 
-    expect(service.issueRemoteBootstrap({
-      deviceType: DEVICE_TYPE.PC,
+    const record = service.upsertRemotePlugin({
+      access: {
+        accessKey: 'smoke-access-key',
+        serverUrl: 'ws://127.0.0.1:23331',
+      },
       displayName: 'Remote Echo',
       pluginName: 'remote.echo',
-    })).toEqual({
-      deviceType: DEVICE_TYPE.PC,
-      pluginName: 'remote.echo',
-      serverUrl: 'ws://127.0.0.1:23331',
-      token: 'signed-token',
-      tokenExpiresIn: '30d',
+      remote: {
+        auth: {
+          mode: 'required',
+        },
+        capabilityProfile: 'query',
+        remoteEnvironment: 'api',
+      },
+      version: '1.0.0',
+    });
+
+    expect(record).toMatchObject({
+      connected: false,
+      manifest: {
+        id: 'remote.echo',
+        name: 'Remote Echo',
+        remote: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+        runtime: 'remote',
+        version: '1.0.0',
+      },
+      pluginId: 'remote.echo',
+      remote: {
+        access: {
+          accessKey: 'smoke-access-key',
+          serverUrl: 'ws://127.0.0.1:23331',
+        },
+        descriptor: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+        metadataCache: {
+          lastSyncedAt: null,
+          manifestHash: null,
+          status: 'empty',
+        },
+      },
+      status: 'offline',
     });
     expect(service.getPlugin('remote.echo')).toMatchObject({
       manifest: {
         id: 'remote.echo',
         name: 'Remote Echo',
+        remote: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
         runtime: 'remote',
       },
       pluginId: 'remote.echo',
