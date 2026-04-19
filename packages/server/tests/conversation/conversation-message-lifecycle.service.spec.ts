@@ -617,6 +617,58 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
   });
 
+  it('short-circuits the conversation mainline for plugin message commands', async () => {
+    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.context-compaction', ['message:received'])]);
+    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
+      action: 'short-circuit',
+      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
+      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+
+    const started = await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
+
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+      { content: '/compact', role: 'user', status: 'completed' },
+      {
+        content: '已压缩上下文，覆盖 2 条历史消息。',
+        model: 'context-compaction-command',
+        provider: 'system',
+        role: 'assistant',
+        status: 'completed',
+      },
+    ]);
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
+  });
+
+  it('still allows plugin message commands when llm auto reply is turned off', async () => {
+    runtimeHostConversationRecordService.writeConversationHostServices(conversationId, {
+      llmEnabled: false,
+      sessionEnabled: true,
+    });
+    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.context-compaction', ['message:received'])]);
+    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
+      action: 'short-circuit',
+      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
+      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+
+    await expect(
+      startAndWait(service, conversationTaskService, { content: '/compress' }, 'user-1'),
+    ).resolves.toMatchObject({
+      assistantMessage: expect.objectContaining({
+        role: 'assistant',
+      }),
+    });
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+  });
+
   it('short-circuits model execution when chat before-model returns an assistant response', async () => {
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.before-model-short-circuit', ['chat:before-model'])]);
     runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({

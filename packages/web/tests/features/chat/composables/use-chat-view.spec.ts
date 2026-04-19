@@ -229,6 +229,72 @@ describe('useChatView', () => {
     expect(chat.sendMessage).not.toHaveBeenCalled()
   })
 
+  it('still allows slash commands to be sent when llm auto reply is turned off', async () => {
+    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
+      sessionEnabled: true,
+      llmEnabled: false,
+      ttsEnabled: true,
+    })
+
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    state.inputText.value = '/compress'
+    await nextTick()
+
+    expect(state.canSend.value).toBe(true)
+
+    await state.send()
+
+    expect(chat.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: '/compress',
+      }),
+    )
+  })
+
+  it('does not bypass llm auto reply restrictions for slash text with pending images', async () => {
+    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
+      sessionEnabled: true,
+      llmEnabled: false,
+      ttsEnabled: true,
+    })
+
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    state.inputText.value = '/compact'
+    state.pendingImages.value.push({
+      id: 'image-1',
+      image: 'data:image/png;base64,AAAA',
+      mimeType: 'image/png',
+      name: 'demo.png',
+    })
+    await nextTick()
+
+    expect(state.canSend.value).toBe(false)
+
+    await state.send()
+
+    expect(chat.sendMessage).not.toHaveBeenCalled()
+  })
+
   it('updates llm service state for the current conversation', async () => {
     vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
       createModelConfig(true, 'image-model').capabilities,

@@ -7,6 +7,168 @@ import type {
 import { BUILTIN_CONTEXT_COMPACTION_PLUGIN } from '../../../../src/plugin/builtin/hooks/builtin-context-compaction.plugin';
 
 describe('BuiltinContextCompactionPlugin', () => {
+  it('short-circuits /compress through message:received and writes compacted history back', async () => {
+    const messageReceivedHook = BUILTIN_CONTEXT_COMPACTION_PLUGIN.hooks?.['message:received'];
+    expect(messageReceivedHook).toBeDefined();
+    const host = createCompactionHost({
+      config: {
+        compressionThreshold: 1,
+        keepRecentMessages: 1,
+        mode: 'manual',
+        reservedTokens: 256,
+        showCoveredMarker: true,
+      },
+      history: createHistorySnapshot([
+        createHistoryMessage('history-1', 'user', '第一条历史消息'),
+        createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
+        createHistoryMessage('history-3', 'user', '请基于上面的历史继续回答。'),
+      ]),
+      modelContextLength: 512,
+    });
+
+    await expect(
+      messageReceivedHook!(
+        {
+          context: {
+            activeModelId: 'gpt-5.4',
+            activeProviderId: 'openai',
+            conversationId: 'conversation-1',
+            source: 'http-route',
+            userId: 'user-1',
+          },
+          conversationId: 'conversation-1',
+          message: {
+            content: '/compress',
+            parts: [
+              {
+                text: '/compress',
+                type: 'text',
+              },
+            ],
+            role: 'user',
+          },
+          modelId: 'gpt-5.4',
+          modelMessages: [
+            {
+              content: '/compress',
+              role: 'user',
+            },
+          ],
+          providerId: 'openai',
+          session: null,
+        } as never,
+        {
+          callContext: {
+            activeModelId: 'gpt-5.4',
+            activeProviderId: 'openai',
+            conversationId: 'conversation-1',
+            source: 'http-route',
+            userId: 'user-1',
+          },
+          host: host.facade,
+        } as never,
+      ),
+    ).resolves.toEqual({
+      action: 'short-circuit',
+      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
+      assistantParts: [
+        {
+          text: '已压缩上下文，覆盖 2 条历史消息。',
+          type: 'text',
+        },
+      ],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+
+    expect(host.history.messages.some((message: PluginConversationHistoryMessage) =>
+      message.id.startsWith('context-compaction:'),
+    )).toBe(true);
+  });
+
+  it('does not treat mixed messages as context compaction commands', async () => {
+    const messageReceivedHook = BUILTIN_CONTEXT_COMPACTION_PLUGIN.hooks?.['message:received'];
+    expect(messageReceivedHook).toBeDefined();
+    const host = createCompactionHost({
+      config: {
+        compressionThreshold: 1,
+        keepRecentMessages: 1,
+        mode: 'manual',
+        reservedTokens: 256,
+        showCoveredMarker: true,
+      },
+      history: createHistorySnapshot([
+        createHistoryMessage('history-1', 'user', '第一条历史消息'),
+        createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
+      ]),
+      modelContextLength: 512,
+    });
+
+    await expect(
+      messageReceivedHook!(
+        {
+          context: {
+            activeModelId: 'gpt-5.4',
+            activeProviderId: 'openai',
+            conversationId: 'conversation-1',
+            source: 'http-route',
+            userId: 'user-1',
+          },
+          conversationId: 'conversation-1',
+          message: {
+            content: '/compact',
+            parts: [
+              {
+                text: '/compact',
+                type: 'text',
+              },
+              {
+                image: 'data:image/png;base64,AAAA',
+                mimeType: 'image/png',
+                type: 'image',
+              },
+            ],
+            role: 'user',
+          },
+          modelId: 'gpt-5.4',
+          modelMessages: [
+            {
+              content: [
+                {
+                  text: '/compact',
+                  type: 'text',
+                },
+                {
+                  image: 'data:image/png;base64,AAAA',
+                  mimeType: 'image/png',
+                  type: 'image',
+                },
+              ],
+              role: 'user',
+            },
+          ],
+          providerId: 'openai',
+          session: null,
+        } as never,
+        {
+          callContext: {
+            activeModelId: 'gpt-5.4',
+            activeProviderId: 'openai',
+            conversationId: 'conversation-1',
+            source: 'http-route',
+            userId: 'user-1',
+          },
+          host: host.facade,
+        } as never,
+      ),
+    ).resolves.toEqual({
+      action: 'pass',
+    });
+
+    expect(host.facade.replaceConversationHistory).not.toHaveBeenCalled();
+  });
+
   it('runs manual compaction through the plugin route and writes summary annotations back to history', async () => {
     const routeHandler = BUILTIN_CONTEXT_COMPACTION_PLUGIN.routes?.['context-compaction/run'];
     expect(routeHandler).toBeDefined();

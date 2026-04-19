@@ -109,10 +109,17 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
 
     return null
   })
+  const canBypassLlmDisabledReason = computed(() =>
+    conversationSendDisabledReason.value === '当前会话已关闭 LLM 自动回复'
+    && matchesPotentialChatCommand(inputText.value, pendingImages.value.length),
+  )
   const canSend = computed(() =>
     Boolean(inputText.value.trim() || pendingImages.value.length > 0) &&
     !chat.streaming &&
-    !conversationSendDisabledReason.value,
+    (
+      !conversationSendDisabledReason.value
+      || canBypassLlmDisabledReason.value
+    ),
   )
   const retryActionLabel = computed(() =>
     chat.retryableMessageId ? '重试' : lastMessageRole.value === 'user' ? '发送' : '重试',
@@ -170,11 +177,14 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    * 把当前文本和待发送图片一起发给聊天 store。
    */
   async function send() {
-    if (conversationSendDisabledReason.value) {
+    const text = inputText.value.trim()
+    if (
+      conversationSendDisabledReason.value
+      && !canBypassLlmDisabledReason.value
+    ) {
       return
     }
 
-    const text = inputText.value.trim()
     if (!selectedCapabilities.value && chat.selectedProvider && chat.selectedModel) {
       await refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
     }
@@ -570,4 +580,11 @@ function getPendingImageBudgetBytes(images: PendingImage[] = []): number {
     (total, image) => total + measureDataUrlBytes(image.image),
     0,
   )
+}
+
+function matchesPotentialChatCommand(
+  text: string,
+  pendingImageCount: number,
+): boolean {
+  return pendingImageCount === 0 && /^\/\S+/.test(text.trim())
 }

@@ -23,6 +23,10 @@ const CONTEXT_COMPACTION_OWNER = 'builtin.context-compaction';
 const CONTEXT_COMPACTION_VERSION = '1';
 const AUTO_STOP_REPLY = '已完成上下文压缩，本轮不继续生成主回复。';
 const AUTO_STOP_STATE_KEY = 'context-compaction:auto-stop';
+const CONTEXT_COMPACTION_COMMAND = '/compact';
+const CONTEXT_COMPACTION_COMMAND_ALIAS = '/compress';
+const CONTEXT_COMPACTION_COMMAND_MODEL = 'context-compaction-command';
+const CONTEXT_COMPACTION_COMMAND_PROVIDER = 'system';
 
 type CompactionTrigger = 'manual' | 'prepare-model';
 
@@ -69,6 +73,52 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
   },
   manifest: CONTEXT_COMPACTION_MANIFEST,
   hooks: {
+    'message:received': async (payload, context) => {
+      const commandInput = readContextCompactionCommandInput(payload);
+      if (!commandInput) {
+        return createPassHookResult();
+      }
+      if (commandInput.hasUnexpectedArgs) {
+        return {
+          action: 'short-circuit',
+          assistantContent: formatContextCompactionCommandReply(null, true),
+          assistantParts: [
+            {
+              text: formatContextCompactionCommandReply(null, true),
+              type: 'text',
+            },
+          ],
+          modelId: CONTEXT_COMPACTION_COMMAND_MODEL,
+          providerId: CONTEXT_COMPACTION_COMMAND_PROVIDER,
+          reason: 'context-compaction:command',
+        };
+      }
+      const history = await context.host.getConversationHistory();
+      const runtimeConfig = await readContextCompactionRuntimeConfigFromHost(context.host.getConfig());
+      const result = await runContextCompaction({
+        conversationId: history.conversationId,
+        history,
+        host: context.host,
+        modelId: context.callContext.activeModelId ?? undefined,
+        providerId: context.callContext.activeProviderId ?? undefined,
+        runtimeConfig,
+        trigger: 'manual',
+      });
+      const assistantContent = formatContextCompactionCommandReply(result, false);
+      return {
+        action: 'short-circuit',
+        assistantContent,
+        assistantParts: [
+          {
+            text: assistantContent,
+            type: 'text',
+          },
+        ],
+        modelId: CONTEXT_COMPACTION_COMMAND_MODEL,
+        providerId: CONTEXT_COMPACTION_COMMAND_PROVIDER,
+        reason: 'context-compaction:command',
+      };
+    },
     'conversation:history-rewrite': async (payload, context) => {
       const hookPayload = asConversationHistoryRewritePayload(payload);
       const runtimeConfig = await readContextCompactionRuntimeConfigFromHost(context.host.getConfig());
@@ -692,4 +742,85 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toJsonValue<T>(value: T): JsonValue {
   return value as unknown as JsonValue;
+}
+
+function readContextCompactionCommandInput(payload: JsonValue): {
+  hasUnexpectedArgs: boolean;
+} | null {
+  if (!isRecord(payload) || !isRecord(payload.message)) {
+    return null;
+  }
+  const messageParts = Array.isArray(payload.message.parts)
+    ? payload.message.parts
+    : [];
+  if (messageParts.some((part) => isRecord(part) && part.type !== 'text')) {
+    return null;
+  }
+  const messageContent = typeof payload.message.content === 'string'
+    ? payload.message.content.trim()
+    : '';
+  if (!messageContent) {
+    return null;
+  }
+
+  if (messageContent === CONTEXT_COMPACTION_COMMAND || messageContent === CONTEXT_COMPACTION_COMMAND_ALIAS) {
+    return {
+      hasUnexpectedArgs: false,
+    };
+  }
+
+  if (
+    messageContent.startsWith(`${CONTEXT_COMPACTION_COMMAND} `)
+    || messageContent.startsWith(`${CONTEXT_COMPACTION_COMMAND_ALIAS} `)
+  ) {
+    return {
+      hasUnexpectedArgs: true,
+    };
+  }
+
+  return null;
+}
+
+function formatContextCompactionCommandReply(
+  result: ContextCompactionRunResult | null,
+  hasUnexpectedArgs: boolean,
+): string {
+  if (hasUnexpectedArgs) {
+    return [
+      '上下文压缩命令不接受额外参数。',
+      `可用命令：${CONTEXT_COMPACTION_COMMAND} 或 ${CONTEXT_COMPACTION_COMMAND_ALIAS}`,
+    ].join('\n');
+  }
+
+  if (!result) {
+    return '本次未执行上下文压缩。';
+  }
+
+  if (result.compacted) {
+    const coveredCount = result.coveredMessageCount ?? 0;
+    return coveredCount > 0
+      ? `已压缩上下文，覆盖 ${coveredCount} 条历史消息。`
+      : '已完成上下文压缩。';
+  }
+
+  return readContextCompactionResultLabel(result.reason);
+}
+
+function readContextCompactionResultLabel(reason?: string): string {
+  if (reason === 'disabled') {
+    return '当前压缩插件已关闭。';
+  }
+  if (reason === 'threshold-not-reached') {
+    return '当前上下文还未达到自动压缩阈值。';
+  }
+  if (reason === 'not-enough-history') {
+    return '当前历史还不足以生成稳定摘要。';
+  }
+  if (reason === 'empty-summary') {
+    return '压缩模型没有返回有效摘要。';
+  }
+  if (reason === 'invalid-history') {
+    return '当前历史结构异常，暂时无法压缩。';
+  }
+  return '本次未执行上下文压缩。';
 }
