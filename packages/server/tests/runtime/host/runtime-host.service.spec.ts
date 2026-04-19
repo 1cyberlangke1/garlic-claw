@@ -829,6 +829,111 @@ describe('RuntimeHostService', () => {
       }),
     ]);
   });
+
+  it('exposes conversation history read, preview and replace through the host facade', async () => {
+    const { service } = createFixture({
+      permissions: ['conversation:read', 'conversation:write'],
+    });
+
+    const history = await memoryHookCall(service, 'conversation.history.get', {});
+    expect(history).toEqual({
+      conversationId: fixtureConversationId,
+      messages: [],
+      revision: expect.any(String),
+    });
+
+    await expect(memoryHookCall(service, 'conversation.history.preview', {
+      messages: [
+        {
+          content: '压缩摘要',
+          createdAt: '2026-04-19T12:00:00.000Z',
+          id: 'summary-1',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  coveredCount: 3,
+                  role: 'summary',
+                },
+                owner: 'builtin.context-compaction',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+          parts: [
+            {
+              text: '压缩摘要',
+              type: 'text',
+            },
+          ],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T12:00:00.000Z',
+        },
+      ],
+    })).resolves.toEqual({
+      estimatedTokens: Math.ceil(Buffer.byteLength('assistant\n压缩摘要', 'utf8') / 4),
+      messageCount: 1,
+      textBytes: Buffer.byteLength('assistant\n压缩摘要', 'utf8'),
+    });
+
+    await expect(memoryHookCall(service, 'conversation.history.replace', {
+      expectedRevision: (history as { revision: string }).revision,
+      messages: [
+        {
+          content: '压缩摘要',
+          createdAt: '2026-04-19T12:00:00.000Z',
+          id: 'summary-1',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  coveredCount: 3,
+                  role: 'summary',
+                },
+                owner: 'builtin.context-compaction',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+          parts: [
+            {
+              text: '压缩摘要',
+              type: 'text',
+            },
+          ],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T12:00:00.000Z',
+        },
+      ],
+    })).resolves.toEqual({
+      changed: true,
+      conversationId: fixtureConversationId,
+      messages: [
+        expect.objectContaining({
+          content: '压缩摘要',
+          id: 'summary-1',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  coveredCount: 3,
+                  role: 'summary',
+                },
+                owner: 'builtin.context-compaction',
+                type: 'context-compaction',
+                version: '1',
+              },
+            ],
+          },
+        }),
+      ],
+      revision: expect.any(String),
+    });
+  });
 });
 
 function createFixture(input?: {

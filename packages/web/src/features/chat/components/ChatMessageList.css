@@ -245,6 +245,57 @@
   gap: 12px;
 }
 
+.message-annotation {
+  border-radius: 16px;
+  border: 1px solid rgba(89, 207, 155, 0.22);
+  background: rgba(89, 207, 155, 0.08);
+  overflow: hidden;
+}
+
+.message-annotation-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #b9f6d8;
+}
+
+.message-annotation-summary::-webkit-details-marker {
+  display: none;
+}
+
+.message-annotation[open] .message-annotation-summary {
+  border-bottom: 1px solid rgba(89, 207, 155, 0.16);
+}
+
+.message-annotation-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 14px;
+}
+
+.message-annotation-chip,
+.message-covered-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.message-annotation-chip {
+  background: rgba(10, 19, 24, 0.3);
+  color: rgba(233, 255, 245, 0.9);
+}
+
+.message-covered-marker {
+  margin-bottom: 4px;
+  background: rgba(89, 207, 155, 0.14);
+  color: #b9f6d8;
+}
+
 .message-custom-block {
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);

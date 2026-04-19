@@ -1,4 +1,4 @@
-import type { ChatAfterModelHookPayload, ChatBeforeModelHookPayload, ChatBeforeModelHookResult, JsonObject, JsonValue, PluginActionName, PluginCallContext, PluginHookName, PluginManifest, PluginRouteRequest, PluginRouteResponse } from "@garlic-claw/shared";
+import type { ChatAfterModelHookPayload, ChatBeforeModelHookPayload, ChatBeforeModelHookResult, ConversationHistoryRewriteHookPayload, JsonObject, JsonValue, PluginActionName, PluginCallContext, PluginHookName, PluginManifest, PluginRouteRequest, PluginRouteResponse } from "@garlic-claw/shared";
 import type { PluginHostFacade } from "../host";
 import { normalizeRoutePath } from "../utils/route";
 export interface PluginAuthorExecutionContext<THost = PluginHostFacade> {
@@ -72,6 +72,7 @@ export function createPluginAuthorTransportExecutor<THost = PluginHostFacade>(in
 export function readPluginHookPayload<T>(payload: JsonValue): T { return payload as T; }
 export function asChatBeforeModelPayload(payload: JsonValue): ChatBeforeModelHookPayload { return readPluginHookPayload<ChatBeforeModelHookPayload>(payload); }
 export function asChatAfterModelPayload(payload: JsonValue): ChatAfterModelHookPayload { return readPluginHookPayload<ChatAfterModelHookPayload>(payload); }
+export function asConversationHistoryRewritePayload(payload: JsonValue): ConversationHistoryRewriteHookPayload { return readPluginHookPayload<ConversationHistoryRewriteHookPayload>(payload); }
 export function createChatBeforeModelHookResult(currentSystemPrompt: string, appendedSystemPrompt: string): ChatBeforeModelHookResult { return { action: "mutate", systemPrompt: currentSystemPrompt ? [currentSystemPrompt, appendedSystemPrompt].join("\n\n") : appendedSystemPrompt }; }
 export function createPassHookResult(): JsonObject { return { action: "pass" }; }
 export function createSystemPromptMutateResult(systemPrompt: string): JsonObject { return { action: "mutate", systemPrompt }; }

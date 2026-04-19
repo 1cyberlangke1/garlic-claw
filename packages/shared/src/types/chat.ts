@@ -118,6 +118,20 @@ export type ChatMessageCustomBlock =
   | ChatMessageJsonBlock;
 
 /**
+ * 通用消息注解。
+ */
+export interface ChatMessageAnnotation {
+  /** 注解类型。 */
+  type: string;
+  /** 注解 owner。 */
+  owner: string;
+  /** 注解版本。 */
+  version: string;
+  /** 注解负载。 */
+  data?: JsonValue;
+}
+
+/**
  * 聊天消息元数据。
  */
 export interface ChatMessageMetadata {
@@ -125,6 +139,8 @@ export interface ChatMessageMetadata {
   visionFallback?: ChatVisionFallbackMetadata;
   /** provider 自定义扩展块。 */
   customBlocks?: ChatMessageCustomBlock[];
+  /** 任意插件可写入的通用注解。 */
+  annotations?: ChatMessageAnnotation[];
 }
 
 /**

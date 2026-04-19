@@ -74,6 +74,41 @@ export function stopConversationMessage(
   );
 }
 
+export interface ConversationContextCompactionResult {
+  compacted: boolean;
+  reason?: string;
+  coveredMessageCount?: number;
+  summaryMessageId?: string;
+  revision?: string;
+  beforePreview?: {
+    estimatedTokens: number;
+    messageCount: number;
+    textBytes: number;
+  };
+  afterPreview?: {
+    estimatedTokens: number;
+    messageCount: number;
+    textBytes: number;
+  };
+}
+
+export function compactConversationContext(
+  conversationId: string,
+  payload: {
+    providerId?: string | null;
+    modelId?: string | null;
+  } = {},
+) {
+  return post<ConversationContextCompactionResult>(
+    "/plugin-routes/builtin.context-compaction/context-compaction/run",
+    {
+      conversationId,
+      ...(payload.providerId ? { providerId: payload.providerId } : {}),
+      ...(payload.modelId ? { modelId: payload.modelId } : {}),
+    },
+  );
+}
+
 export async function sendMessageSSE(
   conversationId: string,
   payload: SendMessagePayload,

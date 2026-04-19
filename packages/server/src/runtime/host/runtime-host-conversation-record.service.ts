@@ -1,8 +1,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { ConversationHostServices, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import type {
+  ChatMessageMetadata,
+  ChatMessagePart,
+  ConversationHostServices,
+  JsonObject,
+  JsonValue,
+  PluginCallContext,
+} from '@garlic-claw/shared';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
@@ -70,6 +77,42 @@ export class RuntimeHostConversationRecordService {
   }
 
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return buildConversationSummary(this.requireConversation(conversationId, userId)); }
+
+  readConversationHistory(conversationId: string, userId?: string): JsonValue { return buildConversationHistorySnapshot(this.requireConversation(conversationId, userId)); }
+
+  previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
+    const conversation = this.requireConversation(conversationId, userId);
+    const messages = params.messages === undefined
+      ? conversation.messages.map((message) => cloneJsonValue(message))
+      : readConversationHistoryMessagesInput(params.messages);
+    return buildConversationHistoryPreview(messages);
+  }
+
+  replaceConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
+    const expectedRevision = readRequiredConversationHistoryString(params, 'expectedRevision');
+    const nextMessages = readConversationHistoryMessagesInput(params.messages);
+    const currentConversation = this.requireConversation(conversationId, userId);
+    if (currentConversation.revision !== expectedRevision) {
+      throw new ConflictException(`Conversation revision mismatch: expected ${expectedRevision}, got ${currentConversation.revision}`);
+    }
+    if (JSON.stringify(currentConversation.messages) === JSON.stringify(nextMessages)) {
+      return asJsonValue({
+        ...buildConversationHistorySnapshot(currentConversation),
+        changed: false,
+      });
+    }
+    const updatedConversation = this.mutateConversation(conversationId, (conversation, timestamp) => {
+      if (conversation.revision !== expectedRevision) {
+        throw new ConflictException(`Conversation revision mismatch: expected ${expectedRevision}, got ${conversation.revision}`);
+      }
+      conversation.messages = cloneJsonValue(nextMessages);
+      this.bumpRevision(conversation, timestamp);
+    }, userId);
+    return asJsonValue({
+      ...buildConversationHistorySnapshot(updatedConversation),
+      changed: true,
+    });
+  }
 
   readCurrentMessageTarget(conversationId: string, userId?: string): JsonValue { const conversation = this.requireConversation(conversationId, userId); return { id: conversation.id, label: conversation.title, type: 'conversation' }; }
 
@@ -170,6 +213,27 @@ function buildConversationSkillState(conversation: RuntimeConversationRecord): J
 
 function buildConversationSummary(conversation: RuntimeConversationRecord): JsonValue { return { ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}), createdAt: conversation.createdAt, id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt }; }
 
+function buildConversationHistorySnapshot(conversation: RuntimeConversationRecord): {
+  conversationId: string;
+  revision: string;
+  messages: JsonObject[];
+} {
+  return {
+    conversationId: conversation.id,
+    revision: conversation.revision,
+    messages: conversation.messages.map((message) => serializeConversationHistoryMessage(message)),
+  };
+}
+
+function buildConversationHistoryPreview(messages: JsonObject[]): JsonValue {
+  const textBytes = estimateConversationHistoryTextBytes(messages);
+  return asJsonValue({
+    estimatedTokens: Math.ceil(textBytes / 4),
+    messageCount: messages.length,
+    textBytes,
+  });
+}
+
 function readConversationSessionKey(pluginId: string, conversationId: string): string { return `${pluginId}:${conversationId}`; }
 
 function resolveConversationStoragePath(): string {
@@ -183,3 +247,263 @@ function serializeConversationSession(session: RuntimeConversationSessionRecord 
 }
 
 export function serializeConversationMessage(message: JsonObject) { return { content: typeof message.content === 'string' ? message.content : null, createdAt: String(message.createdAt), error: typeof message.error === 'string' ? message.error : null, id: String(message.id), metadataJson: typeof message.metadataJson === 'string' ? message.metadataJson : null, model: typeof message.model === 'string' ? message.model : null, partsJson: Array.isArray(message.parts) && message.parts.length > 0 ? JSON.stringify(message.parts) : null, provider: typeof message.provider === 'string' ? message.provider : null, role: String(message.role), status: message.status, toolCalls: Array.isArray(message.toolCalls) && message.toolCalls.length > 0 ? JSON.stringify(message.toolCalls) : null, toolResults: Array.isArray(message.toolResults) && message.toolResults.length > 0 ? JSON.stringify(message.toolResults) : null, updatedAt: String(message.updatedAt) }; }
+
+function serializeConversationHistoryMessage(message: JsonObject): JsonObject {
+  const metadata = readStoredConversationMetadata(message.metadataJson);
+  return asJsonValue({
+    content: typeof message.content === 'string' ? message.content : null,
+    createdAt: String(message.createdAt),
+    ...(typeof message.error === 'string' ? { error: message.error } : {}),
+    id: String(message.id),
+    ...(metadata ? { metadata } : {}),
+    ...(typeof message.model === 'string' ? { model: message.model } : {}),
+    parts: Array.isArray(message.parts) ? cloneJsonValue(message.parts) : [],
+    ...(typeof message.provider === 'string' ? { provider: message.provider } : {}),
+    role: String(message.role),
+    status: typeof message.status === 'string' ? message.status : 'completed',
+    ...(Array.isArray(message.toolCalls) ? { toolCalls: cloneJsonValue(message.toolCalls) } : {}),
+    ...(Array.isArray(message.toolResults) ? { toolResults: cloneJsonValue(message.toolResults) } : {}),
+    updatedAt: String(message.updatedAt),
+  }) as JsonObject;
+}
+
+function readConversationHistoryMessagesInput(value: unknown): JsonObject[] {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException('messages must be an array');
+  }
+  return value.map((entry, index) => normalizeConversationHistoryMessage(entry, index));
+}
+
+function normalizeConversationHistoryMessage(value: unknown, index: number): JsonObject {
+  const object = readJsonObject(value);
+  if (!object) {
+    throw new BadRequestException(`messages[${index}] must be an object`);
+  }
+  const id = readRequiredConversationHistoryString(object, 'id', index);
+  const role = readRequiredConversationHistoryString(object, 'role', index);
+  const content = readOptionalConversationHistoryString(object.content, `messages[${index}].content`);
+  const status = readOptionalConversationHistoryStatus(object.status, `messages[${index}].status`) ?? 'completed';
+  const createdAt = readConversationHistoryTimestamp(object.createdAt, `messages[${index}].createdAt`);
+  const updatedAt = readConversationHistoryTimestamp(object.updatedAt, `messages[${index}].updatedAt`);
+  const parts = readConversationHistoryParts(object.parts, index);
+  const metadata = readConversationHistoryMetadata(object.metadata, index);
+  const toolCalls = readConversationHistoryJsonArray(object.toolCalls, `messages[${index}].toolCalls`);
+  const toolResults = readConversationHistoryJsonArray(object.toolResults, `messages[${index}].toolResults`);
+  return {
+    content: content ?? '',
+    createdAt,
+    ...(typeof object.error === 'string' ? { error: object.error } : {}),
+    id,
+    ...(metadata ? { metadataJson: JSON.stringify(metadata) } : {}),
+    ...(typeof object.model === 'string' ? { model: object.model } : {}),
+    parts: asJsonValue(parts) as unknown as JsonObject['parts'],
+    ...(typeof object.provider === 'string' ? { provider: object.provider } : {}),
+    role,
+    status,
+    ...(toolCalls ? { toolCalls: asJsonValue(toolCalls) as unknown as JsonObject['toolCalls'] } : {}),
+    ...(toolResults ? { toolResults: asJsonValue(toolResults) as unknown as JsonObject['toolResults'] } : {}),
+    updatedAt,
+  };
+}
+
+function readRequiredConversationHistoryString(params: JsonObject, key: string, index?: number): string {
+  const value = params[key];
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+  if (index === undefined) {
+    throw new BadRequestException(`${key} is required`);
+  }
+  throw new BadRequestException(`messages[${index}].${key} is required`);
+}
+
+function readOptionalConversationHistoryString(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  throw new BadRequestException(`${label} must be string or null`);
+}
+
+function readOptionalConversationHistoryStatus(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (value === 'pending' || value === 'streaming' || value === 'completed' || value === 'stopped' || value === 'error') {
+    return value;
+  }
+  throw new BadRequestException(`${label} is invalid`);
+}
+
+function readConversationHistoryTimestamp(value: unknown, _label: string): string {
+  if (typeof value === 'string' && value.trim()) {
+    return value;
+  }
+  return new Date().toISOString();
+}
+
+function readConversationHistoryParts(value: unknown, index: number): ChatMessagePart[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new BadRequestException(`messages[${index}].parts must be an array`);
+  }
+  return value.map((entry, partIndex) => normalizeConversationHistoryPart(entry, index, partIndex));
+}
+
+function normalizeConversationHistoryPart(value: unknown, messageIndex: number, partIndex: number): ChatMessagePart {
+  const object = readJsonObject(value);
+  if (!object || typeof object.type !== 'string') {
+    throw new BadRequestException(`messages[${messageIndex}].parts[${partIndex}] is invalid`);
+  }
+  if (object.type === 'text' && typeof object.text === 'string') {
+    return { text: object.text, type: 'text' };
+  }
+  if (object.type === 'image' && typeof object.image === 'string') {
+    return {
+      image: object.image,
+      ...(typeof object.mimeType === 'string' ? { mimeType: object.mimeType } : {}),
+      type: 'image',
+    };
+  }
+  throw new BadRequestException(`messages[${messageIndex}].parts[${partIndex}] is invalid`);
+}
+
+function readConversationHistoryMetadata(value: unknown, index: number): ChatMessageMetadata | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const object = readJsonObject(value);
+  if (!object) {
+    throw new BadRequestException(`messages[${index}].metadata must be an object`);
+  }
+  const metadata: ChatMessageMetadata = {};
+  if (object.visionFallback !== undefined) {
+    metadata.visionFallback = readConversationHistoryVisionFallback(object.visionFallback, index);
+  }
+  if (object.customBlocks !== undefined) {
+    metadata.customBlocks = readConversationHistoryCustomBlocks(object.customBlocks, index);
+  }
+  if (object.annotations !== undefined) {
+    metadata.annotations = readConversationHistoryAnnotations(object.annotations, index);
+  }
+  return metadata;
+}
+
+function readConversationHistoryVisionFallback(value: unknown, index: number): NonNullable<ChatMessageMetadata['visionFallback']> {
+  const object = readJsonObject(value);
+  if (!object || (object.state !== 'completed' && object.state !== 'transcribing') || !Array.isArray(object.entries)) {
+    throw new BadRequestException(`messages[${index}].metadata.visionFallback is invalid`);
+  }
+  return {
+    entries: object.entries.map((entry, entryIndex) => {
+      const item = readJsonObject(entry);
+      if (!item || typeof item.text !== 'string' || (item.source !== 'cache' && item.source !== 'generated')) {
+        throw new BadRequestException(`messages[${index}].metadata.visionFallback.entries[${entryIndex}] is invalid`);
+      }
+      return {
+        source: item.source,
+        text: item.text,
+      };
+    }),
+    state: object.state,
+  };
+}
+
+function readConversationHistoryCustomBlocks(value: unknown, index: number): NonNullable<ChatMessageMetadata['customBlocks']> {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException(`messages[${index}].metadata.customBlocks must be an array`);
+  }
+  return value.map((entry, blockIndex) => {
+    const object = readJsonObject(entry);
+    if (!object || typeof object.id !== 'string' || typeof object.title !== 'string') {
+      throw new BadRequestException(`messages[${index}].metadata.customBlocks[${blockIndex}] is invalid`);
+    }
+    if (object.kind === 'text' && typeof object.text === 'string') {
+      return {
+        id: object.id,
+        kind: 'text' as const,
+        ...(object.source && readJsonObject(object.source) ? { source: cloneJsonValue(object.source) as { key?: string; origin?: string; providerId?: string } } : {}),
+        ...(object.state === 'done' || object.state === 'streaming' ? { state: object.state } : {}),
+        text: object.text,
+        title: object.title,
+      };
+    }
+    if (object.kind === 'json' && object.data !== undefined) {
+      return {
+        data: cloneJsonValue(object.data) as JsonValue,
+        id: object.id,
+        kind: 'json' as const,
+        ...(object.source && readJsonObject(object.source) ? { source: cloneJsonValue(object.source) as { key?: string; origin?: string; providerId?: string } } : {}),
+        ...(object.state === 'done' || object.state === 'streaming' ? { state: object.state } : {}),
+        title: object.title,
+      };
+    }
+    throw new BadRequestException(`messages[${index}].metadata.customBlocks[${blockIndex}] is invalid`);
+  });
+}
+
+function readConversationHistoryAnnotations(value: unknown, index: number): NonNullable<ChatMessageMetadata['annotations']> {
+  if (!Array.isArray(value)) {
+    throw new BadRequestException(`messages[${index}].metadata.annotations must be an array`);
+  }
+  return value.map((entry, annotationIndex) => {
+    const object = readJsonObject(entry);
+    if (!object || typeof object.type !== 'string' || typeof object.owner !== 'string' || typeof object.version !== 'string') {
+      throw new BadRequestException(`messages[${index}].metadata.annotations[${annotationIndex}] is invalid`);
+    }
+    return {
+      ...(object.data !== undefined ? { data: cloneJsonValue(object.data) as JsonValue } : {}),
+      owner: object.owner,
+      type: object.type,
+      version: object.version,
+    };
+  });
+}
+
+function readConversationHistoryJsonArray(value: unknown, label: string): JsonValue[] | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (!Array.isArray(value)) {
+    throw new BadRequestException(`${label} must be an array`);
+  }
+  return value.map((entry) => cloneJsonValue(entry) as JsonValue);
+}
+
+function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(value) as ChatMessageMetadata;
+  } catch {
+    return null;
+  }
+}
+
+function estimateConversationHistoryTextBytes(messages: JsonObject[]): number {
+  return Buffer.byteLength(messages.map(readConversationHistoryMessageText).join('\n'), 'utf8');
+}
+
+function readConversationHistoryMessageText(message: JsonObject): string {
+  const partText = Array.isArray(message.parts)
+    ? (message.parts as unknown[])
+      .flatMap((part) => {
+        const object = readJsonObject(part);
+        return object?.type === 'text' && typeof object.text === 'string'
+          ? [object.text]
+          : [];
+      })
+      .join('\n')
+    : '';
+  const content = partText || (typeof message.content === 'string' ? message.content : '');
+  const toolCalls = Array.isArray(message.toolCalls) ? JSON.stringify(message.toolCalls) : '';
+  const toolResults = Array.isArray(message.toolResults) ? JSON.stringify(message.toolResults) : '';
+  return [typeof message.role === 'string' ? message.role : '', content, toolCalls, toolResults]
+    .filter(Boolean)
+    .join('\n');
+}

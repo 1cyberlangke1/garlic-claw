@@ -74,7 +74,14 @@ const {
   readOptionalObjectParam,
   readPromptBlockConfig,
   readProviderRouterConfig,
+  readContextCompactionConfig,
+  resolveContextCompactionRuntimeConfig,
   resolveConversationTitleRuntimeConfig,
+  CONTEXT_COMPACTION_CONFIG_SCHEMA,
+  CONTEXT_COMPACTION_DEFAULT_MODE,
+  CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT,
+  CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS,
+  CONTEXT_COMPACTION_DEFAULT_THRESHOLD,
   readOptionalStringParam,
   readPluginHookPayload,
   readJsonObjectValue,
@@ -886,6 +893,30 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(PROVIDER_ROUTER_CONFIG_SCHEMA.items.routing.type, 'object');
   assert.equal(PROVIDER_ROUTER_CONFIG_SCHEMA.items.tools.items.allowedToolNames.type, 'list');
   assert.equal(PROVIDER_ROUTER_CONFIG_SCHEMA.items.shortCircuit.collapsed, true);
+  assert.deepEqual(
+    readContextCompactionConfig({
+      mode: 'manual',
+      keepRecentMessages: 3,
+      reservedTokens: 4096,
+    }),
+    {
+      mode: 'manual',
+      keepRecentMessages: 3,
+      reservedTokens: 4096,
+    },
+  );
+  const contextCompactionRuntimeConfig = resolveContextCompactionRuntimeConfig({});
+  assert.equal(contextCompactionRuntimeConfig.allowAutoContinue, true);
+  assert.equal(contextCompactionRuntimeConfig.compressionThreshold, CONTEXT_COMPACTION_DEFAULT_THRESHOLD);
+  assert.equal(contextCompactionRuntimeConfig.enabled, true);
+  assert.equal(contextCompactionRuntimeConfig.keepRecentMessages, CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT);
+  assert.equal(contextCompactionRuntimeConfig.mode, CONTEXT_COMPACTION_DEFAULT_MODE);
+  assert.equal(contextCompactionRuntimeConfig.reservedTokens, CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS);
+  assert.equal(contextCompactionRuntimeConfig.showCoveredMarker, true);
+  assert.equal(typeof contextCompactionRuntimeConfig.summaryPrompt, 'string');
+  assert.ok(contextCompactionRuntimeConfig.summaryPrompt.length > 0);
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.mode.type, 'string');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.keepRecentMessages.type, 'int');
   assert.deepEqual(
     readCurrentProviderInfo({
       providerId: 'openai',

@@ -19,7 +19,7 @@ export const DEVICE_TYPE = {
 } as const satisfies Record<string, DeviceType>;
 
 export const PLUGIN_HOOK_NAME_VALUES = [
-  'message:received', 'chat:before-model', 'chat:waiting-model', 'chat:after-model', 'conversation:created',
+  'message:received', 'conversation:history-rewrite', 'chat:before-model', 'chat:waiting-model', 'chat:after-model', 'conversation:created',
   'message:created', 'message:updated', 'message:deleted', 'automation:before-run', 'automation:after-run',
   'subagent:before-run', 'subagent:after-run', 'tool:before-call', 'tool:after-call', 'response:before-send',
   'response:after-send', 'plugin:loaded', 'plugin:unloaded', 'plugin:error', 'cron:tick',

@@ -12,110 +12,16 @@
 - 聊天页“会话相关元素统一刷新”已完成，发送 / 重试 / 编辑 / 删除 / 停止生成后的摘要刷新、旧 SSE/旧请求竞态收口、独立 judge 都已通过。
 - 文档分层、跨平台约束、无绝对路径约束、测试目录规范已同步到 `AGENTS.md`。
 - N12 Persona 重构（AstrBot 方向）已完成，当前 persona 已改为服务端一等资源并使用目录化存储。
+- `[已完成] N13 插件配置元数据协议重构（AstrBot 方向）`：
+  - 插件配置已从扁平 `fields[]` 收口为 object-tree 声明式协议，主语义覆盖 section/object/items、`hint / obvious_hint / options / condition / collapsed / _special`。
+  - `shared / plugin-sdk / server / web` 已统一到新协议；宿主可以按 schema 渲染配置 UI，server 会按新协议生成快照并递归校验。
+  - 受影响 build、lint、server smoke、web smoke 与独立 judge 已通过。
+- `[已完成] N16 插件化上下文压缩（参考 OpenCode / AstrBot）`：
+  - 已通过通用 Host API `conversation.history.get / preview / replace`、通用 `metadata.annotations[]` 与确定性 hook 顺序完成插件化上下文压缩，不给宿主增加压缩专用后门。
+  - `builtin.context-compaction` 已支持自动压缩、手动压缩、正式摘要消息写回、送模视图裁剪，以及 assistant 消息上方默认折叠的压缩摘要展示。
+  - 受影响定向测试、`smoke:server`、`smoke:web-ui`、`lint` 与独立 judge 已 fresh 通过；期间暴露的 state 权限缺口和浏览器 smoke 脆弱点都已修复。
 
-## 已完成阶段：[已完成] N13 插件配置元数据协议重构（AstrBot 方向）
-
-### 目标
-
-- 把当前插件配置能力从宿主自定义的扁平 `fields[]`，重构为接近 AstrBot 的声明式配置元数据协议。
-- 插件“自定义 UI”第一轮不做插件自带前端，而是由宿主统一渲染插件声明的配置元数据。
-- 新协议要保留跨前端可消费的纯数据语义，不把当前 Vue 组件实现细节写进共享契约。
-- 配置页主语义要尽量贴近 AstrBot：
-  - object section
-  - `description / hint / obvious_hint`
-  - `items`
-  - `default`
-  - `invisible`
-  - `options`
-  - `editor_mode / editor_language / editor_theme`
-  - `_special`
-  - `condition`
-  - `collapsed`
-- 命名与落点保持当前项目风格统一，不直接照搬 AstrBot 文件名。
-
-### 当前问题
-
-- 当前 `PluginConfigSchema` 只有扁平 `fields[]`，表达不了 AstrBot 风格的 section/object 嵌套结构。
-- 当前字段类型只有 `string / number / boolean / object / array`，缺少 `text / int / float / bool / list` 这种更贴近声明式 UI 的宿主语义。
-- 当前前端 `PluginConfigForm` 只能按扁平字段渲染输入框，无法表达：
-  - 条件显示
-  - 醒目 hint
-  - 折叠高级项
-  - 特殊选择器
-  - 编辑器模式
-- 当前服务端校验逻辑只按扁平字段做类型判断，无法对 object/items 递归处理。
-- 当前插件配置快照仍以“宿主内部字段表单”视角构造，不是“宿主统一消费元数据协议”视角。
-
-### 设计边界
-
-- 第一轮不做插件自带 iframe、微前端或宿主动态执行插件前端模块。
-- 第一轮不做任意自定义按钮动作；先把 AstrBot 风格配置元数据协议做完整。
-- `_special` 作为宿主扩展控件入口保留，但只实现当前项目已具备稳定 owner 的选择器，不为了“字段名兼容”做空壳。
-- 不做兼容层；旧的 `fields[]` 协议不保留双写。
-- 不新增 `helper / helpers` 命名、目录或抽象层。
-
-### 实现计划
-
-#### C1. Shared 与 Plugin SDK 契约改造
-
-- 重写 `PluginConfigSchema` 为 object-tree 元数据协议，至少包含：
-  - section/object 层
-  - item 层
-  - 基础字段类型
-  - `hint / obvious_hint / invisible / condition / collapsed`
-  - `options`
-  - `editor_mode / editor_language / editor_theme`
-  - `_special`
-- 同步更新 `packages/plugin-sdk` 的 manifest 输入类型。
-
-#### C2. Server 快照与校验改造
-
-- `PluginBootstrapService` 读取新的 config 元数据协议，不再只解析 `fields[]`。
-- `PluginPersistenceService.validatePluginConfig()` 改为递归校验 object/items。
-- `plugin-read-model` 生成配置快照时，按新的元数据协议补全默认值并保留已存值。
-- 保持现有 `/plugins/:pluginId/config` HTTP 边界不变，避免扩大 API 面。
-
-#### C3. Web 宿主渲染器改造
-
-- 用新的声明式渲染器替换当前扁平 `PluginConfigForm`。
-- 第一轮至少支持：
-  - object section
-  - text / int / float / bool / string / list
-  - options 下拉或多选
-  - hint / obvious_hint
-  - invisible / condition
-  - collapsed
-  - editor mode
-- `_special` 只接入当前宿主已经稳定存在的数据源选择器。
-
-#### C4. 测试与示例
-
-- 更新 shared/server/web/plugin-sdk 受影响测试与 fixture。
-- 给 builtin/测试插件补一份能覆盖 object/items/condition/options/_special 的示例 schema。
-- fresh 跑完 build、lint、server smoke，以及受影响的 web 测试；如插件页有真实 UI 变化，再跑 `smoke:web-ui`。
-
-### 验收标准
-
-- 插件配置元数据协议已不再是扁平 `fields[]`。
-- 服务端能按新协议生成默认配置快照并做递归校验。
-- 前端插件详情页能按新协议渲染配置 UI，而不是只显示一组扁平输入框。
-- `hint / obvious_hint / invisible / condition / collapsed / options / editor_mode / _special` 至少在第一轮实现的范围内真实生效。
-- 现有插件配置读写接口仍可工作。
-- 受影响测试、构建与 smoke fresh 通过。
-
-### 当前验收命令（阶段内持续维护）
-
-- `packages/shared`: `npm run build`
-- `packages/plugin-sdk`: 受影响测试
-- `packages/server`: 插件配置相关定向 `jest`
-- `packages/server`: `npm run build`
-- `packages/web`: 插件配置相关定向 `vitest`
-- `packages/web`: `npm run build`
-- root: `npm run lint`
-- root: `npm run smoke:server`
-- 如插件页有真实 UI 改动，再补 `npm run smoke:web-ui`
-
-## 当前阶段：[待开始] N14 远程插件静态接入密钥与元数据缓存
+## 阶段候选：[待开始] N14 远程插件静态接入密钥与元数据缓存
 
 ### 目标
 
@@ -280,75 +186,10 @@
 - 模拟 IoT 远程插件的 smoke 链路 fresh 通过。
 - 受影响测试、构建与 smoke fresh 通过。
 
-## 已完成阶段：[已完成] N15 模型上下文长度与 usage 估算
-
-### 目标
-
-- 当上游模型接口未返回 token 使用量时，宿主统一补 usage 估算，避免压缩与后续调度链失去 token 依据。
-- 模型元数据从“只有模型 ID 列表”升级为“显式记录能力与上下文长度”，不再只活在运行时内存。
-- `contextLength` 成为模型一等字段；未显式配置时默认 `128 * 1024`。
-- 使用量估算 owner 收口到统一模型执行层，不让聊天主链、插件链、流式收集链各自分叉补算。
-
-### 当前问题
-
-- 当前 `AiModelExecutionService` 只透传上游 `usage / totalUsage`；若上游不返回，则直接缺失。
-- 当前模型能力虽然可在 UI 中修改，但实际没有持久化到 `ai-settings.server.json`；服务重启后会丢失。
-- 当前 `AiModelConfig` 没有 `contextLength` 字段，前后端都无法记录上下文窗口长度。
-- 当前前端模型管理页也没有上下文长度的展示与编辑入口。
-
-### 当前决定
-
-- `TODO.md` 中已有讨论不删除；本轮只追加 N15。
-- usage 缺失时按用户指定公式估算：`ceil(utf8Bytes / 4)`。
-- 估算优先只统计文本内容：
-  - 输入：`system + messages` 中的文本部分
-  - 输出：最终 `text`
-- 图片 part 暂不按 URL 或 base64 长度折算，避免明显失真；估算结果会标记为 `estimated`。
-- `contextLength` 的 `128k` 语义是默认值，只在模型未显式配置时生效，不覆盖用户手填值。
-- 不做兼容层；模型元数据直接进入正式持久化结构。
-
-### 实现计划
-
-#### U15-1. 模型元数据持久化
-
-- 为 AI 设置文件新增模型元数据存储结构。
-- `AiManagementService` 改为从持久化读取/写回模型能力与上下文长度，而不是仅保存在内存 `Map`。
-- `deleteProvider / deleteModel` 时同步清理对应模型元数据。
-
-#### U15-2. 共享契约与默认值
-
-- `AiModelConfig` 新增 `contextLength`。
-- 默认模型配置统一补 `contextLength = 128 * 1024`。
-- provider / model 相关 HTTP 返回统一带出该字段。
-
-#### U15-3. usage 估算
-
-- 统一模型执行结果结构，至少稳定输出：
-  - `inputTokens`
-  - `outputTokens`
-  - `totalTokens`
-  - `source`
-- 对 `generateText` 与 `stream-collect` 两条链统一补算。
-
-#### U15-4. 前端与测试
-
-- AI 设置页模型面板展示并编辑 `contextLength`。
-- 补 server / web 定向测试，覆盖：
-  - usage 保留 provider 返回
-  - usage 缺失时按指定公式估算
-  - `contextLength` 默认值与显式值
-  - 模型元数据持久化
-
-### 验收标准
-
-- 上游不返回 usage 时，统一模型执行层仍会返回稳定 usage 结构。
-- 模型能力与 `contextLength` 会持久化，不会因服务重启丢失。
-- `AiModelConfig` 与前端模型管理页能真实展示 `contextLength`。
-- 默认 `contextLength` 为 `128 * 1024`，显式设置时保留用户值。
-- 受影响测试、构建与 smoke fresh 通过。
-- 独立 judge 已 PASS，确认：
-  - provider 整体保存删除模型时，会同步清理陈旧模型元数据
-  - 前端 `contextLength` 已走正式接口，并有 composable 与 smoke 证据
+- `[已完成] N15 模型上下文长度与 usage 估算`：
+  - `AiModelConfig` 已新增 `contextLength`，默认值为 `128 * 1024`；模型能力与上下文长度会持久化到 AI 设置文件。
+  - usage 已收口到统一模型执行层：优先读取 AI SDK 统一字段，缺失时按 `ceil(utf8Bytes / 4)` 估算，并统一返回稳定 usage 结构。
+  - 前端 AI 设置页已支持真实编辑 `contextLength`；provider 整体保存会清理被移除模型的陈旧元数据，定向测试、server smoke、web smoke 与独立 judge 已通过。
 
 ## 固定约束
 

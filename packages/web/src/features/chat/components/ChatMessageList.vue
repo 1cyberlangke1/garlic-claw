@@ -82,6 +82,41 @@
               </div>
 
               <template v-else>
+                <details
+                  v-if="contextCompactionSummary(row.message)"
+                  class="message-annotation message-annotation-context-compaction"
+                  @toggle="handleRenderedContentChange"
+                >
+                  <summary class="message-annotation-summary">
+                    {{
+                      `上下文压缩 · 覆盖 ${contextCompactionSummary(row.message)?.coveredCount ?? 0} 条消息`
+                    }}
+                  </summary>
+                  <div class="message-annotation-body">
+                    <span class="message-annotation-chip">
+                      {{ contextCompactionTriggerLabel(contextCompactionSummary(row.message)?.trigger) }}
+                    </span>
+                    <span class="message-annotation-chip">
+                      {{
+                        `Token ${contextCompactionSummary(row.message)?.beforePreview.estimatedTokens ?? 0} -> ${contextCompactionSummary(row.message)?.afterPreview.estimatedTokens ?? 0}`
+                      }}
+                    </span>
+                    <span
+                      v-if="contextCompactionSummary(row.message)?.providerId && contextCompactionSummary(row.message)?.modelId"
+                      class="message-annotation-chip"
+                    >
+                      {{
+                        `${contextCompactionSummary(row.message)?.providerId}/${contextCompactionSummary(row.message)?.modelId}`
+                      }}
+                    </span>
+                  </div>
+                </details>
+                <div
+                  v-if="contextCompactionCoveredMarker(row.message)"
+                  class="message-covered-marker"
+                >
+                  已纳入压缩摘要
+                </div>
                 <div
                   v-if="assistantCustomBlocks(row.message).length"
                   class="message-custom-blocks"
@@ -248,7 +283,11 @@ import {
   watch,
 } from "vue";
 
-import type { ChatMessageCustomBlock, ChatMessagePart } from "@garlic-claw/shared";
+import type {
+  ChatMessageAnnotation,
+  ChatMessageCustomBlock,
+  ChatMessagePart,
+} from "@garlic-claw/shared";
 import type { ChatMessage } from "@/features/chat/store/chat";
 
 interface VisibleMessageRow {
@@ -522,6 +561,8 @@ function estimateMessageSize(message: ChatMessage | undefined) {
       toolCallCount * 80 +
       toolResultCount * 80 +
       assistantCustomBlocks(message).length * 96 +
+      (contextCompactionSummary(message) ? 104 : 0) +
+      (contextCompactionCoveredMarker(message) ? 32 : 0) +
       (message.error ? 72 : 0) +
       (shouldShowVisionFallbackDetails(message) ? 120 : 0),
   );
@@ -655,6 +696,81 @@ function shouldShowVisionFallbackDetails(message: ChatMessage): boolean {
     message.role === "user" &&
     Boolean(message.metadata?.visionFallback?.entries.length)
   );
+}
+
+function contextCompactionSummary(message: ChatMessage) {
+  const annotation = readContextCompactionAnnotations(message).find((entry) =>
+    isContextCompactionSummaryData(entry.data),
+  );
+  return annotation && isContextCompactionSummaryData(annotation.data)
+    ? annotation.data
+    : null;
+}
+
+function contextCompactionCoveredMarker(message: ChatMessage): boolean {
+  return readContextCompactionAnnotations(message).some(
+    (annotation) =>
+      isContextCompactionCoveredData(annotation.data) &&
+      annotation.data.markerVisible,
+  );
+}
+
+function readContextCompactionAnnotations(
+  message: ChatMessage,
+): ChatMessageAnnotation[] {
+  return (message.metadata?.annotations ?? []).filter(
+    (annotation) =>
+      annotation.type === "context-compaction" &&
+      annotation.owner === "builtin.context-compaction",
+  );
+}
+
+function isContextCompactionSummaryData(
+  value: unknown,
+): value is {
+  role: "summary";
+  trigger: "manual" | "prepare-model";
+  coveredCount: number;
+  providerId: string;
+  modelId: string;
+  beforePreview: { estimatedTokens: number };
+  afterPreview: { estimatedTokens: number };
+} {
+  return isRecord(value) &&
+    value.role === "summary" &&
+    typeof value.coveredCount === "number" &&
+    typeof value.providerId === "string" &&
+    typeof value.modelId === "string" &&
+    isPreviewSummary(value.beforePreview) &&
+    isPreviewSummary(value.afterPreview) &&
+    (value.trigger === "manual" || value.trigger === "prepare-model");
+}
+
+function isContextCompactionCoveredData(
+  value: unknown,
+): value is {
+  role: "covered";
+  markerVisible: boolean;
+} {
+  return isRecord(value) &&
+    value.role === "covered" &&
+    typeof value.markerVisible === "boolean";
+}
+
+function isPreviewSummary(
+  value: unknown,
+): value is { estimatedTokens: number } {
+  return isRecord(value) && typeof value.estimatedTokens === "number";
+}
+
+function contextCompactionTriggerLabel(
+  trigger: "manual" | "prepare-model" | undefined,
+): string {
+  return trigger === "manual" ? "手动触发" : "自动触发";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function buildUpdatedParts(

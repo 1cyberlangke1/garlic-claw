@@ -38,6 +38,13 @@ export class ConversationMessagePlanningService {
       },
       conversationId: input.conversationId,
     });
+    await this.runConversationHistoryRewrite({
+      activePersonaId: persona.personaId,
+      conversationId: input.conversationId,
+      modelId: input.modelId,
+      providerId: input.providerId,
+      userId: input.userId,
+    });
     const beforeModel = await this.applyBeforeModel({
       activePersonaId: persona.personaId,
       conversationId: input.conversationId,
@@ -87,6 +94,25 @@ export class ConversationMessagePlanningService {
 
   private async buildModelMessages(conversationId: string, messageId: string): Promise<Array<{ content: string | ChatMessagePart[]; role: 'assistant' | 'user' }>> {
     return Promise.all(this.runtimeHostConversationRecordService.requireConversation(conversationId).messages.filter((entry) => entry.id !== messageId && (entry.role === 'assistant' || entry.role === 'user')).map(async (message) => ({ content: Array.isArray(message.parts) ? await this.aiVisionService.resolveMessageParts(conversationId, message.parts as unknown as ChatMessagePart[]) : typeof message.content === 'string' ? message.content : '', role: message.role === 'assistant' ? 'assistant' : 'user' })));
+  }
+
+  private async runConversationHistoryRewrite(input: { activePersonaId?: string; conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
+    const context = createConversationHookContext(input);
+    let history = this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId);
+    for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'conversation:history-rewrite', kernel: this.runtimeHostPluginDispatchService })) {
+      await this.runtimeHostPluginDispatchService.invokeHook({
+        context,
+        hookName: 'conversation:history-rewrite',
+        payload: asJsonValue({
+          context,
+          conversationId: input.conversationId,
+          history,
+          trigger: 'prepare-model',
+        }),
+        pluginId,
+      });
+      history = this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId);
+    }
   }
 
   private async applyBeforeModel(input: { activePersonaId?: string; conversationId: string; messages: Array<{ content: string | ChatMessagePart[]; role: 'assistant' | 'user' }>; modelId: string; providerId: string; systemPrompt: string; userId?: string }) {

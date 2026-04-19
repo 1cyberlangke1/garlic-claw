@@ -1,4 +1,8 @@
-import type { ChatMessagePart, ChatMessageStatus } from './chat';
+import type {
+  ChatMessageMetadata,
+  ChatMessagePart,
+  ChatMessageStatus,
+} from './chat';
 import type { JsonValue } from './json';
 import type { PluginCallContext } from './plugin';
 import type { PluginLlmMessage } from './plugin-ai';
@@ -21,6 +25,74 @@ export interface PluginMessageHookInfo {
   model?: string | null;
   status?: ChatMessageStatus;
 }
+
+/** 插件可见的会话历史消息。 */
+export interface PluginConversationHistoryMessage {
+  id: string;
+  role: string;
+  content: string | null;
+  parts: ChatMessagePart[];
+  provider?: string | null;
+  model?: string | null;
+  status?: ChatMessageStatus;
+  error?: string | null;
+  metadata?: ChatMessageMetadata;
+  toolCalls?: JsonValue[] | null;
+  toolResults?: JsonValue[] | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** 插件可见的会话历史快照。 */
+export interface PluginConversationHistorySnapshot {
+  conversationId: string;
+  revision: string;
+  messages: PluginConversationHistoryMessage[];
+}
+
+/** 会话历史预览参数。 */
+export interface PluginConversationHistoryPreviewParams {
+  messages?: PluginConversationHistoryMessage[];
+}
+
+/** 会话历史预览结果。 */
+export interface PluginConversationHistoryPreviewResult {
+  estimatedTokens: number;
+  messageCount: number;
+  textBytes: number;
+}
+
+/** 会话历史替换参数。 */
+export interface PluginConversationHistoryReplaceParams {
+  expectedRevision: string;
+  messages: PluginConversationHistoryMessage[];
+}
+
+/** 会话历史替换结果。 */
+export interface PluginConversationHistoryReplaceResult
+  extends PluginConversationHistorySnapshot {
+  changed: boolean;
+}
+
+/** 会话历史改写触发来源。 */
+export type ConversationHistoryRewriteTrigger = 'manual' | 'prepare-model';
+
+/** 会话历史改写 Hook 的输入。 */
+export interface ConversationHistoryRewriteHookPayload {
+  context: PluginCallContext;
+  conversationId: string;
+  trigger: ConversationHistoryRewriteTrigger;
+  history: PluginConversationHistorySnapshot;
+}
+
+/** 会话历史改写 Hook 默认透传。 */
+export interface ConversationHistoryRewriteHookPassResult {
+  action: 'pass';
+}
+
+/** 会话历史改写 Hook 的返回。 */
+export type ConversationHistoryRewriteHookResult =
+  ConversationHistoryRewriteHookPassResult;
 
 /** 当前宿主支持的单用户消息目标类型。 */
 export type PluginMessageTargetType = 'conversation';

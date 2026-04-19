@@ -192,10 +192,12 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await page.getByText(PROVIDER_NAME, { exact: false }).first().click();
   const contextLengthInput = page.locator(`[data-test="context-length-input-${MODEL_ID}"]`);
   await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  const currentContextLengthValue = Number(await contextLengthInput.inputValue());
+  const targetContextLength = currentContextLengthValue === 65536 ? 65537 : 65536;
   await contextLengthInput.evaluate((node, value) => {
     node.value = value;
     node.dispatchEvent(new Event('input', { bubbles: true }));
-  }, '65536');
+  }, String(targetContextLength));
   const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
   await waitFor(async () => (await saveButton.isDisabled()) ? null : true, '等待上下文长度保存按钮可用');
   await saveButton.click();
@@ -204,7 +206,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     const models = await requestJson(`/ai/providers/${PROVIDER_ID}/models`, {
       headers: createAuthHeaders(accessToken),
     }).catch(() => []);
-    return models.find((model) => model.id === MODEL_ID)?.contextLength === 65536 ? true : null;
+    return models.find((model) => model.id === MODEL_ID)?.contextLength === targetContextLength ? true : null;
   }, '等待上下文长度持久化');
 
   await page.getByRole('button', { name: '编辑' }).click();

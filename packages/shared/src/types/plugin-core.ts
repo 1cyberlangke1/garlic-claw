@@ -35,6 +35,7 @@ export type PluginPermission =
 
 export type PluginHookName =
   | 'message:received'
+  | 'conversation:history-rewrite'
   | 'chat:before-model'
   | 'chat:waiting-model'
   | 'chat:after-model'

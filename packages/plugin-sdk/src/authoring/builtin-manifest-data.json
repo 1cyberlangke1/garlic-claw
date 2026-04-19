@@ -6,7 +6,14 @@
     "kbContextPromptPrefix": "与当前问题相关的系统知识",
     "conversationTitleDefaultTitle": "New Chat",
     "conversationTitleMaxMessages": 4,
-    "providerRouterDefaultShortCircuitReply": "本轮请求已由 provider-router 直接处理。"
+    "providerRouterDefaultShortCircuitReply": "本轮请求已由 provider-router 直接处理。",
+    "contextCompactionMode": "auto",
+    "contextCompactionCompressionThreshold": 72,
+    "contextCompactionKeepRecentMessages": 6,
+    "contextCompactionReservedTokens": 12000,
+    "contextCompactionSummaryPrompt": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
+    "contextCompactionShowCoveredMarker": true,
+    "contextCompactionAllowAutoContinue": true
   },
   "memoryContextConfigSchema": {
     "type": "object",
@@ -86,6 +93,62 @@
         "type": "int",
         "description": "参与标题生成的最大消息条数",
         "defaultValue": 4
+      }
+    }
+  },
+  "contextCompactionConfigSchema": {
+    "type": "object",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "是否启用上下文压缩插件",
+        "defaultValue": true
+      },
+      "mode": {
+        "type": "string",
+        "description": "压缩模式。manual 只允许手动触发，auto 会在进入模型前按预算自动触发。",
+        "defaultValue": "auto",
+        "options": [
+          {
+            "value": "auto",
+            "label": "自动"
+          },
+          {
+            "value": "manual",
+            "label": "仅手动"
+          }
+        ]
+      },
+      "compressionThreshold": {
+        "type": "int",
+        "description": "自动压缩阈值，表示预计输入 token 达到可用上下文窗口百分之多少时开始压缩。",
+        "defaultValue": 72
+      },
+      "keepRecentMessages": {
+        "type": "int",
+        "description": "压缩后仍保留最近多少条消息不纳入摘要",
+        "defaultValue": 6
+      },
+      "reservedTokens": {
+        "type": "int",
+        "description": "为当前回复与工具链预留的 token 数",
+        "defaultValue": 12000
+      },
+      "summaryPrompt": {
+        "type": "text",
+        "description": "生成压缩摘要时附加给压缩模型的提示词",
+        "defaultValue": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
+        "editorMode": true
+      },
+      "showCoveredMarker": {
+        "type": "bool",
+        "description": "是否在已纳入压缩的原始消息上显示标记",
+        "defaultValue": true
+      },
+      "allowAutoContinue": {
+        "type": "bool",
+        "description": "自动压缩完成后是否继续当前主回复。关闭后本轮只整理历史，不继续回复。",
+        "defaultValue": true
       }
     }
   },
@@ -402,6 +465,88 @@
           "type": "int",
           "description": "参与标题生成的最大消息条数",
           "defaultValue": 4
+        }
+      }
+    }
+  },
+  "contextCompactionManifest": {
+    "id": "builtin.context-compaction",
+    "name": "上下文压缩",
+    "version": "1.0.0",
+    "runtime": "local",
+    "description": "在主对话中自动或手动压缩会话历史，并把压缩摘要作为正式 assistant 消息写回的本地插件。",
+    "permissions": ["config:read", "conversation:read", "conversation:write", "llm:generate", "provider:read", "state:read", "state:write"],
+    "tools": [],
+    "hooks": [
+      {
+        "name": "conversation:history-rewrite",
+        "description": "在进入模型前按上下文预算整理会话历史"
+      },
+      {
+        "name": "chat:before-model",
+        "description": "根据压缩注解构造本轮实际送模上下文"
+      }
+    ],
+    "routes": [
+      {
+        "path": "context-compaction/run",
+        "methods": ["POST"],
+        "description": "手动触发当前会话的上下文压缩"
+      }
+    ],
+    "config": {
+      "type": "object",
+      "items": {
+        "enabled": {
+          "type": "bool",
+          "description": "是否启用上下文压缩插件",
+          "defaultValue": true
+        },
+        "mode": {
+          "type": "string",
+          "description": "压缩模式。manual 只允许手动触发，auto 会在进入模型前按预算自动触发。",
+          "defaultValue": "auto",
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动"
+            },
+            {
+              "value": "manual",
+              "label": "仅手动"
+            }
+          ]
+        },
+        "compressionThreshold": {
+          "type": "int",
+          "description": "自动压缩阈值，表示预计输入 token 达到可用上下文窗口百分之多少时开始压缩。",
+          "defaultValue": 72
+        },
+        "keepRecentMessages": {
+          "type": "int",
+          "description": "压缩后仍保留最近多少条消息不纳入摘要",
+          "defaultValue": 6
+        },
+        "reservedTokens": {
+          "type": "int",
+          "description": "为当前回复与工具链预留的 token 数",
+          "defaultValue": 12000
+        },
+        "summaryPrompt": {
+          "type": "text",
+          "description": "生成压缩摘要时附加给压缩模型的提示词",
+          "defaultValue": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
+          "editorMode": true
+        },
+        "showCoveredMarker": {
+          "type": "bool",
+          "description": "是否在已纳入压缩的原始消息上显示标记",
+          "defaultValue": true
+        },
+        "allowAutoContinue": {
+          "type": "bool",
+          "description": "自动压缩完成后是否继续当前主回复。关闭后本轮只整理历史，不继续回复。",
+          "defaultValue": true
         }
       }
     }

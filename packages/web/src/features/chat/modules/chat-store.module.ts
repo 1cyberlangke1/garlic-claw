@@ -11,6 +11,7 @@ import {
   type ChatStreamState,
 } from "@/features/chat/modules/chat-stream.module";
 import {
+  compactConversationContextRecord,
   createConversationRecord,
   deleteConversationMessageRecord,
   deleteConversationRecord,
@@ -278,6 +279,20 @@ export function createChatStoreModule() {
     }
   }
 
+  async function compactContext() {
+    const conversationId = currentConversationId.value;
+    if (!conversationId) {
+      return null;
+    }
+
+    const result = await compactConversationContextRecord(conversationId, {
+      modelId: selectedModel.value,
+      providerId: selectedProvider.value,
+    });
+    await tryRefreshConversationRelatedState(conversationId);
+    return result;
+  }
+
   async function loadConversationDetail(conversationId: string) {
     const requestId = ++conversationDetailRequestId;
     const nextMessages = await loadConversationMessages(conversationId);
@@ -313,5 +328,6 @@ export function createChatStoreModule() {
     updateMessage,
     deleteMessage,
     stopStreaming,
+    compactContext,
   };
 }

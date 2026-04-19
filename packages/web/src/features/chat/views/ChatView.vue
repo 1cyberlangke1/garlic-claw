@@ -47,6 +47,14 @@
             >
               {{ conversationHostServices?.llmEnabled === false ? '已关闭 LLM 回复' : '已开启 LLM 回复' }}
             </button>
+            <button
+              class="service-toggle"
+              type="button"
+              :disabled="chat.streaming || compacting"
+              @click="compactConversationContext"
+            >
+              {{ compacting ? '压缩中...' : '压缩上下文' }}
+            </button>
           </div>
           <div class="skill-row">
             <template v-if="conversationSkillState?.activeSkills?.length">
@@ -125,6 +133,7 @@ let currentPersonaRequestId = 0
 const {
   inputText,
   pendingImages,
+  compacting,
   selectedCapabilities,
   conversationHostServices,
   conversationSkillState,
@@ -140,6 +149,7 @@ const {
   setConversationLlmEnabled,
   setConversationSessionEnabled,
   removeConversationSkill,
+  compactConversationContext,
 } = useChatView(chat)
 
 watch(

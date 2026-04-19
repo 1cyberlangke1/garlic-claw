@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
@@ -6,7 +9,10 @@ import { ConversationMessageLifecycleService } from '../../src/conversation/conv
 import { ConversationTaskService } from '../../src/conversation/conversation-task.service';
 import type { PersonaService } from '../../src/persona/persona.service';
 
+let activeConversationId = '';
+
 describe('ConversationMessageLifecycleService', () => {
+  const envKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   const aiModelExecutionService = { streamText: jest.fn() };
   const aiVisionService = { resolveImageText: jest.fn(), resolveMessageParts: jest.fn() };
   const skillSessionService = {
@@ -30,12 +36,18 @@ describe('ConversationMessageLifecycleService', () => {
 
   let conversationTaskService: ConversationTaskService;
   let conversationId: string;
+  let storagePath: string;
   let conversationMessagePlanningService: ConversationMessagePlanningService;
   let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
   let runtimeHostConversationMessageService: RuntimeHostConversationMessageService;
   let service: ConversationMessageLifecycleService;
 
   beforeEach(() => {
+    storagePath = path.join(
+      os.tmpdir(),
+      `conversation-message-lifecycle.service.spec-${Date.now()}-${Math.random()}.json`,
+    );
+    process.env[envKey] = storagePath;
     jest.clearAllMocks();
     aiModelExecutionService.streamText.mockReset();
     aiVisionService.resolveImageText.mockReset();
@@ -80,6 +92,7 @@ describe('ConversationMessageLifecycleService', () => {
       runtimeHostPluginDispatchService as never,
     );
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1', userId: 'user-1' }) as { id: string }).id;
+    activeConversationId = conversationId;
     personaService.readCurrentPersona.mockReturnValue({
       avatar: null,
       beginDialogs: [],
@@ -96,6 +109,17 @@ describe('ConversationMessageLifecycleService', () => {
       toolNames: null,
       updatedAt: '2026-04-10T00:00:00.000Z',
     } satisfies ReturnType<PersonaService['readCurrentPersona']>);
+  });
+
+  afterEach(() => {
+    delete process.env[envKey];
+    try {
+      if (fs.existsSync(storagePath)) {
+        fs.unlinkSync(storagePath);
+      }
+    } catch {
+      // 忽略临时文件清理失败，避免影响测试主语义。
+    }
   });
 
   it('uses ai model streaming instead of echoing the input back to the assistant message', async () => {
@@ -350,6 +374,104 @@ describe('ConversationMessageLifecycleService', () => {
     });
   });
 
+  it('runs conversation history rewrite before chat before-model and model execution', async () => {
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      {
+        content: '旧历史消息',
+        createdAt: '2026-04-19T09:00:00.000Z',
+        id: 'history-user-1',
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-19T09:00:00.000Z',
+      },
+    ]);
+    aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
+    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([
+      plugin('builtin.history-rewrite', ['conversation:history-rewrite']),
+      plugin('builtin.before-model-recorder', ['chat:before-model']),
+    ]);
+    runtimeHostPluginDispatchService.invokeHook.mockImplementation(async ({
+      hookName,
+      payload,
+    }: {
+      hookName: string;
+      payload: {
+        conversationId?: string;
+        history?: {
+          revision: string;
+          messages: Array<Record<string, unknown>>;
+        };
+      };
+    }) => {
+      if (hookName === 'conversation:history-rewrite') {
+        const latestUserMessage = [...(payload.history?.messages ?? [])]
+          .reverse()
+          .find((message) => message.role === 'user');
+        const pendingAssistantMessage = [...(payload.history?.messages ?? [])]
+          .reverse()
+          .find((message) => message.role === 'assistant' && message.status === 'pending');
+        expect(payload.history?.revision).toEqual(expect.any(String));
+        expect(latestUserMessage).toBeTruthy();
+        expect(pendingAssistantMessage).toBeTruthy();
+        runtimeHostConversationRecordService.replaceConversationHistory(conversationId, {
+          expectedRevision: payload.history!.revision,
+          messages: [
+            {
+              content: '压缩后的历史摘要',
+              createdAt: '2026-04-19T09:05:00.000Z',
+              id: 'history-summary-1',
+              parts: [
+                {
+                  text: '压缩后的历史摘要',
+                  type: 'text',
+                },
+              ],
+              role: 'assistant',
+              status: 'completed',
+              updatedAt: '2026-04-19T09:05:00.000Z',
+            },
+            latestUserMessage as never,
+            pendingAssistantMessage as never,
+          ],
+        });
+        return { action: 'pass' };
+      }
+      return { action: 'pass' };
+    });
+
+    await startAndWait(service, conversationTaskService, {
+      content: '新的用户问题',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    });
+
+    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      hookName: 'conversation:history-rewrite',
+      pluginId: 'builtin.history-rewrite',
+    }));
+    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      hookName: 'chat:before-model',
+      pluginId: 'builtin.before-model-recorder',
+    }));
+    expectStreamInput(aiModelExecutionService.streamText, {
+      allowFallbackChatModels: true,
+      messages: [
+        {
+          content: [
+            {
+              text: '压缩后的历史摘要',
+              type: 'text',
+            },
+          ],
+          role: 'assistant',
+        },
+        { content: [], role: 'user' },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+  });
+
   it('applies skill conversation context into tool selection and system prompt', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
     skillSessionService.getConversationSkillContext.mockResolvedValue({
@@ -534,7 +656,7 @@ function plugin(id: string, hookNames: string[]) {
 
 function readConversation(runtimeHostConversationRecordService: RuntimeHostConversationRecordService) {
   return runtimeHostConversationRecordService.requireConversation(
-    ((runtimeHostConversationRecordService.listConversations() as Array<{ id: string }>)[0]).id,
+    activeConversationId,
   );
 }
 
@@ -544,9 +666,7 @@ async function startAndWait(
   dto: { content?: string; model?: string; parts?: ChatMessagePart[]; provider?: string },
   userId?: string,
 ) {
-  const recordService = (service as unknown as { runtimeHostConversationRecordService: RuntimeHostConversationRecordService }).runtimeHostConversationRecordService;
-  const conversationId = ((recordService.listConversations() as Array<{ id: string }>)[0]).id;
-  const started = await service.startMessageGeneration(conversationId, dto, userId);
+  const started = await service.startMessageGeneration(activeConversationId, dto, userId);
   await conversationTaskService.waitForTask(String(started.assistantMessage.id));
   return started;
 }

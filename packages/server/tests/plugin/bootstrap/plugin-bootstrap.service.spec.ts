@@ -264,6 +264,7 @@ describe('PluginBootstrapService', () => {
     );
 
     expect(service.bootstrapBuiltins()).toEqual([
+      'builtin.context-compaction',
       'builtin.conversation-title',
       'builtin.memory-context',
       'builtin.subagent-delegate',
@@ -271,6 +272,15 @@ describe('PluginBootstrapService', () => {
     expect(service.reloadBuiltin('builtin.memory-context')).toBe('builtin.memory-context');
     expect(service.listPlugins()).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          manifest: expect.objectContaining({
+            permissions: expect.arrayContaining([
+              'state:read',
+              'state:write',
+            ]),
+          }),
+          pluginId: 'builtin.context-compaction',
+        }),
         expect.objectContaining({ pluginId: 'builtin.conversation-title' }),
         expect.objectContaining({ pluginId: 'builtin.memory-context' }),
         expect.objectContaining({

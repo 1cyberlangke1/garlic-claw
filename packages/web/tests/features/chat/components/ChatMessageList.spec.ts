@@ -142,4 +142,62 @@ describe('ChatMessageList', () => {
     )
     expect(content.text()).toContain('正式回复')
   })
+
+  it('renders context compaction summary above the assistant message and keeps it collapsed by default', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-summary',
+            role: 'assistant',
+            content: '压缩后的历史摘要',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  type: 'context-compaction',
+                  owner: 'builtin.context-compaction',
+                  version: '1',
+                  data: {
+                    role: 'summary',
+                    trigger: 'manual',
+                    coveredCount: 3,
+                    providerId: 'openai',
+                    modelId: 'gpt-5.4',
+                    beforePreview: {
+                      estimatedTokens: 1200,
+                    },
+                    afterPreview: {
+                      estimatedTokens: 420,
+                    },
+                  },
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="assistant-summary"]')
+    const details = assistant.find('details.message-annotation-context-compaction')
+    const summary = assistant.find('.message-annotation-summary')
+
+    expect(details.exists()).toBe(true)
+    expect((details.element as HTMLDetailsElement).open).toBe(false)
+    expect(summary.text()).toContain('上下文压缩')
+    expect(summary.text()).toContain('覆盖 3 条消息')
+    expect(assistant.text()).toContain('压缩后的历史摘要')
+    expect(assistant.html().indexOf('message-annotation-context-compaction')).toBeLessThan(
+      assistant.html().indexOf('message-content'),
+    )
+  })
 })
