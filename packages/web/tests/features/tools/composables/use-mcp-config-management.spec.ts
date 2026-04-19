@@ -9,6 +9,15 @@ vi.mock('@/features/tools/composables/mcp-config-management.data', () => ({
   createMcpServerConfig: vi.fn(),
   updateMcpServerConfig: vi.fn(),
   deleteMcpServerConfig: vi.fn(),
+  loadMcpServerEvents: vi.fn().mockResolvedValue({
+    items: [],
+    nextCursor: null,
+  }),
+  normalizeMcpEventQuery: vi.fn((query) => ({
+    limit: query.limit ?? 50,
+    ...(query.cursor ? { cursor: query.cursor } : {}),
+  })),
+  dedupeMcpEventLogs: vi.fn((items) => items),
   toErrorMessage: vi.fn((error: Error | undefined, fallback: string) => error?.message ?? fallback),
 }))
 
@@ -16,13 +25,16 @@ describe('useMcpConfigManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(mcpData.loadMcpConfigSnapshot).mockResolvedValue({
-      configPath: 'mcp/mcp.json',
+      configPath: 'mcp/servers',
       servers: [
         {
           name: 'weather-server',
           command: 'npx',
           args: ['-y', '@mariox/weather-mcp-server'],
           env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
         },
       ],
     })
@@ -33,6 +45,9 @@ describe('useMcpConfigManagement', () => {
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
       },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
     })
     vi.mocked(mcpData.updateMcpServerConfig).mockResolvedValue({
       name: 'weather-server',
@@ -40,6 +55,9 @@ describe('useMcpConfigManagement', () => {
       args: ['dist/index.js'],
       env: {
         WEATHER_TOKEN: '${WEATHER_TOKEN}',
+      },
+      eventLog: {
+        maxFileSizeMb: 1,
       },
     })
     vi.mocked(mcpData.deleteMcpServerConfig).mockResolvedValue({
@@ -60,7 +78,7 @@ describe('useMcpConfigManagement', () => {
     mount(Harness)
     await flushPromises()
 
-    expect(state.snapshot.value.configPath).toBe('mcp/mcp.json')
+    expect(state.snapshot.value.configPath).toBe('mcp/servers')
     expect(state.servers.value).toHaveLength(1)
     expect(state.selectedServer.value?.name).toBe('weather-server')
 
@@ -89,6 +107,9 @@ describe('useMcpConfigManagement', () => {
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
       },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
     })
     await state.updateServer('weather-server', {
       name: 'weather-server',
@@ -96,6 +117,9 @@ describe('useMcpConfigManagement', () => {
       args: ['dist/index.js'],
       env: {
         WEATHER_TOKEN: '${WEATHER_TOKEN}',
+      },
+      eventLog: {
+        maxFileSizeMb: 1,
       },
     })
     await state.deleteServer('weather-server')
@@ -107,6 +131,9 @@ describe('useMcpConfigManagement', () => {
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
       },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
     })
     expect(mcpData.updateMcpServerConfig).toHaveBeenCalledWith('weather-server', {
       name: 'weather-server',
@@ -114,6 +141,9 @@ describe('useMcpConfigManagement', () => {
       args: ['dist/index.js'],
       env: {
         WEATHER_TOKEN: '${WEATHER_TOKEN}',
+      },
+      eventLog: {
+        maxFileSizeMb: 1,
       },
     })
     expect(mcpData.deleteMcpServerConfig).toHaveBeenCalledWith('weather-server')

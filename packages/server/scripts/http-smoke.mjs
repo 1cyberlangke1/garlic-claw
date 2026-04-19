@@ -58,7 +58,7 @@ async function main() {
     aiSettingsPath: path.join(tempDir, 'ai-settings.server.json'),
     automationsPath: path.join(tempDir, 'automations.server.json'),
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
-    mcpConfigPath: path.join(tempDir, 'mcp', 'mcp.json'),
+    mcpConfigPath: path.join(tempDir, 'mcp', 'servers'),
     personasPath: path.join(tempDir, 'persona'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
     skillGovernancePath: path.join(tempDir, 'skill-governance.server.json'),

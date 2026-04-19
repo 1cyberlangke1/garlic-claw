@@ -1,0 +1,8 @@
+{
+  "name": "weather-server",
+  "command": "npx",
+  "args": [
+    "-y",
+    "@mariox/weather-mcp-server"
+  ]
+}

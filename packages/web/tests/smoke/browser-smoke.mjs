@@ -325,6 +325,7 @@ async function verifyMcpPage(page) {
   await expectText(page, 'MCP 配置');
   const configPath = (await page.locator('.mcp-config-path').textContent())?.trim() ?? '';
   assert.ok(configPath.length > 0, 'MCP 配置区未展示配置路径');
+  assert.ok(configPath.includes('mcp/servers'), 'MCP 配置路径未切到目录化存储');
   await page.locator('[data-test="mcp-new-button"]').click();
   await page.locator('[data-test="mcp-name-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="mcp-command-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
