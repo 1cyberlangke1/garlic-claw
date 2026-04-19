@@ -31,6 +31,12 @@ import { createPluginAuthorTransportExecutor } from '@garlic-claw/plugin-sdk/aut
     - `gemini` -> `@ai-sdk/google`
   - 协议接入只保留三种协议族：`openai` / `anthropic` / `gemini`
 
+## 运行环境
+
+- Python：`3.10+`
+- Node.js：`22.0.0+`
+- npm：建议跟随当前 Node.js 一起安装
+
 ## 文档导航
 
 使用者入口：
@@ -183,10 +189,10 @@ Linux / WSL：
 bash ./start.sh restart
 ```
 
-直接调用 Python 主入口也可以：
+直接调用 Python 入口时，推荐使用 ASCII 启动 shim：
 
 ```bash
-python tools/一键启停脚本.py restart
+python tools/start_launcher.py restart
 ```
 
 关闭前后端：
@@ -203,10 +209,10 @@ Linux / WSL：
 bash ./start.sh stop
 ```
 
-直接调用 Python 主入口：
+直接调用 Python 入口：
 
 ```bash
-python tools/一键启停脚本.py --stop
+python tools/start_launcher.py --stop
 ```
 
 查看状态：
@@ -226,25 +232,25 @@ bash ./start.sh status
 直接调用 Python 主入口：
 
 ```bash
-python tools/一键启停脚本.py --status
+python tools/start_launcher.py --status
 ```
 
 前台尾随日志并用 `Ctrl+C` 停止：
 
 ```bash
-python tools/一键启停脚本.py --tail-logs
+python tools/start_launcher.py --tail-logs
 ```
 
 运行脚本回归测试：
 
 ```bash
-python tools/一键启停脚本.py --test
+python tools/start_launcher.py --test
 ```
 
 或：
 
 ```bash
-python tools/一键启停脚本.py test
+python tools/start_launcher.py test
 ```
 
 说明：
@@ -252,6 +258,8 @@ python tools/一键启停脚本.py test
 - `start.bat` 会先设置 UTF-8，再转到 `tools/start_launcher.py`
 - `start.sh` 也会统一转到 `tools/start_launcher.py`
 - `tools/start_launcher.py` 再加载真正的中文主脚本 `tools/一键启停脚本.py`
+- `tools/start_launcher.py` 会先校验 Python 版本；开发态预检也会校验 Node.js 版本
+- 直接手输 Python 命令时，也优先使用 `tools/start_launcher.py`，避免不同机器的 shell / 编码环境对中文脚本路径产生差异
 - 如果从 PowerShell 调 WSL 跑测试或长输出，优先把 stdout/stderr 写入 UTF-8 文件后再读，避免乱码和截断
 
 默认地址：

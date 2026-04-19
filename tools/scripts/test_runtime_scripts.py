@@ -1,7 +1,7 @@
 """脚本运行时回归测试。
 
 输入:
-- 直接加载 `tools/一键启停脚本.py`、`tools/scripts/dev_runtime.py` 与 `tools/scripts/process_runtime.py` 模块
+- 直接加载 `tools/start_launcher.py`、`tools/一键启停脚本.py`、`tools/scripts/dev_runtime.py` 与 `tools/scripts/process_runtime.py` 模块
 
 输出:
 - 校验状态文件位置、开发服务定义和关闭逻辑入口是否符合新的跨平台方案
@@ -24,6 +24,7 @@ from unittest import mock
 SCRIPTS_DIR = Path(__file__).resolve().parent
 TOOLS_DIR = SCRIPTS_DIR.parent
 LAUNCHER_PATH = TOOLS_DIR / '一键启停脚本.py'
+ASCII_LAUNCHER_PATH = TOOLS_DIR / 'start_launcher.py'
 DEV_RUNTIME_PATH = SCRIPTS_DIR / 'dev_runtime.py'
 COMMON_PATH = SCRIPTS_DIR / 'process_runtime.py'
 
@@ -57,6 +58,22 @@ def loadPackageModule(module_name: str) -> ModuleType:
 
 class DevLauncherEntryTests(unittest.TestCase):
     """主入口分发回归测试。"""
+
+    def testAsciiLauncherLoadsChineseMainEntry(self) -> None:
+        """ASCII shim 应能稳定加载中文主入口。"""
+        asciiLauncher = loadModule('dev_launcher_ascii', ASCII_LAUNCHER_PATH)
+
+        main = asciiLauncher.loadMain()
+
+        self.assertTrue(callable(main))
+
+    def testAsciiLauncherRejectsOldPythonBeforeLoadingChineseEntry(self) -> None:
+        """ASCII shim 应在低版本 Python 下提前给出明确错误。"""
+        asciiLauncher = loadModule('dev_launcher_ascii_old_python', ASCII_LAUNCHER_PATH)
+
+        with mock.patch.object(asciiLauncher.sys, 'version_info', (3, 9, 18)):
+            with self.assertRaisesRegex(RuntimeError, '至少需要 Python 3.10'):
+                asciiLauncher.loadMain()
 
     def testStateFileMovesToOtherDirectoryJson(self) -> None:
         """应将状态文件迁移到 other/dev-processes.json。"""
@@ -578,6 +595,84 @@ class DevRuntimeTests(unittest.TestCase):
                 devRuntime.getPortWaitTimeoutSeconds('backend_app'),
                 60,
             )
+
+    def testStartupPreflightRejectsOldNodeVersion(self) -> None:
+        """旧 Node.js 版本应在预检阶段直接失败。"""
+        devRuntime = loadPackageModule('tools.scripts.dev_runtime')
+        printed: list[str] = []
+
+        with (
+            mock.patch.object(
+                devRuntime.runtime,
+                'findFirstCommand',
+                side_effect=['C:/node/npm.cmd', 'C:/node/node.exe'],
+            ),
+            mock.patch.object(devRuntime, '读取命令版本号', return_value=(20, 11, 1)),
+            mock.patch.object(devRuntime.runtime, 'startSingleLineStatus'),
+            mock.patch.object(devRuntime.runtime, 'finishSingleLineStatus'),
+            mock.patch('builtins.print', side_effect=printed.append),
+        ):
+            result = devRuntime.执行启动前预检()
+
+        self.assertFalse(result)
+        self.assertTrue(any('当前 Node.js 版本为 20.11.1' in line for line in printed))
+        self.assertTrue(any('至少需要 Node.js 22.0.0' in line for line in printed))
+
+    def testEnsurePortIdleGuidanceUsesAsciiLauncherPath(self) -> None:
+        """端口占用提示应引导到 ASCII 启动入口。"""
+        devRuntime = loadPackageModule('tools.scripts.dev_runtime')
+
+        with (
+            mock.patch.object(devRuntime.runtime, 'findPortPids', return_value=[12345]),
+            mock.patch('builtins.print') as printMock,
+        ):
+            result = devRuntime.确保端口空闲()
+
+        self.assertFalse(result)
+        printed = '\n'.join(
+            str(call.args[0])
+            for call in printMock.call_args_list
+            if call.args
+        )
+        self.assertIn('python tools\\start_launcher.py --stop', printed)
+
+    def testBackgroundModeTailLogTipUsesAsciiLauncherPath(self) -> None:
+        """后台模式成功提示应引导到 ASCII 启动入口。"""
+        devRuntime = loadPackageModule('tools.scripts.dev_runtime')
+        startedNames: list[str] = []
+
+        def fakeStartManagedProcess(service: dict[str, object]) -> mock.Mock:
+            startedNames.append(str(service['name']))
+            return mock.Mock(pid=100 + len(startedNames))
+
+        with (
+            mock.patch.object(devRuntime, '读取受管状态', return_value={}),
+            mock.patch.object(devRuntime, '确保端口空闲', return_value=True),
+            mock.patch.object(devRuntime.runtime, 'ensureRuntimeDirs'),
+            mock.patch.object(devRuntime.runtime, 'ensureGitHooksEnabled'),
+            mock.patch.object(devRuntime, '执行启动前预检', return_value=True),
+            mock.patch.object(devRuntime.docker_runtime, '确保env文件'),
+            mock.patch.object(devRuntime, 'loadProjectEnv'),
+            mock.patch.object(devRuntime, '确保npm依赖已安装', return_value=True),
+            mock.patch.object(devRuntime, '执行构建步骤', return_value=True),
+            mock.patch.object(devRuntime, '等待后端编译器首轮完成', return_value=True),
+            mock.patch.object(devRuntime.runtime, 'startManagedProcess', side_effect=fakeStartManagedProcess),
+            mock.patch.object(devRuntime, '保存受管状态'),
+            mock.patch.object(devRuntime.runtime, 'waitForPort', return_value=True),
+            mock.patch.object(devRuntime.docker_runtime, 'http健康检查', return_value=True),
+            mock.patch.object(devRuntime.runtime, 'startSingleLineStatus'),
+            mock.patch.object(devRuntime.runtime, 'finishSingleLineStatus'),
+            mock.patch('builtins.print') as printMock,
+        ):
+            result = devRuntime.启动开发服务(allowAutoStop=True, tailLogs=False)
+
+        self.assertEqual(result, 0)
+        printed = '\n'.join(
+            str(call.args[0])
+            for call in printMock.call_args_list
+            if call.args
+        )
+        self.assertIn('python tools\\start_launcher.py --tail-logs', printed)
 
     def testStopServicesPrefersStatePidsBeforePortFallback(self) -> None:
         """应先按状态文件 PID 关闭，再按端口兜底。"""
