@@ -1,6 +1,7 @@
 import { delete as del, get, post, put, requestWithMetadata } from '@/api/http'
 import type {
   AiProviderSummary,
+  EventLogSettings,
   JsonValue,
   PluginActionName,
   PluginActionResult,
@@ -92,6 +93,13 @@ export function listPluginEvents(
   return get<PluginEventListResult>(
     `/plugins/${encodeURIComponent(name)}/events${querySuffix}`,
   )
+}
+
+export function updatePluginEventLog(
+  name: string,
+  settings: EventLogSettings,
+) {
+  return put<EventLogSettings>(`/plugins/${encodeURIComponent(name)}/event-log`, settings)
 }
 
 export function getPluginCrons(name: string) {

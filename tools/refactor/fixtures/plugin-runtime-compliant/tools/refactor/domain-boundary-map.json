@@ -17,7 +17,7 @@
         "file": "packages/server/src/plugin-runtime/plugin-chat-runtime.facade.ts",
         "tokens": [
           "AiProviderService",
-          "SkillSessionService",
+          "SkillToolService",
           "ToolRegistryService"
         ]
       },

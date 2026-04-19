@@ -1,7 +1,6 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
-  ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
@@ -98,12 +97,4 @@ export class UpdateConversationHostServicesDto {
   @IsBoolean()
   @IsOptional()
   ttsEnabled?: boolean;
-}
-
-export class UpdateConversationSkillsDto {
-  @IsArray()
-  @ArrayMaxSize(16)
-  @ArrayUnique()
-  @IsString({ each: true })
-  activeSkillIds!: string[];
 }

@@ -19,7 +19,10 @@
 
 ## 当前阶段：待定
 
-- 当前没有新的进行中项目级阶段；下一轮任务开始前，再把对应详细计划写入 `TODO.md / task_plan.md / progress.md / findings.md`。
+- N17 Skill 对齐 OpenCode 已启动：
+  - skill 改为原生按需加载工具
+  - 删除会话级 skill 激活态、专用工具源和隐式常驻 prompt 注入
+  - skill 相关代码执行统一回到通用工具
 
 ## 固定约束
 

@@ -1,6 +1,6 @@
 import type { PluginCronDescriptor, PluginCronJobSummary } from './plugin-cron';
 import type { JsonObject, JsonValue } from './json';
-import type { PluginHealthSnapshot } from './plugin-records';
+import type { EventLogSettings, PluginHealthSnapshot } from './plugin-records';
 import type { PluginRouteDescriptor } from './plugin-route';
 import type {
   PluginActionName,
@@ -128,6 +128,7 @@ export interface PluginInfo {
   crons?: PluginCronJobSummary[];
   manifest: PluginManifest;
   health?: PluginHealthSnapshot;
+  eventLog: EventLogSettings;
   governance?: PluginGovernanceInfo;
   lastSeenAt: string | null;
   createdAt: string;

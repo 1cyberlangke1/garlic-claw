@@ -1,11 +1,5 @@
 <template>
   <aside class="skill-detail-panel">
-    <SkillConversationBinding
-      :conversation-id="conversationId"
-      :active-skills="conversationSkillState?.activeSkills ?? []"
-      @toggle-skill="(skillId) => $emit('toggle-skill', skillId)"
-    />
-
     <article v-if="skill" class="skill-preview">
       <header class="preview-header">
         <div>
@@ -21,25 +15,25 @@
       <p class="detail-line">{{ skill.description }}</p>
       <section class="governance-panel">
         <div class="meta-row">
-          <span class="meta-chip">{{ trustLevelLabel(skill.governance.trustLevel) }}</span>
+          <span class="meta-chip">{{ loadPolicyLabel(skill.governance.loadPolicy) }}</span>
           <span class="meta-chip">{{ skill.assets.length }} 个资产</span>
         </div>
         <p class="detail-line muted-text">
-          {{ trustLevelDescription(skill.governance.trustLevel) }}
+          {{ loadPolicyDescription(skill.governance.loadPolicy) }}
         </p>
         <p class="detail-line muted-text">
-          `技能` 的统一在线启用 / 停用已收敛到本页下方的 `Active Skill Packages` 工具治理区域，这里只保留单个技能的 trust level。
+          `skill` 是原生按需加载工具，不会再绑定到当前会话，也不会自动把提示常驻注入每一轮主聊天。
         </p>
         <div class="governance-actions">
           <label class="trust-level-field">
-            <span>信任等级</span>
+            <span>加载策略</span>
             <select
-              :value="skill.governance.trustLevel"
+              :value="skill.governance.loadPolicy"
               :disabled="selectedSkillBusy"
-              @change="setSelectedSkillTrustLevel"
+              @change="setSelectedSkillLoadPolicy"
             >
               <option
-                v-for="option in trustLevelOptions"
+                v-for="option in loadPolicyOptions"
                 :key="option.value"
                 :value="option.value"
               >
@@ -49,13 +43,6 @@
           </label>
         </div>
       </section>
-      <p v-if="skill.toolPolicy.allow.length > 0" class="detail-line">
-        允许工具: {{ skill.toolPolicy.allow.join(' · ') }}
-      </p>
-      <p v-if="skill.toolPolicy.deny.length > 0" class="detail-line warning-text">
-        禁止工具: {{ skill.toolPolicy.deny.join(' · ') }}
-      </p>
-
       <section class="asset-section">
         <header class="asset-header">
           <div>
@@ -65,7 +52,7 @@
           <span class="meta-chip">{{ skill.assets.length }} 项</span>
         </header>
         <p class="detail-line muted-text">
-          资产读取和脚本执行都依赖当前会话激活状态，以及这里设定的信任等级。
+          目录资产只用于帮助模型理解这个 skill 带了哪些模板、脚本和参考资料。
         </p>
         <div v-if="skill.assets.length === 0" class="empty-state compact">
           当前技能没有附属资产。
@@ -94,41 +81,36 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type {
-  ConversationSkillState,
   SkillAssetKind,
   SkillDetail,
-  SkillTrustLevel,
+  SkillLoadPolicy,
 } from '@garlic-claw/shared'
 import { marked } from 'marked'
-import SkillConversationBinding from './SkillConversationBinding.vue'
 
 const props = defineProps<{
   skill: SkillDetail | null
-  conversationId: string | null
-  conversationSkillState: ConversationSkillState | null
   mutatingSkillId: string | null
 }>()
 
 const emit = defineEmits<{
-  (event: 'toggle-skill', skillId: string): void
-  (event: 'update-trust-level', payload: { skillId: string, trustLevel: SkillTrustLevel }): void
+  (event: 'update-load-policy', payload: { skillId: string, loadPolicy: SkillLoadPolicy }): void
 }>()
 
-const trustLevelOptions: Array<{
-  value: SkillTrustLevel
+const loadPolicyOptions: Array<{
+  value: SkillLoadPolicy
   label: string
 }> = [
   {
-    value: 'prompt-only',
-    label: 'Prompt Only',
+    value: 'allow',
+    label: '允许加载',
   },
   {
-    value: 'asset-read',
-    label: 'Asset Read',
+    value: 'ask',
+    label: '请求确认',
   },
   {
-    value: 'local-script',
-    label: 'Local Script',
+    value: 'deny',
+    label: '拒绝加载',
   },
 ]
 
@@ -144,41 +126,41 @@ const renderedSkillContent = computed(() => {
   return String(marked.parse(props.skill.content))
 })
 
-function setSelectedSkillTrustLevel(event: Event) {
+function setSelectedSkillLoadPolicy(event: Event) {
   if (!props.skill) {
     return
   }
 
-  const nextTrustLevel = (event.target as HTMLSelectElement).value as SkillTrustLevel
-  if (nextTrustLevel === props.skill.governance.trustLevel) {
+  const nextLoadPolicy = (event.target as HTMLSelectElement).value as SkillLoadPolicy
+  if (nextLoadPolicy === props.skill.governance.loadPolicy) {
     return
   }
 
-  emit('update-trust-level', {
+  emit('update-load-policy', {
     skillId: props.skill.id,
-    trustLevel: nextTrustLevel,
+    loadPolicy: nextLoadPolicy,
   })
 }
 
-function trustLevelLabel(trustLevel: SkillTrustLevel): string {
-  switch (trustLevel) {
-    case 'asset-read':
-      return '可读资产'
-    case 'local-script':
-      return '可执行脚本'
+function loadPolicyLabel(loadPolicy: SkillLoadPolicy): string {
+  switch (loadPolicy) {
+    case 'deny':
+      return '拒绝加载'
+    case 'ask':
+      return '请求确认'
     default:
-      return '仅提示'
+      return '允许加载'
   }
 }
 
-function trustLevelDescription(trustLevel: SkillTrustLevel): string {
-  switch (trustLevel) {
-    case 'asset-read':
-      return '当前会话激活后，模型可以通过统一技能工具读取模板、参考资料和脚本文本。'
-    case 'local-script':
-      return '当前会话激活后，模型既可以读取资产，也可以通过统一技能工具执行本地脚本。'
+function loadPolicyDescription(loadPolicy: SkillLoadPolicy): string {
+  switch (loadPolicy) {
+    case 'deny':
+      return '宿主不会向模型暴露这个 skill，原生 `skill` 工具也不能加载它。'
+    case 'ask':
+      return '这个 skill 会出现在目录里，但应当先确认再加载。当前前端只展示状态，不做额外交互。'
     default:
-      return '当前技能只会作为提示和工作流资产注入上下文，不会开放附属文件读取或脚本执行。'
+      return '这个 skill 会出现在原生 `skill` 工具描述中，模型可按需懒加载其完整内容。'
   }
 }
 

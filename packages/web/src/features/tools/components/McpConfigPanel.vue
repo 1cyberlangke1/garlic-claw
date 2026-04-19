@@ -152,6 +152,26 @@
         </div>
       </form>
     </div>
+
+    <div v-if="selectedServer" class="mcp-detail-panels">
+      <EventLogSettingsPanel
+        :settings="selectedServer.eventLog"
+        :saving="savingEventLog"
+        title="MCP 日志设置"
+        description="当前 MCP server 的事件日志会写到 log/mcp/<serverName>/ 目录。"
+        @save="saveServerEventLog"
+      />
+      <EventLogPanel
+        title="MCP 事件日志"
+        description="查看当前 server 最近的失败、治理动作与健康检查记录。"
+        :events="eventLogs"
+        :loading="eventLoading"
+        :query="eventQuery"
+        :next-cursor="eventNextCursor"
+        @refresh="refreshServerEvents"
+        @load-more="loadMoreServerEvents"
+      />
+    </div>
   </section>
 </template>
 
@@ -163,6 +183,8 @@ import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalisti
 import { Icon } from '@iconify/vue'
 import { ref, watch } from 'vue'
 import type { McpServerConfig } from '@garlic-claw/shared'
+import EventLogPanel from '@/features/tools/components/EventLogPanel.vue'
+import EventLogSettingsPanel from '@/features/tools/components/EventLogSettingsPanel.vue'
 import { useMcpConfigManagement } from '@/features/tools/composables/use-mcp-config-management'
 
 const props = defineProps<{
@@ -182,17 +204,25 @@ interface EnvRow {
 const {
   loading,
   saving,
+  savingEventLog,
   deleting,
   notice,
   snapshot,
   servers,
   selectedServerName,
   selectedServer,
+  eventLoading,
+  eventLogs,
+  eventQuery,
+  eventNextCursor,
   refresh,
   selectServer,
   createServer,
   updateServer,
   deleteServer,
+  saveServerEventLog,
+  refreshServerEvents,
+  loadMoreServerEvents,
 } = useMcpConfigManagement()
 
 const draftName = ref('')
@@ -322,6 +352,9 @@ function buildPayload(): McpServerConfig {
         .map((entry) => [entry.key.trim(), entry.value.trim()] as const)
         .filter(([key, value]) => key.length > 0 && value.length > 0),
     ),
+    eventLog: selectedServer.value?.eventLog ?? {
+      maxFileSizeMb: 1,
+    },
   }
 }
 
@@ -359,6 +392,7 @@ function envCount(env: Record<string, string>): number {
 <style scoped>
 .mcp-config-panel,
 .mcp-config-layout,
+.mcp-detail-panels,
 .mcp-editor,
 .mcp-env-panel,
 .mcp-env-list {

@@ -144,7 +144,6 @@ function readStoredPersona(personaRoot: string): StoredPersonaRecord | null {
       isDefault: parsedMeta.isDefault,
       name: parsedMeta.name,
       prompt,
-      skillIds: parsedMeta.skillIds,
       toolNames: parsedMeta.toolNames,
       updatedAt: parsedMeta.updatedAt,
     } as StoredPersonaRecord
@@ -186,7 +185,6 @@ function writeStoredPersona(storageRoot: string, persona: StoredPersonaRecord): 
     id: persona.id,
     isDefault: persona.isDefault,
     name: persona.name,
-    skillIds: persona.skillIds,
     toolNames: persona.toolNames,
     updatedAt: persona.updatedAt,
   }
@@ -254,10 +252,6 @@ function readPersonaMetaYaml(meta: StoredPersonaMeta): string {
     '# Persona 允许使用的 tools。',
     '# null 表示不限制；[] 表示全部禁用；非空数组表示只允许这些 tool 名称。',
     ...formatPersonaMetaField('toolNames', meta.toolNames),
-    '',
-    '# Persona 允许使用的 skills。',
-    '# null 表示不限制；[] 表示全部禁用；非空数组表示只允许这些 skill ID。',
-    ...formatPersonaMetaField('skillIds', meta.skillIds),
     '',
     '# 仅在“主对话主回复”失败时，直接回复给用户的固定错误文案。',
     '# subagent、标题生成、摘要总结等链路不会使用这个字段。',
@@ -338,7 +332,6 @@ function normalizeStoredPersona(persona: StoredPersonaRecord): StoredPersonaReco
     isDefault: persona.isDefault === true,
     name: normalizeRequiredText(persona.name, persona.id),
     prompt: normalizeRequiredText(persona.prompt, fallback.prompt),
-    skillIds: normalizeNullableIdList(persona.skillIds),
     toolNames: normalizeNullableIdList(persona.toolNames),
     updatedAt: typeof persona.updatedAt === 'string' && persona.updatedAt ? persona.updatedAt : fallback.updatedAt,
   }
@@ -355,7 +348,6 @@ function createDefaultPersona(): StoredPersonaRecord {
     isDefault: true,
     name: 'Default Assistant',
     prompt: DEFAULT_PERSONA_PROMPT,
-    skillIds: null,
     toolNames: null,
     updatedAt: DEFAULT_PERSONA_TIMESTAMP,
   }

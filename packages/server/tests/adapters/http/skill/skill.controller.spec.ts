@@ -50,18 +50,18 @@ describe('SkillController', () => {
     skillRegistryService.updateSkillGovernance.mockResolvedValue({
       id: 'project/planner',
       governance: {
-        trustLevel: 'local-script',
+        loadPolicy: 'deny',
       },
     });
 
     await expect(
       controller.updateSkillGovernance('project/planner', {
-        trustLevel: 'local-script',
+        loadPolicy: 'deny',
       } as never),
     ).resolves.toEqual(
       expect.objectContaining({
         governance: {
-          trustLevel: 'local-script',
+          loadPolicy: 'deny',
         },
       }),
     );

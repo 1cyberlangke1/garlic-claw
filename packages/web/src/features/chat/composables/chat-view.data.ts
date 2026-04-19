@@ -1,7 +1,6 @@
 import type {
   AiModelCapabilities,
   ConversationHostServices,
-  ConversationSkillState,
   UpdateConversationHostServicesPayload,
 } from '@garlic-claw/shared'
 import {
@@ -12,20 +11,11 @@ import {
   getConversationHostServices,
   updateConversationHostServices,
 } from '@/features/chat/api/chat'
-import {
-  getConversationSkills,
-  updateConversationSkills,
-} from '@/features/skills/api/skills'
 
 const DEFAULT_HOST_SERVICES: ConversationHostServices = {
   sessionEnabled: true,
   llmEnabled: true,
   ttsEnabled: true,
-}
-
-const EMPTY_CONVERSATION_SKILL_STATE: ConversationSkillState = {
-  activeSkillIds: [],
-  activeSkills: [],
 }
 
 /**
@@ -82,34 +72,4 @@ export function saveConversationHostServices(
   patch: UpdateConversationHostServicesPayload,
 ): Promise<ConversationHostServices> {
   return updateConversationHostServices(conversationId, patch)
-}
-
-/**
- * 读取当前会话激活的 skill 列表。
- * @param conversationId 会话 ID
- * @returns 会话级 skill 状态
- */
-export async function loadConversationSkillState(
-  conversationId: string,
-): Promise<ConversationSkillState> {
-  try {
-    return await getConversationSkills(conversationId)
-  } catch {
-    return EMPTY_CONVERSATION_SKILL_STATE
-  }
-}
-
-/**
- * 保存当前会话激活的 skill 列表。
- * @param conversationId 会话 ID
- * @param activeSkillIds 激活中的 skill ID 列表
- * @returns 保存后的会话 skill 状态
- */
-export function saveConversationSkills(
-  conversationId: string,
-  activeSkillIds: string[],
-): Promise<ConversationSkillState> {
-  return updateConversationSkills(conversationId, {
-    activeSkillIds,
-  })
 }

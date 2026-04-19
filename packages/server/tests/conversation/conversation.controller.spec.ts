@@ -9,17 +9,14 @@ describe('ConversationController', () => {
   const conversationMessageLifecycleService = { retryMessageGeneration: jest.fn(), startMessageGeneration: jest.fn(), stopMessageGeneration: jest.fn() };
   const conversationTaskService = { stopTask: jest.fn(), subscribe: jest.fn(), waitForTask: jest.fn() };
   const runtimeHostConversationMessageService = { deleteMessage: jest.fn(), updateMessage: jest.fn() };
-  const skillSessionService = { getConversationSkillStateForUser: jest.fn(), updateConversationSkillStateForUser: jest.fn() };
   const runtimeHostConversationRecordService = {
     createConversation: jest.fn(),
     deleteConversation: jest.fn(),
     getConversation: jest.fn(),
     listConversations: jest.fn(),
     readConversationHostServices: jest.fn(),
-    readConversationSkillState: jest.fn(),
     requireConversation: jest.fn(),
     writeConversationHostServices: jest.fn(),
-    writeConversationSkillState: jest.fn(),
   };
   let controller: ConversationController;
 
@@ -29,7 +26,6 @@ describe('ConversationController', () => {
       conversationMessageLifecycleService as never,
       conversationTaskService as never,
       runtimeHostConversationMessageService as never,
-      skillSessionService as never,
       runtimeHostConversationRecordService as never,
     );
   });
@@ -68,20 +64,14 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
   });
 
-  it('reads and updates conversation services and skills through owned conversation APIs', () => {
+  it('reads and updates conversation services through owned conversation APIs', () => {
     runtimeHostConversationRecordService.readConversationHostServices.mockReturnValue({ llmEnabled: false, sessionEnabled: true, ttsEnabled: true });
     runtimeHostConversationRecordService.writeConversationHostServices.mockReturnValue({ llmEnabled: true, sessionEnabled: true, ttsEnabled: false });
-    skillSessionService.getConversationSkillStateForUser.mockReturnValue(skillState('project/planner'));
-    skillSessionService.updateConversationSkillStateForUser.mockReturnValue(skillState('project/operator'));
 
     expect(controller.getConversationHostServices('user-1', conversationId)).toEqual({ llmEnabled: false, sessionEnabled: true, ttsEnabled: true });
     expect(runtimeHostConversationRecordService.readConversationHostServices).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.updateConversationHostServices('user-1', conversationId, { ttsEnabled: false } as never)).toEqual({ llmEnabled: true, sessionEnabled: true, ttsEnabled: false });
     expect(runtimeHostConversationRecordService.writeConversationHostServices).toHaveBeenCalledWith(conversationId, { ttsEnabled: false }, 'user-1');
-    expect(controller.getConversationSkillState('user-1', conversationId)).toEqual(skillState('project/planner'));
-    expect(skillSessionService.getConversationSkillStateForUser).toHaveBeenCalledWith('user-1', conversationId);
-    expect(controller.updateConversationSkills('user-1', conversationId, { activeSkillIds: ['project/operator'] } as never)).toEqual(skillState('project/operator'));
-    expect(skillSessionService.updateConversationSkillStateForUser).toHaveBeenCalledWith('user-1', conversationId, ['project/operator']);
   });
 
   it('streams message-start and task events over SSE for sendMessage', async () => {
@@ -169,10 +159,6 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
   });
 });
-
-function skillState(id: string) {
-  return { activeSkillIds: [id], activeSkills: [{ id, name: id }] };
-}
 
 function sse(payload: object) {
   return `data: ${JSON.stringify(payload)}\n\n`;

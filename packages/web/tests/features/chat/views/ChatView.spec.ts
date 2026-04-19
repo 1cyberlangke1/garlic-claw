@@ -28,27 +28,6 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
       llmEnabled: true,
       ttsEnabled: true,
     }),
-    conversationSkillState: ref({
-      activeSkillIds: ['project/planner'],
-      activeSkills: [
-        {
-          id: 'project/planner',
-          name: '规划执行',
-          description: '先拆任务，再逐步执行。',
-          tags: ['planning'],
-          sourceKind: 'project',
-          entryPath: 'planner/SKILL.md',
-          promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
-          toolPolicy: {
-            allow: ['kb.search'],
-            deny: [],
-          },
-          governance: {
-            trustLevel: 'asset-read',
-          },
-        },
-      ],
-    }),
     conversationSendDisabledReason: ref(null),
     uploadNotices: ref([]),
     canSend: ref(false),
@@ -64,7 +43,6 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     triggerRetryAction: vi.fn(),
     setConversationLlmEnabled: vi.fn(),
     setConversationSessionEnabled: vi.fn(),
-    removeConversationSkill: vi.fn(),
     compactConversationContext,
   }),
 }))
@@ -106,7 +84,7 @@ describe('ChatView', () => {
     expect(compactConversationContext).toHaveBeenCalledTimes(1)
   })
 
-  it('renders active skills and passes the current persona avatar into the message list', async () => {
+  it('passes the current persona avatar into the message list', async () => {
     const wrapper = mount(ChatView, {
       global: {
         stubs: {
@@ -125,9 +103,6 @@ describe('ChatView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('当前 技能')
-    expect(wrapper.text()).toContain('规划执行')
-    expect(wrapper.text()).toContain('管理 技能')
     expect(wrapper.find('.chat-message-list').text()).toContain('Writer|/api/personas/persona.writer/avatar')
   })
 })

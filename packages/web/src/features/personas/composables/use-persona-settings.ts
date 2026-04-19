@@ -30,8 +30,6 @@ export interface PersonaEditorDraft {
   customErrorMessage: string
   isDefault: boolean
   beginDialogs: PluginPersonaDialogEntry[]
-  skillMode: PersonaListMode
-  skillInput: string
   toolMode: PersonaListMode
   toolInput: string
 }
@@ -349,8 +347,6 @@ function createEmptyDraft(): PersonaEditorDraft {
     customErrorMessage: '',
     isDefault: false,
     beginDialogs: [],
-    skillMode: 'all',
-    skillInput: '',
     toolMode: 'all',
     toolInput: '',
   }
@@ -365,8 +361,6 @@ function createDraftFromPersona(persona: PluginPersonaDetail): PersonaEditorDraf
     customErrorMessage: persona.customErrorMessage ?? '',
     isDefault: persona.isDefault,
     beginDialogs: persona.beginDialogs.map((entry) => ({ ...entry })),
-    skillMode: readDraftListMode(persona.skillIds),
-    skillInput: (persona.skillIds ?? []).join('\n'),
     toolMode: readDraftListMode(persona.toolNames),
     toolInput: (persona.toolNames ?? []).join('\n'),
   }
@@ -393,7 +387,6 @@ function createPayloadFromDraft(draft: PersonaEditorDraft): PluginPersonaUpsertI
     isDefault: draft.isDefault,
     name: draft.name.trim(),
     prompt: draft.prompt.trim(),
-    skillIds: readScopedIdList(draft.skillMode, draft.skillInput),
     toolNames: readScopedIdList(draft.toolMode, draft.toolInput),
   }
 }
@@ -406,7 +399,6 @@ function createUpdatePayload(payload: PluginPersonaUpsertInput): PluginPersonaUp
     isDefault: payload.isDefault,
     name: payload.name,
     prompt: payload.prompt,
-    skillIds: payload.skillIds,
     toolNames: payload.toolNames,
   }
 }

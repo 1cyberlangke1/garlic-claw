@@ -6,6 +6,7 @@ import type {
   McpServerDeleteResult,
 } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
 
 type LegacyMcpConfigFile = {
   mcpServers?: Record<string, { args: string[]; command: string; env?: Record<string, string> }>;
@@ -72,6 +73,7 @@ export class McpConfigStoreService {
         {
           command: server.command,
           args: [...server.args],
+          eventLog: normalizeEventLogSettings(server.eventLog),
           ...(Object.keys(server.env).length > 0 ? { env: { ...server.env } } : {}),
         },
       ])),
@@ -90,6 +92,7 @@ function readServers(raw: LegacyMcpConfigFile): McpServerConfig[] {
         command: value.command,
         args: [...value.args],
         env: { ...(value.env ?? {}) },
+        eventLog: normalizeEventLogSettings((value as { eventLog?: McpServerConfig['eventLog'] }).eventLog),
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }
@@ -110,7 +113,12 @@ function readServers(raw: LegacyMcpConfigFile): McpServerConfig[] {
 }
 
 function cloneServerConfig(server: McpServerConfig): McpServerConfig {
-  return { ...server, args: [...server.args], env: { ...server.env } };
+  return {
+    ...server,
+    args: [...server.args],
+    env: { ...server.env },
+    eventLog: normalizeEventLogSettings(server.eventLog),
+  };
 }
 
 function resolveMcpConfigFilePath(): string {

@@ -2,9 +2,10 @@ import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { SkillAssetKind, SkillAssetSummary, SkillDetail, SkillGovernanceInfo, UpdateSkillGovernancePayload } from '@garlic-claw/shared';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillAssetSummary, SkillDetail, SkillGovernanceInfo, SkillSummary, UpdateSkillGovernancePayload } from '@garlic-claw/shared';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import YAML from 'yaml';
+import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
 
 interface SkillGovernanceFile {
   skills: Record<string, SkillGovernanceInfo>;
@@ -16,13 +17,23 @@ export interface SkillDiscoveryOptions {
   userSkillsRoot?: string;
 }
 
-const DEFAULT_SKILL_GOVERNANCE: SkillGovernanceInfo = { trustLevel: 'prompt-only' };
+const DEFAULT_SKILL_GOVERNANCE: SkillGovernanceInfo = {
+  eventLog: {
+    maxFileSizeMb: 1,
+  },
+  loadPolicy: 'allow',
+};
 
 @Injectable()
 export class SkillRegistryService {
   private cachedSkills: SkillDetail[] | null = null;
-  private readonly governancePath = path.join(process.cwd(), 'tmp', 'skill-governance.server.json');
+  private readonly governancePath = resolveSkillGovernancePath();
   private governance = readSkillGovernanceFile(this.governancePath);
+
+  constructor(
+    @Optional() @Inject(SKILL_DISCOVERY_OPTIONS) private readonly discoveryOptions: SkillDiscoveryOptions = {},
+    @Optional() private readonly runtimeEventLogService?: RuntimeEventLogService,
+  ) {}
 
   async listSkills(options?: { refresh?: boolean }): Promise<SkillDetail[]> {
     if (!options?.refresh && this.cachedSkills) {
@@ -30,8 +41,8 @@ export class SkillRegistryService {
     }
 
     this.cachedSkills = (await Promise.all([
-      readSkillSource('project', resolveProjectSkillsRoot()),
-      readSkillSource('user', path.join(os.homedir(), '.garlic-claw', 'skills')),
+      readSkillSource('project', this.discoveryOptions.projectSkillsRoot ?? resolveProjectSkillsRoot()),
+      readSkillSource('user', this.discoveryOptions.userSkillsRoot ?? path.join(os.homedir(), '.garlic-claw', 'skills')),
     ]))
       .flat()
       .map((skill) => ({
@@ -43,14 +54,54 @@ export class SkillRegistryService {
     return this.cachedSkills;
   }
 
+  async getSkillByName(skillName: string): Promise<SkillDetail | null> {
+    const normalized = skillName.trim();
+    if (!normalized) {return null;}
+    const skills = await this.listSkills();
+    return skills.find((entry) => entry.name === normalized) ?? null;
+  }
+
+  async listSkillSummaries(options?: { refresh?: boolean }): Promise<SkillSummary[]> {
+    return (await this.listSkills(options)).map(({ content: _content, assets: _assets, ...summary }) => summary);
+  }
+
+  resolveSkillDirectory(skill: Pick<SkillDetail, 'entryPath' | 'sourceKind'>): string {
+    const sourceRoot = skill.sourceKind === 'project'
+      ? this.discoveryOptions.projectSkillsRoot ?? resolveProjectSkillsRoot()
+      : this.discoveryOptions.userSkillsRoot ?? path.join(os.homedir(), '.garlic-claw', 'skills');
+    return path.join(sourceRoot, path.dirname(skill.entryPath));
+  }
+
+  async listSkillEvents(skillId: string, query: EventLogQuery = {}): Promise<EventLogListResult> {
+    const skill = (await this.listSkills()).find((entry) => entry.id === skillId);
+    if (!skill) {throw new NotFoundException(`Unknown skill: ${skillId}`);}
+    return this.getRuntimeEventLogService().listLogs('skill', skillId, query);
+  }
+
   async updateSkillGovernance(skillId: string, patch: UpdateSkillGovernancePayload): Promise<SkillDetail> {
     const skill = (await this.listSkills()).find((entry) => entry.id === skillId);
     if (!skill) {throw new NotFoundException(`Unknown skill: ${skillId}`);}
-    const nextGovernance: SkillGovernanceInfo = { trustLevel: patch.trustLevel ?? skill.governance.trustLevel };
+    const nextGovernance: SkillGovernanceInfo = {
+      eventLog: normalizeEventLogSettings(patch.eventLog ?? skill.governance.eventLog),
+      loadPolicy: patch.loadPolicy ?? skill.governance.loadPolicy,
+    };
     this.governance.skills[skillId] = nextGovernance;
     writeSkillGovernanceFile(this.governancePath, this.governance);
     this.cachedSkills = null;
+    this.getRuntimeEventLogService().appendLog('skill', skillId, nextGovernance.eventLog, {
+      level: 'info',
+      message: `Updated skill governance for ${skill.name}`,
+      metadata: {
+        loadPolicy: nextGovernance.loadPolicy,
+        maxFileSizeMb: nextGovernance.eventLog.maxFileSizeMb,
+      },
+      type: 'governance:updated',
+    });
     return { ...skill, governance: nextGovernance };
+  }
+
+  private getRuntimeEventLogService(): RuntimeEventLogService {
+    return this.runtimeEventLogService ?? new RuntimeEventLogService();
   }
 }
 
@@ -59,11 +110,34 @@ function resolveProjectSkillsRoot(): string {
   return path.join(process.cwd(), 'skills');
 }
 
+function resolveSkillGovernancePath(): string {
+  if (process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH) {
+    return path.resolve(process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH);
+  }
+  if (process.env.JEST_WORKER_ID) {
+    return path.join(process.cwd(), 'tmp', `skill-governance.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  }
+  return path.join(process.cwd(), 'tmp', 'skill-governance.server.json');
+}
+
 function readSkillGovernanceFile(filePath: string): SkillGovernanceFile {
   try {
     if (!fs.existsSync(filePath)) {return { skills: {} };}
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as SkillGovernanceFile;
-    return parsed && typeof parsed === 'object' && parsed.skills ? parsed : { skills: {} };
+    if (!parsed || typeof parsed !== 'object' || !parsed.skills) {
+      return { skills: {} };
+    }
+    return {
+      skills: Object.fromEntries(
+        Object.entries(parsed.skills).map(([skillId, governance]) => [
+          skillId,
+          {
+            eventLog: normalizeEventLogSettings(governance?.eventLog),
+            loadPolicy: governance?.loadPolicy ?? DEFAULT_SKILL_GOVERNANCE.loadPolicy,
+          } satisfies SkillGovernanceInfo,
+        ]),
+      ),
+    };
   } catch {
     return { skills: {} };
   }
@@ -91,7 +165,6 @@ async function buildSkillDetail(
   const entryPath = path.relative(root, filePath).split(path.sep).join('/');
   const skillPath = entryPath.replace(/\/SKILL\.md$/i, '');
   const parsed = await parseSkillFile(filePath);
-  const tools = readUnknownObject(parsed.frontmatter.tools);
   const name = typeof parsed.frontmatter.name === 'string' ? parsed.frontmatter.name.trim() : '';
 
   return {
@@ -104,13 +177,9 @@ async function buildSkillDetail(
     sourceKind: kind,
     entryPath,
     promptPreview: parsed.content.replace(/^#+\s+/gm, '').replace(/\s+/g, ' ').trim().slice(0, 160),
-    toolPolicy: {
-      allow: normalizeStringList(tools?.allow),
-      deny: normalizeStringList(tools?.deny),
-    },
     governance: DEFAULT_SKILL_GOVERNANCE,
     assets: sourceFiles
-      .filter((candidate) => path.dirname(candidate) === path.dirname(filePath) && path.basename(candidate) !== 'SKILL.md')
+      .filter((candidate) => candidate.startsWith(`${path.dirname(filePath)}${path.sep}`) && path.basename(candidate) !== 'SKILL.md')
       .map((candidate) => {
         const extension = path.extname(candidate).toLowerCase();
         return {

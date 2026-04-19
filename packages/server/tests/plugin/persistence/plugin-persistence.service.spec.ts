@@ -430,8 +430,24 @@ describe('PluginPersistenceService', () => {
     expect(service.listPlugins()).toEqual([]);
   });
 
-  it('records, filters and pages plugin events in memory', () => {
+  it('records, filters and pages plugin events', () => {
     const service = new PluginPersistenceService();
+
+    service.upsertPlugin({
+      connected: true,
+      defaultEnabled: true,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'builtin.ping',
+        name: 'Builtin Ping',
+        permissions: [],
+        runtime: 'local',
+        tools: [],
+        version: '1.0.0',
+      },
+      pluginId: 'builtin.ping',
+    });
 
     service.recordPluginEvent('builtin.ping', {
       level: 'info',

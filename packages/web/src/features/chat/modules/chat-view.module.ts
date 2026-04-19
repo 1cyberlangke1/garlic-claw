@@ -1,7 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import type {
   AiModelCapabilities,
-  ConversationSkillState,
   ChatMessageMetadata,
   ChatMessagePart,
   ConversationHostServices,
@@ -9,11 +8,9 @@ import type {
 } from '@garlic-claw/shared'
 import {
   loadConversationHostServices,
-  loadConversationSkillState,
   loadModelCapabilities,
   loadVisionFallbackEnabled,
   saveConversationHostServices,
-  saveConversationSkills,
 } from '@/features/chat/composables/chat-view.data'
 import type { useChatStore } from '@/features/chat/store/chat'
 import {
@@ -63,12 +60,10 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   const compacting = ref(false)
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
   const conversationHostServices = ref<ConversationHostServices | null>(null)
-  const conversationSkillState = ref<ConversationSkillState | null>(null)
   const uploadProcessingNotices = ref<UploadNotice[]>([])
   const visionFallbackEnabled = ref(false)
   let capabilityRequestId = 0
   let conversationHostServicesRequestId = 0
-  let conversationSkillRequestId = 0
   const imageFallbackNotice = computed<UploadNotice[]>(() => {
     if (
       pendingImages.value.length === 0 ||
@@ -91,8 +86,14 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     ...uploadProcessingNotices.value,
   ])
   const lastMessageRole = computed(() => {
-    const lastMessage = chat.messages[chat.messages.length - 1]
-    return lastMessage?.role ?? null
+    for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
+      const message = chat.messages[index]
+      if (message.role !== 'display') {
+        return message.role
+      }
+    }
+
+    return null
   })
   const conversationSendDisabledReason = computed(() => {
     if (!chat.currentConversationId) {
@@ -153,7 +154,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     () => chat.currentConversationId,
     async (conversationId) => {
       await refreshConversationHostServices(conversationId)
-      await refreshConversationSkillState(conversationId)
     },
     { immediate: true },
   )
@@ -214,6 +214,13 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     ]
 
     if (parts.length === 0) {
+      return
+    }
+
+    if (pendingImages.value.length === 0 && isContextCompactionCommand(text)) {
+      inputText.value = ''
+      uploadProcessingNotices.value = []
+      await compactConversationContext()
       return
     }
 
@@ -468,43 +475,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     }
   }
 
-  async function refreshConversationSkillState(
-    conversationId: string | null = chat.currentConversationId,
-  ) {
-    const requestId = ++conversationSkillRequestId
-    if (!conversationId) {
-      conversationSkillState.value = null
-      return
-    }
-
-    const state = await loadConversationSkillState(conversationId)
-    if (
-      requestId !== conversationSkillRequestId ||
-      chat.currentConversationId !== conversationId
-    ) {
-      return
-    }
-
-    conversationSkillState.value = state
-  }
-
-  async function updateConversationSkills(activeSkillIds: string[]) {
-    const conversationId = chat.currentConversationId
-    if (!conversationId) {
-      return
-    }
-
-    conversationSkillState.value = await saveConversationSkills(
-      conversationId,
-      activeSkillIds,
-    )
-  }
-
-  async function removeConversationSkill(skillId: string) {
-    const activeSkillIds = conversationSkillState.value?.activeSkillIds ?? []
-    await updateConversationSkills(activeSkillIds.filter((activeId) => activeId !== skillId))
-  }
-
   async function compactConversationContext() {
     if (!chat.currentConversationId || compacting.value) {
       return
@@ -549,7 +519,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     pendingImages,
     selectedCapabilities,
     conversationHostServices,
-    conversationSkillState,
     conversationSendDisabledReason,
     uploadNotices,
     canSend,
@@ -566,7 +535,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     triggerRetryAction,
     setConversationLlmEnabled,
     setConversationSessionEnabled,
-    removeConversationSkill,
     compactConversationContext,
   }
 }
@@ -587,4 +555,8 @@ function matchesPotentialChatCommand(
   pendingImageCount: number,
 ): boolean {
   return pendingImageCount === 0 && /^\/\S+/.test(text.trim())
+}
+
+function isContextCompactionCommand(text: string): boolean {
+  return text === '/compact' || text === '/compress'
 }

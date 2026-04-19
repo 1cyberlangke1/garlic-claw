@@ -63,7 +63,6 @@ describe('PersonaService', () => {
         customErrorMessage: null,
         id: 'builtin.default-assistant',
         prompt: DEFAULT_PERSONA_PROMPT,
-        skillIds: null,
         toolNames: null,
       }),
     )
@@ -120,7 +119,6 @@ describe('PersonaService', () => {
       isDefault: false,
       name: 'Analyst',
       prompt: '你是一个结构化分析助手。',
-      skillIds: ['project/planner'],
       toolNames: ['memory.search'],
     })
     const activated = service.activatePersona({
@@ -136,7 +134,6 @@ describe('PersonaService', () => {
       isDefault: true,
       name: 'Reviewer',
       prompt: '你是一个审稿式分析助手。',
-      skillIds: [],
       toolNames: [],
     })
     expect(
@@ -177,7 +174,6 @@ describe('PersonaService', () => {
         avatar: null,
         customErrorMessage: '当前人格暂时无法完成请求。',
         id: 'persona.analyst',
-        skillIds: ['project/planner'],
         toolNames: ['memory.search'],
       }),
     )
@@ -197,7 +193,6 @@ describe('PersonaService', () => {
         id: 'persona.analyst',
         isDefault: true,
         name: 'Reviewer',
-        skillIds: [],
         toolNames: [],
       }),
     )
@@ -231,7 +226,6 @@ describe('PersonaService', () => {
       isDefault: false,
       name: 'Analyst',
       prompt: '你是一个结构化分析助手。',
-      skillIds: null,
       toolNames: null,
     })
     const avatarPath = path.join(storageRoot, 'persona.analyst', 'avatar.webp')

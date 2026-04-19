@@ -3,9 +3,9 @@
     <section class="skill-hero">
       <header class="skill-hero-header">
         <div>
-          <span class="hero-kicker">技能 Workspace</span>
-          <h1>技能工作台</h1>
-          <p>把高层 workflow / prompt 资产挂到当前会话，不再把编排逻辑散落在聊天输入里。</p>
+          <span class="hero-kicker">Skill Catalog</span>
+          <h1>技能目录</h1>
+          <p>管理宿主可发现的 `SKILL.md` 目录，以及原生 `skill` 工具允许暴露给模型的加载策略。</p>
         </div>
         <div class="hero-actions">
           <button
@@ -17,15 +17,6 @@
           >
             <Icon :icon="refreshBold" class="hero-button-icon" aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            class="hero-button secondary icon-only"
-            title="清空当前会话"
-            :disabled="!chat.currentConversationId || activeCount === 0"
-            @click="clearConversationSkills()"
-          >
-            <Icon :icon="trashBinMinimalisticBold" class="hero-button-icon" aria-hidden="true" />
-          </button>
         </div>
       </header>
 
@@ -36,19 +27,24 @@
           <p>来自项目本地或用户目录的 `SKILL.md` 资产。</p>
         </article>
         <article class="overview-card warning">
-          <span class="overview-label">当前会话已激活</span>
-          <strong>{{ activeCount }}</strong>
-          <p>会话级激活后，会在模型调用前统一注入提示和工具策略。</p>
+          <span class="overview-label">项目技能</span>
+          <strong>{{ projectCount }}</strong>
+          <p>来自仓库内技能目录，适合团队共用。</p>
+        </article>
+        <article class="overview-card neutral">
+          <span class="overview-label">用户技能</span>
+          <strong>{{ userCount }}</strong>
+          <p>来自用户目录，适合个人私有 workflow。</p>
+        </article>
+        <article class="overview-card warning">
+          <span class="overview-label">已拒绝加载</span>
+          <strong>{{ deniedCount }}</strong>
+          <p>这些技能不会被原生 `skill` 工具加载。</p>
         </article>
         <article class="overview-card neutral">
           <span class="overview-label">技能包</span>
           <strong>{{ packageCount }}</strong>
-          <p>其中 {{ restrictedCount }} 个还声明了工具 allow / deny 策略。</p>
-        </article>
-        <article class="overview-card warning">
-          <span class="overview-label">本地脚本信任</span>
-          <strong>{{ scriptCapableCount }}</strong>
-          <p>这些技能在当前会话激活后，允许通过统一技能工具执行本地脚本。</p>
+          <p>其中 {{ executableCount }} 个目录带有可执行脚本资产。</p>
         </article>
       </div>
     </section>
@@ -61,29 +57,32 @@
         v-model:search-keyword="searchKeyword"
         :skills="filteredSkills"
         :loading="loading"
-        :active-skill-ids="conversationSkillState?.activeSkillIds ?? []"
-        :mutating-skill-id="mutatingSkillId"
-        :current-conversation-id="chat.currentConversationId"
-        @toggle-skill="toggleSkill"
       />
 
       <div class="skill-detail-column">
         <SkillDetailPanel
           :skill="selectedSkill"
-          :conversation-id="chat.currentConversationId"
-          :conversation-skill-state="conversationSkillState"
           :mutating-skill-id="mutatingSkillId"
-          @toggle-skill="toggleSkill"
-          @update-trust-level="handleSkillTrustLevelUpdate"
+          @update-load-policy="handleSkillLoadPolicyUpdate"
         />
-        <ToolGovernancePanel
-          source-id="active-packages"
-          source-kind="skill"
-          title="技能工具治理"
-          description="管理 `Active Skill Packages` 这一条技能工具源的启用状态和治理动作。"
-          :show-source-list="false"
-          empty-title="当前没有技能工具源"
-          empty-description="当会话技能包加载后，这里会展示资产读取与脚本执行工具。"
+        <EventLogSettingsPanel
+          v-if="selectedSkill"
+          :settings="selectedSkill.governance.eventLog"
+          :saving="mutatingSkillId === selectedSkill.id"
+          title="技能日志设置"
+          description="当前技能自己的事件日志会写到 log/skills/<skillId>/ 目录。"
+          @save="handleSkillEventLogUpdate"
+        />
+        <EventLogPanel
+          v-if="selectedSkill"
+          title="技能事件日志"
+          description="查看技能最近的加载、拒绝与治理动作记录。"
+          :events="eventLogs"
+          :loading="eventLoading"
+          :query="eventQuery"
+          :next-cursor="eventNextCursor"
+          @refresh="refreshSkillEvents"
+          @load-more="loadMoreSkillEvents"
         />
       </div>
     </div>
@@ -94,36 +93,37 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
-import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalistic-bold'
-import type { SkillTrustLevel } from '@garlic-claw/shared'
+import type { SkillLoadPolicy } from '@garlic-claw/shared'
 import SkillDetailPanel from '@/features/skills/components/SkillDetailPanel.vue'
 import SkillsList from '@/features/skills/components/SkillsList.vue'
+import EventLogPanel from '@/features/tools/components/EventLogPanel.vue'
+import EventLogSettingsPanel from '@/features/tools/components/EventLogSettingsPanel.vue'
 import { useSkillManagement } from '@/features/skills/composables/use-skill-management'
-import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
-import { useChatStore } from '@/features/chat/store/chat'
-
-const chat = useChatStore()
 const {
   loading,
   refreshing,
   error,
   mutatingSkillId,
+  eventLoading,
+  eventLogs,
+  eventQuery,
+  eventNextCursor,
   searchKeyword,
   filteredSkills,
   selectedSkillId,
   selectedSkill,
-  conversationSkillState,
   totalCount,
-  activeCount,
-  restrictedCount,
+  projectCount,
+  userCount,
+  deniedCount,
   packageCount,
-  scriptCapableCount,
+  executableCount,
   selectSkill,
-  toggleSkill,
-  clearConversationSkills,
   updateSkillGovernance,
+  refreshSkillEvents,
+  loadMoreSkillEvents,
   refreshAll,
-} = useSkillManagement(chat)
+} = useSkillManagement()
 
 const selectedSkillIdModel = computed({
   get: () => selectedSkillId.value,
@@ -137,12 +137,22 @@ const selectedSkillIdModel = computed({
   },
 })
 
-function handleSkillTrustLevelUpdate(payload: {
+function handleSkillLoadPolicyUpdate(payload: {
   skillId: string
-  trustLevel: SkillTrustLevel
+  loadPolicy: SkillLoadPolicy
 }) {
   void updateSkillGovernance(payload.skillId, {
-    trustLevel: payload.trustLevel,
+    loadPolicy: payload.loadPolicy,
+  })
+}
+
+function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
+  if (!selectedSkill.value) {
+    return
+  }
+
+  void updateSkillGovernance(selectedSkill.value.id, {
+    eventLog: payload,
   })
 }
 </script>

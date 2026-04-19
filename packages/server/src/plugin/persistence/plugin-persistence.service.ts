@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type {
+  EventLogSettings,
   JsonObject,
   JsonValue,
   ListPluginEventOptions,
@@ -18,9 +19,10 @@ import type {
   PluginScopeSettings,
   PluginStatus,
 } from '@garlic-claw/shared';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PLUGIN_STATUS } from '../plugin.constants';
 import { createPluginConfigSnapshot } from './plugin-read-model';
+import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
 
 export interface RegisteredPluginRemoteRecord {
   access: PluginRemoteAccessConfig;
@@ -34,6 +36,7 @@ export interface RegisteredPluginRecord {
   conversationScopes?: Record<string, boolean>;
   createdAt: string;
   defaultEnabled: boolean;
+  eventLog: EventLogSettings;
   governance: PluginGovernanceInfo;
   lastSeenAt: string | null;
   llmPreference: PluginLlmPreference;
@@ -49,18 +52,18 @@ interface PluginPersistenceFile {
 }
 
 type UpsertPluginRecordInput =
-  Omit<RegisteredPluginRecord, 'createdAt' | 'llmPreference' | 'status' | 'updatedAt'>
-  & Partial<Pick<RegisteredPluginRecord, 'createdAt' | 'llmPreference' | 'status' | 'updatedAt'>>;
+  Omit<RegisteredPluginRecord, 'createdAt' | 'eventLog' | 'llmPreference' | 'status' | 'updatedAt'>
+  & Partial<Pick<RegisteredPluginRecord, 'createdAt' | 'eventLog' | 'llmPreference' | 'status' | 'updatedAt'>>;
 type PluginEventInput = { level: PluginEventLevel; message: string; metadata?: JsonObject; type: string };
 
 @Injectable()
 export class PluginPersistenceService {
-  private eventSequence = 0;
-  private readonly events = new Map<string, PluginEventRecord[]>();
   private readonly records = new Map<string, RegisteredPluginRecord>();
   private readonly storagePath = resolvePluginStatePath();
+  private readonly runtimeEventLogService: RuntimeEventLogService;
 
-  constructor() {
+  constructor(@Optional() runtimeEventLogService?: RuntimeEventLogService) {
+    this.runtimeEventLogService = runtimeEventLogService ?? new RuntimeEventLogService();
     for (const record of loadPersistedPluginRecords(this.storagePath)) {
       this.records.set(record.pluginId, cloneRegisteredPluginRecord(record));
     }
@@ -75,34 +78,26 @@ export class PluginPersistenceService {
   getPluginConfig(pluginId: string): PluginConfigSnapshot { return createPluginConfigSnapshot(this.readMutableRecord(pluginId)); }
   getPluginLlmPreference(pluginId: string): PluginLlmPreference { return { ...this.readMutableRecord(pluginId).llmPreference }; }
   getPluginScope(pluginId: string): PluginScopeSettings { return toPluginScopeSettings(this.readMutableRecord(pluginId)); }
+  getPluginEventLog(pluginId: string): EventLogSettings { return normalizeEventLogSettings(this.readMutableRecord(pluginId).eventLog); }
 
   listPluginEvents(pluginId: string, options: ListPluginEventOptions = {}): PluginEventListResult {
-    const limit = options.limit ?? 50;
-    const filtered = [...(this.events.get(pluginId) ?? [])]
-      .reverse()
-      .filter((event) => !options.level || event.level === options.level)
-      .filter((event) => !options.type || event.type === options.type)
-      .filter((event) => !options.keyword || pluginEventMatchesKeyword(event, options.keyword))
-      .filter((event) => !options.cursor || event.id !== options.cursor);
-    const items = filtered.slice(0, limit);
-    return { items, nextCursor: filtered.length > limit ? items.at(-1)?.id ?? null : null };
+    this.readMutableRecord(pluginId);
+    return this.runtimeEventLogService.listLogs('plugin', pluginId, options);
   }
 
   listPlugins(): RegisteredPluginRecord[] { return [...this.records.values()].map(cloneRegisteredPluginRecord); }
 
   recordPluginEvent(pluginId: string, input: PluginEventInput): PluginEventRecord {
-    const record: PluginEventRecord = {
-      createdAt: new Date().toISOString(),
-      id: `plugin-event-${++this.eventSequence}`,
-      level: input.level,
-      message: input.message,
-      metadata: input.metadata ? { ...input.metadata } : null,
-      type: input.type,
-    };
-    const records = this.events.get(pluginId) ?? [];
-    records.push(record);
-    this.events.set(pluginId, records);
-    return record;
+    const record = this.readMutableRecord(pluginId);
+    return this.runtimeEventLogService.appendLog('plugin', pluginId, record.eventLog, input)
+      ?? {
+        createdAt: new Date().toISOString(),
+        id: `plugin-event-disabled-${Date.now()}`,
+        level: input.level,
+        message: input.message,
+        metadata: input.metadata ? { ...input.metadata } : null,
+        type: input.type,
+      };
   }
 
   setConnectionState(pluginId: string, connected: boolean): RegisteredPluginRecord {
@@ -146,6 +141,7 @@ export class PluginPersistenceService {
       configValues: record.configValues ?? {},
       conversationScopes: record.conversationScopes ?? {},
       createdAt: existing?.createdAt ?? record.createdAt ?? now,
+      eventLog: normalizeEventLogSettings(record.eventLog ?? existing?.eventLog),
       status: record.status ?? (record.connected ? PLUGIN_STATUS.ONLINE : PLUGIN_STATUS.OFFLINE),
       llmPreference: normalizePluginLlmPreference(record.llmPreference ?? existing?.llmPreference),
       manifest,
@@ -190,6 +186,17 @@ export class PluginPersistenceService {
       updatedAt: new Date().toISOString(),
     });
     return { ...normalizedPreference };
+  }
+
+  updatePluginEventLog(pluginId: string, settings: EventLogSettings): EventLogSettings {
+    const current = this.readMutableRecord(pluginId);
+    const normalizedSettings = normalizeEventLogSettings(settings);
+    this.writeRecord({
+      ...current,
+      eventLog: normalizedSettings,
+      updatedAt: new Date().toISOString(),
+    });
+    return { ...normalizedSettings };
   }
 
   private readMutableRecord(pluginId: string): RegisteredPluginRecord { const record = this.records.get(pluginId); if (!record) {throw new NotFoundException(`Plugin not found: ${pluginId}`);} return record; }
@@ -260,7 +267,10 @@ function loadPersistedPluginRecords(storagePath: string): RegisteredPluginRecord
     }
     const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as Partial<PluginPersistenceFile>;
     return Array.isArray(parsed.records)
-      ? parsed.records.map((record) => cloneRegisteredPluginRecord(record))
+      ? parsed.records.map((record) => ({
+          ...cloneRegisteredPluginRecord(record),
+          eventLog: normalizeEventLogSettings(record.eventLog),
+        }))
       : [];
   } catch {
     return [];
@@ -381,9 +391,4 @@ function validateOptionValue(
   if (typeof value !== 'string' || !allowedOptionValues.has(value)) {
     throw new BadRequestException(`配置字段 ${label} 必须命中声明的 options`);
   }
-}
-
-function pluginEventMatchesKeyword(event: PluginEventRecord, keyword: string): boolean {
-  const normalizedKeyword = keyword.toLowerCase();
-  return event.message.toLowerCase().includes(normalizedKeyword) || event.type.toLowerCase().includes(normalizedKeyword) || JSON.stringify(event.metadata ?? {}).toLowerCase().includes(normalizedKeyword);
 }

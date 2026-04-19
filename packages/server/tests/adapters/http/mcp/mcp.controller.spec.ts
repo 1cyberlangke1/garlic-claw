@@ -25,6 +25,9 @@ describe('McpController', () => {
           command: 'npx',
           args: ['-y', '@mariox/weather-mcp-server'],
           env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
         },
       ],
     });
@@ -48,6 +51,9 @@ describe('McpController', () => {
         env: {
           TAVILY_API_KEY: '${TAVILY_API_KEY}',
         },
+        eventLog: {
+          maxFileSizeMb: 1,
+        },
       })
       .mockResolvedValueOnce({
         name: 'tavily-search',
@@ -55,6 +61,9 @@ describe('McpController', () => {
         args: ['dist/index.js'],
         env: {
           TAVILY_API_KEY: '${TAVILY_API_KEY}',
+        },
+        eventLog: {
+          maxFileSizeMb: 1,
         },
       });
 
@@ -95,6 +104,9 @@ describe('McpController', () => {
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
       },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
     });
     expect(mcpService.saveServer).toHaveBeenNthCalledWith(2, {
       name: 'tavily-search',
@@ -102,6 +114,9 @@ describe('McpController', () => {
       args: ['dist/index.js'],
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
+      eventLog: {
+        maxFileSizeMb: 1,
       },
     }, 'tavily');
     expect(mcpService.applyServerConfig).toHaveBeenNthCalledWith(1, {
@@ -111,6 +126,9 @@ describe('McpController', () => {
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
       },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
     });
     expect(mcpService.applyServerConfig).toHaveBeenNthCalledWith(2, {
       name: 'tavily-search',
@@ -118,6 +136,9 @@ describe('McpController', () => {
       args: ['dist/index.js'],
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
+      eventLog: {
+        maxFileSizeMb: 1,
       },
     }, 'tavily');
   });

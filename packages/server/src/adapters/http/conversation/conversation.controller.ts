@@ -5,14 +5,12 @@ import { ConversationMessageLifecycleService } from '../../../conversation/conve
 import { ConversationTaskService } from '../../../conversation/conversation-task.service';
 import { RuntimeHostConversationMessageService } from '../../../runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
-import { SkillSessionService } from '../../../execution/skill/skill-session.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
   CreateConversationDto,
   RetryMessageDto,
   SendMessageDto,
   UpdateConversationHostServicesDto,
-  UpdateConversationSkillsDto,
   UpdateMessageDto,
 } from './conversation.dto';
 
@@ -23,7 +21,6 @@ export class ConversationController {
     private readonly conversationMessageLifecycleService: ConversationMessageLifecycleService,
     private readonly conversationTaskService: ConversationTaskService,
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
-    private readonly skillSessionService: SkillSessionService,
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
   ) {}
 
@@ -50,12 +47,6 @@ export class ConversationController {
 
   @Put('conversations/:id/services')
   updateConversationHostServices(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateConversationHostServicesDto) { return this.runtimeHostConversationRecordService.writeConversationHostServices(id, dto, userId); }
-
-  @Get('conversations/:id/skills')
-  getConversationSkillState(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.skillSessionService.getConversationSkillStateForUser(userId, id); }
-
-  @Put('conversations/:id/skills')
-  updateConversationSkills(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateConversationSkillsDto) { return this.skillSessionService.updateConversationSkillStateForUser(userId, id, dto.activeSkillIds); }
 
   @Post('conversations/:id/messages')
   async sendMessage(

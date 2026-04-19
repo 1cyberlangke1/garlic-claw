@@ -86,7 +86,6 @@ export class PersonaService {
       isDefault: input.isDefault === true,
       name: normalizeRequiredText(input.name, 'name is required'),
       prompt: normalizeRequiredText(input.prompt, 'prompt is required'),
-      skillIds: normalizeNullableIdList(input.skillIds),
       toolNames: normalizeNullableIdList(input.toolNames),
       updatedAt: timestamp,
     }
@@ -107,7 +106,6 @@ export class PersonaService {
       ...(patch.isDefault !== undefined ? { isDefault: patch.isDefault } : {}),
       ...(patch.name !== undefined ? { name: normalizeRequiredText(patch.name, 'name is required') } : {}),
       ...(patch.prompt !== undefined ? { prompt: normalizeRequiredText(patch.prompt, 'prompt is required') } : {}),
-      ...(patch.skillIds !== undefined ? { skillIds: normalizeNullableIdList(patch.skillIds) } : {}),
       ...(patch.toolNames !== undefined ? { toolNames: normalizeNullableIdList(patch.toolNames) } : {}),
       updatedAt: new Date().toISOString(),
     }
@@ -250,7 +248,6 @@ function toPersonaDetail(persona: StoredPersonaRecord): PluginPersonaDetail {
     beginDialogs: persona.beginDialogs.map((entry) => ({ ...entry })),
     customErrorMessage: persona.customErrorMessage,
     prompt: persona.prompt,
-    skillIds: persona.skillIds ? [...persona.skillIds] : null,
     toolNames: persona.toolNames ? [...persona.toolNames] : null,
   }
 }

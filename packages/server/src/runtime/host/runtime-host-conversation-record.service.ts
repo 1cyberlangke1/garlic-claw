@@ -15,7 +15,7 @@ import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 
-export interface RuntimeConversationRecord { activePersonaId?: string; activeSkillIds: string[]; createdAt: string; hostServices: ConversationHostServices; id: string; messages: JsonObject[]; revision: string; revisionVersion: number; title: string; updatedAt: string; userId: string; }
+export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; hostServices: ConversationHostServices; id: string; messages: JsonObject[]; revision: string; revisionVersion: number; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
 
 @Injectable()
@@ -50,8 +50,6 @@ export class RuntimeHostConversationRecordService {
   listPluginConversationSessions(pluginId: string): JsonValue { return [...this.conversationSessions.values()].filter((session) => session.pluginId === pluginId).sort((left, right) => left.startedAt.localeCompare(right.startedAt)).map(serializeConversationSession); }
   readConversationHostServices(conversationId: string, userId?: string): JsonValue { return asJsonValue(this.requireConversation(conversationId, userId).hostServices); }
   readConversationRevision(conversationId: string): string | null { return this.conversations.get(conversationId)?.revision ?? null; }
-
-  readConversationSkillState(conversationId: string, userId?: string): JsonValue { return buildConversationSkillState(this.requireConversation(conversationId, userId)); }
 
   finishPluginConversationSession(pluginId: string, conversationId: string): boolean { return this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId)); }
 
@@ -138,8 +136,6 @@ export class RuntimeHostConversationRecordService {
     }, userId).hostServices);
   }
 
-  writeConversationSkillState(conversationId: string, activeSkillIds: string[], userId?: string): JsonValue { return buildConversationSkillState(this.mutateConversation(conversationId, (current, timestamp) => { current.activeSkillIds = [...activeSkillIds]; this.bumpRevision(current, timestamp); }, userId)); }
-
   writeConversationTitle(conversationId: string, title: string, userId?: string): JsonValue {
     return buildConversationSummary(this.mutateConversation(conversationId, (conversation, timestamp) => { conversation.title = title; this.bumpRevision(conversation, timestamp); }, userId));
   }
@@ -147,7 +143,7 @@ export class RuntimeHostConversationRecordService {
   private bumpRevision(conversation: RuntimeConversationRecord, timestamp: string): void { conversation.updatedAt = timestamp; conversation.revisionVersion += 1; conversation.revision = `${readRevisionSeed(conversation.revision)}:${conversation.revisionVersion}`; }
 
   private createConversationRecord(input: { conversationId: string; timestamp: string; title: string; userId: string }): RuntimeConversationRecord {
-    const conversation: RuntimeConversationRecord = { activeSkillIds: [], createdAt: input.timestamp, hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true }, id: input.conversationId, messages: [], revision: `${input.conversationId}:${input.timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, title: input.title, updatedAt: input.timestamp, userId: input.userId };
+    const conversation: RuntimeConversationRecord = { createdAt: input.timestamp, hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true }, id: input.conversationId, messages: [], revision: `${input.conversationId}:${input.timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, title: input.title, updatedAt: input.timestamp, userId: input.userId };
     this.conversations.set(conversation.id, conversation);
     this.saveConversations();
     return conversation;
@@ -206,10 +202,6 @@ function buildConversationDetail(conversation: RuntimeConversationRecord): JsonV
 }
 
 function buildConversationOverview(conversation: RuntimeConversationRecord): JsonObject { return { _count: { messages: conversation.messages.length }, createdAt: conversation.createdAt, id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt }; }
-
-function buildConversationSkillState(conversation: RuntimeConversationRecord): JsonValue {
-  return { activeSkillIds: [...conversation.activeSkillIds], activeSkills: conversation.activeSkillIds.map((skillId) => ({ id: skillId, name: skillId })) };
-}
 
 function buildConversationSummary(conversation: RuntimeConversationRecord): JsonValue { return { ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}), createdAt: conversation.createdAt, id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt }; }
 
@@ -490,6 +482,9 @@ function estimateConversationHistoryTextBytes(messages: JsonObject[]): number {
 }
 
 function readConversationHistoryMessageText(message: JsonObject): string {
+  if (typeof message.role === 'string' && message.role === 'display') {
+    return '';
+  }
   const partText = Array.isArray(message.parts)
     ? (message.parts as unknown[])
       .flatMap((part) => {

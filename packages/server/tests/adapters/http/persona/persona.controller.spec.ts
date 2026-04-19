@@ -87,7 +87,6 @@ describe('PersonaController', () => {
       isDefault: false,
       name: 'Writer',
       prompt: 'Write clearly.',
-      skillIds: null,
       toolNames: ['memory.search'],
     });
     personaService.createPersona.mockReturnValue({
@@ -99,7 +98,6 @@ describe('PersonaController', () => {
       isDefault: false,
       name: 'Writer',
       prompt: 'Write clearly.',
-      skillIds: null,
       toolNames: ['memory.search'],
     });
     personaService.updatePersona.mockReturnValue({
@@ -111,7 +109,6 @@ describe('PersonaController', () => {
       isDefault: true,
       name: 'Reviewer',
       prompt: 'Review critically.',
-      skillIds: [],
       toolNames: [],
     });
     personaService.deletePersona.mockReturnValue({
@@ -143,7 +140,6 @@ describe('PersonaController', () => {
       isDefault: true,
       name: 'Reviewer',
       prompt: 'Review critically.',
-      skillIds: [],
       toolNames: [],
     } as never)).resolves.toEqual(
       expect.objectContaining({

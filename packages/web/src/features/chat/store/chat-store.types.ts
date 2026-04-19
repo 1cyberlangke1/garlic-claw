@@ -1,6 +1,7 @@
 import type {
   ChatMessageMetadata,
   ChatMessagePart,
+  ChatMessageRole,
   ChatMessageStatus,
 } from '@garlic-claw/shared'
 
@@ -9,7 +10,7 @@ import type {
  */
 export interface ChatMessage {
   id?: string
-  role: 'user' | 'assistant' | 'system'
+  role: ChatMessageRole
   content: string
   parts?: ChatMessagePart[]
   toolCalls?: Array<{ toolName: string; input: string }>

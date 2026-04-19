@@ -22,6 +22,7 @@ export function buildPluginInfo(record: RegisteredPluginRecord, supportedActions
     connected: record.connected,
     defaultEnabled: record.defaultEnabled,
     createdAt: record.createdAt,
+    eventLog: { ...record.eventLog },
     ...(record.manifest.description ? { description: record.manifest.description } : {}),
     displayName: record.manifest.name,
     governance: record.governance,
@@ -62,6 +63,7 @@ export function buildPluginSelfSummary(record: RegisteredPluginRecord): JsonObje
   return {
     connected: record.connected,
     defaultEnabled: record.defaultEnabled,
+    eventLog: { ...record.eventLog } as unknown as JsonObject,
     ...(record.manifest.description ? { description: record.manifest.description } : {}),
     governance: record.governance as unknown as JsonObject,
     id: record.manifest.id,

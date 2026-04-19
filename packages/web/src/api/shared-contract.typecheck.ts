@@ -144,6 +144,9 @@ const pluginInfo: PluginInfo = {
     },
   },
   supportedActions: ['health-check', 'reload'],
+  eventLog: {
+    maxFileSizeMb: 1,
+  },
   lastSeenAt: '2026-03-26T00:00:00.000Z',
   createdAt: '2026-03-26T00:00:00.000Z',
   updatedAt: '2026-03-26T00:00:00.000Z',

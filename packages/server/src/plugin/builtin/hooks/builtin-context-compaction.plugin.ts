@@ -180,7 +180,9 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
         action: 'mutate',
         messages: [
           ...prefixMessages,
-          ...effectiveMessages.map(toPluginLlmMessage),
+          ...buildEffectiveModelConversationHistory(history.messages, {
+            omitTrailingPendingAssistant: true,
+          }).map(toPluginLlmMessage),
         ],
       } as unknown as JsonValue;
     },
@@ -257,7 +259,9 @@ async function runContextCompaction(input: {
     omitTrailingPendingAssistant: input.trigger === 'prepare-model',
   });
   const beforePreview = await input.host.previewConversationHistory({
-    messages: effectiveMessages,
+    messages: buildEffectiveModelConversationHistory(input.history.messages, {
+      omitTrailingPendingAssistant: input.trigger === 'prepare-model',
+    }),
   });
   const target = await resolveCompactionTarget({
     host: input.host,
@@ -337,7 +341,7 @@ async function runContextCompaction(input: {
     summaryText,
   });
   const afterPreview = await input.host.previewConversationHistory({
-    messages: buildEffectiveConversationHistory(predictedMessages, {
+    messages: buildEffectiveModelConversationHistory(predictedMessages, {
       omitTrailingPendingAssistant: input.trigger === 'prepare-model',
     }),
   });
@@ -411,6 +415,24 @@ function buildEffectiveConversationHistory(
   return options.omitTrailingPendingAssistant
     ? stripTrailingPendingAssistant(filteredMessages)
     : filteredMessages;
+}
+
+function buildEffectiveModelConversationHistory(
+  messages: PluginConversationHistoryMessage[],
+  options: {
+    omitTrailingPendingAssistant?: boolean;
+  } = {},
+): PluginConversationHistoryMessage[] {
+  return buildEffectiveConversationHistory(messages, options).flatMap((message) => {
+    if (message.role === 'display') {
+      return readContextCompactionSummaryAnnotation(message)
+        ? [{ ...message, role: 'assistant' }]
+        : [];
+    }
+    return message.role === 'assistant' || message.role === 'user' || message.role === 'system'
+      ? [message]
+      : [];
+  });
 }
 
 function buildSummarySource(messages: PluginConversationHistoryMessage[]): string {
@@ -530,7 +552,7 @@ function applyContextCompaction(input: {
       },
     ],
     provider: null,
-    role: 'assistant',
+    role: 'display',
     status: 'completed',
     updatedAt: input.createdAt,
   });
@@ -712,7 +734,7 @@ function toPluginLlmMessage(message: PluginConversationHistoryMessage): PluginLl
     content: message.parts?.length
       ? message.parts
       : message.content ?? '',
-    role: message.role === 'assistant' ? 'assistant' : 'user',
+    role: message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user',
   };
 }
 

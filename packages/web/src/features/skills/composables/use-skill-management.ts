@@ -1,20 +1,16 @@
-import { computed, ref, watch } from 'vue'
-import type {
-  ConversationSkillState,
-  SkillDetail,
-  UpdateSkillGovernancePayload,
-} from '@garlic-claw/shared'
+import { computed, ref, shallowRef, watch } from 'vue'
+import type { EventLogQuery, EventLogRecord, UpdateSkillGovernancePayload, SkillDetail } from '@garlic-claw/shared'
 import { useAsyncState } from '@/composables/use-async-state'
-import type { useChatStore } from '@/features/chat/store/chat'
 import {
-  loadConversationSkillState,
+  dedupeEventLogs,
+  loadSkillEvents,
   loadSkillCatalog,
+  normalizeEventLogQuery,
   refreshSkillCatalog,
-  saveConversationSkills,
   saveSkillGovernance,
 } from './skill-management.data'
 
-export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
+export function useSkillManagement() {
   const requestState = useAsyncState(false)
   const loading = requestState.loading
   const error = requestState.error
@@ -23,9 +19,11 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
   const searchKeyword = ref('')
   const skills = ref<SkillDetail[]>([])
   const selectedSkillId = ref<string | null>(null)
-  const conversationSkillState = ref<ConversationSkillState | null>(null)
   const mutatingSkillId = ref<string | null>(null)
-  let conversationSkillRequestId = 0
+  const eventLoading = ref(false)
+  const eventLogs = shallowRef<EventLogRecord[]>([])
+  const eventQuery = shallowRef<EventLogQuery>({ limit: 50 })
+  const eventNextCursor = ref<string | null>(null)
 
   const filteredSkills = computed(() => {
     const keyword = searchKeyword.value.trim().toLowerCase()
@@ -55,26 +53,36 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
     return filteredSkills.value[0] ?? skills.value[0] ?? null
   })
   const totalCount = computed(() => skills.value.length)
-  const activeCount = computed(() => conversationSkillState.value?.activeSkillIds.length ?? 0)
-  const restrictedCount = computed(() =>
-    skills.value.filter((skill) => skill.toolPolicy.allow.length > 0 || skill.toolPolicy.deny.length > 0).length,
+  const projectCount = computed(() =>
+    skills.value.filter((skill) => skill.sourceKind === 'project').length,
+  )
+  const userCount = computed(() =>
+    skills.value.filter((skill) => skill.sourceKind === 'user').length,
+  )
+  const deniedCount = computed(() =>
+    skills.value.filter((skill) => skill.governance.loadPolicy === 'deny').length,
   )
   const packageCount = computed(() =>
     skills.value.filter((skill) => skill.assets.length > 0).length,
   )
-  const scriptCapableCount = computed(() =>
-    skills.value.filter((skill) => skill.governance.trustLevel === 'local-script').length,
-  )
-
-  watch(
-    () => chat.currentConversationId,
-    async (conversationId) => {
-      await refreshConversationSkillState(conversationId)
-    },
-    { immediate: true },
+  const executableCount = computed(() =>
+    skills.value.filter((skill) => skill.assets.some((asset) => asset.executable)).length,
   )
 
   void loadSkills()
+
+  watch(
+    selectedSkill,
+    async (skill) => {
+      if (!skill) {
+        eventLogs.value = []
+        eventNextCursor.value = null
+        return
+      }
+      await refreshSkillEvents()
+    },
+    { immediate: true },
+  )
 
   function replaceSkills(nextSkills: SkillDetail[]) {
     skills.value = nextSkills
@@ -100,28 +108,11 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
 
     try {
       replaceSkills(await refreshSkillCatalog())
-      await refreshConversationSkillState(chat.currentConversationId)
     } catch (cause) {
       requestState.setError(cause, '刷新技能失败')
     } finally {
       refreshing.value = false
     }
-  }
-
-  async function toggleSkill(skillId: string) {
-    const currentIds = conversationSkillState.value?.activeSkillIds ?? []
-    const activeSet = new Set(currentIds)
-    if (activeSet.has(skillId)) {
-      activeSet.delete(skillId)
-    } else {
-      activeSet.add(skillId)
-    }
-
-    await persistConversationSkills([...activeSet])
-  }
-
-  async function clearConversationSkills() {
-    await persistConversationSkills([])
   }
 
   function selectSkill(skillId: string) {
@@ -138,7 +129,6 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
     try {
       const updated = await saveSkillGovernance(skillId, patch)
       replaceSkills(applySkillUpdate(skills.value, updated))
-      await refreshConversationSkillState(chat.currentConversationId)
     } catch (cause) {
       requestState.setError(cause, '更新技能治理失败')
     } finally {
@@ -148,44 +138,51 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
     }
   }
 
-  async function persistConversationSkills(activeSkillIds: string[]) {
-    const conversationId = chat.currentConversationId
-    if (!conversationId) {
+  async function refreshSkillEvents(query: EventLogQuery = eventQuery.value) {
+    if (!selectedSkill.value) {
+      eventLogs.value = []
+      eventQuery.value = normalizeEventLogQuery(query)
+      eventNextCursor.value = null
       return
     }
 
+    eventLoading.value = true
     requestState.clearError()
-
     try {
-      conversationSkillState.value = await saveConversationSkills(
-        conversationId,
-        activeSkillIds,
-      )
+      const normalized = normalizeEventLogQuery(query)
+      const result = await loadSkillEvents(selectedSkill.value.id, normalized)
+      eventQuery.value = normalized
+      eventLogs.value = result.items
+      eventNextCursor.value = result.nextCursor
     } catch (cause) {
-      requestState.setError(cause, '更新当前会话技能失败')
+      requestState.setError(cause, '加载技能事件日志失败')
+    } finally {
+      eventLoading.value = false
     }
   }
 
-  async function refreshConversationSkillState(
-    conversationId: string | null = chat.currentConversationId,
-  ) {
-    const requestId = ++conversationSkillRequestId
-    if (!conversationId) {
-      conversationSkillState.value = null
+  async function loadMoreSkillEvents(query?: EventLogQuery) {
+    const normalized = normalizeEventLogQuery(query ?? eventQuery.value)
+    const cursor = query?.cursor ?? eventNextCursor.value
+    if (!selectedSkill.value || !cursor) {
       return
     }
 
-    const state = await loadConversationSkillState(conversationId)
-    if (isConversationSkillRequestStale(
-      requestId,
-      conversationSkillRequestId,
-      conversationId,
-      chat.currentConversationId,
-    )) {
-      return
+    eventLoading.value = true
+    requestState.clearError()
+    try {
+      const result = await loadSkillEvents(selectedSkill.value.id, {
+        ...normalized,
+        cursor,
+      })
+      eventQuery.value = normalized
+      eventLogs.value = dedupeEventLogs([...eventLogs.value, ...result.items])
+      eventNextCursor.value = result.nextCursor
+    } catch (cause) {
+      requestState.setError(cause, '加载更多技能事件日志失败')
+    } finally {
+      eventLoading.value = false
     }
-
-    conversationSkillState.value = state
   }
 
   return {
@@ -194,21 +191,25 @@ export function useSkillManagement(chat: ReturnType<typeof useChatStore>) {
     error,
     appError,
     mutatingSkillId,
+    eventLoading,
+    eventLogs,
+    eventQuery,
+    eventNextCursor,
     searchKeyword,
     skills,
     filteredSkills,
     selectedSkillId,
     selectedSkill,
-    conversationSkillState,
     totalCount,
-    activeCount,
-    restrictedCount,
+    projectCount,
+    userCount,
+    deniedCount,
     packageCount,
-    scriptCapableCount,
+    executableCount,
     selectSkill,
-    toggleSkill,
-    clearConversationSkills,
     updateSkillGovernance,
+    refreshSkillEvents,
+    loadMoreSkillEvents,
     refreshAll,
   }
 }
@@ -233,13 +234,4 @@ function replaceSelectedSkillId(
   }
 
   return skills[0]?.id ?? null
-}
-
-function isConversationSkillRequestStale(
-  requestId: number,
-  activeRequestId: number,
-  requestedConversationId: string,
-  currentConversationId: string | null,
-): boolean {
-  return requestId !== activeRequestId || currentConversationId !== requestedConversationId
 }

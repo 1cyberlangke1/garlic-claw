@@ -69,7 +69,6 @@ function createPersonaDetail(id: string, name = id): PluginPersonaDetail {
     beginDialogs: [],
     customErrorMessage: null,
     prompt: `${name} prompt`,
-    skillIds: null,
     toolNames: null,
   }
 }
@@ -169,7 +168,6 @@ describe('usePersonaSettings', () => {
       ...createPersonaDetail('persona.reviewer', 'Reviewer'),
       beginDialogs: [{ content: '先列提纲。', role: 'assistant' }],
       customErrorMessage: '当前人格暂时无法完成请求。',
-      skillIds: ['project/planner'],
       toolNames: ['memory.search'],
     })
 
@@ -180,8 +178,6 @@ describe('usePersonaSettings', () => {
     state.editorDraft.value.prompt = 'Review critically.'
     state.editorDraft.value.description = '审稿人格'
     state.editorDraft.value.customErrorMessage = '当前人格暂时无法完成请求。'
-    state.editorDraft.value.skillMode = 'selected'
-    state.editorDraft.value.skillInput = 'project/planner'
     state.editorDraft.value.toolMode = 'selected'
     state.editorDraft.value.toolInput = 'memory.search'
     state.addBeginDialog()
@@ -197,7 +193,6 @@ describe('usePersonaSettings', () => {
       isDefault: false,
       name: 'Reviewer',
       prompt: 'Review critically.',
-      skillIds: ['project/planner'],
       toolNames: ['memory.search'],
     })
     expect(state.editorMode.value).toBe('edit')

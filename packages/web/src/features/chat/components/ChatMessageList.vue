@@ -248,7 +248,7 @@
                 修改
               </button>
               <button
-                v-else
+                v-else-if="row.message.role === 'assistant'"
                 type="button"
                 class="action-text retry-text"
                 @click="emit('retry-message', row.message.id)"
@@ -590,6 +590,9 @@ function getRoleLabel(message: ChatMessage): string {
   if (message.role === "user") {
     return "用户";
   }
+  if (message.role === "display") {
+    return "摘要";
+  }
 
   const assistantName = props.assistantPersona?.name?.trim();
   return assistantName ? assistantName.slice(0, 1) : "AI";
@@ -598,6 +601,9 @@ function getRoleLabel(message: ChatMessage): string {
 function readRoleTitle(message: ChatMessage): string {
   if (message.role === "user") {
     return "用户";
+  }
+  if (message.role === "display") {
+    return "仅展示消息";
   }
 
   return props.assistantPersona?.name?.trim() || "AI";

@@ -1,5 +1,6 @@
 import type {
   AiProviderSummary,
+  EventLogSettings,
   PluginActionName,
   PluginConfigSnapshot,
   PluginConversationSessionInfo,
@@ -35,6 +36,7 @@ import {
   runPluginAction,
   setPluginStorage,
   updatePluginConfig,
+  updatePluginEventLog,
   updatePluginLlmPreference,
   updatePluginRemoteAccess,
   updatePluginScope,
@@ -134,6 +136,13 @@ export function savePluginLlmPreference(
   preference: PluginLlmPreference,
 ) {
   return updatePluginLlmPreference(pluginName, preference)
+}
+
+export function savePluginEventLog(
+  pluginName: string,
+  settings: EventLogSettings,
+) {
+  return updatePluginEventLog(pluginName, settings)
 }
 
 export function savePluginStorageEntry(

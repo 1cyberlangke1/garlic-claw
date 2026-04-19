@@ -7,7 +7,7 @@ import { AutomationService } from '../../execution/automation/automation.service
 import { McpConfigStoreService } from '../../execution/mcp/mcp-config-store.service';
 import { McpService } from '../../execution/mcp/mcp.service';
 import { SKILL_DISCOVERY_OPTIONS, SkillRegistryService } from '../../execution/skill/skill-registry.service';
-import { SkillSessionService } from '../../execution/skill/skill-session.service';
+import { SkillToolService } from '../../execution/skill/skill-tool.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { PersonaService } from '../../persona/persona.service';
 import { PersonaStoreService } from '../../persona/persona-store.service';
@@ -24,6 +24,7 @@ import { RuntimeHostService } from './runtime-host.service';
 import { RuntimeHostSubagentRunnerService } from './runtime-host-subagent-runner.service';
 import { RuntimeHostSubagentTaskStoreService } from './runtime-host-subagent-task-store.service';
 import { RuntimeHostUserContextService } from './runtime-host-user-context.service';
+import { RuntimeEventLogService } from '../log/runtime-event-log.service';
 
 @Module({
   imports: [PluginModule, RuntimeGatewayModule, RuntimeKernelModule],
@@ -44,6 +45,7 @@ import { RuntimeHostUserContextService } from './runtime-host-user-context.servi
     AiVisionService,
     RuntimeHostConversationMessageService,
     RuntimeHostConversationRecordService,
+    RuntimeEventLogService,
     RuntimeHostKnowledgeService,
     RuntimeHostPluginDispatchService,
     RuntimeHostPluginRuntimeService,
@@ -52,10 +54,10 @@ import { RuntimeHostUserContextService } from './runtime-host-user-context.servi
     RuntimeHostSubagentTaskStoreService,
     RuntimeHostUserContextService,
     SkillRegistryService,
-    SkillSessionService,
+    SkillToolService,
     ToolRegistryService,
   ],
-  exports: [AiModelExecutionService, AiManagementService, AiProviderSettingsService, AiVisionService, AutomationService, McpService, PersonaService, PersonaStoreService, RuntimeHostConversationMessageService, RuntimeHostConversationRecordService, RuntimeHostKnowledgeService, RuntimeHostPluginDispatchService, RuntimeHostPluginRuntimeService, RuntimeHostSubagentRunnerService, RuntimeHostService, RuntimeHostUserContextService, SkillRegistryService, SkillSessionService, ToolRegistryService],
+  exports: [AiModelExecutionService, AiManagementService, AiProviderSettingsService, AiVisionService, AutomationService, McpService, PersonaService, PersonaStoreService, RuntimeEventLogService, RuntimeHostConversationMessageService, RuntimeHostConversationRecordService, RuntimeHostKnowledgeService, RuntimeHostPluginDispatchService, RuntimeHostPluginRuntimeService, RuntimeHostSubagentRunnerService, RuntimeHostService, RuntimeHostUserContextService, SkillRegistryService, SkillToolService, ToolRegistryService],
 })
 export class RuntimeHostModule implements OnModuleInit {
   constructor(private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService) {}

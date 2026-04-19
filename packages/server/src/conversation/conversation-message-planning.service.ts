@@ -1,7 +1,6 @@
 import type { ChatMessagePart, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
-import { SkillSessionService } from '../execution/skill/skill-session.service';
 import { ToolRegistryService } from '../execution/tool/tool-registry.service';
 import { PersonaService } from '../persona/persona.service';
 import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
@@ -38,7 +37,7 @@ export type MessageReceivedPlanningResult =
 
 @Injectable()
 export class ConversationMessagePlanningService {
-  constructor(private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiVisionService: AiVisionService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly personaService: PersonaService, private readonly skillSessionService: SkillSessionService, private readonly toolRegistryService: ToolRegistryService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService) {}
+  constructor(private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiVisionService: AiVisionService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly personaService: PersonaService, private readonly toolRegistryService: ToolRegistryService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService) {}
 
   async applyMessageReceived(input: { activePersonaId?: string; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }): Promise<MessageReceivedPlanningResult> {
     const result = await runDispatchableHookChain<
@@ -76,7 +75,7 @@ export class ConversationMessagePlanningService {
         };
   }
 
-  async createStreamPlan(input: { activePersonaId?: string; abortSignal: AbortSignal; conversationId: string; messageId: string; modelId: string; persona?: { beginDialogs: Array<{ content: string; role: 'assistant' | 'user' }>; customErrorMessage: string | null; personaId: string; prompt: string; skillIds: string[] | null; toolNames: string[] | null }; providerId: string; userId?: string }): Promise<ConversationStreamPlan> {
+  async createStreamPlan(input: { activePersonaId?: string; abortSignal: AbortSignal; conversationId: string; messageId: string; modelId: string; persona?: { beginDialogs: Array<{ content: string; role: 'assistant' | 'user' }>; customErrorMessage: string | null; personaId: string; prompt: string; toolNames: string[] | null }; providerId: string; userId?: string }): Promise<ConversationStreamPlan> {
     const persona = input.persona ?? this.personaService.readCurrentPersona({
       context: {
         activePersonaId: input.activePersonaId,
@@ -105,11 +104,7 @@ export class ConversationMessagePlanningService {
     if (!beforeModel) {throw new BadRequestException('Invalid before-model hook result');}
     if (beforeModel.action === 'short-circuit') {return { modelId: beforeModel.modelId, providerId: beforeModel.providerId, responseSource: 'short-circuit', shortCircuitParts: beforeModel.assistantParts, stream: createShortCircuitStream(beforeModel.assistantContent) };}
     if (beforeModel.action !== 'continue') {throw new BadRequestException('Invalid before-model hook result');}
-    const skillContext = await this.skillSessionService.getConversationSkillContext(input.conversationId, {
-      allowedSkillIds: persona.skillIds,
-    });
-    const allowedToolNames = mergeAllowedToolNames(skillContext.allowedToolNames, persona.toolNames);
-    const tools = await this.toolRegistryService.buildToolSet({ allowedToolNames: allowedToolNames ?? undefined, context: createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId }) });
+    const tools = await this.toolRegistryService.buildToolSet({ allowedToolNames: persona.toolNames ?? undefined, context: createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId }) });
     const modelId = beforeModel.modelId === DEFAULT_PROVIDER_MODEL_ID ? undefined : beforeModel.modelId;
     const providerId = beforeModel.providerId === DEFAULT_PROVIDER_ID ? undefined : beforeModel.providerId;
     const stream = this.aiModelExecutionService.streamText({
@@ -118,8 +113,8 @@ export class ConversationMessagePlanningService {
       ...(modelId ? { modelId } : {}),
       messages: beforeModel.messages,
       ...(providerId ? { providerId } : {}),
-      ...((beforeModel.systemPrompt || skillContext.systemPrompt)
-        ? { system: [beforeModel.systemPrompt, skillContext.systemPrompt].filter(Boolean).join('\n\n') }
+      ...(beforeModel.systemPrompt
+        ? { system: beforeModel.systemPrompt }
         : {}),
       ...(tools ? { tools } : {}),
     });
@@ -206,14 +201,6 @@ export function createShortCircuitStream(content: string) {
     finishReason: 'short-circuit',
     fullStream: (async function* () { if (normalized) {yield { text: normalized, type: 'text-delta' as const };} })(),
   };
-}
-
-function mergeAllowedToolNames(left: string[] | null, right: string[] | null): string[] | null {
-  if (left === null && right === null) {return null;}
-  if (left === null) {return right ? [...right] : [];}
-  if (right === null) {return [...left];}
-  const rightSet = new Set(right);
-  return left.filter((toolName) => rightSet.has(toolName));
 }
 
 function createConversationHookContext(input: { activePersonaId?: string; conversationId?: string; modelId?: string; providerId?: string; userId?: string }): PluginCallContext {
