@@ -16,12 +16,16 @@
   - 插件配置已从扁平 `fields[]` 收口为 object-tree 声明式协议，主语义覆盖 section/object/items、`hint / obvious_hint / options / condition / collapsed / _special`。
   - `shared / plugin-sdk / server / web` 已统一到新协议；宿主可以按 schema 渲染配置 UI，server 会按新协议生成快照并递归校验。
   - 受影响 build、lint、server smoke、web smoke 与独立 judge 已通过。
+- `[已完成] N15 模型上下文长度与 usage 估算`：
+  - `AiModelConfig` 已新增 `contextLength`，默认值为 `128 * 1024`；模型能力与上下文长度会持久化到 AI 设置文件。
+  - usage 已收口到统一模型执行层：优先读取 AI SDK 统一字段，缺失时按 `ceil(utf8Bytes / 4)` 估算，并统一返回稳定 usage 结构。
+  - 前端 AI 设置页已支持真实编辑 `contextLength`；provider 整体保存会清理被移除模型的陈旧元数据，定向测试、server smoke、web smoke 与独立 judge 已通过。
 - `[已完成] N16 插件化上下文压缩（参考 OpenCode / AstrBot）`：
   - 已通过通用 Host API `conversation.history.get / preview / replace`、通用 `metadata.annotations[]` 与确定性 hook 顺序完成插件化上下文压缩，不给宿主增加压缩专用后门。
   - `builtin.context-compaction` 已支持自动压缩、手动压缩、正式摘要消息写回、送模视图裁剪，以及 assistant 消息上方默认折叠的压缩摘要展示。
   - 受影响定向测试、`smoke:server`、`smoke:web-ui`、`lint` 与独立 judge 已 fresh 通过；期间暴露的 state 权限缺口和浏览器 smoke 脆弱点都已修复。
 
-## 阶段候选：[待开始] N14 远程插件静态接入密钥与元数据缓存
+## 当前阶段：[进行中] N14 远程插件静态接入密钥与元数据缓存
 
 ### 目标
 
@@ -185,11 +189,6 @@
 - `reload / reconnect / 元数据刷新` 能触发缓存更新。
 - 模拟 IoT 远程插件的 smoke 链路 fresh 通过。
 - 受影响测试、构建与 smoke fresh 通过。
-
-- `[已完成] N15 模型上下文长度与 usage 估算`：
-  - `AiModelConfig` 已新增 `contextLength`，默认值为 `128 * 1024`；模型能力与上下文长度会持久化到 AI 设置文件。
-  - usage 已收口到统一模型执行层：优先读取 AI SDK 统一字段，缺失时按 `ceil(utf8Bytes / 4)` 估算，并统一返回稳定 usage 结构。
-  - 前端 AI 设置页已支持真实编辑 `contextLength`；provider 整体保存会清理被移除模型的陈旧元数据，定向测试、server smoke、web smoke 与独立 judge 已通过。
 
 ## 固定约束
 
