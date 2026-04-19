@@ -302,6 +302,19 @@ async function runChatFlow(page, accessToken) {
     return latestText.includes(`${PREFIX} chat message`) ? latestText : null;
   }, '等待前端展示 AI 回复');
 
+  const compactRequest = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().includes('/api/plugin-routes/builtin.context-compaction/context-compaction/run'),
+  );
+  await composer.fill('/compact');
+  await page.locator('.send-button').click();
+  const compactResponse = await compactRequest;
+  assert.equal(compactResponse.ok(), true, '手动上下文压缩请求失败');
+  await waitFor(async () => {
+    const detail = await getConversationDetail(accessToken, conversation.id);
+    return detail.messages.some((message) => message.content === '/compact') ? null : true;
+  }, '等待 /compact 不写入会话历史');
+
   return conversation.id;
 }
 

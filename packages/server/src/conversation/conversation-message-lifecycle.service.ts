@@ -63,10 +63,11 @@ export class ConversationMessageLifecycleService {
     if (received.action !== 'short-circuit') {
       assertConversationLlmEnabled(conversation);
     }
+    const commandDisplayOnly = isDisplayOnlyCommandMessage(received.content, received.parts);
     const userMessage = await this.runtimeHostConversationMessageService.createMessageWithHooks(conversationId, {
       content: received.content,
       parts: received.parts,
-      role: 'user',
+      role: commandDisplayOnly ? 'display' : 'user',
       status: 'completed',
     }, conversation.userId, this.runtimeHostPluginDispatchService);
     const assistantMessage = this.runtimeHostConversationMessageService.createMessage(conversationId, {
@@ -74,7 +75,7 @@ export class ConversationMessageLifecycleService {
       model: received.modelId,
       parts: [],
       provider: received.providerId,
-      role: 'assistant',
+      role: commandDisplayOnly ? 'display' : 'assistant',
       status: 'pending',
     });
     const assistantMessageId = readMessageId(assistantMessage);
@@ -183,4 +184,10 @@ function assertConversationSessionEnabled(conversation: { hostServices: { sessio
 
 function assertConversationLlmEnabled(conversation: { hostServices: { llmEnabled?: boolean } }): void {
   if (!conversation.hostServices.llmEnabled) {throw new BadRequestException('当前会话已关闭 LLM 自动回复');}
+}
+
+function isDisplayOnlyCommandMessage(content: string, parts: ChatMessagePart[]): boolean {
+  const normalized = content.trim();
+  return normalized.startsWith('/')
+    && !parts.some((part) => part.type !== 'text');
 }
