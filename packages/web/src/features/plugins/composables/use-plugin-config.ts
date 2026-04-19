@@ -1,6 +1,7 @@
 import { ref, shallowRef, type ComputedRef, type Ref } from 'vue'
 import type {
   AiProviderSummary,
+  EventLogSettings,
   PluginConfigSnapshot,
   PluginInfo,
   PluginLlmPreference,
@@ -10,6 +11,7 @@ import type {
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
 import {
   savePluginConfig as savePluginConfigRequest,
+  savePluginEventLog as savePluginEventLogRequest,
   savePluginLlmPreference as savePluginLlmPreferenceRequest,
   savePluginRemoteAccess as savePluginRemoteAccessRequest,
   savePluginScope as savePluginScopeRequest,
@@ -30,6 +32,7 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
   const savingLlmPreference = ref(false)
   const savingRemoteAccess = ref(false)
   const savingScope = ref(false)
+  const savingEventLog = ref(false)
   const configSnapshot = shallowRef<PluginConfigSnapshot | null>(null)
   const llmPreference = shallowRef<PluginLlmPreference | null>(null)
   const llmProviders = shallowRef<AiProviderSummary[]>([])
@@ -145,8 +148,30 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     }
   }
 
+  async function saveEventLog(settings: EventLogSettings) {
+    if (!options.selectedPlugin.value) {
+      return
+    }
+
+    const pluginName = options.selectedPlugin.value.name
+    savingEventLog.value = true
+    options.error.value = null
+    options.notice.value = null
+    try {
+      await savePluginEventLogRequest(pluginName, settings)
+      options.notice.value = '插件日志设置已保存'
+      await options.reloadPluginListSilently()
+      await options.refreshSelectedDetails(pluginName)
+    } catch (caughtError) {
+      options.error.value = toErrorMessage(caughtError, '保存插件日志设置失败')
+    } finally {
+      savingEventLog.value = false
+    }
+  }
+
   return {
     savingConfig,
+    savingEventLog,
     savingLlmPreference,
     savingRemoteAccess,
     savingScope,
@@ -158,6 +183,7 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     applyDetailSnapshot,
     clearDetailState,
     saveConfig,
+    saveEventLog,
     saveLlmPreference,
     saveRemoteAccess,
     saveScope,

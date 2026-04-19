@@ -1,34 +1,81 @@
 import type { ChatMessagePart, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
-import { SkillSessionService } from '../execution/skill/skill-session.service';
 import { ToolRegistryService } from '../execution/tool/tool-registry.service';
 import { PersonaService } from '../persona/persona.service';
 import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-plugin-dispatch.service';
 import { asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/runtime-host-values';
+import type { DispatchableHookChainResult } from '../runtime/kernel/runtime-plugin-hook-governance';
 import { applyMutatingDispatchableHooks, listDispatchableHookPluginIds, runDispatchableHookChain } from '../runtime/kernel/runtime-plugin-hook-governance';
 import { AiVisionService } from '../vision/ai-vision.service';
 import type { CompletedConversationTaskResult, ResolvedConversationTaskStreamSource } from './conversation-task.service';
 
 export type ConversationResponseSource = 'model' | 'short-circuit';
 export type ConversationStreamPlan = ResolvedConversationTaskStreamSource & { responseSource: ConversationResponseSource; shortCircuitParts: ChatMessagePart[] | null };
+export type MessageReceivedPlanningResult =
+  | {
+      action: 'continue';
+      content: string;
+      conversationId: string;
+      modelId: string;
+      parts: ChatMessagePart[];
+      providerId: string;
+      userId?: string;
+    }
+  | {
+      action: 'short-circuit';
+      assistantContent: string;
+      assistantParts: ChatMessagePart[];
+      content: string;
+      conversationId: string;
+      modelId: string;
+      parts: ChatMessagePart[];
+      providerId: string;
+      userId?: string;
+    };
 
 @Injectable()
 export class ConversationMessagePlanningService {
-  constructor(private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiVisionService: AiVisionService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly personaService: PersonaService, private readonly skillSessionService: SkillSessionService, private readonly toolRegistryService: ToolRegistryService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService) {}
+  constructor(private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiVisionService: AiVisionService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly personaService: PersonaService, private readonly toolRegistryService: ToolRegistryService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService) {}
 
-  async applyMessageReceived(input: { activePersonaId?: string; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }) {
-    return this.applyConversationHooks(
-      'message:received',
-      createConversationHookContext(input),
-      input,
-      (payload, context) => ({ context, conversationId: payload.conversationId, modelId: payload.modelId, providerId: payload.providerId, message: { content: payload.content, parts: payload.parts, role: 'user' }, modelMessages: [payload.parts.length > 0 ? { content: payload.parts, role: 'user' } : { content: payload.content, role: 'user' }] }),
-      applyMessageMutation,
-    );
+  async applyMessageReceived(input: { activePersonaId?: string; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }): Promise<MessageReceivedPlanningResult> {
+    const result = await runDispatchableHookChain<
+      typeof input,
+      Record<string, unknown>,
+      MessageReceivedPlanningResult
+    >({
+      applyResponse: (payload, mutation) => readMessageReceivedHookResponse(payload, mutation),
+      hookName: 'message:received',
+      initialState: input,
+      kernel: this.runtimeHostPluginDispatchService,
+      mapPayload: (payload, context) => asJsonValue({
+        context,
+        conversationId: payload.conversationId,
+        modelId: payload.modelId,
+        providerId: payload.providerId,
+        message: {
+          content: payload.content,
+          parts: payload.parts,
+          role: 'user',
+        },
+        modelMessages: [
+          payload.parts.length > 0
+            ? { content: payload.parts, role: 'user' }
+            : { content: payload.content, role: 'user' },
+        ],
+      }),
+      readContext: (payload) => createConversationHookContext(payload),
+    });
+    return 'shortCircuitResult' in result
+      ? result.shortCircuitResult
+      : {
+          action: 'continue',
+          ...result.state,
+        };
   }
 
-  async createStreamPlan(input: { activePersonaId?: string; abortSignal: AbortSignal; conversationId: string; messageId: string; modelId: string; persona?: { beginDialogs: Array<{ content: string; role: 'assistant' | 'user' }>; customErrorMessage: string | null; personaId: string; prompt: string; skillIds: string[] | null; toolNames: string[] | null }; providerId: string; userId?: string }): Promise<ConversationStreamPlan> {
+  async createStreamPlan(input: { activePersonaId?: string; abortSignal: AbortSignal; conversationId: string; messageId: string; modelId: string; persona?: { beginDialogs: Array<{ content: string; role: 'assistant' | 'user' }>; customErrorMessage: string | null; personaId: string; prompt: string; toolNames: string[] | null }; providerId: string; userId?: string }): Promise<ConversationStreamPlan> {
     const persona = input.persona ?? this.personaService.readCurrentPersona({
       context: {
         activePersonaId: input.activePersonaId,
@@ -57,11 +104,7 @@ export class ConversationMessagePlanningService {
     if (!beforeModel) {throw new BadRequestException('Invalid before-model hook result');}
     if (beforeModel.action === 'short-circuit') {return { modelId: beforeModel.modelId, providerId: beforeModel.providerId, responseSource: 'short-circuit', shortCircuitParts: beforeModel.assistantParts, stream: createShortCircuitStream(beforeModel.assistantContent) };}
     if (beforeModel.action !== 'continue') {throw new BadRequestException('Invalid before-model hook result');}
-    const skillContext = await this.skillSessionService.getConversationSkillContext(input.conversationId, {
-      allowedSkillIds: persona.skillIds,
-    });
-    const allowedToolNames = mergeAllowedToolNames(skillContext.allowedToolNames, persona.toolNames);
-    const tools = await this.toolRegistryService.buildToolSet({ allowedToolNames: allowedToolNames ?? undefined, context: createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId }) });
+    const tools = await this.toolRegistryService.buildToolSet({ allowedToolNames: persona.toolNames ?? undefined, context: createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId }) });
     const modelId = beforeModel.modelId === DEFAULT_PROVIDER_MODEL_ID ? undefined : beforeModel.modelId;
     const providerId = beforeModel.providerId === DEFAULT_PROVIDER_ID ? undefined : beforeModel.providerId;
     const stream = this.aiModelExecutionService.streamText({
@@ -70,8 +113,8 @@ export class ConversationMessagePlanningService {
       ...(modelId ? { modelId } : {}),
       messages: beforeModel.messages,
       ...(providerId ? { providerId } : {}),
-      ...((beforeModel.systemPrompt || skillContext.systemPrompt)
-        ? { system: [beforeModel.systemPrompt, skillContext.systemPrompt].filter(Boolean).join('\n\n') }
+      ...(beforeModel.systemPrompt
+        ? { system: beforeModel.systemPrompt }
         : {}),
       ...(tools ? { tools } : {}),
     });
@@ -160,14 +203,6 @@ export function createShortCircuitStream(content: string) {
   };
 }
 
-function mergeAllowedToolNames(left: string[] | null, right: string[] | null): string[] | null {
-  if (left === null && right === null) {return null;}
-  if (left === null) {return right ? [...right] : [];}
-  if (right === null) {return [...left];}
-  const rightSet = new Set(right);
-  return left.filter((toolName) => rightSet.has(toolName));
-}
-
 function createConversationHookContext(input: { activePersonaId?: string; conversationId?: string; modelId?: string; providerId?: string; userId?: string }): PluginCallContext {
   return { ...(input.modelId ? { activeModelId: input.modelId } : {}), ...(input.providerId ? { activeProviderId: input.providerId } : {}), ...(input.conversationId ? { conversationId: input.conversationId } : {}), ...(input.userId ? { userId: input.userId } : {}), ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}), source: 'http-route' };
 }
@@ -179,6 +214,40 @@ function applyMessageMutation<TPayload extends { content: string; modelId: strin
     ...(Array.isArray(mutation.parts) ? { parts: mutation.parts as unknown as ChatMessagePart[] } : {}),
     ...(typeof mutation.modelId === 'string' ? { modelId: mutation.modelId } : {}),
     ...(typeof mutation.providerId === 'string' ? { providerId: mutation.providerId } : {}),
+  };
+}
+
+function readMessageReceivedHookResponse<TPayload extends {
+  content: string;
+  conversationId: string;
+  modelId: string;
+  parts: ChatMessagePart[];
+  providerId: string;
+  userId?: string;
+}>(
+  payload: TPayload,
+  mutation: Record<string, unknown>,
+): DispatchableHookChainResult<TPayload, MessageReceivedPlanningResult> {
+  if (mutation.action === 'short-circuit' && typeof mutation.assistantContent === 'string') {
+    return {
+      shortCircuitResult: {
+        action: 'short-circuit',
+        assistantContent: mutation.assistantContent,
+        assistantParts: Array.isArray(mutation.assistantParts)
+          ? mutation.assistantParts as ChatMessagePart[]
+          : [],
+        content: typeof mutation.content === 'string' ? mutation.content : payload.content,
+        conversationId: payload.conversationId,
+        modelId: typeof mutation.modelId === 'string' ? mutation.modelId : payload.modelId,
+        parts: Array.isArray(mutation.parts) ? mutation.parts as ChatMessagePart[] : payload.parts,
+        providerId: typeof mutation.providerId === 'string' ? mutation.providerId : payload.providerId,
+        ...(payload.userId ? { userId: payload.userId } : {}),
+      },
+    };
+  }
+
+  return {
+    state: applyMessageMutation(payload, mutation),
   };
 }
 

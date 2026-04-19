@@ -61,8 +61,11 @@ async function main() {
     mcpConfigPath: path.join(tempDir, 'mcp', 'mcp.json'),
     personasPath: path.join(tempDir, 'persona'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
+    skillGovernancePath: path.join(tempDir, 'skill-governance.server.json'),
     subagentTasksPath: path.join(tempDir, 'subagent-tasks.server.json'),
+    userHomePath: path.join(tempDir, 'user-home'),
   };
+  await fsPromises.mkdir(serverFiles.userHomePath, { recursive: true });
   const state = {
     adminTokens: null,
     automationId: null,
@@ -71,6 +74,7 @@ async function main() {
     conversationId: null,
     defaultPersonaId: null,
     firstAssistantMessageId: null,
+    firstAssistantText: null,
     firstUserMessageId: null,
     managedPersonaId: 'smoke-persona',
     memoryId: null,
@@ -85,6 +89,9 @@ async function main() {
     remotePluginInitialManifestHash: null,
     remotePluginInitialSyncedAt: null,
     retriedAssistantMessageId: null,
+    retriedAssistantText: null,
+    skillLoopAssistantMessageId: null,
+    skillLoopAssistantText: null,
     skillId: smokeSkillId,
     toolId: null,
     toolSourceId: null,
@@ -146,6 +153,7 @@ async function main() {
     state.bootstrapTokens = state.adminTokens;
 
     await runHttpFlow(apiBase, state, {
+      fakeOpenAi,
       fakeOpenAiUrl: fakeOpenAi.url,
       flowSuffix: state.userAlias,
       mcpCommand: process.execPath,
@@ -332,10 +340,15 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('skills.governance', async () => {
     const detail = await putJson(apiBase, `/skills/${encodeURIComponent(input.smokeSkillId)}/governance`, {
       body: {
-        trustLevel: 'asset-read',
+        loadPolicy: 'deny',
       },
     });
-    ensure(detail.governance?.trustLevel === 'asset-read', 'Expected skill governance update to persist');
+    ensure(detail.governance?.loadPolicy === 'deny', 'Expected skill governance update to persist');
+  });
+
+  await runStep('skills.events.get', async () => {
+    const events = await getJson(apiBase, `/skills/${encodeURIComponent(input.smokeSkillId)}/events?limit=20`);
+    ensure(Array.isArray(events.items), 'Expected skill events payload');
   });
 
   await runStep('chat.conversation.create', async () => {
@@ -376,21 +389,6 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(services.ttsEnabled === false, 'Expected conversation services update to persist');
   });
 
-  await runStep('chat.skills.get', async () => {
-    const skillState = await getJson(apiBase, `/chat/conversations/${state.conversationId}/skills`, { headers: userHeaders() });
-    ensure(Array.isArray(skillState.activeSkillIds), 'Expected conversation skills payload');
-  });
-
-  await runStep('chat.skills.put', async () => {
-    const skillState = await putJson(apiBase, `/chat/conversations/${state.conversationId}/skills`, {
-      body: {
-        activeSkillIds: [input.smokeSkillId],
-      },
-      headers: userHeaders(),
-    });
-    ensure(skillState.activeSkillIds.includes(input.smokeSkillId), 'Expected conversation to activate smoke skill');
-  });
-
   await runStep('personas.list', async () => {
     const personas = await getJson(apiBase, '/personas');
     ensure(Array.isArray(personas) && personas.length > 0, 'Expected personas list to be non-empty');
@@ -415,7 +413,6 @@ async function runHttpFlow(apiBase, state, input) {
         id: state.managedPersonaId,
         name: 'Smoke Persona',
         prompt: '你是一个用于后端烟测的 persona。',
-        skillIds: [input.smokeSkillId],
         toolNames: [],
       },
       headers: userHeaders(),
@@ -453,7 +450,6 @@ async function runHttpFlow(apiBase, state, input) {
         description: '更新后的烟测 persona',
         name: 'Smoke Persona Updated',
         prompt: '你是更新后的后端烟测 persona。',
-        skillIds: [],
         toolNames: [input.smokeSkillId],
       },
       headers: userHeaders(),
@@ -489,6 +485,7 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('chat.messages.send', async () => {
+    input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
         content: '烟测第一条消息',
@@ -507,10 +504,67 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(finishEvent?.status === 'completed', 'Expected send message SSE to finish');
   });
 
+  await runStep('chat.messages.send.denied-skill-tool', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const matchingRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('烟测第一条消息'));
+    ensure(matchingRequest, 'Expected denied-skill send to reach fake OpenAI');
+    ensure(!requestIncludesToolName(matchingRequest.body, 'skill'), 'Expected denied skill governance to remove native skill tool from model request');
+  });
+
   await runStep('chat.conversation.get.after-send', async () => {
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const firstAssistant = conversation.messages.find((entry) => entry.id === state.firstAssistantMessageId);
     ensure(firstAssistant?.content === state.firstAssistantText, 'Expected first assistant message to persist generated content');
+  });
+
+  await runStep('skills.governance.allow', async () => {
+    const detail = await putJson(apiBase, `/skills/${encodeURIComponent(input.smokeSkillId)}/governance`, {
+      body: {
+        loadPolicy: 'allow',
+      },
+    });
+    ensure(detail.governance?.loadPolicy === 'allow', 'Expected skill governance allow update to persist');
+  });
+
+  await runStep('chat.messages.skill-loop', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请加载 smoke-http-flow 技能，并用一句话说明技能加载结果。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.skillLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.skillLoopAssistantMessageId === 'string', 'Expected skill loop to create assistant message');
+    state.skillLoopAssistantText = assertCompletedSse(events, '已加载技能 smoke-http-flow，可继续执行 Smoke HTTP Flow。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'skill'), 'Expected skill loop SSE to include native skill tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'skill'), 'Expected skill loop SSE to include native skill tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected skill loop SSE to finish');
+  });
+
+  await runStep('chat.messages.skill-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请加载 smoke-http-flow 技能'));
+    ensure(firstRequest, 'Expected first skill loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'skill'), 'Expected allowed skill governance to expose native skill tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'skill'));
+    ensure(toolResultRequest, 'Expected skill loop to issue a follow-up request with tool results');
+
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const skillAssistant = conversation.messages.find((entry) => entry.id === state.skillLoopAssistantMessageId);
+    const skillToolCalls = parseSerializedJsonValue(skillAssistant?.toolCalls);
+    const skillToolResults = parseSerializedJsonValue(skillAssistant?.toolResults);
+    ensure(skillAssistant?.content === state.skillLoopAssistantText, 'Expected skill loop assistant message to persist generated content');
+    ensure(Array.isArray(skillToolCalls) && skillToolCalls.some((entry) => entry?.toolName === 'skill'), 'Expected skill loop assistant message to persist native skill tool call');
+    ensure(Array.isArray(skillToolResults) && skillToolResults.some((entry) => entry?.toolName === 'skill'), 'Expected skill loop assistant message to persist native skill tool result');
   });
 
   await runStep('chat.messages.patch', async () => {
@@ -634,9 +688,23 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof scope.defaultEnabled === 'boolean', 'Expected plugin scope payload');
   });
 
+  await runStep('plugins.event-log.get', async () => {
+    const settings = await getJson(apiBase, '/plugins/builtin.memory-context/event-log');
+    ensure(typeof settings.maxFileSizeMb === 'number', 'Expected plugin event log settings payload');
+  });
+
   await runStep('plugins.events.get.initial', async () => {
     const events = await getJson(apiBase, '/plugins/builtin.memory-context/events?limit=20');
     ensure(Array.isArray(events.items), 'Expected plugin events payload');
+  });
+
+  await runStep('plugins.event-log.put', async () => {
+    const settings = await putJson(apiBase, '/plugins/builtin.memory-context/event-log', {
+      body: {
+        maxFileSizeMb: 2,
+      },
+    });
+    ensure(settings.maxFileSizeMb === 2, 'Expected plugin event log update to persist');
   });
 
   await runStep('plugins.scopes.put', async () => {
@@ -1056,6 +1124,11 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(snapshot.servers.some((entry) => entry.name === state.mcpName), 'Expected MCP list to include created server');
   });
 
+  await runStep('mcp.servers.events.get', async () => {
+    const events = await getJson(apiBase, `/mcp/servers/${encodeURIComponent(state.mcpName)}/events?limit=20`);
+    ensure(Array.isArray(events.items), 'Expected MCP events payload');
+  });
+
   await runStep('tools.overview.after-mcp-create', async () => {
     const overview = await getJson(apiBase, '/tools/overview');
     ensure(
@@ -1473,7 +1546,10 @@ async function startBackend(port, wsPort, databaseUrl, files) {
       GARLIC_CLAW_MCP_CONFIG_PATH: files.mcpConfigPath,
       GARLIC_CLAW_PERSONAS_PATH: files.personasPath,
       GARLIC_CLAW_PLUGIN_STATE_PATH: files.pluginStatePath,
+      GARLIC_CLAW_SKILL_GOVERNANCE_PATH: files.skillGovernancePath,
       GARLIC_CLAW_SUBAGENT_TASKS_PATH: files.subagentTasksPath,
+      HOME: files.userHomePath,
+      USERPROFILE: files.userHomePath,
       JWT_SECRET: 'smoke-jwt-secret',
       NODE_ENV: 'test',
       PORT: String(port),
@@ -1878,6 +1954,17 @@ function parseSseEvents(text) {
     });
 }
 
+function parseSerializedJsonValue(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 let completedStepCount = 0;
 
 async function runStep(name, task) {
@@ -2024,6 +2111,7 @@ function ensure(condition, message) {
 }
 
 async function startFakeOpenAiServer() {
+  const chatCompletions = [];
   const server = http.createServer(async (request, response) => {
     try {
       const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -2040,6 +2128,10 @@ async function startFakeOpenAiServer() {
 
       if (request.method === 'POST' && requestUrl.pathname === '/v1/chat/completions') {
         const body = await readJsonBody(request);
+        chatCompletions.push({
+          body: structuredClone(body),
+          receivedAt: new Date().toISOString(),
+        });
         if (body.stream === true) {
           await writeStreamResponse(request, response, body);
           return;
@@ -2071,6 +2163,12 @@ async function startFakeOpenAiServer() {
 
   return {
     url: `http://127.0.0.1:${address.port}/v1`,
+    readChatCompletions() {
+      return chatCompletions.map((entry) => structuredClone(entry));
+    },
+    resetChatCompletions() {
+      chatCompletions.length = 0;
+    },
     async close() {
       await new Promise((resolve, reject) => {
         server.close((error) => {
@@ -2086,8 +2184,42 @@ async function startFakeOpenAiServer() {
 }
 
 function createChatCompletion(body) {
-  const text = resolveAssistantText(body);
+  const plannedResponse = planSmokeChatResponse(body);
   const model = body.model ?? 'smoke-model';
+  if (plannedResponse.kind === 'tool-call') {
+    return {
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          index: 0,
+          message: {
+            content: '',
+            role: 'assistant',
+            tool_calls: [
+              {
+                function: {
+                  arguments: JSON.stringify(plannedResponse.arguments),
+                  name: plannedResponse.toolName,
+                },
+                id: plannedResponse.toolCallId,
+                type: 'function',
+              },
+            ],
+          },
+        },
+      ],
+      created: Math.floor(Date.now() / 1000),
+      id: 'chatcmpl-smoke',
+      model,
+      object: 'chat.completion',
+      usage: {
+        completion_tokens: 8,
+        prompt_tokens: 12,
+        total_tokens: 20,
+      },
+    };
+  }
+  const text = plannedResponse.text;
   return {
     choices: [
       {
@@ -2118,8 +2250,60 @@ async function writeStreamResponse(request, response, body) {
     'content-type': 'text/event-stream',
   });
 
-  const text = resolveAssistantText(body);
   const model = body.model ?? 'smoke-model';
+  const plannedResponse = planSmokeChatResponse(body);
+  if (plannedResponse.kind === 'tool-call') {
+    writeSse(response, {
+      choices: [
+        {
+          delta: {
+            role: 'assistant',
+            tool_calls: [
+              {
+                function: {
+                  arguments: JSON.stringify(plannedResponse.arguments),
+                  name: plannedResponse.toolName,
+                },
+                id: plannedResponse.toolCallId,
+                index: 0,
+                type: 'function',
+              },
+            ],
+          },
+          finish_reason: null,
+          index: 0,
+        },
+      ],
+      created: Math.floor(Date.now() / 1000),
+      id: 'chatcmpl-smoke',
+      model,
+    });
+    await delay(80);
+    if (request.aborted || response.destroyed || response.writableEnded) {
+      return;
+    }
+    writeSse(response, {
+      choices: [
+        {
+          delta: {},
+          finish_reason: 'tool_calls',
+          index: 0,
+        },
+      ],
+      created: Math.floor(Date.now() / 1000),
+      id: 'chatcmpl-smoke',
+      model,
+      usage: {
+        completion_tokens: 8,
+        prompt_tokens: 12,
+        total_tokens: 20,
+      },
+    });
+    response.write('data: [DONE]\n\n');
+    response.end();
+    return;
+  }
+  const text = plannedResponse.text;
   const chunks = splitIntoChunks(text, 6);
 
   for (const chunk of chunks) {
@@ -2195,6 +2379,69 @@ function resolveAssistantText(body) {
     return '这是重试后的烟测回复。';
   }
   return latestUserText ? `本地 smoke 回复: ${latestUserText}` : '本地 smoke 回复。';
+}
+
+function planSmokeChatResponse(body) {
+  if (shouldTriggerSkillTool(body)) {
+    return {
+      arguments: {
+        name: 'smoke-http-flow',
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_skill_0',
+      toolName: 'skill',
+    };
+  }
+  if (requestContainsToolResult(body, 'skill')) {
+    return {
+      kind: 'text',
+      text: '已加载技能 smoke-http-flow，可继续执行 Smoke HTTP Flow。',
+    };
+  }
+  return {
+    kind: 'text',
+    text: resolveAssistantText(body),
+  };
+}
+
+function shouldTriggerSkillTool(body) {
+  return requestIncludesToolName(body, 'skill')
+    && !requestContainsToolResult(body, 'skill')
+    && readLatestUserText(body?.messages).includes('请加载 smoke-http-flow 技能');
+}
+
+function requestHasToolList(body) {
+  return Array.isArray(body?.tools);
+}
+
+function requestIncludesToolName(body, toolName) {
+  if (!Array.isArray(body?.tools)) {
+    return false;
+  }
+  return body.tools.some((entry) => entry?.function?.name === toolName);
+}
+
+function requestContainsToolResult(body, toolName) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) => {
+    if (message?.role !== 'tool') {
+      return false;
+    }
+    if (!toolName) {
+      return true;
+    }
+    const toolCallId = typeof message?.tool_call_id === 'string'
+      ? message.tool_call_id
+      : typeof message?.toolCallId === 'string'
+        ? message.toolCallId
+        : '';
+    return (toolName === 'skill' && toolCallId === 'call_smoke_skill_0')
+      || readTextContent(message).includes('smoke-http-flow');
+  });
+}
+
+function readLatestUserText(messages) {
+  return findLatestUserText(Array.isArray(messages) ? messages : []);
 }
 
 function containsText(messages, needle) {

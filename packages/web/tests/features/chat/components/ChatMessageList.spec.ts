@@ -143,7 +143,7 @@ describe('ChatMessageList', () => {
     expect(content.text()).toContain('正式回复')
   })
 
-  it('renders context compaction summary above the assistant message and keeps it collapsed by default', () => {
+  it('renders display-only context compaction summary with dedicated styling', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         assistantPersona: {
@@ -153,8 +153,8 @@ describe('ChatMessageList', () => {
         loading: false,
         messages: [
           {
-            id: 'assistant-summary',
-            role: 'assistant',
+            id: 'display-summary',
+            role: 'display',
             content: '压缩后的历史摘要',
             provider: 'openai',
             model: 'gpt-5.4',
@@ -187,17 +187,21 @@ describe('ChatMessageList', () => {
       },
     })
 
-    const assistant = wrapper.find('[data-message-id="assistant-summary"]')
-    const details = assistant.find('details.message-annotation-context-compaction')
-    const summary = assistant.find('.message-annotation-summary')
+    const displayMessage = wrapper.find('[data-message-id="display-summary"]')
+    const details = displayMessage.find('details.message-annotation-context-compaction')
+    const summary = displayMessage.find('.message-annotation-summary')
 
     expect(details.exists()).toBe(true)
     expect((details.element as HTMLDetailsElement).open).toBe(false)
     expect(summary.text()).toContain('上下文压缩')
     expect(summary.text()).toContain('覆盖 3 条消息')
-    expect(assistant.text()).toContain('压缩后的历史摘要')
-    expect(assistant.html().indexOf('message-annotation-context-compaction')).toBeLessThan(
-      assistant.html().indexOf('message-content'),
+    expect(displayMessage.text()).toContain('摘要')
+    expect(displayMessage.text()).toContain('压缩后的历史摘要')
+    expect(displayMessage.classes()).toContain('display')
+    expect(displayMessage.find('.message-role-avatar-image').exists()).toBe(false)
+    expect(displayMessage.find('.retry-text').exists()).toBe(false)
+    expect(displayMessage.html().indexOf('message-annotation-context-compaction')).toBeLessThan(
+      displayMessage.html().indexOf('message-content'),
     )
   })
 })

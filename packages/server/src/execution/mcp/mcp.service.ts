@@ -1,11 +1,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { McpConfigSnapshot, JsonObject, JsonValue, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
+import type { EventLogListResult, EventLogQuery, McpConfigSnapshot, JsonObject, JsonValue, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
 import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { McpConfigStoreService } from './mcp-config-store.service';
+import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
 
 type McpServerHealthStatus = 'healthy' | 'error' | 'unknown';
 type McpServerStatus = { name: string; connected: boolean; enabled: boolean; health: McpServerHealthStatus; lastError: string | null; lastCheckedAt: string | null };
@@ -24,7 +25,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   readonly clients = new Map<string, McpClientSession>();
   readonly serverRecords = new Map<string, McpServerRuntimeRecord>();
 
-  constructor(private readonly configService: ConfigService, private readonly mcpConfigStoreService: McpConfigStoreService) {}
+  constructor(private readonly configService: ConfigService, private readonly mcpConfigStoreService: McpConfigStoreService, private readonly runtimeEventLogService: RuntimeEventLogService) {}
 
   async onModuleInit(): Promise<void> { await this.reloadServersFromConfig(); }
 
@@ -58,14 +59,34 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   async setServerEnabled(name: string, enabled: boolean): Promise<void> { const normalizedName = name.trim(); await this.syncServerRecord(normalizedName, await this.requireServerConfig(normalizedName), enabled); }
 
+  async listServerEvents(name: string, query: EventLogQuery = {}): Promise<EventLogListResult> {
+    await this.requireServerConfig(name.trim());
+    return this.runtimeEventLogService.listLogs('mcp', name.trim(), query);
+  }
+
   async runGovernanceAction(sourceId: string, action: 'health-check' | 'reconnect' | 'reload'): Promise<ToolSourceActionResult> {
     if (action !== 'health-check') {
       await this.reloadServer(sourceId);
+      this.recordServerEvent(sourceId, {
+        level: 'info',
+        message: `MCP source ${action}ed`,
+        type: `governance:${action}`,
+      });
       return { accepted: true, action, sourceKind: 'mcp', sourceId, message: `MCP source ${action}ed` };
     }
     const status = this.serverRecords.get(sourceId)?.status;
     if (!status) {throw new NotFoundException(`MCP source not found: ${sourceId}`);}
-    return { accepted: true, action, sourceKind: 'mcp', sourceId, message: status.connected && status.health === 'healthy' ? 'MCP source health check passed' : status.lastError ? `MCP source health check failed: ${status.lastError}` : 'MCP source health check failed' };
+    const message = status.connected && status.health === 'healthy'
+      ? 'MCP source health check passed'
+      : status.lastError
+        ? `MCP source health check failed: ${status.lastError}`
+        : 'MCP source health check failed';
+    this.recordServerEvent(sourceId, {
+      level: status.connected && status.health === 'healthy' ? 'info' : 'warn',
+      message,
+      type: 'governance:health-check',
+    });
+    return { accepted: true, action, sourceKind: 'mcp', sourceId, message };
   }
 
   getToolingSnapshot(): { statuses: McpServerStatus[]; tools: McpToolDescriptor[] } { const statuses: McpServerStatus[] = []; const tools: McpToolDescriptor[] = []; for (const record of this.serverRecords.values()) { statuses.push({ ...record.status }); if (!record.status.connected || !record.status.enabled) {continue;} tools.push(...record.tools.map((tool) => ({ ...tool }))); } return { statuses, tools }; }
@@ -88,6 +109,14 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastError: errorMessage });
+      this.recordServerEvent(input.serverName, {
+        level: 'error',
+        message: errorMessage,
+        metadata: {
+          toolName: input.toolName,
+        },
+        type: 'tool:error',
+      });
       throw error;
     }
   }
@@ -98,8 +127,21 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       const connected = await this.connectClientSession({ name, config });
       this.clients.set(name, connected.client);
       this.serverRecords.set(name, createServerRuntimeRecord(name, { connected: true, health: 'healthy', lastCheckedAt }, connected.tools));
+      this.recordServerEvent(name, {
+        level: 'info',
+        message: `Connected MCP server ${name}`,
+        metadata: {
+          toolCount: connected.tools.length,
+        },
+        type: 'connection:connected',
+      }, config);
     } catch (error) {
       this.serverRecords.set(name, createServerRuntimeRecord(name, { health: 'error', lastError: error instanceof Error ? error.message : String(error), lastCheckedAt }, []));
+      this.recordServerEvent(name, {
+        level: 'error',
+        message: error instanceof Error ? error.message : String(error),
+        type: 'connection:error',
+      }, config);
     }
   }
 
@@ -159,6 +201,20 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       transportEnv[key] = typeof value === 'string' && value.startsWith('${') && value.endsWith('}') ? this.configService.get<string>(value.slice(2, -1)) || '' : value;
     }
     return transportEnv;
+  }
+
+  private recordServerEvent(
+    name: string,
+    input: {
+      level: 'error' | 'info' | 'warn';
+      message: string;
+      metadata?: JsonObject;
+      type: string;
+    },
+    config?: McpServerConfig,
+  ): void {
+    const settings = config?.eventLog ?? this.mcpConfigStoreService.getServer(name)?.eventLog;
+    this.runtimeEventLogService.appendLog('mcp', name, settings, input);
   }
 }
 

@@ -1,6 +1,16 @@
-import type { McpConfigSnapshot, McpServerConfig, McpServerDeleteResult } from '@garlic-claw/shared';
-import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
+import type { EventLogListResult, McpConfigSnapshot, McpServerConfig, McpServerDeleteResult } from '@garlic-claw/shared';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { McpService } from '../../../execution/mcp/mcp.service';
+import { normalizeEventLogSettings } from '../../../runtime/log/runtime-event-log.service';
+import { readPluginEventQuery } from '../http-request.codec';
+
+interface McpEventQueryInput {
+  limit?: string;
+  level?: string;
+  type?: string;
+  keyword?: string;
+  cursor?: string;
+}
 
 @Controller('mcp')
 export class McpController {
@@ -9,6 +19,14 @@ export class McpController {
   @Get('servers')
   async listServers(): Promise<McpConfigSnapshot> {
     return this.mcpService.getSnapshot();
+  }
+
+  @Get('servers/:name/events')
+  async listServerEvents(
+    @Param('name') name: string,
+    @Query() query?: McpEventQueryInput,
+  ): Promise<EventLogListResult> {
+    return this.mcpService.listServerEvents(name, readPluginEventQuery(query ?? {}));
   }
 
   @Post('servers')
@@ -25,6 +43,7 @@ export class McpController {
         ...(dto.env ?? {}),
         ...Object.fromEntries((dto.envEntries ?? []).map((entry) => [entry.key, entry.value])),
       },
+      eventLog: normalizeEventLogSettings((dto as { eventLog?: McpServerConfig['eventLog'] }).eventLog),
     });
     await this.mcpService.applyServerConfig(server);
     return server;
@@ -47,6 +66,7 @@ export class McpController {
         ...(dto.env ?? {}),
         ...Object.fromEntries((dto.envEntries ?? []).map((entry) => [entry.key, entry.value])),
       },
+      eventLog: normalizeEventLogSettings((dto as { eventLog?: McpServerConfig['eventLog'] }).eventLog),
     }, name);
     await this.mcpService.applyServerConfig(server, name);
     return server;

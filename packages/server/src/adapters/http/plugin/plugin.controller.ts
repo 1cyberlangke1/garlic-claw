@@ -1,4 +1,4 @@
-import { type JsonObject, type JsonValue, type PluginActionName, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentTaskDetail, type PluginSubagentTaskOverview } from '@garlic-claw/shared';
+import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentTaskDetail, type PluginSubagentTaskOverview } from '@garlic-claw/shared';
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/http-auth';
@@ -24,6 +24,7 @@ interface UpsertRemotePluginDto {
 }
 interface UpdatePluginConfigDto { values: JsonObject; }
 interface UpdatePluginLlmPreferenceDto extends PluginLlmPreference {}
+interface UpdatePluginEventLogDto extends EventLogSettings {}
 interface UpdatePluginScopeDto { defaultEnabled?: boolean; conversations?: Record<string, boolean>; }
 interface UpdatePluginStorageDto { key: string; value: JsonValue; }
 interface PluginEventQueryInput { limit?: string; level?: string; type?: string; keyword?: string; cursor?: string; }
@@ -64,8 +65,8 @@ export class PluginController {
 
   @Delete('plugins/:pluginId')
   deletePlugin(@Param('pluginId') pluginId: string) {
-    const deleted = this.pluginPersistenceService.deletePlugin(pluginId);
     this.recordPluginEvent(pluginId, { level: 'warn', message: `Deleted plugin ${pluginId}`, type: 'plugin:deleted' });
+    const deleted = this.pluginPersistenceService.deletePlugin(pluginId);
     return deleted;
   }
 
@@ -87,6 +88,16 @@ export class PluginController {
     const preference = this.pluginPersistenceService.updatePluginLlmPreference(pluginId, dto);
     this.recordPluginEvent(pluginId, { message: `Updated plugin llm preference for ${pluginId}`, metadata: { mode: preference.mode, modelId: preference.modelId, providerId: preference.providerId }, type: 'plugin:llm-preference.updated' });
     return preference;
+  }
+
+  @Get('plugins/:pluginId/event-log')
+  getPluginEventLog(@Param('pluginId') pluginId: string) { return this.pluginPersistenceService.getPluginEventLog(pluginId); }
+
+  @Put('plugins/:pluginId/event-log')
+  updatePluginEventLog(@Param('pluginId') pluginId: string, @Body() dto: UpdatePluginEventLogDto) {
+    const settings = this.pluginPersistenceService.updatePluginEventLog(pluginId, dto);
+    this.recordPluginEvent(pluginId, { message: `Updated plugin event log settings for ${pluginId}`, metadata: { maxFileSizeMb: settings.maxFileSizeMb }, type: 'plugin:event-log.updated' });
+    return settings;
   }
 
   @Get('plugins/:pluginId/scopes')

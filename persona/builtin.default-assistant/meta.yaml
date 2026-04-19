@@ -22,10 +22,6 @@ beginDialogs: []
 # null 表示不限制；[] 表示全部禁用；非空数组表示只允许这些 tool 名称。
 toolNames: null
 
-# Persona 允许使用的 skills。
-# null 表示不限制；[] 表示全部禁用；非空数组表示只允许这些 skill ID。
-skillIds: null
-
 # 仅在“主对话主回复”失败时，直接回复给用户的固定错误文案。
 # subagent、标题生成、摘要总结等链路不会使用这个字段。
 # 留空或写 null 表示使用系统默认错误文案。

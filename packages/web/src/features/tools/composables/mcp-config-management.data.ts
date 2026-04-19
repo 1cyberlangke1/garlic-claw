@@ -1,10 +1,13 @@
 import type {
+  EventLogListResult,
+  EventLogQuery,
   McpConfigSnapshot,
   McpServerConfig,
 } from '@garlic-claw/shared'
 import {
   createMcpServer,
   deleteMcpServer,
+  listMcpServerEvents,
   listMcpServers,
   updateMcpServer,
 } from '@/features/tools/api/mcp'
@@ -47,6 +50,39 @@ export function updateMcpServerConfig(
  */
 export function deleteMcpServerConfig(name: string) {
   return deleteMcpServer(name)
+}
+
+/**
+ * 读取 MCP server 最近事件日志。
+ * @param name server 名称
+ * @param query 查询条件
+ * @returns 事件日志结果
+ */
+export function loadMcpServerEvents(
+  name: string,
+  query: EventLogQuery,
+): Promise<EventLogListResult> {
+  return listMcpServerEvents(name, normalizeMcpEventQuery(query))
+}
+
+export function normalizeMcpEventQuery(query: EventLogQuery): EventLogQuery {
+  return {
+    limit: Math.min(200, Math.max(1, query.limit ?? 50)),
+    ...(query.level ? { level: query.level } : {}),
+    ...(query.type?.trim() ? { type: query.type.trim() } : {}),
+    ...(query.keyword?.trim() ? { keyword: query.keyword.trim() } : {}),
+  }
+}
+
+export function dedupeMcpEventLogs(events: EventLogListResult['items']) {
+  const seen = new Set<string>()
+  return events.filter((event) => {
+    if (seen.has(event.id)) {
+      return false
+    }
+    seen.add(event.id)
+    return true
+  })
 }
 
 /**

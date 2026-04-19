@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SSEEvent } from '@garlic-claw/shared'
-import { applySseEvent } from '@/features/chat/store/chat-store.runtime'
+import { applySseEvent, getRetryableMessageId } from '@/features/chat/store/chat-store.runtime'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
 
 describe('applySseEvent', () => {
@@ -107,5 +107,28 @@ describe('applySseEvent', () => {
         },
       },
     ])
+  })
+})
+
+describe('getRetryableMessageId', () => {
+  it('skips trailing display messages and returns the latest assistant reply', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正式回复',
+        status: 'completed',
+        error: null,
+      },
+      {
+        id: 'display-1',
+        role: 'display',
+        content: '压缩摘要',
+        status: 'completed',
+        error: null,
+      },
+    ]
+
+    expect(getRetryableMessageId(messages)).toBe('assistant-1')
   })
 })

@@ -1,5 +1,7 @@
 import type { JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { PluginPersistenceService } from '../../plugin/persistence/plugin-persistence.service';
+import { RuntimeEventLogService } from '../log/runtime-event-log.service';
 import {
   SCOPED_STORE_PREFIX,
   asJsonValue,
@@ -15,15 +17,6 @@ import {
   readScopedKey,
   requireContextField,
 } from './runtime-host-values';
-
-interface RuntimeLogRecord {
-  createdAt: string;
-  id: string;
-  level: string;
-  message: string;
-  metadata?: JsonObject;
-  type: string;
-}
 
 interface RuntimeCronJobRecord {
   createdAt: string;
@@ -45,10 +38,16 @@ interface RuntimeCronJobRecord {
 export class RuntimeHostPluginRuntimeService {
   private readonly cronJobs = new Map<string, RuntimeCronJobRecord[]>();
   private cronSequence = 0;
-  private readonly logs = new Map<string, RuntimeLogRecord[]>();
-  private logSequence = 0;
   private readonly stateStore = new Map<string, Map<string, JsonValue>>();
   private readonly storageStore = new Map<string, Map<string, JsonValue>>();
+  private readonly runtimeEventLogService: RuntimeEventLogService;
+
+  constructor(
+    @Optional() private readonly pluginPersistenceService?: PluginPersistenceService,
+    @Optional() runtimeEventLogService?: RuntimeEventLogService,
+  ) {
+    this.runtimeEventLogService = runtimeEventLogService ?? new RuntimeEventLogService();
+  }
 
   deleteCronJob(pluginId: string, params: JsonObject): JsonValue {
     const jobId = readRequiredString(params, 'jobId');
@@ -77,19 +76,13 @@ export class RuntimeHostPluginRuntimeService {
   }
 
   listPluginLogs(pluginId: string, params: JsonObject): JsonValue {
-    const level = readOptionalString(params, 'level');
-    const keyword = readOptionalString(params, 'keyword')?.toLowerCase();
-    const limit = readPositiveInteger(params, 'limit') ?? 20;
-    const type = readOptionalString(params, 'type');
-
-    return (this.logs.get(pluginId) ?? [])
-      .filter((entry) => !level || entry.level === level)
-      .filter((entry) => !type || entry.type === type)
-      .filter((entry) => !keyword || entry.message.toLowerCase().includes(keyword) || entry.type.toLowerCase().includes(keyword))
-      .slice()
-      .reverse()
-      .slice(0, limit)
-      .map((entry) => asJsonValue(entry));
+    return asJsonValue(this.runtimeEventLogService.listLogs('plugin', pluginId, {
+      ...(readPositiveInteger(params, 'limit') ? { limit: readPositiveInteger(params, 'limit') ?? undefined } : {}),
+      ...(readOptionalString(params, 'level') ? { level: readOptionalString(params, 'level') as 'info' | 'warn' | 'error' } : {}),
+      ...(readOptionalString(params, 'type') ? { type: readOptionalString(params, 'type') ?? undefined } : {}),
+      ...(readOptionalString(params, 'keyword') ? { keyword: readOptionalString(params, 'keyword') ?? undefined } : {}),
+      ...(readOptionalString(params, 'cursor') ? { cursor: readOptionalString(params, 'cursor') ?? undefined } : {}),
+    }));
   }
 
   listPluginStorage(pluginId: string, prefix?: string): Array<{ key: string; value: JsonValue }> {
@@ -151,18 +144,17 @@ export class RuntimeHostPluginRuntimeService {
   }
 
   writePluginLog(pluginId: string, params: JsonObject): JsonValue {
-    const record: RuntimeLogRecord = {
-      createdAt: new Date().toISOString(),
-      id: `log-${++this.logSequence}`,
-      level: readOptionalString(params, 'level') ?? 'info',
-      message: readRequiredString(params, 'message'),
-      type: readOptionalString(params, 'type') ?? 'plugin:log',
-    };
-    const metadata = readJsonObject(params.metadata);
-    if (metadata) {record.metadata = metadata;}
-    const records = this.logs.get(pluginId) ?? [];
-    records.push(record);
-    this.logs.set(pluginId, records);
+    this.runtimeEventLogService.appendLog(
+      'plugin',
+      pluginId,
+      this.pluginPersistenceService?.findPlugin(pluginId)?.eventLog,
+      {
+        level: (readOptionalString(params, 'level') ?? 'info') as 'error' | 'info' | 'warn',
+        message: readRequiredString(params, 'message'),
+        ...(readJsonObject(params.metadata) ? { metadata: readJsonObject(params.metadata) ?? undefined } : {}),
+        type: readOptionalString(params, 'type') ?? 'plugin:log',
+      },
+    );
     return true;
   }
 

@@ -1,4 +1,5 @@
 import type { PluginActionName, PluginParamSchema, PluginRuntimeKind } from './plugin';
+import type { EventLogSettings } from './plugin-records';
 
 export type ToolSourceKind = 'plugin' | 'mcp' | 'skill';
 
@@ -54,6 +55,7 @@ export interface McpServerConfig {
   command: string;
   args: string[];
   env: Record<string, string>;
+  eventLog: EventLogSettings;
 }
 
 export interface McpConfigSnapshot {

@@ -25,7 +25,7 @@
         class="composer-input"
         :value="modelValue"
         :disabled="streaming"
-        placeholder="输入消息，支持附带图片"
+        placeholder="输入消息，支持附带图片；输入 /compact 或 /compress 手动压缩上下文"
         rows="1"
         @input="handleInput"
         @keydown.enter.exact.prevent="$emit('send')"

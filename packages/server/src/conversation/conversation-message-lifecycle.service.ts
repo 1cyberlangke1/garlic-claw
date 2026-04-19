@@ -4,7 +4,6 @@ import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-h
 import { RuntimeHostConversationRecordService, serializeConversationMessage } from '../runtime/host/runtime-host-conversation-record.service';
 import { DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/runtime-host-values';
 import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-plugin-dispatch.service';
-import { SkillSessionService } from '../execution/skill/skill-session.service';
 import { PersonaService } from '../persona/persona.service';
 import { ConversationTaskService } from './conversation-task.service';
 import { ConversationMessagePlanningService, createShortCircuitStream, type ConversationResponseSource } from './conversation-message-planning.service';
@@ -12,7 +11,7 @@ import { ConversationMessagePlanningService, createShortCircuitStream, type Conv
 @Injectable()
 // Keep lifecycle orchestration and hook mutation together to avoid recreating the removed single-consumer hook owner.
 export class ConversationMessageLifecycleService {
-  constructor(private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly conversationTaskService: ConversationTaskService, private readonly conversationMessagePlanningService: ConversationMessagePlanningService, private readonly skillSessionService: SkillSessionService, private readonly personaService: PersonaService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService) {}
+  constructor(private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly conversationTaskService: ConversationTaskService, private readonly conversationMessagePlanningService: ConversationMessagePlanningService, private readonly personaService: PersonaService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService) {}
 
   async retryMessageGeneration(conversationId: string, messageId: string, dto: RetryMessagePayload, userId?: string) {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
@@ -47,22 +46,23 @@ export class ConversationMessageLifecycleService {
 
   async startMessageGeneration(conversationId: string, dto: SendMessagePayload, userId?: string) {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
-    assertConversationGenerationEnabled(conversation);
+    assertConversationSessionEnabled(conversation);
     if (conversation.messages.some(isActiveAssistantMessage)) {
       throw new BadRequestException('当前仍有回复在生成中，请先停止或等待完成');
     }
     const messageText = dto.content ?? dto.parts?.find((part) => part.type === 'text')?.text ?? '';
-    const skillCommandResult = userId ? await this.skillSessionService.tryHandleMessage({ userId: conversation.userId, conversationId, messageText }) : null;
-
     const received = await this.conversationMessagePlanningService.applyMessageReceived({
       activePersonaId: conversation.activePersonaId,
       content: messageText,
       conversationId,
-      modelId: skillCommandResult?.modelId ?? dto.model ?? DEFAULT_PROVIDER_MODEL_ID,
+      modelId: dto.model ?? DEFAULT_PROVIDER_MODEL_ID,
       parts: dto.parts ?? [],
-      providerId: skillCommandResult?.providerId ?? dto.provider ?? DEFAULT_PROVIDER_ID,
+      providerId: dto.provider ?? DEFAULT_PROVIDER_ID,
       userId: conversation.userId,
     });
+    if (received.action !== 'short-circuit') {
+      assertConversationLlmEnabled(conversation);
+    }
     const userMessage = await this.runtimeHostConversationMessageService.createMessageWithHooks(conversationId, {
       content: received.content,
       parts: received.parts,
@@ -78,8 +78,22 @@ export class ConversationMessageLifecycleService {
       status: 'pending',
     });
     const assistantMessageId = readMessageId(assistantMessage);
+    const pluginShortCircuitInput = received.action === 'short-circuit'
+      ? {
+          shortCircuitContent: received.assistantContent,
+          shortCircuitParts: received.assistantParts,
+        }
+      : {};
 
-    this.startConversationTask({ activePersonaId: conversation.activePersonaId, conversationId, messageId: assistantMessageId, modelId: received.modelId, providerId: received.providerId, ...(skillCommandResult ? { shortCircuitContent: skillCommandResult.assistantContent, shortCircuitParts: skillCommandResult.assistantParts } : {}), userId: conversation.userId });
+    this.startConversationTask({
+      activePersonaId: conversation.activePersonaId,
+      conversationId,
+      messageId: assistantMessageId,
+      modelId: received.modelId,
+      providerId: received.providerId,
+      ...pluginShortCircuitInput,
+      userId: conversation.userId,
+    });
 
     return {
       assistantMessage: serializeConversationMessage(assistantMessage as Record<string, unknown> as JsonObject),
@@ -163,7 +177,10 @@ function isActiveAssistantMessage(message: Record<string, unknown>): boolean {
   return message.role === 'assistant' && (message.status === 'pending' || message.status === 'streaming');
 }
 
-function assertConversationGenerationEnabled(conversation: { hostServices: { llmEnabled?: boolean; sessionEnabled?: boolean } }): void {
+function assertConversationSessionEnabled(conversation: { hostServices: { sessionEnabled?: boolean } }): void {
   if (!conversation.hostServices.sessionEnabled) {throw new BadRequestException('当前会话宿主服务已停用');}
+}
+
+function assertConversationLlmEnabled(conversation: { hostServices: { llmEnabled?: boolean } }): void {
   if (!conversation.hostServices.llmEnabled) {throw new BadRequestException('当前会话已关闭 LLM 自动回复');}
 }

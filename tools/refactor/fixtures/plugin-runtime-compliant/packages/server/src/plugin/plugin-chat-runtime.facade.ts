@@ -7,8 +7,8 @@ export class PluginChatRuntimeFacade {
     return this.moduleRef.get(AiProviderService, { strict: false });
   }
 
-  getSkillSession() {
-    return this.moduleRef.get(SkillSessionService, { strict: false });
+  getSkillTool() {
+    return this.moduleRef.get(SkillToolService, { strict: false });
   }
 
   getToolRegistry() {

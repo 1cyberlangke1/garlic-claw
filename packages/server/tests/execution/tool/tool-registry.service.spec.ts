@@ -3,6 +3,8 @@ import { AiManagementService } from '../../../src/ai-management/ai-management.se
 import { AiProviderSettingsService } from '../../../src/ai-management/ai-provider-settings.service';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
+import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
+import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -103,43 +105,19 @@ describe('ToolRegistryService', () => {
     }));
   });
 
-  it('lists skill package tool sources and tool records', async () => {
-    const { service, skillExecution } = createFixture();
-    skillExecution.listToolSources.mockResolvedValue([buildSkillToolSource({ canReadAssets: true, canRunScripts: true })]);
+  it('includes native skill tool in the executable tool set', async () => {
+    const { service } = createFixture();
 
-    await expect(service.listAvailableTools({
+    const toolSet = await service.buildToolSet({
       context: {
         conversationId: 'conversation-1',
         source: 'plugin',
         userId: 'user-1',
       },
-    })).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: 'asset.list',
-        callName: 'skill__asset__list',
-        sourceKind: 'skill',
-        sourceId: 'active-packages',
-      }),
-      expect.objectContaining({
-        name: 'script.run',
-        callName: 'skill__script__run',
-        sourceKind: 'skill',
-        sourceId: 'active-packages',
-      }),
-    ]));
-    await expect(service.listOverview({
-      conversationId: 'conversation-1',
-      source: 'plugin',
-      userId: 'user-1',
-    })).resolves.toEqual(expect.objectContaining({
-      sources: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'skill',
-          id: 'active-packages',
-          supportedActions: ['health-check', 'reload'],
-        }),
-      ]),
-    }));
+    });
+
+    expect(toolSet).toBeDefined();
+    expect(Object.keys(toolSet ?? {})).toContain('skill');
   });
 
   it('updates source and tool enabled flags and dispatches plugin source actions', async () => {
@@ -227,27 +205,6 @@ describe('ToolRegistryService', () => {
     expect(mcpService.setServerEnabled).toHaveBeenCalledWith('weather', false);
   });
 
-  it('dispatches skill source actions through skill registry refresh', async () => {
-    const { service, skillExecution } = createFixture();
-
-    await expect(service.runSourceAction('skill', 'active-packages', 'health-check')).resolves.toEqual({
-      accepted: true,
-      action: 'health-check',
-      sourceKind: 'skill',
-      sourceId: 'active-packages',
-      message: 'Skill source health check passed',
-    });
-    expect(skillExecution.runToolSourceAction).toHaveBeenNthCalledWith(1, 'active-packages', 'health-check');
-    await expect(service.runSourceAction('skill', 'active-packages', 'reload')).resolves.toEqual({
-      accepted: true,
-      action: 'reload',
-      sourceKind: 'skill',
-      sourceId: 'active-packages',
-      message: 'Skill source reloaded',
-    });
-    expect(skillExecution.runToolSourceAction).toHaveBeenNthCalledWith(2, 'active-packages', 'reload');
-  });
-
   it('filters out tools disabled for the current conversation scope', async () => {
     const { pluginBootstrapService, service } = createFixture();
     const builtinPersisted = (pluginBootstrapService as unknown as {
@@ -303,7 +260,9 @@ describe('ToolRegistryService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-    })).resolves.toBeUndefined();
+    })).resolves.toEqual(expect.objectContaining({
+      skill: expect.any(Object),
+    }));
 
     const enabledTools = await service.buildToolSet({
       context: {
@@ -317,6 +276,7 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(enabledTools ?? {})).toEqual([
       'save_memory',
       'search_memory',
+      'skill',
     ]);
   });
 
@@ -335,6 +295,7 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(toolSet ?? {})).toEqual([
       'save_memory',
       'search_memory',
+      'skill',
     ]);
   });
 
@@ -391,10 +352,20 @@ describe('ToolRegistryService', () => {
     });
   });
 
-  it('includes skill package tools in the executable tool set and dispatches execution through SkillSessionService', async () => {
-    const { service, skillExecution } = createFixture();
-    skillExecution.listToolSources.mockResolvedValue([buildSkillToolSource({ canReadAssets: true, canRunScripts: true })]);
-    skillExecution.runPackageTool.mockResolvedValue([{ path: 'templates/task.md', skillId: 'project/planner' }]);
+  it('dispatches native skill tool execution through the skill owner', async () => {
+    const { service, skillRegistryService } = createFixture();
+    skillRegistryService.getSkillByName.mockResolvedValue({
+      id: 'project/planner',
+      name: 'planner',
+      description: '先拆任务，再逐步执行。',
+      content: '# planner\n\n先拆任务，再逐步执行。',
+      entryPath: 'planner/SKILL.md',
+      governance: { loadPolicy: 'allow' },
+      promptPreview: '先拆任务，再逐步执行。',
+      sourceKind: 'project',
+      tags: [],
+      assets: [{ path: 'templates/task.md', kind: 'template', textReadable: true, executable: false }],
+    });
 
     const toolSet = await service.buildToolSet({
       context: {
@@ -402,18 +373,17 @@ describe('ToolRegistryService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      allowedToolNames: ['skill__asset__list'],
+      allowedToolNames: ['skill'],
     });
-    const skillTool = toolSet?.skill__asset__list;
+    const skillTool = toolSet?.skill;
     expect(skillTool).toBeDefined();
-    const result = await (skillTool as any).execute({}, {} as never);
+    const result = await (skillTool as any).execute({ name: 'planner' }, {} as never);
 
-    expect(result).toEqual([{ path: 'templates/task.md', skillId: 'project/planner' }]);
-    expect(skillExecution.runPackageTool).toHaveBeenCalledWith({
-      conversationId: 'conversation-1',
-      toolName: 'asset.list',
-      params: {},
-    });
+    expect(result).toEqual(expect.objectContaining({
+      name: 'planner',
+      entryPath: 'planner/SKILL.md',
+    }));
+    expect(skillRegistryService.getSkillByName).toHaveBeenCalledWith('planner');
   });
 
   it('excludes disconnected remote plugins from the executable tool set', async () => {
@@ -564,95 +534,35 @@ function createFixture() {
     setServerEnabled: jest.fn(),
   };
   mcpService.listToolSources.mockImplementation(() => buildMcpToolSources(mcpService.getToolingSnapshot()));
-  let skillPackageToolsEnabled = true;
-  const skillExecution = {
-    listToolSources: jest.fn().mockImplementation(async () => [buildSkillToolSource({ enabled: skillPackageToolsEnabled })]),
-    runPackageTool: jest.fn(),
-    runToolSourceAction: jest.fn().mockImplementation(async (sourceId: string, action: string) => ({
-      accepted: true,
-      action,
-      sourceKind: 'skill',
-      sourceId,
-      message: action === 'reload' ? 'Skill source reloaded' : 'Skill source health check passed',
-    })),
-    setSkillPackageToolsEnabled: jest.fn((enabled: boolean) => {
-      skillPackageToolsEnabled = enabled;
-    }),
+  const skillRegistryService = {
+    getSkillByName: jest.fn(),
+    listSkillSummaries: jest.fn().mockResolvedValue([
+      {
+        id: 'project/planner',
+        name: 'planner',
+        description: '先拆任务，再逐步执行。',
+        entryPath: 'planner/SKILL.md',
+        governance: { loadPolicy: 'allow' },
+        promptPreview: '先拆任务，再逐步执行。',
+        sourceKind: 'project',
+        tags: [],
+      },
+    ]),
+    resolveSkillDirectory: jest.fn().mockReturnValue('D:/repo/skills/planner'),
   };
+  const skillToolService = new SkillToolService(skillRegistryService as unknown as SkillRegistryService);
 
   return {
     mcpService,
     pluginBootstrapService,
     runtimePluginGovernanceService,
-    skillExecution,
+    skillRegistryService,
     service: new ToolRegistryService(
       mcpService as never,
-      skillExecution as never,
+      skillToolService,
       runtimeHostPluginDispatchService as never,
       runtimePluginGovernanceService as never,
     ),
-  };
-}
-
-function buildSkillToolSource(input?: { canReadAssets?: boolean; canRunScripts?: boolean; enabled?: boolean }) {
-  const enabled = input?.enabled ?? true;
-  const tools = [
-    ...(input?.canReadAssets ? [{
-      toolId: 'skill:active-packages:asset.list',
-      name: 'asset.list',
-      callName: 'skill__asset__list',
-      description: '[Skill] 列出当前会话 skill package 资产',
-      parameters: {},
-      enabled,
-      sourceKind: 'skill' as const,
-      sourceId: 'active-packages',
-      sourceLabel: 'Active Skill Packages',
-      health: 'healthy' as const,
-      lastError: null,
-      lastCheckedAt: null,
-    }, {
-      toolId: 'skill:active-packages:asset.read',
-      name: 'asset.read',
-      callName: 'skill__asset__read',
-      description: '[Skill] 读取当前会话某个 skill package 资产',
-      parameters: {},
-      enabled,
-      sourceKind: 'skill' as const,
-      sourceId: 'active-packages',
-      sourceLabel: 'Active Skill Packages',
-      health: 'healthy' as const,
-      lastError: null,
-      lastCheckedAt: null,
-    }] : []),
-    ...(input?.canRunScripts ? [{
-      toolId: 'skill:active-packages:script.run',
-      name: 'script.run',
-      callName: 'skill__script__run',
-      description: '[Skill] 执行当前会话 skill package 脚本',
-      parameters: {},
-      enabled,
-      sourceKind: 'skill' as const,
-      sourceId: 'active-packages',
-      sourceLabel: 'Active Skill Packages',
-      health: 'healthy' as const,
-      lastError: null,
-      lastCheckedAt: null,
-    }] : []),
-  ];
-  return {
-    source: {
-      kind: 'skill' as const,
-      id: 'active-packages',
-      label: 'Active Skill Packages',
-      enabled,
-      health: 'healthy' as const,
-      lastError: null,
-      lastCheckedAt: null,
-      totalTools: tools.length,
-      enabledTools: enabled ? tools.length : 0,
-      supportedActions: ['health-check', 'reload'],
-    },
-    tools,
   };
 }
 

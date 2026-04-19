@@ -5,6 +5,7 @@ export * from './types/automation';
 export * from './types/chat';
 export * from './types/json';
 export * from './types/plugin';
+export * from './types/plugin-records';
 export * from './types/roles';
 export * from './types/skill';
 export * from './types/tool';

@@ -289,21 +289,6 @@ function readPersonaAvatarAlt(name?: string | null) {
 
           <div class="detail-grid">
             <div class="detail-block">
-              <span class="summary-label">Skills 约束</span>
-              <select v-model="editorDraft.skillMode" class="field-select">
-                <option v-for="option in listModeOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-              <textarea
-                v-if="editorDraft.skillMode === 'selected'"
-                v-model="editorDraft.skillInput"
-                class="field-textarea compact-textarea"
-                placeholder="每行一个 skill ID，也可以用逗号分隔。"
-              />
-            </div>
-
-            <div class="detail-block">
               <span class="summary-label">Tools 约束</span>
               <select v-model="editorDraft.toolMode" class="field-select">
                 <option v-for="option in listModeOptions" :key="option.value" :value="option.value">

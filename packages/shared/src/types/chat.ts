@@ -38,6 +38,16 @@ export type ChatMessageStatus =
   | 'error';
 
 /**
+ * 对话消息角色。
+ * `display` 仅用于前端展示，不应直接进入默认送模上下文。
+ */
+export type ChatMessageRole =
+  | 'assistant'
+  | 'user'
+  | 'system'
+  | 'display';
+
+/**
  * 图像转述来源。
  */
 export type ChatVisionFallbackEntrySource = 'cache' | 'generated';
@@ -186,7 +196,7 @@ export interface Message {
   /** 消息 ID。 */
   id: string;
   /** 角色。 */
-  role: string;
+  role: ChatMessageRole;
   /** 纯文本摘要。 */
   content: string | null;
   /** 结构化 parts 的 JSON。 */

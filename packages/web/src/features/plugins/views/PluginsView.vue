@@ -72,6 +72,13 @@
             :saving="savingScope"
             @save="saveScope"
           />
+          <EventLogSettingsPanel
+            :settings="selectedPlugin.eventLog"
+            :saving="savingEventLog"
+            title="插件日志设置"
+            description="当前插件自己的事件日志会写到 log/plugins/<pluginId>/ 目录。"
+            @save="saveEventLog"
+          />
           <ToolGovernancePanel
             class="detail-span"
             :source-id="selectedPlugin.name"
@@ -149,6 +156,7 @@ import PluginRouteList from '@/features/plugins/components/PluginRouteList.vue'
 import PluginScopeEditor from '@/features/plugins/components/PluginScopeEditor.vue'
 import PluginSidebar from '@/features/plugins/components/PluginSidebar.vue'
 import PluginStoragePanel from '@/features/plugins/components/PluginStoragePanel.vue'
+import EventLogSettingsPanel from '@/features/tools/components/EventLogSettingsPanel.vue'
 import {
   hasPluginIssue,
   pluginAttentionWeight,
@@ -169,6 +177,7 @@ const {
   loading,
   detailLoading,
   savingConfig,
+  savingEventLog,
   savingLlmPreference,
   savingRemoteAccess,
   savingStorage,
@@ -207,6 +216,7 @@ const {
   deleteCronJob,
   finishConversationSession,
   saveConfig,
+  saveEventLog,
   saveLlmPreference,
   saveRemoteAccess,
   saveStorageEntry,

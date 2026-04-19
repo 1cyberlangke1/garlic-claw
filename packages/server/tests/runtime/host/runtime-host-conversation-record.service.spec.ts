@@ -56,10 +56,6 @@ describe('RuntimeHostConversationRecordService', () => {
       sessionEnabled: true,
       ttsEnabled: false,
     });
-    expect(service.writeConversationSkillState(conversationId, ['project/planner'])).toEqual({
-      activeSkillIds: ['project/planner'],
-      activeSkills: [{ id: 'project/planner', name: 'project/planner' }],
-    });
 
     const beforeRevision = service.readConversationRevision(conversationId);
     service.replaceMessages(conversationId, [{
@@ -239,7 +235,6 @@ describe('RuntimeHostConversationRecordService', () => {
     fs.writeFileSync(storagePath, JSON.stringify({
       conversations: {
         'conversation-legacy': {
-          activeSkillIds: [],
           createdAt: '2026-04-10T00:00:00.000Z',
           hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
           id: 'conversation-legacy',

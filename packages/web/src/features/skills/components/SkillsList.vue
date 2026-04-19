@@ -4,7 +4,7 @@
       <div>
         <span class="panel-kicker">Catalog</span>
         <h2>技能目录</h2>
-        <p>当前会话可激活的技能。项目内置和用户自定义都统一在这里治理。</p>
+        <p>宿主当前能发现的技能目录。模型只会看到其中 `允许加载` 的项。</p>
       </div>
     </div>
 
@@ -24,11 +24,7 @@
         :key="skill.id"
         :skill="skill"
         :selected="modelValue === skill.id"
-        :active="isSkillActive(skill.id)"
-        :toggle-disabled="isToggleDisabled(skill.id)"
-        :toggle-label="skillToggleLabel(skill.id)"
         @select="(skillId) => $emit('update:modelValue', skillId)"
-        @toggle="(skillId) => $emit('toggle-skill', skillId)"
       />
     </div>
   </section>
@@ -38,43 +34,19 @@
 import type { SkillDetail } from '@garlic-claw/shared'
 import SkillCard from './SkillCard.vue'
 
-const props = defineProps<{
+defineProps<{
   modelValue: string | null
   searchKeyword: string
   skills: SkillDetail[]
   loading: boolean
-  activeSkillIds: string[]
-  mutatingSkillId: string | null
-  currentConversationId: string | null
 }>()
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string | null): void
   (event: 'update:searchKeyword', value: string): void
-  (event: 'toggle-skill', skillId: string): void
 }>()
 
 function onSearchInput(event: Event) {
   emit('update:searchKeyword', (event.target as HTMLInputElement).value)
-}
-
-function isSkillActive(skillId: string): boolean {
-  return props.activeSkillIds.includes(skillId)
-}
-
-function isToggleDisabled(skillId: string): boolean {
-  if (!props.currentConversationId) {
-    return true
-  }
-
-  return props.mutatingSkillId === skillId
-}
-
-function skillToggleLabel(skillId: string): string {
-  if (props.mutatingSkillId === skillId) {
-    return '更新中...'
-  }
-
-  return isSkillActive(skillId) ? '移除' : '激活'
 }
 </script>

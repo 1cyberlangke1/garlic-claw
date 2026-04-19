@@ -18,6 +18,11 @@ export type PluginHealthStatus =
 
 export type PluginEventLevel = 'info' | 'warn' | 'error';
 
+export interface EventLogSettings {
+  /** 单个实体日志文件的最大大小，单位 MB。0 表示关闭写入。 */
+  maxFileSizeMb: number;
+}
+
 export interface PluginRuntimePressureSnapshot {
   activeExecutions: number;
   maxConcurrentExecutions: number;
@@ -34,7 +39,7 @@ export interface PluginHealthSnapshot {
   runtimePressure?: PluginRuntimePressureSnapshot;
 }
 
-export interface PluginEventRecord {
+export interface EventLogRecord {
   id: string;
   type: string;
   level: PluginEventLevel;
@@ -43,7 +48,7 @@ export interface PluginEventRecord {
   createdAt: string;
 }
 
-export interface PluginEventQuery {
+export interface EventLogQuery {
   limit?: number;
   level?: PluginEventLevel;
   type?: string;
@@ -51,12 +56,18 @@ export interface PluginEventQuery {
   cursor?: string;
 }
 
-export interface PluginEventListResult {
-  items: PluginEventRecord[];
+export interface EventLogListResult {
+  items: EventLogRecord[];
   nextCursor: string | null;
 }
 
-export interface ListPluginEventOptions extends PluginEventQuery {}
+export type PluginEventRecord = EventLogRecord;
+
+export type PluginEventQuery = EventLogQuery;
+
+export type PluginEventListResult = EventLogListResult;
+
+export interface ListPluginEventOptions extends EventLogQuery {}
 
 export interface PluginStorageEntry {
   key: string;
@@ -105,7 +116,6 @@ export interface PluginPersonaDetail extends PluginPersonaSummary {
   prompt: string;
   beginDialogs: PluginPersonaDialogEntry[];
   toolNames: string[] | null;
-  skillIds: string[] | null;
   customErrorMessage: string | null;
 }
 
@@ -121,7 +131,6 @@ export interface PluginPersonaUpsertInput {
   description?: string;
   beginDialogs?: PluginPersonaDialogEntry[];
   toolNames?: string[] | null;
-  skillIds?: string[] | null;
   customErrorMessage?: string | null;
   isDefault?: boolean;
 }
@@ -132,7 +141,6 @@ export interface PluginPersonaUpdateInput {
   description?: string;
   beginDialogs?: PluginPersonaDialogEntry[];
   toolNames?: string[] | null;
-  skillIds?: string[] | null;
   customErrorMessage?: string | null;
   isDefault?: boolean;
 }

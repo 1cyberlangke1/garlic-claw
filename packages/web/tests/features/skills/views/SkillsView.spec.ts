@@ -24,12 +24,11 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
         sourceKind: 'project',
         entryPath: 'planner/SKILL.md',
         promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
-        toolPolicy: {
-          allow: ['kb.search'],
-          deny: [],
-        },
         governance: {
-          trustLevel: 'local-script',
+          loadPolicy: 'deny',
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
         },
         assets: [
           {
@@ -51,12 +50,11 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
         sourceKind: 'project',
         entryPath: 'planner/SKILL.md',
         promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
-        toolPolicy: {
-          allow: ['kb.search'],
-          deny: [],
-        },
         governance: {
-          trustLevel: 'local-script',
+          loadPolicy: 'deny',
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
         },
         assets: [
           {
@@ -78,12 +76,11 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
       sourceKind: 'project',
       entryPath: 'planner/SKILL.md',
       promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
-      toolPolicy: {
-        allow: ['kb.search'],
-        deny: [],
-      },
       governance: {
-        trustLevel: 'local-script',
+        loadPolicy: 'deny',
+        eventLog: {
+          maxFileSizeMb: 1,
+        },
       },
       assets: [
         {
@@ -95,59 +92,48 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
       ],
       content: '# Planner\n\n把复杂请求拆成 3-5 步，再开始执行。',
     })),
-    conversationSkillState: ref({
-      activeSkillIds: ['project/planner'],
-      activeSkills: [
-        {
-          id: 'project/planner',
-          name: '规划执行',
-          description: '先拆任务，再逐步执行。',
-          tags: ['planning'],
-          sourceKind: 'project',
-          entryPath: 'planner/SKILL.md',
-          promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
-          toolPolicy: {
-            allow: ['kb.search'],
-            deny: [],
-          },
-          governance: {
-            trustLevel: 'local-script',
-          },
-        },
-      ],
-    }),
     totalCount: computed(() => 1),
-    activeCount: computed(() => 1),
-    restrictedCount: computed(() => 1),
+    projectCount: computed(() => 1),
+    userCount: computed(() => 0),
+    deniedCount: computed(() => 1),
     packageCount: computed(() => 1),
-    scriptCapableCount: computed(() => 1),
+    executableCount: computed(() => 1),
     mutatingSkillId: ref(null),
+    eventLoading: ref(false),
+    eventLogs: shallowRef([
+      {
+        id: 'event-1',
+        createdAt: '2026-04-19T00:00:00.000Z',
+        level: 'info',
+        message: '技能治理已更新',
+        metadata: {
+          loadPolicy: 'deny',
+        },
+        type: 'governance:updated',
+      },
+    ]),
+    eventQuery: shallowRef({ limit: 50 }),
+    eventNextCursor: ref(null),
     selectSkill: vi.fn(),
-    toggleSkill: vi.fn(),
-    clearConversationSkills: vi.fn(),
     updateSkillGovernance: vi.fn(),
+    refreshSkillEvents: vi.fn(),
+    loadMoreSkillEvents: vi.fn(),
     refreshAll: vi.fn(),
   }),
 }))
 
-vi.mock('@/features/tools/components/ToolGovernancePanel.vue', () => ({
-  default: {
-    name: 'ToolGovernancePanel',
-    template: '<div>技能工具治理</div>',
-  },
-}))
-
 describe('SkillsView', () => {
-  it('renders the skill workspace, active state, and markdown preview', () => {
+  it('renders the skill workspace, governance state, and markdown preview', () => {
     const wrapper = mount(SkillsView)
 
-    expect(wrapper.text()).toContain('技能工作台')
+    expect(wrapper.text()).toContain('技能目录')
     expect(wrapper.text()).toContain('规划执行')
-    expect(wrapper.text()).toContain('当前会话已激活')
-    expect(wrapper.text()).toContain('kb.search')
-    expect(wrapper.text()).toContain('可执行脚本')
+    expect(wrapper.text()).toContain('已拒绝加载')
+    expect(wrapper.text()).toContain('拒绝加载')
     expect(wrapper.text()).toContain('scripts/plan.js')
-    expect(wrapper.text()).toContain('技能工具治理')
     expect(wrapper.text()).toContain('把复杂请求拆成 3-5 步')
+    expect(wrapper.text()).toContain('技能日志设置')
+    expect(wrapper.text()).toContain('技能事件日志')
+    expect(wrapper.text()).toContain('技能治理已更新')
   })
 })

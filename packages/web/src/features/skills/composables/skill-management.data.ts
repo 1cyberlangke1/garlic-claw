@@ -1,21 +1,11 @@
-import type {
-  ConversationSkillState,
-  SkillDetail,
-  UpdateSkillGovernancePayload,
-} from '@garlic-claw/shared'
+import type { EventLogListResult, EventLogQuery, SkillDetail, UpdateSkillGovernancePayload } from '@garlic-claw/shared'
 import {
-  getConversationSkills,
+  listSkillEvents,
   listSkills,
   refreshSkills,
-  updateConversationSkills,
   updateSkillGovernance,
 } from '@/features/skills/api/skills'
 import { getErrorMessage } from '@/utils/error'
-
-const EMPTY_CONVERSATION_SKILL_STATE: ConversationSkillState = {
-  activeSkillIds: [],
-  activeSkills: [],
-}
 
 /**
  * 读取 skill 列表。
@@ -46,33 +36,30 @@ export function saveSkillGovernance(
   return updateSkillGovernance(skillId, patch)
 }
 
-/**
- * 读取会话级 skill 状态。
- * @param conversationId 会话 ID
- * @returns 当前会话 skill 状态
- */
-export async function loadConversationSkillState(
-  conversationId: string,
-): Promise<ConversationSkillState> {
-  try {
-    return await getConversationSkills(conversationId)
-  } catch {
-    return EMPTY_CONVERSATION_SKILL_STATE
+export function loadSkillEvents(
+  skillId: string,
+  query: EventLogQuery,
+): Promise<EventLogListResult> {
+  return listSkillEvents(skillId, normalizeEventLogQuery(query))
+}
+
+export function normalizeEventLogQuery(query: EventLogQuery): EventLogQuery {
+  return {
+    limit: Math.min(200, Math.max(1, query.limit ?? 50)),
+    ...(query.level ? { level: query.level } : {}),
+    ...(query.type?.trim() ? { type: query.type.trim() } : {}),
+    ...(query.keyword?.trim() ? { keyword: query.keyword.trim() } : {}),
   }
 }
 
-/**
- * 保存会话级 skill 激活列表。
- * @param conversationId 会话 ID
- * @param activeSkillIds 激活中的 skill ID 列表
- * @returns 保存后的会话 skill 状态
- */
-export function saveConversationSkills(
-  conversationId: string,
-  activeSkillIds: string[],
-): Promise<ConversationSkillState> {
-  return updateConversationSkills(conversationId, {
-    activeSkillIds,
+export function dedupeEventLogs(events: EventLogListResult['items']) {
+  const seen = new Set<string>()
+  return events.filter((event) => {
+    if (seen.has(event.id)) {
+      return false
+    }
+    seen.add(event.id)
+    return true
   })
 }
 

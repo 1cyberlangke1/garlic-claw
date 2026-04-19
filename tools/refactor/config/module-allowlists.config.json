@@ -49,7 +49,7 @@
             "RuntimeHostService",
             "RuntimeHostUserContextService",
             "SkillRegistryService",
-            "SkillSessionService",
+            "SkillToolService",
             "ToolRegistryService",
             "UserService"
           ]
@@ -127,7 +127,7 @@
             "RuntimeHostService",
             "RuntimeHostUserContextService",
             "SkillRegistryService",
-            "SkillSessionService",
+            "SkillToolService",
             "ToolRegistryService",
             "UserService"
           ]
@@ -200,7 +200,7 @@
             "RuntimeHostService",
             "RuntimeHostUserContextService",
             "SkillRegistryService",
-            "SkillSessionService",
+            "SkillToolService",
             "ToolRegistryService",
             "UserService"
           ]

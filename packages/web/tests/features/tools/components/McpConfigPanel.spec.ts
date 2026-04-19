@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
@@ -22,6 +22,9 @@ describe('McpConfigPanel', () => {
           command: 'npx',
           args: ['-y', '@mariox/weather-mcp-server'],
           env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
         },
       ],
     }
@@ -39,6 +42,8 @@ describe('McpConfigPanel', () => {
     expect(wrapper.text()).toContain('weather-server')
     expect(wrapper.find('[data-test="mcp-name-input"]').element).toHaveProperty('value', 'weather-server')
     expect(wrapper.find('[data-test="mcp-command-input"]').element).toHaveProperty('value', 'npx')
+    expect(wrapper.text()).toContain('MCP 日志设置')
+    expect(wrapper.text()).toContain('MCP 事件日志')
   })
 
   it('submits create requests with command args and env entries', async () => {
@@ -65,6 +70,38 @@ describe('McpConfigPanel', () => {
       env: {
         TAVILY_API_KEY: '${TAVILY_API_KEY}',
       },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
+    })
+  })
+
+  it('saves event log settings for the selected server', async () => {
+    hoisted.state = createManagementState()
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/mcp.json',
+      servers: [
+        {
+          name: 'weather-server',
+          command: 'npx',
+          args: ['-y', '@mariox/weather-mcp-server'],
+          env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    hoisted.state.selectedServerName.value = 'weather-server'
+
+    const wrapper = mount(McpConfigPanel)
+    await flushPromises()
+
+    await wrapper.get('input[type="number"]').setValue('2')
+    await wrapper.get('.mcp-detail-panels button.hero-button').trigger('click')
+
+    expect(hoisted.state?.saveServerEventLog).toHaveBeenCalledWith({
+      maxFileSizeMb: 2,
     })
   })
 })
@@ -77,6 +114,9 @@ function createManagementState() {
       command: string
       args: string[]
       env: Record<string, string>
+      eventLog: {
+        maxFileSizeMb: number
+      }
     }>,
   })
   const selectedServerName = ref<string | null>(null)
@@ -85,21 +125,29 @@ function createManagementState() {
   return {
     loading: ref(false),
     saving: ref(false),
+    savingEventLog: ref(false),
     deleting: ref(false),
     error: ref<string | null>(null),
     notice: ref<string | null>(null),
     snapshot,
     servers,
     selectedServerName,
+    eventLoading: ref(false),
+    eventLogs: shallowRef([]),
+    eventQuery: shallowRef({ limit: 50 }),
+    eventNextCursor: ref<string | null>(null),
     selectedServer: computed(() =>
       servers.value.find((server) => server.name === selectedServerName.value) ?? null,
     ),
     refresh: vi.fn(),
+    refreshServerEvents: vi.fn(),
+    loadMoreServerEvents: vi.fn(),
     selectServer: vi.fn((name: string | null) => {
       selectedServerName.value = name
     }),
     createServer: vi.fn().mockResolvedValue(undefined),
     updateServer: vi.fn().mockResolvedValue(undefined),
     deleteServer: vi.fn().mockResolvedValue(undefined),
+    saveServerEventLog: vi.fn().mockResolvedValue(undefined),
   }
 }

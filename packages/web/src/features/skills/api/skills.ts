@@ -1,7 +1,7 @@
 import type {
-  ConversationSkillState,
+  EventLogListResult,
+  EventLogQuery,
   SkillDetail,
-  UpdateConversationSkillsPayload,
   UpdateSkillGovernancePayload,
 } from '@garlic-claw/shared'
 import { get, post, put } from '@/api/http'
@@ -21,13 +21,27 @@ export function updateSkillGovernance(
   return put<SkillDetail>(`/skills/${encodeURIComponent(skillId)}/governance`, payload)
 }
 
-export function getConversationSkills(conversationId: string) {
-  return get<ConversationSkillState>(`/chat/conversations/${conversationId}/skills`)
-}
-
-export function updateConversationSkills(
-  conversationId: string,
-  payload: UpdateConversationSkillsPayload,
+export function listSkillEvents(
+  skillId: string,
+  query: EventLogQuery = {},
 ) {
-  return put<ConversationSkillState>(`/chat/conversations/${conversationId}/skills`, payload)
+  const search = new URLSearchParams()
+  if (query.limit !== undefined) {
+    search.set('limit', String(query.limit))
+  }
+  if (query.level) {
+    search.set('level', query.level)
+  }
+  if (query.type?.trim()) {
+    search.set('type', query.type.trim())
+  }
+  if (query.keyword?.trim()) {
+    search.set('keyword', query.keyword.trim())
+  }
+  if (query.cursor?.trim()) {
+    search.set('cursor', query.cursor.trim())
+  }
+
+  const querySuffix = search.size > 0 ? `?${search.toString()}` : ''
+  return get<EventLogListResult>(`/skills/${encodeURIComponent(skillId)}/events${querySuffix}`)
 }

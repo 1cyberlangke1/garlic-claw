@@ -15,13 +15,6 @@ describe('ConversationMessageLifecycleService', () => {
   const envKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   const aiModelExecutionService = { streamText: jest.fn() };
   const aiVisionService = { resolveImageText: jest.fn(), resolveMessageParts: jest.fn() };
-  const skillSessionService = {
-    getConversationSkillContext: jest.fn().mockResolvedValue({
-      allowedToolNames: null,
-      systemPrompt: '',
-    }),
-    tryHandleMessage: jest.fn().mockResolvedValue(null),
-  };
   const toolRegistryService = {
     buildToolSet: jest.fn().mockResolvedValue(undefined),
     listAvailableTools: jest.fn().mockResolvedValue([]),
@@ -52,19 +45,12 @@ describe('ConversationMessageLifecycleService', () => {
     aiModelExecutionService.streamText.mockReset();
     aiVisionService.resolveImageText.mockReset();
     aiVisionService.resolveMessageParts.mockReset();
-    skillSessionService.getConversationSkillContext.mockReset();
-    skillSessionService.tryHandleMessage.mockReset();
     toolRegistryService.buildToolSet.mockReset();
     toolRegistryService.listAvailableTools.mockReset();
     runtimeHostPluginDispatchService.invokeHook.mockReset();
     runtimeHostPluginDispatchService.listPlugins.mockReset();
     personaService.readCurrentPersona.mockReset();
     aiVisionService.resolveMessageParts.mockImplementation(async (_conversationId, parts) => parts);
-    skillSessionService.getConversationSkillContext.mockResolvedValue({
-      allowedToolNames: null,
-      systemPrompt: '',
-    });
-    skillSessionService.tryHandleMessage.mockResolvedValue(null);
     toolRegistryService.buildToolSet.mockResolvedValue(undefined);
     toolRegistryService.listAvailableTools.mockResolvedValue([]);
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([]);
@@ -78,7 +64,6 @@ describe('ConversationMessageLifecycleService', () => {
       aiVisionService as never,
       runtimeHostConversationRecordService,
       personaService as never,
-      skillSessionService as never,
       toolRegistryService as never,
       runtimeHostPluginDispatchService as never,
     );
@@ -87,7 +72,6 @@ describe('ConversationMessageLifecycleService', () => {
       runtimeHostConversationRecordService,
       conversationTaskService,
       conversationMessagePlanningService,
-      skillSessionService as never,
       personaService as never,
       runtimeHostPluginDispatchService as never,
     );
@@ -104,7 +88,6 @@ describe('ConversationMessageLifecycleService', () => {
       name: 'Default Assistant',
       personaId: 'builtin.default-assistant',
       prompt: 'You are Garlic Claw.',
-      skillIds: null,
       source: 'default',
       toolNames: null,
       updatedAt: '2026-04-10T00:00:00.000Z',
@@ -329,7 +312,6 @@ describe('ConversationMessageLifecycleService', () => {
       name: 'Persona 1',
       personaId: 'persona-1',
       prompt: '你是 persona-1。',
-      skillIds: null,
       source: 'conversation',
       toolNames: null,
       updatedAt: '2026-04-18T00:00:00.000Z',
@@ -472,23 +454,6 @@ describe('ConversationMessageLifecycleService', () => {
     });
   });
 
-  it('applies skill conversation context into tool selection and system prompt', async () => {
-    aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
-    skillSessionService.getConversationSkillContext.mockResolvedValue({
-      allowedToolNames: ['skill__asset__list'],
-      skillPackageToolsEnabled: true,
-      systemPrompt: '你必须按 planner skill 方式回答',
-    });
-
-    await startAndWait(service, conversationTaskService, { content: '原始模型输入', model: 'gpt-5.4', provider: 'openai' }, 'user-1');
-
-    expect(toolRegistryService.buildToolSet).toHaveBeenCalledWith(expect.objectContaining({
-      allowedToolNames: ['skill__asset__list'],
-      context: expect.objectContaining({ conversationId }),
-    }));
-    expect(aiModelExecutionService.streamText.mock.calls[0][0].system).toContain('planner skill');
-  });
-
   it('injects persona prompt and begin dialogs before model execution', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
     personaService.readCurrentPersona.mockReturnValue({
@@ -505,7 +470,6 @@ describe('ConversationMessageLifecycleService', () => {
       name: 'Analyst',
       personaId: 'persona.analyst',
       prompt: '你是一个分析型助手。',
-      skillIds: null,
       source: 'conversation',
       toolNames: null,
       updatedAt: '2026-04-18T00:00:00.000Z',
@@ -527,7 +491,7 @@ describe('ConversationMessageLifecycleService', () => {
     }));
   });
 
-  it('intersects persona tool restrictions with active skill tool restrictions', async () => {
+  it('applies persona tool restrictions to tool selection', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
     personaService.readCurrentPersona.mockReturnValue({
       avatar: null,
@@ -540,14 +504,9 @@ describe('ConversationMessageLifecycleService', () => {
       name: 'Analyst',
       personaId: 'persona.analyst',
       prompt: '你是一个分析型助手。',
-      skillIds: ['project/planner'],
       source: 'conversation',
-      toolNames: ['skill__asset__list', 'memory.search'],
+      toolNames: ['memory.search'],
       updatedAt: '2026-04-18T00:00:00.000Z',
-    });
-    skillSessionService.getConversationSkillContext.mockResolvedValue({
-      allowedToolNames: ['skill__asset__list', 'skill__script__run'],
-      systemPrompt: '你必须按 planner skill 方式回答',
     });
 
     await startAndWait(service, conversationTaskService, {
@@ -556,13 +515,10 @@ describe('ConversationMessageLifecycleService', () => {
       provider: 'openai',
     }, 'user-1');
 
-    expect(skillSessionService.getConversationSkillContext).toHaveBeenCalledWith(conversationId, {
-      allowedSkillIds: ['project/planner'],
-    })
     expect(toolRegistryService.buildToolSet).toHaveBeenCalledWith(expect.objectContaining({
-      allowedToolNames: ['skill__asset__list'],
-    }))
-  })
+      allowedToolNames: ['memory.search'],
+    }));
+  });
 
   it('uses persona custom error messages when model execution fails', async () => {
     aiModelExecutionService.streamText.mockImplementation(() => {
@@ -579,7 +535,6 @@ describe('ConversationMessageLifecycleService', () => {
       name: 'Analyst',
       personaId: 'persona.analyst',
       prompt: '你是一个分析型助手。',
-      skillIds: null,
       source: 'conversation',
       toolNames: null,
       updatedAt: '2026-04-18T00:00:00.000Z',
@@ -599,22 +554,56 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
   })
 
-  it('short-circuits the conversation mainline for /skill commands', async () => {
-    skillSessionService.tryHandleMessage.mockResolvedValue({
-      assistantContent: '已激活 1 个 skill：project/planner',
-      assistantParts: [{ text: '已激活 1 个 skill：project/planner', type: 'text' }],
-      modelId: 'skill-command',
+  it('short-circuits the conversation mainline for plugin message commands', async () => {
+    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.context-compaction', ['message:received'])]);
+    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
+      action: 'short-circuit',
+      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
+      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
+      modelId: 'context-compaction-command',
       providerId: 'system',
+      reason: 'context-compaction:command',
     });
 
-    const started = await startAndWait(service, conversationTaskService, { content: '/skill use project/planner' }, 'user-1');
+    const started = await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
     expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
-      { content: '/skill use project/planner', role: 'user', status: 'completed' },
-      { content: '已激活 1 个 skill：project/planner', role: 'assistant', status: 'completed' },
+      { content: '/compact', role: 'user', status: 'completed' },
+      {
+        content: '已压缩上下文，覆盖 2 条历史消息。',
+        model: 'context-compaction-command',
+        provider: 'system',
+        role: 'assistant',
+        status: 'completed',
+      },
     ]);
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
+  });
+
+  it('still allows plugin message commands when llm auto reply is turned off', async () => {
+    runtimeHostConversationRecordService.writeConversationHostServices(conversationId, {
+      llmEnabled: false,
+      sessionEnabled: true,
+    });
+    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.context-compaction', ['message:received'])]);
+    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
+      action: 'short-circuit',
+      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
+      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+
+    await expect(
+      startAndWait(service, conversationTaskService, { content: '/compress' }, 'user-1'),
+    ).resolves.toMatchObject({
+      assistantMessage: expect.objectContaining({
+        role: 'assistant',
+      }),
+    });
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });
 
   it('short-circuits model execution when chat before-model returns an assistant response', async () => {

@@ -18,14 +18,12 @@ describe('server api contract freeze', () => {
       'GET /api/chat/conversations',
       'GET /api/chat/conversations/:id',
       'GET /api/chat/conversations/:id/services',
-      'GET /api/chat/conversations/:id/skills',
       'PATCH /api/chat/conversations/:id/messages/:messageId',
       'POST /api/chat/conversations',
       'POST /api/chat/conversations/:id/messages',
       'POST /api/chat/conversations/:id/messages/:messageId/retry',
       'POST /api/chat/conversations/:id/messages/:messageId/stop',
       'PUT /api/chat/conversations/:id/services',
-      'PUT /api/chat/conversations/:id/skills',
     ]);
   });
 });

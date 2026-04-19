@@ -27,11 +27,6 @@ export class UpdatePersonaDto {
   toolNames?: string[] | null
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  skillIds?: string[] | null
-
-  @IsOptional()
   @IsString()
   customErrorMessage?: string | null
 

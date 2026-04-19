@@ -239,13 +239,15 @@ export function applyRequestError(
  * @returns 可重试消息 ID；不存在时返回 null
  */
 export function getRetryableMessageId(messages: ChatMessage[]): string | null {
-  const lastMessage = messages[messages.length - 1]
-  if (
-    lastMessage?.role === 'assistant' &&
-    lastMessage.id &&
-    ['completed', 'stopped', 'error'].includes(lastMessage.status)
-  ) {
-    return lastMessage.id
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (
+      message?.role === 'assistant' &&
+      message.id &&
+      ['completed', 'stopped', 'error'].includes(message.status)
+    ) {
+      return message.id
+    }
   }
 
   return null

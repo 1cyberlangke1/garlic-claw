@@ -274,6 +274,18 @@ describe('PluginBootstrapService', () => {
       expect.arrayContaining([
         expect.objectContaining({
           manifest: expect.objectContaining({
+            commands: [
+              expect.objectContaining({
+                aliases: ['/compress'],
+                canonicalCommand: '/compact',
+                variants: ['/compact', '/compress'],
+              }),
+            ],
+            hooks: expect.arrayContaining([
+              expect.objectContaining({
+                name: 'message:received',
+              }),
+            ]),
             permissions: expect.arrayContaining([
               'state:read',
               'state:write',

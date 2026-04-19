@@ -4,30 +4,48 @@ import * as path from 'node:path';
 import type { McpServerConfig } from '@garlic-claw/shared';
 import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
+import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
 
 describe('McpService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';
   const configService = { get: jest.fn() };
   let tempConfigPath: string;
+  let tempLogRoot: string;
 
   let service: McpService;
 
   function createServer(name: string): McpServerConfig {
-    return { name, command: 'npx', args: ['-y', `${name}-mcp`], env: {} };
+    return {
+      name,
+      command: 'npx',
+      args: ['-y', `${name}-mcp`],
+      env: {},
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
+    };
   }
 
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env[envKey];
     tempConfigPath = path.join(os.tmpdir(), `mcp.service.spec-${Date.now()}-${Math.random()}`, 'mcp.json');
+    tempLogRoot = path.join(os.tmpdir(), `mcp.service.logs-${Date.now()}-${Math.random()}`);
     fs.rmSync(path.dirname(tempConfigPath), { recursive: true, force: true });
     process.env[envKey] = tempConfigPath;
-    service = new McpService(configService as never, new McpConfigStoreService());
+    process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
+    service = new McpService(
+      configService as never,
+      new McpConfigStoreService(),
+      new RuntimeEventLogService(),
+    );
   });
 
   afterEach(() => {
     delete process.env[envKey];
+    delete process.env.GARLIC_CLAW_LOG_ROOT;
     fs.rmSync(path.dirname(tempConfigPath), { recursive: true, force: true });
+    fs.rmSync(tempLogRoot, { recursive: true, force: true });
   });
 
   it('connects and calls a real stdio MCP server through the launcher', async () => {
@@ -61,6 +79,9 @@ describe('McpService', () => {
         command: process.execPath,
         args: [scriptPath],
         env: {},
+        eventLog: {
+          maxFileSizeMb: 1,
+        },
       });
 
       const snapshot = service.getToolingSnapshot();

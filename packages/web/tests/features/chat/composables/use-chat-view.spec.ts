@@ -11,8 +11,6 @@ vi.mock('@/features/chat/composables/chat-view.data', () => ({
   loadVisionFallbackEnabled: vi.fn(),
   loadConversationHostServices: vi.fn(),
   saveConversationHostServices: vi.fn(),
-  loadConversationSkillState: vi.fn(),
-  saveConversationSkills: vi.fn(),
 }))
 
 vi.mock('@/stores/ui', () => ({
@@ -75,18 +73,10 @@ describe('useChatView', () => {
       llmEnabled: true,
       ttsEnabled: true,
     })
-    vi.mocked(chatViewData.loadConversationSkillState).mockResolvedValue({
-      activeSkillIds: [],
-      activeSkills: [],
-    })
     vi.mocked(chatViewData.saveConversationHostServices).mockResolvedValue({
       sessionEnabled: true,
       llmEnabled: true,
       ttsEnabled: true,
-    })
-    vi.mocked(chatViewData.saveConversationSkills).mockResolvedValue({
-      activeSkillIds: [],
-      activeSkills: [],
     })
     vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
       createModelConfig(false, 'text-only-model').capabilities,
@@ -229,6 +219,74 @@ describe('useChatView', () => {
     expect(chat.sendMessage).not.toHaveBeenCalled()
   })
 
+  it('still allows context compaction commands when llm auto reply is turned off', async () => {
+    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
+      sessionEnabled: true,
+      llmEnabled: false,
+      ttsEnabled: true,
+    })
+
+    const chat = createChatStub({
+      compactContext: vi.fn().mockResolvedValue({
+        compacted: true,
+        coveredMessageCount: 1,
+      }),
+    })
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    state.inputText.value = '/compress'
+    await nextTick()
+
+    expect(state.canSend.value).toBe(true)
+
+    await state.send()
+
+    expect(chat.sendMessage).not.toHaveBeenCalled()
+    expect(chat.compactContext).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not bypass llm auto reply restrictions for slash text with pending images', async () => {
+    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
+      sessionEnabled: true,
+      llmEnabled: false,
+      ttsEnabled: true,
+    })
+
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    state.inputText.value = '/compact'
+    state.pendingImages.value.push({
+      id: 'image-1',
+      image: 'data:image/png;base64,AAAA',
+      mimeType: 'image/png',
+      name: 'demo.png',
+    })
+    await nextTick()
+
+    expect(state.canSend.value).toBe(false)
+
+    await state.send()
+
+    expect(chat.sendMessage).not.toHaveBeenCalled()
+  })
+
   it('updates llm service state for the current conversation', async () => {
     vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
       createModelConfig(true, 'image-model').capabilities,
@@ -263,55 +321,6 @@ describe('useChatView', () => {
     expect(state.conversationHostServices.value?.llmEnabled).toBe(false)
   })
 
-  it('loads and removes active skills for the current conversation', async () => {
-    vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
-      createModelConfig(true, 'image-model').capabilities,
-    )
-    vi.mocked(chatViewData.loadConversationSkillState).mockResolvedValue({
-      activeSkillIds: ['project/planner'],
-      activeSkills: [
-        {
-          id: 'project/planner',
-          name: '规划执行',
-          description: '先拆任务，再逐步执行。',
-          tags: ['planning'],
-          sourceKind: 'project',
-          entryPath: 'planner/SKILL.md',
-          promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
-          toolPolicy: {
-            allow: ['kb.search'],
-            deny: [],
-          },
-          governance: {
-            trustLevel: 'asset-read',
-          },
-        },
-      ],
-    })
-    vi.mocked(chatViewData.saveConversationSkills).mockResolvedValue({
-      activeSkillIds: [],
-      activeSkills: [],
-    })
-
-    const chat = createChatStub({
-      selectedModel: 'image-model',
-    })
-    let state!: ReturnType<typeof useChatView>
-    const Harness = defineComponent({
-      setup() {
-        state = useChatView(chat as never)
-        return () => null
-      },
-    })
-
-    mount(Harness)
-    await flushPromises()
-    await state.removeConversationSkill('project/planner')
-
-    expect(state.conversationSkillState.value?.activeSkillIds).toEqual([])
-    expect(chatViewData.saveConversationSkills).toHaveBeenCalledWith('conversation-1', [])
-  })
-
   it('triggers manual context compaction and reports the result through the UI store', async () => {
     const chat = createChatStub({
       compactContext: vi.fn().mockResolvedValue({
@@ -334,5 +343,38 @@ describe('useChatView', () => {
     expect(chat.compactContext).toHaveBeenCalledTimes(1)
     expect(notify).toHaveBeenCalledWith('已压缩上下文，覆盖 2 条历史消息。', 'success')
     expect(state.compacting.value).toBe(false)
+  })
+
+  it('computes retry label from the last non-display message', async () => {
+    const chat = createChatStub({
+      messages: [
+        {
+          id: 'user-1',
+          role: 'user',
+          content: '你好',
+          status: 'completed',
+          error: null,
+        },
+        {
+          id: 'display-1',
+          role: 'display',
+          content: '压缩摘要',
+          status: 'completed',
+          error: null,
+        },
+      ],
+    })
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    expect(state.retryActionLabel.value).toBe('发送')
   })
 })
