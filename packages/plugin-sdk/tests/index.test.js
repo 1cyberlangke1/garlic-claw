@@ -483,7 +483,7 @@ test('createPluginHostFacade normalizes host params for author-side host helpers
       },
     },
     {
-      kind: 'call',
+      kind: 'callHost',
       method: 'llm.generate-text',
       params: {
         prompt: 'ping',

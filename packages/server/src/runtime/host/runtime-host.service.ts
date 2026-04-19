@@ -155,14 +155,15 @@ export class RuntimeHostService implements OnModuleInit {
       : null;
 
     if (method === 'llm.generate-text') {
-      return {
+      return asJsonValue({
         modelId: result.modelId,
         ...(metadata ? { metadata } : {}),
         providerId: result.providerId,
         text: result.text,
-      };
+        ...(result.usage !== undefined ? { usage: result.usage } : {}),
+      });
     }
-    return {
+    return asJsonValue({
       ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
       message: {
         content: result.text,
@@ -176,7 +177,7 @@ export class RuntimeHostService implements OnModuleInit {
       toolCalls: [],
       toolResults: [],
       ...(result.usage !== undefined ? { usage: result.usage } : {}),
-    };
+    });
   }
 }
 

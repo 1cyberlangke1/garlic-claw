@@ -235,10 +235,18 @@ async function runHttpFlow(apiBase, state, input) {
             image: true,
           },
         },
+        contextLength: 65_536,
         name: 'Smoke Extra',
       },
     });
     ensure(model.id === 'smoke-extra', 'Expected extra model to be created');
+    ensure(model.contextLength === 65_536, 'Expected explicit context length to persist on model upsert');
+  });
+
+  await runStep('ai.model.context-length', async () => {
+    const models = await getJson(apiBase, `/ai/providers/${state.providerId}/models`);
+    const extraModel = models.find((entry) => entry.id === 'smoke-extra');
+    ensure(extraModel?.contextLength === 65_536, 'Expected model list to expose persisted context length');
   });
 
   await runStep('ai.default-model', async () => {

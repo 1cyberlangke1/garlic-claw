@@ -45,6 +45,8 @@ describe('AiModelExecutionService', () => {
       usage: {
         inputTokens: 3,
         outputTokens: 5,
+        totalTokens: 8,
+        source: 'provider',
       },
     });
     mockStreamText.mockReturnValue({
@@ -58,6 +60,8 @@ describe('AiModelExecutionService', () => {
       totalUsage: Promise.resolve({
         inputTokens: 3,
         outputTokens: 5,
+        totalTokens: 8,
+        source: 'provider',
       }),
     });
   });
@@ -106,6 +110,8 @@ describe('AiModelExecutionService', () => {
       usage: {
         inputTokens: 3,
         outputTokens: 5,
+        totalTokens: 8,
+        source: 'provider',
       },
     });
 
@@ -168,6 +174,8 @@ describe('AiModelExecutionService', () => {
       usage: {
         inputTokens: 3,
         outputTokens: 5,
+        totalTokens: 8,
+        source: 'provider',
       },
     });
 
@@ -196,6 +204,44 @@ describe('AiModelExecutionService', () => {
       usage: {
         inputTokens: 3,
         outputTokens: 5,
+        source: 'provider',
+        totalTokens: 8,
+      },
+    });
+  });
+
+  it('estimates usage from text content when the provider does not return token counts', async () => {
+    const service = createService();
+    mockGenerateText.mockResolvedValueOnce({
+      finishReason: 'stop',
+      text: 'world!',
+      usage: undefined,
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: [
+            { text: 'hello', type: 'text' },
+            { image: 'https://example.com/cat.png', type: 'image' },
+          ],
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      system: 'sys',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.response-body',
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'world!',
+      usage: {
+        inputTokens: 3,
+        outputTokens: 2,
+        source: 'estimated',
+        totalTokens: 5,
       },
     });
   });
@@ -245,6 +291,8 @@ describe('AiModelExecutionService', () => {
       totalUsage: Promise.resolve({
         inputTokens: 4,
         outputTokens: 6,
+        totalTokens: 10,
+        source: 'provider',
       }),
     });
 
@@ -274,11 +322,55 @@ describe('AiModelExecutionService', () => {
       usage: {
         inputTokens: 4,
         outputTokens: 6,
+        totalTokens: 10,
+        source: 'provider',
       },
     });
 
     expect(mockGenerateText).not.toHaveBeenCalled();
     expect(mockStreamText).toHaveBeenCalledTimes(1);
+  });
+
+  it('estimates usage for stream-collect when the provider does not return totalUsage', async () => {
+    const service = createService();
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield {
+          text: 'world!',
+          type: 'text-delta',
+        };
+      })(),
+      totalUsage: Promise.resolve(undefined),
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: [
+            { text: 'hello', type: 'text' },
+            { image: 'https://example.com/cat.png', type: 'image' },
+          ],
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      system: 'sys',
+      transportMode: 'stream-collect',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.raw',
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'world!',
+      usage: {
+        inputTokens: 3,
+        outputTokens: 2,
+        source: 'estimated',
+        totalTokens: 5,
+      },
+    });
   });
 
   it('retries chat generation with configured fallback chat models when the primary call fails', async () => {
@@ -291,6 +383,8 @@ describe('AiModelExecutionService', () => {
         usage: {
           inputTokens: 1,
           outputTokens: 2,
+          totalTokens: 3,
+          source: 'provider',
         },
       });
 
@@ -313,6 +407,8 @@ describe('AiModelExecutionService', () => {
       usage: {
         inputTokens: 1,
         outputTokens: 2,
+        totalTokens: 3,
+        source: 'provider',
       },
     });
 
@@ -338,6 +434,8 @@ describe('AiModelExecutionService', () => {
         totalUsage: Promise.resolve({
           inputTokens: 1,
           outputTokens: 2,
+          totalTokens: 3,
+          source: 'provider',
         }),
       });
 

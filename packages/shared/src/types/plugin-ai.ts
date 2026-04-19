@@ -1,4 +1,4 @@
-import type { AiModelConfig, AiProviderSummary } from './ai';
+import type { AiModelConfig, AiModelUsage, AiProviderSummary } from './ai';
 import type { ChatMessagePart } from './chat';
 import type { JsonObject, JsonValue } from './json';
 import type {
@@ -43,7 +43,16 @@ export interface PluginLlmGenerateResult {
     content: string;
   };
   finishReason?: string | null;
-  usage?: JsonValue;
+  usage?: AiModelUsage;
+}
+
+/** 插件侧统一 LLM 纯文本生成结果。 */
+export interface PluginLlmGenerateTextResult {
+  providerId: string;
+  modelId: string;
+  text: string;
+  metadata?: JsonValue;
+  usage?: AiModelUsage;
 }
 
 /** 插件侧统一 Subagent 运行请求。 */
@@ -130,7 +139,7 @@ export type PluginProviderSummary = Pick<
 /** 插件可见的模型安全摘要。 */
 export type PluginProviderModelSummary = Pick<
   AiModelConfig,
-  'id' | 'providerId' | 'name' | 'capabilities' | 'status'
+  'id' | 'providerId' | 'name' | 'capabilities' | 'contextLength' | 'status'
 >;
 
 /** 子代理运行前 Hook 的输入。 */

@@ -172,6 +172,7 @@ describe('RuntimeHostService', () => {
         reasoning: false,
         toolCall: true,
       },
+      contextLength: 128 * 1024,
       id: 'gpt-5.4',
       name: 'gpt-5.4',
       providerId: 'openai',
@@ -369,6 +370,8 @@ describe('RuntimeHostService', () => {
       usage: {
         inputTokens: 7,
         outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
       },
     });
     await memoryPluginCall(service, 'conversation.title.set', {
@@ -549,6 +552,12 @@ describe('RuntimeHostService', () => {
       modelId: 'gpt-5.2',
       providerId: 'openai',
       text: 'Generated: 请为这段对话生成标题',
+      usage: {
+        inputTokens: 7,
+        outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
+      },
     });
 
     await expect(
@@ -623,6 +632,8 @@ describe('RuntimeHostService', () => {
       usage: {
         inputTokens: 7,
         outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
       },
     });
 
@@ -667,6 +678,12 @@ describe('RuntimeHostService', () => {
       modelId: 'gpt-5.4',
       providerId: 'openai',
       text: 'Generated: 请总结当前插件行为',
+      usage: {
+        inputTokens: 7,
+        outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
+      },
     });
 
     pluginPersistenceService.updatePluginLlmPreference('builtin.memory-context', {
@@ -709,6 +726,12 @@ describe('RuntimeHostService', () => {
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
       text: 'Generated: 请总结当前插件行为',
+      usage: {
+        inputTokens: 7,
+        outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
+      },
     });
 
     expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(3, expect.objectContaining({
@@ -857,6 +880,8 @@ function createFixture(input?: {
       usage: {
         inputTokens: 7,
         outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
       },
       ...(input.transportMode === 'stream-collect'
         ? { customBlockOrigin: 'ai-sdk.raw' as const }
@@ -907,6 +932,8 @@ function createFixture(input?: {
     usage: {
       inputTokens: 7,
       outputTokens: 18,
+      source: 'provider',
+      totalTokens: 25,
     },
   });
   const runtimeHostAutomationService = new AutomationService(

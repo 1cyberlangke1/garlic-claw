@@ -27,6 +27,7 @@ const PREFIX = `smoke-ui-${Date.now().toString(36)}`;
 const PROVIDER_ID = `${PREFIX}-openai`;
 const PROVIDER_NAME = `${PREFIX}-provider`;
 const MODEL_ID = `${PREFIX}-model`;
+const SHADOW_MODEL_ID = `${PREFIX}-shadow-model`;
 const AUTOMATION_NAME = `${PREFIX}-automation`;
 const AUTOMATION_MESSAGE = `${PREFIX} automation message`;
 
@@ -187,6 +188,74 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     }).catch(() => []);
     return providers.some((provider) => provider.id === PROVIDER_ID) ? true : null;
   }, '等待 smoke provider 创建完成');
+
+  await page.getByText(PROVIDER_NAME, { exact: false }).first().click();
+  const contextLengthInput = page.locator(`[data-test="context-length-input-${MODEL_ID}"]`);
+  await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await contextLengthInput.evaluate((node, value) => {
+    node.value = value;
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+  }, '65536');
+  const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
+  await waitFor(async () => (await saveButton.isDisabled()) ? null : true, '等待上下文长度保存按钮可用');
+  await saveButton.click();
+
+  await waitFor(async () => {
+    const models = await requestJson(`/ai/providers/${PROVIDER_ID}/models`, {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => []);
+    return models.find((model) => model.id === MODEL_ID)?.contextLength === 65536 ? true : null;
+  }, '等待上下文长度持久化');
+
+  await page.getByRole('button', { name: '编辑' }).click();
+  const editDialog = page.locator('[data-test="provider-dialog-overlay"]');
+  await editDialog.waitFor({ state: 'visible' });
+  await editDialog.getByPlaceholder('gpt-4o-mini').fill(SHADOW_MODEL_ID);
+  await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(SHADOW_MODEL_ID);
+  const removeOriginalModelResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT'
+        && response.url().endsWith(`/api/ai/providers/${PROVIDER_ID}`),
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+  await editDialog.getByRole('button', { name: '保存' }).click();
+  const removeOriginalModelResponse = await removeOriginalModelResponsePromise;
+  assert.equal(removeOriginalModelResponse.ok(), true, '删除原模型的 provider 保存请求失败');
+
+  await waitFor(async () => {
+    const models = await requestJson(`/ai/providers/${PROVIDER_ID}/models`, {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => []);
+    const originalModel = models.find((model) => model.id === MODEL_ID);
+    const shadowModel = models.find((model) => model.id === SHADOW_MODEL_ID);
+    return !originalModel && shadowModel ? true : null;
+  }, '等待原模型从 provider 配置中移除');
+
+  await page.getByRole('button', { name: '编辑' }).click();
+  await editDialog.waitFor({ state: 'visible' });
+  await editDialog.getByPlaceholder('gpt-4o-mini').fill(MODEL_ID);
+  await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill([MODEL_ID, SHADOW_MODEL_ID].join('\n'));
+  const readdOriginalModelResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT'
+        && response.url().endsWith(`/api/ai/providers/${PROVIDER_ID}`),
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+  await editDialog.getByRole('button', { name: '保存' }).click();
+  const readdOriginalModelResponse = await readdOriginalModelResponsePromise;
+  assert.equal(readdOriginalModelResponse.ok(), true, '重新加入原模型的 provider 保存请求失败');
+
+  await waitFor(async () => {
+    const models = await requestJson(`/ai/providers/${PROVIDER_ID}/models`, {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => []);
+    return models.find((model) => model.id === MODEL_ID)?.contextLength === 128 * 1024 ? true : null;
+  }, '等待重新加入的原模型恢复默认上下文长度');
+
+  await waitFor(async () => {
+    const currentValue = await contextLengthInput.inputValue().catch(() => '');
+    return currentValue === String(128 * 1024) ? true : null;
+  }, '等待前端模型面板展示重新加入模型的默认上下文长度');
 }
 
 async function runChatFlow(page, accessToken) {

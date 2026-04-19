@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue, PluginLlmMessage, PluginLlmTransportMode } from '@garlic-claw/shared';
+import type { AiModelUsage, JsonObject, PluginLlmMessage, PluginLlmTransportMode } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -28,7 +28,7 @@ export interface AiModelExecutionResult {
   modelId: string;
   providerId: string;
   text: string;
-  usage?: JsonValue;
+  usage?: AiModelUsage;
 }
 
 interface AiExecutionTarget {
@@ -66,7 +66,7 @@ export class AiModelExecutionService {
           modelId: target.modelId,
           providerId: target.provider.id,
           text: typeof result.text === 'string' ? result.text : '',
-          usage: result.usage as unknown as JsonValue,
+          usage: readModelUsage(result.usage, input, typeof result.text === 'string' ? result.text : ''),
         };
       } catch (error) {
         lastError = error;
@@ -118,7 +118,7 @@ export class AiModelExecutionService {
           }
         }
 
-        const usage = await readCollectedUsage(result);
+        const usage = readModelUsage(await result.totalUsage, input, text);
 
         return {
           ...(customBlocks.length > 0 ? { customBlocks } : {}),
@@ -127,7 +127,7 @@ export class AiModelExecutionService {
           modelId: target.modelId,
           providerId: target.provider.id,
           text,
-          ...(usage !== undefined ? { usage } : {}),
+          usage,
         };
       } catch (error) {
         lastError = error;
@@ -236,10 +236,6 @@ function readFinishReason(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-async function readCollectedUsage(result: ReturnType<typeof streamText>): Promise<JsonValue | undefined> {
-  return await result.totalUsage as unknown as JsonValue;
-}
-
 function buildExecutionMessages(messages: PluginLlmMessage[]): ModelMessage[] {
   return messages.map((message) => ({ content: buildExecutionMessageContent(message.content), role: message.role })) as unknown as ModelMessage[];
 }
@@ -267,8 +263,80 @@ function buildProviderOptions(
   return input.variant ? { ...(input.providerOptions ?? {}), variant: input.variant } : input.providerOptions;
 }
 
+function readModelUsage(
+  value: unknown,
+  input: AiModelExecutionRequest,
+  text: string,
+): AiModelUsage {
+  const providerUsage = readProviderUsage(value);
+  if (providerUsage) {
+    return providerUsage;
+  }
+
+  const inputTokens = estimateTokenCount([
+    input.system ?? '',
+    ...input.messages.map((message) => readMessageText(message.content)),
+  ].join('\n'));
+  const outputTokens = estimateTokenCount(text);
+  return {
+    inputTokens,
+    outputTokens,
+    source: 'estimated',
+    totalTokens: inputTokens + outputTokens,
+  };
+}
+
 function readExecutionError(error: unknown, fallback: string): Error {
   return error instanceof Error ? error : new Error(fallback);
+}
+
+function readProviderUsage(value: unknown): AiModelUsage | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const totalTokens = readTokenNumber(value.totalTokens);
+  let inputTokens = readTokenNumber(value.inputTokens);
+  let outputTokens = readTokenNumber(value.outputTokens);
+
+  if (totalTokens !== null && inputTokens !== null && outputTokens === null) {
+    outputTokens = Math.max(totalTokens - inputTokens, 0);
+  }
+  if (totalTokens !== null && outputTokens !== null && inputTokens === null) {
+    inputTokens = Math.max(totalTokens - outputTokens, 0);
+  }
+
+  if (inputTokens === null || outputTokens === null) {
+    return null;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    source: 'provider',
+    totalTokens: totalTokens ?? inputTokens + outputTokens,
+  };
+}
+
+function readTokenNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.ceil(value)
+    : null;
+}
+
+function readMessageText(content: PluginLlmMessage['content']): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  return content
+    .filter((part): part is { text: string; type: 'text' } => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n');
+}
+
+function estimateTokenCount(text: string): number {
+  return Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
 }
 
 function toAiSdkImageInput(image: string): string | ArrayBuffer {

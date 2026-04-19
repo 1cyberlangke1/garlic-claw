@@ -7,7 +7,6 @@ import {
   readConversationMessages,
   readConversationSummary,
   readConversationTitleConfig,
-  readTextGenerationResult,
   resolveConversationTitleRuntimeConfig,
   sanitizeConversationTitle,
   shouldGenerateConversationTitle,
@@ -45,14 +44,11 @@ export const BUILTIN_CONVERSATION_TITLE_PLUGIN: BuiltinPluginDefinition = {
         return createPassHookResult();
       }
 
-      const nextTitle = sanitizeConversationTitle(
-        readTextGenerationResult(
-          await context.host.generateText({
-            prompt,
-            transportMode: 'stream-collect',
-          }),
-        ).text,
-      );
+      const generated = await context.host.generateText({
+        prompt,
+        transportMode: 'stream-collect',
+      });
+      const nextTitle = sanitizeConversationTitle(generated.text);
       if (!nextTitle || nextTitle === conversation.title) {
         return createPassHookResult();
       }
