@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 from collections.abc import Callable
@@ -44,6 +45,7 @@ SERVER_APP_STDERR = LOG_DIR / "server-app.err.log"
 WEB_STDOUT = LOG_DIR / "web-vite.log"
 WEB_STDERR = LOG_DIR / "web-vite.err.log"
 DEV_DOCKER_SERVICES: list[str] = []
+MIN_NODE_VERSION = (22, 0, 0)
 
 
 def parseEnvFile(envPath: Path) -> dict[str, str]:
@@ -75,6 +77,38 @@ def 获取状态输出宽度(messages: list[str]) -> int:
     if not messages:
         return 0
     return max(len(message) for message in messages)
+
+
+def 格式化版本号(version: tuple[int, int, int]) -> str:
+    return '.'.join(str(part) for part in version)
+
+
+def 解析版本号文本(rawText: str) -> tuple[int, int, int] | None:
+    match = re.search(r'(\d+)\.(\d+)\.(\d+)', rawText)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def 读取命令版本号(command: list[str]) -> tuple[int, int, int] | None:
+    try:
+        result = subprocess.run(
+            runtime.normalizeCommand(command),
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            check=False,
+        )
+    except OSError:
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    output = (result.stdout or result.stderr).strip()
+    if not output:
+        return None
+    return 解析版本号文本(output)
 
 
 def 计算文件哈希(path: Path) -> str:
@@ -305,7 +339,7 @@ def 确保端口空闲() -> bool:
             continue
         print(
             f"端口 {port} 已被 PID {pids[0]} 占用。"
-            '请先运行 "python tools\\一键启停脚本.py --stop" 或释放该端口。'
+            '请先运行 "python tools\\start_launcher.py --stop" 或释放该端口。'
         )
         return False
     return True
@@ -331,6 +365,20 @@ def 执行启动前预检() -> bool:
             nodePath or "未找到 node，请确认 Node.js 已安装并已加入 PATH。",
         )
     )
+    if nodePath is not None:
+        nodeVersion = 读取命令版本号(["node", "--version"])
+        checks.append(
+            (
+                "检查 Node.js 版本",
+                nodeVersion is not None and nodeVersion >= MIN_NODE_VERSION,
+                (
+                    f"当前 Node.js 版本为 {格式化版本号(nodeVersion)}。"
+                    f"Garlic Claw 至少需要 Node.js {格式化版本号(MIN_NODE_VERSION)}。"
+                )
+                if nodeVersion is not None
+                else "无法解析 node --version 输出，请确认 Node.js 可正常执行。",
+            )
+        )
 
     requiredPaths = [
         ("检查 package-lock.json", ROOT / "package-lock.json"),
@@ -601,7 +649,7 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
             print("- 运行模式：前台 relay 日志（按 Ctrl+C 停止开发环境）")
         else:
             print("- 运行模式：后台启动后自动退出脚本")
-            print("- 如需前台看日志：python tools\\一键启停脚本.py --tail-logs")
+            print("- 如需前台看日志：python tools\\start_launcher.py --tail-logs")
         print()
 
         if not tailLogs:
