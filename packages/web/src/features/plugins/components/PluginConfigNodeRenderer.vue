@@ -217,6 +217,7 @@ import type {
   PluginConfigNodeSchema,
   PluginConfigOptionSchema,
   PluginPersonaSummary,
+  PluginSubagentTypeSummary,
 } from '@garlic-claw/shared'
 
 defineOptions({
@@ -232,6 +233,7 @@ const props = defineProps<{
   specialOptions: {
     personas: PluginPersonaSummary[]
     providers: AiProviderSummary[]
+    subagentTypes: PluginSubagentTypeSummary[]
   }
 }>()
 
@@ -317,6 +319,12 @@ const availableOptions = computed(() => {
       value: persona.id,
     }))
   }
+  if (props.nodeSchema.specialType === 'selectSubagentType') {
+    return props.specialOptions.subagentTypes.map((subagentType) => ({
+      label: subagentType.name,
+      value: subagentType.id,
+    }))
+  }
   if (props.nodeSchema.specialType === 'selectProviders') {
     return props.specialOptions.providers.map((provider) => ({
       label: provider.name,
@@ -340,6 +348,9 @@ const selectOptions = computed(() => {
 const emptySelectLabel = computed(() => {
   if (props.nodeSchema.specialType === 'selectProvider') {
     return '继承主模型（默认）'
+  }
+  if (props.nodeSchema.specialType === 'selectSubagentType') {
+    return '使用默认子代理类型'
   }
   return '未设置'
 })

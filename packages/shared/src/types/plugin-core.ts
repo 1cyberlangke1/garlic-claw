@@ -170,6 +170,7 @@ export type PluginConfigSpecialType =
   | 'selectProvider'
   | 'selectProviders'
   | 'selectPersona'
+  | 'selectSubagentType'
   | 'personaPool'
   | (string & {});
 

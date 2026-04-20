@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   ChatMessageMetadata,
   ChatMessagePart,
+  ConversationTodoItem,
   ConversationHostServices,
   JsonObject,
   JsonValue,
@@ -23,10 +24,12 @@ export class RuntimeHostConversationRecordService {
   private readonly conversationSessions = new Map<string, RuntimeConversationSessionRecord>();
   private readonly storagePath = resolveConversationStoragePath();
   private readonly conversations: Map<string, RuntimeConversationRecord>;
+  private readonly conversationTodos: Map<string, ConversationTodoItem[]>;
 
   constructor(@Optional() private readonly runtimeHostPluginDispatchService?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>) {
     const loaded = this.loadConversations();
     this.conversations = loaded.records;
+    this.conversationTodos = loaded.todos;
     if (loaded.migrated) {this.saveConversations();}
   }
 
@@ -40,6 +43,7 @@ export class RuntimeHostConversationRecordService {
   deleteConversation(conversationId: string, userId?: string): JsonValue {
     this.requireConversation(conversationId, userId);
     this.conversations.delete(conversationId);
+    this.conversationTodos.delete(conversationId);
     this.saveConversations();
     return { message: 'Conversation deleted' };
   }
@@ -75,6 +79,7 @@ export class RuntimeHostConversationRecordService {
   }
 
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return buildConversationSummary(this.requireConversation(conversationId, userId)); }
+  readSessionTodo(sessionId: string, userId?: string): JsonValue { this.requireConversation(sessionId, userId); return asJsonValue((this.conversationTodos.get(sessionId) ?? []).map((item) => cloneJsonValue(item))); }
 
   readConversationHistory(conversationId: string, userId?: string): JsonValue { return buildConversationHistorySnapshot(this.requireConversation(conversationId, userId)); }
 
@@ -110,6 +115,13 @@ export class RuntimeHostConversationRecordService {
       ...buildConversationHistorySnapshot(updatedConversation),
       changed: true,
     });
+  }
+
+  replaceSessionTodo(sessionId: string, todos: ConversationTodoItem[], userId?: string): JsonValue {
+    this.requireConversation(sessionId, userId);
+    this.conversationTodos.set(sessionId, todos.map((item) => cloneJsonValue(item)));
+    this.saveConversations();
+    return asJsonValue(todos.map((item) => cloneJsonValue(item)));
   }
 
   readCurrentMessageTarget(conversationId: string, userId?: string): JsonValue { const conversation = this.requireConversation(conversationId, userId); return { id: conversation.id, label: conversation.title, type: 'conversation' }; }
@@ -169,19 +181,43 @@ export class RuntimeHostConversationRecordService {
     throw new BadRequestException('timeoutMs must be a positive integer');
   }
 
-  private saveConversations(): void { fs.mkdirSync(path.dirname(this.storagePath), { recursive: true }); fs.writeFileSync(this.storagePath, JSON.stringify({ conversations: Object.fromEntries([...this.conversations.entries()].map(([id, record]) => [id, cloneJsonValue(record)])) }, null, 2), 'utf-8'); }
+  private saveConversations(): void {
+    fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
+    const conversations = Object.fromEntries(
+      [...this.conversations.entries()].map(([id, record]) => [id, cloneJsonValue(record)]),
+    );
+    const todos = Object.fromEntries(
+      [...this.conversationTodos.entries()].map(([id, items]) => [id, cloneJsonValue(items)]),
+    );
+    fs.writeFileSync(
+      this.storagePath,
+      JSON.stringify(
+        {
+          conversations,
+          ...(Object.keys(todos).length > 0 ? { todos } : {}),
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
+  }
 
-  private loadConversations(): { migrated: boolean; records: Map<string, RuntimeConversationRecord> } {
+  private loadConversations(): { migrated: boolean; records: Map<string, RuntimeConversationRecord>; todos: Map<string, ConversationTodoItem[]> } {
     try {
       fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-      if (!fs.existsSync(this.storagePath)) {return { migrated: false, records: new Map<string, RuntimeConversationRecord>() };}
-      const parsed = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as { conversations?: Record<string, RuntimeConversationRecord> };
+      if (!fs.existsSync(this.storagePath)) {return { migrated: false, records: new Map<string, RuntimeConversationRecord>(), todos: new Map<string, ConversationTodoItem[]>() };}
+      const parsed = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as { conversations?: Record<string, RuntimeConversationRecord>; todos?: Record<string, ConversationTodoItem[]> };
       const entries = Object.entries(parsed.conversations ?? {});
       const records = new Map(entries.flatMap(([id, record]) =>
         record.userId === SINGLE_USER_ID ? [[id, cloneJsonValue(record)]] : []));
-      return { migrated: records.size !== entries.length, records };
+      const todos = new Map(Object.entries(parsed.todos ?? {}).flatMap(([conversationId, items]) =>
+        records.has(conversationId) && Array.isArray(items)
+          ? [[conversationId, cloneJsonValue(items)]]
+          : []));
+      return { migrated: records.size !== entries.length, records, todos };
     } catch {
-      return { migrated: false, records: new Map<string, RuntimeConversationRecord>() };
+      return { migrated: false, records: new Map<string, RuntimeConversationRecord>(), todos: new Map<string, ConversationTodoItem[]>() };
     }
   }
 
@@ -478,7 +514,13 @@ function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | n
 }
 
 function estimateConversationHistoryTextBytes(messages: JsonObject[]): number {
-  return Buffer.byteLength(messages.map(readConversationHistoryMessageText).join('\n'), 'utf8');
+  return Buffer.byteLength(
+    messages
+      .map(readConversationHistoryMessageText)
+      .filter((text) => text.length > 0)
+      .join('\n'),
+    'utf8',
+  );
 }
 
 function readConversationHistoryMessageText(message: JsonObject): string {

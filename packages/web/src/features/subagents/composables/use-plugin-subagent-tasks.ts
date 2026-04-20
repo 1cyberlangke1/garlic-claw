@@ -122,6 +122,7 @@ function matchesTask(task: PluginSubagentTaskSummary, keyword: string): boolean 
   }
 
   return [
+    task.description ?? '',
     task.pluginDisplayName ?? '',
     task.pluginId,
     task.requestPreview,

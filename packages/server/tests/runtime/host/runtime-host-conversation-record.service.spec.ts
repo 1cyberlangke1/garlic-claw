@@ -56,6 +56,14 @@ describe('RuntimeHostConversationRecordService', () => {
       sessionEnabled: true,
       ttsEnabled: false,
     });
+    expect(service.replaceSessionTodo(conversationId, [
+      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
+    ])).toEqual([
+      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
+    ]);
+    expect(service.readSessionTodo(conversationId)).toEqual([
+      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
+    ]);
 
     const beforeRevision = service.readConversationRevision(conversationId);
     service.replaceMessages(conversationId, [{
@@ -94,6 +102,9 @@ describe('RuntimeHostConversationRecordService', () => {
 
     const reloaded = new RuntimeHostConversationRecordService();
     expect(reloaded.getConversation(conversationId)).toEqual(service.getConversation(conversationId));
+    expect(reloaded.readSessionTodo(conversationId)).toEqual([
+      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
+    ]);
     expect(service.deleteConversation(conversationId)).toEqual({ message: 'Conversation deleted' });
   });
 
@@ -228,6 +239,74 @@ describe('RuntimeHostConversationRecordService', () => {
       expectedRevision: initialHistory.revision,
       messages: [],
     })).toThrow(ConflictException);
+  });
+
+  it('excludes display messages from conversation history token preview', () => {
+    process.env[envKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'Display Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as {
+      revision: string;
+    };
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '/compact',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'display-command',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  variant: 'command',
+                },
+                owner: 'conversation.display-message',
+                type: 'display-message',
+                version: '1',
+              },
+            ],
+          },
+          parts: [
+            {
+              text: '/compact',
+              type: 'text',
+            },
+          ],
+          role: 'display',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+        {
+          content: '正常消息',
+          createdAt: '2026-04-19T10:01:00.000Z',
+          id: 'assistant-message',
+          parts: [
+            {
+              text: '正常消息',
+              type: 'text',
+            },
+          ],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    const preview = service.previewConversationHistory(conversationId, {}) as {
+      estimatedTokens: number;
+      messageCount: number;
+      textBytes: number;
+    };
+    const expectedTextBytes = Buffer.byteLength('assistant\n正常消息', 'utf8');
+
+    expect(preview).toEqual({
+      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+      messageCount: 2,
+      textBytes: expectedTextBytes,
+    });
   });
 
   it('deletes persisted legacy user conversations that no longer符合单用户模型', () => {

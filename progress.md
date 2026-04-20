@@ -1,0 +1,977 @@
+# Progress
+
+## 2026-04-19
+
+## 2026-04-20
+
+- 已重新读取 `TODO.md / task_plan.md / progress.md / findings.md`，确认本轮从 N17 非执行环境收尾转入新的 `subagent + todo` 收口子阶段。
+- 已把当前真相同步回规划文件：
+  - `subagent` 公开语义从 `profileId + taskId` 继续收口到 `subagentType + sessionId`
+  - `todo` owner 从 `conversation` 收口到 `session`
+  - 后台任务页降级为 session 执行投影视图
+  - 当前仍不碰任何 shell / file runtime
+- 已补 `subagent type` 文件化真相到规划文件：
+  - 宿主不再使用内建 profile 常量表
+  - 当前统一从仓库根 `subagent-types/*.yaml` 扫描类型
+  - 默认 `general / explore` 也作为真实 YAML 文件存在
+  - 插件声明式选择器与 HTTP 列表接口都已切到 `selectSubagentType / GET /subagent-types`
+- 已修复浏览器 smoke 的一个脆点：
+  - `browser-smoke.mjs` 更新 provider 模型上下文长度时，改成直接派发 DOM `input/change` 事件
+  - 不再依赖 `Tab` 触发草稿变更，避免卡在“保存上下文”按钮始终禁用
+- 已根据独立 judge 补修两处当前回归：
+  - 只有真正被 `message:received` 短路处理的 slash 命令才会落成 `display`；未知 `/foo` 不再被错误排除出 LLM 上下文
+  - 聊天页“LLM 已关闭时仍可发送命令”的判定已切到命令目录匹配，不再用纯 `/...` 正则放行未知命令
+- 已把 `subagent` 当前公开语义的真实状态同步回规划文件：
+  - 输入侧已切到 `subagentType + sessionId`
+  - 结果载荷与后台任务账本目前仍保留 `taskId` 投影
+  - 这一段还在进行中，不能提前写成“`taskId` 已完全退出公开语义”
+- 已重新通过这轮提交前 fresh 验证：
+  - `packages/server`: `npx jest --runInBand tests/conversation/conversation-message-lifecycle.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/chat/composables/use-chat-command-catalog.spec.ts tests/features/chat/composables/use-chat-view.spec.ts tests/features/chat/components/ChatComposer.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已完成这轮独立 judge 复核，结论为 PASS：
+  - judge 确认 slash `display` 误判已修复，未知 `/foo` 不再被吞掉
+  - judge 确认前端命令提示与发送放行已收口到同一套命令目录真相源
+  - judge 确认规划文件已改成与代码一致：`taskId` 仍是公开投影视图，这段迁移仍在进行中
+- 已开始继续推进 N17 `skill` 对齐 OpenCode。
+- 已重新读取 `TODO.md`、`task_plan.md`、`progress.md`、`findings.md`，确认这轮先落与执行环境无关的部分。
+- 已确认当前 skill 发现链仍同时扫描仓库 `skills/` 和用户目录 `~/.garlic-claw/skills`，不符合本轮“统一从 `skills/` 目录扫描”的目标。
+- 已把本轮范围补进 `TODO.md / task_plan.md`：
+  - 先收口 skill 目录发现
+  - 先收口技能页公开语义
+  - 相关实现优先参考 `other/opencode` 的 skill discovery / skill tool
+  - bash staging 与执行环境切换留到后续 runtime 阶段
+
+- 已完成启动脚本跨机入口收口：
+  - 排查 `tools/一键启停脚本.py`、`tools/start_launcher.py`、`tools/scripts/dev_runtime.py` 与脚本回归测试
+  - 确认跨机稳定入口应是 ASCII shim `tools/start_launcher.py`，不应继续把中文主脚本路径作为用户默认命令
+  - `dev_runtime.py` 的端口占用提示与后台模式日志提示已改成 `python tools\\start_launcher.py ...`
+  - `README.md` 与 `docs/插件开发指南.md` 的直接 Python 启动命令已统一切到 `tools/start_launcher.py`
+  - `tools/scripts/test_runtime_scripts.py` 已新增 3 条回归：
+    - ASCII shim 能加载中文主入口
+    - 端口占用提示使用 ASCII 入口
+    - 后台模式日志提示使用 ASCII 入口
+- 已补并通过本轮验证：
+  - `python -m unittest tools.scripts.test_runtime_scripts`
+  - `python tools/start_launcher.py --test`
+  - `python tools/start_launcher.py --status`
+
+- 已完成聊天输入命令提示重构：
+  - `ChatComposer` 输入框占位文案已去掉 `/compact`、`/compress` 的硬编码
+  - 输入 `/` 时会显示命令提示面板，支持本地前缀匹配、方向键选择、`Enter/Tab` 补全
+  - 前端命令目录已切到 `localStorage + Trie` 本地缓存，不再每次输入都请求后端
+  - 服务端新增 `/plugin-commands/version`，`/plugin-commands/overview` 也会返回稳定 `version`
+  - 前端只在首次无缓存或版本变动时拉全量命令目录；页面重新可见时会做低频版本校验
+- 已补并通过本轮验证：
+  - `packages/server`: `npx jest --runInBand tests/adapters/http/plugin/plugin-command.controller.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/chat/components/ChatComposer.spec.ts tests/features/chat/views/ChatView.spec.ts tests/features/chat/composables/use-chat-view.spec.ts tests/features/chat/composables/use-chat-command-catalog.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+
+- 已完成 `display` 消息持久化收口：
+  - 前端聊天输入 `/compact`、`/compress` 不再走本地临时展示，统一走正式 `chat.sendMessage()` 链
+  - 服务端会把命令输入与命令结果都持久化为 `role: 'display'`
+  - display 命令消息与结果消息已补正式 `display-message` 注解，前端按类型渲染不同颜色
+  - `display` 消息继续不进入默认 LLM 上下文，也不参与会话 token 预估
+- 已补并通过这轮验证：
+  - `packages/web`: `npm run test:run -- tests/features/chat/composables/use-chat-view.spec.ts tests/features/chat/components/ChatMessageList.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - `packages/server`: `npx jest --runInBand tests/conversation/conversation-message-lifecycle.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
+  - `packages/web`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已定位并修复一个隐藏缺口：
+  - `previewConversationHistory()` 之前虽然把 `display` 正文清空，但仍会因为 `join('\n')` 留下一次分隔换行
+  - 现已在 token 预估前过滤空文本，确保 `display` 完全不计入预估
+
+- 已完成 “MCP 每个配置独立文件” 调整：
+  - `McpConfigStoreService` 已切到 `mcp/servers/*.json` 目录扫描和单文件读写
+  - 默认对外 `configPath` 已改为 `mcp/servers`
+  - 仓库内置 MCP 配置已拆到 `mcp/servers/tavily-mcp.json` 与 `mcp/servers/weather-server.json`
+  - `mcp/mcp.json` 已删除，不再作为真实存储
+- 已同步收口 MCP 目录化存储的前后端与验证：
+  - server 定向 `jest`、web 定向 `vitest`、`packages/server`/`packages/web` build 已通过
+  - root `npm run smoke:server`、`npm run smoke:web-ui` 已 fresh 通过
+- 已开始“MCP 每个配置独立文件”调整：
+  - 用户确认采用目录扫描方案，`mcp/servers/*.json` 直接作为唯一配置源
+  - 不再保留聚合 `mcp/mcp.json` 作为真实存储
+  - 下一步同步改造 `McpConfigStoreService`、定向测试与 smoke 断言
+- 已补“非送模消息前端显式区分”：
+  - `display` 消息现在会在聊天消息头部显示“仅展示，不进入 LLM 上下文”标识
+  - 继续沿用 `display` 作为正式非送模消息角色，不新增消息角色
+  - `ChatMessageList` 单测已补对应断言，准备跑定向验证
+- 已继续收口聊天命令上下文语义：
+  - `message:received` 短路的 slash command 现在会把命令输入和命令结果都落成 `display`
+  - 这类消息继续在前端可见，但默认送模历史会跳过它们
+  - `ConversationMessageLifecycleService` 定向测试已更新，准备跑验证
+- 已补 smoke 覆盖缺口：
+  - `http-smoke.mjs` 现已覆盖 `/compact` 短路后两条消息都为 `display`，且后续正常送模请求不包含 `/compact`
+  - `browser-smoke.mjs` 现已覆盖聊天页输入 `/compact` 后会走压缩请求，并确认该命令不写入会话历史
+- 已开始“独立事件日志与非送模消息语义”任务。
+- 已读取 `TODO.md`、`task_plan.md`、`progress.md`、`findings.md`，并确认当前日志现状与上下文压缩展示缺口。
+- 已完成第一轮摸底：
+  - `plugin` 事件日志仍保存在 `PluginPersistenceService.events` 内存 Map
+  - `MCP` 与 `skill` 还没有独立日志 owner
+  - 上下文压缩摘要仍写成正式 `assistant` 消息
+  - 前端目前只有插件页带事件日志组件，MCP / skill 还没有对应日志视图
+- 已把本轮目标、阶段、当前决定与摸底结论写入 `task_plan.md`，下一步开始改 shared / server 契约并落文件日志。
+- 已补齐 shared 根出口，`EventLog*` 相关类型不再漏出根包导出。
+- 已打通 server / web 首轮编译链：
+  - `SkillController` 现在会显式归一化 `eventLog.maxFileSizeMb`
+  - `shared-contract.typecheck` 与 MCP 编辑器 payload 已补 `eventLog`
+  - `packages/server`、`packages/web` 当前都已重新通过 `npm run build`
+- 已把 MCP 页面正式接上独立事件日志：
+  - `packages/web/src/features/tools/api/mcp.ts` 新增 `listMcpServerEvents()`
+  - `useMcpConfigManagement()` 已维护 `eventLogs / eventQuery / nextCursor / saveServerEventLog`
+  - `McpConfigPanel.vue` 已新增“日志设置 + 事件日志”两个面板
+- 已开始收口 `display` 消息前端语义：
+  - `ChatMessageList.vue` 已把 `display` 角色标签改成独立“摘要”文案
+  - `display` 消息不再出现 retry 按钮
+  - `ChatMessageList.css` 已补专属视觉样式
+  - `chat-store.runtime.ts` 与 `chat-view.module.ts` 已改成忽略尾部 `display`，继续按最后一条 assistant 判断重试语义
+
+- 已开始“skill 对齐 OpenCode”任务。
+- 已读取 `TODO.md`、`task_plan.md`、`progress.md`、`findings.md`，并把本轮任务写入规划文件。
+- 已完成第一轮对照：
+  - Garlic Claw 当前 skill 是“会话级激活 + 持续注入 systemPrompt + skill package 工具 + 独立工作台”
+  - OpenCode 当前 skill 是“原生 `skill` 工具按需加载 `SKILL.md` + 权限过滤 + 对话内懒注入”
+- 已确认这不是字段层对齐，而是公开语义和运行时 owner 的重构题；下一步先向用户确认是否直接切到 OpenCode 的懒加载模型。
+- 用户已确认采用方案 1：
+  - skill 改成 OpenCode 风格的原生懒加载工具
+  - 删除会话级 skill 激活态与相关命令
+  - skill 相关代码执行回到通用工具，不再保留 skill 专用脚本执行链
+- 已继续完成本轮“与执行环境无关”的收尾：
+  - `packages/shared/src/types/skill.ts` 的 `SkillSourceKind` 已收口为单一 `project`
+  - 技能页统计已不再按 `sourceKind === 'project'` 过滤，直接表达“当前目录扫描到多少 skill”
+  - 这避免后续又从共享契约或前端聚合逻辑把 `user skill` 旧语义带回来
+- 已继续把 native `skill` 工具输出对齐到 OpenCode 方向：
+  - `SkillToolService.loadSkill()` 现在会生成稳定的 `modelOutput`
+  - `ToolRegistryService` 已为 native `skill` 工具接上 `toModelOutput`
+  - 模型 follow-up request 现在会收到 `<skill_content name="...">`、base directory、entry file 与 `<skill_files>` 文本块，而不是只看到 JSON 结果
+- 已继续补齐这轮剩余的静态可见性细节：
+  - `SkillRegistryService` 现在按 `name -> id` 排序 skill，对外暴露顺序更接近 `other/opencode`
+  - native `skill` 工具的 `<available_skills>` 现在包含 `<location>skills/.../SKILL.md</location>`，便于模型理解技能在仓库中的位置
+- 已重新通过本轮定向验证：
+  - `packages/web`: `npm run test:run -- tests/features/skills/composables/use-skill-management.spec.ts tests/features/skills/views/SkillsView.spec.ts`
+  - `packages/server`: `npx jest --runInBand tests/execution/skill/skill-registry.service.spec.ts tests/execution/skill/skill-tool.service.spec.ts tests/adapters/http/skill/skill.controller.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已补本轮新增验证：
+  - `packages/server`: `npx jest --runInBand tests/execution/skill/skill-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run smoke:server`
+  - `packages/web`: `npm run build`
+- 已重新通过这次新增改动的 fresh 验收：
+  - `packages/server`: `npx jest --runInBand tests/execution/skill/skill-registry.service.spec.ts tests/execution/skill/skill-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已继续推进 OpenCode 风格 `todo`：
+  - `shared` 已补 `ConversationTodoItem`
+  - `RuntimeHostConversationRecordService` 已接入会话级 todo 持久化与独立读写
+  - `ConversationController` 已补 `GET/PUT /chat/conversations/:id/todo`
+  - `ToolRegistryService` 已把 native `todo` 接入主聊天与子代理工具集
+  - 聊天页当前已展示“当前待办”面板，并跟随会话切换/刷新同步加载
+- 已补并通过这轮 `todo` 验证：
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npx jest --runInBand tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation.controller.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/server`: `npm run smoke:http`
+  - `http-smoke.mjs` 已新增：
+    - `GET/PUT /chat/conversations/:id/todo`
+    - native `todo` 多轮工具循环
+    - 会话详情与 todo 资源读回校验
+- 已继续把 `subagent` 往 OpenCode `task` 语义推进一段：
+  - `PluginSubagentRunParams` 已新增可选 `taskId`
+  - `plugin-sdk` host facade 与 `builtin.subagent-delegate` 已支持把 `taskId` 透传到宿主
+  - `RuntimeHostSubagentRunnerService` 现在支持：
+    - `subagent.run` 传入 `taskId` 时，沿用既有任务请求上下文继续执行
+    - `subagent.task.start` 传入 `taskId` 时，复用原任务 id 并重新排队执行
+- 已补并通过这轮 `subagent taskId` 验证：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npx jest --runInBand tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts`
+  - `packages/server`: `npm run build`
+- 已继续把 `subagent` 往 OpenCode `task` 语义推进第二段：
+  - `PluginSubagentRunParams / PluginSubagentRequest / PluginSubagentTaskSummary` 已新增 `description`
+  - `plugin-sdk` host facade、builtin `subagent-delegate` 和 server runner/task store 已接通 `description`
+  - 后台任务当前会把 `description` 作为独立标题持久化，而 `requestPreview` 继续保留真实 prompt 预览
+  - `SubagentTasksView` 卡片标题现已优先显示 `description`
+- 已定位上一轮“consumer 看不到 shared 新字段”的报错没有复现：
+  - fresh 重新执行 `packages/shared` build 后，`packages/plugin-sdk` 和 `packages/web` 的 build/test 都已恢复正常
+  - 当前没有继续追加兼容层，按“shared 声明构建残差”记录处理
+- 已补并通过这轮 `subagent description` 验证：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run test:run -- tests/features/subagents/views/SubagentTasksView.spec.ts tests/features/subagents/composables/use-plugin-subagent-tasks.spec.ts`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已继续补强 `subagent description` 的 smoke 证据链：
+  - `http-smoke.mjs` 的自动化任务现在会显式传 `description: '自动化烟测任务'`
+  - smoke 已断言 overview/detail 都会返回：
+    - `description === '自动化烟测任务'`
+    - `requestPreview === '请输出 smoke automation task'`
+  - 中间暴露出真实链路里 prompt 是 `ChatMessagePart[]`，因此 runner 已补“从 text parts 提取 requestPreview”的处理
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run smoke:server`
+
+- 已按用户反馈补齐更接近 OpenCode 的手动压缩入口：
+  - 聊天输入框现在支持输入 `/compact` 触发手动上下文压缩
+  - 命令与原有“压缩上下文”按钮复用同一条前端压缩链，不会作为普通用户消息发出
+  - 输入框占位文案已显式提示 `/compact`
+- 已补验证：
+  - `packages/web`: `npm run test:run -- tests/features/chat/components/ChatComposer.spec.ts tests/features/chat/composables/use-chat-view.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+
+- 已读取 `TODO.md`、`task_plan.md`、`progress.md`、`findings.md`，确认当前主线已切到 `N14 远程插件静态接入密钥与元数据缓存`。
+- 已复核 `TODO.md` 当前差异，确认本轮仅保留 N14 详细计划，N15 / N16 已压缩进“已完成摘要”。
+- 已读取 shared / server / web 的远程插件相关文件，确认 `deviceType` 仍扩散在共享契约、控制器、bootstrap 服务、网关握手和前端读模型。
+- 已把 N14 的目标、阶段、当前决定与摸底结论同步到规划文件，准备开始 shared 契约改造。
+- 已提交 `TODO.md` 压缩提交：`b0b8dc8`（`文档: 压缩 TODO 已完成项`）。
+- 已完成 shared 远程插件契约第一轮替换：
+  - `DeviceType` 主语义已移除
+  - 新增 `PluginRemoteDescriptor / PluginRemoteAccessConfig / PluginRemoteMetadataCacheInfo`
+  - `AuthPayload` 已改成 `pluginName + remoteEnvironment + accessKey`
+- 已完成 server 第一轮改造：
+  - `PluginPersistenceService` 新增远程接入 / 元数据缓存分层，并落到 `tmp/plugins.server.json`
+  - `PluginBootstrapService` 已删除远程 bootstrap token 主链，新增远程插件槽位 `upsertRemotePlugin()`
+  - 网关握手已从 JWT 验签改成“按宿主配置的静态 key + remoteEnvironment 校验”
+  - `RuntimePluginGovernanceService` 已补 `refresh-metadata` 动作语义
+- 已完成 web 第一轮对齐：
+  - `PluginInfo` 示例值与动作映射已切到新契约
+  - 插件详情页已新增 `PluginRemoteSummaryPanel`，展示远程环境、鉴权模式、能力类型、接入地址、Key 配置状态和缓存状态
+- 已重新通过：
+  - `packages/server`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+
+## 2026-04-18
+
+- 读取 `TODO.md`、persona store 与 persona service 相关测试。
+- 确认本次改动核心在 `PersonaStoreService` 的存储模型切换。
+- 新建规划文件并确认目录结构为 `persona/<id>/SYSTEM.md + meta.json`。
+- 已改造 `packages/server/src/persona/persona-store.service.ts` 为目录化持久化。
+- 已更新 `packages/server/tests/persona/persona.service.spec.ts` 与 `packages/server/scripts/http-smoke.mjs` 到目录模型。
+- 已通过 `packages/server` persona 定向 `jest`。
+- 已通过 `packages/server` `npm run build`。
+- 已通过 root `npm run smoke:server`。
+- 已通过 root `npm run lint`。
+- 已在仓库根新增 `persona/builtin.default-assistant/`，默认人设作为目录化参考一起入库。
+- 已把默认 persona 参考目录中的 `meta.json` 改成带注释的 `meta.yaml`。
+- 已补上服务端自动识别 `avatar.*` 的测试，并删除前端 avatar 手填相关测试断言。
+- 已修复 `packages/web/src/features/personas/composables/use-persona-settings.ts` 中遗漏的 `customErrorMessage` 空值归一化函数。
+- 已重新通过 `packages/shared` `npm run build`。
+- 已重新通过 `packages/server` persona 定向 `jest`。
+- 已重新通过 `packages/web` persona 定向 `vitest`。
+- 已重新通过 `packages/server` `npm run build`。
+- 已重新通过 `packages/web` `npm run build`。
+- 已重新通过 root `npm run lint`。
+- 已重新通过 root `npm run smoke:server`。
+- 已重新通过 root `npm run smoke:web-ui`。
+- 已把 `meta.yaml` 模板补成逐字段注释，明确 `id / name / description / beginDialogs / toolNames / skillIds / customErrorMessage / isDefault / createdAt / updatedAt` 的配置方式。
+- 已把前端人设页中的 `customErrorMessage` 占位文案改成“仅主对话主回复失败生效”，避免和 subagent / 标题 / 总结语义混淆。
+- 已统计代码行数：`packages/server/src` 当前总计 `8033` 行。
+- 已在 `packages/server/scripts/http-smoke.mjs` 补上 persona 头像夹具与 `GET /personas/:personaId/avatar` 访问步骤，避免后端路由覆盖检查漏掉头像接口。
+- 已重新通过 root `npm run smoke:server`，确认 persona 头像路由已被 smoke 覆盖。
+- 已定位默认人设头像不显示的根因：`PersonaStoreService` 默认从 `process.cwd()/persona` 读取，开发态后端 `cwd` 是 `packages/server`，导致实际读成 `packages/server/persona`，看不到仓库根 `persona/` 下的 `avatar.png`。
+- 已把默认 persona 根目录解析改成仓库根 `persona/`，删除不再使用的 `packages/server/persona/` 内置副本，并重新通过：
+  - `packages/server`: `npx jest --runInBand tests/persona/persona.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已定位 `packages/server/tmp/ai-settings.server.json` 中遗留 `openai / test-openai-key` 的问题：当前浏览器 smoke 会复用真实开发态配置文件，虽然现在创建的是 `smoke-ui-*` provider，但清理逻辑之前只按前缀删除，无法覆盖历史固定测试 id。
+- 已删除当前遗留的 `openai` 测试 provider，并把浏览器 smoke provider 清理规则加固为：
+  - 删除本次配置的精确 smoke provider id
+  - 删除 `smoke-ui-*` 前缀 provider
+  - 删除“不在测试开始前列表中，且 apiKey = test-openai-key”的历史测试 provider
+- 已重新通过：
+  - `packages/web`: `npm run test:run -- tests/smoke/browser-smoke-provider-cleanup.spec.ts`
+  - root: `npm run smoke:web-ui`
+- 已开始“插件模型配置 owner + 工具治理拆页”任务。
+- 已确认本次改造边界：
+  - 全局 AI 设置里目前真实生效的是 `fallbackChatModels`
+  - `compressionModel` 与 `utilityModelRoles.pluginGenerateText` 目前没有稳定消费 owner
+  - 插件 `llm.generate / llm.generate-text` 当前缺少插件级宿主模型偏好层
+- 已确定实现方向：
+  - 后端新增独立插件宿主模型偏好接口
+  - 运行时优先级改成“显式参数 > 插件偏好 > 当前对话上下文 > 系统默认”
+  - 前端移除独立工具治理页，把插件 / MCP / skill 的治理入口下沉到各自页面
+- 已完成后端改造：
+  - shared 新增 `PluginLlmPreference`
+  - `PluginPersistenceService` 新增插件宿主模型偏好读写
+  - `PluginController` 新增 `/plugins/:pluginId/llm-preference` GET / PUT
+  - `RuntimeHostService` 的插件模型选择优先级已改成“显式参数 > 插件偏好 > 当前对话上下文 > 系统默认”
+- 已完成前端改造：
+  - 插件页新增“插件模型策略”面板
+  - AI 设置里的 `Host Model Routing` 只保留聊天回退链
+  - 新增独立 `MCP 管理` 页面
+  - 删除独立工具治理页，`/tools` 改为重定向到 `/mcp`
+  - 插件页与技能页已内嵌各自的工具治理面板
+- 已补测试与验收：
+  - `packages/server`: `npx jest --runInBand tests/plugin/persistence/plugin-persistence.service.spec.ts tests/adapters/http/plugin/plugin.controller.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/ai-settings/components/HostModelRoutingPanel.spec.ts tests/router/index.spec.ts tests/features/admin/layouts/AdminConsoleLayout.spec.ts tests/features/plugins/views/PluginsView.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/plugins/components/PluginLlmPreferencePanel.spec.ts tests/features/skills/views/SkillsView.spec.ts tests/features/mcp/views/McpView.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run lint`
+- 已确认当前 “MCP 页面为空” 不是仓库历史配置丢失，而是运行时默认路径读成了 `packages/server/tmp/mcp.server.json`。
+- 已开始把 MCP 默认目录从 `.mcp/` 改成 `mcp/`，并同步修改后端默认路径、前端展示和测试预期。
+- 已把后端 HTTP smoke 的临时 MCP 配置路径也统一成 `mcp/mcp.json`，避免继续沿用旧命名。
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/execution/mcp/mcp-config.service.spec.ts tests/adapters/http/mcp/mcp.controller.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/tools/components/McpConfigPanel.spec.ts tests/features/tools/composables/use-mcp-config-management.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run lint`
+- 已定位开发态 MCP `EPIPE` 根因：
+  - `packages/server/src/execution/mcp/mcp.service.ts` 只有 `OnModuleInit`，没有退出收尾
+  - `packages/server/src/core/bootstrap/bootstrap-http-app.ts` 未启用 shutdown hooks
+  - `node --watch` 重启时旧后端先退出，stdio MCP server 仍向旧 stdout 写入，触发 `EPIPE`
+- 已开始补 `McpService` 模块销毁收尾和 bootstrap shutdown hooks，并增加回归测试。
+- 已完成修复：
+  - `McpService` 增加 `OnModuleDestroy`，模块销毁时主动 `disconnectAllClients()`
+  - `bootstrapHttpApp()` 启用 `app.enableShutdownHooks()`
+  - 新增 `packages/server/tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - 扩展 `packages/server/tests/execution/mcp/mcp.service.spec.ts`
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run lint`
+- 已复现新的校验链缺口：
+  - `packages/server/tests/execution/mcp/mcp.service.spec.ts` 的真实 stdio MCP 集成测试把 `working-mcp.cjs` 写到系统临时目录
+  - Node 会按脚本所在目录向上解析依赖，因此找不到项目里的 `@modelcontextprotocol/sdk`
+  - 结果是单测夹具自己先崩，报 `Cannot find module '@modelcontextprotocol/sdk/server/mcp.js'`
+  - 这会把真实问题伪装成 `MCP error -32000: Connection closed`
+- 已开始修复：
+  - 把真实 stdio MCP 集成测试脚本目录改到 `packages/server/tmp/...`
+  - 让测试夹具的依赖解析位置与 `http-smoke.mjs` 保持一致
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已继续补强校验质量：
+  - 用 `npx jest --runInBand --detectOpenHandles tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts` 复核
+  - 定位到 `packages/server/src/execution/mcp/mcp.service.ts` 的 `withTimeout()` 没有清理定时器
+  - 已改为主 Promise 结束时 `clearTimeout()`，并对定时器 `unref()`
+- 已再次通过：
+  - `packages/server`: `npx jest --runInBand tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `packages/server`: `npx jest --runInBand --detectOpenHandles tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已定位新的真实运行态缺口：
+  - 当前 launcher 在 Windows 上用 `spawn('npx', ..., { shell: false })`
+  - 本机直接复现为 `ENOENT`
+  - 真实默认 MCP 配置 `weather-server / tavily-mcp` 都是 `command: "npx"`，因此会在 launcher 这一层直接起不来
+  - 之前 smoke 没挡住，是因为 smoke 只覆盖了 `node script.js` 型 stdio MCP server，没有覆盖 Windows 下的 `npx` 启动链
+- 已完成修复：
+  - `packages/server/src/execution/mcp/mcp-stdio-launcher.ts` 新增 Windows 启动解析
+  - 在 Windows 下把 `npm / npx` 统一改为 `node.exe + npm/bin/*-cli.js`
+  - launcher 启动失败时会把错误写到 `stderr`，不再静默只剩 `Connection closed`
+  - 新增 `packages/server/tests/execution/mcp/mcp-stdio-launcher.spec.ts`
+- 已做真实链路复核：
+  - 直接用 SDK + 新 launcher 连接 `@mariox/weather-mcp-server`
+  - 直接用 SDK + 新 launcher 连接 `tavily-mcp@latest`
+  - 两者都能成功 `initialize + listTools`
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/execution/mcp/mcp-stdio-launcher.spec.ts tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `packages/server`: `npx jest --runInBand --detectOpenHandles tests/execution/mcp/mcp-stdio-launcher.spec.ts tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 说明：
+  - 首次 `smoke:web-ui` 失败点是登录拿不到 token，日志显示为开发态现存进程与首次编排期间的代理 `ECONNRESET / ECONNREFUSED`
+  - 停止现有开发进程后重跑 `smoke:web-ui` 已通过，本轮修复未再触发新的阻断项
+- 已定位 `nvidia / z-ai/glm-5.1` 聊天失败 `Expected 'id' to be a string.` 的直接原因：
+  - `@ai-sdk/openai` 在流式解析 `delta.tool_calls` 时要求首个工具调用 chunk 必须自带字符串 `id`
+  - 部分 OpenAI 兼容端点会返回 `tool_calls`，但漏掉 `id / type / index` 中的一部分字段
+- 已在 `packages/server/src/ai/ai-model-execution.service.ts` 给 OpenAI 兼容驱动接入流式 SSE 整形：
+  - 仅按 `tool_calls` 数据结构补齐缺失的 `id / type / index`
+  - 不按厂商名分支，不特判 `reasoning_content`
+- 已新增 `packages/server/tests/ai/ai-model-execution.service.spec.ts` 覆盖：
+  - OpenAI 兼容流缺失 `tool_calls[].id / type` 时会被整形后再交给 AI SDK
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已复核新的开发态 `Weather MCP Server` `EPIPE`：
+  - 当前报错来自外部 `@mariox/weather-mcp-server` 进程自身
+  - 旧修复保证宿主 `McpService` 会在模块销毁时主动断开 client，但外部 stdio server 仍可能在父进程 stdout 已关闭后继续写入，导致其内部 SDK 抛 `EPIPE`
+- 已新增本地 `packages/server/src/execution/mcp/mcp-stdio-launcher.ts`：
+  - 宿主不再直接把 `npx ...` 交给 `StdioClientTransport`
+  - 改为先经由本地 launcher 拉起真实 MCP 子进程并转发 stdio
+  - 当父进程 stdout/stderr 断开时，launcher 会吞掉 `EPIPE` 并主动结束真实子进程
+- 已更新 `packages/server/src/execution/mcp/mcp.service.ts`：
+  - 所有 stdio MCP server 统一通过 launcher 启动，而不是只特判 `weather-server`
+- 已新增 `packages/server/tests/execution/mcp/mcp.service.spec.ts` 断言：
+  - `McpService` 生成的 transport 配置会指向本地 launcher，再携带原始 `command + args`
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/execution/mcp/mcp.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已开始“移除宿主子代理步数限制”任务。
+- 已删除宿主侧步数限制链：
+  - `AiModelExecutionService.streamText()` 不再暴露 `stopWhen`
+  - `RuntimeHostSubagentRunnerService` 不再引入 `stepCountIs`、不再读取默认 `maxSteps`、也不再允许 before hook 改写 `maxSteps`
+  - `packages/shared` 与 `packages/plugin-sdk` 的子代理契约、authoring config、payload builder 已移除 `maxSteps`
+- 已同步清理受影响测试与插件作者文档中的 `maxSteps` 示例，待重新跑定向验证。
+- 已遇到一次回归：
+  - `packages/plugin-sdk/src/authoring/builtin-manifest-data.json` 删除 `maxSteps` 字段时留下了尾随逗号
+  - 直接导致 `plugin-sdk` 测试与 `server` 相关 `jest` 因非法 JSON 失败
+  - 已修正 JSON 语法后继续验证
+- 已重新通过：
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/adapters/http/plugin/plugin-subagent-task.controller.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已开始核对 `ai sdk` 本身的多轮工具调用语义。
+- 已确认当前安装版本：
+  - `ai@6.0.164`
+  - `generateText / streamText` 默认 `stopWhen = stepCountIs(1)`
+  - 库内部在“工具调用已执行完且 stop 条件未命中”时会继续下一步，因此原生支持多轮工具循环
+- 已在 `packages/server/src/ai/ai-model-execution.service.ts` 做统一适配：
+  - 仅当本次 `streamText()` 调用真的带了 `tools` 时，向 `ai sdk` 注入 `stopWhen: isLoopFinished()`
+  - 没有工具的调用保持原样
+- 已新增测试覆盖：
+  - `packages/server/tests/ai/ai-model-execution.service.spec.ts` 断言工具流式调用会带上 `isLoopFinished()`
+  - `packages/server/tests/runtime/host/runtime-host-subagent-runner.service.spec.ts` 断言子代理工具链路也会走该 stop 条件
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/ai/ai-model-execution.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已开始“插件系统自定义 UI”设计探索。
+- 已复核 AstrBot 相关实现：
+  - `VerticalSidebar.vue` 中的 `iframe` 是文档入口，不是插件 WebUI 容器
+  - `useExtensionPage.js` 的 `open_config` 只是打开插件配置
+  - `components` 标签主要是治理面板，不是插件自定义页面
+- 已复核我们现状：
+  - 插件 manifest 只有 `routes`
+  - 服务端只有 `/plugin-routes/:pluginId/*path`
+  - 前端插件页目前只把 route 当成 JSON Route tester 展示
+- 当前进入设计澄清阶段，下一步要确认第一版自定义 UI 的目标形态。
+- 已继续复核 AstrBot 配置元数据链：
+  - 文档确认 `_conf_schema.json` 是插件配置 UI 主协议
+  - `AstrBotCoreConfigWrapper.vue` 负责 section/tabs 容器
+  - `AstrBotConfigV4.vue` 负责字段、condition、collapsed、_special、editor_mode 等渲染
+- 当前判断：
+  - 用户说的“AstrBot 那种好”，更可能是指其配置元数据协议与宿主统一渲染方式
+  - 下一步需要确认的是“是否直接对标其语义模型，只把命名改成项目风格统一”
+- 已完成插件配置元数据协议的 web 收尾修复：
+  - `PluginConfigForm.vue` 不再对 Vue proxy 直接 `structuredClone`，改为仅复制 JSON 对象，修复 object-tree 配置表单挂载时报 `DataCloneError`
+  - `plugin-management.helpers.ts` 已改成按新 object-tree schema 判断“是否有面向用户的配置面”，不再看旧 `config.fields`
+  - `PluginConfigNodeRenderer.vue` 的 list 字段错误提示已统一收敛为 `JSON 数组格式无效`，避免把底层 JSON 异常直接暴露给用户
+  - `PluginConfigForm.vue` 已补齐根 schema 类型收窄，`vue-tsc` 与 `vite build` 可通过
+- 已重新通过插件配置元数据协议相关验证：
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/plugins/components/PluginSidebar.spec.ts`
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npx jest --runInBand tests/plugin/persistence/plugin-persistence.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 当前阶段状态：
+  - `TODO.md` 中的 N13 仍保持 `[进行中]`
+  - 原因不是实现或验收未过，而是还没做独立 judge 复核，暂不提前改成完成
+- 已继续把插件配置元数据协议往 AstrBot 语义靠拢：
+  - `packages/shared/src/types/plugin-core.ts` 新增 `PluginConfigOptionSchema` 与 `renderType`
+  - `options` 已从纯字符串列表升级为带 `value / label / description` 的类型化配置
+  - `list + options` 现在支持 `renderType: 'checkbox' | 'select'`
+  - `packages/server/src/plugin/bootstrap/plugin-bootstrap.service.ts` 已能读取 typed options 与 renderType
+  - `packages/web/src/features/plugins/components/PluginConfigNodeRenderer.vue` 已支持：
+    - 单值下拉显示 option label
+    - 列表字段按 `renderType === 'checkbox'` 渲染复选组
+    - 列表字段按 `renderType !== 'checkbox'` 渲染多选下拉
+- 已为上述协议增强补测试并通过：
+  - `packages/server`: `npx jest --runInBand tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+- 已再次完成整体验证：
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/plugins/components/PluginSidebar.spec.ts`
+  - `packages/server`: `npx jest --runInBand tests/plugin/persistence/plugin-persistence.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已顺带清掉插件配置链上的 lint warning：
+  - `packages/server/src/plugin/persistence/plugin-persistence.service.ts`
+  - `packages/server/src/plugin/persistence/plugin-read-model.ts`
+  - root `npm run lint` 当前已无 warning / error
+- 已进一步收紧 `_special` 契约边界：
+  - `packages/shared/src/types/plugin-core.ts` 已删除当前宿主并未实际接通的 `selectProviderStt / selectProviderTts / selectKnowledgebase / selectPluginSet`
+  - 避免继续把未实现的数据源选择器暴露成共享类型能力
+- 已重新通过：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+- 已继续收口 plugin-sdk 内建配置 schema：
+  - `builtin.provider-router` 改成 `routing / tools / shortCircuit` 三段 object section
+  - `builtin.subagent-delegate` 改成 `llm / tools` 两段 object section
+  - 两者的 `allowedToolNames` 都已从“逗号分隔字符串”改成声明式 `list<string>`
+  - plugin-sdk 已删除不再需要的 `parseCommaSeparatedNames`
+- 已同步改造 authoring 读取链：
+  - `readProviderRouterConfig()` 现按嵌套 section 读取 `allowedToolNames: string[]`
+  - `readSubagentDelegateConfig()` 与 `buildSubagentDelegate*Params()` 现直接消费 `string[]`
+- 已补并通过这轮定向验证：
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已按独立 judge 第一轮反馈修补 N13 真实缺口：
+  - `plugin-read-model` 不再把 schema 未声明的旧键带回配置快照
+  - `PluginConfigForm` 初始化与保存前都会按 schema 重新投影，只保留声明字段
+  - 插件页里的“插件模型策略”改成按权限自动出现：只有声明 `llm:generate` 的插件才显示
+- 已补强 fresh 验收覆盖：
+  - `packages/server/tests/plugin/persistence/plugin-persistence.service.spec.ts` 新增 object-tree 默认值、旧键清理、未知嵌套字段拒绝
+  - `packages/web/tests/features/plugins/components/PluginConfigForm.spec.ts` 新增旧键清理、`condition / collapsed / hint / obviousHint / invisible / editorMode` 渲染验证
+  - `packages/web/tests/features/plugins/views/PluginsView.spec.ts` 新增“仅 LLM 插件显示模型策略面板”验证
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/plugin/persistence/plugin-persistence.service.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts tests/features/plugins/views/PluginsView.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已完成第三轮独立 judge 复核并拿到 PASS：
+  - judge 结论确认 N13 的 object-tree 协议、server 递归默认值/递归校验、web 宿主渲染、plugin-sdk 内建 schema 收口都已达到可签字状态
+  - 当前 residual risk 仅剩 `list<object>` 还没有单独浏览器端到端断言，但不阻止 N13 完成
+  - 已把 `TODO.md` 中的 N13 标记为 `[已完成]`
+- 已复核用户反馈的 `smoke-ui-*` 聊天残留：
+  - 当前后端 AI 设置与数据库里都没有对应 smoke provider / conversation / message
+  - 结论是前端开发态页面残留了旧 `chat` store 状态，而不是后端数据没清掉
+- 已修复 `packages/web/src/features/chat/modules/chat-store.module.ts`：
+  - `loadConversations()` 现在会在当前会话不再出现在服务端列表时，主动清空 `currentConversationId / messages / selectedProvider / selectedModel`
+  - 同时终止流式状态并停止恢复轮询，避免右侧聊天区继续显示旧 smoke 内容
+- 已新增 `packages/web/tests/features/chat/store/chat-store.module.spec.ts`，覆盖“刷新列表后当前会话已失效时必须清空聊天状态”。
+- 已重新通过：
+  - `packages/web`: `npm run test:run -- tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/layouts/ChatConsoleView.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run smoke:server`
+- 已继续收尾插件页状态展示与模型面板语义：
+  - `packages/server/src/runtime/kernel/runtime-plugin-governance.service.ts` 已把详情健康快照状态收口为完整 `PluginHealthSnapshot` 语义
+  - 远程插件在未连接或探测失败但未进入 `plugin.status === 'error'` 时，详情状态按 `offline` 展示
+  - `packages/web/src/features/plugins/components/PluginSidebar.vue` 已移除重复的连接状态 chip，只保留健康状态 chip
+  - `packages/web/src/features/plugins/composables/plugin-management.helpers.ts` 已把“插件模型策略”面板显隐判断统一收口为单一函数
+- 已重新通过这轮 fresh 验证：
+  - `packages/server`: `npx jest --runInBand tests/adapters/http/plugin/plugin.controller.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/views/PluginsView.spec.ts tests/features/plugins/components/PluginSidebar.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已调整 `packages/web/src/features/plugins/components/PluginConfigNodeRenderer.vue`：
+  - `selectProvider` 的空选项文案从“未设置”改成“继承主模型（默认）”
+  - 只改前端渲染层，不改 schema 与后端数据语义
+- 已补充 `packages/web/tests/features/plugins/components/PluginConfigForm.spec.ts`：
+  - 断言 `selectProvider` 会展示“继承主模型（默认）”
+- 已通过：
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+  - `packages/web`: `npm run build`
+  - root: `npm run smoke:server`
+- 当前阻断：
+  - root `npm run smoke:web-ui` 连续两次失败，失败点都在登录阶段获取 token
+  - 日志 `other/logs/web-vite.err.log` 显示同时间段存在 `/api/auth/login` 代理 `ECONNREFUSED`
+  - 现象更像开发态前后端启动窗口抖动，不像这次插件配置文案修改引入的页面回归
+- 已定位“会话标题”内建插件完全不工作的直接原因：
+  - `packages/server/src/plugin/builtin/builtin-plugin-registry.service.ts` 之前只注册了 `builtin.conversation-title` 的 manifest
+  - 没有注册真实 `hooks` 实现，所以 `chat:after-model` 阶段根本不会执行任何标题生成逻辑
+- 已补上真实内建实现 `packages/server/src/plugin/builtin/hooks/builtin-conversation-title.plugin.ts`，并把注册表改成注册完整 definition，而不是只有 manifest。
+- 已新增 `packages/server/tests/plugin/builtin/hooks/builtin-conversation-title.plugin.spec.ts`，覆盖：
+  - 默认标题时会在主回复完成后生成并写回会话标题
+  - 已自定义标题时不会重复生成
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/plugin/builtin/hooks/builtin-conversation-title.plugin.spec.ts`
+  - `packages/server`: `npx jest --runInBand tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run smoke:server`
+- 已继续推进“本地插件公开语义 + memory-context 恢复”收尾：
+  - 新增 `packages/server/src/plugin/builtin/hooks/builtin-memory-context.plugin.ts` 真实实现，并在 `BuiltinPluginRegistryService` 注册完整 definition
+  - 当前实现已按历史语义在 `chat:before-model` 中读取最新用户消息、调用 `memory.search`，把命中摘要拼进 `systemPrompt`
+  - 为避免 hook 返回类型被推宽，`memory-context` 现直接返回稳定 JSON `{ action: 'mutate', systemPrompt }`
+- 已修正前端测试夹具的旧 runtime 语义：
+  - `packages/web/tests/features/plugins/composables/use-plugin-management.spec.ts`
+  - `packages/web/tests/features/plugins/components/PluginAttentionPanel.spec.ts`
+  - 默认 runtime 已从历史残留 `'builtin'` 改为 `'local'`
+- 已核对仓库历史：
+  - `git show 61f2893:packages/server/src/plugin/builtin/memory-context.plugin.ts` 可确认重构前已有真实 memory hook 实现
+- 已通过这轮定向验证：
+  - `packages/server`: `npx jest --runInBand tests/plugin/builtin/hooks/builtin-memory-context.plugin.spec.ts tests/plugin/builtin/hooks/builtin-conversation-title.plugin.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginSidebar.spec.ts tests/features/plugins/views/PluginsView.spec.ts tests/features/commands/views/CommandsView.spec.ts tests/features/subagents/views/SubagentTasksView.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/commands/composables/use-plugin-command-management.spec.ts tests/features/subagents/composables/use-plugin-subagent-tasks.spec.ts`
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+- 已完成整体验收：
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已开始“聊天相关元素统一刷新”收尾：
+  - 目标是把主聊天操作后的标题、更新时间、消息数等会话摘要层数据统一刷新，不再只刷新消息正文
+  - owner 收口在 `packages/web/src/features/chat/modules/chat-store.module.ts`，不为标题单独写特判
+- 已完成实现：
+  - `packages/web/src/features/chat/modules/chat-store.module.ts` 新增统一的当前会话相关元素刷新动作，顺序为：
+    - 刷新会话列表 `loadConversations()`
+    - 当前会话仍有效时再刷新详情 `loadConversationDetail()`
+  - `sendMessage / retryMessage / updateMessage / deleteMessage / stopStreaming` 都已接入这条统一刷新动作
+  - `packages/web/src/features/chat/modules/chat-stream.module.ts` 在流式发送和重试时：
+    - 首个流事件到达后触发一次会话相关元素刷新，覆盖消息数与更新时间等早期变更
+    - 流结束后再次刷新，覆盖标题等在 `chat:after-model` 阶段才写回的变更
+- 已补测试：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts` 新增：
+    - 流式发送完成后会刷新会话相关元素
+    - 流式重试完成后会刷新会话相关元素
+    - 更新 / 删除 / 停止消息后也会刷新会话相关元素
+- 已通过这轮验证：
+  - `packages/web`: `npm run test:run -- tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/layouts/ChatConsoleView.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已按独立 judge 第一轮反馈补上聊天刷新竞态收口：
+  - `packages/web/src/features/chat/modules/chat-store.module.ts` 在切会话与删会话前会主动失效旧的列表/详情请求，避免旧列表响应在用户已切到新会话后再写回
+  - 删除当前会话时现已同步清空 `selectedProvider / selectedModel`，与“当前会话失效”路径保持一致
+- 已补定向回归测试：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts` 新增“切会话后忽略旧列表刷新”和“删除当前会话时清空模型选择”
+- 已重新通过：
+  - `packages/web`: `npm run test:run -- tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/store/chat-store.dispatch.spec.ts tests/features/chat/layouts/ChatConsoleView.spec.ts tests/features/chat/views/ChatView.spec.ts`
+- 已完成独立 judge 复核并拿到 PASS：
+  - judge 结论确认：
+    - 发送 / 重试 / 编辑 / 删除 / 停止生成都走统一会话刷新链
+    - 旧会话 SSE / polling / 旧请求不会再覆盖新会话状态
+    - 刷新失败不会把成功操作改写成失败
+  - 当前 residual risk 仅剩“浏览器级复合竞态场景”仍可再补一条 E2E，但不阻断本轮收尾
+- 已完成提交前 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已复核远程插件现状并确认：
+  - 当前接入主链是宿主签发 `remote-plugin` JWT，再由远程插件握手时携带 `token + pluginName + deviceType`
+  - 当前 manifest / tools / routes / config schema 在注册后会进入宿主内存记录，但还没有明确的持久缓存语义
+- 已按用户新要求把“远程插件静态接入密钥与元数据缓存”写入 `TODO.md` 与 `task_plan.md`，作为下一阶段计划
+- 已开始“模型上下文长度与 usage 估算”任务。
+- 已读取 `TODO.md`、`task_plan.md`、`progress.md`、`findings.md`、`AiModelExecutionService`、`AiManagementService`、`AiProviderSettingsService`、AI 设置页前端与相关测试。
+- 已确认关键缺口：
+  - 上游未返回 `usage` 时当前直接缺失
+  - `AiModelConfig` 还没有 `contextLength`
+  - 模型能力目前也没有持久化到 `ai-settings.server.json`
+- 已按用户要求追加 N15 规划，并保持 `TODO.md` 既有讨论不删除。
+- 已完成 shared/server 持久化改造：
+  - `AiModelConfig` 新增 `contextLength`
+  - AI 设置文件新增模型元数据持久化
+  - `AiManagementService` 不再只把模型能力放在进程内 `Map`
+- 已完成统一 usage 估算：
+  - 只认 AI SDK 统一字段 `inputTokens / outputTokens / totalTokens`
+  - 若缺失则按 `ceil(utf8Bytes / 4)` 估算
+  - 估算只统计 `system + messages + text` 的文本部分
+- 已完成前端 AI 设置页改造：
+  - 模型列表新增上下文长度展示与保存
+  - 通过现有模型元数据接口写回 `contextLength`
+- 已通过本轮定向验证：
+  - `packages/server`: `npx jest --runInBand tests/ai/ai-model-execution.service.spec.ts tests/ai-management/ai-management.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/adapters/http/ai/ai.controller.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/ai-settings/components/AiProviderModelsPanel.spec.ts tests/features/ai-settings/composables/use-provider-settings.spec.ts tests/features/ai-settings/composables/provider-settings.data.spec.ts tests/components/ModelQuickInput.spec.ts tests/features/chat/store/chat-store.helpers.spec.ts`
+- 已通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 说明：
+  - 当前 N15 实现与验收已完成
+  - 但按仓库约束，若要把 `TODO.md` 标成 `[已完成]`，还需要独立 judge；本轮先保持 `[进行中]`
+- 已完成第一轮独立 judge，结论为 FAIL：
+  - `llm.generate-text` 正式插件链漏回 `usage`
+  - `stream-collect` 缺 usage 的估算分支缺少回归测试
+- 已按 judge 反馈补齐：
+  - `packages/shared` 新增 `PluginLlmGenerateTextResult`
+  - `packages/plugin-sdk` 的 `host.generateText()` 改为正式返回该类型，并走 `callHost`
+  - `packages/server/src/runtime/host/runtime-host.service.ts` 的 `llm.generate-text` 分支回传 `usage`
+  - `packages/server/tests/ai/ai-model-execution.service.spec.ts` 新增 `stream-collect + 无 usage` 的估算回归测试
+  - `packages/server/src/plugin/builtin/hooks/builtin-conversation-title.plugin.ts` 改为直接消费正式 `generateText()` 结果类型
+- 已重新通过：
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/ai/ai-model-execution.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已按第二轮 judge 反馈补齐 N15 缺口：
+  - `packages/server/src/ai-management/ai-provider-settings.service.ts` 在 provider 整体保存时会清理已从 `models[]` 移除的持久化模型元数据
+  - `packages/server/src/ai-management/ai-management.service.ts` 的 provider 更新链改为先复制再变更，避免“先改旧对象再保存”导致无法识别被移除模型
+  - `packages/server/tests/ai-management/ai-management.service.spec.ts` 新增“移除模型后元数据同步删除、重新加回不复活旧 `contextLength`”回归测试
+  - `packages/web/tests/features/ai-settings/composables/use-provider-settings.spec.ts` 新增 `updateContextLength()` 正式链测试，覆盖 `saveProviderModelContextLength -> reloadSelectedProvider`
+  - `packages/server/scripts/http-smoke.mjs` 已覆盖显式 `contextLength` 提交与回读校验
+  - `packages/web/tests/smoke/browser-smoke.mjs` 已覆盖 AI 设置页真实修改 `contextLength` 并验证后端持久化
+- 已重新通过：
+  - `packages/server`: `npx jest --runInBand tests/ai-management/ai-management.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/ai-settings/composables/use-provider-settings.spec.ts tests/features/ai-settings/components/AiProviderModelsPanel.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已完成第三轮独立 judge，结论为 PASS：
+  - judge 确认 provider 整体保存删除模型时，会同步清理 `settings.models` 中对应陈旧元数据
+  - judge 确认前端 `contextLength` 已通过 composable 正式链、后端正式接口与浏览器 smoke 建立证据
+  - 已据此把 `TODO.md` 中的 N15 标记为 `[已完成]`
+- 已继续清掉 N15 judge 的最后一条残余风险：
+  - `packages/web/tests/smoke/browser-smoke.mjs` 现已覆盖“在 provider 编辑弹窗里删除原模型、保存、再重新加入同名模型”
+  - 浏览器 smoke 会验证：
+    - 原模型被移除后不再出现在 provider 模型列表
+    - 同名模型重新加入后，`contextLength` 不会复活旧值 `65536`
+    - 前端模型面板最终展示默认值 `131072`
+- 已重新通过：
+  - root: `npm run smoke:web-ui`
+- 已按当前 TODO 维护原则，把 `TODO.md` 中 N13、N15 的详细已完成段落压缩为摘要，仅保留未完成与进行中的详细计划。
+- 已开始“插件化上下文压缩（参考 OpenCode / AstrBot）”任务。
+- 已完成设计探索并确认主方向：
+  - 自动压缩 + 手动压缩都支持
+  - 插件通过通用历史接口改写持久化历史，不走压缩专用后门
+  - 会话消息扩展改成通用 `annotations[]`
+  - 历史改写阶段与 `chat:before-model` 阶段分层
+- 已核对 `other/opencode`：
+  - 它保留全量历史
+  - 压缩点是正式消息
+  - 送模视图会基于压缩点裁剪，而不是简单删库
+- 已核对 `other/astrbot`：
+  - 它把临时上下文改写和持久化历史更新分开
+  - 压缩默认只改请求前的 `req.contexts`
+  - 持久化历史需走单独 `update_conversation(history=...)`
+- 已把本轮设计落到 `TODO.md / task_plan.md`，准备进入共享契约和宿主接口实现。
+- 已完成 N16 主实现落地：
+  - `shared / plugin-sdk / server / web` 已接通通用会话历史读写、`metadata.annotations[]`、历史改写阶段和 `builtin.context-compaction`
+  - 聊天页已补“压缩上下文”入口、assistant 消息上方默认折叠的压缩摘要展示，以及 covered marker 渲染
+- 已补并通过上下文压缩相关定向验证：
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/chat/components/ChatMessageList.spec.ts tests/features/chat/views/ChatView.spec.ts tests/features/chat/composables/use-chat-view.spec.ts tests/features/chat/store/chat-store.module.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+- 已修复自动压缩场景的一个真实缺口：
+  - 当历史尾部存在空的 pending assistant 占位消息时，`builtin.context-compaction` 现在会在有效视图里忽略它，避免把“当前用户消息”误压进摘要
+- 已复现并定位 fresh smoke 失败根因：
+  - 不是压缩算法或 SSE 解析回归
+  - 实际是 `builtin.context-compaction` 在 `chat:before-model` 里调用 `state.get` / `state.set` / `state.delete`，但 manifest 权限漏了 `state:read / state:write`
+  - 运行时因此在 `chat.messages.send` 首条消息就报 `Plugin builtin.context-compaction is missing permission state:read`
+- 已按根因修复：
+  - `packages/plugin-sdk/src/authoring/builtin-manifest-data.json` 为 `builtin.context-compaction` 补齐 `state:read / state:write`
+  - `packages/server/tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts` 新增权限断言，防止后续再漏
+- 已重新通过修复后的 fresh 验收：
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已继续修复浏览器 smoke 的一个脆弱点：
+  - `packages/web/tests/smoke/browser-smoke.mjs` 不再固定把 `contextLength` 写成 `65536`
+  - 现在会先读取当前值，再选择一个保证不同的目标值，避免残留状态下“保存上下文”按钮一直 disabled
+- 已重新通过：
+  - root: `npm run smoke:web-ui`
+- 已完成独立 judge 二次复核，结论为 PASS：
+  - judge 确认 N16 没有压缩专用宿主后门
+  - judge 确认 `conversation:history-rewrite` 与 `chat:before-model` 分层成立且顺序确定
+  - judge 确认尾部空 pending assistant 的防吞消息修复有效
+  - judge 确认 `smoke:server`、`smoke:web-ui` 已 fresh 通过，可把 `TODO.md` 的 N16 标记为完成
+- 已继续推进 N14 远程插件静态接入密钥与元数据缓存收尾：
+  - `plugin-sdk` 测试已切到 `PluginClient.fromRemoteAccess()` 和 `remoteEnvironment / accessKey`
+  - `server` 远程插件控制器、网关生命周期、WebSocket 模块、runtime kernel 相关测试已全部切到静态 key 语义
+  - `http-smoke.mjs` 已改成：
+    - `PUT /plugins/:pluginId/remote-access`
+    - `GET /plugins/:pluginId/remote-connection`
+    - 远程脚本走 `PluginClient.fromRemoteAccess()`
+  - `docs/插件开发指南.md` 已移除公开主链中的 bootstrap token / deviceType 说明，改成静态接入 key + remote descriptor
+- 已重新通过 N14 当前验收：
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/adapters/http/plugin/plugin.controller.spec.ts tests/runtime/gateway/runtime-gateway-connection-lifecycle.service.spec.ts tests/plugin/remote/plugin-remote-bootstrap.service.spec.ts tests/adapters/ws/plugin-gateway/plugin-gateway-ws-module.spec.ts tests/adapters/ws/plugin-gateway/plugin-gateway-ws-connection.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
+  - root: `npm run smoke:server`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:web-ui`
+- 当前下一步：
+  - 做独立 judge 复核 N14 是否真的清掉 bootstrap/deviceType 公开主语义
+  - judge PASS 后再更新 `TODO.md / task_plan.md` 阶段状态并提交、push
+- 已定位 `smoke:server` 新阻断的根因：HTTP smoke 启动后端时没有设置 `GARLIC_CLAW_PLUGIN_STATE_PATH`，导致 fresh 冒烟仍读到开发态 `packages/server/tmp/plugins.server.json`，把 `builtin.memory-context` 的默认 `llmPreference` 污染成 `override`。
+- 已修复 smoke 隔离缺口：
+  - `packages/server/scripts/http-smoke.mjs` 现已把插件状态文件切到本轮临时目录
+  - `packages/server/tests/plugin/persistence/plugin-persistence.service.spec.ts` 新增显式 state path 回归测试
+- 已按 judge 第一轮反馈补齐 N14 证据链：
+  - `packages/server/tests/runtime/kernel/runtime-kernel.service.spec.ts` 新增 `refresh-metadata -> 断开 -> 重连注册 -> metadataCache 更新时间/哈希变化` 回归测试
+  - `packages/server/scripts/http-smoke.mjs` 新增 `refresh-metadata` 真链路，并让第二次远端注册带变更后的 manifest，正式验证 `lastSyncedAt / manifestHash` 刷新
+  - `packages/web/tests/features/plugins/components/PluginRemoteAccessPanel.spec.ts` 与 `PluginRemoteSummaryPanel.spec.ts` 已补远程接入面板和远程摘要面板的直接组件证据
+  - `packages/web/tests/smoke/browser-smoke.mjs` 已补“远程插件先缓存、再断开、离线页仍展示缓存元数据”的浏览器链路，并清理 smoke 远程插件残留
+- 已重新通过这轮 fresh 验收：
+  - `packages/server`: `npx jest --runInBand tests/runtime/kernel/runtime-kernel.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginRemoteAccessPanel.spec.ts tests/features/plugins/components/PluginRemoteSummaryPanel.spec.ts tests/features/plugins/views/PluginsView.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/plugins/components/PluginSidebar.spec.ts tests/features/plugins/components/PluginScopeEditor.spec.ts tests/features/plugins/components/PluginAttentionPanel.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已完成第二轮独立 judge，结论为 PASS：
+  - judge 确认 `refresh-metadata` 已有代码、server 测试和 smoke 证据
+  - judge 确认 Web 侧远程面板已有组件测试和浏览器 smoke 直接证据
+  - judge 确认旧公开主语义与 smoke 隔离缺口都已收口，可把 `TODO.md` 的 N14 标记为完成
+- 已补齐 N17 当前缺失的 smoke 证据链：
+  - `packages/server/scripts/http-smoke.mjs` 的 fake OpenAI 现在会记录 `chat/completions` 请求，并支持一轮 native `skill` tool call -> tool result -> 最终自然语言回复
+  - smoke 新增：
+    - `skills.governance=deny` 后，主聊天请求里的 `tools` 不再包含 native `skill`
+    - `skills.governance=allow` 后，主聊天 SSE 会出现 `tool-call/tool-result`，并在会话详情中保留对应的 `toolCalls/toolResults`
+- 已按 TDD 顺序先让 smoke 失败，再补齐 fake OpenAI 记录与 tool loop 响应；首个失败点为 `resetChatCompletions` 未实现。
+- 已重新通过 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已继续收掉 judge 提到的剩余稳定性风险：
+  - fake OpenAI 的第二轮请求识别已明确收窄到 `skill` 对应 tool result
+  - smoke 启动的后端进程已把 `HOME / USERPROFILE` 指到临时目录，隔离本机 user skill 目录
+- 已重新通过最新 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run lint`
+- 已完成最新独立 judge 复核，结论为 PASS：
+  - judge 确认 deny/allow 两条 smoke 证据链都落在 runtime skill 主链，而不是 `/skills` 路由壳
+  - judge 确认上一轮残余的二轮请求判定与 user skill 目录污染风险都已收口
+- 已继续把 `subagent` 往 OpenCode `task` 语义推进第三段：
+  - shared / plugin-sdk / server / web 已接通 `profileId`
+  - 宿主已新增 `RuntimeHostSubagentProfileService`，当前提供 `general / explore` 两个真实 profile
+  - `subagent` 执行前现在会按 profile 补默认 `providerId / modelId / system / toolNames`，显式字段仍可覆盖
+  - 后台任务会持久化 `profileId / profileName`
+  - `PluginConfigForm` 已支持 `selectSubagentProfile`，`SubagentTasksView` 已显示 profile 标识
+  - `http-smoke.mjs` 已补 `GET /subagent-profiles` 路由覆盖
+  - 这段语义后续已被 `subagent type + subagent-types/*.yaml` 替代，保留为历史记录
+- 已补并通过这轮 `subagent profile` 验证：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts tests/adapters/http/plugin/plugin-subagent-task.controller.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts tests/features/subagents/views/SubagentTasksView.spec.ts`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已按用户要求把 `bash / FileRuntime / native 执行工具` 从当前 N17 计划口径移走：
+  - 不把这部分再算作“当前阶段已完成内容”
+  - 后续如要保留，另开 runtime 子阶段重新评审
+  - 本轮只同步规划和进度表述，不回退现有代码
+- 已继续推进 N17 内部失败恢复链，补齐 `invalid`：
+  - 新增 `packages/server/src/execution/invalid/invalid-tool-record.ts`
+  - 新增 `packages/server/src/execution/invalid/invalid-tool.service.ts`
+  - `ToolRegistryService` 现已自动附带内部 `invalid` 工具，但不会暴露到 `listAvailableTools()` 或治理界面
+  - `AiModelExecutionService` 现已接入 `experimental_repairToolCall`
+  - 无效参数 / 未知工具会自动修复为内部 `invalid` 结果
+  - 可恢复执行错误会统一落成 `invalid-tool-result`，不会再把整轮对话直接打断
+  - `ConversationTaskService` 与 `RuntimeHostSubagentRunnerService` 已接住 `tool-error`，并把它们稳定持久化为工具结果
+- 已通过这轮 fresh 验证：
+  - `packages/server`: `npx jest --runInBand tests/ai/ai-model-execution.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已继续把 `subagent` 往 OpenCode `task` 语义推进第四段：
+  - 新增 `RuntimeHostSubagentSessionStoreService`，把子代理上下文从 task record 中拆成独立 session owner
+  - `subagent.run` 当前会生成正式 `taskId + sessionId`，但默认以 `visibility: 'inline'` 持久化，不进入后台任务总览
+  - `subagent.task.start` / `subagent.task.get` / `plugin-subagent-tasks/overview` 当前都已接通 `sessionId / sessionMessageCount / sessionUpdatedAt`
+  - `taskId` 续跑当前会优先复用 session 历史，并把上一轮 assistant 结果一起带入，而不是只拼旧 request.messages
+  - `SubagentTasksView` 当前已展示 session 消息数与最近更新时间
+- 已补并通过这轮子会话验证：
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `npx jest --runInBand tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/adapters/http/plugin/plugin-subagent-task.controller.spec.ts`
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/web`: `npm run test:run -- tests/features/subagents/views/SubagentTasksView.spec.ts tests/features/subagents/composables/use-plugin-subagent-tasks.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已按独立 judge 第一轮反馈补齐证据链缺口：
+  - `packages/plugin-sdk/tests/index.test.js` 已直接断言 `subagent.run` 返回 `taskId / sessionId / sessionMessageCount`
+  - `packages/server/tests/runtime/host/runtime-host.service.spec.ts` 已直接断言 inline task 不进入 `subagent.task.list`
+  - `packages/web/tests/smoke/browser-smoke.mjs` 已新增 `/subagents` 页面路径验证
+  - 浏览器 smoke 里原有 `contextLength` 交互已顺手改成 `fill + Tab`，避免按钮使能竞态再次误报
+- 已重新通过 judge 反馈后的 fresh 验证：
+  - root: `npm run lint`
+  - `packages/plugin-sdk`: `npm test`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已把当前阶段不应继续存在的执行环境草稿从工作区移除：
+  - 删除 `packages/server/src/execution/bash/*`
+  - 删除 `packages/server/src/execution/file/*`
+  - 删除对应未提交测试草稿
+  - 当前 N17 工作区只保留与执行环境无关的主链实现
+- 已同步 `TODO.md / task_plan.md / findings.md`：
+  - `S17-1 / S17-2 / S17-3` 改为已完成
+  - 明确当前有效主链为 `skill / todo / webfetch / task / invalid / subagent`
+  - 明确当前剩余工作只剩 fresh 验收与独立 judge
+- 已完成 fresh 验收：
+  - `packages/plugin-sdk`: `npm test`
+  - `packages/server`: `npx jest --runInBand tests/execution/skill/skill-registry.service.spec.ts tests/execution/skill/skill-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/adapters/http/plugin/plugin-subagent-task.controller.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已完成独立 judge，结论为 PASS：
+  - judge 确认当前 N17 非执行环境主链没有继续混入 `bash / file` 之类执行环境实现
+  - judge 确认 `skill / todo / webfetch / task / invalid / subagent` 的 owner 收口成立，不是换壳假完成
+  - judge 确认规划文件、代码与 fresh 验收一致，可以把这段非执行环境子阶段视为完成
+- 已按 judge 低优先级提示收尾：
+  - 删除空的 `packages/server/src/execution/bash`
+  - 删除空的 `packages/server/src/execution/file`
+  - 删除空的 `packages/server/tests/execution/bash`
+  - 删除空的 `packages/server/tests/execution/file`
+  - `task_plan.md` 已把 `S17-4` 标为已完成
+  - `TODO.md` 已改成“后续 runtime 子阶段待启动”

@@ -1,0 +1,529 @@
+# Findings
+
+## 2026-04-19
+
+## 2026-04-20
+
+- 当前 `SkillRegistryService` 已经会扫描仓库根 `skills/`，但还额外扫描 `~/.garlic-claw/skills`：
+  - 位置在 `packages/server/src/execution/skill/skill-registry.service.ts`
+  - 因此技能页仍保留了“项目技能 / 用户技能”双来源公开语义
+- 用户当前要的不是“项目技能优先、用户技能补充”，而是更明确的“skill 从仓库 `skills/` 目录扫描”。
+- 这轮最适合先落的部分就是 discovery 和静态契约：
+  - skill 扫描目录
+  - skill 列表/详情公开文案
+  - tool description 与静态 metadata
+- 与执行环境有关的部分可以后置：
+  - bash staging
+  - 环境内副本同步
+  - WSL / 容器 / 本机 shell 切换
+- `other/opencode` 的可直接参考点：
+  - `other/opencode/packages/opencode/src/skill/index.ts`
+  - `other/opencode/packages/opencode/src/tool/skill.ts`
+  - 当前最值得借用的是它的 skill discovery 与 `<available_skills>` / `<skill_content>` 组织方式，而不是先复制执行环境逻辑
+- 即使 server 发现链已经只扫 `skills/`，只要共享契约还保留 `SkillSourceKind = 'project' | 'user'`，前端和后续实现就还有机会把旧双来源语义带回来。
+- 因此这轮“与执行环境无关的收口”不只包含目录扫描，还应把 `SkillSourceKind` 同步收成单一分支，并让技能页统计直接表达“扫描到的 skill 数量”，而不是继续按来源过滤。
+
+- 这次“我机器能跑，别人机器不行”的最薄弱点不在开发编排链本身，而在用户入口语义：
+  - 仓库其实早就有 ASCII shim `tools/start_launcher.py`
+  - 但 README、插件开发指南以及脚本自己的提示文案，仍在引导用户直接运行 `tools/一键启停脚本.py`
+  - 中文脚本名在本机能跑，不代表跨 shell、跨编码环境、跨系统都适合作为默认公开入口
+- 更稳的修法不是继续给中文脚本名补壳，而是把现有 ASCII shim 提升成唯一推荐入口：
+  - `start.bat` / `start.sh` 本来就已经走 `tools/start_launcher.py`
+  - 因此只要把直接 Python 命令、端口冲突提示、日志提示也统一到这个入口，就能收掉跨机差异
+
+- 当前命令治理页的数据源可以直接复用到聊天输入提示，但聊天输入需要的不是冲突视图，而是稳定版本 + 本地前缀索引：
+  - 后端只补 `version` 契约和轻量 `/plugin-commands/version` 就够，不需要再造第二套聊天命令接口
+  - 前端命令提示真正的 owner 是“本地 Trie + 低频版本校验”，不是输入框组件自己请求接口
+- 命令提示如果继续把 `/compact`、`/compress` 写死在 placeholder 里，会和“自适应命令目录”目标冲突：
+  - 更合适的语义是输入框只提示“输入 `/` 查看命令”
+  - 具体有哪些命令，由缓存下来的命令目录决定
+- 命令目录刷新不该绑在每次按键输入上：
+  - 首次无缓存时拉一次 overview
+  - 有缓存时只做低频 `version` 校验
+  - 后端版本没变时，前端始终只查本地 Trie
+
+- 这轮 `display` 语义真正的收口点不在前端，而在聊天正式写入链：
+  - 前端如果把 `/compact` 截成纯本地行为，就无法满足“持久化保存”的要求
+  - 服务端 `ConversationMessageLifecycleService` 已天然支持把 slash command 短路结果写成 `role: 'display'`
+- `display` 消息的类型区分不该放在前端临时注解里：
+  - 更稳的 owner 是服务端正式消息元数据
+  - 给命令输入和命令结果统一补 `display-message` 注解后，前端只按消息类型渲染，不需要再保留本地 transient 消息
+- 会话 token 预估原本还有一个容易漏掉的边角：
+  - 即使 `display` 的正文返回空字符串，`messages.map(...).join('\n')` 仍会留下额外换行
+  - 因此“正文清空”不等于“完全不计 token”，还要在拼接前先过滤空文本
+- 浏览器 smoke 也要跟着改 owner：
+  - 现在 `/compact` 走正式聊天发送接口，不再命中旧的插件 route 请求
+  - 结果文案也不一定固定为“已压缩上下文”，更稳的断言是“命令输入与命令结果都以 `display` 消息落库”
+
+- MCP 独立文件存储已经收口为目录真相源：
+  - `GARLIC_CLAW_MCP_CONFIG_PATH` 现在按“目录路径”解释
+  - 默认目录为仓库根 `mcp/servers`
+  - 每个 server 独立保存为 `encodeURIComponent(name).json`
+- 这次不再保留聚合索引文件：
+  - `mcp/mcp.json` 已从仓库删除
+  - 仓库内置配置直接拆成两个单文件，方便按名字定位与修改
+- smoke 也要跟着切目录语义：
+  - `http-smoke.mjs` 以前把临时 MCP 配置路径写成单文件
+  - 改目录后，fresh 冒烟需要把环境变量改成临时 `.../mcp/servers` 目录，否则会继续沿用旧文件语义
+- 当前 MCP 配置 owner 仍是单文件 `mcp/mcp.json`：
+  - `McpConfigStoreService` 读写 `mcpServers` 聚合对象
+  - 前端展示的 `configPath` 也固定写成 `mcp/mcp.json`
+  - 如果要改成“每个 server 一个文件方便定位”，最自然的真相源是 `mcp/servers/*.json` 目录扫描，而不是继续保留聚合索引
+- 当前 `plugin` 事件日志没有持久化到文件：
+  - owner 在 `packages/server/src/plugin/persistence/plugin-persistence.service.ts`
+  - 数据结构是 `Map<string, PluginEventRecord[]>`
+  - 因此重启后会丢失，也无法天然支持每个实体独立文件大小上限
+- 当前 `MCP` 和 `skill` 没有与插件对等的事件日志体系：
+  - `McpService.runGovernanceAction()` 只返回结果，不写日志
+  - `SkillRegistryService` 只有治理配置读写，没有日志 owner
+- 现有插件事件日志前端组件 `PluginEventLog.vue` 已经足够接近通用事件日志面板：
+  - 支持 limit / level / type / keyword / load more
+  - 可以抽成通用日志展示组件，再由 plugin / MCP / skill 各自页面接入
+- 当前上下文压缩产物仍是正式 assistant 消息：
+  - 生成位置在 `packages/server/src/plugin/builtin/hooks/builtin-context-compaction.plugin.ts`
+  - 角色写成了 `role: 'assistant'`
+  - 前端展示依赖 `metadata.annotations`
+- 当前送模历史构造链已经有明确的收口点：
+  - `packages/server/src/conversation/conversation-message-planning.service.ts` 只把 `assistant / user` 放进模型消息
+  - `RuntimeHostConversationRecordService.normalizeConversationHistoryMessage()` 目前接受任意字符串 role，但没有正式受控的“前端可见、送模忽略”角色
+- 前端聊天页目前只把 `assistant` 视为“显示头像、显示扩展块、显示重试按钮”的主要 AI 回复角色。
+  如果新增“用户可见但不送模”的消息角色，需要同步补上：
+  - `packages/shared/src/types/chat.ts`
+  - `packages/web/src/features/chat/store/chat-store.types.ts`
+  - `packages/web/src/features/chat/components/ChatMessageList.vue`
+- `display` 消息一旦成为压缩摘要的正式载体，前端“最后一条消息”的 owner 也要同步调整：
+  - `getRetryableMessageId()` 不能再只看数组尾项
+  - 聊天输入区“发送 / 重试”按钮文案也不能直接读取最后一条消息角色
+- MCP 的日志设置如果仍只藏在 `McpServerConfig.eventLog` 字段里、却没有单独面板，使用者很难发现这项能力；因此 Web 侧应直接在 `MCP 管理` 页展示“日志设置 + 最近事件”。
+
+- 当前 Garlic Claw skill 与 OpenCode skill 的差异是“主语义不同”，不是前端样式或目录结构不同：
+  - Garlic Claw：skill 是会话级持久绑定资源，会持续影响每次主聊天调用
+  - OpenCode：skill 是按需加载的原生工具，只有被调用时才把 skill 内容注入上下文
+- Garlic Claw 当前 skill 额外长出了 4 层 OpenCode 没有的 owner：
+  - 会话持久化 `activeSkillIds`
+  - `/skill use/remove/clear` 状态命令
+  - `skill__asset__list / asset.read / script.run` 专用工具源
+  - 独立 skill 工作台与会话绑定 UI
+- OpenCode skill 的核心 owner 在工具系统，而不是会话系统：
+  - `SkillTool` 会把可用技能列表写进工具描述
+  - agent 需要时调用 `skill({ name })`
+  - 返回 `<skill_content>` 块，把完整内容和 skill 目录信息注入当前上下文
+- OpenCode 的“可发现性”来自 3 个地方：
+  - skill 目录扫描
+  - tool description 中的 `<available_skills>` 列表
+  - slash command 列表里把同名 skill 暴露成快捷入口
+- OpenCode 的权限模型也是围绕“是否允许加载某个 skill 名称”展开，不是围绕“会话里哪些 skill 处于激活态”展开。
+- 如果要真正对齐 OpenCode，Garlic Claw 最可能需要收掉或降级的就是会话级 skill 状态，而不是继续在现有工作台上补字段。
+- 用户已确认走这一方向，因此当前设计基线已经固定为：
+  - skill 不是会话资源，而是一次次按需加载的提示资产
+  - skill 不再拥有自己的代码执行通道
+  - “从 skill 里引用脚本/模板/参考资料”只提供路径和说明，真正执行仍由通用工具完成
+- 当前 `ai` SDK 默认会把对象型 tool result 作为 JSON 回送给模型；如果 native `skill` 继续直接返回结构化对象，模型实际拿到的就不是 OpenCode 那种 `<skill_content>` 文本块。
+- 更合适的 owner 不是把 `loadSkill()` 改成只返回字符串，而是保留结构化结果用于持久化/调试，同时通过 `toModelOutput` 单独控制送模文本。
+- 这样可以同时满足两件事：
+  - 会话里持久化的 `toolResults` 仍保留稳定结构
+  - follow-up request 给模型的内容改成 OpenCode 风格的 `<skill_content>` / `<skill_files>` 文本
+- `other/opencode` 的 `Skill.fmt(list, { verbose: false })` 虽然是简版列表，但 verbose 版明确会带 `location`；这说明 skill 的“仓库内位置”本身就是公开可见性语义的一部分，而不只是前端详情页字段。
+- 因此 Garlic Claw 这轮除了把 `<skill_content>` 对齐外，也应把 native `skill` 工具描述里的 `<available_skills>` 补上 repo 内 `location`，否则模型只能看到名字和说明，缺少定位上下文。
+- `other/opencode` 的 skill 可用列表和目录集合默认都会做按名称排序；当前 Garlic Claw 若继续按 `id` 排，会把“目录层级”偶然暴露成主排序语义，不利于模型检索和人工浏览。
+- 对当前 Garlic Claw 来说，最自然的 runtime 起点不是一口气把 `read / glob / grep / bash / edit / write` 全塞进现有 `ToolOverview`，而是先把“native 工具进入模型可执行集，但不进入治理页”这条语义建起来。
+- 这样可以先验证：
+  - `ToolRegistryService` 已能同时承接
+    - overview 工具源（plugin / mcp）
+    - native 工具（bash / skill）
+  - 主聊天和子代理的多轮工具循环能正确消费 native 工具
+  - `/tools` UI 不会因为 runtime 抽象未完成就被迫提前扩容
+- `BashRuntime` 当前最需要先固定的是工作区边界，而不是交互式 shell 能力：
+  - 当前宿主没有 OpenCode 那种 permission ask 链
+  - 因此本阶段把 `workdir` 限制在仓库内，比直接开放任意目录更符合现有宿主能力
+- `bash` 的 shell 方言不能继续靠模型自己猜：
+  - Windows 下最容易出问题的是把 PowerShell 当 bash 用
+  - 因此 tool description 里直接暴露 `shellDialect / shellExecutable`，比在系统提示词里散落说明更稳
+- `FileRuntime` 这层最自然的第一段是只读，不是直接做 `edit / write`：
+  - `read / glob / grep` 不会和“编辑前必须先读”“补丁语义”“并发修改冲突”搅在一起
+  - 先把工作区路径约束、文本/二进制边界、递归扫描边界固住，更适合当前阶段
+- 当前 `write / edit` 适合在既有 `FileRuntime` 上继续加，而不是回退到 shell：
+  - `write` 的 owner 是“工作区内整文件写入”，不需要把目录创建和覆写语义交给 `bash`
+  - `edit` 的 owner 是“精确文本替换”，默认唯一命中比一开始就追求复杂 fuzzy patch 更符合当前宿主能力
+  - 只要保留工作区路径约束、文本文件限制、`replaceAll` 和换行风格保留，这一段就已经能给后续 `task / skill` 提供稳定基座
+- `todo` 最适合继续按 OpenCode 的 session owner 收口，而不是塞进普通聊天消息：
+  - `other/opencode` 的 `TodoWriteTool` 是“全量覆盖当前 session todo 列表”
+  - session 读取则是独立 `/:sessionID/todo` 资源，而不是去消息正文里反推
+  - Garlic Claw 当前把它落成“会话级独立 todo 存储 + `GET/PUT /chat/conversations/:id/todo` + native todo 工具”是对齐方向
+- 会话持久化文件不必在没有待办时强制写出空 `todos: {}`：
+  - 仅在存在 todo 记录时再落 `todos` 顶层字段，存储更干净
+  - 这样也避免旧格式迁移时把“无 todo”误表达成一层新的永久噪音
+- `subagent` 后续若要继续向 OpenCode 靠拢，重点不是名字，而是 owner：
+  - OpenCode `task` 更接近“具名子代理 + 独立会话 + 可恢复 task_id”
+  - Garlic Claw 后续应继续把当前“后台任务记录”语义往这条主线迁，而不是再长新的控制面壳
+- 当前最小但有效的一步不是整套 session 重写，而是先补 `taskId` 续跑：
+  - `subagent.run` 传入已有 `taskId` 后，可以沿用该任务原始请求上下文，并把新的 messages 接在后面
+  - `subagent.task.start` 传入已有 `taskId` 后，复用原任务 id 重新排队，比“每次都新建另一个任务号”更接近 OpenCode 的恢复语义
+  - 这仍不是完整的“独立子会话”，但已经把公开主语义从“纯一次性后台任务”往“可恢复 task”推进了一步
+- `other/opencode` 的 `task` 里，`description` 明确是短标题，不是 prompt 摘要：
+  - 它会进入子会话标题和 tool metadata
+  - 因此 Garlic Claw 这边若把 `description` 直接塞进 `requestPreview`，前端就会重复展示标题
+  - 更合适的语义是：`description` 单独持久化为标题字段，`requestPreview` 继续保留真实请求预览
+- 真实链路里的 `builtin.subagent-delegate` 传给宿主的 prompt 不是纯字符串，而是 `ChatMessagePart[]`：
+  - 如果 `requestPreview` 只按 `typeof content === 'string'` 提取，就会错误回退到 `description`
+  - 因此后台任务预览提取必须同时支持字符串和 `type === 'text'` 的 parts
+- 先前出现的 consumer 类型报错这轮没有再次复现：
+  - 在 fresh 执行 `packages/shared build` 后，`packages/plugin-sdk build/test` 与 `packages/web build` 都恢复正常
+  - 当前没有证据表明需要额外加兼容层或路径映射；更像是上一次 shared 声明未 fresh 构建时的工作区残差
+- 这轮 `http-smoke` 的 fake provider 出现过一个隐性碰撞：
+  - `read` 的工具结果里也会出现 `smoke-http-flow`
+  - 如果 `requestContainsToolResult()` 继续按正文关键字宽松判定，就会把 `read` 误判成 `skill`
+  - 更稳的做法是按 `tool_call_id + 对应结果块标签` 联合判断
+- `glob / grep` 这一阶段不必先追求完整 ripgrep 兼容：
+  - 当前最关键的是宿主侧 owner 已从 shell 分离
+  - 只要 `ToolRegistryService`、主聊天工具循环、工作区路径边界和 smoke 证据都成立，这一层就已经有了稳定基座
+- `ai@6.0.164` 已内置 `experimental_repairToolCall`：
+  - 它会在 `NoSuchToolError / InvalidToolInputError` 发生时给宿主一次修复 tool call 的机会
+  - 因此 Garlic Claw 这轮最自然的 `invalid` owner，不是额外造一条聊天旁路，而是把修复目标收口成内部工具结果
+- `tool-error` 不能继续被宿主流式解析忽略：
+  - AI SDK 本身会把执行失败继续带入下一轮工具上下文
+  - 如果宿主只认 `tool-call / tool-result`，那会话记录和 subagent 结果就会丢失这段关键证据
+  - 因此这轮需要把 `tool-error` 正式归一化为稳定结果结构再持久化
+- 内部 `invalid` 工具最适合只进入执行链，不进入治理可见面：
+  - `buildToolSet()` 需要带上它，AI SDK 才能把修复后的 tool call 真正执行掉
+  - `listAvailableTools()` 与治理页面则不应暴露它，避免把宿主恢复机制误当成用户可配置工具
+- 这轮 `subagent` 继续向 OpenCode `task` 靠拢时，最省代码的收口点不是把 task store 扩成更大的 owner，而是补一层独立 session store：
+  - session 负责可恢复上下文
+  - task 负责可见执行记录与后台调度
+  - 这样同步 `subagent.run` 也能拿到正式 `taskId`，但不会污染后台任务总览
+- session 恢复时不能只回放旧 `request.messages`：
+  - 若上一轮已经有 assistant 结果，新的续跑上下文里也必须带上这条 assistant 回复
+  - 否则看起来像“总能续跑”，实际却丢了子代理上一轮产出
+- 这轮把 session store 加上后，后台任务总览与详情还需要最小可见性字段，否则前端看不出“独立子会话”已经存在：
+  - `sessionId`
+  - `sessionMessageCount`
+  - `sessionUpdatedAt`
+- 与执行环境无关的这段主链如果要保持口径干净，不能只在文档里写“`bash / file` 不算当前阶段”：
+  - 这些未提交草稿一旦继续留在 `packages/server/src` 和 `packages/server/tests`，仍会污染工作区与验收边界
+  - 用户已经明确要求先不做执行环境相关能力，因此更合适的动作是直接从当前工作区移除这批草稿
+- 当前 N17 非执行环境部分的有效主链已经收口为：
+  - `skill` 发现与按需加载
+  - `todo`
+  - `webfetch`
+  - `task / subagent` 的标题、profile、独立 session 与续跑语义
+  - 内部 `invalid`
+  - 这之后剩余的主要工作就是 fresh 验收和独立 judge，而不是继续扩工具种类
+- 独立 judge 已确认：
+  - 当前阶段没有继续混入执行环境相关活动代码
+  - 现有 fresh 验收已足够支撑“非执行环境部分完成”
+  - 剩余风险主要是覆盖深度而不是语义 owner 错位
+
+## 2026-04-18
+
+- 当前 persona 持久化入口在 `packages/server/src/persona/persona-store.service.ts`。
+- 现状是单文件存储：`GARLIC_CLAW_PERSONAS_PATH` 或 `packages/server/tmp/personas.server.json`。
+- `PersonaService` 与前端不直接依赖底层文件格式，主要受影响的是 store 和测试。
+- 目录化落地后，配置文件改为 `meta.yaml`，可以直接写注释给维护者看。
+- `avatar` 不再作为输入字段保存，统一由服务端扫描 persona 目录中的 `avatar.*` 文件自动识别。
+- 前端 Persona 编辑页已移除 avatar 手填入口，响应侧 `avatar` 仍保留为只读展示字段。
+- `customErrorMessage` 当前只作用于“主对话主回复失败”的错误回退链路；不会扩散到 subagent、标题生成或摘要总结。
+- Persona 目录模板现在已经把每个字段的用途、空值语义和 `avatar` 自动发现规则都写成可直接照着改的注释。
+- persona 头像接口的 smoke 不能只创建 persona 记录；还需要在对应 persona 目录下放一个真实 `avatar.*` 文件，否则访问 `/api/personas/:personaId/avatar` 会返回 `404`。
+- 默认 persona 存储根目录不能直接取 `process.cwd()`；开发态后端由 `tools/scripts/dev_runtime.py` 以 `packages/server` 为工作目录启动，否则会把默认读取目录误指向 `packages/server/persona`，从而漏掉仓库根 `persona/` 下的头像与配置。
+- 浏览器 smoke 目前仍跑在开发态真实 `packages/server/tmp/ai-settings.server.json` 上，而不是像后端 HTTP smoke 那样走独立临时 AI 设置文件。
+- 当前 `openai / test-openai-key / gpt-5.4` 残留不是现版浏览器 smoke 直接创建出来的；现版创建的是 `smoke-ui-*-openai`。但旧清理逻辑只删前缀 provider，所以历史固定测试 id 不会被自动清掉。
+- 插件配置 API 当前只接受 manifest schema 声明的字段；未知字段会在 `PluginPersistenceService.validatePluginConfig()` 被拒绝，所以“插件宿主模型偏好”不能直接混进普通 plugin config。
+- 插件侧 `llm.generate / llm.generate-text` 运行时目前只有 `builtin.conversation-title` 会回落到 `context.activeProviderId / activeModelId`；普通插件未显式传 provider/model 时，会直接落回系统默认 provider 选择。
+- 当前前端 `/tools` 页面同时承载了三类东西：
+  - 插件与 MCP 的统一工具源治理
+  - 统一工具列表治理
+  - MCP 配置编辑
+  这和“插件 / MCP / skill 各自独立管理”的目标冲突。
+- skill 工具治理在服务端本质上只有一个 source：`Active Skill Packages`；因此 skill 页不需要做多 source 目录，而是直接展示这一条 source 的开关、动作和工具列表。
+- 插件宿主模型偏好比普通 plugin config 更像宿主运行策略，而不是插件 manifest 声明字段；放到独立接口后，可以避免 schema 校验冲突，也能明确区分“插件自己的配置”和“宿主如何为它选模型”。
+- 插件模型选择改成统一优先级后，`builtin.conversation-title` 不再需要单独特判；普通插件在主对话里手动触发时，也会自然继承当前会话的 `activeProviderId / activeModelId`。
+- 工具治理页面拆掉后，MCP 最适合单独成页，因为它既有工具源治理，也有 `.mcp/mcp.json` 配置编辑；插件页和 skill 页则更适合内嵌自己的对应 source 治理。
+- `smoke:server` 的后端路由覆盖检查会严格追踪新增 HTTP 路由；只要控制器加了新接口，就必须同步补 `http-smoke.mjs` 步骤，否则即使功能没问题也会被验收挡住。
+- 当前仓库历史里的原始 MCP 配置没有丢；最早引入时就在 `.mcp/mcp.json`，内容是 `tavily-mcp` 与 `weather-server`。
+- 真正的问题是 `McpConfigStoreService` 默认路径写成了 `process.cwd()/tmp/mcp.server.json`，所以运行时读到了空临时文件。
+- 在当前项目语义下，`mcp/` 比 `.mcp/` 更合适，因为这里存放的是用户可见、可编辑的长期资源，而不是隐藏内部缓存。
+- 测试侧如果继续保留 `mcp.server.json` 这类旧命名，会让默认路径语义和临时路径语义分裂，所以 smoke 里的临时配置也应一并改名。
+- `@modelcontextprotocol/sdk` 的 `StdioClientTransport.close()` 已经实现了较完整的收尾流程：先 `stdin.end()`，再超时 `SIGTERM / SIGKILL`。
+- 当前 `EPIPE` 更像是宿主没有触发这条关闭链，而不是 SDK 没能力关闭子进程。
+- `bootstrap-http-app.ts` 当前未调用 `app.enableShutdownHooks()`；在开发态 `node --watch` 重启下，这会让 Nest 模块销毁链缺席。
+- `McpService` 当前只有 `OnModuleInit`，没有 `OnModuleDestroy`；这与 `AutomationService`、`PluginGatewayWsModule` 已有的退出清理模式不一致。
+- `nvidia / z-ai/glm-5.1` 这类 OpenAI 兼容端点，除了会返回 `reasoning / reasoning_content`，还可能在流式 `delta.tool_calls` 里漏掉 AI SDK 期望的标准字段。
+- `@ai-sdk/openai` 流式解析阶段对首个工具调用 chunk 很严格：缺 `id` 会直接抛 `Expected 'id' to be a string.`，而非像非流式那样自动生成 ID。
+- 这个问题不该按厂商名修；更合理的 owner 是 OpenAI 兼容驱动入口，对所有 `text/event-stream` 响应按结构整形：
+  - `tool_calls[].index` 缺失时按数组位置补齐
+  - `tool_calls[].type` 缺失但存在 `function` 对象时补成 `function`
+  - `tool_calls[].id` 缺失时生成稳定流内 ID
+- 本次新的 `Weather MCP Server` `EPIPE` 栈不再是宿主 `McpService.close()` 没执行，而是外部 stdio MCP server 在父进程重启后继续向已断开的 stdout 写协议数据。
+- 直接改外部 `npx` 包不可控，也不该为单个 `weather-server` 写特判；更稳的 owner 是宿主统一的 stdio 启动层。
+- 用本地 launcher 代理 `command + args` 后，真实 MCP server 的 stdout 会先写到 launcher；当父进程断开时，由 launcher 负责捕获 `EPIPE`、结束真实子进程并静默退出。
+- 这次“校验通过但线上马上炸”的直接缺口有两层：
+  - `tsconfig.build` 之前没有把 `mcp-stdio-launcher.ts` 纳入发射图，导致运行态缺文件
+  - 后补的真实 stdio MCP 集成测试又把脚本写进系统临时目录，依赖解析环境和项目运行态不一致
+- 结论不是“已有校验足够，只是偶发漏掉”，而是校验 owner 设计不完整：
+  - 仅靠编译成功，不能证明字符串引用的运行时入口文件真的发射出来
+  - 仅靠假的 MCP 夹具，不能证明 launcher 到真实 server 的 stdio 链路真的可用
+  - 仅靠放错位置的真实夹具，也不能说明产品坏了，因为那是在测一个不存在的运行环境
+- 把真实 stdio MCP 测试脚本放到 `packages/server/tmp/...` 后，Node 会沿仓库目录向上正确解析到项目依赖；这才与 `http-smoke.mjs` 的真实运行环境一致。
+- `McpService.withTimeout()` 原先用 `Promise.race + setTimeout`，但主 Promise 先结束时没有清理定时器；功能上通常没问题，但会让 `jest --detectOpenHandles` 报残留句柄，属于校验链噪音源。
+- 当前真实运行态 `MCP error -32000: Connection closed` 的新根因不是 MCP 协议本身，而是 Windows 命令启动语义：
+  - launcher 之前直接 `spawn('npx', ..., { shell: false })`
+  - 在这台机器上，`npx` 实际解析到 `C:\nvm4w\nodejs\npx.ps1`
+  - `Start-Process npx` 会报“不是有效的 Win32 应用程序”，Node 侧直接复现为 `spawn npx ENOENT`
+  - 因此默认 `mcp/mcp.json` 里的 `weather-server / tavily-mcp` 会在真正握手前就退出，宿主侧只剩 `Connection closed`
+- smoke 没挡住这条问题，是因为当前 smoke 覆盖的是“规范 stdio MCP server + node 命令”，不是“Windows 下 npx shim 启动外部 MCP server”。
+- 真实 server 本身并没有坏：
+  - 直接走 `node + npm/bin/npx-cli.js + @mariox/weather-mcp-server`，可以成功 `initialize + listTools`
+  - 直接走 `node + npm/bin/npx-cli.js + tavily-mcp@latest`，也可以成功 `initialize + listTools`
+  - 两个 server 的启动提示都写在 `stderr`，不会污染 MCP 协议 `stdout`
+- 这次“工具调用后为什么不继续”的宿主侧 owner 已清干净：
+  - `AiModelExecutionService` 不再暴露 `stopWhen`
+  - `RuntimeHostSubagentRunnerService` 不再注入 `stepCountIs(request.maxSteps)`
+  - shared 契约、plugin-sdk payload、builtin subagent-delegate config 也都不再保留 `maxSteps`
+- 但第三方 `ai` 包本身仍然有自己的默认步数语义；移除宿主侧限制后，不等于修改了该库内部默认值。
+- 当前安装的 `ai@6.0.164` 并不是“不支持多轮工具调用”，而是“支持，但默认只给一轮”：
+  - `generateText / streamText` 默认 `stopWhen = stepCountIs(1)`
+  - 内部循环条件是：“有工具调用且工具结果都齐了”并且“stop 条件还没命中”才继续下一步
+  - 因此只要把 stop 条件改成不会提前命中的 `isLoopFinished()`，它就会一直跑到工具循环自然结束
+- 最合适的 owner 是 `AiModelExecutionService`：
+  - 这里能统一覆盖主聊天与子代理
+  - 不需要让上层业务知道 `ai sdk` 的 stop 细节
+  - 也不会把新的“步数配置”重新暴露给插件作者
+- 当前我们自己的插件系统只有“插件声明 JSON Route，然后由宿主后端转发调用”的能力：
+  - `packages/shared/src/types/plugin-route.ts` 的 route 描述只有 `path / methods / description`
+  - `PluginRouteResponse.body` 仍是 `JsonValue`
+  - `packages/server/src/runtime/host/runtime-host-plugin-dispatch.service.ts` 只做 route 声明匹配与转发
+  - `packages/server/src/adapters/http/plugin/plugin.controller.ts` 只有 `/plugin-routes/:pluginId/*path` 入口
+  - `packages/plugin-sdk/src/client/index.ts` manifest 输入也只有 `routes?: PluginRouteDescriptor[]`
+- 结论：现状没有“插件声明前端页面、导航入口、静态资源、挂载点”的一等模型，只有宿主内 JSON API route。
+- AstrBot 当前能直接对照到的“扩展 UI”主要是管理台导航与扩展页组织方式，不是插件后端 API：
+  - `other/AstrBot/dashboard/src/layouts/full/vertical-sidebar/sidebarItem.ts` 把插件、MCP、skills、components 聚合在 `/extension` 下的不同标签
+  - `other/AstrBot/dashboard/src/views/extension/useExtensionPage.js` 的 `open_config` 只是从 URL query 打开插件配置对话框
+  - `other/AstrBot/dashboard/src/components/extension/componentPanel/index.vue` 的 `components` 更像组件/命令治理，不是插件作者自定义页面
+- `other/AstrBot/dashboard/src/layouts/full/vertical-sidebar/VerticalSidebar.vue` 里的 `iframe` 是文档站入口，不是插件 WebUI 容器。
+- 目前最像“AstrBot 式扩展 UI”的方向，是给插件声明管理台页面入口，而不是直接让插件把宿主 Vue 组件注入现有页面。
+- AstrBot 在“插件自定义 UI”这件事上的主能力，本质是配置元数据协议，不是插件自带前端：
+  - 插件目录下用 `_conf_schema.json` 声明配置 schema
+  - WebUI 统一读取 metadata 并渲染配置表单
+  - `other/AstrBot/docs/zh/dev/star/plugin.md` 已明确字段：
+    - `type`: `string / text / int / float / bool / object / list`
+    - `description`
+    - `hint`
+    - `obvious_hint`
+    - `default`
+    - `items`
+    - `invisible`
+    - `options`
+    - `editor_mode / editor_language / editor_theme`
+    - `_special`
+- AstrBot 前端不是简单平铺字段，而是“section + object items”两层结构：
+  - `AstrBotCoreConfigWrapper.vue` 负责 tabs/section 包装与搜索
+  - `AstrBotConfigV4.vue` 负责 object section 内部字段渲染
+  - section 和 item 都支持：
+    - `condition`
+    - `hint / obvious_hint`
+    - `invisible`
+  - item 额外支持：
+    - `collapsed`
+    - `_special`
+    - `template_list`
+- AstrBot 的 `_special` 不是厂商特判，而是宿主声明式增强控件：
+  - 已看到 `select_provider / select_provider_stt / select_provider_tts / select_providers / select_persona / persona_pool / select_knowledgebase / select_plugin_set / t2i_template / get_embedding_dim`
+- 如果要“按 AstrBot 那种来”，最接近的实现不是新造一套自由度更高但语义更松的 `adminSchema`，而是直接落一个宿主统一配置元数据协议，并让 Web 端按该协议渲染。
+- Vue `structuredClone()` 不能直接克隆测试挂载时传入的 reactive/proxy props；插件配置值本来就是 `JsonObject`，用 JSON 复制更贴合当前协议，也能避开 `DataCloneError`。
+- 插件页“系统内建插件默认隐藏”的判定不能再看 `plugin.manifest.config.fields`；迁到 object-tree schema 后，应该按 `config.type === 'object' && Object.keys(config.items).length > 0` 识别是否存在用户可配置面。
+- `vue-tsc` 对模板里的 `v-else` 分支不会自动把 `PluginConfigSchema | undefined` 收窄成非空根节点；需要在模板层显式用 `v-else-if="rootSchema"` 配合脚本中的 `PluginConfigSchema | undefined` 计算属性。
+- list 字段把原始 `JSON.parse` 异常直接展示出来并不适合作为宿主统一 UI 的语义；AstrBot 风格的配置页更适合输出稳定、可预期的宿主错误文案。
+- AstrBot 的 `options` 在前端并不只是“值数组”；它还会配合 `labels` 与 `render_type` 影响最终控件类型。我们如果只保留字符串数组，会把“字段值”和“展示文案”绑死，跨前端语义也不够稳定。
+- 在当前项目风格下，把 `options` 收口成对象数组 `{ value, label?, description? }`，比继续照搬 AstrBot 的 `options + labels` 双字段更适合作为共享契约；宿主渲染层仍然能表达相同能力。
+- `list + options` 默认走多选下拉、`renderType === 'checkbox'` 走复选组，和 AstrBot 的 `render_type` 语义更接近，也比“所有 list options 一律复选框”更稳。
+- 插件配置链里这次 residual lint warning 的来源，不是业务逻辑本身，而是 list 分支在已经判空后仍继续使用 `schema.items!`；把 `schema.items` 提前收窄成局部常量即可消掉 warning，而不需要改行为。
+- 如果共享类型里继续保留 `selectProviderStt / selectProviderTts / selectKnowledgebase / selectPluginSet`，但宿主前后端都没有对应数据源与渲染 owner，本质上是在对插件作者暴露假能力；这种“类型先行、实现缺席”的做法和当前 TODO 里的收口边界冲突。
+- 内建 plugin schema 里的“工具名白名单”如果继续保留成逗号分隔字符串，会把旧表单思维继续暴露给插件作者；更贴近 AstrBot 的做法是直接声明为 `list<string>`，由宿主统一决定控件形态。
+- `builtin.provider-router` 和 `builtin.subagent-delegate` 用 object section 分组后，更接近 AstrBot 的配置页结构，也能真实覆盖 `object + collapsed + hint + _special + list` 这组组合语义，而不是只在测试夹具里出现。
+- 仅靠服务端把 schema 改成 object-tree 还不够；如果快照仍把未知旧键带回前端，而前端保存时又整包回传，就会形成“UI 看不见、保存时报错”的残留迁移陷阱。这个 owner 需要 server 和 web 同时收口。
+- 插件“自动出现模型选择 UI”的现成 owner 不是插件 manifest config，而是宿主已有的 `llmPreference` 能力；更合理的做法是按插件是否声明 `llm:generate` 自动显隐，而不是要求插件作者再手写一遍 provider/model 字段。
+- 这次用户看到的 `smoke-ui-*` 聊天残留，不是后端持久化数据还在：
+  - `packages/server/tmp/ai-settings.server.json` 里没有对应 smoke provider
+  - 当前运行态数据库里也没有对应 conversation / message
+- 真正缺口在前端 `chat` store：
+  - 开发态浏览器页面会继续持有旧的 `currentConversationId / messages`
+  - `loadConversations()` 之前只刷新左侧列表，不会在“当前会话已不存在”时主动清空右侧聊天内容
+  - 所以后端即使已经删光，页面仍可能继续显示旧 smoke 消息，直到用户手动切换会话或刷新状态
+- 这类问题最适合在列表刷新入口收口，而不是继续向 smoke 清理脚本追加更多特判；因为真正需要兜住的是“前端持有的会话已经失效”这一语义。
+- 插件页这次“内建 / 未知 / 在线”观感异常，不是单纯的样式问题，而是详情健康接口契约错位：
+  - 列表接口 `/plugins` 返回的是完整 `PluginInfo.health`
+  - 详情接口 `/plugins/:pluginId/health` 旧实现只返回 `{ ok: boolean }`
+  - 前端详情刷新后把这个旧结构覆盖回 `plugin.health`，就会让 `plugin.health.status` 变成 `undefined`
+- 插件健康详情接口如果已经升级成 `PluginHealthSnapshot`，就不能再把“探测失败”一律映射成 `error`：
+  - 对远程插件，未连上或探测失败但运行态还没进入 error owner 时，更接近 `offline`
+  - 对内建插件，`connected` 本身就是宿主内状态，因此探测失败才可视为 `error`
+- “自动出现插件模型策略面板”的当前稳定 owner 仍是宿主 LLM 权限，而不是任意“间接会用到模型”的插件：
+  - 当前宿主统一偏好只覆盖 `llm.generate / llm.generate-text`
+  - `subagent:run` 走的是子代理模型链，不应误并入这块 UI 语义
+- `builtin.conversation-title` 之前是“声明存在、实现缺失”：
+  - 注册表里只有 manifest，没有真实 hook definition
+  - 插件列表页因此会显示它存在，但运行时 `chat:after-model` 不会触发任何标题生成逻辑
+- 这类内建插件不能只靠 manifest 注册来判断“功能已接通”；如果声明了 hook，但 registry 没把对应实现一并注册，宿主侧会静默表现为“插件存在但完全不工作”。
+- 会话标题插件最合适的 owner 仍然是 `chat:after-model`：
+  - 只在主回复完成后执行
+  - 只在当前标题仍等于默认标题时生成
+  - 生成后通过宿主 `conversation.title.set` 写回，不污染 assistant 正文
+- 仓库历史确认 `memory-context` 在重构前确实有真实实现，不是这轮新加能力：
+  - `git show 61f2893:packages/server/src/plugin/builtin/memory-context.plugin.ts` 能看到旧版 `chat:before-model` hook
+  - 旧语义就是读取最新用户消息、调用 `memory.search`，再把命中的记忆摘要拼进 `systemPrompt`
+- 当前运行时 `RuntimeHostUserContextService.searchMemoriesByUser()` 仍是字符串/关键词匹配，不是向量检索：
+  - `record.content` 包含查询
+  - `record.category` 包含查询
+  - `record.keywords` 任一项包含查询
+- 因此 `memory-context` 测试要构造真实可命中的查询文本，不能把“语义上相关但字符串不相交”的例子当成命中样例。
+- `chat:before-model` 内建 hook 的返回值如果经由更宽的 SDK union 推导，TypeScript 会把它扩成包含多种 mutation 字段的结果类型；在 server 侧定义里直接返回稳定 JSON `{ action, systemPrompt }` 更安全。
+- 当前聊天页的会话标题不实时刷新，不是标题插件失效，而是前端刷新 owner 不完整：
+  - 服务端标题插件写回的是会话记录
+  - SSE 只推送消息流，不推送会话摘要变更
+  - 前端 `chat-store` 之前只在页面挂载时拉会话列表，聊天操作里没有统一刷新会话相关元素
+- 这个缺口不只影响标题，还会影响所有挂在会话摘要层的字段，例如：
+  - `title`
+  - `updatedAt`
+  - `_count.messages`
+  - 其他未来可能出现在会话列表或摘要视图上的通用字段
+- 最合适的 owner 是前端 `chat-store` 的统一“会话相关元素刷新”动作，而不是为单独字段追加特判，也不是让每个视图组件各自补拉接口。
+- 仅有“列表请求先后顺序保护”还不够；如果用户在旧列表请求返回前切换或删除当前会话，也要主动失效旧请求，否则旧响应仍可能按“当前会话不存在于列表”误清空新会话状态。
+- “当前会话失效”与“主动删除当前会话”本质上都属于当前聊天上下文被移除，模型选择清理必须保持一致；否则新会话可能沿用已删除会话的 `selectedProvider / selectedModel`。
+- 当前远程插件接入并不是匿名：
+  - 宿主会通过 `/plugins/remote/bootstrap` 签发带 `authKind=remote-plugin`、`role=remote_plugin`、`pluginName`、`deviceType` 的 JWT
+  - 远程插件建连时必须携带 `token + pluginName + deviceType`
+  - 服务端在网关握手阶段会做验签与身份绑定校验
+- 当前远程插件的 manifest、tools、routes、config schema 在注册后会驻留在宿主内存记录里，前端读插件详情时并不是每次都直接回源到远程插件。
+- 但这套“缓存”目前更接近进程内暂存，而不是稳定的服务端持久缓存：
+  - 进程重启后无明确恢复语义
+  - 没有静态元数据快照与运行态健康信息的显式分层
+  - 未来若扩展远程插件 UI schema，也没有单独 owner
+- 如果接入主语义改成“用户手填静态 key”，最关键的不是继续做 token 生命周期，而是：
+  - key 与插件身份绑定
+  - 宿主仅负责安全保存与校验
+  - 静态元数据缓存与运行态状态分离
+- 当前 AI 模型管理存在一个隐藏缺口：`AiManagementService` 的模型能力只存在进程内 `Map`，并不会写回 `ai-settings.server.json`。
+- 这意味着当前“模型能力可编辑”只是运行时内有效；服务重启后会退回 `createAiModelConfig()` 的默认值。
+- 既然这轮要新增 `contextLength`，就不能继续沿用只在内存里保存模型元数据的模式；需要把“模型能力 + 上下文长度”一起持久化。
+- 当前 usage owner 只在 `AiModelExecutionService`：
+  - `generateText()` 透传 `result.usage`
+  - `stream-collect` 透传 `result.totalUsage`
+  - 两者都没有 provider 缺失时的补算逻辑
+- 当前主聊天消息持久化链本身不记录 usage；因此这一轮最有效的落点仍是统一模型执行层先保证“有 usage 可用”。
+- 当前这轮实现里，usage 读取已经明确收口为“只认 AI SDK 统一字段”：
+  - `inputTokens`
+  - `outputTokens`
+  - `totalTokens`
+- 不再额外兼容上游原始 `prompt_tokens / completion_tokens` 之类字段名；若 AI SDK 没给统一 usage，就直接走估算。
+- `contextLength` 当前被放在模型元数据层，而不是 provider 层：
+  - 默认值 `128 * 1024`
+  - 用户可在 AI 设置页按模型单独修改
+  - 服务重启后仍会从 AI 设置文件恢复
+- provider 整体保存时，如果只更新 `settings.providers` 而不同时清理 `settings.models`，就会留下“UI 已删、持久化仍在”的陈旧模型元数据；同名模型重新加入后会错误复活旧 `contextLength / capabilities`。
+- 这条清理逻辑不能只靠 `AiProviderSettingsService.upsertProvider()` 当前入参判断；`AiManagementService.updateProvider()` 若直接原地修改旧 provider 对象，会让“旧模型列表”在保存前就被覆盖，导致无法识别哪些模型是被删掉的。
+- 浏览器 smoke 对这种“设置已持久化”的验收，更稳的做法是以后端状态变化为准，而不是强依赖某个前端 `response` 事件必须被 Playwright 捕获；本轮 `contextLength` 编辑链已经按这个方式收口。
+- 现在浏览器 smoke 已把“provider 编辑弹窗删除模型并重新加入同名模型”的真实 UI 链路补上，因此此前 judge 提到的残余风险已经不再停留在说明层，而是有浏览器端到端证据。
+- `other/opencode` 的上下文压缩不是简单裁掉历史，而是：
+  - 保留完整会话记录
+  - 生成正式压缩摘要消息
+  - 再在送模阶段基于压缩点构造裁剪后的上下文视图
+- `other/astrbot` 的上下文压缩是“请求前临时改写 `req.contexts`”，不会自动把压缩结果写回会话历史。
+- 因此“插件能改上下文”不等于“插件能持久化改历史”；两者必须分开建模。
+- 当前我们自己的 `chat:before-model` 也属于临时上下文 mutation，不会自动回写 `RuntimeHostConversationRecordService`。
+- 如果把压缩信息做成固定 `metadata.compaction`，本质上更像给压缩插件预埋专用通道；更合适的是通用 `metadata.annotations[]`，由插件自己声明 `type / owner / version / data`。
+- 当前 hook 顺序已经是确定性的：
+  - 先按 `hook.priority` 升序
+  - 同优先级按 `pluginId`
+  - 位置在 `packages/server/src/runtime/kernel/runtime-plugin-hook-governance.ts`
+- 这套顺序语义可直接复用到“历史改写阶段”，不需要再造第二套排序系统。
+- 这次 N16 fresh smoke 失败的真实根因不是“压缩插件把当前消息吞掉”或“SSE 流丢了 text-delta”，而是权限声明缺口：
+  - `builtin.context-compaction` 在 `chat:before-model` 会读取会话级 `AUTO_STOP_STATE_KEY`
+  - 在 `conversation:history-rewrite` 会写入和删除同一个会话级状态
+  - 但 manifest 之前只声明了 `config:read / conversation:read / conversation:write / llm:generate / provider:read`
+  - 没有声明 `state:read / state:write`
+  - 运行时因此直接报 `Plugin builtin.context-compaction is missing permission state:read`
+- 这类问题不能只靠“直接调用内建 hook 测语义”的单测兜住；因为那类测试会绕过宿主权限治理。
+- 因此 N16 除了插件语义测试，还需要至少一条经过 builtin manifest 注册链的断言，确保实际 manifest 权限与 hook 内调用的宿主能力一致。
+- 浏览器 smoke 里如果把 `contextLength` 固定改成一个常量值，会受上次残留状态影响：
+  - 当当前值刚好已经是目标值时，前端“保存上下文”按钮不会变可点
+  - 这不是业务回归，但会让 smoke 误报失败
+- 更稳的 smoke owner 是：
+  - 先读取当前输入值
+  - 再选择一个保证不同的目标值
+  - 继续验证“按钮可用 -> 保存成功 -> 后端持久化 -> 前端回显”
+
+## 2026-04-19
+
+- 当前上下文压缩在这轮补齐前只有按钮式手动入口，没有像 OpenCode 那样可直接在聊天输入里触发的命令式入口。
+- 对现有链路来说，最稳的 owner 不是再造一条“命令压缩 API”，而是让聊天输入里的 `/compact` 直接复用已有 `compactConversationContext()`。
+- `/compact` 应当在前端发送链最前面识别：
+  - 不落普通用户消息
+  - 不受“当前会话关闭 LLM 自动回复”限制
+  - 但仍受当前流式生成中 / 正在压缩中的互斥限制
+- 如果聊天输入里已经附带图片，`/compact` 不应被强行解释成命令；这种情况下继续按普通消息处理更稳。
+
+- 当前远程插件主语义仍是“宿主签发 bootstrap token + 网关按 `pluginName + deviceType` 验签”，和用户要求的“静态 key + 宿主自动接入面板”不一致。
+- `deviceType` 同时混入了运行位置、环境类别和展示语义，已经不适合作为公开模型继续扩散。
+- 当前插件详情页读的是宿主内存记录，不是每次直接回源远程插件；因此把“静态元数据缓存”做成持久化分层是顺势收口，不是新增另一套旁路。
+- `PluginInfo.deviceType`、`PluginLifecycleHookInfo.deviceType`、plugin-sdk `PluginClientOptions.deviceType` 都需要同步迁移，否则前后端和远程插件作者侧会继续绑定旧语义。
+- 这轮优先级应是：
+  - 先改 shared 契约
+  - 再改 server 持久化和读模型
+  - 最后再改 web 面板与 smoke
+- `PluginPersistenceService` 之前完全是进程内 `Map`；这轮新增 `tmp/plugins.server.json` 后，远程插件的静态 manifest 和接入配置已经有了最基本的重启后恢复能力。
+- 现有远程插件拓扑仍然是“远程插件主动连宿主 WebSocket”，所以“用户填写静态 key”更合理的落点不是宿主主动出站，而是宿主保存并校验这把 key，远端连接时携带同一把 key 完成配对。
+- 远程插件的静态缓存不一定要把 manifest 再复制一份塞进另一个字段；也可以把 `record.manifest` 作为静态快照本体，再额外记录 `lastSyncedAt / manifestHash / status` 来表达缓存语义。
+- N14 收尾阶段真正容易漏掉的不是正式代码，而是三类外围残留：
+  - `plugin-sdk` 作者侧测试还在断言 `fromBootstrap`
+  - `server` 的网关与控制器测试还在按 `deviceType / token / claims.authKind` 写夹具
+  - `http-smoke.mjs` 和 `docs/插件开发指南.md` 还在公开 `/plugins/remote/bootstrap`
+- `PluginController.upsertRemotePlugin()` 返回的是完整 `PluginInfo`，不是简单的 persistence record；如果测试 mock 只返回 `{ pluginId }`，会在 `buildPluginInfo()` 里直接炸掉。
+- 这轮 `smoke:server` 已证明新的远程主链成立：
+  - 宿主先保存 `remote-access`
+  - 再通过 `remote-connection` 暴露 SDK 可消费的连接参数
+  - 远程插件脚本用 `PluginClient.fromRemoteAccess()` 建连并完成真实 route / host 调用
+- `smoke:server` 如果不显式设置 `GARLIC_CLAW_PLUGIN_STATE_PATH`，即使数据库和 AI 设置都走临时目录，插件持久化仍会误读开发态 `packages/server/tmp/plugins.server.json`，从而把 fresh 冒烟的默认插件状态污染成真实开发态数据。
+- `refresh-metadata` 当前实现的真正 owner 不是宿主主动回源拉元数据，而是“要求远端断开并重新注册”；只要 smoke 和回归测试能证明第二次注册确实刷新了 `metadataCache.lastSyncedAt / manifestHash`，这条语义就成立。
+- Web 侧远程插件验收不能只看插件列表页是否打开；至少要有两层证据：
+  - 组件测试覆盖 `auth.mode`、风险标签、缓存状态和离线摘要展示
+  - 浏览器 smoke 覆盖“先缓存、再断开、离线页仍展示缓存元数据”的真实链路
+- `http-smoke.mjs` 原先只覆盖 `/skills` 路由和普通聊天成功路径，不能证明 N17 的 runtime 语义真的成立。
+- 当前最小但有效的 smoke 证据链是两条：
+  - `loadPolicy=deny` 后，发给模型的 `tools` 里不再出现 native `skill`
+  - `loadPolicy=allow` 后，模型先发 `skill` tool call，宿主执行后继续下一轮并返回最终自然语言
+- 会话详情接口 `/api/chat/conversations/:id` 里的 `toolCalls / toolResults` 不是数组，而是 JSON 字符串；如果 smoke 直接按数组断言，会把正式读模型误判成运行时缺口。
+- 如果 smoke 不隔离 `HOME / USERPROFILE`，`SkillRegistryService` 会继续扫描本机 `~/.garlic-claw/skills`，让 deny 场景对本机环境敏感；把后端 smoke 进程的 home 指向临时目录后，这条污染源已被隔离。
+- `subagent` 继续向 OpenCode `task` 靠拢时，最稳的是落真实 `subagent type registry`，而不是继续保留 `profile` 壳：
+  - `subagentType` 对应宿主真实 owner
+  - `providerId / modelId / system / toolNames` 继续作为显式 override
+  - 类型真相源直接是 `subagent-types/*.yaml`，不会退回空壳枚举
+- `subagent type` 最合适的解析顺序是：
+  - 原始 request 先保留，用于续跑与持久化
+  - 执行前再解析 type 默认值，补齐 provider / model / system / tools
+  - 最后允许显式字段覆盖 type 默认值
+- 插件配置里的 `selectSubagentType` 不需要插件作者手写 options：
+  - 宿主提供 `GET /subagent-types`
+  - 前端配置表单只在 schema 用到该 specialType 时拉取
+  - 这和现有 `selectProvider / selectPersona` 的 owner 一致
+- 当前 Garlic Claw 这条链还差 OpenCode 的两层关键 owner：
+  - `general / explore` 需要从宿主内建常量表彻底切到真实类型文件
+  - `taskId` 目前同时承担后台任务记录 id 和子会话恢复入口
+- 如果继续保留这两个公开字段，外部作者看到的仍是“任务记录系统”，不是 OpenCode 风格的“agent type + session”。
+- 因此这轮真正要收口的是：
+  - `profileId -> subagentType`
+  - `taskId -> sessionId`（公开恢复入口）
+  - `conversation todo -> session todo`
+- 聊天主会话天然已经有 `conversationId`，因此最稳的做法不是新造一套聊天 session 页面，而是在宿主层把当前 conversation 视作主 session 的公开映射。
+- 浏览器 smoke 里，`type="number"` 输入框仅靠 Playwright `fill() + Tab` 并不稳定：
+  - 组件启用保存按钮依赖真实 DOM `input` 事件更新草稿值
+  - 直接在浏览器端设置 `value` 并派发 `input/change` 更稳，能避免“保存上下文”按钮一直保持禁用
+- slash 命令是否应该走“仅展示、不送模”不能按字符串前缀粗判：
+  - 只有真正被插件链短路处理的命令，才应该落成 `display`
+  - 未知 `/foo` 仍然是普通用户消息；否则会被历史规划链跳过，等于消息被吞掉
+- 前端“LLM 已关闭时命令仍可发送”的判定也必须复用命令目录：
+  - 只看 `/` 前缀会把未知文本误当成命令
+  - 改成按命令目录最长前缀匹配后，命令提示与发送放行终于用了同一套真相源
+- 当前 `subagent` 迁移的真实状态是：
+  - 输入侧已经是 `subagentType + sessionId`
+  - 但结果载荷、task 工具结果和后台账本仍保留 `taskId` 公开投影
+  - 因此这段只能算“迁移进行中”，还不能写成“`taskId` 已退出公开主语义”

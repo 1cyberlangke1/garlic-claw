@@ -75,6 +75,7 @@ async function main() {
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
     createdConversationId = await runChatFlow(page, accessToken);
     await verifyMcpPage(page);
+    await verifySubagentTasksPage(page);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
@@ -203,10 +204,13 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
   const currentContextLengthValue = Number(await contextLengthInput.inputValue());
   const targetContextLength = currentContextLengthValue === 65536 ? 65537 : 65536;
-  await contextLengthInput.evaluate((node, value) => {
-    node.value = value;
-    node.dispatchEvent(new Event('input', { bubbles: true }));
-  }, String(targetContextLength));
+  await contextLengthInput.evaluate((input, nextValue) => {
+    input.focus();
+    input.value = String(nextValue);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.blur();
+  }, targetContextLength);
   const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
   await waitFor(async () => (await saveButton.isDisabled()) ? null : true, '等待上下文长度保存按钮可用');
   await saveButton.click();
@@ -304,7 +308,7 @@ async function runChatFlow(page, accessToken) {
 
   const compactRequest = page.waitForResponse((response) =>
     response.request().method() === 'POST'
-    && response.url().includes('/api/plugin-routes/builtin.context-compaction/context-compaction/run'),
+    && response.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
   );
   await composer.fill('/compact');
   await page.locator('.send-button').click();
@@ -312,8 +316,14 @@ async function runChatFlow(page, accessToken) {
   assert.equal(compactResponse.ok(), true, '手动上下文压缩请求失败');
   await waitFor(async () => {
     const detail = await getConversationDetail(accessToken, conversation.id);
-    return detail.messages.some((message) => message.content === '/compact') ? null : true;
-  }, '等待 /compact 不写入会话历史');
+    const commandMessage = detail.messages.find((message) => message.content === '/compact');
+    const resultMessage = detail.messages.find((message) =>
+      message.role === 'display' && message.content !== '/compact',
+    );
+    return commandMessage?.role === 'display' && resultMessage?.role === 'display'
+      ? true
+      : null;
+  }, '等待 /compact 以 display 消息写入会话历史');
 
   return conversation.id;
 }
@@ -356,6 +366,12 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   await page.locator('[data-test="plugin-remote-access-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="plugin-remote-access-key"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   return remotePluginHandle
+}
+
+async function verifySubagentTasksPage(page) {
+  await page.goto('/subagents', { waitUntil: 'networkidle' });
+  await expectText(page, '后台 Subagent 任务');
+  await expectText(page, '任务账本');
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {

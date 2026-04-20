@@ -6,6 +6,7 @@ import { generateText, isLoopFinished, streamText, type LanguageModel, type Mode
 import { createRequire } from 'node:module';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
 import type { StoredAiProviderConfig } from '../ai-management/ai-management.types';
+import { stringifyInvalidToolInput } from '../execution/invalid/invalid-tool-record';
 import { readAssistantRawCustomBlocks, readAssistantResponseCustomBlocks, type AssistantCustomBlockEntry } from '../runtime/host/runtime-host-values';
 
 export interface AiModelExecutionRequest {
@@ -18,6 +19,7 @@ export interface AiModelExecutionRequest {
   providerOptions?: JsonObject;
   system?: string;
   transportMode?: PluginLlmTransportMode;
+  tools?: Record<string, Tool>;
   variant?: string;
 }
 
@@ -56,7 +58,12 @@ export class AiModelExecutionService {
     let lastError: unknown;
     for (const target of this.buildExecutionTargets(input)) {
       try {
-        const result = await generateText(this.buildExecutionInput(input, target) as Parameters<typeof generateText>[0]);
+        const result = await generateText({
+          ...this.buildExecutionInput(input, target),
+          ...(input.tools ? { stopWhen: isLoopFinished() } : {}),
+          ...(input.tools ? { tools: input.tools } : {}),
+          ...(input.tools ? { experimental_repairToolCall: this.createRepairToolCall(input.tools) } : {}),
+        } as Parameters<typeof generateText>[0]);
         return {
           ...(result.response?.body
             ? { customBlocks: readAssistantResponseCustomBlocks(result.response.body) }
@@ -182,6 +189,7 @@ export class AiModelExecutionService {
       ...this.buildExecutionInput(input, target),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       includeRawChunks: true,
+      ...(input.tools ? { experimental_repairToolCall: this.createRepairToolCall(input.tools) } : {}),
       ...(input.tools ? { stopWhen: isLoopFinished() } : {}),
       ...(input.tools ? { tools: input.tools } : {}),
     } as Parameters<typeof streamText>[0]);
@@ -203,6 +211,29 @@ export class AiModelExecutionService {
       fetch: createOpenAiCompatibleFetch(target.provider.id),
       name: target.provider.id,
     }).chat(target.modelId) as unknown as LanguageModel;
+  }
+
+  private createRepairToolCall(tools: Record<string, Tool>) {
+    return async (input: {
+      error: { message?: string; name?: string };
+      toolCall: { input: string; toolCallId: string; toolName: string } & Record<string, unknown>;
+    }) => {
+      if (!tools.invalid) {
+        return null;
+      }
+      return {
+        ...input.toolCall,
+        input: JSON.stringify({
+          error: readRepairToolErrorMessage(input.error),
+          ...(stringifyInvalidToolInput(input.toolCall.input)
+            ? { inputText: stringifyInvalidToolInput(input.toolCall.input) }
+            : {}),
+          phase: readRepairToolPhase(input.error),
+          tool: input.toolCall.toolName,
+        }),
+        toolName: 'invalid',
+      };
+    };
   }
 }
 
@@ -528,4 +559,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function sanitizeOpenAiCompatibleIdFragment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]+/g, '-');
+}
+
+function readRepairToolErrorMessage(error: { message?: string } | null | undefined): string {
+  return typeof error?.message === 'string' && error.message.trim().length > 0
+    ? error.message.trim()
+    : '工具调用不合法';
+}
+
+function readRepairToolPhase(error: { name?: string } | null | undefined): 'resolve' | 'validate' {
+  return error?.name === 'AI_NoSuchToolError'
+    ? 'resolve'
+    : 'validate';
 }

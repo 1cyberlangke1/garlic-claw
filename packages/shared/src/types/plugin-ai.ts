@@ -57,6 +57,9 @@ export interface PluginLlmGenerateTextResult {
 
 /** 插件侧统一 Subagent 运行请求。 */
 export interface PluginSubagentRunParams {
+  sessionId?: string;
+  description?: string;
+  subagentType?: string;
   providerId?: string;
   modelId?: string;
   system?: string;
@@ -98,6 +101,9 @@ export interface PluginSubagentToolResult {
 
 /** 插件侧统一 Subagent 运行结果。 */
 export interface PluginSubagentRunResult {
+  taskId?: string;
+  sessionId?: string;
+  sessionMessageCount?: number;
   providerId: string;
   modelId: string;
   text: string;
@@ -112,6 +118,8 @@ export interface PluginSubagentRunResult {
 
 /** 子代理运行时可改写的请求快照。 */
 export interface PluginSubagentRequest {
+  description?: string;
+  subagentType?: string;
   providerId?: string;
   modelId?: string;
   system?: string;

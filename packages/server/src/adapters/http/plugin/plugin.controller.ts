@@ -1,8 +1,8 @@
-import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentTaskDetail, type PluginSubagentTaskOverview } from '@garlic-claw/shared';
+import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginCommandCatalogVersion, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentTaskDetail, type PluginSubagentTaskOverview, type PluginSubagentTypeSummary } from '@garlic-claw/shared';
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/http-auth';
-import { buildPluginCommandConflicts, buildPluginInfo, listPluginCommands } from '../../../plugin/persistence/plugin-read-model';
+import { buildPluginCommandCatalogVersion, buildPluginCommandOverview, buildPluginInfo, listPluginCommands } from '../../../plugin/persistence/plugin-read-model';
 import { PluginPersistenceService } from '../../../plugin/persistence/plugin-persistence.service';
 import { buildRemotePluginConnectionInfo, PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
@@ -156,11 +156,20 @@ export class PluginController {
   @Get('plugin-commands/overview')
   async listCommandOverview(): Promise<PluginCommandOverview> {
     const commands = this.runtimePluginGovernanceService.listPlugins().flatMap((plugin) => listPluginCommands(plugin, plugin.connected));
-    return { commands, conflicts: buildPluginCommandConflicts(commands) };
+    return buildPluginCommandOverview(commands);
+  }
+
+  @Get('plugin-commands/version')
+  async getCommandCatalogVersion(): Promise<PluginCommandCatalogVersion> {
+    const commands = this.runtimePluginGovernanceService.listPlugins().flatMap((plugin) => listPluginCommands(plugin, plugin.connected));
+    return buildPluginCommandCatalogVersion(commands);
   }
 
   @Get('plugin-subagent-tasks/overview')
   listSubagentTaskOverview(): PluginSubagentTaskOverview { return this.runtimeHostSubagentRunnerService.listOverview(); }
+
+  @Get('subagent-types')
+  listSubagentTypes(): PluginSubagentTypeSummary[] { return this.runtimeHostSubagentRunnerService.listTypes(); }
 
   @Get('plugin-subagent-tasks/:taskId')
   getSubagentTask(@Param('taskId') taskId: string): PluginSubagentTaskDetail { return this.runtimeHostSubagentRunnerService.getTaskOrThrow(taskId); }

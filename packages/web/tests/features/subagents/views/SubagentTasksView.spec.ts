@@ -9,9 +9,15 @@ vi.mock('@/features/subagents/composables/use-plugin-subagent-tasks', () => ({
     error: ref(null),
     tasks: shallowRef([
       {
+        description: '继续已有后台任务',
         id: 'subagent-task-1',
+        sessionId: 'subagent-session-1',
+        sessionMessageCount: 3,
+        sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
         pluginId: 'builtin.subagent-delegate',
         pluginDisplayName: '子代理委派',
+        subagentType: 'explore',
+        subagentTypeName: '探索',
         runtimeKind: 'local',
         status: 'running',
         requestPreview: '请帮我总结当前对话',
@@ -32,9 +38,15 @@ vi.mock('@/features/subagents/composables/use-plugin-subagent-tasks', () => ({
     filter: ref('all'),
     pagedTasks: computed(() => [
       {
+        description: '继续已有后台任务',
         id: 'subagent-task-1',
+        sessionId: 'subagent-session-1',
+        sessionMessageCount: 3,
+        sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
         pluginId: 'builtin.subagent-delegate',
         pluginDisplayName: '子代理委派',
+        subagentType: 'explore',
+        subagentTypeName: '探索',
         runtimeKind: 'local',
         status: 'running',
         requestPreview: '请帮我总结当前对话',
@@ -82,8 +94,11 @@ describe('SubagentTasksView', () => {
     })
 
     expect(wrapper.text()).toContain('后台 Subagent 任务')
+    expect(wrapper.text()).toContain('继续已有后台任务')
     expect(wrapper.text()).toContain('子代理委派')
+    expect(wrapper.text()).toContain('探索')
     expect(wrapper.text()).toContain('请帮我总结当前对话')
+    expect(wrapper.text()).toContain('会话 3 条')
     expect(wrapper.text()).toContain('回写等待中')
     expect(wrapper.text()).toContain('打开插件治理')
   })

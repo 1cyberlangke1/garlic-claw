@@ -19,7 +19,7 @@
         <div
           :data-message-id="row.message.id ?? undefined"
           class="message"
-          :class="row.message.role"
+          :class="[row.message.role, displayVariantClass(row.message)]"
         >
           <div class="message-role" :title="readRoleTitle(row.message)">
             <img
@@ -598,7 +598,10 @@ function getRoleLabel(message: ChatMessage): string {
     return "用户";
   }
   if (message.role === "display") {
-    return "摘要";
+    if (readDisplayMessageVariant(message) === "command") {
+      return "命令";
+    }
+    return contextCompactionSummary(message) ? "摘要" : "展示";
   }
 
   const assistantName = props.assistantPersona?.name?.trim();
@@ -610,7 +613,7 @@ function readRoleTitle(message: ChatMessage): string {
     return "用户";
   }
   if (message.role === "display") {
-    return "仅展示消息";
+    return readDisplayMessageVariant(message) === "command" ? "命令消息" : "仅展示消息";
   }
 
   return props.assistantPersona?.name?.trim() || "AI";
@@ -622,6 +625,15 @@ function shouldRenderAssistantAvatar(message: ChatMessage): boolean {
 
 function isNonContextMessage(message: ChatMessage): boolean {
   return message.role === "display";
+}
+
+function displayVariantClass(message: ChatMessage): string | null {
+  if (message.role !== "display") {
+    return null;
+  }
+
+  const variant = readDisplayMessageVariant(message);
+  return variant ? `display-${variant}` : null;
 }
 
 function readAssistantPersonaAlt(): string {
@@ -740,6 +752,19 @@ function readContextCompactionAnnotations(
       annotation.type === "context-compaction" &&
       annotation.owner === "builtin.context-compaction",
   );
+}
+
+function readDisplayMessageVariant(
+  message: ChatMessage,
+): "command" | "result" | null {
+  const annotation = message.metadata?.annotations?.find(
+    (entry) =>
+      entry.type === "display-message" &&
+      entry.owner === "conversation.display-message" &&
+      entry.version === "1",
+  );
+  const variant = isRecord(annotation?.data) ? annotation.data.variant : null;
+  return variant === "command" || variant === "result" ? variant : null;
 }
 
 function isContextCompactionSummaryData(

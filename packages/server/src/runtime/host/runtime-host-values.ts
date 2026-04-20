@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue, PluginCallContext, PluginLlmMessage } from '@garlic-claw/shared';
 import { BadRequestException } from '@nestjs/common';
+import { createInvalidToolResult, stringifyInvalidToolInput } from '../../execution/invalid/invalid-tool-record';
 
 export const DEFAULT_PERSONA_ID = 'builtin.default-assistant';
 export const DEFAULT_PROVIDER_ID = 'builtin.default';
@@ -76,6 +77,21 @@ export function readAssistantStreamPart(rawPart: unknown):
     return rawPart.type === 'tool-call'
       ? { input: rawPart.input as JsonValue, toolCallId: rawPart.toolCallId, toolName: rawPart.toolName, type: 'tool-call' }
       : { output: rawPart.output as JsonValue, toolCallId: rawPart.toolCallId, toolName: rawPart.toolName, type: 'tool-result' };
+  }
+  if (rawPart.type === 'tool-error' && typeof rawPart.toolCallId === 'string' && typeof rawPart.toolName === 'string') {
+    return {
+      output: createInvalidToolResult({
+        error: readToolErrorMessage(rawPart.error),
+        ...(stringifyInvalidToolInput(rawPart.input)
+          ? { inputText: stringifyInvalidToolInput(rawPart.input) }
+          : {}),
+        phase: 'execute',
+        tool: rawPart.toolName,
+      }) as unknown as JsonValue,
+      toolCallId: rawPart.toolCallId,
+      toolName: rawPart.toolName,
+      type: 'tool-result',
+    };
   }
   return null;
 }
@@ -225,4 +241,12 @@ function isKnownAssistantDeltaKey(key: string): boolean {
     || key === 'function_call'
     || key === 'refusal'
     || key === 'audio';
+}
+
+function readToolErrorMessage(value: unknown): string {
+  return value instanceof Error
+    ? value.message
+    : typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : '工具执行失败';
 }

@@ -26,6 +26,7 @@ describe('PluginController subagent task routes', () => {
   const runtimeHostSubagentRunnerService = {
     getTaskOrThrow: jest.fn(),
     listOverview: jest.fn(),
+    listTypes: jest.fn(),
   };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
@@ -54,6 +55,9 @@ describe('PluginController subagent task routes', () => {
       tasks: [
         {
           id: 'subagent-task-1',
+          sessionId: 'subagent-session-1',
+          sessionMessageCount: 2,
+          sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
           pluginId: 'builtin.subagent-delegate',
           pluginDisplayName: '子代理委派',
           runtimeKind: 'local',
@@ -84,6 +88,9 @@ describe('PluginController subagent task routes', () => {
   it('returns one persisted background subagent task by id', async () => {
     runtimeHostSubagentRunnerService.getTaskOrThrow.mockReturnValue({
       id: 'subagent-task-1',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 2,
+      sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
       pluginId: 'builtin.subagent-delegate',
       pluginDisplayName: '子代理委派',
       runtimeKind: 'local',
@@ -134,5 +141,31 @@ describe('PluginController subagent task routes', () => {
         }),
       }),
     );
+  });
+
+  it('returns available subagent types for config selectors', () => {
+    runtimeHostSubagentRunnerService.listTypes.mockReturnValue([
+      {
+        id: 'general',
+        name: '通用',
+        description: '默认子代理',
+      },
+      {
+        id: 'explore',
+        name: '探索',
+      },
+    ]);
+
+    expect(controller.listSubagentTypes()).toEqual([
+      {
+        id: 'general',
+        name: '通用',
+        description: '默认子代理',
+      },
+      {
+        id: 'explore',
+        name: '探索',
+      },
+    ]);
   });
 });

@@ -37,6 +37,7 @@ process.env.NO_PROXY = [
   .join(',');
 
 const visitedHttpRoutes = [];
+let smokeWebFetchUrl = '';
 
 async function main() {
   const cli = parseCliArgs(process.argv.slice(2));
@@ -51,6 +52,7 @@ async function main() {
   const wsPort = cli.proxyOrigin ? null : await getFreePort();
   const skillRoot = path.join(SERVER_DIR, 'skills', SKILL_DIR_NAME);
   const fakeOpenAi = await startFakeOpenAiServer();
+  smokeWebFetchUrl = `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-webfetch/article`;
   const smokeSkillId = 'project/.smoke-http-flow';
   const mcpScriptPath = path.join(tempDir, 'working-mcp.cjs');
   const remotePluginScriptPath = path.join(tempDir, 'remote-route-plugin.cjs');
@@ -62,6 +64,7 @@ async function main() {
     personasPath: path.join(tempDir, 'persona'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
     skillGovernancePath: path.join(tempDir, 'skill-governance.server.json'),
+    subagentTypesPath: path.join(tempDir, 'subagent-types'),
     subagentTasksPath: path.join(tempDir, 'subagent-tasks.server.json'),
     userHomePath: path.join(tempDir, 'user-home'),
   };
@@ -95,6 +98,12 @@ async function main() {
     retriedAssistantText: null,
     skillLoopAssistantMessageId: null,
     skillLoopAssistantText: null,
+    taskLoopAssistantMessageId: null,
+    taskLoopAssistantText: null,
+    todoLoopAssistantMessageId: null,
+    todoLoopAssistantText: null,
+    webFetchLoopAssistantMessageId: null,
+    webFetchLoopAssistantText: null,
     skillId: smokeSkillId,
     toolId: null,
     toolSourceId: null,
@@ -113,6 +122,7 @@ async function main() {
       assertWebRoutesMatchServerRoutes(serverRoutes, webRoutes);
     });
     await prepareProjectSkill(skillRoot);
+    await prepareCustomSubagentType(serverFiles.subagentTypesPath);
     await prepareWorkingMcpScript(mcpScriptPath);
     await prepareRemoteRoutePluginScript(remotePluginScriptPath);
 
@@ -392,6 +402,40 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(services.ttsEnabled === false, 'Expected conversation services update to persist');
   });
 
+  await runStep('chat.todo.get.initial', async () => {
+    const todos = await getJson(apiBase, `/chat/sessions/${state.conversationId}/todo`, { headers: userHeaders() });
+    ensure(Array.isArray(todos), 'Expected session todo payload to be an array');
+    ensure(todos.length === 0, 'Expected new session todo list to be empty');
+  });
+
+  await runStep('chat.todo.put', async () => {
+    const todos = await putJson(apiBase, `/chat/sessions/${state.conversationId}/todo`, {
+      body: {
+        todos: [
+          {
+            content: '校对 smoke 路由覆盖',
+            priority: 'medium',
+            status: 'completed',
+          },
+          {
+            content: '补 todo 工具主链',
+            priority: 'high',
+            status: 'in_progress',
+          },
+        ],
+      },
+      headers: userHeaders(),
+    });
+    ensure(Array.isArray(todos) && todos.length === 2, 'Expected session todo update to persist');
+    ensure(todos[1]?.content === '补 todo 工具主链', 'Expected updated todo content to persist');
+  });
+
+  await runStep('chat.todo.get.after-put', async () => {
+    const todos = await getJson(apiBase, `/chat/sessions/${state.conversationId}/todo`, { headers: userHeaders() });
+    ensure(Array.isArray(todos) && todos.length === 2, 'Expected session todo list to include updated items');
+    ensure(todos.some((entry) => entry.content === '补 todo 工具主链' && entry.status === 'in_progress'), 'Expected session todo list to expose updated items');
+  });
+
   await runStep('personas.list', async () => {
     const personas = await getJson(apiBase, '/personas');
     ensure(Array.isArray(personas) && personas.length > 0, 'Expected personas list to be non-empty');
@@ -594,6 +638,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(!containsText(firstRequest.body?.messages ?? [], '/compact'), 'Expected slash command display messages to stay out of model context');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'skill'));
     ensure(toolResultRequest, 'Expected skill loop to issue a follow-up request with tool results');
+    ensure(requestContainsSkillContent(toolResultRequest.body, 'smoke-http-flow'), 'Expected skill loop follow-up request to include rendered skill content');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const skillAssistant = conversation.messages.find((entry) => entry.id === state.skillLoopAssistantMessageId);
@@ -602,6 +647,131 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(skillAssistant?.content === state.skillLoopAssistantText, 'Expected skill loop assistant message to persist generated content');
     ensure(Array.isArray(skillToolCalls) && skillToolCalls.some((entry) => entry?.toolName === 'skill'), 'Expected skill loop assistant message to persist native skill tool call');
     ensure(Array.isArray(skillToolResults) && skillToolResults.some((entry) => entry?.toolName === 'skill'), 'Expected skill loop assistant message to persist native skill tool result');
+  });
+
+  await runStep('chat.messages.task-loop', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请使用 task 工具委派一个探索任务，并总结结果。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.taskLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.taskLoopAssistantMessageId === 'string', 'Expected task loop to create assistant message');
+    state.taskLoopAssistantText = assertCompletedSse(events, '子任务已完成：Smoke HTTP Flow 用于后端烟测。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'task'), 'Expected task loop SSE to include native task tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'task'), 'Expected task loop SSE to include native task tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected task loop SSE to finish');
+  });
+
+  await runStep('chat.messages.task-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请使用 task 工具委派一个探索任务'));
+    ensure(firstRequest, 'Expected first task loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'task'), 'Expected task loop request to expose native task tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'task'));
+    ensure(toolResultRequest, 'Expected task loop to issue a follow-up request with task tool results');
+    ensure(requestContainsTaskResult(toolResultRequest.body, 'Smoke HTTP Flow 用于后端烟测。'), 'Expected task loop follow-up request to include rendered task result');
+    ensure(JSON.stringify(toolResultRequest.body).includes('subagent_type: review'), 'Expected task loop follow-up request to include the custom review subagent type');
+
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const taskAssistant = conversation.messages.find((entry) => entry.id === state.taskLoopAssistantMessageId);
+    const taskToolCalls = parseSerializedJsonValue(taskAssistant?.toolCalls);
+    const taskToolResults = parseSerializedJsonValue(taskAssistant?.toolResults);
+    ensure(taskAssistant?.content === state.taskLoopAssistantText, 'Expected task loop assistant message to persist generated content');
+    ensure(Array.isArray(taskToolCalls) && taskToolCalls.some((entry) => entry?.toolName === 'task'), 'Expected task loop assistant message to persist native task tool call');
+    ensure(Array.isArray(taskToolResults) && taskToolResults.some((entry) => entry?.toolName === 'task'), 'Expected task loop assistant message to persist native task tool result');
+  });
+
+  await runStep('chat.messages.todo-loop', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请更新当前待办列表，并用一句话说明剩余任务数。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.todoLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.todoLoopAssistantMessageId === 'string', 'Expected todo loop to create assistant message');
+    state.todoLoopAssistantText = assertCompletedSse(events, '已更新当前待办，当前剩余 2 项。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'todowrite'), 'Expected todo loop SSE to include native todowrite tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'todowrite'), 'Expected todo loop SSE to include native todowrite tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected todo loop SSE to finish');
+  });
+
+  await runStep('chat.messages.todo-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请更新当前待办列表'));
+    ensure(firstRequest, 'Expected first todo loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'todowrite'), 'Expected todo loop request to expose native todowrite tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'todowrite'));
+    ensure(toolResultRequest, 'Expected todo loop to issue a follow-up request with todowrite tool results');
+    ensure(requestContainsTodoResult(toolResultRequest.body, '继续补 todo smoke'), 'Expected todo loop follow-up request to include rendered todo result');
+
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const todoAssistant = conversation.messages.find((entry) => entry.id === state.todoLoopAssistantMessageId);
+    const todoToolCalls = parseSerializedJsonValue(todoAssistant?.toolCalls);
+    const todoToolResults = parseSerializedJsonValue(todoAssistant?.toolResults);
+    ensure(todoAssistant?.content === state.todoLoopAssistantText, 'Expected todo loop assistant message to persist generated content');
+    ensure(Array.isArray(todoToolCalls) && todoToolCalls.some((entry) => entry?.toolName === 'todowrite'), 'Expected todo loop assistant message to persist native todowrite tool call');
+    ensure(Array.isArray(todoToolResults) && todoToolResults.some((entry) => entry?.toolName === 'todowrite'), 'Expected todo loop assistant message to persist native todowrite tool result');
+
+    const todos = await getJson(apiBase, `/chat/sessions/${state.conversationId}/todo`, { headers: userHeaders() });
+    ensure(Array.isArray(todos) && todos.length === 3, 'Expected todo loop to overwrite session todo list');
+    ensure(todos.some((entry) => entry.content === '继续补 todo smoke' && entry.status === 'in_progress'), 'Expected todo loop to persist latest in-progress item');
+  });
+
+  await runStep('chat.messages.webfetch-loop', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请抓取 smoke web 页面，并用一句话说明标题。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.webFetchLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.webFetchLoopAssistantMessageId === 'string', 'Expected webfetch loop to create assistant message');
+    state.webFetchLoopAssistantText = assertCompletedSse(events, '已抓取 smoke 页面，并整理成 markdown。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'webfetch'), 'Expected webfetch loop SSE to include native webfetch tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'webfetch'), 'Expected webfetch loop SSE to include native webfetch tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected webfetch loop SSE to finish');
+  });
+
+  await runStep('chat.messages.webfetch-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请抓取 smoke web 页面'));
+    ensure(firstRequest, 'Expected first webfetch loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'webfetch'), 'Expected webfetch loop request to expose native webfetch tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'webfetch'));
+    ensure(toolResultRequest, 'Expected webfetch loop to issue a follow-up request with webfetch tool results');
+    ensure(requestContainsWebFetchResult(toolResultRequest.body, 'Smoke Article'), 'Expected webfetch loop follow-up request to include rendered webfetch result');
+
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const webFetchAssistant = conversation.messages.find((entry) => entry.id === state.webFetchLoopAssistantMessageId);
+    const webFetchToolCalls = parseSerializedJsonValue(webFetchAssistant?.toolCalls);
+    const webFetchToolResults = parseSerializedJsonValue(webFetchAssistant?.toolResults);
+    ensure(webFetchAssistant?.content === state.webFetchLoopAssistantText, 'Expected webfetch loop assistant message to persist generated content');
+    ensure(Array.isArray(webFetchToolCalls) && webFetchToolCalls.some((entry) => entry?.toolName === 'webfetch'), 'Expected webfetch loop assistant message to persist native webfetch tool call');
+    ensure(Array.isArray(webFetchToolResults) && webFetchToolResults.some((entry) => entry?.toolName === 'webfetch'), 'Expected webfetch loop assistant message to persist native webfetch tool result');
   });
 
   await runStep('chat.messages.patch', async () => {
@@ -814,11 +984,25 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('plugins.command-overview', async () => {
     const overview = await getJson(apiBase, '/plugin-commands/overview');
     ensure(Array.isArray(overview.commands), 'Expected plugin command overview payload');
+    ensure(typeof overview.version === 'string' && overview.version.length > 0, 'Expected plugin command overview version');
+  });
+
+  await runStep('plugins.command-version', async () => {
+    const version = await getJson(apiBase, '/plugin-commands/version');
+    ensure(typeof version.version === 'string' && version.version.length > 0, 'Expected plugin command catalog version payload');
   });
 
   await runStep('plugins.subagent-overview', async () => {
     const overview = await getJson(apiBase, '/plugin-subagent-tasks/overview');
     ensure(Array.isArray(overview.tasks), 'Expected subagent task overview payload');
+  });
+
+  await runStep('plugins.subagent-types', async () => {
+    const subagentTypes = await getJson(apiBase, '/subagent-types');
+    ensure(Array.isArray(subagentTypes), 'Expected subagent type list payload');
+    ensure(subagentTypes.some((entry) => entry.id === 'general'), 'Expected general subagent type');
+    ensure(subagentTypes.some((entry) => entry.id === 'explore'), 'Expected explore subagent type');
+    ensure(subagentTypes.some((entry) => entry.id === 'review'), 'Expected user-defined review subagent type');
   });
 
   await runStep('plugins.subagent-detail.missing', async () => {
@@ -1231,6 +1415,7 @@ async function runHttpFlow(apiBase, state, input) {
           {
             capability: 'delegate_summary_background',
             params: {
+              description: '自动化烟测任务',
               prompt: '请输出 smoke automation task',
               writeBack: false,
             },
@@ -1303,13 +1488,22 @@ async function runHttpFlow(apiBase, state, input) {
 
   await runStep('plugins.subagent-overview.with-task', async () => {
     const overview = await getJson(apiBase, '/plugin-subagent-tasks/overview');
-    ensure(overview.tasks.some((entry) => entry.id === state.automationSubagentTaskId), 'Expected subagent overview to include automation-created task');
+    const task = overview.tasks.find((entry) => entry.id === state.automationSubagentTaskId);
+    ensure(task, 'Expected subagent overview to include automation-created task');
+    ensure(task.description === '自动化烟测任务', 'Expected subagent overview to expose persisted task description');
+    ensure(task.requestPreview === '请输出 smoke automation task', 'Expected subagent overview to keep prompt preview separate from description');
+    ensure(typeof task.sessionId === 'string' && task.sessionId.length > 0, 'Expected subagent overview to expose session id');
+    ensure(typeof task.sessionMessageCount === 'number' && task.sessionMessageCount >= 1, 'Expected subagent overview to expose session message count');
   });
 
   await runStep('plugins.subagent-detail.success', async () => {
     const task = await waitForSubagentTaskCompletion(apiBase, state.automationSubagentTaskId);
     ensure(task.id === state.automationSubagentTaskId, 'Expected subagent task detail to load');
+    ensure(task.description === '自动化烟测任务', 'Expected subagent task detail to expose persisted task description');
     ensure(task.pluginId === 'builtin.subagent-delegate', 'Expected subagent task detail plugin id');
+    ensure(task.requestPreview === '请输出 smoke automation task', 'Expected subagent task detail to keep prompt preview separate from description');
+    ensure(typeof task.sessionId === 'string' && task.sessionId.length > 0, 'Expected subagent task detail to expose session id');
+    ensure(typeof task.sessionMessageCount === 'number' && task.sessionMessageCount >= 2, 'Expected subagent task detail to expose updated session message count');
     ensure(task.status === 'completed', 'Expected subagent task detail status to be completed');
     ensure(typeof task.result?.text === 'string' && task.result.text.length > 0, 'Expected subagent task detail result text');
   });
@@ -1395,6 +1589,23 @@ async function prepareProjectSkill(skillRoot) {
     '# Smoke HTTP Flow',
     '',
     'This temporary skill exists only for the reusable HTTP smoke flow.',
+    '',
+  ].join('\n'), 'utf8');
+}
+
+async function prepareCustomSubagentType(subagentTypesRoot) {
+  await fsPromises.mkdir(subagentTypesRoot, { recursive: true });
+  await fsPromises.writeFile(path.join(subagentTypesRoot, 'review.yaml'), [
+    'id: review',
+    'name: 审阅',
+    'description: 聚焦审阅与风险检查的烟测子代理类型。',
+    'providerId: null',
+    'modelId: null',
+    'toolNames:',
+    '  - webfetch',
+    'system: |-',
+    '  你是一个审阅子代理。',
+    '  优先指出风险、缺口与可疑点。',
     '',
   ].join('\n'), 'utf8');
 }
@@ -1584,6 +1795,7 @@ async function startBackend(port, wsPort, databaseUrl, files) {
       GARLIC_CLAW_PERSONAS_PATH: files.personasPath,
       GARLIC_CLAW_PLUGIN_STATE_PATH: files.pluginStatePath,
       GARLIC_CLAW_SKILL_GOVERNANCE_PATH: files.skillGovernancePath,
+      GARLIC_CLAW_SUBAGENT_TYPES_PATH: files.subagentTypesPath,
       GARLIC_CLAW_SUBAGENT_TASKS_PATH: files.subagentTasksPath,
       HOME: files.userHomePath,
       USERPROFILE: files.userHomePath,
@@ -2163,6 +2375,12 @@ async function startFakeOpenAiServer() {
         return;
       }
 
+      if (request.method === 'GET' && requestUrl.pathname === '/mock-webfetch/article') {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        response.end('<html><head><title>Smoke Article</title></head><body><h1>Smoke Article</h1><p>webfetch smoke body</p></body></html>');
+        return;
+      }
+
       if (request.method === 'POST' && requestUrl.pathname === '/v1/chat/completions') {
         const body = await readJsonBody(request);
         chatCompletions.push({
@@ -2412,6 +2630,9 @@ function resolveAssistantText(body) {
   }
 
   const latestUserText = findLatestUserText(messages);
+  if (latestUserText.includes('请总结 smoke-http-flow 技能的用途')) {
+    return 'Smoke HTTP Flow 用于后端烟测。';
+  }
   if (latestUserText.includes('更新后')) {
     return '这是重试后的烟测回复。';
   }
@@ -2429,10 +2650,77 @@ function planSmokeChatResponse(body) {
       toolName: 'skill',
     };
   }
+  if (shouldTriggerTaskTool(body)) {
+    return {
+      arguments: {
+        description: '探索 smoke 技能',
+        subagentType: 'review',
+        prompt: '请总结 smoke-http-flow 技能的用途',
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_task_0',
+      toolName: 'task',
+    };
+  }
+  if (shouldTriggerTodoTool(body)) {
+    return {
+      arguments: {
+        todos: [
+          {
+            content: '复核 todo 工具描述',
+            priority: 'high',
+            status: 'completed',
+          },
+          {
+            content: '继续补 todo smoke',
+            priority: 'high',
+            status: 'in_progress',
+          },
+          {
+            content: '整理 subagent 与 opencode 对齐点',
+            priority: 'medium',
+            status: 'pending',
+          },
+        ],
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_todo_0',
+      toolName: 'todowrite',
+    };
+  }
+  if (shouldTriggerWebFetchTool(body)) {
+    return {
+      arguments: {
+        format: 'markdown',
+        url: smokeWebFetchUrl,
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_webfetch_0',
+      toolName: 'webfetch',
+    };
+  }
   if (requestContainsToolResult(body, 'skill')) {
     return {
       kind: 'text',
       text: '已加载技能 smoke-http-flow，可继续执行 Smoke HTTP Flow。',
+    };
+  }
+  if (requestContainsToolResult(body, 'task')) {
+    return {
+      kind: 'text',
+      text: '子任务已完成：Smoke HTTP Flow 用于后端烟测。',
+    };
+  }
+  if (requestContainsToolResult(body, 'todowrite')) {
+    return {
+      kind: 'text',
+      text: '已更新当前待办，当前剩余 2 项。',
+    };
+  }
+  if (requestContainsToolResult(body, 'webfetch')) {
+    return {
+      kind: 'text',
+      text: '已抓取 smoke 页面，并整理成 markdown。',
     };
   }
   return {
@@ -2445,6 +2733,24 @@ function shouldTriggerSkillTool(body) {
   return requestIncludesToolName(body, 'skill')
     && !requestContainsToolResult(body, 'skill')
     && readLatestUserText(body?.messages).includes('请加载 smoke-http-flow 技能');
+}
+
+function shouldTriggerTaskTool(body) {
+  return requestIncludesToolName(body, 'task')
+    && !requestContainsToolResult(body, 'task')
+    && readLatestUserText(body?.messages).includes('请使用 task 工具委派一个探索任务');
+}
+
+function shouldTriggerTodoTool(body) {
+  return requestIncludesToolName(body, 'todowrite')
+    && !requestContainsToolResult(body, 'todowrite')
+    && readLatestUserText(body?.messages).includes('请更新当前待办列表');
+}
+
+function shouldTriggerWebFetchTool(body) {
+  return requestIncludesToolName(body, 'webfetch')
+    && !requestContainsToolResult(body, 'webfetch')
+    && readLatestUserText(body?.messages).includes('请抓取 smoke web 页面');
 }
 
 function requestHasToolList(body) {
@@ -2472,9 +2778,43 @@ function requestContainsToolResult(body, toolName) {
       : typeof message?.toolCallId === 'string'
         ? message.toolCallId
         : '';
-    return (toolName === 'skill' && toolCallId === 'call_smoke_skill_0')
-      || readTextContent(message).includes('smoke-http-flow');
+    const content = readTextContent(message);
+    return (toolName === 'skill' && (toolCallId === 'call_smoke_skill_0' || content.includes('<skill_content name="smoke-http-flow">')))
+      || (toolName === 'task' && (toolCallId === 'call_smoke_task_0' || content.includes('<task_result title=')))
+      || (toolName === 'todowrite' && (toolCallId === 'call_smoke_todo_0' || content.includes('<todo_result>')))
+      || (toolName === 'webfetch' && (toolCallId === 'call_smoke_webfetch_0' || content.includes('<webfetch_result>')));
   });
+}
+
+function requestContainsSkillContent(body, skillName) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) =>
+    message?.role === 'tool'
+    && readTextContent(message).includes(`<skill_content name="${skillName}">`));
+}
+
+function requestContainsTaskResult(body, expectedText) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) =>
+    message?.role === 'tool'
+    && readTextContent(message).includes('<task_result title=')
+    && readTextContent(message).includes(expectedText));
+}
+
+function requestContainsTodoResult(body, todoContent) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) =>
+    message?.role === 'tool'
+    && readTextContent(message).includes('<todo_result>')
+    && readTextContent(message).includes(todoContent));
+}
+
+function requestContainsWebFetchResult(body, title) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) =>
+    message?.role === 'tool'
+    && readTextContent(message).includes('<webfetch_result>')
+    && readTextContent(message).includes(`Title: ${title}`));
 }
 
 function readLatestUserText(messages) {

@@ -7,7 +7,7 @@
           <h3>{{ skill.name }}</h3>
         </div>
         <div class="meta-row">
-          <span class="meta-chip">{{ skill.sourceKind === 'project' ? '项目' : '用户' }}</span>
+          <span class="meta-chip">skills/</span>
           <span class="meta-chip">{{ skill.entryPath }}</span>
         </div>
       </header>
@@ -23,6 +23,9 @@
         </p>
         <p class="detail-line muted-text">
           `skill` 是原生按需加载工具，不会再绑定到当前会话，也不会自动把提示常驻注入每一轮主聊天。
+        </p>
+        <p class="detail-line muted-text">
+          当前宿主只从仓库根 `skills/` 目录扫描 skill；与执行环境相关的 staging 与 bash 语义后续再接入。
         </p>
         <div class="governance-actions">
           <label class="trust-level-field">

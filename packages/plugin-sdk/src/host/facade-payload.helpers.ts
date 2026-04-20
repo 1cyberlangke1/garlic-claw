@@ -62,6 +62,9 @@ export function buildPluginGenerateParams(input: PluginLlmGenerateParams): JsonO
 
 export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): JsonObject {
   return {
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.description ? { description: input.description } : {}),
+    ...(input.subagentType ? { subagentType: input.subagentType } : {}),
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.system ? { system: input.system } : {}),
@@ -76,6 +79,9 @@ export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): Js
 
 export function buildPluginStartSubagentTaskParams(input: PluginSubagentTaskStartParams): JsonObject {
   return {
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.description ? { description: input.description } : {}),
+    ...(input.subagentType ? { subagentType: input.subagentType } : {}),
     messages: toHostJsonValue(input.messages),
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),

@@ -13,7 +13,11 @@ function createOverview() {
   return {
     tasks: [
       {
+        description: '继续已有后台任务',
         id: 'subagent-task-1',
+        sessionId: 'subagent-session-1',
+        sessionMessageCount: 3,
+        sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
         pluginId: 'builtin.subagent-delegate',
         pluginDisplayName: '子代理委派',
         runtimeKind: 'local' as const,
@@ -28,7 +32,11 @@ function createOverview() {
         conversationId: 'conversation-1',
       },
       {
+        description: '分析失败插件',
         id: 'subagent-task-2',
+        sessionId: 'subagent-session-2',
+        sessionMessageCount: 4,
+        sessionUpdatedAt: '2026-03-30T11:50:05.000Z',
         pluginId: 'remote.ops-helper',
         pluginDisplayName: '运维助手',
         runtimeKind: 'remote' as const,
@@ -86,7 +94,7 @@ describe('usePluginSubagentTasks', () => {
     ])
 
     state.filter.value = 'all'
-    state.searchKeyword.value = '运维'
+    state.searchKeyword.value = '分析失败'
     await flushPromises()
 
     expect(state.filteredTaskCount.value).toBe(1)

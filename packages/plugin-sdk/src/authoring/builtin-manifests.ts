@@ -2,6 +2,7 @@ import type { PluginManifest } from "@garlic-claw/shared";
 import builtinManifestData from "./builtin-manifest-data.json";
 
 export interface PluginSubagentDelegateConfig {
+  targetSubagentType?: string;
   targetProviderId?: string;
   targetModelId?: string;
   allowedToolNames?: string[];

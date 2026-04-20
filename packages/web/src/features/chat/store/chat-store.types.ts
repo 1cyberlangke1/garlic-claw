@@ -3,6 +3,7 @@ import type {
   ChatMessagePart,
   ChatMessageRole,
   ChatMessageStatus,
+  ConversationTodoItem,
 } from '@garlic-claw/shared'
 
 /**
@@ -34,3 +35,5 @@ export interface ChatSendInput {
   model?: string | null
   optimisticAssistantMetadata?: ChatMessageMetadata
 }
+
+export type { ConversationTodoItem }

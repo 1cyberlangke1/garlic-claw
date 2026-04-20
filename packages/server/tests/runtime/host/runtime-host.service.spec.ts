@@ -26,6 +26,7 @@ import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.servi
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 
 const subagentTaskStorePaths: string[] = [];
+const subagentSessionStorePaths: string[] = [];
 let fixtureConversationId = 'conversation-1';
 const fixtureConversationTitle = 'Conversation conversation-1';
 
@@ -37,7 +38,14 @@ describe('RuntimeHostService', () => {
         fs.unlinkSync(nextPath);
       }
     }
+    while (subagentSessionStorePaths.length > 0) {
+      const nextPath = subagentSessionStorePaths.pop();
+      if (nextPath && fs.existsSync(nextPath)) {
+        fs.unlinkSync(nextPath);
+      }
+    }
     delete process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH;
+    delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
   });
 
   it('rejects unmigrated host methods', async () => {
@@ -347,7 +355,7 @@ describe('RuntimeHostService', () => {
       permissions: ['conversation:read', 'conversation:write', 'subagent:run'],
     });
 
-    await expect(memoryPluginCall(service, 'subagent.run', {
+    const inlineRun = await memoryPluginCall(service, 'subagent.run', {
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -356,7 +364,8 @@ describe('RuntimeHostService', () => {
       ],
       modelId: 'gpt-5.2',
       providerId: 'openai',
-    }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toEqual({
+    }, { userId: 'user-1', conversationId: fixtureConversationId });
+    expect(inlineRun).toEqual({
       finishReason: 'stop',
       message: {
         content: 'Generated: 请帮我总结当前对话',
@@ -364,6 +373,9 @@ describe('RuntimeHostService', () => {
       },
       modelId: 'gpt-5.2',
       providerId: 'openai',
+      sessionId: expect.any(String),
+      sessionMessageCount: 2,
+      taskId: expect.any(String),
       text: 'Generated: 请帮我总结当前对话',
       toolCalls: [],
       toolResults: [],
@@ -374,6 +386,10 @@ describe('RuntimeHostService', () => {
         totalTokens: 25,
       },
     });
+    await expect(memoryPluginCall(service, 'subagent.task.list', {}, {
+      userId: 'user-1',
+      conversationId: fixtureConversationId,
+    })).resolves.toEqual([]);
     await memoryPluginCall(service, 'conversation.title.set', {
       title: fixtureConversationTitle,
     }, { userId: 'user-1', conversationId: fixtureConversationId });
@@ -394,7 +410,7 @@ describe('RuntimeHostService', () => {
       },
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(started).toMatchObject({
-      id: 'subagent-task-1',
+      id: 'subagent-task-2',
       pluginDisplayName: 'Memory Context',
       status: 'queued',
       writeBackStatus: 'pending',
@@ -405,14 +421,14 @@ describe('RuntimeHostService', () => {
       conversationId: fixtureConversationId,
     })).resolves.toEqual([
       expect.objectContaining({
-        id: 'subagent-task-1',
+        id: 'subagent-task-2',
         status: 'completed',
       }),
     ]);
     await expect(memoryPluginCall(service, 'subagent.task.get', {
-      taskId: 'subagent-task-1',
+      taskId: 'subagent-task-2',
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
-      id: 'subagent-task-1',
+      id: 'subagent-task-2',
       result: {
         text: 'Generated: 请帮我总结当前对话',
       },
@@ -822,12 +838,15 @@ describe('RuntimeHostService', () => {
         content: 'User likes pour-over coffee',
       }),
     ]);
-    await expect(memoryPluginCall(service, 'log.list', {})).resolves.toEqual([
-      expect.objectContaining({
-        message: 'memory saved',
-        type: 'plugin:memory',
-      }),
-    ]);
+    await expect(memoryPluginCall(service, 'log.list', {})).resolves.toEqual({
+      items: [
+        expect.objectContaining({
+          message: 'memory saved',
+          type: 'plugin:memory',
+        }),
+      ],
+      nextCursor: null,
+    });
   });
 
   it('exposes conversation history read, preview and replace through the host facade', async () => {
@@ -940,8 +959,11 @@ function createFixture(input?: {
   permissions?: string[];
 }) {
   const subagentStorePath = path.join(os.tmpdir(), `gc-server-host-subagent-${Date.now()}-${Math.random()}.json`);
+  const subagentSessionPath = path.join(os.tmpdir(), `gc-server-host-subagent-session-${Date.now()}-${Math.random()}.json`);
   process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH = subagentStorePath;
+  process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH = subagentSessionPath;
   subagentTaskStorePaths.push(subagentStorePath);
+  subagentSessionStorePaths.push(subagentSessionPath);
   const pluginPersistenceService = new PluginPersistenceService();
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),

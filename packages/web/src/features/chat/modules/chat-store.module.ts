@@ -1,5 +1,5 @@
 import { computed, markRaw, ref, shallowRef } from "vue";
-import type { ChatMessagePart, Conversation } from "@garlic-claw/shared";
+import type { ChatMessagePart, Conversation, ConversationTodoItem } from "@garlic-claw/shared";
 import {
   abortChatStream,
   discardPendingMessageUpdates,
@@ -17,6 +17,7 @@ import {
   deleteConversationRecord,
   loadConversationList,
   loadConversationMessages,
+  loadConversationTodoRecord,
   stopConversationMessageRecord,
   updateConversationMessageRecord,
 } from "@/features/chat/modules/chat-conversation.data";
@@ -35,6 +36,7 @@ export function createChatStoreModule() {
   const conversations = ref<Conversation[]>([]);
   const currentConversationId = ref<string | null>(null);
   const messages = shallowRef<ChatMessage[]>([]);
+  const todoItems = ref<ConversationTodoItem[]>([]);
   const loading = ref(false);
   const streaming = ref(false);
   const currentStreamingMessageId = ref<string | null>(null);
@@ -54,6 +56,7 @@ export function createChatStoreModule() {
   };
   let conversationListRequestId = 0;
   let conversationDetailRequestId = 0;
+  let conversationTodoRequestId = 0;
 
   const retryableMessageId = computed(() =>
     getRetryableMessageId(messages.value),
@@ -66,6 +69,7 @@ export function createChatStoreModule() {
   function invalidateConversationRequests() {
     conversationListRequestId += 1;
     conversationDetailRequestId += 1;
+    conversationTodoRequestId += 1;
   }
 
   async function refreshConversationRelatedState(
@@ -80,7 +84,10 @@ export function createChatStoreModule() {
       return;
     }
 
-    await loadConversationDetail(conversationId);
+    await Promise.all([
+      loadConversationDetail(conversationId),
+      loadConversationTodo(conversationId),
+    ]);
   }
 
   async function refreshConversationSummary(
@@ -123,6 +130,7 @@ export function createChatStoreModule() {
       currentConversationId.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
+      todoItems.value = [];
       replaceMessages([]);
       syncChatStreamingState(streamState);
     }
@@ -142,9 +150,13 @@ export function createChatStoreModule() {
     currentConversationId.value = id;
     selectedProvider.value = null;
     selectedModel.value = null;
+    todoItems.value = [];
     loading.value = true;
     try {
-      await loadConversationDetail(id);
+      await Promise.all([
+        loadConversationDetail(id),
+        loadConversationTodo(id),
+      ]);
       await ensureModelSelection(messages.value);
       scheduleChatRecoveryWithState(streamState, loadConversationDetail);
     } finally {
@@ -168,6 +180,7 @@ export function createChatStoreModule() {
       currentConversationId.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
+      todoItems.value = [];
       replaceMessages([]);
       syncChatStreamingState(streamState);
     }
@@ -307,10 +320,24 @@ export function createChatStoreModule() {
     syncChatStreamingState(streamState);
   }
 
+  async function loadConversationTodo(conversationId: string) {
+    const requestId = ++conversationTodoRequestId;
+    const nextTodoItems = await loadConversationTodoRecord(conversationId);
+    if (
+      requestId !== conversationTodoRequestId ||
+      currentConversationId.value !== conversationId
+    ) {
+      return;
+    }
+
+    todoItems.value = nextTodoItems;
+  }
+
   return {
     conversations,
     currentConversationId,
     messages,
+    todoItems,
     loading,
     streaming,
     currentStreamingMessageId,

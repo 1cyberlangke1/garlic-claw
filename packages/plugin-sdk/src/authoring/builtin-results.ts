@@ -20,14 +20,14 @@ export function readSubagentDelegateConfig(value: unknown): PluginSubagentDelega
   const tools = readJsonObjectValue(object?.tools);
   const allowedToolNames = readOptionalToolNames(tools?.allowedToolNames);
   return {
-    ...pickOptionalStringFields(llm, ["targetProviderId", "targetModelId"] as const),
+    ...pickOptionalStringFields(llm, ["targetSubagentType", "targetProviderId", "targetModelId"] as const),
     ...(allowedToolNames ? { allowedToolNames } : {}),
   };
 }
-export function buildSubagentDelegateRunParams(input: { config: PluginSubagentDelegateConfig; prompt: string }): PluginSubagentRunParams {
+export function buildSubagentDelegateRunParams(input: { config: PluginSubagentDelegateConfig; prompt: string; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentRunParams {
   return buildSubagentDelegateBaseParams(input);
 }
-export function buildSubagentDelegateTaskParams(input: { config: PluginSubagentDelegateConfig; prompt: string; shouldWriteBack: boolean; conversationId?: string | null }): PluginSubagentTaskStartParams {
+export function buildSubagentDelegateTaskParams(input: { config: PluginSubagentDelegateConfig; prompt: string; shouldWriteBack: boolean; conversationId?: string | null; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentTaskStartParams {
   const base = buildSubagentDelegateBaseParams(input);
   return { ...base, ...(input.shouldWriteBack && input.conversationId ? { writeBack: { target: { type: "conversation", id: input.conversationId } } } : {}) };
 }
@@ -111,6 +111,9 @@ export function createRouteInspectorContextResponse(input: {
 }
 export function createSubagentRunSummary(result: PluginSubagentRunResult): JsonValue {
   return toHostJsonValue({
+    ...(result.taskId ? { taskId: result.taskId } : {}),
+    ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+    ...(typeof result.sessionMessageCount === "number" ? { sessionMessageCount: result.sessionMessageCount } : {}),
     providerId: result.providerId,
     modelId: result.modelId,
     text: result.text,
@@ -120,9 +123,12 @@ export function createSubagentRunSummary(result: PluginSubagentRunResult): JsonV
   });
 }
 export function createSubagentTaskSummaryResult(result: PluginSubagentTaskSummary): JsonValue { return toHostJsonValue(result); }
-function buildSubagentDelegateBaseParams(input: { config: PluginSubagentDelegateConfig; prompt: string }): PluginSubagentRunParams {
+function buildSubagentDelegateBaseParams(input: { config: PluginSubagentDelegateConfig; prompt: string; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentRunParams {
   const toolNames = input.config.allowedToolNames?.length ? input.config.allowedToolNames : null;
   return {
+    ...(sanitizeOptionalText(input.sessionId ?? undefined) ? { sessionId: sanitizeOptionalText(input.sessionId ?? undefined) } : {}),
+    ...(sanitizeOptionalText(input.description ?? undefined) ? { description: sanitizeOptionalText(input.description ?? undefined) } : {}),
+    ...(sanitizeOptionalText(input.subagentType ?? undefined) ? { subagentType: sanitizeOptionalText(input.subagentType ?? undefined) } : sanitizeOptionalText(input.config.targetSubagentType) ? { subagentType: sanitizeOptionalText(input.config.targetSubagentType) } : {}),
     ...(sanitizeOptionalText(input.config.targetProviderId) ? { providerId: sanitizeOptionalText(input.config.targetProviderId) } : {}),
     ...(sanitizeOptionalText(input.config.targetModelId) ? { modelId: sanitizeOptionalText(input.config.targetModelId) } : {}),
     messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],

@@ -514,6 +514,54 @@ describe('AiModelExecutionService', () => {
     }));
   });
 
+  it('repairs invalid tool calls into the internal invalid tool when tools are enabled', async () => {
+    const service = createService();
+
+    service.streamText({
+      messages: [
+        {
+          content: '帮我先查天气再总结',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      tools: {
+        invalid: {} as never,
+        weather_search: {} as never,
+      },
+    } as never);
+
+    const repairToolCall = mockStreamText.mock.calls[0][0].experimental_repairToolCall as
+      | ((input: {
+          error: { message?: string; name?: string };
+          toolCall: { input: string; toolCallId: string; toolName: string };
+        }) => Promise<{ input: string; toolCallId: string; toolName: string } | null>)
+      | undefined;
+    expect(typeof repairToolCall).toBe('function');
+
+    await expect(repairToolCall?.({
+      error: {
+        message: 'city is required',
+        name: 'AI_InvalidToolInputError',
+      },
+      toolCall: {
+        input: '{"city":""}',
+        toolCallId: 'tool-call-1',
+        toolName: 'weather_search',
+      },
+    })).resolves.toEqual({
+      input: JSON.stringify({
+        error: 'city is required',
+        inputText: '{"city":""}',
+        phase: 'validate',
+        tool: 'weather_search',
+      }),
+      toolCallId: 'tool-call-1',
+      toolName: 'invalid',
+    });
+  });
+
   it('normalizes streamed tool calls for openai-compatible providers when the endpoint omits id and type', async () => {
     const service = createService();
     const originalFetch = global.fetch;

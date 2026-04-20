@@ -17,12 +17,110 @@
 - N16 插件化上下文压缩已完成；通用历史接口、`metadata.annotations[]`、自动/手动压缩、聊天摘要展示与 fresh 验收已打通。
 - N14 远程插件静态接入密钥与元数据缓存已完成；远程插件主语义已收口为 `runtimeKind + remoteEnvironment + auth.mode + capabilityProfile`，接入配置面板、静态缓存、IoT 风险提示和 fresh 验收已齐备。
 
-## 当前阶段：待定
+## 当前阶段：N17 后续 runtime 子阶段待启动
 
 - N17 Skill 对齐 OpenCode 已启动：
+  - 所有与执行环境相关的能力统一下沉为 runtime 抽象；工具层只保留稳定语义，不直接绑定宿主实现
   - skill 改为原生按需加载工具
   - 删除会话级 skill 激活态、专用工具源和隐式常驻 prompt 注入
   - skill 相关代码执行统一回到通用工具
+  - 增加内部工具失败兜底结果能力，不暴露到普通工具治理 / 配置界面；用于统一承接参数校验失败、工具源解析失败与可恢复执行错误
+  - `question` 不进入 Garlic Claw 工具面；需要用户确认时走宿主协作流程，不单独暴露给模型
+  - `apply_patch` 不适配特定模型能力，不进入 Garlic Claw 工具面
+  - `websearch / codesearch` 当前不作为本地内建工具推进；它们更接近远端搜索能力，后续如需要应按独立 provider / MCP / remote tool 设计
+  - 继续筛选 OpenCode 本地工具分层，当前保留评估目标为 `todo / webfetch / task / lsp / invalid`
+  - `subagent` 的公开名称保持不变，不改名为 `task`
+  - `subagent` 的实现语义要向 OpenCode `task` 靠拢；相关实现优先参考 `other/opencode`
+  - 当前 Garlic Claw `subagent` 更接近“宿主侧模型调用 + 后台任务记录”，而 OpenCode `task` 是“具名子代理类型 + 独立子会话 + 可恢复 task_id”
+  - 当前已补第一段续跑语义：
+    - `subagent.run / subagent.task.start` 已支持显式 `taskId`
+    - 传入已有 task id 时，会沿用该任务既有请求上下文继续执行
+    - 后台任务续跑时会复用原 task id，而不是再生成新的公开 id
+    - 当前已补第二段任务标题语义：
+      - `subagent.run / subagent.task.start` 已支持显式 `description`
+      - `description` 作为任务标题独立持久化，不再和 `requestPreview` 混用
+      - 前端任务列表优先显示 `description`，请求摘要继续保留真实 prompt 预览
+    - 当前已补第三段子代理类型语义：
+      - shared / plugin-sdk / server / web 都已接通 `subagentType`
+      - 宿主当前通过 `subagent-types/*.yaml` 提供真实类型，而不是内建常量表
+      - 默认 `general / explore` 已文件化；用户新增 YAML 文件后再次读取列表即可生效
+      - 子代理请求会先按类型补默认 `providerId / modelId / system / toolNames`，再允许显式字段覆盖
+      - 后台任务会独立持久化 `subagentType / subagentTypeName`，前端任务卡片与插件配置页都能读取该语义
+      - HTTP 已新增 `GET /subagent-types`，供声明式配置选择器稳定拉取类型列表
+    - 当前已补第四段子会话语义：
+      - `subagent` 已新增独立 session store，不再只把历史塞回单条 task.request
+      - `taskId` 续跑时会优先复用对应 session 历史，再把新的用户消息追加进去
+      - session 与 task 已拆层：后台任务总览继续只展示后台任务，同步 `subagent.run` 会生成可恢复 taskId，但不会污染总览
+      - shared / plugin-sdk / server / web 已接通 `sessionId / sessionMessageCount / sessionUpdatedAt`
+      - 后台任务页当前已能直接看到 session 消息数与最近更新时间
+      - `plugin-sdk` 作者侧测试已直接断言 `subagent.run` 返回 `taskId / sessionId / sessionMessageCount`
+      - `server` 回归已直接断言 inline task 不进入 `subagent.task.list`
+      - 浏览器 smoke 已覆盖 `/subagents` 路由和后台任务页基本可见性
+  - 后续重构目标：
+    - 保留 `subagent` 这个名称
+    - 引入更接近 OpenCode 的子代理类型语义，而不是只传裸 `providerId / modelId / messages`
+    - 子代理应具备独立会话上下文与可恢复执行语义
+    - 当前后台排队、结果回写、任务概览等能力属于宿主扩展，不继续作为公开主语义
+  - 本轮先落与执行环境无关的 skill 主链：
+    - 统一从仓库根 `skills/` 目录扫描，不再把用户目录作为公开主语义
+    - 技能页与共享契约先收口到“仓库 skills 目录中的可发现 skill”
+    - native `skill` 工具里的 `<available_skills>` 继续补齐静态可见性信息，当前已包含 repo 内 `location`
+    - skill 对外列表当前已按名称稳定排序，便于模型和用户检索
+    - 相关实现优先参考 `other/opencode` 的 skill discovery / skill tool 设计
+    - 与任何执行环境绑定的部分都留到后续 runtime 阶段，不计入当前 N17 进度
+  - 后续 runtime 子阶段单列，不纳入当前阶段统计：
+    - `bash / FileRuntime / SkillRuntime staging`
+    - 本机 / WSL / 容器 / 虚拟 shell
+    - 与执行环境相关的 native 工具注入与描述
+  - 工具路线暂定：
+    - 第一优先级：`todo`
+      - 实现语义继续对齐 `other/opencode/packages/opencode/src/tool/todo.ts` 与 `session/todo.ts`
+      - 会话级独立持久化，不混进普通消息正文
+      - 采用全量覆盖写入语义，避免增量 patch 带来的冲突和脏状态
+      - 会话读取接口对齐 OpenCode `/:sessionID/todo` 的独立资源语义
+      - 前端在聊天页展示当前会话 todo，并保留独立的工具结果可视反馈
+    - 第二优先级：`webfetch`
+      - 负责把远端页面抓取并转成稳定文本输入
+      - 属于通用宿主能力，不依赖特定 shell 或 skill
+      - 适合作为 `task / skill / 主对话` 共用的信息读取工具
+      - 当前已完成基础实现，并已通过 native `webfetch` 多轮工具循环 smoke
+    - 第三优先级：`task`
+      - 对齐为“委派给子代理/子任务”的工具，而不是再造一套会话命令
+      - 复用现有 subagent 能力，但要把对 AI 暴露的工具语义收口成更像 OpenCode 的单一入口
+      - 相关实现优先参考 `other/opencode/packages/opencode/src/tool/task.ts` 与 task/session 侧恢复语义
+      - 真正落地前，先完成 runtime/tool 抽象，避免继续把调度细节泄露给模型
+    - 第四优先级：`lsp`
+      - 属于增强型代码理解工具，依赖语言服务与宿主运行环境
+      - 应放在 `FileRuntime / BashRuntime` 基座稳定后接入，避免早接入后 owner 混乱
+      - 语义上优先覆盖“定义/引用/符号信息”，不急着复制全部 IDE 能力
+    - 内部保留：`invalid`
+      - 作为统一失败返回与可恢复错误承接能力
+      - 不作为普通用户治理对象，不放进公开工具配置界面
+      - 当前已接入 AI SDK `experimental_repairToolCall`
+      - 未知工具 / 参数校验失败会自动修复为内部 `invalid` 结果
+      - 可恢复执行错误会统一回写 `invalid-tool-result`
+      - 会话主回复与 `subagent` 都会持久化这类结果，不再把整轮调用直接打断
+  - 当前结论：
+    - 与执行环境无关的主链当前已落到 `skill / todo / webfetch / task / invalid / subagent`
+    - 先前游离在工作区中的 `bash / file` 草稿与空目录已移除，不再计入本阶段
+    - 非执行环境部分的 fresh 验收与独立 judge 已通过，可视为完成
+    - 后续若继续推进 N17，仅剩 runtime 子阶段：
+      - `bash / FileRuntime / SkillRuntime staging`
+      - 本机 / WSL / 容器 / 虚拟 shell
+      - 与执行环境相关的 native 工具注入与描述
+  - N17 新子阶段已启动：
+    - `subagent` 的公开主语义从旧 `profileId + taskId` 收口到 OpenCode 风格的 `subagentType + sessionId`
+    - 当前恢复同一子代理上下文时统一传 `sessionId`
+    - 当前公开结果与后台任务账本仍保留 `taskId` 投影；彻底把 `taskId` 降级为内部/账本语义仍属于后续步骤
+    - 宿主内部仍可保留后台任务视图，但它只作为 `session` 的投影视图，不再继续承担公开 owner
+    - `todo` 的公开 owner 从 `conversation todo` 收口到 `session todo`
+    - 主聊天会话把 `conversationId` 作为主 session 的宿主投影，因此聊天页 todo 面板继续可用，但底层读写统一改到 session 资源
+    - 插件配置里的 `selectSubagentType` 直接读取 `subagent-types/*.yaml` 扫描结果
+    - 相关实现优先参考：
+      - `other/opencode/packages/opencode/src/tool/task.ts`
+      - `other/opencode/packages/opencode/src/tool/todo.ts`
+      - `other/opencode/packages/opencode/src/agent/agent.ts`
+      - `other/opencode/packages/opencode/src/server/instance/session.ts`
 
 ## 固定约束
 

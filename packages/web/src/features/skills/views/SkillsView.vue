@@ -24,17 +24,12 @@
         <article class="overview-card accent">
           <span class="overview-label">技能总数</span>
           <strong>{{ totalCount }}</strong>
-          <p>来自项目本地或用户目录的 `SKILL.md` 资产。</p>
+          <p>来自仓库根 `skills/` 目录的 `SKILL.md` 资产。</p>
         </article>
         <article class="overview-card warning">
-          <span class="overview-label">项目技能</span>
-          <strong>{{ projectCount }}</strong>
-          <p>来自仓库内技能目录，适合团队共用。</p>
-        </article>
-        <article class="overview-card neutral">
-          <span class="overview-label">用户技能</span>
-          <strong>{{ userCount }}</strong>
-          <p>来自用户目录，适合个人私有 workflow。</p>
+          <span class="overview-label">skills 目录</span>
+          <strong>{{ directoryCount }}</strong>
+          <p>当前宿主只从仓库根 `skills/` 目录扫描 skill，便于项目内共享与版本管理。</p>
         </article>
         <article class="overview-card warning">
           <span class="overview-label">已拒绝加载</span>
@@ -113,8 +108,7 @@ const {
   selectedSkillId,
   selectedSkill,
   totalCount,
-  projectCount,
-  userCount,
+  directoryCount,
   deniedCount,
   packageCount,
   executableCount,

@@ -1,4 +1,4 @@
-import type { ChatMessagePart, JsonObject, RetryMessagePayload, SendMessagePayload } from '@garlic-claw/shared';
+import type { ChatMessageMetadata, ChatMessagePart, JsonObject, RetryMessagePayload, SendMessagePayload } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService, serializeConversationMessage } from '../runtime/host/runtime-host-conversation-record.service';
@@ -63,9 +63,11 @@ export class ConversationMessageLifecycleService {
     if (received.action !== 'short-circuit') {
       assertConversationLlmEnabled(conversation);
     }
-    const commandDisplayOnly = isDisplayOnlyCommandMessage(received.content, received.parts);
+    const commandDisplayOnly = received.action === 'short-circuit'
+      && isDisplayOnlyCommandMessage(received.content, received.parts);
     const userMessage = await this.runtimeHostConversationMessageService.createMessageWithHooks(conversationId, {
       content: received.content,
+      ...(commandDisplayOnly ? { metadata: createDisplayMessageMetadata('command') } : {}),
       parts: received.parts,
       role: commandDisplayOnly ? 'display' : 'user',
       status: 'completed',
@@ -73,6 +75,7 @@ export class ConversationMessageLifecycleService {
     const assistantMessage = this.runtimeHostConversationMessageService.createMessage(conversationId, {
       content: '',
       model: received.modelId,
+      ...(commandDisplayOnly ? { metadata: createDisplayMessageMetadata('result') } : {}),
       parts: [],
       provider: received.providerId,
       role: commandDisplayOnly ? 'display' : 'assistant',
@@ -190,4 +193,19 @@ function isDisplayOnlyCommandMessage(content: string, parts: ChatMessagePart[]):
   const normalized = content.trim();
   return normalized.startsWith('/')
     && !parts.some((part) => part.type !== 'text');
+}
+
+function createDisplayMessageMetadata(variant: 'command' | 'result'): ChatMessageMetadata {
+  return {
+    annotations: [
+      {
+        data: {
+          variant,
+        },
+        owner: 'conversation.display-message',
+        type: 'display-message',
+        version: '1',
+      },
+    ],
+  };
 }

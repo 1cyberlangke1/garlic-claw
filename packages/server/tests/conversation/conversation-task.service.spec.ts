@@ -181,6 +181,56 @@ describe('ConversationTaskService', () => {
       { messageId: String(assistantMessage.id), status: 'stopped', type: 'finish' },
     ]));
   });
+
+  it('normalizes tool-error parts into persisted tool results', async () => {
+    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream: async () => ({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield {
+              error: 'request timeout',
+              input: {
+                city: 'Shanghai',
+              },
+              toolCallId: 'tool-call-2',
+              toolName: 'weather.search',
+              type: 'tool-error' as const,
+            };
+          })(),
+        },
+      }),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+      role: 'assistant',
+      status: 'completed',
+      toolResults: [
+        {
+          output: {
+            error: 'request timeout',
+            inputText: JSON.stringify({
+              city: 'Shanghai',
+            }, null, 2),
+            phase: 'execute',
+            recovered: true,
+            tool: 'weather.search',
+            type: 'invalid-tool-result',
+          },
+          toolCallId: 'tool-call-2',
+          toolName: 'weather.search',
+        },
+      ],
+    });
+  });
 });
 
 function createAssistantMessage(runtimeHostConversationMessageService: RuntimeHostConversationMessageService) {

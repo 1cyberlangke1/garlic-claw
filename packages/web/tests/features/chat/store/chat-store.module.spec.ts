@@ -10,6 +10,7 @@ vi.mock('@/features/chat/modules/chat-conversation.data', () => ({
   deleteConversationRecord: vi.fn(),
   loadConversationList: vi.fn(),
   loadConversationMessages: vi.fn(),
+  loadConversationTodoRecord: vi.fn(),
   stopConversationMessageRecord: vi.fn(),
   updateConversationMessageRecord: vi.fn(),
 }))
@@ -77,6 +78,7 @@ describe('createChatStoreModule', () => {
     expect(store.currentConversationId.value).toBeNull()
     expect(store.selectedProvider.value).toBeNull()
     expect(store.selectedModel.value).toBeNull()
+    expect(store.todoItems.value).toEqual([])
     expect(store.messages.value).toEqual([])
     expect(chatStreamModule.abortChatStream).toHaveBeenCalledTimes(1)
     expect(chatStreamModule.stopChatRecovery).toHaveBeenCalledTimes(1)
@@ -107,6 +109,13 @@ describe('createChatStoreModule', () => {
         model: null,
       },
     ])
+    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([
+      {
+        content: '更新会话摘要',
+        priority: 'high',
+        status: 'in_progress',
+      },
+    ])
     vi.mocked(chatModelSelection.ensureChatModelSelection).mockResolvedValue()
     vi.mocked(chatStreamModule.dispatchSendMessage).mockImplementation(
       async (_state, _input, params) => {
@@ -125,6 +134,7 @@ describe('createChatStoreModule', () => {
     expect(chatStreamModule.dispatchSendMessage).toHaveBeenCalledTimes(1)
     expect(chatConversationData.loadConversationList).toHaveBeenCalledTimes(2)
     expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledWith('conversation-1')
     expect(store.conversations.value).toEqual([
       expect.objectContaining({
         id: 'conversation-1',
@@ -135,6 +145,11 @@ describe('createChatStoreModule', () => {
       expect.objectContaining({
         id: 'assistant-1',
         content: '已同步最新消息',
+      }),
+    ])
+    expect(store.todoItems.value).toEqual([
+      expect.objectContaining({
+        content: '更新会话摘要',
       }),
     ])
   })
@@ -163,6 +178,7 @@ describe('createChatStoreModule', () => {
         model: null,
       },
     ])
+    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([])
     vi.mocked(chatStreamModule.dispatchRetryMessage).mockImplementation(
       async (_state, _messageId, params) => {
         await params?.refreshConversationSummary?.()
@@ -178,6 +194,7 @@ describe('createChatStoreModule', () => {
     expect(chatStreamModule.dispatchRetryMessage).toHaveBeenCalledTimes(1)
     expect(chatConversationData.loadConversationList).toHaveBeenCalledTimes(2)
     expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledWith('conversation-1')
     expect(store.conversations.value).toEqual([
       expect.objectContaining({
         id: 'conversation-1',
@@ -208,6 +225,13 @@ describe('createChatStoreModule', () => {
         error: null,
         provider: null,
         model: null,
+      },
+    ])
+    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([
+      {
+        content: '停止当前生成',
+        priority: 'medium',
+        status: 'pending',
       },
     ])
     vi.mocked(chatConversationData.updateConversationMessageRecord).mockResolvedValue({
@@ -263,6 +287,7 @@ describe('createChatStoreModule', () => {
     )
     expect(chatConversationData.loadConversationList).toHaveBeenCalledTimes(3)
     expect(chatConversationData.loadConversationMessages).toHaveBeenCalledTimes(3)
+    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledTimes(3)
     expect(chatStreamModule.abortChatStream).toHaveBeenCalledTimes(1)
     expect(chatStreamModule.discardPendingMessageUpdates).toHaveBeenCalledTimes(1)
     expect(chatStreamModule.stopChatRecovery).toHaveBeenCalledTimes(1)
@@ -270,6 +295,11 @@ describe('createChatStoreModule', () => {
       expect.objectContaining({
         id: 'assistant-1',
         content: '服务端最终消息',
+      }),
+    ])
+    expect(store.todoItems.value).toEqual([
+      expect.objectContaining({
+        content: '停止当前生成',
       }),
     ])
   })
@@ -730,6 +760,7 @@ describe('createChatStoreModule', () => {
     expect(store.currentConversationId.value).toBeNull()
     expect(store.selectedProvider.value).toBeNull()
     expect(store.selectedModel.value).toBeNull()
+    expect(store.todoItems.value).toEqual([])
     expect(store.messages.value).toEqual([])
   })
 
@@ -761,6 +792,13 @@ describe('createChatStoreModule', () => {
         model: 'gpt-5.4',
       },
     ])
+    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([
+      {
+        content: '检查压缩结果',
+        priority: 'medium',
+        status: 'pending',
+      },
+    ])
 
     const store = createChatStoreModule()
     store.currentConversationId.value = 'conversation-1'
@@ -781,10 +819,16 @@ describe('createChatStoreModule', () => {
     )
     expect(chatConversationData.loadConversationList).toHaveBeenCalledTimes(1)
     expect(chatConversationData.loadConversationMessages).toHaveBeenCalledWith('conversation-1')
+    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledWith('conversation-1')
     expect(store.messages.value).toEqual([
       expect.objectContaining({
         id: 'summary-1',
         content: '压缩后的历史摘要',
+      }),
+    ])
+    expect(store.todoItems.value).toEqual([
+      expect.objectContaining({
+        content: '检查压缩结果',
       }),
     ])
   })

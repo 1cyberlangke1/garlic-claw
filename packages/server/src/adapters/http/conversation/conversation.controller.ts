@@ -7,9 +7,11 @@ import { RuntimeHostConversationMessageService } from '../../../runtime/host/run
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
+  ConversationTodoItemDto,
   CreateConversationDto,
   RetryMessageDto,
   SendMessageDto,
+  UpdateConversationTodoDto,
   UpdateConversationHostServicesDto,
   UpdateMessageDto,
 } from './conversation.dto';
@@ -39,6 +41,9 @@ export class ConversationController {
   @Get('conversations/:id')
   getConversation(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.getConversation(id, userId); }
 
+  @Get('sessions/:id/todo')
+  getSessionTodo(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.readSessionTodo(id, userId); }
+
   @Delete('conversations/:id')
   deleteConversation(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.deleteConversation(id, userId); }
 
@@ -47,6 +52,9 @@ export class ConversationController {
 
   @Put('conversations/:id/services')
   updateConversationHostServices(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateConversationHostServicesDto) { return this.runtimeHostConversationRecordService.writeConversationHostServices(id, dto, userId); }
+
+  @Put('sessions/:id/todo')
+  updateSessionTodo(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateConversationTodoDto) { return this.runtimeHostConversationRecordService.replaceSessionTodo(id, dto.todos as ConversationTodoItemDto[], userId); }
 
   @Post('conversations/:id/messages')
   async sendMessage(

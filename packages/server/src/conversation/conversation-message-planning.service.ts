@@ -1,4 +1,4 @@
-import type { ChatMessagePart, PluginCallContext } from '@garlic-claw/shared';
+import type { ChatMessageMetadata, ChatMessagePart, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { ToolRegistryService } from '../execution/tool/tool-registry.service';
@@ -123,7 +123,13 @@ export class ConversationMessagePlanningService {
 
   async finalizeTaskResult(result: CompletedConversationTaskResult, responseSource: ConversationResponseSource, shortCircuitParts: ChatMessagePart[] | null): Promise<CompletedConversationTaskResult> {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(result.conversationId);
-    const assistantResult = responseSource === 'short-circuit' ? { ...result, parts: shortCircuitParts ?? result.parts } : await this.applyAssistantMutation('chat:after-model', { activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, result);
+    const assistantResult = responseSource === 'short-circuit'
+      ? {
+          ...result,
+          metadata: createDisplayMessageMetadata('result'),
+          parts: shortCircuitParts ?? result.parts,
+        }
+      : await this.applyAssistantMutation('chat:after-model', { activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, result);
     return this.applyAssistantMutation('response:before-send', { activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId }, assistantResult, responseSource);
   }
 
@@ -274,6 +280,21 @@ function createAssistantMutationPayload(hookName: 'chat:after-model' | 'response
     ...(responseSource ? { responseSource } : {}),
     toolCalls: payload.toolCalls,
     toolResults: payload.toolResults,
+  };
+}
+
+function createDisplayMessageMetadata(variant: 'command' | 'result'): ChatMessageMetadata {
+  return {
+    annotations: [
+      {
+        data: {
+          variant,
+        },
+        owner: 'conversation.display-message',
+        type: 'display-message',
+        version: '1',
+      },
+    ],
   };
 }
 

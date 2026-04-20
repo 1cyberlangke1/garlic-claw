@@ -93,8 +93,7 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
       content: '# Planner\n\n把复杂请求拆成 3-5 步，再开始执行。',
     })),
     totalCount: computed(() => 1),
-    projectCount: computed(() => 1),
-    userCount: computed(() => 0),
+    directoryCount: computed(() => 1),
     deniedCount: computed(() => 1),
     packageCount: computed(() => 1),
     executableCount: computed(() => 1),
@@ -128,6 +127,7 @@ describe('SkillsView', () => {
 
     expect(wrapper.text()).toContain('技能目录')
     expect(wrapper.text()).toContain('规划执行')
+    expect(wrapper.text()).toContain('skills 目录')
     expect(wrapper.text()).toContain('已拒绝加载')
     expect(wrapper.text()).toContain('拒绝加载')
     expect(wrapper.text()).toContain('scripts/plan.js')

@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillAssetSummary, SkillDetail, SkillGovernanceInfo, SkillSummary, UpdateSkillGovernancePayload } from '@garlic-claw/shared';
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
@@ -13,8 +12,7 @@ interface SkillGovernanceFile {
 
 export const SKILL_DISCOVERY_OPTIONS = 'SKILL_DISCOVERY_OPTIONS';
 export interface SkillDiscoveryOptions {
-  projectSkillsRoot?: string;
-  userSkillsRoot?: string;
+  skillsRoot?: string;
 }
 
 const DEFAULT_SKILL_GOVERNANCE: SkillGovernanceInfo = {
@@ -41,15 +39,17 @@ export class SkillRegistryService {
     }
 
     this.cachedSkills = (await Promise.all([
-      readSkillSource('project', this.discoveryOptions.projectSkillsRoot ?? resolveProjectSkillsRoot()),
-      readSkillSource('user', this.discoveryOptions.userSkillsRoot ?? path.join(os.homedir(), '.garlic-claw', 'skills')),
+      readSkillSource('project', this.discoveryOptions.skillsRoot ?? resolveProjectSkillsRoot()),
     ]))
       .flat()
       .map((skill) => ({
         ...skill,
         governance: this.governance.skills[skill.id] ?? DEFAULT_SKILL_GOVERNANCE,
       }))
-      .sort((left, right) => left.id.localeCompare(right.id));
+      .sort((left, right) => {
+        const nameOrder = left.name.localeCompare(right.name);
+        return nameOrder !== 0 ? nameOrder : left.id.localeCompare(right.id);
+      });
 
     return this.cachedSkills;
   }
@@ -66,9 +66,7 @@ export class SkillRegistryService {
   }
 
   resolveSkillDirectory(skill: Pick<SkillDetail, 'entryPath' | 'sourceKind'>): string {
-    const sourceRoot = skill.sourceKind === 'project'
-      ? this.discoveryOptions.projectSkillsRoot ?? resolveProjectSkillsRoot()
-      : this.discoveryOptions.userSkillsRoot ?? path.join(os.homedir(), '.garlic-claw', 'skills');
+    const sourceRoot = this.discoveryOptions.skillsRoot ?? resolveProjectSkillsRoot();
     return path.join(sourceRoot, path.dirname(skill.entryPath));
   }
 

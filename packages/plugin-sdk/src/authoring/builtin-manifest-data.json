@@ -52,14 +52,20 @@
         "type": "object",
         "description": "模型设置",
         "items": {
+          "targetSubagentType": {
+            "type": "string",
+            "description": "子代理默认使用的类型 ID",
+            "specialType": "selectSubagentType",
+            "defaultValue": "general"
+          },
           "targetProviderId": {
             "type": "string",
-            "description": "子代理默认使用的 provider ID",
+            "description": "可选。覆盖子代理类型默认 provider ID",
             "specialType": "selectProvider"
           },
           "targetModelId": {
             "type": "string",
-            "description": "子代理默认使用的 model ID"
+            "description": "可选。覆盖子代理类型默认 model ID"
           }
         }
       },
@@ -353,6 +359,18 @@
           "type": "string",
           "description": "要交给子代理处理的提示词",
           "required": true
+        },
+        "description": {
+          "type": "string",
+          "description": "可选。为这次子代理任务提供简短描述，便于在任务列表中识别"
+        },
+        "subagentType": {
+          "type": "string",
+          "description": "可选。为本次子代理调用指定类型 ID"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "可选。传入已有子代理 session ID 时，会沿用该 session 的既有上下文继续执行"
         }
       }
     },
@@ -364,6 +382,18 @@
           "type": "string",
           "description": "要交给后台子代理处理的提示词",
           "required": true
+        },
+        "description": {
+          "type": "string",
+          "description": "可选。为后台子代理任务提供简短描述，便于在任务列表中识别"
+        },
+        "subagentType": {
+          "type": "string",
+          "description": "可选。为本次后台子代理调用指定类型 ID"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "可选。传入已有子代理 session ID 时，会在同一 session 上继续执行，并生成新的后台执行记录"
         },
         "writeBack": {
           "type": "boolean",
@@ -880,21 +910,27 @@
     "config": {
       "type": "object",
       "items": {
-        "llm": {
-          "type": "object",
-          "description": "模型设置",
-          "items": {
-            "targetProviderId": {
-              "type": "string",
-              "description": "子代理默认使用的 provider ID",
-              "specialType": "selectProvider"
-            },
-            "targetModelId": {
-              "type": "string",
-              "description": "子代理默认使用的 model ID"
-            }
+      "llm": {
+        "type": "object",
+        "description": "模型设置",
+        "items": {
+          "targetSubagentType": {
+            "type": "string",
+            "description": "子代理默认使用的类型 ID",
+            "specialType": "selectSubagentType",
+            "defaultValue": "general"
+          },
+          "targetProviderId": {
+            "type": "string",
+            "description": "可选。覆盖子代理类型默认 provider ID",
+            "specialType": "selectProvider"
+          },
+          "targetModelId": {
+            "type": "string",
+            "description": "可选。覆盖子代理类型默认 model ID"
           }
-        },
+        }
+      },
         "tools": {
           "type": "object",
           "description": "工具限制",

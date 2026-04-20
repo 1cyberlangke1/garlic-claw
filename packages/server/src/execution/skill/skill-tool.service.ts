@@ -3,6 +3,7 @@ import { ForbiddenException, Injectable, NotFoundException, Optional } from '@ne
 import { SkillRegistryService } from './skill-registry.service';
 import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
 
+const MODEL_OUTPUT_FILE_LIMIT = 10;
 const SKILL_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   name: {
     description: 'The name of the skill from available_skills.',
@@ -37,6 +38,7 @@ export class SkillToolService {
         '  <skill>',
         `    <name>${escapeXml(skill.name)}</name>`,
         `    <description>${escapeXml(skill.description)}</description>`,
+        `    <location>${escapeXml(`skills/${skill.entryPath}`)}</location>`,
         '  </skill>',
       ].join('\n')),
       '</available_skills>',
@@ -45,6 +47,13 @@ export class SkillToolService {
 
   getToolParameters(): Record<string, PluginParamSchema> {
     return SKILL_TOOL_PARAMETERS;
+  }
+
+  toModelOutput(result: SkillLoadResult) {
+    return {
+      type: 'text' as const,
+      value: result.modelOutput,
+    };
   }
 
   async loadSkill(skillName: string): Promise<SkillLoadResult> {
@@ -76,6 +85,15 @@ export class SkillToolService {
       entryPath: skill.entryPath,
       files: skill.assets.map(copyAssetSummary),
       id: skill.id,
+      modelOutput: renderSkillModelOutput({
+        baseDirectory: this.skillRegistryService.resolveSkillDirectory(skill),
+        content: skill.content,
+        description: skill.description,
+        entryPath: skill.entryPath,
+        files: skill.assets.map(copyAssetSummary),
+        id: skill.id,
+        name: skill.name,
+      }),
       name: skill.name,
     };
   }
@@ -94,6 +112,28 @@ function copyAssetSummary(asset: SkillAssetSummary): SkillAssetSummary {
     path: asset.path,
     textReadable: asset.textReadable,
   };
+}
+
+function renderSkillModelOutput(result: Omit<SkillLoadResult, 'modelOutput'>): string {
+  const sampledFiles = result.files.slice(0, MODEL_OUTPUT_FILE_LIMIT);
+  return [
+    `<skill_content name="${escapeXml(result.name)}">`,
+    `# Skill: ${result.name}`,
+    '',
+    result.content.trim(),
+    '',
+    `Base directory for this skill: ${result.baseDirectory}`,
+    `Entry file: ${result.entryPath}`,
+    'Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.',
+    sampledFiles.length < result.files.length
+      ? `Note: file list is sampled (${sampledFiles.length}/${result.files.length}).`
+      : 'Note: file list is sampled.',
+    '',
+    '<skill_files>',
+    ...sampledFiles.map((file) => `<file>${escapeXml(file.path)}</file>`),
+    '</skill_files>',
+    '</skill_content>',
+  ].join('\n');
 }
 
 function escapeXml(input: string): string {

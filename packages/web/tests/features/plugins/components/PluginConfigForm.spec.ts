@@ -24,6 +24,20 @@ vi.mock('@/features/personas/api/personas', () => ({
   ]),
 }))
 
+vi.mock('@/features/plugins/api/plugins', () => ({
+  listSubagentTypes: vi.fn().mockResolvedValue([
+    {
+      id: 'general',
+      name: '通用',
+      description: '默认子代理',
+    },
+    {
+      id: 'explore',
+      name: '探索',
+    },
+  ]),
+}))
+
 describe('PluginConfigForm', () => {
   it('emits nested config values from object-tree schema', async () => {
     const wrapper = mount(PluginConfigForm, {
@@ -143,6 +157,35 @@ describe('PluginConfigForm', () => {
     const options = wrapper.findAll('option').map((node) => node.text())
     expect(options).toContain('OpenAI')
     expect(options).toContain('继承主模型（默认）')
+  })
+
+  it('renders subagent type selector options through host data sources', async () => {
+    const wrapper = mount(PluginConfigForm, {
+      props: {
+        saving: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              targetSubagentType: {
+                type: 'string',
+                specialType: 'selectSubagentType',
+              },
+            },
+          },
+          values: {
+            targetSubagentType: 'general',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const options = wrapper.findAll('option').map((node) => node.text())
+    expect(options).toContain('通用')
+    expect(options).toContain('探索')
+    expect(options).toContain('使用默认子代理类型')
   })
 
   it('renders typed option labels for single-select fields', async () => {

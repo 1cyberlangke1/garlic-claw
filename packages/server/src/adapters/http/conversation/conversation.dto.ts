@@ -98,3 +98,24 @@ export class UpdateConversationHostServicesDto {
   @IsOptional()
   ttsEnabled?: boolean;
 }
+
+export class ConversationTodoItemDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  content!: string;
+
+  @IsIn(['pending', 'in_progress', 'completed', 'cancelled'])
+  status!: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+  @IsIn(['high', 'medium', 'low'])
+  priority!: 'high' | 'medium' | 'low';
+}
+
+export class UpdateConversationTodoDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ConversationTodoItemDto)
+  todos!: ConversationTodoItemDto[];
+}

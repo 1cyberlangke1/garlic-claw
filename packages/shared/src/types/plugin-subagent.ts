@@ -12,12 +12,24 @@ export interface PluginSubagentTaskWriteBack {
   target?: PluginMessageTargetRef | null;
 }
 
+export interface PluginSubagentTypeSummary {
+  id: string;
+  name: string;
+  description?: string;
+}
+
 export interface PluginSubagentTaskStartParams extends PluginSubagentRunParams {
   writeBack?: PluginSubagentTaskWriteBack | null;
 }
 
 export interface PluginSubagentTaskSummary {
   id: string;
+  sessionId: string;
+  sessionMessageCount: number;
+  sessionUpdatedAt: string;
+  description?: string;
+  subagentType?: string;
+  subagentTypeName?: string;
   pluginId: string;
   pluginDisplayName?: string;
   runtimeKind: PluginRuntimeKind;

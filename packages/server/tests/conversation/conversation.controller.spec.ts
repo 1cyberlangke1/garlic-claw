@@ -14,7 +14,9 @@ describe('ConversationController', () => {
     deleteConversation: jest.fn(),
     getConversation: jest.fn(),
     listConversations: jest.fn(),
+    readSessionTodo: jest.fn(),
     readConversationHostServices: jest.fn(),
+    replaceSessionTodo: jest.fn(),
     requireConversation: jest.fn(),
     writeConversationHostServices: jest.fn(),
   };
@@ -72,6 +74,17 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.readConversationHostServices).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.updateConversationHostServices('user-1', conversationId, { ttsEnabled: false } as never)).toEqual({ llmEnabled: true, sessionEnabled: true, ttsEnabled: false });
     expect(runtimeHostConversationRecordService.writeConversationHostServices).toHaveBeenCalledWith(conversationId, { ttsEnabled: false }, 'user-1');
+  });
+
+  it('reads and updates session todo through owned conversation APIs', () => {
+    const todos = [{ content: '实现 todo 工具', priority: 'high', status: 'in_progress' }];
+    runtimeHostConversationRecordService.readSessionTodo.mockReturnValue(todos);
+    runtimeHostConversationRecordService.replaceSessionTodo.mockReturnValue(todos);
+
+    expect(controller.getSessionTodo('user-1', conversationId)).toEqual(todos);
+    expect(runtimeHostConversationRecordService.readSessionTodo).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(controller.updateSessionTodo('user-1', conversationId, { todos } as never)).toEqual(todos);
+    expect(runtimeHostConversationRecordService.replaceSessionTodo).toHaveBeenCalledWith(conversationId, todos, 'user-1');
   });
 
   it('streams message-start and task events over SSE for sendMessage', async () => {

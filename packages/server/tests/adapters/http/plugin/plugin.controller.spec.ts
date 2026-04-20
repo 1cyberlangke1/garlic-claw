@@ -36,6 +36,7 @@ describe('PluginController', () => {
   const runtimeHostSubagentRunnerService = {
     getTaskOrThrow: jest.fn(),
     listOverview: jest.fn(),
+    listProfiles: jest.fn(),
   };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),

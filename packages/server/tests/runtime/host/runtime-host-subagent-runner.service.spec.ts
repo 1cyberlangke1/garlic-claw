@@ -23,15 +23,19 @@ import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin
 import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
+import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
 import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
 
 describe('RuntimeHostSubagentRunnerService', () => {
   let storagePath: string;
+  let sessionStoragePath: string;
 
   beforeEach(() => {
     jest.clearAllMocks();
     storagePath = path.join(os.tmpdir(), `gc-server-runner-${Date.now()}-${Math.random()}.json`);
+    sessionStoragePath = path.join(os.tmpdir(), `gc-server-runner-session-${Date.now()}-${Math.random()}.json`);
     process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH = storagePath;
+    process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH = sessionStoragePath;
     mockStreamText.mockReturnValue({
       finishReason: Promise.resolve('stop'),
       fullStream: (async function* () {
@@ -61,8 +65,12 @@ describe('RuntimeHostSubagentRunnerService', () => {
 
   afterEach(() => {
     delete process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH;
+    delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
     if (fs.existsSync(storagePath)) {
       fs.unlinkSync(storagePath);
+    }
+    if (fs.existsSync(sessionStoragePath)) {
+      fs.unlinkSync(sessionStoragePath);
     }
   });
 
@@ -152,6 +160,9 @@ describe('RuntimeHostSubagentRunnerService', () => {
       },
       modelId: 'gpt-5.4',
       providerId: 'openai',
+      sessionId: expect.any(String),
+      sessionMessageCount: 2,
+      taskId: expect.any(String),
       text: 'Done',
       toolCalls: [
         {
@@ -291,6 +302,412 @@ describe('RuntimeHostSubagentRunnerService', () => {
     }));
   });
 
+  it('applies subagent type defaults to provider, system and tools', async () => {
+    const toolRegistryService = {
+      buildToolSet: jest.fn().mockResolvedValue({
+        webfetch: {},
+        skill: {},
+      }),
+    };
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      toolRegistryService as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentTaskStoreService(),
+    );
+
+    await runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [
+        {
+          content: 'collect project context',
+          role: 'user',
+        },
+      ],
+      subagentType: 'explore',
+    });
+
+    expect(toolRegistryService.buildToolSet).toHaveBeenCalledWith(expect.objectContaining({
+      allowedToolNames: ['webfetch', 'skill'],
+    }));
+    expect(mockStreamText).toHaveBeenCalledWith(expect.objectContaining({
+      system: expect.stringContaining('你是一个专注于探索与信息收集的子代理。'),
+    }));
+  });
+
+  it('lets explicit request fields override subagent type defaults', async () => {
+    const toolRegistryService = {
+      buildToolSet: jest.fn().mockResolvedValue({
+        'memory.search': {},
+      }),
+    };
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      toolRegistryService as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentTaskStoreService(),
+    );
+
+    await runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [
+        {
+          content: 'collect project context',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      subagentType: 'explore',
+      providerId: 'openai',
+      system: '只检查 memory.search 工具',
+      toolNames: ['memory.search'],
+    });
+
+    expect(toolRegistryService.buildToolSet).toHaveBeenCalledWith(expect.objectContaining({
+      allowedToolNames: ['memory.search'],
+    }));
+    expect(mockStreamText).toHaveBeenCalledWith(expect.objectContaining({
+      system: '只检查 memory.search 工具',
+    }));
+    expect(mockStreamText.mock.calls.at(-1)?.[0]?.tools).not.toHaveProperty('webfetch');
+  });
+
+  it('reuses previous session request context when sessionId is provided', async () => {
+    const taskStore = new RuntimeHostSubagentTaskStoreService();
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    sessionStore.createSession({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      description: '已有后台任务',
+      messages: [
+        {
+          content: 'original prompt',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      pluginDisplayName: 'Memory Context',
+      pluginId: 'builtin.memory-context',
+      providerId: 'openai',
+      taskId: 'subagent-task-1',
+      toolNames: ['memory.search'],
+    });
+    taskStore.createTask({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      pluginDisplayName: 'Memory Context',
+      pluginId: 'builtin.memory-context',
+      request: {
+        description: '已有后台任务',
+        messages: [
+          {
+            content: 'original prompt',
+            role: 'user',
+          },
+        ],
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        toolNames: ['memory.search'],
+      },
+      requestPreview: 'original prompt',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 1,
+      sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
+      visibility: 'background',
+      writeBackTarget: null,
+    });
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue({
+          'memory.search': {},
+        }),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      taskStore,
+      sessionStore,
+    );
+
+    await runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      description: '继续已有后台任务',
+      messages: [
+        {
+          content: 'continue this task',
+          role: 'user',
+        },
+      ],
+      sessionId: 'subagent-session-1',
+    });
+
+    expect(mockStreamText).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [
+        {
+          content: 'original prompt',
+          role: 'user',
+        },
+        {
+          content: 'continue this task',
+          role: 'user',
+        },
+      ],
+      tools: expect.objectContaining({
+        'memory.search': expect.any(Object),
+      }),
+    }));
+  });
+
+  it('creates a new background task record when an existing session resumes', async () => {
+    const taskStore = new RuntimeHostSubagentTaskStoreService();
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    sessionStore.createSession({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      description: '已有后台任务',
+      messages: [
+        {
+          content: 'original prompt',
+          role: 'user',
+        },
+        {
+          content: 'done',
+          role: 'assistant',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      pluginDisplayName: 'Memory Context',
+      pluginId: 'builtin.memory-context',
+      providerId: 'openai',
+      taskId: 'subagent-task-1',
+    });
+    taskStore.createTask({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      pluginDisplayName: 'Memory Context',
+      pluginId: 'builtin.memory-context',
+      request: {
+        description: '已有后台任务',
+        messages: [
+          {
+            content: 'original prompt',
+            role: 'user',
+          },
+        ],
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+      },
+      requestPreview: 'original prompt',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 1,
+      sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
+      visibility: 'background',
+      writeBackTarget: {
+        id: 'conversation-1',
+        type: 'conversation',
+      },
+    });
+    taskStore.updateTask('builtin.memory-context', 'subagent-task-1', (task, now) => {
+      task.status = 'completed';
+      task.finishedAt = now;
+      task.result = {
+        message: {
+          content: 'done',
+          role: 'assistant',
+        },
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        text: 'done',
+        toolCalls: [],
+        toolResults: [],
+      };
+      task.resultPreview = 'done';
+      task.writeBackStatus = 'sent';
+    });
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      taskStore,
+      sessionStore,
+    );
+
+    const summary = await runner.startTask('builtin.memory-context', 'Memory Context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      description: '继续已有后台任务',
+      messages: [
+        {
+          content: 'continue this task',
+          role: 'user',
+        },
+      ],
+      sessionId: 'subagent-session-1',
+      writeBack: {
+        target: {
+          id: 'conversation-1',
+          type: 'conversation',
+        },
+      },
+    });
+
+    expect(summary).toMatchObject({
+      description: '继续已有后台任务',
+      id: 'subagent-task-2',
+      requestPreview: 'continue this task',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 3,
+      status: 'queued',
+      writeBackStatus: 'pending',
+    });
+    expect(taskStore.getTask('builtin.memory-context', 'subagent-task-2')).toMatchObject({
+      id: 'subagent-task-2',
+      request: {
+        description: '继续已有后台任务',
+        messages: [
+          {
+            content: 'original prompt',
+            role: 'user',
+          },
+          {
+            content: 'done',
+            role: 'assistant',
+          },
+          {
+            content: 'continue this task',
+            role: 'user',
+          },
+        ],
+      },
+      status: 'queued',
+    });
+  });
+
+  it('derives background task preview from text parts while keeping description separate', async () => {
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentTaskStoreService(),
+    );
+
+    const summary = await runner.startTask('builtin.memory-context', 'Memory Context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      description: '自动化烟测任务',
+      messages: [
+        {
+          content: [
+            {
+              text: '请输出 smoke automation task',
+              type: 'text',
+            },
+          ],
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+
+    expect(summary).toMatchObject({
+      description: '自动化烟测任务',
+      requestPreview: '请输出 smoke automation task',
+    });
+  });
+
+  it('persists subagent type summary on background tasks while keeping the raw request resumable', async () => {
+    const taskStore = new RuntimeHostSubagentTaskStoreService();
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      taskStore,
+    );
+
+    const summary = await runner.startTask('builtin.memory-context', 'Memory Context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      description: '探索任务',
+      messages: [
+        {
+          content: '扫描仓库结构',
+          role: 'user',
+        },
+      ],
+      subagentType: 'explore',
+    });
+
+    expect(summary).toMatchObject({
+      description: '探索任务',
+      subagentType: 'explore',
+      subagentTypeName: '探索',
+    });
+    expect(taskStore.getTask('builtin.memory-context', 'subagent-task-1')).toMatchObject({
+      subagentType: 'explore',
+      subagentTypeName: '探索',
+      request: {
+        subagentType: 'explore',
+      },
+    });
+  });
+
   it('runs builtin subagent hooks through the same hook chain', async () => {
     const pluginBootstrapService = new PluginBootstrapService(
       new PluginGovernanceService(),
@@ -389,6 +806,78 @@ describe('RuntimeHostSubagentRunnerService', () => {
         {
           content: 'builtin mutated prompt',
           role: 'user',
+        },
+      ],
+    }));
+  });
+
+  it('collects tool-error parts as normalized tool results in subagent runs', async () => {
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield {
+          error: 'request timeout',
+          input: {
+            city: 'Shanghai',
+          },
+          toolCallId: 'tool-call-error-1',
+          toolName: 'weather.search',
+          type: 'tool-error',
+        };
+        yield {
+          text: '继续完成回复',
+          type: 'text-delta',
+        };
+      })(),
+    });
+
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue({
+          weather_search: {},
+        }),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentTaskStoreService(),
+    );
+
+    const result = await runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [
+        {
+          content: '先查天气再总结',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      toolNames: ['weather_search'],
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      text: '继续完成回复',
+      toolResults: [
+        {
+          output: {
+            error: 'request timeout',
+            inputText: JSON.stringify({
+              city: 'Shanghai',
+            }, null, 2),
+            phase: 'execute',
+            recovered: true,
+            tool: 'weather.search',
+            type: 'invalid-tool-result',
+          },
+          toolCallId: 'tool-call-error-1',
+          toolName: 'weather.search',
         },
       ],
     }));

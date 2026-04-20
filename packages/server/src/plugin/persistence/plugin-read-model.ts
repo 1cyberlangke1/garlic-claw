@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import type {
   JsonObject,
   JsonValue,
   PluginActionName,
+  PluginCommandCatalogVersion,
   PluginCommandConflict,
+  PluginCommandOverview,
   PluginCommandInfo,
   PluginConfigNodeSchema,
   PluginConfigSnapshot,
@@ -128,11 +131,109 @@ export function buildPluginCommandConflicts(commands: PluginCommandInfo[]): Plug
     .filter((conflict) => conflict.commands.length > 1);
 }
 
+export function buildPluginCommandOverview(commands: PluginCommandInfo[]): PluginCommandOverview {
+  const sortedCommands = [...commands].sort(comparePluginCommandsForCatalog);
+  const conflicts = buildPluginCommandConflicts(sortedCommands)
+    .map((conflict) => ({
+      ...conflict,
+      commands: [...conflict.commands].sort(comparePluginCommandConflictEntriesForCatalog),
+    }))
+    .sort(comparePluginCommandConflictsForCatalog);
+  return {
+    version: createPluginCommandOverviewVersion({
+      commands: sortedCommands,
+      conflicts,
+    }),
+    commands: sortedCommands,
+    conflicts,
+  };
+}
+
+export function buildPluginCommandCatalogVersion(commands: PluginCommandInfo[]): PluginCommandCatalogVersion {
+  return {
+    version: buildPluginCommandOverview(commands).version,
+  };
+}
+
 function resolvePluginConfigValues(record: RegisteredPluginRecord): JsonObject {
   return resolveConfigNodeValue(
     record.manifest.config ?? null,
     record.configValues ?? {},
   ) as JsonObject;
+}
+
+function createPluginCommandOverviewVersion(overview: {
+  commands: PluginCommandInfo[];
+  conflicts: PluginCommandConflict[];
+}): string {
+  return createHash('sha1')
+    .update(
+      JSON.stringify({
+        commands: overview.commands.map((command) => ({
+          aliases: command.aliases,
+          canonicalCommand: command.canonicalCommand,
+          commandId: command.commandId,
+          conflictTriggers: command.conflictTriggers,
+          connected: command.connected,
+          defaultEnabled: command.defaultEnabled,
+          governance: command.governance ?? null,
+          kind: command.kind,
+          path: command.path,
+          pluginDisplayName: command.pluginDisplayName ?? null,
+          pluginId: command.pluginId,
+          priority: command.priority ?? null,
+          runtimeKind: command.runtimeKind,
+          source: command.source,
+          variants: command.variants,
+        })),
+        conflicts: overview.conflicts.map((conflict) => ({
+          commands: conflict.commands.map((command) => ({
+            canonicalCommand: command.canonicalCommand,
+            commandId: command.commandId,
+            connected: command.connected,
+            defaultEnabled: command.defaultEnabled,
+            kind: command.kind,
+            pluginDisplayName: command.pluginDisplayName ?? null,
+            pluginId: command.pluginId,
+            priority: command.priority ?? null,
+            runtimeKind: command.runtimeKind,
+          })),
+          trigger: conflict.trigger,
+        })),
+      }),
+    )
+    .digest('hex');
+}
+
+function comparePluginCommandsForCatalog(left: PluginCommandInfo, right: PluginCommandInfo): number {
+  return compareValues(left.canonicalCommand, right.canonicalCommand)
+    || compareValues(left.kind, right.kind)
+    || compareNumbers(left.priority, right.priority)
+    || compareValues(left.pluginId, right.pluginId)
+    || compareValues(left.commandId, right.commandId);
+}
+
+function comparePluginCommandConflictsForCatalog(left: PluginCommandConflict, right: PluginCommandConflict): number {
+  return compareValues(left.trigger, right.trigger);
+}
+
+function comparePluginCommandConflictEntriesForCatalog(
+  left: PluginCommandConflict['commands'][number],
+  right: PluginCommandConflict['commands'][number],
+): number {
+  return compareValues(left.canonicalCommand, right.canonicalCommand)
+    || compareValues(left.kind, right.kind)
+    || compareNumbers(left.priority, right.priority)
+    || compareValues(left.pluginId, right.pluginId)
+    || compareValues(left.commandId, right.commandId);
+}
+
+function compareNumbers(left: number | undefined, right: number | undefined): number {
+  return (left ?? Number.MAX_SAFE_INTEGER) - (right ?? Number.MAX_SAFE_INTEGER);
+}
+
+function compareValues(left: string, right: string): number {
+  return left.localeCompare(right);
 }
 
 function resolveConfigNodeValue(

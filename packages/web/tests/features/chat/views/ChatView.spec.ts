@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import ChatView from '@/features/chat/views/ChatView.vue'
 
 const compactConversationContext = vi.fn()
+const applyCommandSuggestion = vi.fn()
 
 vi.mock('@/features/chat/store/chat', () => ({
   useChatStore: () => ({
@@ -11,6 +12,13 @@ vi.mock('@/features/chat/store/chat', () => ({
     selectedProvider: 'demo-provider',
     selectedModel: 'demo-model',
     messages: [],
+    todoItems: [
+      {
+        content: '实现 todo 面板',
+        priority: 'high',
+        status: 'in_progress',
+      },
+    ],
     loading: false,
     streaming: false,
     stopStreaming: vi.fn(),
@@ -22,6 +30,18 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     inputText: ref(''),
     pendingImages: ref([]),
     compacting: ref(false),
+    commandSuggestions: ref([
+      {
+        commandId: 'builtin.context-compaction:/compact:command',
+        trigger: '/compact',
+        canonicalCommand: '/compact',
+        pluginId: 'builtin.context-compaction',
+        pluginDisplayName: '上下文压缩',
+        connected: true,
+        defaultEnabled: true,
+        kind: 'command',
+      },
+    ]),
     selectedCapabilities: ref(null),
     conversationHostServices: ref({
       sessionEnabled: true,
@@ -44,6 +64,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     setConversationLlmEnabled: vi.fn(),
     setConversationSessionEnabled: vi.fn(),
     compactConversationContext,
+    applyCommandSuggestion,
   }),
 }))
 
@@ -104,5 +125,54 @@ describe('ChatView', () => {
     await flushPromises()
 
     expect(wrapper.find('.chat-message-list').text()).toContain('Writer|/api/personas/persona.writer/avatar')
+  })
+
+  it('passes command suggestions and selection events into the composer', async () => {
+    applyCommandSuggestion.mockReset()
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: {
+            props: ['commandSuggestions'],
+            emits: ['apply-command-suggestion'],
+            template: '<button class="chat-composer" @click="$emit(\'apply-command-suggestion\', commandSuggestions[0]?.trigger)">{{ commandSuggestions[0]?.trigger }}</button>',
+          },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.chat-composer').text()).toContain('/compact')
+
+    await wrapper.find('.chat-composer').trigger('click')
+
+    expect(applyCommandSuggestion).toHaveBeenCalledWith('/compact')
+  })
+
+  it('renders the current conversation todo panel', async () => {
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前待办')
+    expect(wrapper.text()).toContain('实现 todo 面板')
+    expect(wrapper.text()).toContain('进行中')
   })
 })

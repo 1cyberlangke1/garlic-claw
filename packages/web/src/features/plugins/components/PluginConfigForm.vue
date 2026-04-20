@@ -46,9 +46,11 @@ import type {
   PluginConfigSchema,
   PluginConfigSnapshot,
   PluginPersonaSummary,
+  PluginSubagentTypeSummary,
 } from '@garlic-claw/shared'
 import { listAiProviders } from '@/features/ai-settings/api/ai'
 import { listPersonas } from '@/features/personas/api/personas'
+import { listSubagentTypes } from '@/features/plugins/api/plugins'
 import PluginConfigNodeRenderer from '@/features/plugins/components/PluginConfigNodeRenderer.vue'
 
 const props = defineProps<{
@@ -66,9 +68,11 @@ const sourceError = ref<string | null>(null)
 const specialOptions = reactive<{
   personas: PluginPersonaSummary[]
   providers: AiProviderSummary[]
+  subagentTypes: PluginSubagentTypeSummary[]
 }>({
   personas: [],
   providers: [],
+  subagentTypes: [],
 })
 
 const rootSchema = computed<PluginConfigSchema | undefined>(() => props.snapshot?.schema ?? undefined)
@@ -90,19 +94,23 @@ watch(
     if (!nextSchema) {
       specialOptions.providers = []
       specialOptions.personas = []
+      specialOptions.subagentTypes = []
       return
     }
 
     try {
-      const [providers, personas] = await Promise.all([
+      const [providers, personas, subagentTypes] = await Promise.all([
         schemaNeedsProviderOptions(nextSchema) ? listAiProviders() : Promise.resolve([]),
         schemaNeedsPersonaOptions(nextSchema) ? listPersonas() : Promise.resolve([]),
+        schemaNeedsSubagentTypeOptions(nextSchema) ? listSubagentTypes() : Promise.resolve([]),
       ])
       specialOptions.providers = providers
       specialOptions.personas = personas
+      specialOptions.subagentTypes = subagentTypes
     } catch (error) {
       specialOptions.providers = []
       specialOptions.personas = []
+      specialOptions.subagentTypes = []
       sourceError.value = error instanceof Error ? error.message : '加载配置选择器数据失败'
     }
   },
@@ -195,6 +203,10 @@ function schemaNeedsProviderOptions(configSchema: PluginConfigSchema): boolean {
 
 function schemaNeedsPersonaOptions(configSchema: PluginConfigSchema): boolean {
   return schemaUsesSpecialType(configSchema, ['selectPersona', 'personaPool'])
+}
+
+function schemaNeedsSubagentTypeOptions(configSchema: PluginConfigSchema): boolean {
+  return schemaUsesSpecialType(configSchema, ['selectSubagentType'])
 }
 
 function schemaUsesSpecialType(

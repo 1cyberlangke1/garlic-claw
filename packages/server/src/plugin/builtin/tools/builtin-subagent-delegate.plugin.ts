@@ -4,6 +4,7 @@ import {
   createSubagentRunSummary,
   createSubagentTaskSummaryResult,
   readBooleanFlag,
+  readOptionalStringParam,
   readRequiredTextValue,
   readSubagentDelegateConfig,
   SUBAGENT_DELEGATE_MANIFEST,
@@ -20,16 +21,25 @@ export const BUILTIN_SUBAGENT_DELEGATE_PLUGIN: BuiltinPluginDefinition = {
   tools: {
     delegate_summary: async (params, context) => {
       const prompt = readRequiredTextValue(params.prompt, 'delegate_summary 的 prompt');
+      const description = readOptionalStringParam(params, 'description') ?? undefined;
+      const sessionId = readOptionalStringParam(params, 'sessionId') ?? undefined;
+      const subagentType = readOptionalStringParam(params, 'subagentType') ?? undefined;
       const config = readSubagentDelegateConfig(await context.host.getConfig());
       const result = await context.host.runSubagent(buildSubagentDelegateRunParams({
         config,
         prompt,
+        ...(description ? { description } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(subagentType ? { subagentType } : {}),
       }));
 
       return createSubagentRunSummary(result);
     },
     delegate_summary_background: async (params, context) => {
       const prompt = readRequiredTextValue(params.prompt, 'delegate_summary_background 的 prompt');
+      const description = readOptionalStringParam(params, 'description') ?? undefined;
+      const sessionId = readOptionalStringParam(params, 'sessionId') ?? undefined;
+      const subagentType = readOptionalStringParam(params, 'subagentType') ?? undefined;
       const config = readSubagentDelegateConfig(await context.host.getConfig());
       const shouldWriteBack = readBooleanFlag(
         params.writeBack,
@@ -40,6 +50,9 @@ export const BUILTIN_SUBAGENT_DELEGATE_PLUGIN: BuiltinPluginDefinition = {
         prompt,
         shouldWriteBack,
         conversationId: context.callContext.conversationId,
+        ...(description ? { description } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(subagentType ? { subagentType } : {}),
       }));
 
       return createSubagentTaskSummaryResult(task);

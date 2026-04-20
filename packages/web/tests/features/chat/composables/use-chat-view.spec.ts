@@ -4,8 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as chatViewData from '@/features/chat/composables/chat-view.data'
 import { useChatView } from '@/features/chat/composables/use-chat-view'
 
-const notify = vi.fn()
-
 vi.mock('@/features/chat/composables/chat-view.data', () => ({
   loadModelCapabilities: vi.fn(),
   loadVisionFallbackEnabled: vi.fn(),
@@ -13,9 +11,30 @@ vi.mock('@/features/chat/composables/chat-view.data', () => ({
   saveConversationHostServices: vi.fn(),
 }))
 
-vi.mock('@/stores/ui', () => ({
-  useUiStore: () => ({
-    notify,
+vi.mock('@/features/chat/composables/chat-command-catalog.data', () => ({
+  loadChatCommandCatalog: vi.fn().mockResolvedValue({
+    version: 'catalog-v1',
+    commands: [
+      {
+        aliases: ['/compress'],
+        canonicalCommand: '/compact',
+        commandId: 'builtin.context-compaction:/compact:command',
+        conflictTriggers: [],
+        connected: true,
+        defaultEnabled: true,
+        kind: 'command',
+        path: ['compact'],
+        pluginDisplayName: '上下文压缩',
+        pluginId: 'builtin.context-compaction',
+        runtimeKind: 'local',
+        source: 'manifest',
+        variants: ['/compact', '/compress'],
+      },
+    ],
+    conflicts: [],
+  }),
+  loadChatCommandCatalogVersion: vi.fn().mockResolvedValue({
+    version: 'catalog-v1',
   }),
 }))
 
@@ -81,7 +100,6 @@ describe('useChatView', () => {
     vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
       createModelConfig(false, 'text-only-model').capabilities,
     )
-    notify.mockReset()
   })
 
   it('shows a fallback notice when pending images target a text-only model', async () => {
@@ -226,12 +244,7 @@ describe('useChatView', () => {
       ttsEnabled: true,
     })
 
-    const chat = createChatStub({
-      compactContext: vi.fn().mockResolvedValue({
-        compacted: true,
-        coveredMessageCount: 1,
-      }),
-    })
+    const chat = createChatStub()
     let state!: ReturnType<typeof useChatView>
     const Harness = defineComponent({
       setup() {
@@ -249,8 +262,45 @@ describe('useChatView', () => {
 
     await state.send()
 
+    expect(chat.sendMessage).toHaveBeenCalledWith({
+      content: '/compress',
+      model: 'text-only-model',
+      parts: [
+        {
+          text: '/compress',
+          type: 'text',
+        },
+      ],
+      provider: 'demo-provider',
+    })
+  })
+
+  it('does not bypass llm auto reply restrictions for unknown slash text', async () => {
+    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
+      sessionEnabled: true,
+      llmEnabled: false,
+      ttsEnabled: true,
+    })
+
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    state.inputText.value = '/unknown'
+    await nextTick()
+
+    expect(state.canSend.value).toBe(false)
+
+    await state.send()
+
     expect(chat.sendMessage).not.toHaveBeenCalled()
-    expect(chat.compactContext).toHaveBeenCalledTimes(1)
   })
 
   it('does not bypass llm auto reply restrictions for slash text with pending images', async () => {
@@ -321,13 +371,8 @@ describe('useChatView', () => {
     expect(state.conversationHostServices.value?.llmEnabled).toBe(false)
   })
 
-  it('triggers manual context compaction and reports the result through the UI store', async () => {
-    const chat = createChatStub({
-      compactContext: vi.fn().mockResolvedValue({
-        compacted: true,
-        coveredMessageCount: 2,
-      }),
-    })
+  it('triggers manual context compaction through the regular send pipeline', async () => {
+    const chat = createChatStub()
     let state!: ReturnType<typeof useChatView>
     const Harness = defineComponent({
       setup() {
@@ -340,8 +385,17 @@ describe('useChatView', () => {
     await flushPromises()
     await state.compactConversationContext()
 
-    expect(chat.compactContext).toHaveBeenCalledTimes(1)
-    expect(notify).toHaveBeenCalledWith('已压缩上下文，覆盖 2 条历史消息。', 'success')
+    expect(chat.sendMessage).toHaveBeenCalledWith({
+      content: '/compact',
+      model: 'text-only-model',
+      parts: [
+        {
+          text: '/compact',
+          type: 'text',
+        },
+      ],
+      provider: 'demo-provider',
+    })
     expect(state.compacting.value).toBe(false)
   })
 

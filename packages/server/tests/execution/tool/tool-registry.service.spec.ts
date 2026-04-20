@@ -3,8 +3,12 @@ import { AiManagementService } from '../../../src/ai-management/ai-management.se
 import { AiProviderSettingsService } from '../../../src/ai-management/ai-provider-settings.service';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
+import { InvalidToolService } from '../../../src/execution/invalid/invalid-tool.service';
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
+import { TaskToolService } from '../../../src/execution/task/task-tool.service';
+import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
+import { WebFetchToolService } from '../../../src/execution/webfetch/webfetch-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -21,6 +25,7 @@ import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runti
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
 import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
+import { RuntimeHostSubagentTypeRegistryService } from '../../../src/runtime/host/runtime-host-subagent-type-registry.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
 import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.service';
@@ -118,6 +123,25 @@ describe('ToolRegistryService', () => {
 
     expect(toolSet).toBeDefined();
     expect(Object.keys(toolSet ?? {})).toContain('skill');
+  });
+
+  it('includes native task, todowrite and webfetch tools in the executable tool set', async () => {
+    const { service } = createFixture();
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+
+    expect(toolSet).toBeDefined();
+    expect(Object.keys(toolSet ?? {})).toEqual(expect.arrayContaining([
+      'task',
+      'todowrite',
+      'webfetch',
+    ]));
   });
 
   it('updates source and tool enabled flags and dispatches plugin source actions', async () => {
@@ -276,7 +300,11 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(enabledTools ?? {})).toEqual([
       'save_memory',
       'search_memory',
+      'task',
+      'todowrite',
+      'webfetch',
       'skill',
+      'invalid',
     ]);
   });
 
@@ -295,8 +323,112 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(toolSet ?? {})).toEqual([
       'save_memory',
       'search_memory',
+      'task',
+      'todowrite',
+      'webfetch',
       'skill',
+      'invalid',
     ]);
+  });
+
+  it('does not expose internal invalid tool in the available tool summary list', async () => {
+    const { service } = createFixture();
+
+    const tools = await service.listAvailableTools({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+
+    expect(tools.map((entry) => entry.name)).not.toContain('invalid');
+  });
+
+  it('dispatches native webfetch tool execution through the webfetch owner', async () => {
+    const { service, webFetchService } = createFixture();
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['webfetch'],
+    });
+    const webFetchTool = toolSet?.webfetch;
+    expect(webFetchTool).toBeDefined();
+    const result = await (webFetchTool as any).execute({
+      format: 'markdown',
+      url: 'https://example.com/smoke',
+    }, {} as never);
+    const modelOutput = await (webFetchTool as any).toModelOutput({
+      input: {
+        format: 'markdown',
+        url: 'https://example.com/smoke',
+      },
+      output: result,
+      toolCallId: 'call-webfetch-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      format: 'markdown',
+      title: 'Smoke Example',
+      url: 'https://example.com/smoke',
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<webfetch_result>'),
+    }));
+    expect(webFetchService.fetch).toHaveBeenCalledWith({
+      format: 'markdown',
+      url: 'https://example.com/smoke',
+    });
+  });
+
+  it('converts recoverable tool execution errors into internal invalid results', async () => {
+    const { service, webFetchService } = createFixture();
+    webFetchService.fetch.mockRejectedValueOnce(new Error('request timeout'));
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['webfetch'],
+    });
+    const webFetchTool = toolSet?.webfetch;
+    expect(webFetchTool).toBeDefined();
+
+    const result = await (webFetchTool as any).execute({
+      format: 'markdown',
+      url: 'https://example.com/smoke',
+    }, {} as never);
+    const modelOutput = await (webFetchTool as any).toModelOutput({
+      input: {
+        format: 'markdown',
+        url: 'https://example.com/smoke',
+      },
+      output: result,
+      toolCallId: 'call-webfetch-failed-1',
+    });
+
+    expect(result).toEqual({
+      error: 'request timeout',
+      inputText: JSON.stringify({
+        format: 'markdown',
+        url: 'https://example.com/smoke',
+      }, null, 2),
+      phase: 'execute',
+      recovered: true,
+      tool: 'webfetch',
+      type: 'invalid-tool-result',
+    });
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<invalid_tool_result>'),
+    }));
   });
 
   it('includes MCP tools in the executable tool set and dispatches execution through McpService', async () => {
@@ -378,12 +510,114 @@ describe('ToolRegistryService', () => {
     const skillTool = toolSet?.skill;
     expect(skillTool).toBeDefined();
     const result = await (skillTool as any).execute({ name: 'planner' }, {} as never);
+    const modelOutput = await (skillTool as any).toModelOutput({
+      input: { name: 'planner' },
+      output: result,
+      toolCallId: 'call-skill-1',
+    });
 
     expect(result).toEqual(expect.objectContaining({
       name: 'planner',
       entryPath: 'planner/SKILL.md',
+      modelOutput: expect.stringContaining('<skill_content name="planner">'),
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<skill_content name="planner">'),
     }));
     expect(skillRegistryService.getSkillByName).toHaveBeenCalledWith('planner');
+  });
+
+  it('dispatches native task tool execution through the subagent runner owner', async () => {
+    const { runtimeHostSubagentRunnerService, service } = createFixture();
+    const runSubagentSpy = runtimeHostSubagentRunnerService.runSubagent as jest.Mock;
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['task'],
+    });
+    const taskTool = toolSet?.task;
+    expect(taskTool).toBeDefined();
+
+    const result = await (taskTool as any).execute({
+      description: '仓库探索',
+      subagentType: 'explore',
+      prompt: '请总结当前仓库的技能目录',
+    }, {} as never);
+    const modelOutput = await (taskTool as any).toModelOutput({
+      input: {
+        description: '仓库探索',
+        subagentType: 'explore',
+        prompt: '请总结当前仓库的技能目录',
+      },
+      output: result,
+      toolCallId: 'call-task-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      description: '仓库探索',
+      subagentType: 'explore',
+      taskId: expect.any(String),
+      text: 'Generated: 请总结当前仓库的技能目录',
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<task_result title="仓库探索">'),
+    }));
+    expect(runSubagentSpy).toHaveBeenCalledWith('native.task', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, expect.objectContaining({
+      description: '仓库探索',
+      messages: [
+        {
+          content: '请总结当前仓库的技能目录',
+          role: 'user',
+        },
+      ],
+      subagentType: 'explore',
+    }));
+  });
+
+  it('dispatches native todowrite tool execution through the session todo owner', async () => {
+    const { conversationId, runtimeHostConversationRecordService, service } = createFixture();
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['todowrite'],
+    });
+    const todoTool = toolSet?.todowrite;
+    expect(todoTool).toBeDefined();
+    const todos = [
+      { content: '分析现有实现', priority: 'high' as const, status: 'completed' as const },
+      { content: '实现 todo 工具', priority: 'high' as const, status: 'in_progress' as const },
+    ];
+    const result = await (todoTool as any).execute({ todos }, {} as never);
+    const modelOutput = await (todoTool as any).toModelOutput({
+      input: { todos },
+      output: result,
+      toolCallId: 'call-todo-1',
+    });
+
+    expect(result).toEqual({
+      sessionId: conversationId,
+      pendingCount: 1,
+      todos,
+    });
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<todo_result>'),
+    }));
+    expect(runtimeHostConversationRecordService.readSessionTodo(conversationId)).toEqual(todos);
   });
 
   it('excludes disconnected remote plugins from the executable tool set', async () => {
@@ -456,6 +690,10 @@ function createFixture() {
     runtimeGatewayConnectionLifecycleService,
   );
   const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
+  const conversationId = (runtimeHostConversationRecordService.createConversation({
+    title: 'Tool Registry Todo',
+    userId: 'user-1',
+  }) as { id: string }).id;
   const runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
     runtimeHostConversationRecordService,
   );
@@ -468,9 +706,25 @@ function createFixture() {
     } as never,
     {
       invokeHook: jest.fn(),
+      listPlugins: jest.fn().mockReturnValue([]),
     } as never,
     new RuntimeHostSubagentTaskStoreService(),
   );
+  jest.spyOn(runtimeHostSubagentRunnerService, 'runSubagent').mockResolvedValue({
+    finishReason: 'stop',
+    message: {
+      content: 'Generated: 请总结当前仓库的技能目录',
+      role: 'assistant',
+    },
+    modelId: 'gpt-5.4',
+    providerId: 'openai',
+    sessionId: 'subagent-session-1',
+    sessionMessageCount: 2,
+    taskId: 'subagent-task-inline-1',
+    text: 'Generated: 请总结当前仓库的技能目录',
+    toolCalls: [],
+    toolResults: [],
+  } as never);
   const runtimeHostAutomationService = new AutomationService(
     new AutomationExecutionService(
       {
@@ -551,15 +805,40 @@ function createFixture() {
     resolveSkillDirectory: jest.fn().mockReturnValue('D:/repo/skills/planner'),
   };
   const skillToolService = new SkillToolService(skillRegistryService as unknown as SkillRegistryService);
+  const invalidToolService = new InvalidToolService();
+  const taskToolService = new TaskToolService(new RuntimeHostSubagentTypeRegistryService());
+  const todoToolService = new TodoToolService(runtimeHostConversationRecordService as never);
+  const webFetchService = {
+    fetch: jest.fn().mockResolvedValue({
+      contentType: 'text/html',
+      format: 'markdown',
+      output: '# Smoke Example\n\nbody',
+      status: 200,
+      title: 'Smoke Example',
+      url: 'https://example.com/smoke',
+    }),
+  };
+  const webFetchToolService = new WebFetchToolService(webFetchService as never);
 
   return {
+    conversationId,
     mcpService,
     pluginBootstrapService,
+    runtimeHostConversationRecordService,
     runtimePluginGovernanceService,
+    runtimeHostSubagentRunnerService,
     skillRegistryService,
+    webFetchService,
     service: new ToolRegistryService(
       mcpService as never,
+      invalidToolService,
+      todoToolService,
+      webFetchToolService,
       skillToolService,
+      taskToolService,
+      {
+        get: jest.fn().mockImplementation((token) => token === RuntimeHostSubagentRunnerService ? runtimeHostSubagentRunnerService : null),
+      } as never,
       runtimeHostPluginDispatchService as never,
       runtimePluginGovernanceService as never,
     ),

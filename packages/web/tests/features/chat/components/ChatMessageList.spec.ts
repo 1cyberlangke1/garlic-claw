@@ -206,4 +206,66 @@ describe('ChatMessageList', () => {
       displayMessage.html().indexOf('message-content'),
     )
   })
+
+  it('renders persisted display command and result messages with distinct variants', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'display-command',
+            role: 'display',
+            content: '/compact',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    variant: 'command',
+                  },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+          {
+            id: 'display-result',
+            role: 'display',
+            content: '已压缩上下文，覆盖 2 条历史消息。',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    variant: 'result',
+                  },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const commandMessage = wrapper.find('[data-message-id="display-command"]')
+    const resultMessage = wrapper.find('[data-message-id="display-result"]')
+
+    expect(commandMessage.text()).toContain('命令')
+    expect(commandMessage.classes()).toContain('display-command')
+    expect(commandMessage.text()).toContain('/compact')
+    expect(resultMessage.text()).toContain('展示')
+    expect(resultMessage.classes()).toContain('display-result')
+    expect(resultMessage.text()).toContain('已压缩上下文，覆盖 2 条历史消息。')
+  })
 })

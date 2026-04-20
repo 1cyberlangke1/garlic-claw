@@ -569,9 +569,37 @@ describe('ConversationMessageLifecycleService', () => {
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
     expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
-      { content: '/compact', role: 'display', status: 'completed' },
+      {
+        content: '/compact',
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                variant: 'command',
+              },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+              version: '1',
+            },
+          ],
+        }),
+        role: 'display',
+        status: 'completed',
+      },
       {
         content: '已压缩上下文，覆盖 2 条历史消息。',
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                variant: 'result',
+              },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+              version: '1',
+            },
+          ],
+        }),
         model: 'context-compaction-command',
         provider: 'system',
         role: 'display',
@@ -608,6 +636,37 @@ describe('ConversationMessageLifecycleService', () => {
       }),
     });
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+  });
+
+  it('does not downgrade unknown slash text to display messages', async () => {
+    aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '常规模型回复'));
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '/unknown test',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    }, 'user-1');
+
+    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+      {
+        content: '/unknown test',
+        role: 'user',
+        status: 'completed',
+      },
+      {
+        content: '常规模型回复',
+        role: 'assistant',
+        status: 'completed',
+      },
+    ]);
+    expect(started.userMessage).toMatchObject({ role: 'user' });
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' });
+    expectStreamInput(aiModelExecutionService.streamText, {
+      allowFallbackChatModels: true,
+      messages: [{ content: '/unknown test', role: 'user' }],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
   });
 
   it('short-circuits model execution when chat before-model returns an assistant response', async () => {

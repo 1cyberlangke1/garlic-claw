@@ -5,6 +5,7 @@ import type {
   Conversation,
   ConversationDetail,
   ConversationHostServices,
+  ConversationTodoItem,
   Message,
   RetryMessagePayload,
   SSEEvent,
@@ -23,6 +24,10 @@ export function createConversation(title?: string) {
 
 export function getConversation(id: string) {
   return get<ConversationDetail>(`/chat/conversations/${id}`);
+}
+
+export function getConversationTodo(conversationId: string) {
+  return get<ConversationTodoItem[]>(`/chat/sessions/${conversationId}/todo`);
 }
 
 export function deleteConversation(id: string) {

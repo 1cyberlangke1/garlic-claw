@@ -3,7 +3,7 @@ import type { EventLogSettings } from './plugin-records';
 /**
  * skill 来源类型。
  */
-export type SkillSourceKind = 'project' | 'user';
+export type SkillSourceKind = 'project';
 
 export type SkillLoadPolicy = 'allow' | 'ask' | 'deny';
 
@@ -61,6 +61,7 @@ export interface SkillLoadResult {
   entryPath: string;
   baseDirectory: string;
   files: SkillAssetSummary[];
+  modelOutput: string;
 }
 
 export interface UpdateSkillGovernancePayload {

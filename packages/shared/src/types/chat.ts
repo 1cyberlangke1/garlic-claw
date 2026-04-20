@@ -174,6 +174,35 @@ export interface ConversationCount {
 }
 
 /**
+ * 会话待办状态。
+ */
+export type ConversationTodoStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+
+/**
+ * 会话待办优先级。
+ */
+export type ConversationTodoPriority =
+  | 'high'
+  | 'medium'
+  | 'low';
+
+/**
+ * 单条会话待办项。
+ */
+export interface ConversationTodoItem {
+  /** 待办内容。 */
+  content: string;
+  /** 当前状态。 */
+  status: ConversationTodoStatus;
+  /** 优先级。 */
+  priority: ConversationTodoPriority;
+}
+
+/**
  * 对话摘要。
  */
 export interface Conversation {

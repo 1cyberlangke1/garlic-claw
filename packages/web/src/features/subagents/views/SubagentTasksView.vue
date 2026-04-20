@@ -90,9 +90,12 @@
           <div class="task-card-top">
             <div>
               <div class="task-title-row">
-                <strong>{{ task.pluginDisplayName || task.pluginId }}</strong>
+                <strong>{{ task.description || task.pluginDisplayName || task.pluginId }}</strong>
                 <span class="status-pill" :class="task.status">{{ statusLabel(task.status) }}</span>
               </div>
+              <p v-if="task.description" class="detail-line muted-text">
+                插件: {{ task.pluginDisplayName || task.pluginId }}
+              </p>
               <p>{{ task.requestPreview }}</p>
             </div>
             <RouterLink
@@ -105,6 +108,10 @@
 
           <div class="meta-row">
             <span class="meta-chip">{{ task.runtimeKind === 'local' ? '本地' : '远程' }}</span>
+            <span v-if="task.subagentTypeName || task.subagentType" class="meta-chip">
+              {{ task.subagentTypeName || task.subagentType }}
+            </span>
+            <span class="meta-chip">会话 {{ task.sessionMessageCount }} 条</span>
             <span v-if="task.providerId" class="meta-chip">{{ task.providerId }}</span>
             <span v-if="task.modelId" class="meta-chip">{{ task.modelId }}</span>
             <span class="meta-chip writeback-chip" :class="task.writeBackStatus">
@@ -126,6 +133,7 @@
           </p>
           <p class="detail-line muted-text">
             请求时间: {{ formatTime(task.requestedAt) }}
+            <span> · 会话更新于 {{ formatTime(task.sessionUpdatedAt) }}</span>
             <span v-if="task.finishedAt"> · 完成于 {{ formatTime(task.finishedAt) }}</span>
           </p>
         </article>

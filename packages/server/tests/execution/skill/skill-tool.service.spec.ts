@@ -24,8 +24,7 @@ describe('SkillToolService', () => {
     ].join('\n'), 'utf8');
     await fs.writeFile(path.join(tempRoot, 'skills', 'planner', 'templates', 'task.md'), '# task\n', 'utf8');
     registry = new SkillRegistryService({
-      projectSkillsRoot: path.join(tempRoot, 'skills'),
-      userSkillsRoot: path.join(tempRoot, 'user-skills'),
+      skillsRoot: path.join(tempRoot, 'skills'),
     });
     service = new SkillToolService(registry);
   });
@@ -45,7 +44,22 @@ describe('SkillToolService', () => {
           path: 'templates/task.md',
         }),
       ]),
+      modelOutput: expect.stringContaining('<skill_content name="planner">'),
     }));
+  });
+
+  it('renders available_skills with repo-relative location metadata', async () => {
+    await expect(service.listAvailableSkills()).resolves.toEqual([
+      expect.objectContaining({
+        entryPath: 'planner/SKILL.md',
+        name: 'planner',
+      }),
+    ]);
+
+    const description = service.buildToolDescription(await service.listAvailableSkills());
+    expect(description).toContain('<available_skills>');
+    expect(description).toContain('<name>planner</name>');
+    expect(description).toContain('<location>skills/planner/SKILL.md</location>');
   });
 
   it('filters denied skills from the native skill catalog and blocks direct loading', async () => {

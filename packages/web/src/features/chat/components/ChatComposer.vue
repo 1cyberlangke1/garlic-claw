@@ -21,15 +21,41 @@
     </div>
 
     <div class="composer">
-      <textarea
-        class="composer-input"
-        :value="modelValue"
-        :disabled="streaming"
-        placeholder="输入消息，支持附带图片；输入 /compact 或 /compress 手动压缩上下文"
-        rows="1"
-        @input="handleInput"
-        @keydown.enter.exact.prevent="$emit('send')"
-      ></textarea>
+      <div class="composer-input-wrap">
+        <textarea
+          ref="textareaRef"
+          class="composer-input"
+          :value="modelValue"
+          :disabled="streaming"
+          placeholder="输入消息，支持附带图片；输入 / 查看命令提示"
+          rows="1"
+          @blur="handleBlur"
+          @focus="handleFocus"
+          @input="handleInput"
+          @keydown="handleKeydown"
+        ></textarea>
+        <div v-if="showCommandSuggestions" class="command-suggestions">
+          <button
+            v-for="(suggestion, index) in commandSuggestions"
+            :key="`${suggestion.commandId}:${suggestion.trigger}`"
+            type="button"
+            class="command-suggestion-item"
+            :class="{ selected: index === selectedCommandSuggestionIndex }"
+            @mousedown.prevent="selectCommandSuggestion(suggestion.trigger)"
+            @mouseenter="selectedCommandSuggestionIndex = index"
+          >
+            <span class="command-trigger">{{ suggestion.trigger }}</span>
+            <span class="command-plugin">{{ suggestion.pluginDisplayName || suggestion.pluginId }}</span>
+            <span v-if="suggestion.description" class="command-description">{{ suggestion.description }}</span>
+            <span
+              class="command-status"
+              :class="{ offline: !suggestion.connected }"
+            >
+              {{ suggestion.connected ? '可用' : '离线' }}
+            </span>
+          </button>
+        </div>
+      </div>
       <label class="composer-button upload-button" title="上传图片">
         <input accept="image/*" multiple type="file" @change="$emit('file-change', $event)" />
         <Icon :icon="galleryAddBold" class="button-icon" aria-hidden="true" />
@@ -57,34 +83,148 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref, toRefs, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import galleryAddBold from '@iconify-icons/solar/gallery-add-bold'
 import plainBold from '@iconify-icons/solar/plain-bold'
 import stopBold from '@iconify-icons/solar/stop-bold'
 import type { PendingImage, UploadNotice } from '@/features/chat/composables/use-chat-view'
+import type { ChatCommandSuggestion } from '@/features/chat/composables/use-chat-command-catalog'
 
-defineProps<{
+const props = defineProps<{
   modelValue: string
   pendingImages: PendingImage[]
   uploadNotices: UploadNotice[]
+  commandSuggestions: ChatCommandSuggestion[]
   canSend: boolean
   streaming: boolean
 }>()
+const {
+  modelValue,
+  pendingImages,
+  uploadNotices,
+  commandSuggestions,
+  canSend,
+  streaming,
+} = toRefs(props)
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'file-change', value: Event): void
   (event: 'remove-image', index: number): void
+  (event: 'apply-command-suggestion', value: string): void
   (event: 'send'): void
   (event: 'stop'): void
 }>()
+
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const suggestionPanelExpanded = ref(false)
+const selectedCommandSuggestionIndex = ref(0)
+const showCommandSuggestions = computed(() =>
+  suggestionPanelExpanded.value &&
+  commandSuggestions.value.length > 0 &&
+  modelValue.value.trim().startsWith('/'),
+)
+
+watch(
+  commandSuggestions,
+  () => {
+    selectedCommandSuggestionIndex.value = 0
+    if (commandSuggestions.value.length === 0) {
+      suggestionPanelExpanded.value = false
+    }
+  },
+  {
+    deep: true,
+  },
+)
+
+watch(
+  modelValue,
+  (value) => {
+    if (!value.trim().startsWith('/')) {
+      suggestionPanelExpanded.value = false
+      selectedCommandSuggestionIndex.value = 0
+      return
+    }
+    if (commandSuggestions.value.length > 0) {
+      suggestionPanelExpanded.value = true
+    }
+  },
+)
 
 /**
  * 同步输入框内容到父组件状态。
  * @param event 输入事件
  */
 function handleInput(event: Event) {
-  emit('update:modelValue', (event.target as HTMLTextAreaElement).value)
+  const value = (event.target as HTMLTextAreaElement).value
+  emit('update:modelValue', value)
+  suggestionPanelExpanded.value = value.trim().startsWith('/')
+}
+
+function handleFocus() {
+  if (commandSuggestions.value.length > 0 && modelValue.value.trim().startsWith('/')) {
+    suggestionPanelExpanded.value = true
+  }
+}
+
+function handleBlur() {
+  window.setTimeout(() => {
+    suggestionPanelExpanded.value = false
+  }, 120)
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (showCommandSuggestions.value) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      selectedCommandSuggestionIndex.value = Math.min(
+        selectedCommandSuggestionIndex.value + 1,
+        commandSuggestions.value.length - 1,
+      )
+      return
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      selectedCommandSuggestionIndex.value = Math.max(selectedCommandSuggestionIndex.value - 1, 0)
+      return
+    }
+
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      if (!event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault()
+        const suggestion = commandSuggestions.value[selectedCommandSuggestionIndex.value]
+        if (suggestion) {
+          selectCommandSuggestion(suggestion.trigger)
+        }
+        return
+      }
+    }
+
+    if (event.key === 'Escape') {
+      suggestionPanelExpanded.value = false
+      return
+    }
+  }
+
+  if (
+    event.key === 'Enter' &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  ) {
+    event.preventDefault()
+    emit('send')
+  }
+}
+
+function selectCommandSuggestion(trigger: string) {
+  emit('apply-command-suggestion', trigger)
+  suggestionPanelExpanded.value = false
+  textareaRef.value?.focus()
 }
 </script>
 
@@ -156,6 +296,10 @@ function handleInput(event: Event) {
   align-items: stretch;
 }
 
+.composer-input-wrap {
+  position: relative;
+}
+
 .composer-input {
   width: 100%;
   min-height: 58px;
@@ -221,6 +365,76 @@ function handleInput(event: Event) {
   color: #ffb0b0;
 }
 
+.command-suggestions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(14, 24, 38, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 12px 28px rgba(1, 6, 15, 0.24), 0 0 15px rgba(103, 199, 207, 0.08);
+  z-index: 20;
+}
+
+.command-suggestion-item {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.command-suggestion-item:hover,
+.command-suggestion-item.selected {
+  background: rgba(103, 199, 207, 0.12);
+}
+
+.command-trigger {
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.command-plugin {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.command-description {
+  grid-column: 1 / span 2;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.command-status {
+  justify-self: end;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(68, 204, 136, 0.14);
+  color: var(--success);
+  font-size: 11px;
+}
+
+.command-status.offline {
+  background: rgba(255, 107, 107, 0.14);
+  color: var(--danger);
+}
+
 @media (max-width: 768px) {
   .composer {
     grid-template-columns: minmax(0, 1fr) 54px 54px;
@@ -231,6 +445,19 @@ function handleInput(event: Event) {
   .composer-input {
     min-height: 54px;
     border-radius: 16px;
+  }
+
+  .command-suggestion-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .command-trigger {
+    grid-column: 1 / span 2;
+  }
+
+  .command-plugin,
+  .command-description {
+    grid-column: 1 / span 2;
   }
 }
 </style>

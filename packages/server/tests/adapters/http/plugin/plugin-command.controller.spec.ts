@@ -26,6 +26,7 @@ describe('PluginController command overview', () => {
   const runtimeHostSubagentRunnerService = {
     getTaskOrThrow: jest.fn(),
     listOverview: jest.fn(),
+    listProfiles: jest.fn(),
   };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
@@ -96,6 +97,7 @@ describe('PluginController command overview', () => {
     ]);
 
     await expect(controller.listCommandOverview()).resolves.toEqual({
+      version: expect.stringMatching(/^[a-f0-9]{40}$/),
       commands: expect.arrayContaining([
         expect.objectContaining({
           commandId: 'builtin.core-tools:/sys reload:command',
@@ -140,6 +142,7 @@ describe('PluginController command overview', () => {
     ]);
 
     await expect(controller.listCommandOverview()).resolves.toEqual({
+      version: expect.stringMatching(/^[a-f0-9]{40}$/),
       commands: [
         expect.objectContaining({
           commandId: 'remote.echo:/remote ping:command',
@@ -147,6 +150,37 @@ describe('PluginController command overview', () => {
         }),
       ],
       conflicts: [],
+    });
+  });
+
+  it('returns the same catalog version from the lightweight version endpoint', async () => {
+    runtimePluginGovernanceService.listPlugins.mockReturnValue([
+      {
+        connected: true,
+        manifest: {
+          id: 'builtin.compact',
+          name: '上下文压缩',
+          runtime: 'local',
+          version: '1.0.0',
+          permissions: [],
+          commands: [
+            {
+              kind: 'command',
+              canonicalCommand: '/compact',
+              path: ['compact'],
+              aliases: ['/compress'],
+              variants: ['/compact', '/compress'],
+            },
+          ],
+          tools: [],
+        },
+        pluginId: 'builtin.compact',
+      },
+    ]);
+
+    const overview = await controller.listCommandOverview();
+    await expect(controller.getCommandCatalogVersion()).resolves.toEqual({
+      version: overview.version,
     });
   });
 });

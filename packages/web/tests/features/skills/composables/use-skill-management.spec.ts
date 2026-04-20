@@ -96,8 +96,7 @@ describe('useSkillManagement', () => {
     await flushPromises()
 
     expect(state.skills.value).toHaveLength(1)
-    expect(state.projectCount.value).toBe(1)
-    expect(state.userCount.value).toBe(0)
+    expect(state.directoryCount.value).toBe(1)
     expect(state.deniedCount.value).toBe(0)
     expect(state.packageCount.value).toBe(1)
     expect(state.executableCount.value).toBe(0)

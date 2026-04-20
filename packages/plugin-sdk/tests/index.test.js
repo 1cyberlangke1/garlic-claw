@@ -1581,8 +1581,27 @@ test('execution context exposes message target lookup and generic send host APIs
 test('execution context exposes background subagent task host APIs', async () => {
   const client = createClient();
   const sent = installHostCallMock(client, {
+    'subagent.run': () => ({
+      taskId: 'subagent-task-inline-1',
+      sessionId: 'subagent-session-inline-1',
+      sessionMessageCount: 2,
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      text: '这是同步子代理总结',
+      message: {
+        role: 'assistant',
+        content: '这是同步子代理总结',
+      },
+      finishReason: 'stop',
+      toolCalls: [],
+      toolResults: [],
+    }),
     'subagent.task.start': () => ({
+      description: '总结当前对话',
       id: 'subagent-task-1',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 1,
+      sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
       pluginId: 'plugin.sdk.test',
       pluginDisplayName: 'plugin.sdk.test',
       runtimeKind: 'remote',
@@ -1597,7 +1616,11 @@ test('execution context exposes background subagent task host APIs', async () =>
     }),
     'subagent.task.list': () => ([
       {
+        description: '总结当前对话',
         id: 'subagent-task-1',
+        sessionId: 'subagent-session-1',
+        sessionMessageCount: 1,
+        sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
         pluginId: 'plugin.sdk.test',
         pluginDisplayName: 'plugin.sdk.test',
         runtimeKind: 'remote',
@@ -1613,6 +1636,10 @@ test('execution context exposes background subagent task host APIs', async () =>
     ]),
     'subagent.task.get': () => ({
       id: 'subagent-task-1',
+      description: '总结当前对话',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 2,
+      sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
       pluginId: 'plugin.sdk.test',
       pluginDisplayName: 'plugin.sdk.test',
       runtimeKind: 'remote',
@@ -1627,6 +1654,7 @@ test('execution context exposes background subagent task host APIs', async () =>
       startedAt: '2026-03-30T12:00:01.000Z',
       finishedAt: '2026-03-30T12:00:05.000Z',
       request: {
+        description: '总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
         messages: [
@@ -1660,7 +1688,19 @@ test('execution context exposes background subagent task host APIs', async () =>
     conversationId: 'conv-1',
   });
 
+  const inlineResult = await executionContext.host.runSubagent({
+    description: '同步总结当前对话',
+    providerId: 'openai',
+    modelId: 'gpt-5.2',
+    messages: [
+      {
+        role: 'user',
+        content: '请同步总结当前对话',
+      },
+    ],
+  });
   const startedTask = await executionContext.host.startSubagentTask({
+    description: '总结当前对话',
     providerId: 'openai',
     modelId: 'gpt-5.2',
     messages: [
@@ -1679,13 +1719,20 @@ test('execution context exposes background subagent task host APIs', async () =>
   const listedTasks = await executionContext.host.listSubagentTasks();
   const loadedTask = await executionContext.host.getSubagentTask('subagent-task-1');
 
+  assert.equal(inlineResult.taskId, 'subagent-task-inline-1');
+  assert.equal(inlineResult.sessionId, 'subagent-session-inline-1');
+  assert.equal(inlineResult.sessionMessageCount, 2);
   assert.equal(startedTask.status, 'queued');
+  assert.equal(startedTask.description, '总结当前对话');
   assert.equal(listedTasks.length, 1);
   assert.equal(loadedTask.status, 'completed');
   assert.equal(loadedTask.result.text, '这是后台任务总结');
+  assert.equal(sent[0].payload.params.description, '同步总结当前对话');
+  assert.equal(sent[1].payload.params.description, '总结当前对话');
   assert.deepEqual(
     sent.map((entry) => entry.payload.method),
     [
+      'subagent.run',
       'subagent.task.start',
       'subagent.task.list',
       'subagent.task.get',

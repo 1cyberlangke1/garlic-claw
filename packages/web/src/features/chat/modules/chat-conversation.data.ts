@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ConversationTodoItem,
   SendMessagePayload,
   UpdateMessagePayload,
 } from '@garlic-claw/shared'
@@ -9,6 +10,7 @@ import {
   deleteConversation,
   deleteConversationMessage,
   getConversation,
+  getConversationTodo,
   listConversations,
   retryMessageSSE,
   sendMessageSSE,
@@ -34,6 +36,12 @@ export function deleteConversationRecord(conversationId: string) {
 export async function loadConversationMessages(conversationId: string): Promise<ChatMessage[]> {
   const detail = await getConversation(conversationId)
   return detail.messages.map(dbMessageToChat)
+}
+
+export function loadConversationTodoRecord(
+  conversationId: string,
+): Promise<ConversationTodoItem[]> {
+  return getConversationTodo(conversationId)
 }
 
 export function sendConversationMessage(

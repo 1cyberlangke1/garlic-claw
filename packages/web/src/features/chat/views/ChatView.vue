@@ -51,7 +51,7 @@
               class="service-toggle"
               type="button"
               :disabled="chat.streaming || compacting"
-              @click="compactConversationContext"
+              @click="compactConversationContext()"
             >
               {{ compacting ? '压缩中...' : '压缩上下文' }}
             </button>
@@ -59,10 +59,30 @@
         </template>
       </div>
 
+      <section class="chat-todo-panel">
+        <div class="chat-todo-header">
+          <h3>当前待办</h3>
+          <span class="chat-todo-count">{{ chat.todoItems.length }}</span>
+        </div>
+        <div v-if="chat.todoItems.length" class="chat-todo-list">
+          <div
+            v-for="(item, index) in chat.todoItems"
+            :key="`${index}-${item.content}`"
+            class="chat-todo-item"
+            :class="[`status-${item.status}`, `priority-${item.priority}`]"
+          >
+            <span class="chat-todo-state">{{ readTodoStatusLabel(item.status) }}</span>
+            <span class="chat-todo-content">{{ item.content }}</span>
+            <span class="chat-todo-priority">{{ readTodoPriorityLabel(item.priority) }}</span>
+          </div>
+        </div>
+        <p v-else class="chat-todo-empty">当前会话还没有待办。</p>
+      </section>
+
       <ChatMessageList
         :assistant-persona="currentConversationPersona ? { avatar: currentConversationPersona.avatar, name: currentConversationPersona.name } : null"
         :loading="chat.loading"
-        :messages="chat.messages"
+        :messages="displayedMessages"
         @delete-message="deleteMessage"
         @retry-message="retryMessage"
         @update-message="updateMessage"
@@ -71,9 +91,11 @@
       <ChatComposer
         v-model="inputText"
         :can-send="canSend"
+        :command-suggestions="commandSuggestions"
         :pending-images="pendingImages"
         :streaming="chat.streaming"
         :upload-notices="uploadNotices"
+        @apply-command-suggestion="applyCommandSuggestion"
         @file-change="handleFileChange"
         @remove-image="removeImage"
         @send="send"
@@ -109,6 +131,8 @@ const {
   inputText,
   pendingImages,
   compacting,
+  commandSuggestions,
+  displayedMessages,
   selectedCapabilities,
   conversationHostServices,
   uploadNotices,
@@ -123,6 +147,7 @@ const {
   setConversationLlmEnabled,
   setConversationSessionEnabled,
   compactConversationContext,
+  applyCommandSuggestion,
 } = useChatView(chat)
 
 watch(
@@ -152,6 +177,30 @@ async function readCurrentConversationPersona(conversationId: string, requestId:
       return
     }
     currentConversationPersona.value = null
+  }
+}
+
+function readTodoStatusLabel(status: "pending" | "in_progress" | "completed" | "cancelled") {
+  switch (status) {
+    case "in_progress":
+      return "进行中"
+    case "completed":
+      return "已完成"
+    case "cancelled":
+      return "已取消"
+    default:
+      return "待处理"
+  }
+}
+
+function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
+  switch (priority) {
+    case "high":
+      return "高"
+    case "low":
+      return "低"
+    default:
+      return "中"
   }
 }
 </script>
@@ -280,6 +329,93 @@ async function readCurrentConversationPersona(conversationId: string, requestId:
 .service-toggle:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+.chat-todo-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(8, 15, 19, 0.78);
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.chat-todo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-todo-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.chat-todo-count {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(76, 189, 255, 0.12);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-todo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-todo-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-todo-item.status-completed,
+.chat-todo-item.status-cancelled {
+  opacity: 0.7;
+}
+
+.chat-todo-state {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chat-todo-content {
+  min-width: 0;
+}
+
+.chat-todo-priority {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chat-todo-item.priority-high .chat-todo-priority {
+  color: var(--danger);
+}
+
+.chat-todo-item.priority-medium .chat-todo-priority {
+  color: var(--accent);
+}
+
+.chat-todo-item.priority-low .chat-todo-priority {
+  color: var(--success);
+}
+
+.chat-todo-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .no-conversation {
