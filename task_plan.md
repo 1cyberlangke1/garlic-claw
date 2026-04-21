@@ -14,7 +14,172 @@
 | S17-2 | 已完成 | 形成对齐方案，确认 shared / server / web 的收敛边界 |
 | S17-3 | 已完成 | 按确认方案改造 skill 发现、运行时注入、命令入口与前端界面 |
 | S17-4 | 已完成 | 补测试、fresh 验收与独立 judge |
-| S17-5 | 进行中 | 把 `subagent` 公开语义从 `profileId + taskId` 收口到 `subagentType + sessionId`，并把 `todo` owner 改成 session 级资源 |
+| S17-5 | 已完成 | 把 `subagent` 公开语义从 `profileId + taskId` 收口到 `subagentType + sessionId`，并把 `todo` owner 改成 session 级资源 |
+
+## 2026-04-20 天气 skill 收口
+
+## 目标
+
+- 删除仓库当前旧 skill 目录，只保留真实要用的天气查询 skill。
+- 把仓库默认天气查询从 `mcp/servers/weather-server.json` 收回到 `skills/weather-query/`。
+- 保持 skill 继续是 OpenCode 风格“按需加载的提示资产”，不重新引入专用 skill 执行器。
+- 补齐天气 skill 的脚本资产识别与代码执行验证。
+
+## 阶段
+
+| 阶段 | 状态 | 内容 |
+| --- | --- | --- |
+| W17-1 | 已完成 | 同步规划文件，确认旧 skill 删除范围与天气 skill 设计 |
+| W17-2 | 已完成 | 删除旧 skill、落 `skills/weather-query/` 并移除默认天气 MCP |
+| W17-3 | 已完成 | 更新 server / web 测试与 smoke，补脚本资产和代码执行验证 |
+| W17-4 | 已完成 | 执行 fresh 验收并确认无测试残留 |
+
+## 当前决定
+
+- 不保留 `automation-designer / planner / plugin-operator` 这 3 个旧 skill。
+- 天气能力改成仓库内一个正式 skill：`skills/weather-query/`。
+- 不给 skill 恢复专用执行通道；天气查询继续通过现有通用工具完成。
+- 当前 `bash` 工具只允许在 `/workspace` 内执行，因此天气 skill 不直接假设能从仓库路径原地执行脚本。
+- 天气 skill 会同时提供：
+  - 面向模型的 markdown 指令
+  - 仓库内可维护的 `scripts/weather.js` 资产
+- 代码执行验证分两层：
+  - skill 资产被识别为 `executable`
+  - 现有 `bash` 执行链与 smoke 继续提供稳定代码执行证据
+
+## 当前摸底
+
+- 仓库当前真实 `skills/` 目录只有：
+  - `skills/automation-designer`
+  - `skills/planner`
+  - `skills/plugin-operator`
+- 当前“查询天气”实际是默认 MCP：
+  - `mcp/servers/weather-server.json`
+- skill 系统当前只扫描仓库根 `skills/` 下的 `SKILL.md`，这和本轮收口方向一致。
+- `bash` 当前工作目录限制在 `/workspace`，不能直接把仓库 skill 目录当执行 cwd 使用。
+
+## 2026-04-20 执行层 runtime 规划（just-bash 起步）
+
+## 目标
+
+- 为后续执行环境相关能力建立正式 runtime 抽象，不再把执行后端细节直接揉进工具层。
+- 首个执行后端采用 `just-bash`，但公开 contract 必须支持后续继续挂载其他执行后端。
+- 当前首个 `just-bash` 后端以“挂载到指定工作区目录的文件系统”作为真相源，不走纯内存环境；这不是所有 runtime 后端的统一硬约束。
+- 第一版默认允许网络等完整能力，但能力策略必须是 runtime 自己的正式 owner。
+- 先把计划和风险写清楚，这一轮不开始 runtime 实现代码。
+
+## 阶段
+
+| 阶段 | 状态 | 内容 |
+| --- | --- | --- |
+| R17-1 | 已完成 | 定义 runtime 驱动接口、session/workspace/能力策略 contract，明确多后端抽象 |
+| R17-2 | 已完成 | 落首个 `just-bash` 适配器，明确 exec 生命周期与错误模型 |
+| R17-3 | 已完成 | 设计挂载目录、工作区复制/映射、持久文件真相源与清理策略 |
+| R17-4 | 已完成 | `subagent` 公开语义继续向 OpenCode `task` 收口，公开主键固定为 `sessionId` |
+| R17-5 | 已完成 | 复核 `todo / task / bash` 与 OpenCode 的公开语义，差异表与收敛结果已补齐 |
+| R17-6 | 已完成 | 为本机 shell / WSL / 容器等后续执行后端预留稳定扩展点 |
+| R17-7 | 进行中 | 做 Windows / WSL 跨平台验证，并补 `workdir / timeout / tar` 等命令面证据 |
+
+## R17-5 差异表
+
+| 工具 | OpenCode 主语义 | 当前收口结果 | 保留差异 |
+| --- | --- | --- | --- |
+| `todo` | session 级全量覆盖写入 | 已对齐为当前 session 全量覆盖，不走增量 patch | 无额外公开差异 |
+| `task` | 以 session 续跑，结果面向模型只给最小必要信息 | 已收口为 `sessionId + <task_result>`，不再回送 `provider/model` | 工具名保持项目风格 `task`，不改成其他别名 |
+| `bash` | 公开的是 shell 工作区语义，而不是宿主实现细节 | 已收口为“session 工作区持续、shell 状态不持续、自包含命令” | 当前后端仍不提供持久 shell 进程状态；这是现阶段 runtime 边界，不再向模型暴露宿主直挂或审批实现细节 |
+
+## 当前决定
+
+- 公开工具语义仍使用 `bash`，不把 `just-bash` 直接作为对模型暴露的工具名。
+- `just-bash` 只是首个执行后端，不应反向定义整个 runtime 接口。
+- runtime 至少要拆出这些 owner：
+  - 驱动接口
+  - 工作区挂载配置
+  - 能力策略
+  - native 工具接线
+- 对 `just-bash` 后端，工作区必须是显式指定目录，执行产生的文件要落到这个目录语义上；其他后端后续可按各自能力模型定义是否需要同样约束。
+- 默认能力按用户要求允许网络访问等完整能力，但后续若要限权，必须改 runtime 能力策略，不在工具层散落特判。
+- 当前先不决定“Windows 直接跑 `just-bash`”就是最终方案；先把它视为待验证对象。
+- 第一段实现改成“系统路径留在内存层，`/workspace` 直挂宿主 session 工作区”模型：
+  - `just-bash` 仍然是首个执行后端
+  - `/bin`、`/usr/bin`、`/proc` 这类系统路径仍由内存 base 承接
+  - `/workspace` 通过宿主自建 mounted filesystem 直挂到真实目录
+  - 不直接使用当前 Windows 下不稳定的 `ReadWriteFs` 路径解析
+- 这轮优先把这些东西打通：
+  - runtime 执行接口
+  - session 工作区目录
+  - native `bash` 工具
+  - 实际 smoke 里的写入后再读取验证
+
+## 当前摸底
+
+- `just-bash@2.14.2` 已装入 `packages/server`，可作为后续 runtime 试验基座。
+- 已确认 `just-bash` 的关键导出包括：
+  - `Bash`
+  - `InMemoryFs`
+  - `OverlayFs`
+  - `ReadWriteFs`
+  - `MountableFs`
+  - `defineCommand`
+- 已确认 `exec()` 的关键语义：
+  - 多次执行共享文件系统状态
+  - 不共享 shell 进程状态
+  - 因此 `cwd / export / shell function` 之类状态不会跨次保留
+- 已确认它支持 `curl`，但需要显式打开 `network`。
+- 已观察到 Windows 下真实目录挂载有明显风险：
+  - `ReadWriteFs` / `MountableFs` 对 `/workspace` 这类虚拟绝对路径和 Windows 宿主路径的映射不稳定
+  - 出现过 `resolves outside sandbox` 与真实文件找不到的问题
+- 因此这轮实现前必须把“跨平台验证”当成正式阶段，而不是默认假设。
+- 当前第一段实现策略：
+  - 使用 `MountableFs`
+  - base 仍为 `InMemoryFs`
+  - `/workspace` 通过 `RuntimeMountedWorkspaceFileSystem` 直挂宿主目录
+  - 这样保留真实工作区目录语义，同时绕开 `ReadWriteFs` 现有的 Windows 路径问题
+- 当前 ask 审批策略：
+  - runtime 能力策略正式收口为 `allow / ask / deny`
+  - `just-bash` 当前对 `shellExecution / networkAccess` 走 `ask`
+  - pending request 以 conversation 为 owner，支持 `once / always / reject`
+  - 聊天 SSE、`GET pending`、`POST reply` 和前端聊天页审批面板都已接通
+  - `always` 批准记录当前已持久化到 conversation store，服务重启后会继续生效
+  - fresh `smoke:server` 已补真实链路：同一会话里首次 `bash` 调用 `always` 批准后，后续 `bash` 调用不再二次 `ask`
+- 当前测试约束补充：
+  - `runtime-just-bash.service.spec.ts` 这类直接改 `process.env` 的用例，恢复环境时不能写 `process.env.KEY = undefined`
+  - 原值缺失时必须 `delete process.env.KEY`，否则 Node 会把它变成字符串 `'undefined'`，污染后续 `just-bash` 配置读取
+- 当前 runtime 抽象收口新进展：
+  - `RuntimeCommandService` 已改成 runtime backend 注册表模式，不再硬绑定单个 `RuntimeJustBashService`
+  - shared `RuntimeBackendKind` 已放宽为开放字符串，不再把契约锁死为单一字面量
+  - 新增 `RuntimeToolBackendService`，把 shell backend 与 workspace backend 的选择点从工具层抽回 runtime owner
+  - `ToolRegistryService` 当前只消费解析后的 backend descriptor，不再持有“先拿 kind 再回查 registry”的细节
+  - `BashToolService` 的描述文案也已改成读取当前默认 shell backend descriptor，而不是写死 `just-bash`
+- 当前已落第一段实现：
+  - `RuntimeCommandService` 已作为 runtime 执行入口落地
+  - `RuntimeJustBashService` 已作为首个后端落地
+  - `RuntimeWorkspaceService` 已把 session 工作区同步到宿主目录
+  - `RuntimeWorkspaceService` 已补 `deleteWorkspace()`，主会话删除时会清理对应 runtime workspace
+  - `RuntimeMountedWorkspaceFileSystem` 已把 `/workspace` 直挂到宿主目录
+  - `RuntimeMountedWorkspaceFileSystem` 已补 `symlink / link / readlink`
+  - native `bash / read / glob / grep / write / edit` 工具已进入统一工具集
+  - `RuntimeToolPermissionService` 已作为 runtime 权限 owner 落地
+  - `ToolRegistryService` 已把 native runtime 工具统一接到权限审查链
+  - HTTP smoke 已覆盖 `bash / read / glob / grep / write / edit` 多轮工具链，以及“先写文件、再读取、再校验宿主目录存在文件、最后删除会话后工作区已被清理”
+  - `RuntimeHostConversationRecordService` 的可选注入不能用 `Pick<...>` 这类泛型类型表达；Nest 真链路只会拿到 `Object`，会让清理逻辑在 HTTP 路径里静默失效
+  - `BashToolService` 已把“命令完成后同步回宿主工作区”的旧描述改成“直挂并直接落宿主工作区”
+- 当前已拿到的新鲜验证：
+  - Windows：`packages/server` runtime 定向 `jest`、`packages/server build`、root `lint`、root `smoke:server`
+  - WSL 内部目录：`packages/server` runtime 定向 `jest`、root `smoke:server`
+- 2026-04-20 补充推进：
+  - `bash` 的对模描述和 `<bash_result>` 已去掉 backend kind 这类宿主附加语义
+  - `task` 的对模结果已收成 `session_id + <task_result>`，不再回送 `provider/model`
+  - `RuntimeJustBashService` 已补 runtime owner 的统一超时决议，不再只依赖底层 `AbortSignal`
+  - HTTP smoke 已新增 `bash-workdir-loop`、`bash-timeout-loop` 与 `bash-tar-loop`
+- 当前已确认的命令面：
+  - 文件追加、复制、移动、删除
+  - shell 状态跨次不续存
+  - 本地 `curl` 网络访问
+  - `ln -s / readlink / ln`
+- 当前仍缺：
+  - 更宽命令面，例如压缩、`tar`、更复杂目录树与边界性能
+  - 按用户当前验收口径，把 Windows + WSL fresh 证据整理成正式收尾结论
 
 ## 当前决定
 
@@ -49,13 +214,19 @@
       - shared / plugin-sdk / server / web 都已接通 `description`
       - `description` 作为任务标题独立持久化，前端任务卡片优先显示该标题
       - `requestPreview` 继续保留真实请求预览，不再复用 `description`
-    - 当前已补第三段 `subagent type` 语义：
-      - shared / plugin-sdk / server / web 都已接通 `subagentType`
-      - 宿主已落真实 `RuntimeHostSubagentTypeRegistryService`，通过 `subagent-types/*.yaml` 扫描类型
-      - 默认 `general / explore` 会自动补齐到目录中；`explore` 仍会补默认只读工具与探索导向提示词
-      - 显式 `providerId / modelId / system / toolNames` 仍可覆盖类型默认值
-      - 后台任务会持久化 `subagentType / subagentTypeName`
-      - HTTP 已补 `GET /subagent-types`，插件声明式配置可用 `selectSubagentType` 拉取选项
+- 当前已补第三段 `subagent type` 语义：
+  - shared / plugin-sdk / server / web 都已接通 `subagentType`
+  - 宿主已落真实 `RuntimeHostSubagentTypeRegistryService`，通过 `subagent-types/*.yaml` 扫描类型
+  - 默认 `general / explore` 会自动补齐到目录中；`explore` 仍会补默认只读工具与探索导向提示词
+  - 显式 `providerId / modelId / system / toolNames` 仍可覆盖类型默认值
+  - 后台任务会持久化 `subagentType / subagentTypeName`
+  - HTTP 已补 `GET /subagent-types`，插件声明式配置可用 `selectSubagentType` 拉取选项
+    - 当前已补第四段 `session` 主语义收口：
+      - `subagent.task.get` 宿主 Host API 已改成按 `sessionId` 读取
+      - plugin-sdk `getSubagentTask()` 已改成透传 `sessionId`
+      - HTTP `plugin-subagent-tasks/:sessionId` 与后台列表都已改成 session 最新投影语义
+      - native `task` 工具对模型输出已改成 `session_id` 优先，`taskId` 只保留为 `ledger_task_id` 投影
+      - `subagent.run` 与 `subagent.task.start/list/get/overview` 的公开结果都已移除账本 `id/taskId`，只保留 `sessionId / sessionMessageCount` 作为公开续跑与投影视图字段
     - 当前已补 `invalid` 失败恢复语义：
       - `AiModelExecutionService` 已接入 `experimental_repairToolCall`
       - 无效参数 / 未知工具会自动转成内部 `invalid` 工具结果，而不是直接打断整轮工具循环
@@ -70,10 +241,24 @@
       - `subagent` 名字保持不变，但公开输入改成 OpenCode 风格的 `subagentType + sessionId`
       - `profileId` 不再作为公开主语义；宿主内建 `general / explore` 已改成子代理类型目录
       - 恢复同一子代理上下文的公开入口改用 `sessionId`
-      - 当前结果载荷与后台任务账本仍保留 `taskId` 投影；后续再继续把它从公开主语义降级
+      - 当前后台任务账本仍保留 `taskId` 作为内部投影；公开结果和前端消费已经不再暴露它
       - 后台任务页继续保留，但只展示 session 的最新执行投影，不再让任务记录反向拥有 session
       - `todo` 读写统一改到 session owner；主聊天只把 `conversationId` 当主 session id 的宿主映射
       - 插件声明式配置里的子代理选择器特殊类型改成 `selectSubagentType`
+
+## 2026-04-20 R17-8 预备结论
+
+- `other/opencode` 的 `bash / read / write / edit / grep / lsp` 面向真实项目 worktree，而不是 session runtime workspace。
+- 当前 Garlic Claw 新增的 `bash / read / glob / grep / write / edit` 则明确面向 `sessionId` 对应的 `/workspace`。
+- 这意味着当前 runtime 文件工具与 runtime bash 虽然已经形成稳定 owner，但它们不能直接当成 OpenCode 本地项目工具层。
+- 因此 `R17-8` 的第一步不是直接接 `lsp`，而是先决定：
+  - 新增独立的 project/worktree backend
+  - 还是重定义当前文件工具的公开语义
+- 在这个 owner 没厘清前，不应把 `lsp` 直接挂到现有 runtime workspace 文件链上。
+- 2026-04-21 更新：
+  - 用户已明确取消当前阶段的 `lsp` 计划。
+  - 已复核仓库主代码，当前没有真正落地的 `lsp` 实现需要删除，只有规划层引用。
+  - 因此这条结论保留为未来参考，不再作为当前执行项继续推进。
 
 ## 当前摸底
 

@@ -4,6 +4,149 @@
 
 ## 2026-04-20
 
+- 这轮“天气改成 skill”有一个不能忽略的边界：
+  - 当前 `bash` 工具的 `cwd` 被限制在 `/workspace`
+  - skill 仓库目录不在 `/workspace`
+  - 因此不能在 skill 文档里假设“直接运行仓库 skill 资产就能执行”
+- 更合理的语义是：
+  - skill 负责提供天气查询方法、脚本内容和使用说明
+  - 真正执行仍通过现有 `bash` / `write` 这类通用工具完成
+- `just-bash` 当前版本的 `js-exec` 在本地最小复现中会直接报错：
+  - `js-exec -c "console.log(1)"` 返回 `Invalid URL`
+  - `js-exec scripts/test.js` 返回内部执行错误
+  - 因此这轮不把天气 skill 默认执行路径建立在 `js-exec` 上
+- 用户要的“顺便测试代码执行”不适合依赖真实天气网络请求本身：
+  - 真实外网天气接口会让测试易波动
+  - 更稳的是拆成“脚本资产被识别为可执行”与“现有 `bash` 执行链 / smoke 继续成立”两层证据
+
+- 如果共享契约继续把 `RuntimeBackendKind` 锁死成 `'just-bash'`，那 runtime registry 再怎么改也只是服务端内部换壳：
+  - 新后端一进来，shared / plugin-sdk / Web 仍会被旧字面量卡住
+  - 因此先把 kind 放宽为开放字符串，比继续在服务端本地做兼容壳更干净
+- 只把 `RuntimeCommandService` 改成多 backend 容器还不够：
+  - 如果 `ToolRegistryService` 里仍然到处写 `'just-bash'`
+  - 或者仍然让工具自己知道“默认 backend 是谁”
+  - 那后续新增本机 shell / WSL / 容器时，还是得从工具层一层层回改
+- 更合理的 owner 是：
+  - `RuntimeCommandService` 负责 backend registry 与默认 backend 决议
+  - `RuntimeToolBackendService` 负责“shell 语义”和“workspace 语义”当前各自绑定到哪个 backend
+  - `ToolRegistryService` 只消费已经解析好的 backend descriptor
+- 这样当前虽然实际 backend 仍只有 `just-bash`，但“以后接第二个 backend 要改哪里”已经被收口到了 runtime owner，而不是散在工具定义里
+
+- runtime `ask` 这条链如果没有会话级 owner，就会退化成“工具层里临时弹窗”：
+  - 更稳的边界是 `RuntimeToolPermissionService` 独立持有 pending request、approval memory 和事件订阅
+  - `ToolRegistryService` 只负责声明工具所需 capability，不直接拥有审批状态
+  - 这样 native `bash / read / glob / grep / write / edit` 才能共享同一条审查链
+- `bash` 的成功回归测试不能继续假设“调用就直接执行”：
+  - 当前 `shellExecution` 默认走 `ask`
+  - 因此测试本身也必须显式取 pending request 并回复 `once/always`
+  - 旧测试超时不是 runtime owner 失效，而是用例没有走新的审批语义
+- 前端这轮 `TS2589` 的实际触发点不是 SSE 事件，而是 `Ref<ChatPendingRuntimePermission[]>` 上叠加了共享递归 `JsonValue` 后又在数组 map/spread 里继续推导：
+  - 把 pending runtime permission 状态改成显式归一化对象，并改用 `shallowRef`
+  - 这比继续堆 `satisfies` 或在局部 spread 上硬压类型更稳
+- 后端 smoke 如果继续用“一次性读完整个 SSE 文本”模式，就无法覆盖任何需要中途人工审批的对话：
+  - 这次 `bash` 超时不是执行链坏了，而是 smoke 没有在流中途消费 `permission-request`
+  - 把 smoke 改成流式读事件、收到审批请求后立刻调 pending/reply 接口，才是和正式语义一致的验收方式
+- “始终允许”如果只留在 `RuntimeToolPermissionService` 内存里，前端文案就是假的：
+  - 用户看到的是 conversation 级语义，不是“本次进程存活期内允许”
+  - 因此最自然的 owner 不是另建权限文件，而是直接跟对话记录一起持久化
+  - 当前把 approval key 写进 conversation store 后，新 service 实例已经能直接复用
+- `always` 的验收不能只停在 service 级单测：
+  - 更关键的是同一会话里的下一次真实工具调用不能再次抛出 `permission-request`
+  - 当前 `http-smoke.mjs` 已用 `bash-write-loop -> always`、`bash-read-loop -> no second ask` 把这条语义钉实
+  - 这说明当前审批记忆已经是 conversation 级执行语义，不只是接口层假成功
+
+- 当前第一段 runtime 实现已经证明：
+  - `just-bash` 可以做成真正的宿主目录直挂，但不能直接套它自带的 `ReadWriteFs`
+  - 当前可行做法是 `MountableFs + RuntimeMountedWorkspaceFileSystem`
+  - 同一 session 第二次调用 `bash` 可以读到第一次写入的文件，且宿主目录中确实存在对应文件
+- runtime 工作区生命周期现在还需要和主会话生命周期绑定看：
+  - 仅验证“能写进去、下一次能读出来”还不够
+  - 如果删除会话后不清理对应 runtime workspace，就会留下真正的宿主目录残留
+  - 这条链当前已经补进 `RuntimeHostConversationRecordService.deleteConversation()` 和 HTTP smoke
+- `RuntimeMountedWorkspaceFileSystem` 之前没有实现 `symlink / link / readlink`：
+  - 真实复现里，`ln -s source.txt link.txt` 和 `ln source.txt hard.txt` 都会失败
+  - 这不是上游 `just-bash` 没能力，而是宿主挂载文件系统缺实现
+  - 这条链现在已经补齐，并且 runtime 定向测试已覆盖相对符号链接、绝对 `/workspace/...` 符号链接和硬链接
+- 挂载文件系统补 `symlink` 时，不能把用户给的相对目标原样写进宿主文件系统：
+  - 例如工作区内 `ln -s ../../outside bad-link`，在虚拟根里会被裁到工作区内
+  - 但如果原样写到宿主符号链接，宿主会按真实目录层级解析，可能逃出工作区
+  - 因此宿主层必须把相对目标重新映射成“相对于 link 位置、且仍指向工作区内真实目标”的安全路径
+- `BashToolService` 之前还保留了旧同步模型的描述：
+  - 代码已经是直挂
+  - 但工具描述仍写“命令完成后同步回宿主工作区”
+  - 这会误导模型对写入可见性和时机的判断，已经一并改正
+- `@Optional()` 注入如果写成 `Pick<Service, 'method'>` 这类泛型类型，Nest 真链路拿不到真实 provider token：
+  - 单测里手动 `new Service(mock)` 不会暴露这个问题
+  - 只有 HTTP smoke 这种真实 DI 路径才会暴露“字段一直是 `undefined`”
+  - 对宿主 owner 来说，可选注入也必须保持真实类类型，不能为了缩窄字段改成泛型类型表达
+- 当前效率边界相比上一版同步模型已经改善：
+  - `/workspace` 现在是直接读写宿主目录，不需要执行前后全量同步
+  - 仍未优化的部分主要是 `getAllPaths()` 递归扫描成本，以及更复杂文件操作的覆盖深度
+- 这轮定位出的关键事实是：
+  - `ReadWriteFs.mkdir()` 在 Windows 下可用
+  - 但 `ReadWriteFs.writeFile()` 在处理 `/workspace/...` 或相对文件写入时会误判越界
+  - 因此“直挂可行”和“直接使用 `ReadWriteFs` 可行”不是一回事
+- 这轮已经有真实 smoke 证据，不再只是单测：
+  - fake OpenAI 会先触发 native `bash` 工具调用
+  - follow-up request 会带 `<bash_result>`
+  - smoke 最终还会检查宿主工作区目录中的真实文件
+- 当前最实际的第一段落地方式不是继续硬挂宿主目录，而是：
+  - 宿主真实工作区目录负责持久化
+  - `just-bash` 运行时看到的是虚拟 `/workspace`
+  - 执行前把宿主目录映射成初始文件集
+  - 执行后把 `/workspace` 同步回宿主目录
+- 这个方案仍满足用户要的“不要纯内存”的目标：
+  - 真实状态最终仍落在指定目录
+  - 只是中间执行态不依赖当前 Windows 下不稳定的直挂实现
+- 这轮最值得先打通的证据不是命令覆盖率，而是“同一 session 的第二次 bash 调用能读到第一次写入的文件”，并且宿主工作区目录里也确实存在该文件。
+- `just-bash` 当前最适合在 Garlic Claw 里承担“首个执行后端”，而不是直接承担公开工具语义：
+  - 对模型和插件作者更稳定的名字仍应是 `bash`
+  - `just-bash` 应属于 runtime 驱动实现细节
+- `just-bash` 的 `exec()` 共享的是文件系统，不是 shell 进程状态：
+  - 文件改动可在多次执行间保留
+  - `cwd / export / alias / function` 不会自然续上
+  - 因此 runtime session 不能宣称“持续 shell 会话”
+- 当前最适合继续补的执行层能力不是去伪造 shell 状态，而是补工作区文件工具：
+  - `read / glob / grep` 都只依赖 session 工作区真相源
+  - 它们不需要持久 shell 进程，也不会被 `just-bash` 的无状态限制卡住
+  - 这三类工具在宿主里更适合直接走 `RuntimeWorkspaceFileService`，而不是反向依赖 bash 命令拼装
+- 继续往下补 `write / edit` 时，工作区文件层里的 `ENOENT` 判断不能依赖 `instanceof Error`：
+  - 在当前测试/运行时里，`fs.promises.stat()` 抛出的缺失路径异常可能是普通对象
+  - 只按 `error.code === 'ENOENT'` 识别会更稳
+  - 否则 `write` 这种“先探测路径是否存在，再决定创建/覆盖”的流程会被误判成执行失败
+- `bash` 的工具提示只要明确写清“每次调用会重置 shell 状态”，模型就能把命令写成自包含形式：
+  - 这比在运行时伪造 `alias / function / export` 续存更简单
+  - 也更符合当前 `just-bash` 的真实能力边界
+- `just-bash` 可用的文件系统能力至少包括：
+  - `InMemoryFs`
+  - `OverlayFs`
+  - `ReadWriteFs`
+  - `MountableFs`
+  这说明 Garlic Claw 后续最需要先建的是“工作区挂载 contract”，而不是把后端能力直接写死在工具里。
+- 对当前 `just-bash` 后端，用户要求“环境挂在指定文件夹下，不要仅内存”，因此后续首要验证点不是命令覆盖率，而是：
+  - 真实目录如何挂进 runtime
+  - 执行结果如何稳定落到挂载目录
+  - 清理策略和复用策略如何表达
+- `just-bash` 的能力开关适合纳入 runtime 正式配置，而不是散落到单个工具里：
+  - `network`
+  - 可选的 `python`
+  - 可选的 `javascript`
+  - 自定义命令
+  这和用户要求的“默认允许网络等所有能力，但要预留其他执行后端接口”是一致的。
+- 当前 Windows 下已经观察到真实目录挂载风险：
+  - `ReadWriteFs` / `MountableFs` 在虚拟绝对路径与 Windows 真路径之间容易出现 `resolves outside sandbox`
+  - 这意味着“跨平台”不能只看 README 宣称；必须在 Garlic Claw 自己的工作区挂载模型里做显式验证
+- WSL 验证里，最容易产生假失败的不是 just-bash 本身，而是测试执行方式：
+  - 如果直接在 `/mnt/d/...` 跑，会违背当前仓库的 WSL 约束
+  - 如果同步工作树时用了过宽的排除规则，例如 `--exclude=log`，会把 `src/runtime/log` 这种真实源码也排掉
+  - 如果在仓库根直接跑 `npx jest`，会命中根层默认 Jest 解析，而不是 `packages/server` 自己的配置
+- 如果后续继续支持本机 shell / WSL / 容器等执行后端，runtime 抽象里至少要保留这些独立 owner：
+  - 后端类型
+  - 工作区挂载方式
+  - 能力策略
+  - native `bash` 工具接线
+  - 错误模型与执行日志
+
 - 当前 `SkillRegistryService` 已经会扫描仓库根 `skills/`，但还额外扫描 `~/.garlic-claw/skills`：
   - 位置在 `packages/server/src/execution/skill/skill-registry.service.ts`
   - 因此技能页仍保留了“项目技能 / 用户技能”双来源公开语义
@@ -525,5 +668,82 @@
   - 改成按命令目录最长前缀匹配后，命令提示与发送放行终于用了同一套真相源
 - 当前 `subagent` 迁移的真实状态是：
   - 输入侧已经是 `subagentType + sessionId`
-  - 但结果载荷、task 工具结果和后台账本仍保留 `taskId` 公开投影
-  - 因此这段只能算“迁移进行中”，还不能写成“`taskId` 已退出公开主语义”
+  - `subagent.run` 结果、native `task` 工具主结果，以及 `subagent.task.start/list/get/overview` 的公开摘要都已不再公开账本 `id/taskId`
+  - 后台任务账本仍保留 `taskId` 作为内部投影；只要公开契约和前端不再消费它，这一层内部 owner 可以继续存在
+- `subagent.task.get` 如果继续按 `taskId` 直读账本记录，就会让后台任务记录反向拥有 session：
+  - 更贴近 OpenCode 的收口方式，是把 Host API、HTTP 明细和 SDK facade 都改成按 `sessionId` 读取“该 session 的最新执行投影”
+  - 账本里的 `taskId` 仍可保留给内部调度、异步完成和后台追踪，但不再作为公开续跑入口
+- 后台任务总览如果继续逐条暴露账本记录，会把“session 语义”重新打散成“任务记录列表”：
+  - 更合理的是只展示每个 session 的最新记录
+  - 这样 UI 看到的是 session 当前状态，而不是历史账本 owner 本身
+- runtime 抽象要真正成立，不能只把 `RuntimeCommandService` 做成多后端注册表：
+  - 如果 `ToolRegistryService` 里仍然自己拼 `backend descriptor + capability list + summary`
+  - 那后续接第二个 shell / workspace backend 时，工具层仍然要跟着逐个修改
+  - 更稳的边界是“工具服务声明访问语义，runtime owner 负责角色到后端的映射”
+- 现在更合适的职责分层是：
+  - `BashToolService`、`ReadToolService`、`GlobToolService`、`GrepToolService`、`WriteToolService`、`EditToolService` 各自声明 `readRuntimeAccess()`
+  - `RuntimeToolBackendService` 只根据 `shell | workspace` 角色解析实际 backend descriptor
+  - `RuntimeToolPermissionService` 只消费能力需求和已解析 backend，不反向感知具体工具实现
+- 这样 `R17-2 / R17-3` 才算真正落到代码 owner，而不是只把硬编码从一处挪到另一处。
+- shell backend 真路由补完后，workspace 侧也暴露出同类缺口：
+  - 如果文件工具只是拿 `getDefaultBackend()` 执行，而权限描述改成 `GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND`
+  - 那结果会变成“审批和文案显示是新 backend，真实读写仍是旧 backend”
+  - 这类错位单看 build 和 smoke 不一定暴露，必须用第二 backend 的定向测试直接钉住
+- 更稳的收口方式是：
+  - `RuntimeWorkspaceBackendService` 自己拥有“当前配置 backend”的决议
+  - `RuntimeToolBackendService` 复用它读取 descriptor
+  - `read / glob / grep / write / edit` 也复用它读取真实执行 backend
+- 这样 workspace 语义终于和 shell 语义一样，形成“描述、权限、执行共用同一 backend owner”的稳定边界。
+- 这轮继续对照 `other/opencode/packages/opencode/src/tool/bash.ts / task.ts / todo.ts` 后，当前最该继续收掉的不是工具名，而是“暴露给模型的宿主附加信息”：
+  - `bash` 不该继续把 backend kind 这种 runtime 细节写进描述和 `<bash_result>`
+  - `bash` 的公开描述也不该再提“宿主直挂”这类实现细节；对模型来说，稳定真相只需要是“session 工作区可持续、shell 状态不持续”
+  - `bash` 的公开描述也不该把审批 owner 暴露成模型语义；权限是 runtime 宿主治理，不是 bash 工具 contract 本身
+  - `task` 不该继续把 `provider/model` 这种宿主执行投影塞进 `<task_result>`
+  - `todo` 当前 session 级全量覆盖语义已经和 OpenCode owner 基本一致，不需要为对齐再扩 public contract
+- `just-bash` 当前对 `AbortSignal` 的支持不能直接当成宿主 timeout 语义：
+  - 对慢网络请求，底层命令可能在宿主期望的 timeout 之后仍继续运行
+  - 如果 runtime 只是把 `AbortSignal` 透传给后端，就会出现“配置了 timeout 但实际没有超时”的假语义
+  - 更稳的 owner 是 runtime 自己用竞态超时给出统一决议，再把 `AbortSignal` 当成尽力取消，而不是唯一真相源
+- `bash` 的审批记忆是按 capability 维度生效的，不是“只要批准过一次 bash 就永远不再 ask”：
+  - `bash-write-loop` 走的是 `shellExecution`
+  - 这轮新增的 `bash-timeout-loop` 用 `curl` 额外触发了 `networkAccess`
+  - 因此同一会话里再次出现审批请求是正确语义，不是审批缓存失效
+- WSL 先前的 `167 checks` 不是“新增 bash 步骤被条件跳过”：
+  - WSL 内部目录的 `packages/server/scripts/http-smoke.mjs` 已确认包含 `bash-workdir-loop / bash-timeout-loop / bash-tar-loop`
+  - 重新执行 `/home/test/garlic-claw-wsl-internal` 下的 `npm run smoke:server` 后，日志已明确跑出这 6 个步骤，并得到 `173 checks`
+  - 因此该异常的真实含义是“旧日志已过期”，不是 runtime 或 smoke 脚本仍存在平台分支缺口
+- 对当前仓库这条 runtime 验收链，WSL 已足够承担 Linux 侧等价基线：
+  - 当前关注点是 shell / workspace contract、命令面与路径/超时/打包行为
+  - 这些能力在本仓库现有约束下，WSL 内部目录运行已经能覆盖需要的 Linux 侧行为差异
+  - 在用户明确接受的前提下，继续把“原生 Linux 宿主”设为硬门槛只会阻塞收尾，不会增加当前阶段的有效信息量
+- 当前 smoke 验收还有一个执行层面的约束：
+  - `smoke:server` 与 `smoke:web-ui` 都会触发 `prisma generate`
+  - 如果并行执行，会在 `node_modules/.prisma/client` 上命中 `EBUSY: resource busy or locked`
+  - 这不是代码语义缺口，而是验收流程必须串行的事实
+- 当前与 OpenCode 最关键的文件工具语义差异不是参数细节，而是文件真相源：
+  - OpenCode 的 `bash / read / write / edit / grep / lsp` 围绕项目 worktree
+  - Garlic Claw 当前这套 `bash / read / glob / grep / write / edit` 围绕 session runtime workspace
+  - 如果不先拆清这两个 owner，就不只是 `lsp` 会接错，连本地 shell 与本地文件工具的公开语义都会继续和 OpenCode 错位
+- 仓库里原本已经存在多处“项目根目录”判定重复实现：
+  - `persona-store`
+  - `mcp-config-store`
+  - `skill-registry`
+  - `runtime-host-subagent-type-registry`
+- 先把这层路径真相源统一成 `project-workspace-root` 是值得的：
+  - 它不会改变现有 runtime/workspace 语义
+  - 但能为后续 project/worktree backend 与 `lsp` owner 提供共同锚点
+- 在这个基础上先补 `ProjectWorktreeFileService` 是合理的：
+  - 它把“真实项目目录内的安全文件访问”从 runtime session workspace 文件链中拆了出来
+  - 当前还没有改公开工具名，因此不会立刻破坏已通过的 runtime smoke 语义
+  - 但后续无论是接 `lsp`，还是把 OpenCode 风格 `read / write / edit / grep / glob` 迁回项目语义，都已经有了可复用底座
+- 再往前走一步时，显式 project root override 也值得先补：
+  - 未来如果要让受控上下文指向某个特定项目目录，不能一直隐式依赖 `process.cwd()`
+  - 用 `GARLIC_CLAW_PROJECT_WORKSPACE_PATH` 先把这层入口做出来，可以避免后续 project/worktree 工具链再重复发明“根目录从哪来”
+- Node 测试里恢复环境变量时，`process.env.KEY = undefined` 不是“删除变量”，而是把值写成字符串 `'undefined'`：
+  - 对 `readRuntimeJustBashOptions()` 这类严格读取布尔值/整数的逻辑，会被误判成非法配置
+  - 这次 `runtime-just-bash.service.spec.ts` 连续失败的真实原因不是后端坏了，而是 spec 的 `afterEach()` 污染了后续用例环境
+  - 正确恢复方式是：原值不存在时 `delete process.env.KEY`，原值存在时再恢复字符串
+- 已按用户要求复核并移除当前阶段的 `lsp` 计划：
+  - 仓库主代码里没有真正的 `lsp` 工具、LSP 服务或前后端接线实现
+  - 当前只存在 `TODO.md / task_plan.md / findings.md` 里的预备设计结论
+  - 因此这次移除的是规划项，不是运行时代码
