@@ -267,6 +267,7 @@ describe('PluginBootstrapService', () => {
       'builtin.context-compaction',
       'builtin.conversation-title',
       'builtin.memory-context',
+      'builtin.runtime-tools',
       'builtin.subagent-delegate',
     ]);
     expect(service.reloadBuiltin('builtin.memory-context')).toBe('builtin.memory-context');
@@ -298,8 +299,17 @@ describe('PluginBootstrapService', () => {
         expect.objectContaining({
           manifest: expect.objectContaining({
             tools: expect.arrayContaining([
-              expect.objectContaining({ name: 'delegate_summary' }),
-              expect.objectContaining({ name: 'delegate_summary_background' }),
+              expect.objectContaining({ name: 'bash' }),
+              expect.objectContaining({ name: 'read' }),
+            ]),
+          }),
+          pluginId: 'builtin.runtime-tools',
+        }),
+        expect.objectContaining({
+          manifest: expect.objectContaining({
+            tools: expect.arrayContaining([
+              expect.objectContaining({ name: 'subagent' }),
+              expect.objectContaining({ name: 'subagent_background' }),
             ]),
           }),
           pluginId: 'builtin.subagent-delegate',

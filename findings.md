@@ -4,6 +4,60 @@
 
 ## 2026-04-20
 
+## 2026-04-21
+
+- 当前本地插件执行链虽然已经能承载工具与 hook，但它拿到的宿主能力仍停在 `plugin-sdk host facade` 既有白名单：
+  - `bash / read / glob / grep / write / edit` 之所以还挂在 `ToolRegistryService`，不是因为 builtin local plugin 形态本身不行
+  - 而是因为还没有正式的 runtime host method 可以让本地插件安全复用 runtime backend 与审批链
+- 如果直接把现有执行服务塞回 builtin plugin definition，而不补 host contract，只会把 native owner 换个位置继续耦合：
+  - 权限审查点会重新散到插件实现
+  - 其他本地插件也没法复用
+  - `ToolRegistryService` 仍得替这些工具保留额外特判
+- 更稳的收口方式是：
+  - shared 增加正式 `runtime.command.* / runtime.fs.*` host method 与对应权限
+  - server 在 host 层统一复用 `BashToolService / ReadToolService / ...` 的参数校验、runtime access 与审批
+  - builtin `runtime-tools` 只负责把这些 host method 暴露成 `bash / read / glob / grep / write / edit`
+
+- 事件日志分页如果只写成 `record.id !== query.cursor`，看起来像支持 `cursor`，实际上只是“去掉当前记录”，不是“继续下一页”：
+  - 这样前端的 `loadMore` 会被本地 `dedupe` 掩盖，表面不报错，但永远拿不到更旧的日志。
+  - 更稳的 owner 是先完成过滤，再按当前过滤结果集查找 `cursor`，命中后从其后一条开始切片；未命中过滤结果时直接返回空页。
+  - 这条语义需要同时在服务端分页测试和前端 composable 的 `loadMore` 测试里钉住，否则 fresh build + smoke 很容易漏掉。
+
+- yolo 的 fresh 证据不能只靠 service 单测：
+  - 默认 smoke 原先把“首轮 bash 一定出现 `permission-request`”写死了
+  - 这会让 `GARLIC_CLAW_RUNTIME_APPROVAL_MODE=yolo` 虽然代码可运行，但端到端验收天然误报失败
+  - 更稳的 owner 是让 smoke 自己识别 runtime 审批模式，并把“是否出现 permission-request”当成随模式变化的语义断言
+- 对 yolo 来说，“没有审批弹窗”还不够：
+  - 还要额外确认 pending 权限列表保持为空
+  - 否则可能出现 SSE 没回事件，但服务端其实留下未处理 pending request 的半坏状态
+- 如果继续要求 yolo smoke 也执行“覆盖全部后端路由”检查，就不能只靠自然主链：
+  - `POST /chat/conversations/:id/runtime-permissions/:requestId/reply` 在 yolo 下不会自然命中
+  - 最小且稳定的补法是增加一个 `missing-request` 的 404 覆盖请求
+  - 这样既保留 yolo 主语义，又不会为了覆盖率把 smoke 重新拉回 review 行为
+- 当前 `R17-7` 的跨平台收尾口径已经可以固定为：
+  - Windows fresh 证据来自当前工作树本地 `build / lint / smoke`
+  - Linux 侧等价基线来自 WSL 内部目录，不再引用过期的 2026-04-20 日志
+  - 2026-04-21 新日志已经证明 `node v24.9.0`、runtime 定向 jest 与 `smoke:server` 都在 WSL 内部目录 fresh 通过
+
+- 用户当前目标是“能操控整个环境的 agent”，不是“只操控单个代码仓库的 agent”。
+- 因此 `other/opencode` 值得对齐的是：
+  - 工具抽象层次
+  - 参数与输出收口方式
+  - 权限审查与执行链 owner
+  不是把它当前 `project/worktree` 场景限定直接当成 Garlic Claw 通用工具的主语义。
+- 当前仓库里最该修的不是“有没有 project/worktree backend”，而是“工具层把固定 `/workspace` 写死成了 contract”：
+  - `bash` 的 `workdir` 说明与校验都写死 `/workspace`
+  - `read / glob / grep / write / edit` 的说明与路径解析也都写死 `/workspace`
+  - 这会把工具 contract 缩窄成单一场景，不利于后续接 WSL / 本机 shell / 容器等更宽执行环境
+- 更稳的 owner 应该是：
+  - backend 声明当前暴露哪些路径语义
+  - 工具只说“访问 backend 可见路径”
+  - 权限层只审能力与目标路径
+- yolo 也不该做成“跳过所有权限系统”的散落特判：
+  - 更适合作为 runtime 默认审批模式
+  - 保留 capability declaration、事件流和审计记录
+  - 只把默认决议从 `ask` 改成直接放行
+
 - 这轮“天气改成 skill”有一个不能忽略的边界：
   - 当前 `bash` 工具的 `cwd` 被限制在 `/workspace`
   - skill 仓库目录不在 `/workspace`
@@ -639,13 +693,13 @@
 - `subagent` 继续向 OpenCode `task` 靠拢时，最稳的是落真实 `subagent type registry`，而不是继续保留 `profile` 壳：
   - `subagentType` 对应宿主真实 owner
   - `providerId / modelId / system / toolNames` 继续作为显式 override
-  - 类型真相源直接是 `subagent-types/*.yaml`，不会退回空壳枚举
+  - 类型真相源直接是仓库根 `subagent/*.yaml`，不会退回空壳枚举
 - `subagent type` 最合适的解析顺序是：
   - 原始 request 先保留，用于续跑与持久化
   - 执行前再解析 type 默认值，补齐 provider / model / system / tools
   - 最后允许显式字段覆盖 type 默认值
 - 插件配置里的 `selectSubagentType` 不需要插件作者手写 options：
-  - 宿主提供 `GET /subagent-types`
+  - 宿主提供 `GET /plugin-subagents/types`
   - 前端配置表单只在 schema 用到该 specialType 时拉取
   - 这和现有 `selectProvider / selectPersona` 的 owner 一致
 - 当前 Garlic Claw 这条链还差 OpenCode 的两层关键 owner：

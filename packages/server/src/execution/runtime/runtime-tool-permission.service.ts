@@ -44,6 +44,8 @@ type RuntimePermissionEvent =
       result: RuntimePermissionReplyResult;
     };
 
+type RuntimeApprovalMode = 'review' | 'yolo';
+
 @Injectable()
 export class RuntimeToolPermissionService {
   private readonly approvals = new Map<string, Set<string>>();
@@ -72,6 +74,10 @@ export class RuntimeToolPermissionService {
       throw new ForbiddenException(
         `当前 runtime 权限策略拒绝能力: ${deniedCapabilities.join(', ')}`,
       );
+    }
+
+    if (readRuntimeApprovalMode() === 'yolo') {
+      return;
     }
 
     const capabilitiesToAsk = input.requiredCapabilities.filter((capability) => {
@@ -240,4 +246,15 @@ export class RuntimeToolPermissionService {
     this.approvals.set(conversationId, approvals);
     return approvals;
   }
+}
+
+function readRuntimeApprovalMode(): RuntimeApprovalMode {
+  const configuredMode = process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE?.trim().toLowerCase();
+  if (!configuredMode || configuredMode === 'review') {
+    return 'review';
+  }
+  if (configuredMode === 'yolo') {
+    return 'yolo';
+  }
+  throw new ForbiddenException('GARLIC_CLAW_RUNTIME_APPROVAL_MODE 只能是 review / yolo');
 }

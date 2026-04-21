@@ -11,18 +11,18 @@ describe('SkillToolService', () => {
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'garlic-claw-skill-tool-'));
-    await fs.mkdir(path.join(tempRoot, 'skills', 'planner', 'templates'), { recursive: true });
-    await fs.writeFile(path.join(tempRoot, 'skills', 'planner', 'SKILL.md'), [
+    await fs.mkdir(path.join(tempRoot, 'skills', 'weather-query', 'scripts'), { recursive: true });
+    await fs.writeFile(path.join(tempRoot, 'skills', 'weather-query', 'SKILL.md'), [
       '---',
-      'name: planner',
-      'description: 先拆任务，再逐步执行。',
+      'name: weather-query',
+      'description: 查询指定地点天气。',
       '---',
       '',
-      '# planner',
+      '# weather-query',
       '',
-      '先拆任务，再逐步执行。',
+      '请先确认地点，再查询天气。',
     ].join('\n'), 'utf8');
-    await fs.writeFile(path.join(tempRoot, 'skills', 'planner', 'templates', 'task.md'), '# task\n', 'utf8');
+    await fs.writeFile(path.join(tempRoot, 'skills', 'weather-query', 'scripts', 'weather.js'), 'console.log("weather")\n', 'utf8');
     registry = new SkillRegistryService({
       skillsRoot: path.join(tempRoot, 'skills'),
     });
@@ -34,42 +34,43 @@ describe('SkillToolService', () => {
   });
 
   it('loads skill content with base directory and sampled files', async () => {
-    await expect(service.loadSkill('planner')).resolves.toEqual(expect.objectContaining({
-      name: 'planner',
-      description: '先拆任务，再逐步执行。',
-      entryPath: 'planner/SKILL.md',
-      content: expect.stringContaining('# planner'),
+    await expect(service.loadSkill('weather-query')).resolves.toEqual(expect.objectContaining({
+      name: 'weather-query',
+      description: '查询指定地点天气。',
+      entryPath: 'weather-query/SKILL.md',
+      content: expect.stringContaining('# weather-query'),
       files: expect.arrayContaining([
         expect.objectContaining({
-          path: 'templates/task.md',
+          executable: true,
+          path: 'scripts/weather.js',
         }),
       ]),
-      modelOutput: expect.stringContaining('<skill_content name="planner">'),
+      modelOutput: expect.stringContaining('<skill_content name="weather-query">'),
     }));
   });
 
   it('renders available_skills with repo-relative location metadata', async () => {
     await expect(service.listAvailableSkills()).resolves.toEqual([
       expect.objectContaining({
-        entryPath: 'planner/SKILL.md',
-        name: 'planner',
+        entryPath: 'weather-query/SKILL.md',
+        name: 'weather-query',
       }),
     ]);
 
     const description = service.buildToolDescription(await service.listAvailableSkills());
     expect(description).toContain('<available_skills>');
-    expect(description).toContain('<name>planner</name>');
-    expect(description).toContain('<location>skills/planner/SKILL.md</location>');
+    expect(description).toContain('<name>weather-query</name>');
+    expect(description).toContain('<location>skills/weather-query/SKILL.md</location>');
   });
 
   it('filters denied skills from the native skill catalog and blocks direct loading', async () => {
-    const skill = await registry.getSkillByName('planner');
+    const skill = await registry.getSkillByName('weather-query');
     expect(skill).toBeTruthy();
     await registry.updateSkillGovernance(skill!.id, {
       loadPolicy: 'deny',
     });
 
     await expect(service.listAvailableSkills()).resolves.toEqual([]);
-    await expect(service.loadSkill('planner')).rejects.toThrow('denied by governance policy');
+    await expect(service.loadSkill('weather-query')).rejects.toThrow('denied by governance policy');
   });
 });

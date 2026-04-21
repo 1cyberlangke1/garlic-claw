@@ -30,6 +30,7 @@ const HOST_WORKSPACE_BACKEND_DESCRIPTOR: RuntimeBackendDescriptor = {
     workspaceRead: 'allow',
     workspaceWrite: 'allow',
   },
+  visibleRoot: '/',
 };
 
 interface RuntimeWorkspaceHostResolvedPath extends RuntimeWorkspaceResolvedPath {
@@ -52,14 +53,14 @@ export class RuntimeWorkspaceFileService implements RuntimeWorkspaceBackend {
     return HOST_WORKSPACE_BACKEND_DESCRIPTOR;
   }
 
-  getVirtualWorkspaceRoot(): string {
-    return this.runtimeWorkspaceService.getVirtualWorkspaceRoot();
+  getVisibleRoot(): string {
+    return this.runtimeWorkspaceService.getVisibleRoot();
   }
 
   async resolvePath(sessionId: string, inputPath?: string): Promise<RuntimeWorkspaceHostResolvedPath> {
     const workspaceRoot = await this.runtimeWorkspaceService.resolveWorkspaceRoot(sessionId);
-    const virtualPath = resolveRuntimeWorkspacePath(this.getVirtualWorkspaceRoot(), inputPath);
-    const hostPath = toRuntimeHostPath(workspaceRoot, this.getVirtualWorkspaceRoot(), virtualPath);
+    const virtualPath = resolveRuntimeWorkspacePath(this.getVisibleRoot(), inputPath);
+    const hostPath = toRuntimeHostPath(workspaceRoot, this.getVisibleRoot(), virtualPath);
     try {
       const stat = await fsPromises.stat(hostPath);
       return {
@@ -191,14 +192,14 @@ function resolveRuntimeWorkspacePath(workspaceRoot: string, inputPath?: string):
   const normalized = inputPath.trim().startsWith('/')
     ? normalizeRuntimeVirtualPath(inputPath.trim())
     : normalizeRuntimeVirtualPath(`${workspaceRoot}/${inputPath.trim()}`);
-  if (normalized !== workspaceRoot && !normalized.startsWith(`${workspaceRoot}/`)) {
+  if (workspaceRoot !== '/' && normalized !== workspaceRoot && !normalized.startsWith(`${workspaceRoot}/`)) {
     throw new BadRequestException(`路径必须位于 ${workspaceRoot} 内`);
   }
   return normalized;
 }
 
 function toRuntimeHostPath(workspaceRoot: string, virtualRoot: string, virtualPath: string): string {
-  const relativePath = virtualPath === virtualRoot ? '' : virtualPath.slice(virtualRoot.length + 1);
+  const relativePath = readRelativeRuntimePath(virtualRoot, virtualPath);
   const hostPath = relativePath ? path.join(workspaceRoot, ...relativePath.split('/')) : workspaceRoot;
   const resolved = path.resolve(hostPath);
   const normalizedWorkspaceRoot = path.resolve(workspaceRoot);
@@ -206,6 +207,13 @@ function toRuntimeHostPath(workspaceRoot: string, virtualRoot: string, virtualPa
     throw new BadRequestException(`路径越界: ${virtualPath}`);
   }
   return resolved;
+}
+
+function readRelativeRuntimePath(virtualRoot: string, virtualPath: string): string {
+  if (virtualRoot === '/') {
+    return virtualPath.replace(/^\/+/, '');
+  }
+  return virtualPath === virtualRoot ? '' : virtualPath.slice(virtualRoot.length + 1);
 }
 
 async function collectRuntimeWorkspaceFiles(

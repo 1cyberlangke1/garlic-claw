@@ -89,7 +89,7 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
     async executeCommand(input) {
       return {
         backendKind: kind,
-        cwd: input.workdir ?? '/workspace',
+        cwd: input.workdir ?? '/',
         exitCode: 0,
         sessionId: input.sessionId,
         stderr: '',
@@ -116,6 +116,7 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       };
     },
     getKind() {
@@ -129,7 +130,7 @@ function createWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
     async editTextFile() {
       return {
         occurrences: 1,
-        path: '/workspace/mock.txt',
+        path: '/mock.txt',
       };
     },
     getDescriptor() {
@@ -151,24 +152,25 @@ function createWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       };
     },
     getKind() {
       return kind;
     },
-    getVirtualWorkspaceRoot() {
-      return '/workspace';
+    getVisibleRoot() {
+      return '/';
     },
     async listFiles() {
       return {
-        basePath: '/workspace',
+        basePath: '/',
         files: [],
       };
     },
     async readDirectoryEntries() {
       return {
         entries: [],
-        path: '/workspace',
+        path: '/',
       };
     },
     async readExistingPath() {
@@ -176,20 +178,20 @@ function createWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
         exists: true,
         hostPath: '/tmp/mock.txt',
         type: 'file' as const,
-        virtualPath: '/workspace/mock.txt',
+        virtualPath: '/mock.txt',
         workspaceRoot: '/tmp',
       };
     },
     async readTextFile() {
       return {
         content: 'mock',
-        path: '/workspace/mock.txt',
+        path: '/mock.txt',
       };
     },
     async writeTextFile() {
       return {
         created: true,
-        path: '/workspace/mock.txt',
+        path: '/mock.txt',
       };
     },
   };

@@ -266,6 +266,7 @@ describe('ConversationTaskService', () => {
                   workspaceRead: 'allow',
                   workspaceWrite: 'allow',
                 },
+                visibleRoot: '/',
               },
               conversationId,
               messageId: String(assistantMessage.id),

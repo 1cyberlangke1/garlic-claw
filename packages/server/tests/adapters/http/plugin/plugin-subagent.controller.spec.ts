@@ -1,6 +1,6 @@
 import { PluginController } from '../../../../src/adapters/http/plugin/plugin.controller';
 
-describe('PluginController subagent task routes', () => {
+describe('PluginController subagent routes', () => {
   const pluginRemoteBootstrapService = {
     issueBootstrap: jest.fn(),
   };
@@ -24,7 +24,7 @@ describe('PluginController subagent task routes', () => {
     setPluginStorage: jest.fn(),
   };
   const runtimeHostSubagentRunnerService = {
-    getTaskOrThrow: jest.fn(),
+    getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
     listTypes: jest.fn(),
   };
@@ -50,11 +50,10 @@ describe('PluginController subagent task routes', () => {
     );
   });
 
-  it('returns the background subagent task overview', async () => {
+  it('returns the background subagent overview', async () => {
     runtimeHostSubagentRunnerService.listOverview.mockReturnValue({
-      tasks: [
+      subagents: [
         {
-          id: 'subagent-task-1',
           sessionId: 'subagent-session-1',
           sessionMessageCount: 2,
           sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
@@ -63,7 +62,7 @@ describe('PluginController subagent task routes', () => {
           runtimeKind: 'local',
           status: 'completed',
           requestPreview: '请帮我总结当前对话',
-          resultPreview: '这是后台任务总结',
+          resultPreview: '这是后台子代理总结',
           providerId: 'openai',
           modelId: 'gpt-5.2',
           writeBackStatus: 'sent',
@@ -75,19 +74,18 @@ describe('PluginController subagent task routes', () => {
       ],
     });
 
-    expect(controller.listSubagentTaskOverview()).toEqual({
-      tasks: [
+    expect(controller.listSubagentOverview()).toEqual({
+      subagents: [
         expect.objectContaining({
-          id: 'subagent-task-1',
+          sessionId: 'subagent-session-1',
           status: 'completed',
         }),
       ],
     });
   });
 
-  it('returns one persisted background subagent task by id', async () => {
-    runtimeHostSubagentRunnerService.getTaskOrThrow.mockReturnValue({
-      id: 'subagent-task-1',
+  it('returns one persisted background subagent session projection', async () => {
+    runtimeHostSubagentRunnerService.getSubagentOrThrow.mockReturnValue({
       sessionId: 'subagent-session-1',
       sessionMessageCount: 2,
       sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
@@ -96,7 +94,7 @@ describe('PluginController subagent task routes', () => {
       runtimeKind: 'local',
       status: 'completed',
       requestPreview: '请帮我总结当前对话',
-      resultPreview: '这是后台任务总结',
+      resultPreview: '这是后台子代理总结',
       providerId: 'openai',
       modelId: 'gpt-5.2',
       writeBackStatus: 'sent',
@@ -122,10 +120,10 @@ describe('PluginController subagent task routes', () => {
       result: {
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        text: '这是后台任务总结',
+        text: '这是后台子代理总结',
         message: {
           role: 'assistant',
-          content: '这是后台任务总结',
+          content: '这是后台子代理总结',
         },
         finishReason: 'stop',
         toolCalls: [],
@@ -133,11 +131,11 @@ describe('PluginController subagent task routes', () => {
       },
     });
 
-    expect(controller.getSubagentTask('subagent-task-1')).toEqual(
+    expect(controller.getSubagent('subagent-session-1')).toEqual(
       expect.objectContaining({
-        id: 'subagent-task-1',
+        sessionId: 'subagent-session-1',
         result: expect.objectContaining({
-          text: '这是后台任务总结',
+          text: '这是后台子代理总结',
         }),
       }),
     );

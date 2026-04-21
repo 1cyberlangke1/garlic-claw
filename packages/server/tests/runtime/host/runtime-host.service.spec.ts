@@ -7,6 +7,19 @@ import { AiProviderSettingsService } from '../../../src/ai-management/ai-provide
 import { createSingleUserProfile } from '../../../src/auth/single-user-auth';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
+import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
+import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
+import { RuntimeWorkspaceFileService } from '../../../src/execution/file/runtime-workspace-file.service';
+import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
+import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
+import { ReadToolService } from '../../../src/execution/read/read-tool.service';
+import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
+import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
+import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
+import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
+import { RuntimeWorkspaceBackendService } from '../../../src/execution/runtime/runtime-workspace-backend.service';
+import { RuntimeWorkspaceService } from '../../../src/execution/runtime/runtime-workspace.service';
+import { WriteToolService } from '../../../src/execution/write/write-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -20,20 +33,22 @@ import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/
 import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-host-knowledge.service';
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
+import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
+import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 
-const subagentTaskStorePaths: string[] = [];
+const subagentStorePaths: string[] = [];
 const subagentSessionStorePaths: string[] = [];
+const runtimeWorkspaceRoots: string[] = [];
 let fixtureConversationId = 'conversation-1';
 const fixtureConversationTitle = 'Conversation conversation-1';
 
 describe('RuntimeHostService', () => {
   afterEach(() => {
-    while (subagentTaskStorePaths.length > 0) {
-      const nextPath = subagentTaskStorePaths.pop();
+    while (subagentStorePaths.length > 0) {
+      const nextPath = subagentStorePaths.pop();
       if (nextPath && fs.existsSync(nextPath)) {
         fs.unlinkSync(nextPath);
       }
@@ -44,7 +59,14 @@ describe('RuntimeHostService', () => {
         fs.unlinkSync(nextPath);
       }
     }
-    delete process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH;
+    while (runtimeWorkspaceRoots.length > 0) {
+      const nextPath = runtimeWorkspaceRoots.pop();
+      if (nextPath && fs.existsSync(nextPath)) {
+        fs.rmSync(nextPath, { force: true, recursive: true });
+      }
+    }
+    delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
+    delete process.env.GARLIC_CLAW_SUBAGENTS_PATH;
     delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
   });
 
@@ -85,6 +107,7 @@ describe('RuntimeHostService', () => {
       new RuntimeHostKnowledgeService(),
       runtimeHostPluginDispatchService,
       new RuntimeHostPluginRuntimeService(),
+      {} as never,
       {} as never,
       new RuntimeHostUserContextService(),
       new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
@@ -349,7 +372,7 @@ describe('RuntimeHostService', () => {
     });
   });
 
-  it('runs subagent requests and tracks background subagent tasks', async () => {
+  it('runs subagent requests and tracks background subagents', async () => {
     jest.useFakeTimers();
     const { service } = createFixture({
       permissions: ['conversation:read', 'conversation:write', 'subagent:run'],
@@ -375,7 +398,6 @@ describe('RuntimeHostService', () => {
       providerId: 'openai',
       sessionId: expect.any(String),
       sessionMessageCount: 2,
-      taskId: expect.any(String),
       text: 'Generated: 请帮我总结当前对话',
       toolCalls: [],
       toolResults: [],
@@ -386,14 +408,14 @@ describe('RuntimeHostService', () => {
         totalTokens: 25,
       },
     });
-    await expect(memoryPluginCall(service, 'subagent.task.list', {}, {
+    await expect(memoryPluginCall(service, 'subagent.list', {}, {
       userId: 'user-1',
       conversationId: fixtureConversationId,
     })).resolves.toEqual([]);
     await memoryPluginCall(service, 'conversation.title.set', {
       title: fixtureConversationTitle,
     }, { userId: 'user-1', conversationId: fixtureConversationId });
-    const started = await memoryPluginCall(service, 'subagent.task.start', {
+    const started = await memoryPluginCall(service, 'subagent.start', {
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -410,25 +432,25 @@ describe('RuntimeHostService', () => {
       },
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(started).toMatchObject({
-      id: 'subagent-task-2',
+      sessionId: expect.any(String),
       pluginDisplayName: 'Memory Context',
       status: 'queued',
       writeBackStatus: 'pending',
     });
     await jest.runAllTimersAsync();
-    await expect(memoryPluginCall(service, 'subagent.task.list', {}, {
+    await expect(memoryPluginCall(service, 'subagent.list', {}, {
       userId: 'user-1',
       conversationId: fixtureConversationId,
     })).resolves.toEqual([
       expect.objectContaining({
-        id: 'subagent-task-2',
+        sessionId: (started as { sessionId: string }).sessionId,
         status: 'completed',
       }),
     ]);
-    await expect(memoryPluginCall(service, 'subagent.task.get', {
-      taskId: 'subagent-task-2',
+    await expect(memoryPluginCall(service, 'subagent.get', {
+      sessionId: (started as { sessionId: string }).sessionId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
-      id: 'subagent-task-2',
+      sessionId: (started as { sessionId: string }).sessionId,
       result: {
         text: 'Generated: 请帮我总结当前对话',
       },
@@ -447,7 +469,7 @@ describe('RuntimeHostService', () => {
     jest.useRealTimers();
   });
 
-  it('records subagent task failures and write-back failures without fabricating sent status', async () => {
+  it('records subagent failures and write-back failures without fabricating sent status', async () => {
     jest.useFakeTimers();
     const {
       runtimeHostConversationMessageService,
@@ -459,7 +481,7 @@ describe('RuntimeHostService', () => {
     runtimeHostConversationMessageService.sendMessage = jest.fn(() => {
       throw new Error('message.send failed');
     });
-    const started = await memoryPluginCall(service, 'subagent.task.start', {
+    const started = await memoryPluginCall(service, 'subagent.start', {
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -480,8 +502,8 @@ describe('RuntimeHostService', () => {
       writeBackStatus: 'pending',
     });
     await jest.runAllTimersAsync();
-    await expect(memoryPluginCall(service, 'subagent.task.get', {
-      taskId: 'subagent-task-1',
+    await expect(memoryPluginCall(service, 'subagent.get', {
+      sessionId: (started as { sessionId: string }).sessionId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       status: 'completed',
       writeBackError: 'message.send failed',
@@ -491,7 +513,7 @@ describe('RuntimeHostService', () => {
     (runtimeHostSubagentRunnerService as any).executeSubagent = async () => {
       throw new Error('subagent failed');
     };
-    const failed = await memoryPluginCall(service, 'subagent.task.start', {
+    const failed = await memoryPluginCall(service, 'subagent.start', {
       messages: [
         {
           content: '再次总结',
@@ -502,12 +524,12 @@ describe('RuntimeHostService', () => {
       providerId: 'openai',
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(failed).toMatchObject({
-      id: 'subagent-task-2',
+      sessionId: expect.any(String),
       status: 'queued',
     });
     await jest.runAllTimersAsync();
-    await expect(memoryPluginCall(service, 'subagent.task.get', {
-      taskId: 'subagent-task-2',
+    await expect(memoryPluginCall(service, 'subagent.get', {
+      sessionId: (failed as { sessionId: string }).sessionId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       error: 'subagent failed',
       status: 'error',
@@ -960,9 +982,9 @@ function createFixture(input?: {
 }) {
   const subagentStorePath = path.join(os.tmpdir(), `gc-server-host-subagent-${Date.now()}-${Math.random()}.json`);
   const subagentSessionPath = path.join(os.tmpdir(), `gc-server-host-subagent-session-${Date.now()}-${Math.random()}.json`);
-  process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH = subagentStorePath;
+  process.env.GARLIC_CLAW_SUBAGENTS_PATH = subagentStorePath;
   process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH = subagentSessionPath;
-  subagentTaskStorePaths.push(subagentStorePath);
+  subagentStorePaths.push(subagentStorePath);
   subagentSessionStorePaths.push(subagentSessionPath);
   const pluginPersistenceService = new PluginPersistenceService();
   const pluginBootstrapService = new PluginBootstrapService(
@@ -1043,7 +1065,7 @@ function createFixture(input?: {
     {
       invokeHook: jest.fn(),
     } as never,
-    new RuntimeHostSubagentTaskStoreService(),
+    new RuntimeHostSubagentStoreService(),
   );
   (runtimeHostSubagentRunnerService as any).executeSubagent = async ({ request }: any) => ({
     finishReason: 'stop',
@@ -1106,6 +1128,25 @@ function createFixture(input?: {
     runtimeHostLlmService,
     runtimeHostSubagentRunnerService,
     service: (() => {
+      const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-host-'));
+      process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+      runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+      const runtimeWorkspaceService = new RuntimeWorkspaceService();
+      const runtimeWorkspaceFileService = new RuntimeWorkspaceFileService(runtimeWorkspaceService);
+      const runtimeCommandService = new RuntimeCommandService([new RuntimeJustBashService(runtimeWorkspaceService)]);
+      const runtimeWorkspaceBackendService = new RuntimeWorkspaceBackendService([runtimeWorkspaceFileService]);
+      const runtimeToolBackendService = new RuntimeToolBackendService(runtimeCommandService, runtimeWorkspaceBackendService);
+      const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
+      const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
+        new BashToolService(runtimeCommandService, runtimeToolBackendService),
+        new ReadToolService(runtimeWorkspaceBackendService),
+        new GlobToolService(runtimeWorkspaceBackendService),
+        new GrepToolService(runtimeWorkspaceBackendService),
+        new WriteToolService(runtimeWorkspaceBackendService),
+        new EditToolService(runtimeWorkspaceBackendService),
+        runtimeToolBackendService,
+        runtimeToolPermissionService,
+      );
       const runtimeHostPluginDispatchService = { registerHostCaller: jest.fn() } as never;
       const service = new RuntimeHostService(
         pluginBootstrapService,
@@ -1117,6 +1158,7 @@ function createFixture(input?: {
         new RuntimeHostKnowledgeService(),
         runtimeHostPluginDispatchService,
         new RuntimeHostPluginRuntimeService(),
+        runtimeHostRuntimeToolService,
         runtimeHostSubagentRunnerService,
         new RuntimeHostUserContextService(),
         new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),

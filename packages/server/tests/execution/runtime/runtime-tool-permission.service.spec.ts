@@ -8,6 +8,7 @@ describe('RuntimeToolPermissionService', () => {
   let conversationId: string;
   let service: RuntimeToolPermissionService;
   let conversationsPath: string;
+  const originalApprovalMode = process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE;
 
   beforeEach(() => {
     conversationsPath = path.join(
@@ -25,6 +26,11 @@ describe('RuntimeToolPermissionService', () => {
 
   afterEach(() => {
     delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
+    if (originalApprovalMode === undefined) {
+      delete process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE;
+    } else {
+      process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE = originalApprovalMode;
+    }
     try {
       if (fs.existsSync(conversationsPath)) {
         fs.unlinkSync(conversationsPath);
@@ -54,6 +60,7 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       },
       conversationId,
       requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
@@ -82,6 +89,7 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       },
       conversationId,
       messageId: 'message-1',
@@ -122,6 +130,7 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       },
       conversationId,
       requiredCapabilities: ['shellExecution'],
@@ -157,6 +166,7 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       },
       conversationId,
       requiredCapabilities: ['shellExecution'],
@@ -191,6 +201,7 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       },
       conversationId,
       requiredCapabilities: ['shellExecution'],
@@ -220,6 +231,7 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       },
       conversationId,
       requiredCapabilities: ['networkAccess'],
@@ -246,11 +258,45 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       },
       conversationId,
       requiredCapabilities: ['networkAccess'],
       summary: '联网执行命令',
       toolName: 'bash',
     })).rejects.toThrow('权限策略拒绝');
+  });
+
+  it('allows ask capabilities directly in yolo mode without creating pending requests', async () => {
+    process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE = 'yolo';
+
+    await expect(service.review({
+      backend: {
+        capabilities: {
+          networkAccess: true,
+          persistentFilesystem: true,
+          persistentShellState: false,
+          shellExecution: true,
+          workspaceRead: true,
+          workspaceWrite: true,
+        },
+        kind: 'just-bash',
+        permissionPolicy: {
+          networkAccess: 'ask',
+          persistentFilesystem: 'allow',
+          persistentShellState: 'deny',
+          shellExecution: 'ask',
+          workspaceRead: 'allow',
+          workspaceWrite: 'allow',
+        },
+        visibleRoot: '/',
+      },
+      conversationId,
+      requiredCapabilities: ['shellExecution', 'networkAccess'],
+      summary: '联网执行 bash 命令',
+      toolName: 'bash',
+    })).resolves.toBeUndefined();
+
+    expect(service.listPendingRequests(conversationId)).toEqual([]);
   });
 });

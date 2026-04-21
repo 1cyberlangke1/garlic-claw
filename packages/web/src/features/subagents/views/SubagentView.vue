@@ -1,13 +1,13 @@
 <template>
-  <div class="plugins-page subagent-tasks-page">
-    <section class="task-hero">
-      <header class="task-hero-header">
+  <div class="plugins-page subagent-page">
+    <section class="subagent-hero">
+      <header class="subagent-hero-header">
         <div>
-          <span class="hero-kicker">Background Subagent Tasks</span>
-          <h1>后台 Subagent 任务</h1>
-          <p>统一查看插件发起的后台子代理任务、完成态结果和消息回写状态。</p>
+          <span class="hero-kicker">Background Subagents</span>
+          <h1>后台 Subagent</h1>
+          <p>统一查看插件发起的后台子代理、完成态结果和消息回写状态。</p>
         </div>
-        <div class="task-hero-side">
+        <div class="subagent-hero-side">
           <button
             type="button"
             class="hero-action icon-only"
@@ -17,9 +17,9 @@
             <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
           </button>
           <div class="hero-note">
-            <span class="hero-note-label">当前任务面</span>
+            <span class="hero-note-label">当前子代理面</span>
             <strong>{{ heroHeadline }}</strong>
-            <p>同步调用继续保留给工具即时返回，长任务则在这里被持久化观察和追踪。</p>
+            <p>同步调用继续保留给工具即时返回，后台子代理则在这里被持久化观察和追踪。</p>
           </div>
         </div>
       </header>
@@ -40,12 +40,12 @@
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
 
-    <section class="task-list-panel">
+    <section class="subagent-list-panel">
       <div class="panel-header">
         <div>
-          <span class="panel-kicker">Task Ledger</span>
-          <h2>任务账本</h2>
-          <p>按插件、模型和状态查看后台子代理任务，不再让结果只停留在运行时内存里。</p>
+          <span class="panel-kicker">Subagent Overview</span>
+          <h2>子代理账本</h2>
+          <p>按插件、模型和状态查看后台子代理，不再让结果只停留在运行时内存里。</p>
         </div>
         <button
           type="button"
@@ -60,7 +60,7 @@
       <div class="panel-controls">
         <input
           v-model="searchKeyword"
-          data-test="subagent-task-search"
+          data-test="subagent-search"
           type="text"
           placeholder="搜索插件、请求摘要、结果摘要或模型"
         >
@@ -69,8 +69,8 @@
 
       <div class="sidebar-results">
         <span class="sidebar-results-text">
-          匹配 {{ filteredTaskCount }} / {{ taskCount }} 个任务
-          <span v-if="taskCount > 0">
+          匹配 {{ filteredSubagentCount }} / {{ subagentCount }} 个子代理
+          <span v-if="subagentCount > 0">
             · 第 {{ page }} / {{ pageCount }} 页
             · 显示 {{ rangeStart }}-{{ rangeEnd }} 项
           </span>
@@ -78,68 +78,68 @@
       </div>
 
       <div v-if="loading" class="sidebar-state">加载中...</div>
-      <div v-else-if="pagedTasks.length === 0" class="sidebar-state">
-        当前筛选下没有后台子代理任务。
+      <div v-else-if="pagedSubagents.length === 0" class="sidebar-state">
+        当前筛选下没有后台子代理。
       </div>
-      <div v-else class="task-list">
+      <div v-else class="subagent-list">
         <article
-          v-for="task in pagedTasks"
-          :key="task.id"
-          class="task-card"
+          v-for="subagent in pagedSubagents"
+          :key="subagent.sessionId"
+          class="subagent-card"
         >
-          <div class="task-card-top">
+          <div class="subagent-card-top">
             <div>
-              <div class="task-title-row">
-                <strong>{{ task.description || task.pluginDisplayName || task.pluginId }}</strong>
-                <span class="status-pill" :class="task.status">{{ statusLabel(task.status) }}</span>
+              <div class="subagent-title-row">
+                <strong>{{ subagent.description || subagent.pluginDisplayName || subagent.pluginId }}</strong>
+                <span class="status-pill" :class="subagent.status">{{ statusLabel(subagent.status) }}</span>
               </div>
-              <p v-if="task.description" class="detail-line muted-text">
-                插件: {{ task.pluginDisplayName || task.pluginId }}
+              <p v-if="subagent.description" class="detail-line muted-text">
+                插件: {{ subagent.pluginDisplayName || subagent.pluginId }}
               </p>
-              <p>{{ task.requestPreview }}</p>
+              <p>{{ subagent.requestPreview }}</p>
             </div>
             <RouterLink
               class="ghost-button link-button"
-              :to="{ name: 'plugins', query: { plugin: task.pluginId } }"
+              :to="{ name: 'plugins', query: { plugin: subagent.pluginId } }"
             >
               打开插件治理
             </RouterLink>
           </div>
 
           <div class="meta-row">
-            <span class="meta-chip">{{ task.runtimeKind === 'local' ? '本地' : '远程' }}</span>
-            <span v-if="task.subagentTypeName || task.subagentType" class="meta-chip">
-              {{ task.subagentTypeName || task.subagentType }}
+            <span class="meta-chip">{{ subagent.runtimeKind === 'local' ? '本地' : '远程' }}</span>
+            <span v-if="subagent.subagentTypeName || subagent.subagentType" class="meta-chip">
+              {{ subagent.subagentTypeName || subagent.subagentType }}
             </span>
-            <span class="meta-chip">会话 {{ task.sessionMessageCount }} 条</span>
-            <span v-if="task.providerId" class="meta-chip">{{ task.providerId }}</span>
-            <span v-if="task.modelId" class="meta-chip">{{ task.modelId }}</span>
-            <span class="meta-chip writeback-chip" :class="task.writeBackStatus">
-              {{ writeBackLabel(task.writeBackStatus) }}
+            <span class="meta-chip">会话 {{ subagent.sessionMessageCount }} 条</span>
+            <span v-if="subagent.providerId" class="meta-chip">{{ subagent.providerId }}</span>
+            <span v-if="subagent.modelId" class="meta-chip">{{ subagent.modelId }}</span>
+            <span class="meta-chip writeback-chip" :class="subagent.writeBackStatus">
+              {{ writeBackLabel(subagent.writeBackStatus) }}
             </span>
           </div>
 
-          <p v-if="task.resultPreview" class="detail-line">
-            结果摘要: {{ task.resultPreview }}
+          <p v-if="subagent.resultPreview" class="detail-line">
+            结果摘要: {{ subagent.resultPreview }}
           </p>
-          <p v-if="task.error" class="detail-line warning-text">
-            失败原因: {{ task.error }}
+          <p v-if="subagent.error" class="detail-line warning-text">
+            失败原因: {{ subagent.error }}
           </p>
-          <p v-if="task.writeBackError" class="detail-line warning-text">
-            回写失败: {{ task.writeBackError }}
+          <p v-if="subagent.writeBackError" class="detail-line warning-text">
+            回写失败: {{ subagent.writeBackError }}
           </p>
-          <p v-if="task.writeBackTarget" class="detail-line muted-text">
-            回写目标: {{ task.writeBackTarget.label || task.writeBackTarget.id }}
+          <p v-if="subagent.writeBackTarget" class="detail-line muted-text">
+            回写目标: {{ subagent.writeBackTarget.label || subagent.writeBackTarget.id }}
           </p>
           <p class="detail-line muted-text">
-            请求时间: {{ formatTime(task.requestedAt) }}
-            <span> · 会话更新于 {{ formatTime(task.sessionUpdatedAt) }}</span>
-            <span v-if="task.finishedAt"> · 完成于 {{ formatTime(task.finishedAt) }}</span>
+            请求时间: {{ formatTime(subagent.requestedAt) }}
+            <span> · 会话更新于 {{ formatTime(subagent.sessionUpdatedAt) }}</span>
+            <span v-if="subagent.finishedAt"> · 完成于 {{ formatTime(subagent.finishedAt) }}</span>
           </p>
         </article>
       </div>
 
-      <div v-if="taskCount > 0" class="sidebar-pagination">
+      <div v-if="subagentCount > 0" class="sidebar-pagination">
         <button
           type="button"
           class="ghost-button"
@@ -166,14 +166,14 @@ import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
-import { usePluginSubagentTasks } from '../composables/use-plugin-subagent-tasks'
+import { usePluginSubagents } from '../composables/use-plugin-subagents'
 
 const {
   loading,
   error,
   searchKeyword,
   filter,
-  pagedTasks,
+  pagedSubagents,
   page,
   pageCount,
   rangeStart,
@@ -182,52 +182,52 @@ const {
   canGoNextPage,
   goPrevPage,
   goNextPage,
-  taskCount,
-  filteredTaskCount,
-  runningTaskCount,
-  errorTaskCount,
+  filteredSubagentCount,
+  runningSubagentCount,
+  errorSubagentCount,
   writeBackAttentionCount,
   refreshAll,
-} = usePluginSubagentTasks()
+  subagentCount,
+} = usePluginSubagents()
 
 const heroHeadline = computed(() => {
-  if (taskCount.value === 0) {
-    return '等待首个后台任务排队'
+  if (subagentCount.value === 0) {
+    return '等待首个后台子代理排队'
   }
-  if (runningTaskCount.value > 0) {
-    return `${runningTaskCount.value} 个任务仍在执行中`
+  if (runningSubagentCount.value > 0) {
+    return `${runningSubagentCount.value} 个子代理仍在执行中`
   }
-  if (errorTaskCount.value > 0) {
-    return `${errorTaskCount.value} 个任务需要人工关注`
+  if (errorSubagentCount.value > 0) {
+    return `${errorSubagentCount.value} 个子代理需要人工关注`
   }
 
-  return `${taskCount.value} 个任务都已落地可追踪`
+  return `${subagentCount.value} 个子代理都已落地可追踪`
 })
 
 const overviewCards = computed(() => [
   {
-    label: '任务总数',
-    value: String(taskCount.value),
-    note: '后台子代理任务会被持久化记录，刷新页面也不会丢',
+    label: '子代理总数',
+    value: String(subagentCount.value),
+    note: '后台子代理会被持久化记录，刷新页面也不会丢',
     tone: 'accent',
   },
   {
     label: '运行中',
-    value: String(runningTaskCount.value),
-    note: runningTaskCount.value > 0 ? '仍有任务在排队或运行' : '当前没有活跃任务',
-    tone: runningTaskCount.value > 0 ? 'warning' : 'neutral',
+    value: String(runningSubagentCount.value),
+    note: runningSubagentCount.value > 0 ? '仍有子代理在排队或运行' : '当前没有活跃子代理',
+    tone: runningSubagentCount.value > 0 ? 'warning' : 'neutral',
   },
   {
     label: '回写关注项',
     value: String(writeBackAttentionCount.value),
-    note: '重点关注等待回写或回写失败的任务',
+    note: '重点关注等待回写或回写失败的子代理',
     tone: writeBackAttentionCount.value > 0 ? 'warning' : 'neutral',
   },
   {
-    label: '失败任务',
-    value: String(errorTaskCount.value),
-    note: errorTaskCount.value > 0 ? '失败任务需要回看请求和插件权限' : '当前没有失败任务',
-    tone: errorTaskCount.value > 0 ? 'warning' : 'neutral',
+    label: '失败子代理',
+    value: String(errorSubagentCount.value),
+    note: errorSubagentCount.value > 0 ? '失败子代理需要回看请求和插件权限' : '当前没有失败子代理',
+    tone: errorSubagentCount.value > 0 ? 'warning' : 'neutral',
   },
 ])
 
@@ -272,39 +272,39 @@ function formatTime(iso: string) {
 </script>
 
 <style scoped>
-.subagent-tasks-page {
+.subagent-page {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   min-height: 0;
 }
 
-.task-hero,
-.task-list-panel {
+.subagent-hero,
+.subagent-list-panel {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) * 1.2);
   background: var(--bg-card);
   padding: 1rem;
 }
 
-.task-hero-header,
+.subagent-hero-header,
 .panel-header,
-.task-card-top,
+.subagent-card-top,
 .panel-controls,
 .meta-row {
   display: flex;
   gap: 0.75rem;
 }
 
-.task-hero-header,
+.subagent-hero-header,
 .panel-header,
-.task-card-top {
+.subagent-card-top {
   justify-content: space-between;
 }
 
-.task-hero-side,
+.subagent-hero-side,
 .hero-note,
-.task-list {
+.subagent-list {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -351,7 +351,7 @@ function formatTime(iso: string) {
 
 .filter-chips,
 .meta-row,
-.task-title-row {
+.subagent-title-row {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
@@ -374,7 +374,7 @@ function formatTime(iso: string) {
   color: var(--accent);
 }
 
-.task-card {
+.subagent-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.9rem;
@@ -441,9 +441,9 @@ function formatTime(iso: string) {
 }
 
 @media (max-width: 980px) {
-  .task-hero-header,
+  .subagent-hero-header,
   .panel-header,
-  .task-card-top {
+  .subagent-card-top {
     flex-direction: column;
   }
 }

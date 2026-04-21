@@ -38,10 +38,13 @@ describe('McpConfigStoreService', () => {
     fs.mkdirSync(nestedServerRoot, { recursive: true });
     fs.mkdirSync(defaultConfigRoot, { recursive: true });
     fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'mcp-config-test' }), 'utf-8');
-    fs.writeFileSync(path.join(defaultConfigRoot, 'weather-server.json'), JSON.stringify({
-      name: 'weather-server',
+    fs.writeFileSync(path.join(defaultConfigRoot, 'tavily-mcp.json'), JSON.stringify({
+      name: 'tavily-mcp',
       command: 'npx',
-      args: ['-y', '@mariox/weather-mcp-server'],
+      args: ['-y', 'tavily-mcp@latest'],
+      env: {
+        TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
     }, null, 2));
 
     process.chdir(nestedServerRoot);
@@ -53,17 +56,19 @@ describe('McpConfigStoreService', () => {
         configPath: 'mcp/servers',
         servers: [
           {
-            name: 'weather-server',
+            name: 'tavily-mcp',
             command: 'npx',
-            args: ['-y', '@mariox/weather-mcp-server'],
+            args: ['-y', 'tavily-mcp@latest'],
             eventLog: {
               maxFileSizeMb: 1,
             },
-            env: {},
+            env: {
+              TAVILY_API_KEY: '${TAVILY_API_KEY}',
+            },
           },
         ],
       });
-      expect(fs.existsSync(path.join(defaultConfigRoot, 'weather-server.json'))).toBe(true);
+      expect(fs.existsSync(path.join(defaultConfigRoot, 'tavily-mcp.json'))).toBe(true);
     } finally {
       process.chdir(originalCwd);
       fs.rmSync(workspaceRoot, { recursive: true, force: true });

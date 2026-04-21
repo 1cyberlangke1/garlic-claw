@@ -7,5 +7,7 @@ export * from './plugin-operation';
 export * from './plugin-route';
 export * from './plugin-core';
 export * from './plugin-records';
+export * from './plugin-runtime-tools';
 export * from './plugin-subagent';
+export * from './plugin-tool-output';
 export * from './plugin-manifest';

@@ -10,7 +10,7 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       toolResults: [],
     });
 
-    const result = await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.delegate_summary?.({
+    const result = await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.subagent?.({
       prompt: 'Summarize this thread',
     } as never, {
       callContext: {
@@ -51,15 +51,14 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
   });
 
   it('starts background tasks and defaults write-back to the current conversation', async () => {
-    const startSubagentTask = jest.fn().mockResolvedValue({
-      id: 'task-1',
+    const startSubagent = jest.fn().mockResolvedValue({
       pluginId: 'builtin.subagent-delegate',
       requestPreview: 'Summarize this thread',
       status: 'queued',
       writeBackStatus: 'pending',
     });
 
-    const result = await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.delegate_summary_background?.({
+    const result = await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.subagent_background?.({
       prompt: 'Summarize this thread',
     } as never, {
       callContext: {
@@ -72,11 +71,11 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
             targetProviderId: 'openai',
           },
         }),
-        startSubagentTask,
+        startSubagent,
       },
     } as never);
 
-    expect(startSubagentTask).toHaveBeenCalledWith({
+    expect(startSubagent).toHaveBeenCalledWith({
       messages: [
         {
           content: [{ text: 'Summarize this thread', type: 'text' }],
@@ -93,7 +92,6 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       },
     });
     expect(result).toEqual({
-      id: 'task-1',
       pluginId: 'builtin.subagent-delegate',
       requestPreview: 'Summarize this thread',
       status: 'queued',
@@ -109,8 +107,7 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       toolCalls: [],
       toolResults: [],
     });
-    const startSubagentTask = jest.fn().mockResolvedValue({
-      id: 'task-9',
+    const startSubagent = jest.fn().mockResolvedValue({
       pluginId: 'builtin.subagent-delegate',
       requestPreview: 'Continue this thread',
       status: 'queued',
@@ -124,10 +121,10 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
         },
       }),
       runSubagent,
-      startSubagentTask,
+      startSubagent,
     };
 
-    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.delegate_summary?.({
+    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.subagent?.({
       description: '继续当前子任务',
       prompt: 'Continue this thread',
       sessionId: 'subagent-session-9',
@@ -137,7 +134,7 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       },
       host,
     } as never);
-    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.delegate_summary_background?.({
+    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.subagent_background?.({
       description: '继续当前子任务',
       prompt: 'Continue this thread',
       sessionId: 'subagent-session-9',
@@ -152,7 +149,7 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       description: '继续当前子任务',
       sessionId: 'subagent-session-9',
     }));
-    expect(startSubagentTask).toHaveBeenCalledWith(expect.objectContaining({
+    expect(startSubagent).toHaveBeenCalledWith(expect.objectContaining({
       description: '继续当前子任务',
       sessionId: 'subagent-session-9',
     }));
@@ -167,7 +164,7 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
       toolResults: [],
     });
 
-    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.delegate_summary?.({
+    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.subagent?.({
       prompt: 'Summarize this thread',
     } as never, {
       callContext: {
@@ -189,15 +186,14 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
   });
 
   it('lets per-call subagentType override the configured subagent type', async () => {
-    const startSubagentTask = jest.fn().mockResolvedValue({
-      id: 'task-1',
+    const startSubagent = jest.fn().mockResolvedValue({
       pluginId: 'builtin.subagent-delegate',
       requestPreview: 'Summarize this thread',
       status: 'queued',
       writeBackStatus: 'pending',
     });
 
-    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.delegate_summary_background?.({
+    await BUILTIN_SUBAGENT_DELEGATE_PLUGIN.tools?.subagent_background?.({
       subagentType: 'general',
       prompt: 'Summarize this thread',
     } as never, {
@@ -210,11 +206,11 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
             targetSubagentType: 'explore',
           },
         }),
-        startSubagentTask,
+        startSubagent,
       },
     } as never);
 
-    expect(startSubagentTask).toHaveBeenCalledWith(expect.objectContaining({
+    expect(startSubagent).toHaveBeenCalledWith(expect.objectContaining({
       subagentType: 'general',
     }));
   });

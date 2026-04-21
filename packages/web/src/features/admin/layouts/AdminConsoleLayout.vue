@@ -77,7 +77,7 @@ const navItems: Array<{
     | 'mcp'
     | 'skills'
     | 'commands'
-    | 'subagent-tasks'
+    | 'subagents'
     | 'automations'
     | 'ai-settings'
   label: string
@@ -90,7 +90,7 @@ const navItems: Array<{
   { name: 'mcp', label: 'MCP', icon: widgetAddBold, section: 'core' },
   { name: 'skills', label: '技能', icon: magicStick3Bold, section: 'core' },
   { name: 'commands', label: '命令', icon: keyboardBold, section: 'core' },
-  { name: 'subagent-tasks', label: '后台代理', icon: cpuBold, section: 'core' },
+  { name: 'subagents', label: '后台代理', icon: cpuBold, section: 'core' },
   { name: 'automations', label: '自动化', icon: cpuBoltBold, section: 'admin' },
   { name: 'ai-settings', label: 'AI 设置', icon: codeBold, section: 'admin' },
 ]

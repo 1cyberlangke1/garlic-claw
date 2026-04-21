@@ -5,7 +5,6 @@ import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import type { RuntimeCommandResult } from '../runtime/runtime-command.types';
 import { RuntimeCommandService } from '../runtime/runtime-command.service';
 import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';
-import { RuntimeWorkspaceService } from '../runtime/runtime-workspace.service';
 
 export interface BashToolInput {
   command: string;
@@ -15,7 +14,7 @@ export interface BashToolInput {
   workdir?: string;
 }
 
-const BASH_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
+export const BASH_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   command: {
     description: '要执行的 bash 命令。命令语法必须按 bash 编写，不是 PowerShell。',
     required: true,
@@ -27,7 +26,7 @@ const BASH_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
     type: 'string',
   },
   workdir: {
-    description: '可选工作目录。相对路径会基于 /workspace 解析，且必须仍位于 /workspace 内。优先使用该字段，不要在命令里先写 cd。',
+    description: '可选工作目录。相对路径会基于当前 backend 的可见根解析。优先使用该字段，不要在命令里先写 cd。',
     required: false,
     type: 'string',
   },
@@ -43,7 +42,6 @@ export class BashToolService {
   constructor(
     private readonly runtimeCommandService: RuntimeCommandService,
     private readonly runtimeToolBackendService: RuntimeToolBackendService,
-    private readonly runtimeWorkspaceService: RuntimeWorkspaceService,
   ) {}
 
   getToolName(): string {
@@ -51,16 +49,20 @@ export class BashToolService {
   }
 
   buildToolDescription(): string {
-    const workspaceRoot = this.runtimeWorkspaceService.getVirtualWorkspaceRoot();
     const backend = this.runtimeToolBackendService.getShellBackendDescriptor();
+    const visibleRoot = backend.visibleRoot;
     return [
-      '在当前 session 的工作区中执行 bash 命令。',
-      `同一 session 下写入 ${workspaceRoot} 的文件，会在后续工具调用中继续可见。`,
+      '在当前 session 的执行后端中执行 bash 命令。',
+      visibleRoot === '/'
+        ? '同一 session 下写入 backend 当前可见路径的文件，会在后续工具调用中继续可见。'
+        : `同一 session 下写入 ${visibleRoot} 内的文件，会在后续工具调用中继续可见。`,
       '不要假设 shell 进程状态会跨调用延续；每次调用都应写成自包含命令。',
       backend.permissionPolicy.networkAccess === 'deny'
         ? '当前执行环境不提供网络访问。'
         : '如需访问网络，请把依赖写进同一条命令中。',
-      `workdir 参数只能位于 ${workspaceRoot} 内。`,
+      visibleRoot === '/'
+        ? 'workdir 必须位于当前 backend 可见路径内。'
+        : `workdir 参数只能位于 ${visibleRoot} 内。`,
     ].join('\n');
   }
 
@@ -100,6 +102,7 @@ export class BashToolService {
 
   readRuntimeAccess(args: Record<string, unknown>, sessionId?: string): RuntimeToolAccessRequest {
     const input = this.readInput(args, sessionId);
+    const backend = this.runtimeToolBackendService.getShellBackendDescriptor();
     return {
       metadata: {
         command: input.command,
@@ -114,7 +117,7 @@ export class BashToolService {
         ...(requiresBashNetworkAccess(input.command) ? ['networkAccess' as const] : []),
       ],
       role: 'shell',
-      summary: `${input.description} (${input.workdir ?? '/workspace'})`,
+      summary: `${input.description} (${input.workdir ?? backend.visibleRoot})`,
     };
   }
 

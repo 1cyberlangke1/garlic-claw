@@ -1,8 +1,8 @@
 import {
   buildSubagentDelegateRunParams,
-  buildSubagentDelegateTaskParams,
+  buildSubagentDelegateStartParams,
   createSubagentRunSummary,
-  createSubagentTaskSummaryResult,
+  createSubagentSummaryResult,
   readBooleanFlag,
   readOptionalStringParam,
   readRequiredTextValue,
@@ -19,8 +19,8 @@ export const BUILTIN_SUBAGENT_DELEGATE_PLUGIN: BuiltinPluginDefinition = {
   },
   manifest: SUBAGENT_DELEGATE_MANIFEST,
   tools: {
-    delegate_summary: async (params, context) => {
-      const prompt = readRequiredTextValue(params.prompt, 'delegate_summary 的 prompt');
+    subagent: async (params, context) => {
+      const prompt = readRequiredTextValue(params.prompt, 'subagent 的 prompt');
       const description = readOptionalStringParam(params, 'description') ?? undefined;
       const sessionId = readOptionalStringParam(params, 'sessionId') ?? undefined;
       const subagentType = readOptionalStringParam(params, 'subagentType') ?? undefined;
@@ -35,8 +35,8 @@ export const BUILTIN_SUBAGENT_DELEGATE_PLUGIN: BuiltinPluginDefinition = {
 
       return createSubagentRunSummary(result);
     },
-    delegate_summary_background: async (params, context) => {
-      const prompt = readRequiredTextValue(params.prompt, 'delegate_summary_background 的 prompt');
+    subagent_background: async (params, context) => {
+      const prompt = readRequiredTextValue(params.prompt, 'subagent_background 的 prompt');
       const description = readOptionalStringParam(params, 'description') ?? undefined;
       const sessionId = readOptionalStringParam(params, 'sessionId') ?? undefined;
       const subagentType = readOptionalStringParam(params, 'subagentType') ?? undefined;
@@ -45,7 +45,7 @@ export const BUILTIN_SUBAGENT_DELEGATE_PLUGIN: BuiltinPluginDefinition = {
         params.writeBack,
         Boolean(context.callContext.conversationId),
       );
-      const task = await context.host.startSubagentTask(buildSubagentDelegateTaskParams({
+      const subagent = await context.host.startSubagent(buildSubagentDelegateStartParams({
         config,
         prompt,
         shouldWriteBack,
@@ -55,7 +55,7 @@ export const BUILTIN_SUBAGENT_DELEGATE_PLUGIN: BuiltinPluginDefinition = {
         ...(subagentType ? { subagentType } : {}),
       }));
 
-      return createSubagentTaskSummaryResult(task);
+      return createSubagentSummaryResult(subagent);
     },
   },
 };

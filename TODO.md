@@ -16,23 +16,26 @@
 - N15 模型上下文长度与 usage 估算已完成；`contextLength` 与模型元数据已持久化，usage 缺失时会统一估算并返回稳定结构。
 - N16 插件化上下文压缩已完成；通用历史接口、`metadata.annotations[]`、自动/手动压缩、聊天摘要展示与 fresh 验收已打通。
 - N14 远程插件静态接入密钥与元数据缓存已完成；远程插件主语义已收口为 `runtimeKind + remoteEnvironment + auth.mode + capabilityProfile`，接入配置面板、静态缓存、IoT 风险提示和 fresh 验收已齐备。
+- L18 独立事件日志与非送模消息语义已完成；`plugin / MCP / skill` 已收口为独立文件日志，`display` 已成为正式“仅前端展示、不进入默认 LLM 上下文”的消息角色，并已通过 fresh 验证与独立 judge。
 
-## 当前阶段：N17 OpenCode 对齐与 runtime 抽象收尾
+## 已完成阶段：N17 OpenCode 对齐与 runtime 抽象收尾
 
 - 已完成摘要：
   - 非执行环境主链已对齐到 `skill / todo / webfetch / invalid / subagent(session 化)`，fresh 验收和独立 judge 已通过。
   - `skill` 已收口为仓库 `skills/` 懒加载，`todo` 已收口为 session owner，`subagent` 已接入 `subagentType + sessionId`。
-  - `subagent.task.get`、plugin-sdk facade、HTTP 明细入口与 `task` 工具输出已改成 `sessionId` 优先；后台任务列表现在按 session 只展示最新执行投影。
+  - `subagent.get`、plugin-sdk facade、HTTP 明细入口与 `subagent` 工具输出已改成 `sessionId` 优先；后台子代理列表现在按 session 只展示最新执行投影。
   - `bash / read / glob / grep / write / edit`、runtime `ask/always/reject` 审批链、工作区持久化与聊天前端审批面板已经打通，并有 fresh smoke 证据。
-  - 当前残留不是“功能没有”，而是“抽象边界还没完全收干净”，还不能判成完全对标 OpenCode。
+  - `bash / read / glob / grep / write / edit` 的 backend 可见路径语义、runtime yolo 审批模式、Windows + WSL 内部目录 fresh 基线都已收口，并已通过独立 judge。
 
 - 本轮总目标：
   - 把所有执行环境相关能力统一压到 runtime 抽象下。
   - 工具层只表达稳定语义，不直接绑定 `just-bash`。
   - 让后续接入本机 shell / WSL / 容器 / 其他虚拟 shell 时，不需要重写工具层和审批链。
+  - 把 `bash / read / glob / grep / write / edit` 的主语义收口为“当前执行后端可见的路径与能力”，不再把仓库根或固定 `/workspace` 当成工具主 contract。
+  - 在保留权限审查链的前提下，支持显式配置成 yolo 模式，让 runtime 默认直接放行能力请求。
   - 把当前 `subagent` 继续收口到更接近 OpenCode `task` 的公开语义。
 
-- 当前仍未完成的完整路线：
+  - 本阶段完整路线：
 
 ### R17-1 runtime 后端注册与默认后端决议
 
@@ -76,9 +79,9 @@
   - 逐步把 `taskId` 从公开主语义降级为投影或内部账本字段。
   - 保持 `subagentType + sessionId` 为公开恢复入口。
 - 当前推进：
-  - `subagent.task.get` 已改为按 `sessionId` 读取最新 session 投影，而不是按 `taskId` 直读账本记录。
-  - plugin-sdk `getSubagentTask()`、HTTP `plugin-subagent-tasks/:sessionId` 与 `task` 工具对模型输出都已同步切到 `sessionId` 优先。
-  - `subagent.run`、`subagent.task.start/list/get/overview` 的公开结果都已去掉账本 `id/taskId`，shared / plugin-sdk / server / web 现在统一只把 `sessionId` 作为公开主键与明细入口。
+  - `subagent.get` 已改为按 `sessionId` 读取最新 session 投影，而不是按账本 `taskId` 直读记录。
+  - plugin-sdk `getSubagent()`、HTTP `plugin-subagents/:sessionId` 与 `subagent` 工具对模型输出都已同步切到 `sessionId` 优先。
+  - `subagent.run`、`subagent.start/list/get/overview` 的公开结果都已去掉账本 `id/taskId`，shared / plugin-sdk / server / web 现在统一只把 `sessionId` 作为公开主键与明细入口。
   - 后台任务总览当前已按 session 收口为“最新执行投影视图”。
 - 验收：
   - shared / plugin-sdk / server / web 的公开参数和返回值以 `sessionId` 为主要续跑入口。
@@ -123,20 +126,63 @@
 
 ### R17-7 跨平台与命令面补强
 
-- 状态：进行中
+- 状态：已完成
 - 目标：
   - 以 Windows + WSL 内部目录作为当前可接受的跨平台 fresh 基线。
   - 补更宽的命令面和边界验证，例如压缩、`tar`、更复杂目录树。
 - 当前推进：
   - Windows 已 fresh 通过：runtime 定向 `jest`、`packages/server build`、`packages/web build`、root `lint`、`smoke:server`、`smoke:web-ui`。
-  - WSL 内部目录已 fresh 通过：`packages/server` runtime 定向 `jest` 与 root `smoke:server`，日志位于 `/home/test/garlic-claw-wsl-internal/other/test-logs/2026-04-20-r17-runtime/`。
+  - WSL 内部目录已 fresh 通过：`packages/server` runtime 定向 `jest` 与 root `smoke:server`，最新日志位于 `/home/test/garlic-claw-wsl-internal/other/test-logs/2026-04-21-r17-runtime/`。
   - `smoke:server` 已补 `bash-workdir-loop`、`bash-timeout-loop`、`bash-tar-loop` 三条端到端证据，当前新增命令面不再只停在定向单测。
   - 用户已明确接受“没有原生 Linux 时，以 WSL 视作当前 Linux 侧等价基线”；因此本条剩余工作不再被原生 Linux 环境阻塞。
 - 验收：
   - Windows 与 WSL 内部目录都有新鲜证据。
   - `smoke:server` 与定向 runtime `jest` 覆盖新增命令面。
 
-### R17-8 `lsp` 与后续本地工具层
+### R17-8 通用环境工具语义收口
+
+- 状态：已完成
+- 目标：
+  - 把 `bash / read / glob / grep / write / edit` 从“固定 session `/workspace`”语义改成“当前 backend 可见路径”语义。
+  - 工具层只声明路径、能力与操作类型，不硬编码某个仓库根或某个固定虚拟根。
+  - `just-bash` 作为首个 backend 时，允许访问 just-bash 文件系统里当前暴露的任意路径；哪些路径持久、哪些路径只在运行期存在，由 backend 自己声明。
+  - 完成度以当前范围内对标 `other/opencode` 为准，但不把其 `project/worktree` 限定错误移植成 Garlic Claw 的通用工具主语义。
+- 当前决定：
+  - “项目 / 仓库视图”只作为后续可选附加能力，不再作为通用执行工具主 contract。
+  - `RuntimeWorkspaceBackend` 后续需要演进为更通用的文件系统 backend owner，表达“可见路径边界”而不是“工作区根”。
+  - `bash` 的 `workdir`、文件工具的 `filePath/path` 校验，应统一委托给 backend 判定是否处于当前可见路径集合内。
+  - 对模型暴露的说明应强调“按 backend 当前可见路径工作”，而不是强调固定 `/workspace`。
+- 当前推进：
+  - `RuntimeBackendDescriptor` 已新增 `visibleRoot`。
+  - `bash / read / glob / grep / write / edit` 的参数说明、描述文案和访问摘要已去掉固定 `/workspace` 文案，改成 backend 可见路径语义。
+  - `RuntimeWorkspaceService` 的可见根已改成 `/`，`RuntimeWorkspaceFileService` 当前已按“backend 根文件系统”解释相对路径和绝对路径。
+  - `RuntimeJustBashService` 已不再通过 `MountableFs` 把宿主目录挂到 `/workspace`，而是直接把自定义文件系统作为 just-bash 根 `fs`，从而支持整棵虚拟根路径。
+- 验收：
+  - `bash / read / glob / grep / write / edit` 的参数说明、权限摘要与执行路径校验不再写死 `/workspace`。
+  - 首个 `just-bash` backend 下，可对 backend 当前暴露的任意路径进行读写与搜索，而不是只限单个固定根目录。
+  - 定向测试与 `smoke:server` 覆盖“backend 可见路径”语义。
+
+### R17-9 runtime 审批模式与 yolo 开关
+
+- 状态：已完成
+- 目标：
+  - 在保留现有 `allow / ask / deny / once / always / reject` 审批链的前提下，补一层 runtime 级默认审批模式。
+  - 支持显式 yolo 模式，使当前 runtime backend 的能力请求默认不进入人工审批。
+- 当前决定：
+  - yolo 是 runtime 宿主配置，不是单个工具自己的特判。
+  - yolo 只改变默认审批决议，不移除权限事件、审计记录和能力声明。
+  - 关闭 yolo 后，现有审批链语义保持不变。
+- 当前推进：
+  - `RuntimeToolPermissionService` 已接入 `GARLIC_CLAW_RUNTIME_APPROVAL_MODE=review|yolo`。
+  - 当前 `yolo` 语义为：能力支持且未被 backend `deny` 时，直接放行，不创建 pending permission。
+  - 已补定向测试，证明 yolo 模式下 `ask` 能力不会再进入人工审批。
+  - `http-smoke.mjs` 已支持 `review|yolo` 两种 runtime 审批模式；当前 smoke 的 bash 权限断言会按模式切换，不再把首轮 `permission-request` 写死成唯一语义。
+- 验收：
+  - 存在可配置的 runtime 默认审批模式，并有定向测试。
+  - yolo 模式下 native runtime 工具不会产生 pending permission，并有 smoke 证据。
+  - 非 yolo 模式下，现有 pending/reply/always 语义继续成立。
+
+### R17-10 `lsp` 与后续本地工具层
 
 - 状态：已取消
 - 取消原因：
@@ -147,7 +193,7 @@
   - 当前 Garlic Claw 的 `bash / read / glob / grep / write / edit` 明确绑定 `sessionId + runtime workspace backend`，这是稳定的 runtime 语义，但不等于 OpenCode 的本地项目工具语义。
   - 如果未来重新评估 `lsp`，必须先决定是否新增一层“project/worktree tool backend”作为独立 owner，不能直接挂到现有 runtime workspace 文件链上。
 
-### R17-9 skill 目录清理与天气 skill 收口
+### R17-11 skill 目录清理与天气 skill 收口
 
 - 状态：已完成
 - 目标：
@@ -161,8 +207,39 @@
 
 - 本轮执行顺序：
   1. 已完成 `R17-1`、`R17-2`、`R17-3`，runtime registry、角色路由与工具权限接线已收口。
-  2. 已完成 `R17-4` 与 `R17-9`，`subagent` 公开语义和天气 skill 主链已对齐。
-  3. 下一步继续 `R17-5 ~ R17-7`，做 OpenCode 语义复核、第二后端接入准备与跨平台补证据。
+  2. 已完成 `R17-4` 与 `R17-11`，`subagent` 公开语义和天气 skill 主链已对齐。
+  3. 当前先推进 `R17-8` 与 `R17-9`，把工具主语义从固定 `/workspace` 收口到“backend 可见路径”，并补 yolo 审批模式。
+  4. 然后继续 `R17-5 ~ R17-7` 的剩余补证据项。
+
+### R17-12 runtime 工具本地大插件化
+
+- 状态：已完成
+- 目标：
+  - 把 `bash / read / glob / grep / write / edit` 从宿主原生工具注册迁到一个正式的本地插件。
+  - 不把 runtime 权限审查、backend 路由和执行 owner 重新散回插件实现；先补正式 host contract，再由本地插件消费。
+  - 让后续其他本地插件在需要时也能复用同一套 runtime host 能力，而不是继续依赖 `ToolRegistryService` 内建特判。
+- 当前决定：
+  - 新增正式 host method，而不是让插件通过隐式内部对象直接调用执行服务。
+  - runtime host contract 先按语义拆成：
+    - `runtime.command.execute`
+    - `runtime.fs.read`
+    - `runtime.fs.glob`
+    - `runtime.fs.grep`
+    - `runtime.fs.write`
+    - `runtime.fs.edit`
+  - 新本地插件暂定收口为单个 `builtin.runtime-tools`，公开工具名继续保持 `bash / read / glob / grep / write / edit`。
+  - `ToolRegistryService` 在本阶段完成后不再保留这些工具的 native 注入与 native 审批前置。
+- 完成结果：
+  - shared 已补正式 runtime host contract、`runtime:*` 权限与 `PluginToolOutput` 类型。
+  - plugin-sdk facade 已接 `executeRuntimeCommand / readRuntimePath / globRuntimePaths / grepRuntimeContent / writeRuntimeFile / editRuntimeFile`。
+  - server 已落 `RuntimeHostRuntimeToolService` 与 `builtin.runtime-tools`，并由宿主统一复用 runtime backend 路由与权限审查链。
+  - `ToolRegistryService` 已移除 `bash / read / glob / grep / write / edit` 的 native 注入；工具总览中的这 6 个工具现在统一来自 `builtin.runtime-tools`。
+  - 新鲜验收已通过：定向 `jest`、`packages/shared` build、`packages/plugin-sdk` test/build、`packages/server` build、`packages/web` build、root `lint`、root `smoke:server`、root `smoke:web-ui`。
+  - 独立 judge 已 PASS，确认当前不是“把 native owner 换个地方继续保留”的假完成。
+- 验收：
+  - runtime 工具在工具总览里表现为单个本地插件来源，而不是 native 工具散列。
+  - `ToolRegistryService` 不再直接构造 `bash / read / glob / grep / write / edit`。
+  - host contract、plugin-sdk facade、builtin runtime-tools 插件、定向测试、`smoke:server` 全部通过。
 
 ## 固定约束
 

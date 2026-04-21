@@ -1,4 +1,4 @@
-import type { ActionConfig, JsonObject, PluginConversationHistoryPreviewParams, PluginConversationHistoryReplaceParams, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentRunParams, PluginSubagentTaskStartParams, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, JsonObject, PluginConversationHistoryPreviewParams, PluginConversationHistoryReplaceParams, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentRunParams, PluginSubagentStartParams, TriggerConfig } from "@garlic-claw/shared";
 
 import type { PluginGenerateTextParams, PluginScopedStateOptions } from "./facade";
 import { toHostJsonValue } from "./host-json-value.codec";
@@ -77,7 +77,7 @@ export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): Js
   };
 }
 
-export function buildPluginStartSubagentTaskParams(input: PluginSubagentTaskStartParams): JsonObject {
+export function buildPluginStartSubagentParams(input: PluginSubagentStartParams): JsonObject {
   return {
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.description ? { description: input.description } : {}),

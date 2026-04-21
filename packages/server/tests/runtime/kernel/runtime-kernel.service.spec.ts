@@ -17,7 +17,7 @@ import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-h
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
+import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
@@ -463,7 +463,7 @@ function createService() {
     {
       invokeHook: jest.fn(),
     } as never,
-    new RuntimeHostSubagentTaskStoreService(),
+    new RuntimeHostSubagentStoreService(),
   );
   const runtimeHostAutomationService = new AutomationService(
     new AutomationExecutionService(
@@ -494,6 +494,7 @@ function createService() {
     new RuntimeHostKnowledgeService(),
     runtimeHostPluginDispatchService,
     new RuntimeHostPluginRuntimeService(),
+    {} as never,
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
     new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),

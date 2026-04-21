@@ -56,8 +56,8 @@ const router = createRouter({
         },
         {
           path: 'subagents',
-          name: 'subagent-tasks',
-          component: () => import('@/features/subagents/views/SubagentTasksView.vue'),
+          name: 'subagents',
+          component: () => import('@/features/subagents/views/SubagentView.vue'),
         },
         {
           path: 'automations',

@@ -31,6 +31,7 @@ export interface RuntimeBackendDescriptor {
   capabilities: RuntimeCapabilitySet;
   kind: RuntimeBackendKind;
   permissionPolicy: RuntimePermissionPolicy;
+  visibleRoot: string;
 }
 
 export interface RuntimeBackend {

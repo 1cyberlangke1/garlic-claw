@@ -24,9 +24,9 @@ describe('PluginController command overview', () => {
     setPluginStorage: jest.fn(),
   };
   const runtimeHostSubagentRunnerService = {
-    getTaskOrThrow: jest.fn(),
+    getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
-    listProfiles: jest.fn(),
+    listTypes: jest.fn(),
   };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),

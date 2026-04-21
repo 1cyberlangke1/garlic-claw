@@ -3,6 +3,7 @@ import type { BuiltinPluginDefinition } from './builtin-plugin-definition';
 import { BUILTIN_CONTEXT_COMPACTION_PLUGIN } from './hooks/builtin-context-compaction.plugin';
 import { BUILTIN_CONVERSATION_TITLE_PLUGIN } from './hooks/builtin-conversation-title.plugin';
 import { BUILTIN_MEMORY_CONTEXT_PLUGIN } from './hooks/builtin-memory-context.plugin';
+import { BUILTIN_RUNTIME_TOOLS_PLUGIN } from './tools/builtin-runtime-tools.plugin';
 import { BUILTIN_SUBAGENT_DELEGATE_PLUGIN } from './tools/builtin-subagent-delegate.plugin';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class BuiltinPluginRegistryService {
     BUILTIN_CONTEXT_COMPACTION_PLUGIN,
     BUILTIN_CONVERSATION_TITLE_PLUGIN,
     BUILTIN_MEMORY_CONTEXT_PLUGIN,
+    BUILTIN_RUNTIME_TOOLS_PLUGIN,
     BUILTIN_SUBAGENT_DELEGATE_PLUGIN,
   ];
 

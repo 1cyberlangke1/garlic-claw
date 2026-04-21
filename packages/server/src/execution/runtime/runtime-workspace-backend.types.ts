@@ -34,7 +34,7 @@ export interface RuntimeWorkspaceBackend {
   ): Promise<RuntimeWorkspaceEditResult>;
   getDescriptor(): RuntimeBackendDescriptor;
   getKind(): RuntimeBackendKind;
-  getVirtualWorkspaceRoot(): string;
+  getVisibleRoot(): string;
   listFiles(sessionId: string, inputPath?: string): Promise<{
     basePath: string;
     files: RuntimeWorkspaceFileEntry[];

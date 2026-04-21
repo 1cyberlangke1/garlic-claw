@@ -15,6 +15,9 @@ function createSelectedPlugin(permissions: string[]): PluginInfo {
     defaultEnabled: true,
     runtimeKind: 'local',
     supportedActions: ['health-check', 'reload'],
+    eventLog: {
+      maxFileSizeMb: 1,
+    },
     crons: [
       {
         id: 'cron-1',
@@ -99,7 +102,9 @@ vi.mock('@/features/plugins/composables/use-plugin-management', () => {
       loading: ref(false),
       detailLoading: ref(false),
       savingConfig: ref(false),
+      savingEventLog: ref(false),
       savingLlmPreference: ref(false),
+      savingRemoteAccess: ref(false),
       savingStorage: ref(false),
       savingScope: ref(false),
       eventLoading: ref(false),
@@ -142,7 +147,9 @@ vi.mock('@/features/plugins/composables/use-plugin-management', () => {
       deleteCronJob: vi.fn(),
       finishConversationSession: vi.fn(),
       saveConfig: vi.fn(),
+      saveEventLog: vi.fn(),
       saveLlmPreference: vi.fn(),
+      saveRemoteAccess: vi.fn(),
       saveStorageEntry: vi.fn(),
       saveScope: vi.fn(),
       runAction: vi.fn(),

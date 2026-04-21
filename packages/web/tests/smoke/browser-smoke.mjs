@@ -75,7 +75,7 @@ async function main() {
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
     createdConversationId = await runChatFlow(page, accessToken);
     await verifyMcpPage(page);
-    await verifySubagentTasksPage(page);
+    await verifySubagentsPage(page);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
@@ -368,10 +368,10 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   return remotePluginHandle
 }
 
-async function verifySubagentTasksPage(page) {
+async function verifySubagentsPage(page) {
   await page.goto('/subagents', { waitUntil: 'networkidle' });
-  await expectText(page, '后台 Subagent 任务');
-  await expectText(page, '任务账本');
+  await expectText(page, '后台 Subagent');
+  await expectText(page, '子代理账本');
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {

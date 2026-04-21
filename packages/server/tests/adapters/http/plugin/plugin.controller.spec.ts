@@ -34,9 +34,9 @@ describe('PluginController', () => {
     setPluginStorage: jest.fn(),
   };
   const runtimeHostSubagentRunnerService = {
-    getTaskOrThrow: jest.fn(),
+    getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
-    listProfiles: jest.fn(),
+    listTypes: jest.fn(),
   };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
@@ -160,6 +160,7 @@ describe('PluginController', () => {
         createdAt: '2026-03-26T00:00:00.000Z',
         description: 'Memory plugin',
         displayName: 'Memory Context',
+        eventLog: {},
         governance: { canDisable: true },
         health: {
           consecutiveFailures: 0,
@@ -195,6 +196,7 @@ describe('PluginController', () => {
         createdAt: '2026-03-27T00:00:00.000Z',
         description: 'Remote plugin',
         displayName: 'Remote Echo',
+        eventLog: {},
         governance: { canDisable: true },
         health: {
           consecutiveFailures: 0,
@@ -552,6 +554,96 @@ describe('PluginController', () => {
         level: 'fatal',
       }),
     ).toThrow(BadRequestException);
+  });
+
+  it('delegates subagent overview, type list and detail routes to the subagent runtime owner', () => {
+    runtimeHostSubagentRunnerService.listOverview.mockReturnValue({
+      subagents: [
+        {
+          description: '总结当前对话',
+          sessionId: 'subagent-session-1',
+          sessionMessageCount: 2,
+          sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+          pluginId: 'builtin.subagent-delegate',
+          pluginDisplayName: '子代理委派',
+          runtimeKind: 'local',
+          status: 'completed',
+          requestPreview: '请帮我总结当前对话',
+          writeBackStatus: 'skipped',
+          requestedAt: '2026-03-30T12:00:00.000Z',
+          startedAt: '2026-03-30T12:00:01.000Z',
+          finishedAt: '2026-03-30T12:00:05.000Z',
+        },
+      ],
+    });
+    runtimeHostSubagentRunnerService.listTypes.mockReturnValue([
+      {
+        id: 'general',
+        name: '通用',
+      },
+      {
+        id: 'explore',
+        name: '探索',
+      },
+    ]);
+    runtimeHostSubagentRunnerService.getSubagentOrThrow.mockReturnValue({
+      description: '总结当前对话',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 2,
+      sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      runtimeKind: 'local',
+      status: 'completed',
+      requestPreview: '请帮我总结当前对话',
+      writeBackStatus: 'skipped',
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      startedAt: '2026-03-30T12:00:01.000Z',
+      finishedAt: '2026-03-30T12:00:05.000Z',
+      context: {
+        source: 'plugin',
+      },
+      request: {
+        messages: [
+          {
+            role: 'user',
+            content: '请帮我总结当前对话',
+          },
+        ],
+      },
+      result: {
+        providerId: 'openai',
+        modelId: 'gpt-5.2',
+        text: '这是后台子代理总结',
+        message: {
+          role: 'assistant',
+          content: '这是后台子代理总结',
+        },
+        toolCalls: [],
+        toolResults: [],
+      },
+    });
+
+    expect(controller.listSubagentOverview()).toEqual({
+      subagents: [
+        expect.objectContaining({
+          sessionId: 'subagent-session-1',
+        }),
+      ],
+    });
+    expect(controller.listSubagentTypes()).toEqual([
+      { id: 'general', name: '通用' },
+      { id: 'explore', name: '探索' },
+    ]);
+    expect(controller.getSubagent('subagent-session-1')).toEqual(
+      expect.objectContaining({
+        sessionId: 'subagent-session-1',
+        result: expect.objectContaining({
+          text: '这是后台子代理总结',
+        }),
+      }),
+    );
+    expect(runtimeHostSubagentRunnerService.getSubagentOrThrow).toHaveBeenCalledWith('subagent-session-1');
   });
 
   it('deletes plugins through persistence owner and records plugin deletion events', async () => {

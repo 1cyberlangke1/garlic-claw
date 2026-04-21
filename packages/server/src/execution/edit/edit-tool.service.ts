@@ -18,9 +18,9 @@ export interface EditToolResult {
   path: string;
 }
 
-const EDIT_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
+export const EDIT_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   filePath: {
-    description: '要修改的文件路径。相对路径会基于 /workspace 解析。',
+    description: '要修改的文件路径。相对路径会基于当前 backend 的可见根解析。',
     required: true,
     type: 'string',
   },
@@ -50,10 +50,12 @@ export class EditToolService {
   }
 
   buildToolDescription(): string {
-    const workspaceRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVirtualWorkspaceRoot();
+    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
     return [
-      '在当前 session 工作区内对文本文件执行精确字符串替换。',
-      `filePath 必须位于 ${workspaceRoot} 内。`,
+      '在当前 backend 可见路径内对文本文件执行精确字符串替换。',
+      visibleRoot === '/'
+        ? 'filePath 可传相对路径或 backend 可见的绝对路径。'
+        : `filePath 必须位于 ${visibleRoot} 内。`,
       '如果 oldString 找不到会报错；如果匹配到多个位置，则需要提供更多上下文或使用 replaceAll。',
       '该工具不执行命令，只负责文本替换。',
     ].join('\n');
@@ -119,7 +121,7 @@ export class EditToolService {
       },
       requiredCapabilities: ['workspaceRead', 'workspaceWrite', 'persistentFilesystem'],
       role: 'workspace',
-      summary: `修改工作区路径 ${input.filePath}`,
+      summary: `修改路径 ${input.filePath}`,
     };
   }
 

@@ -78,7 +78,10 @@
 | R17-4 | 已完成 | `subagent` 公开语义继续向 OpenCode `task` 收口，公开主键固定为 `sessionId` |
 | R17-5 | 已完成 | 复核 `todo / task / bash` 与 OpenCode 的公开语义，差异表与收敛结果已补齐 |
 | R17-6 | 已完成 | 为本机 shell / WSL / 容器等后续执行后端预留稳定扩展点 |
-| R17-7 | 进行中 | 做 Windows / WSL 跨平台验证，并补 `workdir / timeout / tar` 等命令面证据 |
+| R17-7 | 已完成 | 做 Windows / WSL 跨平台验证，并补 `workdir / timeout / tar` 等命令面证据 |
+| R17-8 | 已完成 | 把工具主语义从固定 `/workspace` 收口到“当前 backend 可见路径” |
+| R17-9 | 已完成 | 补 runtime 审批模式与 yolo 开关 |
+| R17-12 | 已完成 | 增强 runtime host contract，并把 `bash / read / glob / grep / write / edit` 收成单个本地插件 |
 
 ## R17-5 差异表
 
@@ -92,11 +95,15 @@
 
 - 公开工具语义仍使用 `bash`，不把 `just-bash` 直接作为对模型暴露的工具名。
 - `just-bash` 只是首个执行后端，不应反向定义整个 runtime 接口。
+- 通用执行工具的主语义不再绑定某个代码仓库，也不再绑定单个固定 `/workspace` 根。
+- 对工具来说，稳定真相应是“当前 backend 允许看见哪些路径、允许做哪些能力操作”。
+- “项目 / worktree”后续如有需要，只能作为附加视图或特定 backend 能力，不能反向定义通用环境工具。
 - runtime 至少要拆出这些 owner：
   - 驱动接口
   - 工作区挂载配置
   - 能力策略
   - native 工具接线
+- runtime 需要提供显式审批模式开关；yolo 模式属于 runtime 配置，不属于单个工具特判。
 - 对 `just-bash` 后端，工作区必须是显式指定目录，执行产生的文件要落到这个目录语义上；其他后端后续可按各自能力模型定义是否需要同样约束。
 - 默认能力按用户要求允许网络访问等完整能力，但后续若要限权，必须改 runtime 能力策略，不在工具层散落特判。
 - 当前先不决定“Windows 直接跑 `just-bash`”就是最终方案；先把它视为待验证对象。
@@ -179,7 +186,58 @@
   - `ln -s / readlink / ln`
 - 当前仍缺：
   - 更宽命令面，例如压缩、`tar`、更复杂目录树与边界性能
-  - 按用户当前验收口径，把 Windows + WSL fresh 证据整理成正式收尾结论
+
+## 2026-04-21 通用环境工具语义修正
+
+## 目标
+
+- 把 runtime 工具主语义从“session `/workspace`”修正为“当前 backend 可见路径”。
+- 保留 just-bash 作为首个 backend，但不让它当前的挂载布局反向定义整个工具 contract。
+- 补 runtime 审批模式；在需要时可切到 yolo，但保留能力声明与审计痕迹。
+
+## 当前决定
+
+- `bash / read / glob / grep / write / edit` 的路径参数都应由 backend 判定是否可见，而不是工具层自己假设固定根。
+- just-bash 下允许访问 just-bash 文件系统里当前暴露的任意路径；持久与非持久路径由 backend 自己表达。
+- 当前先不把 project/worktree 作为主工具语义继续推进；相关底座仅保留为后续附加能力参考。
+- yolo 只改变默认审批决议，不跳过 runtime capability declaration，也不跳过日志/审计链。
+
+## 阶段
+
+| 阶段 | 状态 | 内容 |
+| --- | --- | --- |
+| E17-1 | 已完成 | 更新规划文件并复核当前 `/workspace` 绑定点 |
+| E17-2 | 已完成 | 改造 runtime backend 文件路径 contract，去掉工具层对固定根的硬编码 |
+| E17-3 | 已完成 | 改造 just-bash backend 的可见路径模型与路径校验 |
+| E17-4 | 已完成 | 补 runtime yolo 模式、定向测试与 smoke，并整理 fresh 结论 |
+
+## 2026-04-21 R17-12 runtime 工具插件化
+
+## 目标
+
+- 把 `bash / read / glob / grep / write / edit` 从 `ToolRegistryService` 原生注入迁到单个本地插件。
+- 保留现有 runtime backend、审批链和文件/命令 owner，不回退到“插件直接碰底层 runtime 服务”。
+- 让本地插件拥有正式 runtime host contract，为后续其他插件复用同一能力做准备。
+
+## 阶段
+
+| 阶段 | 状态 | 内容 |
+| --- | --- | --- |
+| P17-12-1 | 已完成 | 增加 shared / plugin-sdk / server 的 runtime host method 与权限契约 |
+| P17-12-2 | 已完成 | 新增 `builtin.runtime-tools` 本地插件，接管 `bash / read / glob / grep / write / edit` |
+| P17-12-3 | 已完成 | 移除 `ToolRegistryService` 原生 runtime 工具注入并补 fresh 验证 |
+
+## 当前决定
+
+- 插件接口增强优先于“继续保留 native 工具壳”。
+- runtime 工具不走单个 `runtime.tool.call` 泛化入口，先按稳定语义拆成 6 个 host method。
+- 本阶段仍保留 `todowrite / webfetch / skill` 的 native owner；这次只处理执行环境工具。
+- 新本地插件先做成 `system-required`，避免在迁移阶段改变默认可用性。
+- 独立 judge 已 PASS：
+  - `ToolRegistryService` 不再直接拼接 `bash / read / glob / grep / write / edit`
+  - `builtin.runtime-tools` 通过正式 host contract 调用 runtime owner
+  - runtime 权限审查与 backend 路由仍由宿主统一持有
+  - fresh 验收链足以支撑完成判定
 
 ## 当前决定
 
@@ -216,15 +274,15 @@
       - `requestPreview` 继续保留真实请求预览，不再复用 `description`
 - 当前已补第三段 `subagent type` 语义：
   - shared / plugin-sdk / server / web 都已接通 `subagentType`
-  - 宿主已落真实 `RuntimeHostSubagentTypeRegistryService`，通过 `subagent-types/*.yaml` 扫描类型
+  - 宿主已落真实 `RuntimeHostSubagentTypeRegistryService`，通过仓库根 `subagent/*.yaml` 扫描类型
   - 默认 `general / explore` 会自动补齐到目录中；`explore` 仍会补默认只读工具与探索导向提示词
   - 显式 `providerId / modelId / system / toolNames` 仍可覆盖类型默认值
   - 后台任务会持久化 `subagentType / subagentTypeName`
-  - HTTP 已补 `GET /subagent-types`，插件声明式配置可用 `selectSubagentType` 拉取选项
+  - HTTP 已补 `GET /plugin-subagents/types`，插件声明式配置可用 `selectSubagentType` 拉取选项
     - 当前已补第四段 `session` 主语义收口：
-      - `subagent.task.get` 宿主 Host API 已改成按 `sessionId` 读取
-      - plugin-sdk `getSubagentTask()` 已改成透传 `sessionId`
-      - HTTP `plugin-subagent-tasks/:sessionId` 与后台列表都已改成 session 最新投影语义
+      - `subagent.get` 宿主 Host API 已改成按 `sessionId` 读取
+      - plugin-sdk `getSubagent()` 已改成透传 `sessionId`
+      - HTTP `plugin-subagents/:sessionId` 与后台列表都已改成 session 最新投影语义
       - native `task` 工具对模型输出已改成 `session_id` 优先，`taskId` 只保留为 `ledger_task_id` 投影
       - `subagent.run` 与 `subagent.task.start/list/get/overview` 的公开结果都已移除账本 `id/taskId`，只保留 `sessionId / sessionMessageCount` 作为公开续跑与投影视图字段
     - 当前已补 `invalid` 失败恢复语义：
@@ -309,10 +367,10 @@
 
 | 阶段 | 状态 | 内容 |
 | --- | --- | --- |
-| L18-1 | 进行中 | 确认日志 owner、消息语义 owner、shared/server/web 契约边界 |
-| L18-2 | 进行中 | 实现 server 文件日志服务与 plugin / MCP / skill 日志读写、配置持久化 |
-| L18-3 | 进行中 | 实现“仅前端展示、不进入送模上下文”的消息角色并迁移上下文压缩 |
-| L18-4 | 进行中 | 更新前端日志面板、聊天展示、测试、fresh 验收与独立 judge |
+| L18-1 | 已完成 | 确认日志 owner、消息语义 owner、shared/server/web 契约边界 |
+| L18-2 | 已完成 | 实现 server 文件日志服务与 plugin / MCP / skill 日志读写、配置持久化 |
+| L18-3 | 已完成 | 实现“仅前端展示、不进入送模上下文”的消息角色并迁移上下文压缩 |
+| L18-4 | 已完成 | 更新前端日志面板、聊天展示、测试、fresh 验收与独立 judge |
 
 ## 当前决定
 
@@ -341,7 +399,10 @@
   - root: `npm run lint`
   - root: `npm run smoke:server`
   - root: `npm run smoke:web-ui`
-- 当前还缺独立 judge；在拿到 judge PASS 前，不把 L18 标成已完成。
+- 已补第二轮阻塞修复：
+  - `RuntimeEventLogService` 已改成真正按 `cursor` 继续分页，不再只是排除当前 cursor 这一条记录。
+  - 已新增 server 定向分页测试与 web 三个日志 composable 的 `loadMore` 分页测试。
+- 独立 judge 已 PASS；`L18` 现在可标记为已完成。
 
 ## 当前摸底
 

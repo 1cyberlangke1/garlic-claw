@@ -17,16 +17,17 @@ describe('SkillRegistryService', () => {
   it('scans skills only from the configured skills directory', async () => {
     const skillsRoot = path.join(tempRoot, 'skills');
     const externalRoot = path.join(tempRoot, 'external-skills');
-    await fs.mkdir(path.join(skillsRoot, 'planner'), { recursive: true });
+    await fs.mkdir(path.join(skillsRoot, 'weather-query', 'scripts'), { recursive: true });
     await fs.mkdir(path.join(externalRoot, 'ignored'), { recursive: true });
-    await fs.writeFile(path.join(skillsRoot, 'planner', 'SKILL.md'), [
+    await fs.writeFile(path.join(skillsRoot, 'weather-query', 'SKILL.md'), [
       '---',
-      'name: planner',
-      'description: 先拆任务，再逐步执行。',
+      'name: weather-query',
+      'description: 查询指定地点天气。',
       '---',
       '',
-      '# planner',
+      '# weather-query',
     ].join('\n'), 'utf8');
+    await fs.writeFile(path.join(skillsRoot, 'weather-query', 'scripts', 'weather.js'), 'console.log("weather")\n', 'utf8');
     await fs.writeFile(path.join(externalRoot, 'ignored', 'SKILL.md'), [
       '---',
       'name: ignored',
@@ -42,10 +43,10 @@ describe('SkillRegistryService', () => {
 
     await expect(service.listSkills()).resolves.toEqual([
       expect.objectContaining({
-        description: '先拆任务，再逐步执行。',
-        entryPath: 'planner/SKILL.md',
-        id: 'project/planner',
-        name: 'planner',
+        description: '查询指定地点天气。',
+        entryPath: 'weather-query/SKILL.md',
+        id: 'project/weather-query',
+        name: 'weather-query',
         sourceKind: 'project',
       }),
     ]);
@@ -95,8 +96,36 @@ describe('SkillRegistryService', () => {
     });
 
     expect(service.resolveSkillDirectory({
-      entryPath: 'planner/SKILL.md',
+      entryPath: 'weather-query/SKILL.md',
       sourceKind: 'project',
-    })).toBe(path.join(skillsRoot, 'planner'));
+    })).toBe(path.join(skillsRoot, 'weather-query'));
+  });
+
+  it('marks shell scripts as executable skill assets', async () => {
+    const skillsRoot = path.join(tempRoot, 'skills');
+    await fs.mkdir(path.join(skillsRoot, 'weather-query', 'scripts'), { recursive: true });
+    await fs.writeFile(path.join(skillsRoot, 'weather-query', 'SKILL.md'), [
+      '---',
+      'name: weather-query',
+      'description: 查询指定地点天气。',
+      '---',
+      '',
+      '# weather-query',
+    ].join('\n'), 'utf8');
+    await fs.writeFile(path.join(skillsRoot, 'weather-query', 'scripts', 'weather.js'), 'console.log("weather")\n', 'utf8');
+
+    const service = new SkillRegistryService({
+      skillsRoot,
+    });
+
+    const [skill] = await service.listSkills();
+    expect(skill?.assets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        executable: true,
+        kind: 'script',
+        path: 'scripts/weather.js',
+        textReadable: true,
+      }),
+    ]));
   });
 });

@@ -1,4 +1,4 @@
-import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginCommandCatalogVersion, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentTaskDetail, type PluginSubagentTaskOverview, type PluginSubagentTypeSummary } from '@garlic-claw/shared';
+import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginCommandCatalogVersion, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentDetail, type PluginSubagentOverview, type PluginSubagentTypeSummary } from '@garlic-claw/shared';
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/http-auth';
@@ -165,14 +165,14 @@ export class PluginController {
     return buildPluginCommandCatalogVersion(commands);
   }
 
-  @Get('plugin-subagent-tasks/overview')
-  listSubagentTaskOverview(): PluginSubagentTaskOverview { return this.runtimeHostSubagentRunnerService.listOverview(); }
+  @Get('plugin-subagents/overview')
+  listSubagentOverview(): PluginSubagentOverview { return this.runtimeHostSubagentRunnerService.listOverview(); }
 
-  @Get('subagent-types')
+  @Get('plugin-subagents/types')
   listSubagentTypes(): PluginSubagentTypeSummary[] { return this.runtimeHostSubagentRunnerService.listTypes(); }
 
-  @Get('plugin-subagent-tasks/:taskId')
-  getSubagentTask(@Param('taskId') taskId: string): PluginSubagentTaskDetail { return this.runtimeHostSubagentRunnerService.getTaskOrThrow(taskId); }
+  @Get('plugin-subagents/:sessionId')
+  getSubagent(@Param('sessionId') sessionId: string): PluginSubagentDetail { return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(sessionId); }
 
   private recordPluginEvent(inputPluginId: string, input: {
     level?: 'error' | 'info' | 'warn';

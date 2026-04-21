@@ -196,7 +196,7 @@ model PluginEvent {
   @@map("plugin_events")
 }
 
-model PluginSubagentTask {
+model PluginSubagent {
   id                 String   @id
   pluginId           String   @map("plugin_id")
   pluginDisplayName  String?  @map("plugin_display_name")
@@ -222,7 +222,7 @@ model PluginSubagentTask {
 
   @@index([status, requestedAt])
   @@index([pluginId, requestedAt])
-  @@map("plugin_subagent_tasks")
+  @@map("plugin_subagents")
 }
 
 model Memory {

@@ -16,9 +16,9 @@ export interface WriteToolResult {
   path: string;
 }
 
-const WRITE_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
+export const WRITE_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   filePath: {
-    description: '要写入的文件路径。相对路径会基于 /workspace 解析。',
+    description: '要写入的文件路径。相对路径会基于当前 backend 的可见根解析。',
     required: true,
     type: 'string',
   },
@@ -38,12 +38,14 @@ export class WriteToolService {
   }
 
   buildToolDescription(): string {
-    const workspaceRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVirtualWorkspaceRoot();
+    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
     return [
-      '在当前 session 工作区内整文件写入内容。',
-      `filePath 必须位于 ${workspaceRoot} 内。`,
+      '在当前 backend 可见路径内整文件写入内容。',
+      visibleRoot === '/'
+        ? 'filePath 可传相对路径或 backend 可见的绝对路径。'
+        : `filePath 必须位于 ${visibleRoot} 内。`,
       '如果文件已存在，会被完整覆盖；如果文件不存在，会自动创建父目录。',
-      '该工具不执行命令，只负责工作区文件写入。',
+      '该工具不执行命令，只负责文件系统写入。',
     ].join('\n');
   }
 
@@ -91,7 +93,7 @@ export class WriteToolService {
       },
       requiredCapabilities: ['workspaceWrite', 'persistentFilesystem'],
       role: 'workspace',
-      summary: `写入工作区路径 ${input.filePath}`,
+      summary: `写入路径 ${input.filePath}`,
     };
   }
 

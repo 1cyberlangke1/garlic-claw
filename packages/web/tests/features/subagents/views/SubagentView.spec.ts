@@ -1,16 +1,15 @@
 import { computed, ref, shallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import SubagentTasksView from '@/features/subagents/views/SubagentTasksView.vue'
+import SubagentView from '@/features/subagents/views/SubagentView.vue'
 
-vi.mock('@/features/subagents/composables/use-plugin-subagent-tasks', () => ({
-  usePluginSubagentTasks: () => ({
+vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
+  usePluginSubagents: () => ({
     loading: ref(false),
     error: ref(null),
-    tasks: shallowRef([
+    subagents: shallowRef([
       {
-        description: '继续已有后台任务',
-        id: 'subagent-task-1',
+        description: '继续已有后台子代理',
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
@@ -36,10 +35,9 @@ vi.mock('@/features/subagents/composables/use-plugin-subagent-tasks', () => ({
     ]),
     searchKeyword: ref(''),
     filter: ref('all'),
-    pagedTasks: computed(() => [
+    pagedSubagents: computed(() => [
       {
-        description: '继续已有后台任务',
-        id: 'subagent-task-1',
+        description: '继续已有后台子代理',
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
@@ -71,18 +69,18 @@ vi.mock('@/features/subagents/composables/use-plugin-subagent-tasks', () => ({
     canGoNextPage: ref(false),
     goPrevPage: vi.fn(),
     goNextPage: vi.fn(),
-    taskCount: computed(() => 1),
-    filteredTaskCount: computed(() => 1),
-    runningTaskCount: computed(() => 1),
-    errorTaskCount: computed(() => 0),
+    filteredSubagentCount: computed(() => 1),
+    runningSubagentCount: computed(() => 1),
+    errorSubagentCount: computed(() => 0),
     writeBackAttentionCount: computed(() => 1),
+    subagentCount: computed(() => 1),
     refreshAll: vi.fn(),
   }),
 }))
 
-describe('SubagentTasksView', () => {
-  it('renders the background subagent task dashboard and plugin deep-links', () => {
-    const wrapper = mount(SubagentTasksView, {
+describe('SubagentView', () => {
+  it('renders the background subagent dashboard and plugin deep-links', () => {
+    const wrapper = mount(SubagentView, {
       global: {
         stubs: {
           RouterLink: {
@@ -93,8 +91,8 @@ describe('SubagentTasksView', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('后台 Subagent 任务')
-    expect(wrapper.text()).toContain('继续已有后台任务')
+    expect(wrapper.text()).toContain('后台 Subagent')
+    expect(wrapper.text()).toContain('继续已有后台子代理')
     expect(wrapper.text()).toContain('子代理委派')
     expect(wrapper.text()).toContain('探索')
     expect(wrapper.text()).toContain('请帮我总结当前对话')

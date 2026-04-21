@@ -182,6 +182,7 @@ function createRuntimeFixture() {
     new RuntimeHostKnowledgeService(),
     runtimeHostPluginDispatchService,
     new RuntimeHostPluginRuntimeService(),
+    {} as never,
     {
       getTask: jest.fn(),
       listTasks: jest.fn(),

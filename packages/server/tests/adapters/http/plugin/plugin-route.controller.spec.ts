@@ -25,7 +25,7 @@ describe('PluginController route forwarding', () => {
     setPluginStorage: jest.fn(),
   };
   const runtimeHostSubagentRunnerService = {
-    getTaskOrThrow: jest.fn(),
+    getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
   };
   const runtimePluginGovernanceService = {

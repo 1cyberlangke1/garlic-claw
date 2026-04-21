@@ -14,6 +14,7 @@ import { PLUGIN_HOST_METHOD_PERMISSION_MAP } from './runtime-host.constants';
 import { RuntimeHostKnowledgeService } from './runtime-host-knowledge.service';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from './runtime-host-plugin-runtime.service';
+import { RuntimeHostRuntimeToolService } from './runtime-host-runtime-tool.service';
 import { RuntimeHostSubagentRunnerService } from './runtime-host-subagent-runner.service';
 import { RuntimeHostUserContextService } from './runtime-host-user-context.service';
 import { asJsonValue, readJsonObject, readOptionalString, readPluginLlmMessages, readRequiredString, requireContextField, type AssistantCustomBlockEntry } from './runtime-host-values';
@@ -33,7 +34,7 @@ interface RuntimeHostCallInput {
 export class RuntimeHostService implements OnModuleInit {
   private readonly callHandlers: Record<RuntimeHostMethod, RuntimeHostCallHandler>;
 
-  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly automationService: AutomationService, private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiManagementService: AiManagementService, private readonly runtimeHostKnowledgeService: RuntimeHostKnowledgeService, private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService, private readonly runtimeHostUserContextService: RuntimeHostUserContextService, private readonly personaService: PersonaService) {
+  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly automationService: AutomationService, private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiManagementService: AiManagementService, private readonly runtimeHostKnowledgeService: RuntimeHostKnowledgeService, private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimeHostRuntimeToolService: RuntimeHostRuntimeToolService, private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService, private readonly runtimeHostUserContextService: RuntimeHostUserContextService, private readonly personaService: PersonaService) {
     this.callHandlers = this.buildCallHandlers();
   }
 
@@ -113,6 +114,12 @@ export class RuntimeHostService implements OnModuleInit {
       'provider.get': ({ params }) => asJsonValue(this.aiManagementService.getProviderSummary(String(params.providerId))),
       'provider.list': () => this.aiManagementService.listProviders() as unknown as JsonValue,
       'provider.model.get': ({ params }) => asJsonValue(this.aiManagementService.getProviderModelSummary(String(params.providerId), String(params.modelId))),
+      'runtime.command.execute': async ({ context, params }) => asJsonValue(await this.runtimeHostRuntimeToolService.executeCommand(context, params)),
+      'runtime.fs.edit': async ({ context, params }) => asJsonValue(await this.runtimeHostRuntimeToolService.editFile(context, params)),
+      'runtime.fs.glob': async ({ context, params }) => asJsonValue(await this.runtimeHostRuntimeToolService.globPaths(context, params)),
+      'runtime.fs.grep': async ({ context, params }) => asJsonValue(await this.runtimeHostRuntimeToolService.grepContent(context, params)),
+      'runtime.fs.read': async ({ context, params }) => asJsonValue(await this.runtimeHostRuntimeToolService.readPath(context, params)),
+      'runtime.fs.write': async ({ context, params }) => asJsonValue(await this.runtimeHostRuntimeToolService.writeFile(context, params)),
       'state.delete': (input) => runStoreMutation('state', 'deleteStoreValue', input),
       'state.get': (input) => runStoreMutation('state', 'getStoreValue', input),
       'state.list': (input) => runStoreMutation('state', 'listStoreValues', input),
@@ -122,9 +129,9 @@ export class RuntimeHostService implements OnModuleInit {
       'storage.list': (input) => runStoreMutation('storage', 'listStoreValues', input),
       'storage.set': (input) => runStoreMutation('storage', 'setStoreValue', input),
       'subagent.run': ({ context, params, pluginId }) => this.runtimeHostSubagentRunnerService.runSubagent(pluginId, context, params),
-      'subagent.task.get': ({ params, pluginId }) => this.runtimeHostSubagentRunnerService.getTask(pluginId, readRequiredString(params, 'taskId')) as unknown as JsonValue,
-      'subagent.task.list': ({ pluginId }) => this.runtimeHostSubagentRunnerService.listTasks(pluginId) as unknown as JsonValue,
-      'subagent.task.start': ({ context, params, plugin, pluginId }) => this.runtimeHostSubagentRunnerService.startTask(pluginId, plugin.manifest.name, context, params),
+      'subagent.get': ({ params, pluginId }) => this.runtimeHostSubagentRunnerService.getSubagent(pluginId, readRequiredString(params, 'sessionId')) as unknown as JsonValue,
+      'subagent.list': ({ pluginId }) => this.runtimeHostSubagentRunnerService.listSubagents(pluginId) as unknown as JsonValue,
+      'subagent.start': ({ context, params, plugin, pluginId }) => this.runtimeHostSubagentRunnerService.startSubagent(pluginId, plugin.manifest.name, context, params),
       'user.get': ({ context }) => {
         if (!context.userId) {throw new NotFoundException('User not found: unknown');}
         return asJsonValue(createSingleUserProfile());

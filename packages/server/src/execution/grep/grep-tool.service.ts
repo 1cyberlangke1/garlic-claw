@@ -21,14 +21,14 @@ export interface GrepToolResult {
 const MAX_GREP_MATCHES = 100;
 const MAX_GREP_LINE_LENGTH = 2000;
 
-const GREP_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
+export const GREP_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   pattern: {
     description: '要搜索的正则表达式。',
     required: true,
     type: 'string',
   },
   path: {
-    description: '可选搜索路径。相对路径会基于 /workspace 解析，默认搜索整个工作区。',
+    description: '可选搜索路径。相对路径会基于当前 backend 的可见根解析，默认搜索整个可见文件系统。',
     required: false,
     type: 'string',
   },
@@ -48,10 +48,12 @@ export class GrepToolService {
   }
 
   buildToolDescription(): string {
-    const workspaceRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVirtualWorkspaceRoot();
+    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
     return [
-      '在当前 session 工作区内按正则搜索文本文件内容。',
-      `path 参数只能位于 ${workspaceRoot} 内。`,
+      '在当前 backend 可见路径内按正则搜索文本文件内容。',
+      visibleRoot === '/'
+        ? 'path 可省略，或传 backend 可见的绝对路径。'
+        : `path 参数只能位于 ${visibleRoot} 内。`,
       '会跳过二进制文件；include 可进一步限制参与搜索的文件。',
     ].join('\n');
   }
@@ -151,7 +153,7 @@ export class GrepToolService {
       },
       requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
       role: 'workspace',
-      summary: `按正则搜索工作区路径 ${input.path ?? '/workspace'}`,
+      summary: `按正则搜索路径 ${input.path ?? this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot()}`,
     };
   }
 

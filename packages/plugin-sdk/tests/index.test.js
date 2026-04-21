@@ -1578,11 +1578,10 @@ test('execution context exposes message target lookup and generic send host APIs
   });
 });
 
-test('execution context exposes background subagent task host APIs', async () => {
+test('execution context exposes background subagent host APIs', async () => {
   const client = createClient();
   const sent = installHostCallMock(client, {
     'subagent.run': () => ({
-      taskId: 'subagent-task-inline-1',
       sessionId: 'subagent-session-inline-1',
       sessionMessageCount: 2,
       providerId: 'openai',
@@ -1596,9 +1595,8 @@ test('execution context exposes background subagent task host APIs', async () =>
       toolCalls: [],
       toolResults: [],
     }),
-    'subagent.task.start': () => ({
+    'subagent.start': () => ({
       description: '总结当前对话',
-      id: 'subagent-task-1',
       sessionId: 'subagent-session-1',
       sessionMessageCount: 1,
       sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
@@ -1614,10 +1612,9 @@ test('execution context exposes background subagent task host APIs', async () =>
       startedAt: null,
       finishedAt: null,
     }),
-    'subagent.task.list': () => ([
+    'subagent.list': () => ([
       {
         description: '总结当前对话',
-        id: 'subagent-task-1',
         sessionId: 'subagent-session-1',
         sessionMessageCount: 1,
         sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
@@ -1634,8 +1631,7 @@ test('execution context exposes background subagent task host APIs', async () =>
         finishedAt: null,
       },
     ]),
-    'subagent.task.get': () => ({
-      id: 'subagent-task-1',
+    'subagent.get': () => ({
       description: '总结当前对话',
       sessionId: 'subagent-session-1',
       sessionMessageCount: 2,
@@ -1645,7 +1641,7 @@ test('execution context exposes background subagent task host APIs', async () =>
       runtimeKind: 'remote',
       status: 'completed',
       requestPreview: '请帮我总结当前对话',
-      resultPreview: '这是后台任务总结',
+      resultPreview: '这是后台子代理总结',
       providerId: 'openai',
       modelId: 'gpt-5.2',
       writeBackStatus: 'sent',
@@ -1671,10 +1667,10 @@ test('execution context exposes background subagent task host APIs', async () =>
       result: {
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        text: '这是后台任务总结',
+        text: '这是后台子代理总结',
         message: {
           role: 'assistant',
-          content: '这是后台任务总结',
+          content: '这是后台子代理总结',
         },
         finishReason: 'stop',
         toolCalls: [],
@@ -1699,7 +1695,7 @@ test('execution context exposes background subagent task host APIs', async () =>
       },
     ],
   });
-  const startedTask = await executionContext.host.startSubagentTask({
+  const startedSubagent = await executionContext.host.startSubagent({
     description: '总结当前对话',
     providerId: 'openai',
     modelId: 'gpt-5.2',
@@ -1716,28 +1712,30 @@ test('execution context exposes background subagent task host APIs', async () =>
       },
     },
   });
-  const listedTasks = await executionContext.host.listSubagentTasks();
-  const loadedTask = await executionContext.host.getSubagentTask('subagent-task-1');
+  const listedSubagents = await executionContext.host.listSubagents();
+  const loadedSubagent = await executionContext.host.getSubagent('subagent-session-1');
 
-  assert.equal(inlineResult.taskId, 'subagent-task-inline-1');
   assert.equal(inlineResult.sessionId, 'subagent-session-inline-1');
   assert.equal(inlineResult.sessionMessageCount, 2);
-  assert.equal(startedTask.status, 'queued');
-  assert.equal(startedTask.description, '总结当前对话');
-  assert.equal(listedTasks.length, 1);
-  assert.equal(loadedTask.status, 'completed');
-  assert.equal(loadedTask.result.text, '这是后台任务总结');
+  assert.equal(startedSubagent.status, 'queued');
+  assert.equal(startedSubagent.description, '总结当前对话');
+  assert.equal(listedSubagents.length, 1);
+  assert.equal(loadedSubagent.status, 'completed');
+  assert.equal(loadedSubagent.result.text, '这是后台子代理总结');
   assert.equal(sent[0].payload.params.description, '同步总结当前对话');
   assert.equal(sent[1].payload.params.description, '总结当前对话');
   assert.deepEqual(
     sent.map((entry) => entry.payload.method),
     [
       'subagent.run',
-      'subagent.task.start',
-      'subagent.task.list',
-      'subagent.task.get',
+      'subagent.start',
+      'subagent.list',
+      'subagent.get',
     ],
   );
+  assert.deepEqual(sent[3].payload.params, {
+    sessionId: 'subagent-session-1',
+  });
 });
 
 test('execution context exposes a conversation session controller helper', async () => {

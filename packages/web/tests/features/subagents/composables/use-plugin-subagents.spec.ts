@@ -1,20 +1,19 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { usePluginSubagentTasks } from '@/features/subagents/composables/use-plugin-subagent-tasks'
-import * as subagentTaskData from '@/features/subagents/composables/plugin-subagent-tasks.data'
+import { usePluginSubagents } from '@/features/subagents/composables/use-plugin-subagents'
+import * as subagentData from '@/features/subagents/composables/plugin-subagents.data'
 
-vi.mock('@/features/subagents/composables/plugin-subagent-tasks.data', () => ({
-  loadPluginSubagentTaskOverview: vi.fn(),
+vi.mock('@/features/subagents/composables/plugin-subagents.data', () => ({
+  loadPluginSubagentOverview: vi.fn(),
   toErrorMessage: vi.fn((error: Error | undefined, fallback: string) => error?.message ?? fallback),
 }))
 
 function createOverview() {
   return {
-    tasks: [
+    subagents: [
       {
-        description: '继续已有后台任务',
-        id: 'subagent-task-1',
+        description: '继续已有后台子代理',
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
@@ -33,7 +32,6 @@ function createOverview() {
       },
       {
         description: '分析失败插件',
-        id: 'subagent-task-2',
         sessionId: 'subagent-session-2',
         sessionMessageCount: 4,
         sessionUpdatedAt: '2026-03-30T11:50:05.000Z',
@@ -42,7 +40,7 @@ function createOverview() {
         runtimeKind: 'remote' as const,
         status: 'completed' as const,
         requestPreview: '请分析最近失败的插件',
-        resultPreview: '这是后台任务总结',
+        resultPreview: '这是后台子代理总结',
         providerId: 'anthropic',
         modelId: 'claude-3-7-sonnet',
         writeBackStatus: 'sent' as const,
@@ -55,22 +53,22 @@ function createOverview() {
   }
 }
 
-describe('usePluginSubagentTasks', () => {
+describe('usePluginSubagents', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
-    vi.mocked(subagentTaskData.loadPluginSubagentTaskOverview).mockResolvedValue(createOverview())
+    vi.mocked(subagentData.loadPluginSubagentOverview).mockResolvedValue(createOverview())
   })
 
   afterEach(() => {
     vi.useRealTimers()
   })
 
-  it('loads the overview, filters by keyword and task status, and keeps polling', async () => {
-    let state!: ReturnType<typeof usePluginSubagentTasks>
+  it('loads the overview, filters by keyword and subagent status, and keeps polling', async () => {
+    let state!: ReturnType<typeof usePluginSubagents>
     const Harness = defineComponent({
       setup() {
-        state = usePluginSubagentTasks()
+        state = usePluginSubagents()
         return () => null
       },
     })
@@ -78,32 +76,32 @@ describe('usePluginSubagentTasks', () => {
     const wrapper = mount(Harness)
     await flushPromises()
 
-    expect(state.taskCount.value).toBe(2)
-    expect(state.runningTaskCount.value).toBe(1)
-    expect(state.pagedTasks.value.map((task) => task.id)).toEqual([
-      'subagent-task-1',
-      'subagent-task-2',
+    expect(state.subagentCount.value).toBe(2)
+    expect(state.runningSubagentCount.value).toBe(1)
+    expect(state.pagedSubagents.value.map((subagent) => subagent.sessionId)).toEqual([
+      'subagent-session-1',
+      'subagent-session-2',
     ])
 
     state.filter.value = 'running'
     await flushPromises()
 
-    expect(state.filteredTaskCount.value).toBe(1)
-    expect(state.pagedTasks.value.map((task) => task.id)).toEqual([
-      'subagent-task-1',
+    expect(state.filteredSubagentCount.value).toBe(1)
+    expect(state.pagedSubagents.value.map((subagent) => subagent.sessionId)).toEqual([
+      'subagent-session-1',
     ])
 
     state.filter.value = 'all'
     state.searchKeyword.value = '分析失败'
     await flushPromises()
 
-    expect(state.filteredTaskCount.value).toBe(1)
-    expect(state.pagedTasks.value.map((task) => task.id)).toEqual([
-      'subagent-task-2',
+    expect(state.filteredSubagentCount.value).toBe(1)
+    expect(state.pagedSubagents.value.map((subagent) => subagent.sessionId)).toEqual([
+      'subagent-session-2',
     ])
 
     await vi.advanceTimersByTimeAsync(5000)
-    expect(subagentTaskData.loadPluginSubagentTaskOverview).toHaveBeenCalledTimes(2)
+    expect(subagentData.loadPluginSubagentOverview).toHaveBeenCalledTimes(2)
 
     wrapper.unmount()
   })

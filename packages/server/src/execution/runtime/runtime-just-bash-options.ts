@@ -36,6 +36,7 @@ export function readRuntimeJustBashOptions(): RuntimeJustBashOptions {
         workspaceRead: 'allow',
         workspaceWrite: 'allow',
       } satisfies RuntimePermissionPolicy,
+      visibleRoot: '/',
     },
     maxTimeoutMs: readPositiveIntegerEnv(
       'GARLIC_CLAW_RUNTIME_JUST_BASH_MAX_TIMEOUT_MS',

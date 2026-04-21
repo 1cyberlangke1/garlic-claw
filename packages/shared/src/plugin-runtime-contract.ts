@@ -12,7 +12,7 @@ import type {
   PluginCallContext,
   PluginErrorHookPayload,
   PluginLoadedHookPayload,
-  PluginSubagentRunResult,
+  PluginSubagentExecutionResult,
   PluginUnloadedHookPayload,
   ResponseAfterSendHookPayload,
   ResponseBeforeSendHookPayload,
@@ -67,7 +67,7 @@ export type SubagentHookFamily = {
   'subagent:before-run': HookSpec<
     SubagentBeforeRunHookPayload,
     | { action: 'continue'; payload: SubagentBeforeRunHookPayload }
-    | { action: 'short-circuit'; result: PluginSubagentRunResult }
+    | { action: 'short-circuit'; result: PluginSubagentExecutionResult }
   >;
   'subagent:after-run': HookSpec<SubagentAfterRunHookPayload, SubagentAfterRunHookPayload>;
 };

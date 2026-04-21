@@ -1,14 +1,14 @@
 import type {
+  PluginSubagentExecutionResult,
   PluginSubagentRequest,
   PluginSubagentRunParams,
-  PluginSubagentRunResult,
-  PluginSubagentTaskStatus,
-  PluginSubagentTaskWriteBackStatus,
+  PluginSubagentStatus,
+  PluginSubagentWriteBackStatus,
 } from './plugin-ai';
 import type { PluginMessageTargetInfo, PluginMessageTargetRef } from './plugin-chat';
 import type { PluginCallContext, PluginRuntimeKind } from './plugin-core';
 
-export interface PluginSubagentTaskWriteBack {
+export interface PluginSubagentWriteBack {
   target?: PluginMessageTargetRef | null;
 }
 
@@ -18,12 +18,11 @@ export interface PluginSubagentTypeSummary {
   description?: string;
 }
 
-export interface PluginSubagentTaskStartParams extends PluginSubagentRunParams {
-  writeBack?: PluginSubagentTaskWriteBack | null;
+export interface PluginSubagentStartParams extends PluginSubagentRunParams {
+  writeBack?: PluginSubagentWriteBack | null;
 }
 
-export interface PluginSubagentTaskSummary {
-  id: string;
+export interface PluginSubagentSummary {
   sessionId: string;
   sessionMessageCount: number;
   sessionUpdatedAt: string;
@@ -33,13 +32,13 @@ export interface PluginSubagentTaskSummary {
   pluginId: string;
   pluginDisplayName?: string;
   runtimeKind: PluginRuntimeKind;
-  status: PluginSubagentTaskStatus;
+  status: PluginSubagentStatus;
   requestPreview: string;
   resultPreview?: string;
   providerId?: string;
   modelId?: string;
   error?: string;
-  writeBackStatus: PluginSubagentTaskWriteBackStatus;
+  writeBackStatus: PluginSubagentWriteBackStatus;
   writeBackTarget?: PluginMessageTargetInfo | null;
   writeBackError?: string;
   writeBackMessageId?: string;
@@ -50,12 +49,12 @@ export interface PluginSubagentTaskSummary {
   userId?: string;
 }
 
-export interface PluginSubagentTaskDetail extends PluginSubagentTaskSummary {
+export interface PluginSubagentDetail extends PluginSubagentSummary {
   request: PluginSubagentRequest;
   context: PluginCallContext;
-  result?: PluginSubagentRunResult | null;
+  result?: PluginSubagentExecutionResult | null;
 }
 
-export interface PluginSubagentTaskOverview {
-  tasks: PluginSubagentTaskSummary[];
+export interface PluginSubagentOverview {
+  subagents: PluginSubagentSummary[];
 }

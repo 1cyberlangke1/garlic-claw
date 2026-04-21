@@ -1,4 +1,4 @@
-import { Bash, InMemoryFs, MountableFs } from 'just-bash';
+import { Bash } from 'just-bash';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { RuntimeBackend, RuntimeBackendDescriptor, RuntimeCommandRequest, RuntimeCommandResult } from './runtime-command.types';
 import { RuntimeWorkspaceService } from './runtime-workspace.service';
@@ -22,22 +22,17 @@ export class RuntimeJustBashService implements RuntimeBackend {
   async executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandResult> {
     const options = readRuntimeJustBashOptions();
     const workspaceRoot = await this.runtimeWorkspaceService.resolveWorkspaceRoot(input.sessionId);
-    const filesystem = new MountableFs({
-      base: new InMemoryFs(),
-    });
-    filesystem.mount(
-      this.runtimeWorkspaceService.getVirtualWorkspaceRoot(),
-      new RuntimeMountedWorkspaceFileSystem(workspaceRoot, this.runtimeWorkspaceService.getVirtualWorkspaceRoot()),
-    );
+    const visibleRoot = this.runtimeWorkspaceService.getVisibleRoot();
+    const filesystem = new RuntimeMountedWorkspaceFileSystem(workspaceRoot, visibleRoot);
     const bash = new Bash({
-      cwd: this.runtimeWorkspaceService.getVirtualWorkspaceRoot(),
+      cwd: visibleRoot,
       fs: filesystem,
       network: {
         dangerouslyAllowFullInternetAccess: options.descriptor.capabilities.networkAccess,
       },
     });
 
-    const cwd = resolveRuntimeWorkingDirectory(this.runtimeWorkspaceService.getVirtualWorkspaceRoot(), input.workdir);
+    const cwd = resolveRuntimeWorkingDirectory(visibleRoot, input.workdir);
     const timeoutMs = readRuntimeJustBashTimeout(input.timeout);
     const controller = new AbortController();
     let timeoutHandle: NodeJS.Timeout | null = null;
@@ -138,7 +133,7 @@ function resolveRuntimeWorkingDirectory(workspaceRoot: string, inputWorkdir?: st
   const normalized = inputWorkdir.trim().startsWith('/')
     ? normalizePosixPath(inputWorkdir.trim())
     : normalizePosixPath(`${workspaceRoot}/${inputWorkdir.trim()}`);
-  if (normalized !== workspaceRoot && !normalized.startsWith(`${workspaceRoot}/`)) {
+  if (workspaceRoot !== '/' && normalized !== workspaceRoot && !normalized.startsWith(`${workspaceRoot}/`)) {
     throw new BadRequestException(`bash.workdir 必须位于 ${workspaceRoot} 内`);
   }
   return normalized;

@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common'
 import YAML from 'yaml'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
+import { resolveProjectWorkspaceRoot } from '../runtime/host/project-workspace-root'
 
 export interface StoredPersonaRecord extends PluginPersonaDetail {}
 
@@ -67,32 +68,7 @@ export function resolvePersonaStorageRoot(): string {
       `personas.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     )
   }
-  return path.join(resolveProjectRoot(), 'persona')
-}
-
-function resolveProjectRoot(): string {
-  return findProjectRoot(process.cwd())
-    ?? findProjectRoot(__dirname)
-    ?? process.cwd()
-}
-
-function findProjectRoot(startPath: string): string | null {
-  let currentPath = path.resolve(startPath)
-
-  while (true) {
-    if (
-      fs.existsSync(path.join(currentPath, 'package.json'))
-      && fs.existsSync(path.join(currentPath, 'packages', 'server'))
-    ) {
-      return currentPath
-    }
-
-    const parentPath = path.dirname(currentPath)
-    if (parentPath === currentPath) {
-      return null
-    }
-    currentPath = parentPath
-  }
+  return path.join(resolveProjectWorkspaceRoot(process.cwd()), 'persona')
 }
 
 function loadPersonaStore(storageRoot: string): StoredPersonaRecord[] {

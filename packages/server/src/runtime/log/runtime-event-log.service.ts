@@ -70,12 +70,12 @@ export class RuntimeEventLogService {
       .reverse()
       .filter((record) => !query.level || record.level === query.level)
       .filter((record) => !query.type || record.type === query.type)
-      .filter((record) => !query.keyword || runtimeEventLogMatchesKeyword(record, query.keyword))
-      .filter((record) => !query.cursor || record.id !== query.cursor);
-    const items = filtered.slice(0, limit);
+      .filter((record) => !query.keyword || runtimeEventLogMatchesKeyword(record, query.keyword));
+    const paged = sliceRuntimeEventLogsByCursor(filtered, query.cursor);
+    const items = paged.slice(0, limit);
     return {
       items,
-      nextCursor: filtered.length > limit ? items.at(-1)?.id ?? null : null,
+      nextCursor: paged.length > limit ? items.at(-1)?.id ?? null : null,
     };
   }
 }
@@ -136,6 +136,20 @@ function runtimeEventLogMatchesKeyword(record: EventLogRecord, keyword: string):
   return record.message.toLowerCase().includes(normalizedKeyword)
     || record.type.toLowerCase().includes(normalizedKeyword)
     || JSON.stringify(record.metadata ?? {}).toLowerCase().includes(normalizedKeyword);
+}
+
+function sliceRuntimeEventLogsByCursor(
+  records: EventLogRecord[],
+  cursor?: string,
+): EventLogRecord[] {
+  if (!cursor) {
+    return records;
+  }
+  const cursorIndex = records.findIndex((record) => record.id === cursor);
+  if (cursorIndex < 0) {
+    return [];
+  }
+  return records.slice(cursorIndex + 1);
 }
 
 function resolveEventLogFilePath(

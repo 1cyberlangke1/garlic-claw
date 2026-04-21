@@ -104,7 +104,7 @@ export class ConversationMessagePlanningService {
     if (!beforeModel) {throw new BadRequestException('Invalid before-model hook result');}
     if (beforeModel.action === 'short-circuit') {return { modelId: beforeModel.modelId, providerId: beforeModel.providerId, responseSource: 'short-circuit', shortCircuitParts: beforeModel.assistantParts, stream: createShortCircuitStream(beforeModel.assistantContent) };}
     if (beforeModel.action !== 'continue') {throw new BadRequestException('Invalid before-model hook result');}
-    const tools = await this.toolRegistryService.buildToolSet({ allowedToolNames: persona.toolNames ?? undefined, context: createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId }) });
+    const tools = await this.toolRegistryService.buildToolSet({ abortSignal: input.abortSignal, allowedToolNames: persona.toolNames ?? undefined, assistantMessageId: input.messageId, context: createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId }) });
     const modelId = beforeModel.modelId === DEFAULT_PROVIDER_MODEL_ID ? undefined : beforeModel.modelId;
     const providerId = beforeModel.providerId === DEFAULT_PROVIDER_ID ? undefined : beforeModel.providerId;
     const stream = this.aiModelExecutionService.streamText({

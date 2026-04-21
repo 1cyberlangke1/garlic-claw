@@ -19,14 +19,14 @@ export interface GlobToolResult {
 
 const MAX_GLOB_RESULTS = 100;
 
-const GLOB_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
+export const GLOB_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   pattern: {
     description: '要匹配的 glob 模式，例如 `*.ts`、`**/*.md`。',
     required: true,
     type: 'string',
   },
   path: {
-    description: '可选搜索目录。相对路径会基于 /workspace 解析，默认搜索整个工作区。',
+    description: '可选搜索目录。相对路径会基于当前 backend 的可见根解析，默认搜索整个可见文件系统。',
     required: false,
     type: 'string',
   },
@@ -41,11 +41,13 @@ export class GlobToolService {
   }
 
   buildToolDescription(): string {
-    const workspaceRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVirtualWorkspaceRoot();
+    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
     return [
-      '在当前 session 工作区内按 glob 模式列出文件。',
-      `path 参数只能位于 ${workspaceRoot} 内。`,
-      '结果返回匹配到的虚拟工作区路径，不执行任何命令。',
+      '在当前 backend 可见路径内按 glob 模式列出文件。',
+      visibleRoot === '/'
+        ? 'path 可省略，或传 backend 可见的绝对路径。'
+        : `path 参数只能位于 ${visibleRoot} 内。`,
+      '结果返回 backend 可见路径，不执行任何命令。',
     ].join('\n');
   }
 
@@ -105,7 +107,7 @@ export class GlobToolService {
       },
       requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
       role: 'workspace',
-      summary: `按 glob 搜索工作区路径 ${input.path ?? '/workspace'}`,
+      summary: `按 glob 搜索路径 ${input.path ?? this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot()}`,
     };
   }
 

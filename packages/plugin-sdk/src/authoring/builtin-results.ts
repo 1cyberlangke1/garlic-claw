@@ -1,4 +1,4 @@
-import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, JsonObject, JsonValue, PluginSubagentRunParams, PluginSubagentRunResult, PluginSubagentTaskStartParams, PluginSubagentTaskSummary, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, JsonObject, JsonValue, PluginSubagentRunParams, PluginSubagentRunResult, PluginSubagentStartParams, PluginSubagentSummary, TriggerConfig } from "@garlic-claw/shared";
 import { toHostJsonValue } from "../host";
 import { pickOptionalStringFields, readOptionalObjectParam, readOptionalStringParam, readRequiredStringParam, sanitizeOptionalText, readJsonObjectValue } from "./index";
 import { PluginSubagentDelegateConfig } from "./builtin-manifests";
@@ -27,7 +27,7 @@ export function readSubagentDelegateConfig(value: unknown): PluginSubagentDelega
 export function buildSubagentDelegateRunParams(input: { config: PluginSubagentDelegateConfig; prompt: string; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentRunParams {
   return buildSubagentDelegateBaseParams(input);
 }
-export function buildSubagentDelegateTaskParams(input: { config: PluginSubagentDelegateConfig; prompt: string; shouldWriteBack: boolean; conversationId?: string | null; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentTaskStartParams {
+export function buildSubagentDelegateStartParams(input: { config: PluginSubagentDelegateConfig; prompt: string; shouldWriteBack: boolean; conversationId?: string | null; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentStartParams {
   const base = buildSubagentDelegateBaseParams(input);
   return { ...base, ...(input.shouldWriteBack && input.conversationId ? { writeBack: { target: { type: "conversation", id: input.conversationId } } } : {}) };
 }
@@ -111,9 +111,8 @@ export function createRouteInspectorContextResponse(input: {
 }
 export function createSubagentRunSummary(result: PluginSubagentRunResult): JsonValue {
   return toHostJsonValue({
-    ...(result.taskId ? { taskId: result.taskId } : {}),
-    ...(result.sessionId ? { sessionId: result.sessionId } : {}),
-    ...(typeof result.sessionMessageCount === "number" ? { sessionMessageCount: result.sessionMessageCount } : {}),
+    sessionId: result.sessionId,
+    sessionMessageCount: result.sessionMessageCount,
     providerId: result.providerId,
     modelId: result.modelId,
     text: result.text,
@@ -122,7 +121,7 @@ export function createSubagentRunSummary(result: PluginSubagentRunResult): JsonV
     ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
   });
 }
-export function createSubagentTaskSummaryResult(result: PluginSubagentTaskSummary): JsonValue { return toHostJsonValue(result); }
+export function createSubagentSummaryResult(result: PluginSubagentSummary): JsonValue { return toHostJsonValue(result); }
 function buildSubagentDelegateBaseParams(input: { config: PluginSubagentDelegateConfig; prompt: string; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentRunParams {
   const toolNames = input.config.allowedToolNames?.length ? input.config.allowedToolNames : null;
   return {

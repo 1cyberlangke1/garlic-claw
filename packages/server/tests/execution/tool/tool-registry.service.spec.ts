@@ -24,7 +24,6 @@ import type { RuntimeWorkspaceBackend } from '../../../src/execution/runtime/run
 import { RuntimeWorkspaceService } from '../../../src/execution/runtime/runtime-workspace.service';
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
-import { TaskToolService } from '../../../src/execution/task/task-tool.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
 import { WebFetchToolService } from '../../../src/execution/webfetch/webfetch-tool.service';
 import { WriteToolService } from '../../../src/execution/write/write-tool.service';
@@ -41,10 +40,10 @@ import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/
 import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-host-knowledge.service';
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
+import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
-import { RuntimeHostSubagentTypeRegistryService } from '../../../src/runtime/host/runtime-host-subagent-type-registry.service';
+import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
 import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.service';
@@ -158,7 +157,7 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(toolSet ?? {})).toContain('skill');
   });
 
-  it('includes native task, todowrite, webfetch, bash, read, glob, grep, write and edit tools in the executable tool set', async () => {
+  it('includes native todowrite, webfetch, bash, read, glob, grep, write and edit tools in the executable tool set', async () => {
     const { service } = createFixture();
 
     const toolSet = await service.buildToolSet({
@@ -171,7 +170,6 @@ describe('ToolRegistryService', () => {
 
     expect(toolSet).toBeDefined();
     expect(Object.keys(toolSet ?? {})).toEqual(expect.arrayContaining([
-      'task',
       'todowrite',
       'webfetch',
       'bash',
@@ -339,15 +337,14 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(enabledTools ?? {})).toEqual([
       'save_memory',
       'search_memory',
-      'task',
-      'todowrite',
-      'webfetch',
       'bash',
       'read',
       'glob',
       'grep',
       'write',
       'edit',
+      'todowrite',
+      'webfetch',
       'skill',
       'invalid',
     ]);
@@ -368,15 +365,14 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(toolSet ?? {})).toEqual([
       'save_memory',
       'search_memory',
-      'task',
-      'todowrite',
-      'webfetch',
       'bash',
       'read',
       'glob',
       'grep',
       'write',
       'edit',
+      'todowrite',
+      'webfetch',
       'skill',
       'invalid',
     ]);
@@ -482,19 +478,18 @@ describe('ToolRegistryService', () => {
     });
 
     expect(writeResult).toEqual(expect.objectContaining({
-      backendKind: 'just-bash',
-      exitCode: 0,
-      stdout: 'persisted\n',
+      kind: 'tool:text',
+      value: expect.stringContaining('persisted'),
     }));
     expect(readResult).toEqual(expect.objectContaining({
-      exitCode: 0,
-      stdout: 'persisted\n',
+      kind: 'tool:text',
+      value: expect.stringContaining('persisted'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
       value: expect.stringContaining('<bash_result>'),
     }));
-    expect((modelOutput as { value: string }).value).toContain('cwd: /workspace');
+    expect((modelOutput as { value: string }).value).toContain('cwd: /');
     expect((modelOutput as { value: string }).value).not.toContain('backend:');
     expect(fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'logs', 'run.txt'), 'utf8')).toBe('persisted\n');
   });
@@ -513,8 +508,8 @@ describe('ToolRegistryService', () => {
     const bashTool = toolSet?.bash;
     expect(bashTool).toBeDefined();
 
-    expect((bashTool as { description: string }).description).toContain('在当前 session 的工作区中执行 bash 命令');
-    expect((bashTool as { description: string }).description).toContain('同一 session 下写入 /workspace 的文件');
+    expect((bashTool as { description: string }).description).toContain('在当前 session 的执行后端中执行 bash 命令');
+    expect((bashTool as { description: string }).description).toContain('同一 session 下写入 backend 当前可见路径的文件');
     expect((bashTool as { description: string }).description).not.toContain('当前默认 runtime 后端');
     expect((bashTool as { description: string }).description).not.toContain('宿主工作区');
     expect((bashTool as { description: string }).description).not.toContain('权限审批');
@@ -554,7 +549,7 @@ describe('ToolRegistryService', () => {
   });
 
   it('keeps bash workdir and timeout semantics stable through the native tool contract', async () => {
-    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const { conversationId, runtimeToolPermissionService, runtimeWorkspaceRoot, service } = createFixture();
     const slowServer = http.createServer(async (_request: http.IncomingMessage, response: http.ServerResponse) => {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
@@ -575,6 +570,7 @@ describe('ToolRegistryService', () => {
     });
     const bashTool = toolSet?.bash;
     expect(bashTool).toBeDefined();
+    fs.mkdirSync(path.join(runtimeWorkspaceRoot, conversationId, 'nested'), { recursive: true });
 
     const workdirExecution = (bashTool as any).execute({
       command: 'pwd && printf "from-workdir\\n" > child.txt && cat child.txt',
@@ -590,10 +586,10 @@ describe('ToolRegistryService', () => {
     const workdirResult = await workdirExecution;
 
     expect(workdirResult).toEqual(expect.objectContaining({
-      cwd: '/workspace/nested',
-      exitCode: 0,
-      stdout: '/workspace/nested\nfrom-workdir\n',
+      kind: 'tool:text',
+      value: expect.stringContaining('cwd: /nested'),
     }));
+    expect((workdirResult as { value: string }).value).toContain('/nested\nfrom-workdir\n');
 
     try {
       const address = slowServer.address();
@@ -661,8 +657,8 @@ describe('ToolRegistryService', () => {
       expect(pendingRequest?.backendKind).toBe('mock-shell');
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'once');
       await expect(execution).resolves.toEqual(expect.objectContaining({
-        backendKind: 'mock-shell',
-        stdout: 'mock-shell:echo routed',
+        kind: 'tool:text',
+        value: expect.stringContaining('mock-shell:echo routed'),
       }));
     } finally {
       if (originalShellBackend === undefined) {
@@ -699,11 +695,11 @@ describe('ToolRegistryService', () => {
       });
 
       expect(result).toEqual(expect.objectContaining({
-        path: '/workspace/mock-workspace.txt',
-        type: 'file',
+        kind: 'tool:text',
+        value: expect.stringContaining('/mock-workspace.txt'),
       }));
-      expect((result as { output: string }).output).toContain('1: mock-workspace line');
-      expect((result as { output: string }).output).toContain('(end of file, total lines: 2)');
+      expect((result as { value: string }).value).toContain('1: mock-workspace line');
+      expect((result as { value: string }).value).toContain('(end of file, total lines: 2)');
     } finally {
       if (originalWorkspaceBackend === undefined) {
         delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
@@ -748,15 +744,16 @@ describe('ToolRegistryService', () => {
         oldString: 'created',
       });
 
-      expect((globResult as { output: string }).output).toContain('/workspace/mock-workspace.txt');
-      expect((grepResult as { output: string }).output).toContain('/workspace/mock-workspace.txt:');
-      expect((grepResult as { output: string }).output).toContain('1: mock-workspace line');
+      expect((globResult as { value: string }).value).toContain('/mock-workspace.txt');
+      expect((grepResult as { value: string }).value).toContain('/mock-workspace.txt:');
+      expect((grepResult as { value: string }).value).toContain('1: mock-workspace line');
       expect(writeResult).toEqual(expect.objectContaining({
-        path: '/workspace/mock-workspace/notes/output.txt',
+        kind: 'tool:text',
+        value: expect.stringContaining('/mock-workspace/notes/output.txt'),
       }));
       expect(editResult).toEqual(expect.objectContaining({
-        occurrences: 7,
-        path: '/workspace/mock-workspace/notes/output.txt',
+        kind: 'tool:text',
+        value: expect.stringContaining('/mock-workspace/notes/output.txt'),
       }));
     } finally {
       if (originalWorkspaceBackend === undefined) {
@@ -796,9 +793,8 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      path: '/workspace/notes/runtime.txt',
-      truncated: true,
-      type: 'file',
+      kind: 'tool:text',
+      value: expect.stringContaining('/notes/runtime.txt'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
@@ -827,24 +823,24 @@ describe('ToolRegistryService', () => {
     expect(globTool).toBeDefined();
 
     const result = await (globTool as any).execute({
-      path: '/workspace',
+      path: '/',
       pattern: '**/*.txt',
     });
     const modelOutput = await (globTool as any).toModelOutput({
-      input: { path: '/workspace', pattern: '**/*.txt' },
+      input: { path: '/', pattern: '**/*.txt' },
       output: result,
       toolCallId: 'call-glob-1',
     });
 
     expect(result).toEqual(expect.objectContaining({
-      count: 1,
-      truncated: false,
+      kind: 'tool:text',
+      value: expect.stringContaining('/notes/runtime.txt'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
       value: expect.stringContaining('<glob_result>'),
     }));
-    expect((modelOutput as { value: string }).value).toContain('/workspace/notes/runtime.txt');
+    expect((modelOutput as { value: string }).value).toContain('/notes/runtime.txt');
   });
 
   it('dispatches native grep tool execution through the runtime workspace owner', async () => {
@@ -868,24 +864,24 @@ describe('ToolRegistryService', () => {
 
     const result = await (grepTool as any).execute({
       include: '*.txt',
-      path: '/workspace',
+      path: '/',
       pattern: 'smoke-workspace',
     });
     const modelOutput = await (grepTool as any).toModelOutput({
-      input: { include: '*.txt', path: '/workspace', pattern: 'smoke-workspace' },
+      input: { include: '*.txt', path: '/', pattern: 'smoke-workspace' },
       output: result,
       toolCallId: 'call-grep-1',
     });
 
     expect(result).toEqual(expect.objectContaining({
-      matches: 1,
-      truncated: false,
+      kind: 'tool:text',
+      value: expect.stringContaining('/notes/runtime.txt:'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
       value: expect.stringContaining('<grep_result>'),
     }));
-    expect((modelOutput as { value: string }).value).toContain('/workspace/notes/runtime.txt:');
+    expect((modelOutput as { value: string }).value).toContain('/notes/runtime.txt:');
     expect((modelOutput as { value: string }).value).toContain('1: smoke-workspace');
   });
 
@@ -915,8 +911,8 @@ describe('ToolRegistryService', () => {
     });
 
     expect(wrappedResult).toEqual(expect.objectContaining({
-      created: true,
-      path: '/workspace/generated/output.txt',
+      kind: 'tool:text',
+      value: expect.stringContaining('/generated/output.txt'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
@@ -954,8 +950,8 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      occurrences: 1,
-      path: '/workspace/generated/output.txt',
+      kind: 'tool:text',
+      value: expect.stringContaining('/generated/output.txt'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
@@ -1106,64 +1102,6 @@ describe('ToolRegistryService', () => {
     expect(skillRegistryService.getSkillByName).toHaveBeenCalledWith('weather-query');
   });
 
-  it('dispatches native task tool execution through the subagent runner owner', async () => {
-    const { runtimeHostSubagentRunnerService, service } = createFixture();
-    const runSubagentSpy = runtimeHostSubagentRunnerService.runSubagent as jest.Mock;
-
-    const toolSet = await service.buildToolSet({
-      context: {
-        conversationId: 'conversation-1',
-        source: 'plugin',
-        userId: 'user-1',
-      },
-      allowedToolNames: ['task'],
-    });
-    const taskTool = toolSet?.task;
-    expect(taskTool).toBeDefined();
-
-    const result = await (taskTool as any).execute({
-      description: '仓库探索',
-      subagentType: 'explore',
-      prompt: '请总结当前仓库的技能目录',
-    });
-    const modelOutput = await (taskTool as any).toModelOutput({
-      input: {
-        description: '仓库探索',
-        subagentType: 'explore',
-        prompt: '请总结当前仓库的技能目录',
-      },
-      output: result,
-      toolCallId: 'call-task-1',
-    });
-
-    expect(result).toEqual(expect.objectContaining({
-      description: '仓库探索',
-      subagentType: 'explore',
-      text: 'Generated: 请总结当前仓库的技能目录',
-    }));
-    expect(modelOutput).toEqual(expect.objectContaining({
-      type: 'text',
-      value: expect.stringContaining('<task_result title="仓库探索">'),
-    }));
-    expect((modelOutput as { value: string }).value).toContain('session_id: subagent-session-1');
-    expect((modelOutput as { value: string }).value).not.toContain('provider:');
-    expect((modelOutput as { value: string }).value).not.toContain('model:');
-    expect(runSubagentSpy).toHaveBeenCalledWith('native.task', {
-      conversationId: 'conversation-1',
-      source: 'plugin',
-      userId: 'user-1',
-    }, expect.objectContaining({
-      description: '仓库探索',
-      messages: [
-        {
-          content: '请总结当前仓库的技能目录',
-          role: 'user',
-        },
-      ],
-      subagentType: 'explore',
-    }));
-  });
-
   it('dispatches native todowrite tool execution through the session todo owner', async () => {
     const { conversationId, runtimeHostConversationRecordService, service } = createFixture();
 
@@ -1294,7 +1232,7 @@ function createFixture(options: {
       invokeHook: jest.fn(),
       listPlugins: jest.fn().mockReturnValue([]),
     } as never,
-    new RuntimeHostSubagentTaskStoreService(),
+    new RuntimeHostSubagentStoreService(),
   );
   jest.spyOn(runtimeHostSubagentRunnerService, 'runSubagent').mockResolvedValue({
     finishReason: 'stop',
@@ -1334,29 +1272,20 @@ function createFixture(options: {
     name: 'OpenAI',
   });
   const builtinPluginRegistryService = new BuiltinPluginRegistryService();
+  const runtimeToolsDefinition = builtinPluginRegistryService.getDefinition('builtin.runtime-tools');
+  pluginBootstrapService.registerPlugin({
+    fallback: {
+      id: runtimeToolsDefinition.manifest.id,
+      name: runtimeToolsDefinition.manifest.name,
+      runtime: 'local',
+    },
+    governance: runtimeToolsDefinition.governance,
+    manifest: runtimeToolsDefinition.manifest,
+  });
   const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
-  );
-  const runtimeHostService = new RuntimeHostService(
-    pluginBootstrapService,
-    runtimeHostAutomationService,
-    runtimeHostConversationMessageService,
-    runtimeHostConversationRecordService,
-    aiModelExecutionService as never,
-    aiManagementService,
-    new RuntimeHostKnowledgeService(),
-    runtimeHostPluginDispatchService,
-    new RuntimeHostPluginRuntimeService(),
-    runtimeHostSubagentRunnerService,
-    new RuntimeHostUserContextService(),
-    new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
-  );
-  runtimeHostService.onModuleInit();
-  const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
-    pluginBootstrapService,
-    runtimeGatewayConnectionLifecycleService,
   );
 
   const mcpService: {
@@ -1402,15 +1331,44 @@ function createFixture(options: {
     runtimeCommandService,
     runtimeWorkspaceBackendService,
   );
-  const runtimeToolPermissionService = new RuntimeToolPermissionService();
-  const bashToolService = new BashToolService(runtimeCommandService, runtimeToolBackendService, runtimeWorkspaceService);
+  const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
+  const bashToolService = new BashToolService(runtimeCommandService, runtimeToolBackendService);
   const readToolService = new ReadToolService(runtimeWorkspaceBackendService);
   const globToolService = new GlobToolService(runtimeWorkspaceBackendService);
   const grepToolService = new GrepToolService(runtimeWorkspaceBackendService);
   const writeToolService = new WriteToolService(runtimeWorkspaceBackendService);
   const editToolService = new EditToolService(runtimeWorkspaceBackendService);
+  const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
+    bashToolService,
+    readToolService,
+    globToolService,
+    grepToolService,
+    writeToolService,
+    editToolService,
+    runtimeToolBackendService,
+    runtimeToolPermissionService,
+  );
+  const runtimeHostService = new RuntimeHostService(
+    pluginBootstrapService,
+    runtimeHostAutomationService,
+    runtimeHostConversationMessageService,
+    runtimeHostConversationRecordService,
+    aiModelExecutionService as never,
+    aiManagementService,
+    new RuntimeHostKnowledgeService(),
+    runtimeHostPluginDispatchService,
+    new RuntimeHostPluginRuntimeService(),
+    runtimeHostRuntimeToolService,
+    runtimeHostSubagentRunnerService,
+    new RuntimeHostUserContextService(),
+    new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+  );
+  runtimeHostService.onModuleInit();
+  const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
+    pluginBootstrapService,
+    runtimeGatewayConnectionLifecycleService,
+  );
   const invalidToolService = new InvalidToolService();
-  const taskToolService = new TaskToolService(new RuntimeHostSubagentTypeRegistryService());
   const todoToolService = new TodoToolService(runtimeHostConversationRecordService as never);
   const webFetchService = {
     fetch: jest.fn().mockResolvedValue({
@@ -1440,18 +1398,6 @@ function createFixture(options: {
       todoToolService,
       webFetchToolService,
       skillToolService,
-      taskToolService,
-      bashToolService,
-      readToolService,
-      globToolService,
-      grepToolService,
-      writeToolService,
-      editToolService,
-      runtimeToolBackendService,
-      runtimeToolPermissionService,
-      {
-        get: jest.fn().mockImplementation((token) => token === RuntimeHostSubagentRunnerService ? runtimeHostSubagentRunnerService : null),
-      } as never,
       runtimeHostPluginDispatchService as never,
       runtimePluginGovernanceService as never,
     ),
@@ -1463,7 +1409,7 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
     async executeCommand(input) {
       return {
         backendKind: kind,
-        cwd: input.workdir ?? '/workspace',
+        cwd: input.workdir ?? '/',
         exitCode: 0,
         sessionId: input.sessionId,
         stderr: '',
@@ -1490,6 +1436,7 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
           workspaceRead: 'allow' as const,
           workspaceWrite: 'allow' as const,
         },
+        visibleRoot: '/',
       };
     },
     getKind() {
@@ -1500,7 +1447,7 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
 
 function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
   const backendFileName = `${kind}.txt`;
-  const backendVirtualPath = `/workspace/${backendFileName}`;
+  const backendVirtualPath = `/${backendFileName}`;
   const backendContent = `${kind} line\nsecond line\n`;
   return {
     async editTextFile(_sessionId, input) {
@@ -1509,7 +1456,7 @@ function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
           ? 7
           : input.replaceAll ? 2 : 1,
         path: input.filePath.trim()
-          ? `/workspace/${kind}/${input.filePath.replace(/^\/+/, '')}`
+          ? `/${kind}/${input.filePath.replace(/^\/+/, '')}`
           : backendVirtualPath,
       };
     },
@@ -1532,17 +1479,18 @@ function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
           workspaceRead: 'allow' as const,
           workspaceWrite: 'allow' as const,
         },
+        visibleRoot: '/',
       };
     },
     getKind() {
       return kind;
     },
-    getVirtualWorkspaceRoot() {
-      return '/workspace';
+    getVisibleRoot() {
+      return '/';
     },
     async listFiles() {
       return {
-        basePath: '/workspace',
+        basePath: '/',
         files: [
           {
             virtualPath: backendVirtualPath,
@@ -1553,16 +1501,16 @@ function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
     async readDirectoryEntries() {
       return {
         entries: ['routed.txt'],
-        path: '/workspace',
+        path: '/',
       };
     },
     async readExistingPath(_sessionId, inputPath) {
       const normalizedInputPath = typeof inputPath === 'string' ? inputPath.trim() : '';
-      if (!normalizedInputPath || normalizedInputPath === '/workspace' || normalizedInputPath === '.') {
+      if (!normalizedInputPath || normalizedInputPath === '/' || normalizedInputPath === '.') {
         return {
           exists: true,
           type: 'directory' as const,
-          virtualPath: '/workspace',
+          virtualPath: '/',
           workspaceRoot: 'D:/mock/runtime',
         };
       }
@@ -1582,7 +1530,7 @@ function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
     async writeTextFile(_sessionId, inputPath) {
       return {
         created: true,
-        path: `/workspace/${kind}/${inputPath.replace(/^\/+/, '')}`,
+        path: `/${kind}/${inputPath.replace(/^\/+/, '')}`,
       };
     },
   };

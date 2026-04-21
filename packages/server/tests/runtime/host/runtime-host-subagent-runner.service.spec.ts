@@ -24,7 +24,7 @@ import { RuntimeHostConversationMessageService } from '../../../src/runtime/host
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
 import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
-import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
+import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 
 describe('RuntimeHostSubagentRunnerService', () => {
   let storagePath: string;
@@ -34,7 +34,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     jest.clearAllMocks();
     storagePath = path.join(os.tmpdir(), `gc-server-runner-${Date.now()}-${Math.random()}.json`);
     sessionStoragePath = path.join(os.tmpdir(), `gc-server-runner-session-${Date.now()}-${Math.random()}.json`);
-    process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH = storagePath;
+    process.env.GARLIC_CLAW_SUBAGENTS_PATH = storagePath;
     process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH = sessionStoragePath;
     mockStreamText.mockReturnValue({
       finishReason: Promise.resolve('stop'),
@@ -64,7 +64,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
   });
 
   afterEach(() => {
-    delete process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH;
+    delete process.env.GARLIC_CLAW_SUBAGENTS_PATH;
     delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
     if (fs.existsSync(storagePath)) {
       fs.unlinkSync(storagePath);
@@ -134,7 +134,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
 
     const result = await runner.runSubagent('builtin.memory-context', {
@@ -162,7 +162,6 @@ describe('RuntimeHostSubagentRunnerService', () => {
       providerId: 'openai',
       sessionId: expect.any(String),
       sessionMessageCount: 2,
-      taskId: expect.any(String),
       text: 'Done',
       toolCalls: [
         {
@@ -261,7 +260,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       conversationMessageService,
       toolRegistryService as never,
       runtimeKernelService as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
 
     const hookedResult = await runner.runSubagent('builtin.memory-context', {
@@ -317,7 +316,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
 
     await runner.runSubagent('builtin.memory-context', {
@@ -356,7 +355,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
 
     await runner.runSubagent('builtin.memory-context', {
@@ -387,7 +386,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
   });
 
   it('reuses previous session request context when sessionId is provided', async () => {
-    const taskStore = new RuntimeHostSubagentTaskStoreService();
+    const subagentStore = new RuntimeHostSubagentStoreService();
     const sessionStore = new RuntimeHostSubagentSessionStoreService();
     sessionStore.createSession({
       context: {
@@ -395,7 +394,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      description: '已有后台任务',
+      description: '已有后台子代理',
       messages: [
         {
           content: 'original prompt',
@@ -406,10 +405,10 @@ describe('RuntimeHostSubagentRunnerService', () => {
       pluginDisplayName: 'Memory Context',
       pluginId: 'builtin.memory-context',
       providerId: 'openai',
-      taskId: 'subagent-task-1',
+      subagentId: 'subagent-1',
       toolNames: ['memory.search'],
     });
-    taskStore.createTask({
+    subagentStore.createSubagent({
       context: {
         conversationId: 'conversation-1',
         source: 'plugin',
@@ -418,7 +417,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       pluginDisplayName: 'Memory Context',
       pluginId: 'builtin.memory-context',
       request: {
-        description: '已有后台任务',
+        description: '已有后台子代理',
         messages: [
           {
             content: 'original prompt',
@@ -448,7 +447,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
-      taskStore,
+      subagentStore,
       sessionStore,
     );
 
@@ -457,7 +456,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       source: 'plugin',
       userId: 'user-1',
     }, {
-      description: '继续已有后台任务',
+      description: '继续已有后台子代理',
       messages: [
         {
           content: 'continue this task',
@@ -485,7 +484,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
   });
 
   it('creates a new background task record when an existing session resumes', async () => {
-    const taskStore = new RuntimeHostSubagentTaskStoreService();
+    const subagentStore = new RuntimeHostSubagentStoreService();
     const sessionStore = new RuntimeHostSubagentSessionStoreService();
     sessionStore.createSession({
       context: {
@@ -493,7 +492,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      description: '已有后台任务',
+      description: '已有后台子代理',
       messages: [
         {
           content: 'original prompt',
@@ -508,9 +507,9 @@ describe('RuntimeHostSubagentRunnerService', () => {
       pluginDisplayName: 'Memory Context',
       pluginId: 'builtin.memory-context',
       providerId: 'openai',
-      taskId: 'subagent-task-1',
+      subagentId: 'subagent-1',
     });
-    taskStore.createTask({
+    subagentStore.createSubagent({
       context: {
         conversationId: 'conversation-1',
         source: 'plugin',
@@ -519,7 +518,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       pluginDisplayName: 'Memory Context',
       pluginId: 'builtin.memory-context',
       request: {
-        description: '已有后台任务',
+        description: '已有后台子代理',
         messages: [
           {
             content: 'original prompt',
@@ -539,10 +538,10 @@ describe('RuntimeHostSubagentRunnerService', () => {
         type: 'conversation',
       },
     });
-    taskStore.updateTask('builtin.memory-context', 'subagent-task-1', (task, now) => {
-      task.status = 'completed';
-      task.finishedAt = now;
-      task.result = {
+    subagentStore.updateSubagent('builtin.memory-context', 'subagent-1', (subagent, now) => {
+      subagent.status = 'completed';
+      subagent.finishedAt = now;
+      subagent.result = {
         message: {
           content: 'done',
           role: 'assistant',
@@ -553,8 +552,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         toolCalls: [],
         toolResults: [],
       };
-      task.resultPreview = 'done';
-      task.writeBackStatus = 'sent';
+      subagent.resultPreview = 'done';
+      subagent.writeBackStatus = 'sent';
     });
     const runner = new RuntimeHostSubagentRunnerService(
       createAiModelExecutionService(),
@@ -566,16 +565,16 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
-      taskStore,
+      subagentStore,
       sessionStore,
     );
 
-    const summary = await runner.startTask('builtin.memory-context', 'Memory Context', {
+    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
     }, {
-      description: '继续已有后台任务',
+      description: '继续已有后台子代理',
       messages: [
         {
           content: 'continue this task',
@@ -592,18 +591,16 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
 
     expect(summary).toMatchObject({
-      description: '继续已有后台任务',
-      id: 'subagent-task-2',
+      description: '继续已有后台子代理',
       requestPreview: 'continue this task',
       sessionId: 'subagent-session-1',
       sessionMessageCount: 3,
       status: 'queued',
       writeBackStatus: 'pending',
     });
-    expect(taskStore.getTask('builtin.memory-context', 'subagent-task-2')).toMatchObject({
-      id: 'subagent-task-2',
+    expect(subagentStore.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
       request: {
-        description: '继续已有后台任务',
+        description: '继续已有后台子代理',
         messages: [
           {
             content: 'original prompt',
@@ -634,10 +631,10 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
 
-    const summary = await runner.startTask('builtin.memory-context', 'Memory Context', {
+    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -665,7 +662,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
   });
 
   it('persists subagent type summary on background tasks while keeping the raw request resumable', async () => {
-    const taskStore = new RuntimeHostSubagentTaskStoreService();
+    const subagentStore = new RuntimeHostSubagentStoreService();
     const runner = new RuntimeHostSubagentRunnerService(
       createAiModelExecutionService(),
       new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
@@ -676,10 +673,10 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
-      taskStore,
+      subagentStore,
     );
 
-    const summary = await runner.startTask('builtin.memory-context', 'Memory Context', {
+    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -699,7 +696,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       subagentType: 'explore',
       subagentTypeName: '探索',
     });
-    expect(taskStore.getTask('builtin.memory-context', 'subagent-task-1')).toMatchObject({
+    expect(subagentStore.getSubagent('builtin.memory-context', (summary as { sessionId: string }).sessionId)).toMatchObject({
       subagentType: 'explore',
       subagentTypeName: '探索',
       request: {
@@ -771,7 +768,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
       toolRegistryService as never,
       runtimeKernelService as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
 
     const result = await runner.runSubagent('builtin.memory-context', {
@@ -843,7 +840,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
 
     const result = await runner.runSubagent('builtin.memory-context', {
@@ -939,7 +936,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         buildToolSet: jest.fn().mockResolvedValue(undefined),
       } as never,
       runtimeKernelService as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
     (runner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',
@@ -1000,9 +997,9 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
-    originalRunner.startTask('builtin.memory-context', 'Memory Context', {
+    originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1027,7 +1024,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
     (resumedRunner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',
@@ -1042,12 +1039,11 @@ describe('RuntimeHostSubagentRunnerService', () => {
       toolResults: [],
     });
 
-    resumedRunner.resumePendingTasks();
+    resumedRunner.resumePendingSubagents();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(resumedRunner.getTask('builtin.memory-context', 'subagent-task-1')).toMatchObject({
-      id: 'subagent-task-1',
+    expect(resumedRunner.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
       result: {
         text: 'resume me',
       },
@@ -1083,9 +1079,9 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
-    await originalRunner.startTask('builtin.memory-context', 'Memory Context', {
+    await originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1116,7 +1112,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
     (resumedRunner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',
@@ -1131,12 +1127,11 @@ describe('RuntimeHostSubagentRunnerService', () => {
       toolResults: [],
     });
 
-    resumedRunner.resumePendingTasks();
+    resumedRunner.resumePendingSubagents();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(resumedRunner.getTask('builtin.memory-context', 'subagent-task-1')).toMatchObject({
-      id: 'subagent-task-1',
+    expect(resumedRunner.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
       status: 'completed',
       writeBackError: 'Conversation not found: conversation-1',
       writeBackStatus: 'failed',
@@ -1145,7 +1140,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
 
   it('does not treat a recreated conversation with the same id as a valid write-back target after restart', async () => {
     const conversationEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
-    const taskEnvKey = 'GARLIC_CLAW_SUBAGENT_TASKS_PATH';
+    const taskEnvKey = 'GARLIC_CLAW_SUBAGENTS_PATH';
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const originalConversationPath = path.join(process.cwd(), 'tmp', `runtime-host-subagent-runner.original-conversations.${suffix}.json`);
     const resumedConversationPath = path.join(process.cwd(), 'tmp', `runtime-host-subagent-runner.resumed-conversations.${suffix}.json`);
@@ -1183,9 +1178,9 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
-    await originalRunner.startTask('builtin.memory-context', 'Memory Context', {
+    await originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: originalConversationId,
       source: 'plugin',
       userId: 'user-1',
@@ -1229,7 +1224,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         invokeHook: jest.fn(),
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
-      new RuntimeHostSubagentTaskStoreService(),
+      new RuntimeHostSubagentStoreService(),
     );
     (resumedRunner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',
@@ -1244,12 +1239,11 @@ describe('RuntimeHostSubagentRunnerService', () => {
       toolResults: [],
     });
 
-    resumedRunner.resumePendingTasks();
+    resumedRunner.resumePendingSubagents();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(resumedRunner.getTask('builtin.memory-context', 'subagent-task-1')).toMatchObject({
-      id: 'subagent-task-1',
+    expect(resumedRunner.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
       status: 'completed',
       writeBackError: `Conversation revision changed: ${originalConversationId}`,
       writeBackStatus: 'failed',

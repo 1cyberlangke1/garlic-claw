@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { JsonObject, PluginCallContext, PluginLlmMessage, PluginSubagentRunResult } from '@garlic-claw/shared';
+import type { JsonObject, PluginCallContext, PluginLlmMessage, PluginSubagentExecutionResult } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { cloneJsonValue } from './runtime-host-values';
 
@@ -21,7 +21,7 @@ export interface RuntimeSubagentSessionRecord {
   maxOutputTokens?: number;
   conversationId?: string;
   userId?: string;
-  lastTaskId?: string;
+  lastSubagentId?: string;
   createdAt: string;
   updatedAt: string;
   messages: PluginLlmMessage[];
@@ -54,7 +54,7 @@ export class RuntimeHostSubagentSessionStoreService {
     providerOptions?: JsonObject;
     headers?: Record<string, string>;
     maxOutputTokens?: number;
-    taskId?: string;
+    subagentId?: string;
   }): RuntimeSubagentSessionRecord {
     const now = new Date().toISOString();
     const session: RuntimeSubagentSessionRecord = {
@@ -77,7 +77,7 @@ export class RuntimeHostSubagentSessionStoreService {
       ...(input.description ? { description: input.description } : {}),
       ...(input.subagentType ? { subagentType: input.subagentType } : {}),
       ...(input.subagentTypeName ? { subagentTypeName: input.subagentTypeName } : {}),
-      ...(input.taskId ? { lastTaskId: input.taskId } : {}),
+      ...(input.subagentId ? { lastSubagentId: input.subagentId } : {}),
     };
     this.sessions.set(session.id, session);
     this.saveSessions();
@@ -108,7 +108,7 @@ export class RuntimeHostSubagentSessionStoreService {
   appendAssistantMessage(
     pluginId: string,
     sessionId: string,
-    result: PluginSubagentRunResult,
+    result: PluginSubagentExecutionResult,
   ): RuntimeSubagentSessionRecord {
     return this.updateSession(pluginId, sessionId, (session) => {
       session.messages = [

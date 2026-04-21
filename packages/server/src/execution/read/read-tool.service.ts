@@ -22,9 +22,9 @@ const DEFAULT_READ_LIMIT = 2000;
 const MAX_READ_LIMIT = 2000;
 const MAX_LINE_LENGTH = 2000;
 
-const READ_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
+export const READ_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   filePath: {
-    description: '要读取的文件或目录路径。相对路径会基于 /workspace 解析。',
+    description: '要读取的文件或目录路径。相对路径会基于当前 backend 的可见根解析。',
     required: true,
     type: 'string',
   },
@@ -49,12 +49,13 @@ export class ReadToolService {
   }
 
   buildToolDescription(): string {
-    const workspaceRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVirtualWorkspaceRoot();
+    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
     return [
-      '读取当前 session 工作区内的文本文件，或列出目录内容。',
-      `路径必须位于 ${workspaceRoot} 内。`,
-      '相对路径会基于当前工作区根目录解析。',
-      '该工具不会执行命令，只负责稳定读取工作区内容。',
+      '读取当前 backend 可见路径内的文本文件，或列出目录内容。',
+      visibleRoot === '/'
+        ? '可传相对路径或 backend 可见的绝对路径。'
+        : `路径必须位于 ${visibleRoot} 内。`,
+      '该工具不会执行命令，只负责稳定读取文件系统内容。',
     ].join('\n');
   }
 
@@ -150,7 +151,7 @@ export class ReadToolService {
       },
       requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
       role: 'workspace',
-      summary: `读取工作区路径 ${input.filePath}`,
+      summary: `读取路径 ${input.filePath}`,
     };
   }
 

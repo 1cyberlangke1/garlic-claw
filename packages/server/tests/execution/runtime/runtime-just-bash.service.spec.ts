@@ -63,7 +63,7 @@ describe('RuntimeJustBashService', () => {
 
     expect(second.exitCode).toBe(0);
     expect(second.stdout).toBe('persisted\n');
-    expect(second.cwd).toBe('/workspace');
+    expect(second.cwd).toBe('/');
   });
 
   it('supports append, copy, move and remove operations inside the workspace', async () => {
@@ -99,8 +99,8 @@ describe('RuntimeJustBashService', () => {
       sessionId: 'session-1',
     });
 
-    expect(first.stdout).toBe('/workspace/src\n1\n');
-    expect(second.stdout).toBe('/workspace\nempty\n');
+    expect(first.stdout).toBe('/src\n1\n');
+    expect(second.stdout).toBe('/\nempty\n');
   });
 
   it('supports symbolic links and hard links inside the workspace', async () => {
@@ -115,7 +115,7 @@ describe('RuntimeJustBashService', () => {
       sessionId: 'session-1',
     });
     const absoluteLink = await service.executeCommand({
-      command: 'ln -s /workspace/source.txt abs-link.txt && readlink abs-link.txt && cat abs-link.txt',
+      command: 'ln -s /source.txt abs-link.txt && readlink abs-link.txt && cat abs-link.txt',
       sessionId: 'session-1',
     });
     const hardLink = await service.executeCommand({
@@ -126,24 +126,24 @@ describe('RuntimeJustBashService', () => {
     expect(relativeLink.exitCode).toBe(0);
     expect(relativeLink.stdout).toBe('source.txt\nhello\n');
     expect(absoluteLink.exitCode).toBe(0);
-    expect(absoluteLink.stdout).toBe('/workspace/source.txt\nhello\n');
+    expect(absoluteLink.stdout).toBe('/source.txt\nhello\n');
     expect(hardLink.exitCode).toBe(0);
     expect(hardLink.stdout).toBe('updated\n');
   });
 
-  it('rejects symbolic link targets outside the mounted workspace root', async () => {
+  it('maps absolute symbolic link targets inside the backend visible root', async () => {
     const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-workspace-'));
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
     const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
     const result = await service.executeCommand({
-      command: 'echo hello > source.txt && ln -s /etc/passwd bad-link.txt',
+      command: 'mkdir -p etc && echo safe > etc/passwd && ln -s /etc/passwd safe-link.txt && readlink safe-link.txt && cat safe-link.txt',
       sessionId: 'session-1',
     });
 
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('runtime workspace 符号链接目标必须位于 /workspace 内');
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('/etc/passwd\nsafe\n');
   });
 
   it('supports network access through curl', async () => {
@@ -225,18 +225,25 @@ describe('RuntimeJustBashService', () => {
     }
   });
 
-  it('rejects cwd values outside /workspace', async () => {
+  it('allows cwd values across the backend visible root', async () => {
     const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-workspace-'));
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
     const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
-
-    await expect(service.executeCommand({
-      command: 'pwd',
-      workdir: '../outside',
+    await service.executeCommand({
+      command: 'mkdir -p nested',
       sessionId: 'session-1',
-    })).rejects.toThrow('bash.workdir 必须位于 /workspace 内');
+    });
+
+    const result = await service.executeCommand({
+      command: 'pwd',
+      workdir: '/nested',
+      sessionId: 'session-1',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.cwd).toBe('/nested');
   });
 
   it('supports tar archive round-trip on nested workspace trees', async () => {

@@ -7,6 +7,7 @@ import type {
 } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
+import { resolveProjectWorkspaceRoot } from '../../runtime/host/project-workspace-root';
 
 type StoredMcpServerFile = Partial<McpServerConfig> & {
   name?: string;
@@ -126,7 +127,7 @@ function resolveMcpConfigRootPath(): string {
     return path.resolve(process.env.GARLIC_CLAW_MCP_CONFIG_PATH);
   }
 
-  return path.join(resolveProjectRoot(), 'mcp', 'servers');
+  return path.join(resolveProjectWorkspaceRoot(process.cwd()), 'mcp', 'servers');
 }
 
 function readReportedMcpConfigPath(configRootPath: string): string {
@@ -139,29 +140,4 @@ function readReportedMcpConfigPath(configRootPath: string): string {
 
 function resolveServerFilePath(configRootPath: string, serverName: string): string {
   return path.join(configRootPath, `${encodeURIComponent(serverName)}.json`);
-}
-
-function resolveProjectRoot(): string {
-  return findProjectRoot(process.cwd())
-    ?? findProjectRoot(__dirname)
-    ?? process.cwd();
-}
-
-function findProjectRoot(startPath: string): string | null {
-  let currentPath = path.resolve(startPath);
-
-  while (true) {
-    if (
-      fs.existsSync(path.join(currentPath, 'package.json'))
-      && fs.existsSync(path.join(currentPath, 'packages', 'server'))
-    ) {
-      return currentPath;
-    }
-
-    const parentPath = path.dirname(currentPath);
-    if (parentPath === currentPath) {
-      return null;
-    }
-    currentPath = parentPath;
-  }
 }

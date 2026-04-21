@@ -43,7 +43,7 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
     async executeCommand(input) {
       return {
         backendKind: kind,
-        cwd: input.workdir ?? '/workspace',
+        cwd: input.workdir ?? '/',
         exitCode: 0,
         sessionId: input.sessionId,
         stderr: '',
@@ -70,6 +70,7 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
+        visibleRoot: '/',
       };
     },
     getKind() {

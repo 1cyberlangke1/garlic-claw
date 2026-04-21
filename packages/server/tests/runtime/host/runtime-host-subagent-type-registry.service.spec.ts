@@ -4,11 +4,11 @@ import * as path from 'node:path';
 import { RuntimeHostSubagentTypeRegistryService } from '../../../src/runtime/host/runtime-host-subagent-type-registry.service';
 
 describe('RuntimeHostSubagentTypeRegistryService', () => {
-  const envKey = 'GARLIC_CLAW_SUBAGENT_TYPES_PATH';
+  const envKey = 'GARLIC_CLAW_SUBAGENT_PATH';
   let storageRoot: string;
 
   beforeEach(() => {
-    storageRoot = path.join(os.tmpdir(), `gc-subagent-types-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    storageRoot = path.join(os.tmpdir(), `gc-subagent-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     process.env[envKey] = storageRoot;
   });
 

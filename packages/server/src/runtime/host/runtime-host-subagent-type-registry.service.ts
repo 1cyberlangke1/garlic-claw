@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { PluginSubagentTypeSummary } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import YAML from 'yaml';
+import { resolveProjectWorkspaceRoot } from './project-workspace-root';
 
 export interface RuntimeHostSubagentTypeDefinition {
   id: string;
@@ -185,31 +186,8 @@ function formatSubagentTypeField(fieldName: string, value: unknown): string[] {
 }
 
 function resolveSubagentTypeStorageRoot(): string {
-  if (process.env.GARLIC_CLAW_SUBAGENT_TYPES_PATH) {
-    return path.resolve(process.env.GARLIC_CLAW_SUBAGENT_TYPES_PATH);
+  if (process.env.GARLIC_CLAW_SUBAGENT_PATH) {
+    return path.resolve(process.env.GARLIC_CLAW_SUBAGENT_PATH);
   }
-  return path.join(resolveProjectRoot(), 'subagent-types');
-}
-
-function resolveProjectRoot(): string {
-  return findProjectRoot(process.cwd())
-    ?? findProjectRoot(__dirname)
-    ?? process.cwd();
-}
-
-function findProjectRoot(startPath: string): string | null {
-  let currentPath = path.resolve(startPath);
-  while (true) {
-    if (
-      fs.existsSync(path.join(currentPath, 'package.json'))
-      && fs.existsSync(path.join(currentPath, 'packages', 'server'))
-    ) {
-      return currentPath;
-    }
-    const parentPath = path.dirname(currentPath);
-    if (parentPath === currentPath) {
-      return null;
-    }
-    currentPath = parentPath;
-  }
+  return path.join(resolveProjectWorkspaceRoot(process.cwd()), 'subagent');
 }

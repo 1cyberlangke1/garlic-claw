@@ -5,6 +5,7 @@ import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillAssetSumma
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import YAML from 'yaml';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
+import { resolveProjectWorkspaceRoot } from '../../runtime/host/project-workspace-root';
 
 interface SkillGovernanceFile {
   skills: Record<string, SkillGovernanceInfo>;
@@ -104,8 +105,7 @@ export class SkillRegistryService {
 }
 
 function resolveProjectSkillsRoot(): string {
-  for (const candidate of [path.resolve(__dirname, '..', '..', '..', '..'), process.cwd()]) { if (fs.existsSync(path.join(candidate, 'package.json'))) {return path.join(candidate, 'skills');} }
-  return path.join(process.cwd(), 'skills');
+  return path.join(resolveProjectWorkspaceRoot(process.cwd()), 'skills');
 }
 
 function resolveSkillGovernancePath(): string {

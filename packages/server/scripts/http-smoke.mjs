@@ -67,8 +67,8 @@ async function main() {
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
     runtimeWorkspacesPath: path.join(tempDir, 'runtime-workspaces'),
     skillGovernancePath: path.join(tempDir, 'skill-governance.server.json'),
-    subagentTypesPath: path.join(tempDir, 'subagent-types'),
-    subagentTasksPath: path.join(tempDir, 'subagent-tasks.server.json'),
+    subagentPath: path.join(tempDir, 'subagent'),
+    subagentsPath: path.join(tempDir, 'subagents.server.json'),
     userHomePath: path.join(tempDir, 'user-home'),
   };
   await fsPromises.mkdir(serverFiles.userHomePath, { recursive: true });
@@ -113,8 +113,8 @@ async function main() {
     retriedAssistantText: null,
     skillLoopAssistantMessageId: null,
     skillLoopAssistantText: null,
-    taskLoopAssistantMessageId: null,
-    taskLoopAssistantText: null,
+    subagentLoopAssistantMessageId: null,
+    subagentLoopAssistantText: null,
     todoLoopAssistantMessageId: null,
     todoLoopAssistantText: null,
     webFetchLoopAssistantMessageId: null,
@@ -145,7 +145,7 @@ async function main() {
       assertWebRoutesMatchServerRoutes(serverRoutes, webRoutes);
     });
     await prepareProjectSkill(skillRoot);
-    await prepareCustomSubagentType(serverFiles.subagentTypesPath);
+    await prepareCustomSubagentType(serverFiles.subagentPath);
     await prepareWorkingMcpScript(mcpScriptPath);
     await prepareRemoteRoutePluginScript(remotePluginScriptPath);
 
@@ -176,7 +176,9 @@ async function main() {
       });
 
       console.log('-> start backend');
-      backend = await startBackend(port, wsPort, databaseUrl, serverFiles);
+      backend = await startBackend(port, wsPort, databaseUrl, serverFiles, {
+        runtimeApprovalMode: cli.runtimeApprovalMode,
+      });
       apiBase = `http://127.0.0.1:${port}${API_PREFIX}`;
     }
 
@@ -197,6 +199,7 @@ async function main() {
       personasPath: serverFiles.personasPath,
       remotePluginServerUrl: cli.proxyOrigin ? 'ws://127.0.0.1:23331' : `ws://127.0.0.1:${wsPort}`,
       remotePluginScriptPath,
+      runtimeApprovalMode: cli.runtimeApprovalMode,
       runtimeWorkspacesPath: serverFiles.runtimeWorkspacesPath,
       smokeSkillId,
     });
@@ -227,6 +230,7 @@ async function main() {
 }
 
 async function runHttpFlow(apiBase, state, input) {
+  const usesYoloApproval = input.runtimeApprovalMode === 'yolo';
   const adminHeaders = () => createBearerHeaders(readTokens(state.adminTokens).accessToken);
   const userHeaders = adminHeaders;
   const managedPersonaDirectory = path.join(input.personasPath, encodeURIComponent(state.managedPersonaId));
@@ -256,6 +260,22 @@ async function runHttpFlow(apiBase, state, input) {
     );
     ensure(reply?.requestId === event.request.id, 'Expected runtime permission reply to match request');
     ensure(reply?.resolution === 'approved', 'Expected runtime permission reply to approve the request');
+  };
+  const readPendingRuntimePermissions = async () => {
+    ensure(typeof state.conversationId === 'string', 'Expected conversation id before reading runtime permissions');
+    return getJson(apiBase, `/chat/conversations/${state.conversationId}/runtime-permissions/pending`, {
+      headers: userHeaders(),
+    });
+  };
+  const ensureRuntimePermissionExpectation = async (events, expected, label) => {
+    const hasRequest = events.some((entry) => entry.type === 'permission-request');
+    if (expected === 'requested') {
+      ensure(hasRequest, `Expected ${label} to include runtime permission request`);
+      return;
+    }
+    ensure(!hasRequest, `Expected ${label} not to include runtime permission request`);
+    const pending = await readPendingRuntimePermissions();
+    ensure(Array.isArray(pending) && pending.length === 0, `Expected ${label} to leave no pending runtime permission request`);
   };
 
   await runStep('ai.provider-catalog', async () => {
@@ -434,6 +454,27 @@ async function runHttpFlow(apiBase, state, input) {
     state.conversationId = conversation.id;
     ensure(typeof state.conversationId === 'string', 'Expected conversation id');
   });
+
+  if (usesYoloApproval) {
+    await runStep('chat.runtime-permissions.reply.missing', async () => {
+      ensure(typeof state.conversationId === 'string', 'Expected conversation id before covering runtime reply route');
+      const reply = await postJson(
+        apiBase,
+        `/chat/conversations/${state.conversationId}/runtime-permissions/missing-request/reply`,
+        {
+          body: {
+            decision: 'reject',
+          },
+          expectedStatuses: [404],
+          headers: userHeaders(),
+        },
+      );
+      ensure(
+        typeof reply?.message === 'string' && reply.message.includes('Runtime permission request not found'),
+        'Expected missing runtime permission reply to return not found payload',
+      );
+    });
+  }
 
   await runStep('chat.conversation.list', async () => {
     const conversations = await getJson(apiBase, '/chat/conversations', { headers: userHeaders() });
@@ -709,11 +750,11 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(skillToolResults) && skillToolResults.some((entry) => entry?.toolName === 'skill'), 'Expected skill loop assistant message to persist native skill tool result');
   });
 
-  await runStep('chat.messages.task-loop', async () => {
+  await runStep('chat.messages.subagent-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
-        content: '请使用 task 工具委派一个探索任务，并总结结果。',
+        content: '请使用 subagent 工具委派一个探索任务，并总结结果。',
         model: state.modelId,
         provider: state.providerId,
       },
@@ -721,35 +762,35 @@ async function runHttpFlow(apiBase, state, input) {
     });
     const startEvent = events.find((entry) => entry.type === 'message-start');
     const finishEvent = events.find((entry) => entry.type === 'finish');
-    state.taskLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
-    ensure(typeof state.taskLoopAssistantMessageId === 'string', 'Expected task loop to create assistant message');
-    state.taskLoopAssistantText = assertCompletedSse(events, '子任务已完成：Smoke HTTP Flow 用于后端烟测。');
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'task'), 'Expected task loop SSE to include native task tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'task'), 'Expected task loop SSE to include native task tool result');
-    ensure(finishEvent?.status === 'completed', 'Expected task loop SSE to finish');
+    state.subagentLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.subagentLoopAssistantMessageId === 'string', 'Expected subagent loop to create assistant message');
+    state.subagentLoopAssistantText = assertCompletedSse(events, '子代理已完成：Smoke HTTP Flow 用于后端烟测。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'subagent'), 'Expected subagent loop SSE to include subagent tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'subagent'), 'Expected subagent loop SSE to include subagent tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected subagent loop SSE to finish');
   });
 
-  await runStep('chat.messages.task-loop.verify', async () => {
+  await runStep('chat.messages.subagent-loop.verify', async () => {
     const requests = input.fakeOpenAi.readChatCompletions();
     const firstRequest = requests.find((entry) =>
       requestHasToolList(entry.body)
-      && readLatestUserText(entry.body?.messages).includes('请使用 task 工具委派一个探索任务'));
-    ensure(firstRequest, 'Expected first task loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'task'), 'Expected task loop request to expose native task tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'task'));
-    ensure(toolResultRequest, 'Expected task loop to issue a follow-up request with task tool results');
-    ensure(requestContainsTaskResult(toolResultRequest.body, 'Smoke HTTP Flow 用于后端烟测。'), 'Expected task loop follow-up request to include rendered task result');
-    ensure(requestContainsTaskSessionId(toolResultRequest.body), 'Expected task loop follow-up request to include session_id');
-    ensure(!JSON.stringify(toolResultRequest.body).includes('provider:'), 'Expected task loop follow-up request not to leak provider details');
-    ensure(!JSON.stringify(toolResultRequest.body).includes('model:'), 'Expected task loop follow-up request not to leak model details');
+      && readLatestUserText(entry.body?.messages).includes('请使用 subagent 工具委派一个探索任务'));
+    ensure(firstRequest, 'Expected first subagent loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'subagent'), 'Expected subagent loop request to expose subagent tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'subagent'));
+    ensure(toolResultRequest, 'Expected subagent loop to issue a follow-up request with subagent tool results');
+    ensure(requestContainsSubagentResult(toolResultRequest.body, 'Smoke HTTP Flow 用于后端烟测。'), 'Expected subagent loop follow-up request to include rendered subagent result');
+    ensure(requestContainsSubagentSessionId(toolResultRequest.body), 'Expected subagent loop follow-up request to include session_id');
+    ensure(!JSON.stringify(toolResultRequest.body).includes('provider:'), 'Expected subagent loop follow-up request not to leak provider details');
+    ensure(!JSON.stringify(toolResultRequest.body).includes('model:'), 'Expected subagent loop follow-up request not to leak model details');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
-    const taskAssistant = conversation.messages.find((entry) => entry.id === state.taskLoopAssistantMessageId);
-    const taskToolCalls = parseSerializedJsonValue(taskAssistant?.toolCalls);
-    const taskToolResults = parseSerializedJsonValue(taskAssistant?.toolResults);
-    ensure(taskAssistant?.content === state.taskLoopAssistantText, 'Expected task loop assistant message to persist generated content');
-    ensure(Array.isArray(taskToolCalls) && taskToolCalls.some((entry) => entry?.toolName === 'task'), 'Expected task loop assistant message to persist native task tool call');
-    ensure(Array.isArray(taskToolResults) && taskToolResults.some((entry) => entry?.toolName === 'task'), 'Expected task loop assistant message to persist native task tool result');
+    const subagentAssistant = conversation.messages.find((entry) => entry.id === state.subagentLoopAssistantMessageId);
+    const subagentToolCalls = parseSerializedJsonValue(subagentAssistant?.toolCalls);
+    const subagentToolResults = parseSerializedJsonValue(subagentAssistant?.toolResults);
+    ensure(subagentAssistant?.content === state.subagentLoopAssistantText, 'Expected subagent loop assistant message to persist generated content');
+    ensure(Array.isArray(subagentToolCalls) && subagentToolCalls.some((entry) => entry?.toolName === 'subagent'), 'Expected subagent loop assistant message to persist subagent tool call');
+    ensure(Array.isArray(subagentToolResults) && subagentToolResults.some((entry) => entry?.toolName === 'subagent'), 'Expected subagent loop assistant message to persist subagent tool result');
   });
 
   await runStep('chat.messages.todo-loop', async () => {
@@ -856,7 +897,11 @@ async function runHttpFlow(apiBase, state, input) {
     state.bashWriteAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashWriteAssistantMessageId === 'string', 'Expected bash write loop to create assistant message');
     state.bashWriteAssistantText = assertCompletedSse(events, '已写入 smoke workspace 文件。');
-    ensure(events.some((entry) => entry.type === 'permission-request'), 'Expected bash write loop SSE to include runtime permission request');
+    await ensureRuntimePermissionExpectation(
+      events,
+      usesYoloApproval ? 'skipped' : 'requested',
+      'bash write loop SSE',
+    );
     ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash write loop SSE to include native bash tool call');
     ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash write loop SSE to include native bash tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash write loop SSE to finish');
@@ -896,7 +941,7 @@ async function runHttpFlow(apiBase, state, input) {
     state.bashReadAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashReadAssistantMessageId === 'string', 'Expected bash read loop to create assistant message');
     state.bashReadAssistantText = assertCompletedSse(events, '已读取 smoke workspace 文件。');
-    ensure(events.every((entry) => entry.type !== 'permission-request'), 'Expected bash read loop SSE not to require another runtime permission request after always approval');
+    await ensureRuntimePermissionExpectation(events, 'skipped', 'bash read loop SSE');
     ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash read loop SSE to include native bash tool call');
     ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash read loop SSE to include native bash tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash read loop SSE to finish');
@@ -942,7 +987,7 @@ async function runHttpFlow(apiBase, state, input) {
     state.bashWorkdirAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashWorkdirAssistantMessageId === 'string', 'Expected bash workdir loop to create assistant message');
     state.bashWorkdirAssistantText = assertCompletedSse(events, '已在指定 bash 工作目录中完成执行。');
-    ensure(events.every((entry) => entry.type !== 'permission-request'), 'Expected bash workdir loop not to require another runtime permission request after always approval');
+    await ensureRuntimePermissionExpectation(events, 'skipped', 'bash workdir loop SSE');
     ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash workdir loop SSE to include native bash tool call');
     ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash workdir loop SSE to include native bash tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash workdir loop SSE to finish');
@@ -957,7 +1002,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash workdir loop request to expose native bash tool');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
     ensure(toolResultRequest, 'Expected bash workdir loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'cwd: /workspace/nested'), 'Expected bash workdir loop follow-up request to include rendered cwd');
+    ensure(requestContainsBashResult(toolResultRequest.body, 'cwd: /nested'), 'Expected bash workdir loop follow-up request to include rendered cwd');
     ensure(requestContainsBashResult(toolResultRequest.body, 'from-workdir'), 'Expected bash workdir loop follow-up request to include rendered workdir output');
     ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'nested', 'child.txt'), 'utf8') === 'from-workdir\n', 'Expected bash workdir loop to persist file under nested workdir');
 
@@ -990,7 +1035,11 @@ async function runHttpFlow(apiBase, state, input) {
     state.bashTimeoutAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashTimeoutAssistantMessageId === 'string', 'Expected bash timeout loop to create assistant message');
     state.bashTimeoutAssistantText = assertCompletedSse(events, '已收到 bash 超时错误。');
-    ensure(events.some((entry) => entry.type === 'permission-request'), 'Expected bash timeout loop SSE to include runtime permission request for network access');
+    await ensureRuntimePermissionExpectation(
+      events,
+      usesYoloApproval ? 'skipped' : 'requested',
+      'bash timeout loop SSE',
+    );
     ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash timeout loop SSE to include native bash tool call');
     ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash timeout loop SSE to include native bash tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash timeout loop SSE to finish');
@@ -1036,7 +1085,7 @@ async function runHttpFlow(apiBase, state, input) {
     state.bashTarAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashTarAssistantMessageId === 'string', 'Expected bash tar loop to create assistant message');
     state.bashTarAssistantText = assertCompletedSse(events, '已完成 bash 打包与还原验证。');
-    ensure(events.every((entry) => entry.type !== 'permission-request'), 'Expected bash tar loop not to require another runtime permission request after previous approvals');
+    await ensureRuntimePermissionExpectation(events, 'skipped', 'bash tar loop SSE');
     ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash tar loop SSE to include native bash tool call');
     ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash tar loop SSE to include native bash tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash tar loop SSE to finish');
@@ -1097,7 +1146,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, 'read'), 'Expected read loop request to expose native read tool');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'read'));
     ensure(toolResultRequest, 'Expected read loop to issue a follow-up request with read tool results');
-    ensure(requestContainsReadResult(toolResultRequest.body, '/workspace/notes/runtime.txt', 'smoke-workspace'), 'Expected read loop follow-up request to include rendered read result');
+    ensure(requestContainsReadResult(toolResultRequest.body, '/notes/runtime.txt', 'smoke-workspace'), 'Expected read loop follow-up request to include rendered read result');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const readAssistant = conversation.messages.find((entry) => entry.id === state.readLoopAssistantMessageId);
@@ -1137,7 +1186,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, 'glob'), 'Expected glob loop request to expose native glob tool');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'glob'));
     ensure(toolResultRequest, 'Expected glob loop to issue a follow-up request with glob tool results');
-    ensure(requestContainsGlobResult(toolResultRequest.body, '/workspace/notes/runtime.txt'), 'Expected glob loop follow-up request to include rendered glob result');
+    ensure(requestContainsGlobResult(toolResultRequest.body, '/notes/runtime.txt'), 'Expected glob loop follow-up request to include rendered glob result');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const globAssistant = conversation.messages.find((entry) => entry.id === state.globLoopAssistantMessageId);
@@ -1177,7 +1226,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, 'grep'), 'Expected grep loop request to expose native grep tool');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'grep'));
     ensure(toolResultRequest, 'Expected grep loop to issue a follow-up request with grep tool results');
-    ensure(requestContainsGrepResult(toolResultRequest.body, '/workspace/notes/runtime.txt', 'smoke-workspace'), 'Expected grep loop follow-up request to include rendered grep result');
+    ensure(requestContainsGrepResult(toolResultRequest.body, '/notes/runtime.txt', 'smoke-workspace'), 'Expected grep loop follow-up request to include rendered grep result');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const grepAssistant = conversation.messages.find((entry) => entry.id === state.grepLoopAssistantMessageId);
@@ -1217,7 +1266,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, 'write'), 'Expected write loop request to expose native write tool');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'write'));
     ensure(toolResultRequest, 'Expected write loop to issue a follow-up request with write tool results');
-    ensure(requestContainsWriteResult(toolResultRequest.body, '/workspace/generated/output.txt'), 'Expected write loop follow-up request to include rendered write result');
+    ensure(requestContainsWriteResult(toolResultRequest.body, '/generated/output.txt'), 'Expected write loop follow-up request to include rendered write result');
     ensure(fs.existsSync(path.join(readSessionWorkspaceRoot(), 'generated', 'output.txt')), 'Expected write loop to persist generated file in runtime workspace');
     ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'generated', 'output.txt'), 'utf8') === 'generated file\n', 'Expected write loop to persist generated file content');
 
@@ -1259,7 +1308,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, 'edit'), 'Expected edit loop request to expose native edit tool');
     const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'edit'));
     ensure(toolResultRequest, 'Expected edit loop to issue a follow-up request with edit tool results');
-    ensure(requestContainsEditResult(toolResultRequest.body, '/workspace/generated/output.txt'), 'Expected edit loop follow-up request to include rendered edit result');
+    ensure(requestContainsEditResult(toolResultRequest.body, '/generated/output.txt'), 'Expected edit loop follow-up request to include rendered edit result');
     ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'generated', 'output.txt'), 'utf8') === 'updated file\n', 'Expected edit loop to persist updated file content');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
@@ -1490,12 +1539,12 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('plugins.subagent-overview', async () => {
-    const overview = await getJson(apiBase, '/plugin-subagent-tasks/overview');
-    ensure(Array.isArray(overview.tasks), 'Expected subagent task overview payload');
+    const overview = await getJson(apiBase, '/plugin-subagents/overview');
+    ensure(Array.isArray(overview.subagents), 'Expected subagent overview payload');
   });
 
-  await runStep('plugins.subagent-types', async () => {
-    const subagentTypes = await getJson(apiBase, '/subagent-types');
+  await runStep('plugins.subagents.types', async () => {
+    const subagentTypes = await getJson(apiBase, '/plugin-subagents/types');
     ensure(Array.isArray(subagentTypes), 'Expected subagent type list payload');
     ensure(subagentTypes.some((entry) => entry.id === 'general'), 'Expected general subagent type');
     ensure(subagentTypes.some((entry) => entry.id === 'explore'), 'Expected explore subagent type');
@@ -1503,7 +1552,7 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('plugins.subagent-detail.missing', async () => {
-    await getJson(apiBase, '/plugin-subagent-tasks/subagent-session-missing', {
+    await getJson(apiBase, '/plugin-subagents/subagent-session-missing', {
       expectedStatus: 404,
     });
   });
@@ -1910,7 +1959,7 @@ async function runHttpFlow(apiBase, state, input) {
             type: 'ai_message',
           },
           {
-            capability: 'delegate_summary_background',
+            capability: 'subagent_background',
             params: {
               description: '自动化烟测任务',
               prompt: '请输出 smoke automation task',
@@ -1983,26 +2032,26 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof automation?.lastRunAt === 'string', 'Expected automation list to reflect last run timestamp');
   });
 
-  await runStep('plugins.subagent-overview.with-task', async () => {
-    const overview = await getJson(apiBase, '/plugin-subagent-tasks/overview');
-    const task = overview.tasks.find((entry) => entry.sessionId === state.automationSubagentSessionId);
-    ensure(task, 'Expected subagent overview to include automation-created session projection');
-    ensure(task.description === '自动化烟测任务', 'Expected subagent overview to expose persisted task description');
-    ensure(task.requestPreview === '请输出 smoke automation task', 'Expected subagent overview to keep prompt preview separate from description');
-    ensure(typeof task.sessionId === 'string' && task.sessionId.length > 0, 'Expected subagent overview to expose session id');
-    ensure(typeof task.sessionMessageCount === 'number' && task.sessionMessageCount >= 1, 'Expected subagent overview to expose session message count');
+  await runStep('plugins.subagent-overview.with-subagent', async () => {
+    const overview = await getJson(apiBase, '/plugin-subagents/overview');
+    const subagent = overview.subagents.find((entry) => entry.sessionId === state.automationSubagentSessionId);
+    ensure(subagent, 'Expected subagent overview to include automation-created session projection');
+    ensure(subagent.description === '自动化烟测任务', 'Expected subagent overview to expose persisted subagent description');
+    ensure(subagent.requestPreview === '请输出 smoke automation task', 'Expected subagent overview to keep prompt preview separate from description');
+    ensure(typeof subagent.sessionId === 'string' && subagent.sessionId.length > 0, 'Expected subagent overview to expose session id');
+    ensure(typeof subagent.sessionMessageCount === 'number' && subagent.sessionMessageCount >= 1, 'Expected subagent overview to expose session message count');
   });
 
   await runStep('plugins.subagent-detail.success', async () => {
-    const task = await waitForSubagentTaskCompletion(apiBase, state.automationSubagentSessionId);
-    ensure(task.sessionId === state.automationSubagentSessionId, 'Expected subagent session detail to load');
-    ensure(task.description === '自动化烟测任务', 'Expected subagent task detail to expose persisted task description');
-    ensure(task.pluginId === 'builtin.subagent-delegate', 'Expected subagent task detail plugin id');
-    ensure(task.requestPreview === '请输出 smoke automation task', 'Expected subagent task detail to keep prompt preview separate from description');
-    ensure(typeof task.sessionId === 'string' && task.sessionId.length > 0, 'Expected subagent task detail to expose session id');
-    ensure(typeof task.sessionMessageCount === 'number' && task.sessionMessageCount >= 2, 'Expected subagent task detail to expose updated session message count');
-    ensure(task.status === 'completed', 'Expected subagent task detail status to be completed');
-    ensure(typeof task.result?.text === 'string' && task.result.text.length > 0, 'Expected subagent task detail result text');
+    const subagent = await waitForSubagentTaskCompletion(apiBase, state.automationSubagentSessionId);
+    ensure(subagent.sessionId === state.automationSubagentSessionId, 'Expected subagent session detail to load');
+    ensure(subagent.description === '自动化烟测任务', 'Expected subagent detail to expose persisted description');
+    ensure(subagent.pluginId === 'builtin.subagent-delegate', 'Expected subagent detail plugin id');
+    ensure(subagent.requestPreview === '请输出 smoke automation task', 'Expected subagent detail to keep prompt preview separate from description');
+    ensure(typeof subagent.sessionId === 'string' && subagent.sessionId.length > 0, 'Expected subagent detail to expose session id');
+    ensure(typeof subagent.sessionMessageCount === 'number' && subagent.sessionMessageCount >= 2, 'Expected subagent detail to expose updated session message count');
+    ensure(subagent.status === 'completed', 'Expected subagent detail status to be completed');
+    ensure(typeof subagent.result?.text === 'string' && subagent.result.text.length > 0, 'Expected subagent detail result text');
   });
 
   await runStep('automations.logs', async () => {
@@ -2278,7 +2327,7 @@ async function loginDevelopmentAdmin(apiBase) {
   return payload;
 }
 
-async function startBackend(port, wsPort, databaseUrl, files) {
+async function startBackend(port, wsPort, databaseUrl, files, options = {}) {
   const logs = [];
   const child = spawn(process.execPath, ['dist/src/main.js'], {
     cwd: SERVER_DIR,
@@ -2292,10 +2341,11 @@ async function startBackend(port, wsPort, databaseUrl, files) {
       GARLIC_CLAW_MCP_CONFIG_PATH: files.mcpConfigPath,
       GARLIC_CLAW_PERSONAS_PATH: files.personasPath,
       GARLIC_CLAW_PLUGIN_STATE_PATH: files.pluginStatePath,
+      GARLIC_CLAW_RUNTIME_APPROVAL_MODE: options.runtimeApprovalMode ?? 'review',
       GARLIC_CLAW_RUNTIME_WORKSPACES_PATH: files.runtimeWorkspacesPath,
       GARLIC_CLAW_SKILL_GOVERNANCE_PATH: files.skillGovernancePath,
-      GARLIC_CLAW_SUBAGENT_TYPES_PATH: files.subagentTypesPath,
-      GARLIC_CLAW_SUBAGENT_TASKS_PATH: files.subagentTasksPath,
+      GARLIC_CLAW_SUBAGENT_PATH: files.subagentPath,
+      GARLIC_CLAW_SUBAGENTS_PATH: files.subagentsPath,
       HOME: files.userHomePath,
       USERPROFILE: files.userHomePath,
       JWT_SECRET: 'smoke-jwt-secret',
@@ -2470,6 +2520,7 @@ async function writeHostModelRoutingConfig(apiBase, body) {
 function parseCliArgs(args) {
   const config = {
     proxyOrigin: null,
+    runtimeApprovalMode: normalizeRuntimeApprovalMode(process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE),
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -2477,10 +2528,23 @@ function parseCliArgs(args) {
     if (arg === '--proxy-origin') {
       config.proxyOrigin = args[index + 1] ?? null;
       index += 1;
+      continue;
+    }
+    if (arg === '--runtime-approval-mode') {
+      config.runtimeApprovalMode = normalizeRuntimeApprovalMode(args[index + 1]);
+      index += 1;
     }
   }
 
   return config;
+}
+
+function normalizeRuntimeApprovalMode(value) {
+  const normalizedValue = (value ?? 'review').trim().toLowerCase();
+  if (normalizedValue === 'review' || normalizedValue === 'yolo') {
+    return normalizedValue;
+  }
+  throw new Error('runtime approval mode must be review or yolo');
 }
 
 function normalizeOrigin(origin) {
@@ -2545,12 +2609,12 @@ async function waitForSubagentTaskCompletion(apiBase, sessionId) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
-    const task = await getJson(apiBase, `/plugin-subagent-tasks/${sessionId}`);
-    if (task?.status === 'completed') {
-      return task;
+    const subagent = await getJson(apiBase, `/plugin-subagents/${sessionId}`);
+    if (subagent?.status === 'completed') {
+      return subagent;
     }
-    if (task?.status === 'error') {
-      throw new Error(`Subagent session ${sessionId} failed: ${task.error ?? 'unknown error'}`);
+    if (subagent?.status === 'error') {
+      throw new Error(`Subagent session ${sessionId} failed: ${subagent.error ?? 'unknown error'}`);
     }
     await delay(250);
   }
@@ -3199,7 +3263,7 @@ function planSmokeChatResponse(body) {
       toolName: 'skill',
     };
   }
-  if (shouldTriggerTaskTool(body)) {
+  if (shouldTriggerSubagentTool(body)) {
     return {
       arguments: {
         description: '探索 smoke 技能',
@@ -3207,8 +3271,8 @@ function planSmokeChatResponse(body) {
         prompt: '请总结 smoke-http-flow 技能的用途',
       },
       kind: 'tool-call',
-      toolCallId: 'call_smoke_task_0',
-      toolName: 'task',
+      toolCallId: 'call_smoke_subagent_0',
+      toolName: 'subagent',
     };
   }
   if (shouldTriggerTodoTool(body)) {
@@ -3251,7 +3315,7 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerBashWriteTool(body)) {
     return {
       arguments: {
-        command: 'mkdir -p notes && echo smoke-workspace > notes/runtime.txt && cat notes/runtime.txt',
+        command: 'mkdir -p notes nested && echo smoke-workspace > notes/runtime.txt && cat notes/runtime.txt',
         description: '写入 smoke workspace 文件',
       },
       kind: 'tool-call',
@@ -3320,7 +3384,7 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerGlobTool(body)) {
     return {
       arguments: {
-        path: '/workspace',
+        path: '/',
         pattern: '**/*.txt',
       },
       kind: 'tool-call',
@@ -3332,7 +3396,7 @@ function planSmokeChatResponse(body) {
     return {
       arguments: {
         include: '*.txt',
-        path: '/workspace',
+        path: '/',
         pattern: 'smoke-workspace',
       },
       kind: 'tool-call',
@@ -3369,10 +3433,10 @@ function planSmokeChatResponse(body) {
       text: '已加载技能 smoke-http-flow，可继续执行 Smoke HTTP Flow。',
     };
   }
-  if (requestContainsToolResult(body, 'task')) {
+  if (requestContainsToolResult(body, 'subagent')) {
     return {
       kind: 'text',
-      text: '子任务已完成：Smoke HTTP Flow 用于后端烟测。',
+      text: '子代理已完成：Smoke HTTP Flow 用于后端烟测。',
     };
   }
   if (requestContainsToolResult(body, 'todowrite')) {
@@ -3443,10 +3507,10 @@ function shouldTriggerSkillTool(body) {
     && readLatestUserText(body?.messages).includes('请加载 smoke-http-flow 技能');
 }
 
-function shouldTriggerTaskTool(body) {
-  return requestIncludesToolName(body, 'task')
-    && !requestContainsToolResult(body, 'task')
-    && readLatestUserText(body?.messages).includes('请使用 task 工具委派一个探索任务');
+function shouldTriggerSubagentTool(body) {
+  return requestIncludesToolName(body, 'subagent')
+    && !requestContainsToolResult(body, 'subagent')
+    && readLatestUserText(body?.messages).includes('请使用 subagent 工具委派一个探索任务');
 }
 
 function shouldTriggerTodoTool(body) {
@@ -3548,7 +3612,11 @@ function requestContainsToolResult(body, toolName) {
         : '';
     const content = readTextContent(message);
     return (toolName === 'skill' && (toolCallId === 'call_smoke_skill_0' || content.includes('<skill_content name="smoke-http-flow">')))
-      || (toolName === 'task' && (toolCallId === 'call_smoke_task_0' || content.includes('<task_result title=')))
+      || (toolName === 'subagent' && (
+        toolCallId === 'call_smoke_subagent_0'
+        || content.includes('<subagent_result')
+        || content.includes('"sessionId"')
+      ))
       || (toolName === 'todowrite' && (toolCallId === 'call_smoke_todo_0' || content.includes('<todo_result>')))
       || (toolName === 'webfetch' && (toolCallId === 'call_smoke_webfetch_0' || content.includes('<webfetch_result>')))
       || (toolName === 'bash' && (
@@ -3575,20 +3643,20 @@ function requestContainsSkillContent(body, skillName) {
     && readTextContent(message).includes(`<skill_content name="${skillName}">`));
 }
 
-function requestContainsTaskResult(body, expectedText) {
+function requestContainsSubagentResult(body, expectedText) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.some((message) =>
     message?.role === 'tool'
-    && readTextContent(message).includes('<task_result title=')
-    && readTextContent(message).includes(expectedText));
+    && readTextContent(message).includes(expectedText)
+    && isRenderedSubagentToolContent(readTextContent(message)));
 }
 
-function requestContainsTaskSessionId(body) {
+function requestContainsSubagentSessionId(body) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.some((message) =>
     message?.role === 'tool'
-    && readTextContent(message).includes('session_id: ')
-    && readTextContent(message).includes('<task_result title='));
+    && (readTextContent(message).includes('session_id: ') || readTextContent(message).includes('"sessionId"'))
+    && isRenderedSubagentToolContent(readTextContent(message)));
 }
 
 function requestContainsTodoResult(body, todoContent) {
@@ -3655,6 +3723,10 @@ function requestContainsBashResult(body, contentFragment) {
     message?.role === 'tool'
     && readTextContent(message).includes('<bash_result>')
     && readTextContent(message).includes(contentFragment));
+}
+
+function isRenderedSubagentToolContent(content) {
+  return content.includes('<subagent_result') || content.includes('"sessionId"');
 }
 
 function requestContainsInvalidToolResult(body, toolName, errorFragment) {

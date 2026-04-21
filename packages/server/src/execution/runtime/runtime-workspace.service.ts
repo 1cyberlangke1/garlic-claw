@@ -3,14 +3,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 
-const VIRTUAL_WORKSPACE_ROOT = '/workspace';
+const VISIBLE_RUNTIME_ROOT = '/';
 
 @Injectable()
 export class RuntimeWorkspaceService {
   private readonly storageRoot = readRuntimeWorkspaceStorageRoot();
 
-  getVirtualWorkspaceRoot(): string {
-    return VIRTUAL_WORKSPACE_ROOT;
+  getVisibleRoot(): string {
+    return VISIBLE_RUNTIME_ROOT;
   }
 
   async resolveWorkspaceRoot(sessionId: string): Promise<string> {

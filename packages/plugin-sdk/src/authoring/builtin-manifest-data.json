@@ -352,8 +352,8 @@
   ],
   "subagentDelegateManifestTools": [
     {
-      "name": "delegate_summary",
-      "description": "将当前任务委托给宿主子代理做简短总结",
+      "name": "subagent",
+      "description": "将当前任务委托给宿主子代理做同步处理并返回结果",
       "parameters": {
         "prompt": {
           "type": "string",
@@ -375,7 +375,7 @@
       }
     },
     {
-      "name": "delegate_summary_background",
+      "name": "subagent_background",
       "description": "将当前任务委托给宿主子代理后台执行，并可在完成后回写当前会话",
       "parameters": {
         "prompt": {
@@ -880,8 +880,8 @@
     "permissions": ["config:read", "conversation:write", "subagent:run"],
     "tools": [
       {
-        "name": "delegate_summary",
-        "description": "将当前任务委托给宿主子代理做简短总结",
+        "name": "subagent",
+        "description": "将当前任务委托给宿主子代理做同步处理并返回结果",
         "parameters": {
           "prompt": {
             "type": "string",
@@ -891,7 +891,7 @@
         }
       },
       {
-        "name": "delegate_summary_background",
+        "name": "subagent_background",
         "description": "将当前任务委托给宿主子代理后台执行，并可在完成后回写当前会话",
         "parameters": {
           "prompt": {

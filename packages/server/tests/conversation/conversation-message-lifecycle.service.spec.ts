@@ -7,6 +7,7 @@ import { RuntimeHostConversationMessageService } from '../../src/runtime/host/ru
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
 import { ConversationMessageLifecycleService } from '../../src/conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../src/conversation/conversation-task.service';
+import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
 import type { PersonaService } from '../../src/persona/persona.service';
 
 let activeConversationId = '';
@@ -58,7 +59,10 @@ describe('ConversationMessageLifecycleService', () => {
     runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
       runtimeHostConversationRecordService,
     );
-    conversationTaskService = new ConversationTaskService(runtimeHostConversationMessageService);
+    conversationTaskService = new ConversationTaskService(
+      runtimeHostConversationMessageService,
+      new RuntimeToolPermissionService(),
+    );
     conversationMessagePlanningService = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
       aiVisionService as never,
