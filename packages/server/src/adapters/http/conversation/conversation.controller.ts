@@ -3,12 +3,14 @@ import type { Response } from 'express';
 import { CurrentUser, JwtAuthGuard } from '../../../auth/http-auth';
 import { ConversationMessageLifecycleService } from '../../../conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../../conversation/conversation-task.service';
+import { RuntimeToolPermissionService } from '../../../execution/runtime/runtime-tool-permission.service';
 import { RuntimeHostConversationMessageService } from '../../../runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
   ConversationTodoItemDto,
   CreateConversationDto,
+  ReplyRuntimePermissionDto,
   RetryMessageDto,
   SendMessageDto,
   UpdateConversationTodoDto,
@@ -22,6 +24,7 @@ export class ConversationController {
   constructor(
     private readonly conversationMessageLifecycleService: ConversationMessageLifecycleService,
     private readonly conversationTaskService: ConversationTaskService,
+    private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
   ) {}
@@ -55,6 +58,18 @@ export class ConversationController {
 
   @Put('sessions/:id/todo')
   updateSessionTodo(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateConversationTodoDto) { return this.runtimeHostConversationRecordService.replaceSessionTodo(id, dto.todos as ConversationTodoItemDto[], userId); }
+
+  @Get('conversations/:id/runtime-permissions/pending')
+  listPendingRuntimePermissions(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) {
+    this.requireOwnedConversation(userId, id);
+    return this.runtimeToolPermissionService.listPendingRequests(id);
+  }
+
+  @Post('conversations/:id/runtime-permissions/:requestId/reply')
+  replyRuntimePermission(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Param('requestId') requestId: string, @Body() dto: ReplyRuntimePermissionDto) {
+    this.requireOwnedConversation(userId, id);
+    return this.runtimeToolPermissionService.reply(id, requestId, dto.decision);
+  }
 
   @Post('conversations/:id/messages')
   async sendMessage(

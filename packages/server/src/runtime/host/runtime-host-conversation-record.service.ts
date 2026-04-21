@@ -12,11 +12,12 @@ import type {
 } from '@garlic-claw/shared';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
+import { RuntimeWorkspaceService } from '../../execution/runtime/runtime-workspace.service';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 
-export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; hostServices: ConversationHostServices; id: string; messages: JsonObject[]; revision: string; revisionVersion: number; title: string; updatedAt: string; userId: string; }
+export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; hostServices: ConversationHostServices; id: string; messages: JsonObject[]; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
 
 @Injectable()
@@ -26,7 +27,10 @@ export class RuntimeHostConversationRecordService {
   private readonly conversations: Map<string, RuntimeConversationRecord>;
   private readonly conversationTodos: Map<string, ConversationTodoItem[]>;
 
-  constructor(@Optional() private readonly runtimeHostPluginDispatchService?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>) {
+  constructor(
+    @Optional() private readonly runtimeHostPluginDispatchService?: RuntimeHostPluginDispatchService,
+    @Optional() private readonly runtimeWorkspaceService?: RuntimeWorkspaceService,
+  ) {
     const loaded = this.loadConversations();
     this.conversations = loaded.records;
     this.conversationTodos = loaded.todos;
@@ -44,6 +48,7 @@ export class RuntimeHostConversationRecordService {
     this.requireConversation(conversationId, userId);
     this.conversations.delete(conversationId);
     this.conversationTodos.delete(conversationId);
+    this.runtimeWorkspaceService?.deleteWorkspace(conversationId);
     this.saveConversations();
     return { message: 'Conversation deleted' };
   }
@@ -79,6 +84,7 @@ export class RuntimeHostConversationRecordService {
   }
 
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return buildConversationSummary(this.requireConversation(conversationId, userId)); }
+  readRuntimePermissionApprovals(conversationId: string, userId?: string): string[] { return [...(this.requireConversation(conversationId, userId).runtimePermissionApprovals ?? [])]; }
   readSessionTodo(sessionId: string, userId?: string): JsonValue { this.requireConversation(sessionId, userId); return asJsonValue((this.conversationTodos.get(sessionId) ?? []).map((item) => cloneJsonValue(item))); }
 
   readConversationHistory(conversationId: string, userId?: string): JsonValue { return buildConversationHistorySnapshot(this.requireConversation(conversationId, userId)); }
@@ -152,10 +158,18 @@ export class RuntimeHostConversationRecordService {
     return buildConversationSummary(this.mutateConversation(conversationId, (conversation, timestamp) => { conversation.title = title; this.bumpRevision(conversation, timestamp); }, userId));
   }
 
+  rememberRuntimePermissionApproval(conversationId: string, approvalKey: string, userId?: string): string[] {
+    return [...this.mutateConversation(conversationId, (conversation) => {
+      const approvals = new Set(conversation.runtimePermissionApprovals ?? []);
+      approvals.add(approvalKey);
+      conversation.runtimePermissionApprovals = [...approvals].sort((left, right) => left.localeCompare(right));
+    }, userId).runtimePermissionApprovals ?? []];
+  }
+
   private bumpRevision(conversation: RuntimeConversationRecord, timestamp: string): void { conversation.updatedAt = timestamp; conversation.revisionVersion += 1; conversation.revision = `${readRevisionSeed(conversation.revision)}:${conversation.revisionVersion}`; }
 
   private createConversationRecord(input: { conversationId: string; timestamp: string; title: string; userId: string }): RuntimeConversationRecord {
-    const conversation: RuntimeConversationRecord = { createdAt: input.timestamp, hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true }, id: input.conversationId, messages: [], revision: `${input.conversationId}:${input.timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, title: input.title, updatedAt: input.timestamp, userId: input.userId };
+    const conversation: RuntimeConversationRecord = { createdAt: input.timestamp, hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true }, id: input.conversationId, messages: [], revision: `${input.conversationId}:${input.timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title, updatedAt: input.timestamp, userId: input.userId };
     this.conversations.set(conversation.id, conversation);
     this.saveConversations();
     return conversation;

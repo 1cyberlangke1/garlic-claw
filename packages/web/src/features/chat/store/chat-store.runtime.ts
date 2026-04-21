@@ -190,6 +190,9 @@ export function applySseEvent(
         ...message,
         metadata: event.metadata,
       }))
+    case 'permission-request':
+    case 'permission-resolved':
+      return messages
     case 'finish':
       return updateMessageState(messages, event.messageId, (message) => ({
         ...message,

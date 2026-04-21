@@ -10,6 +10,7 @@ import type {
 } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-host-conversation-message.service';
+import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
 import {
   cloneJsonValue,
   readAssistantRawCustomBlocks,
@@ -27,6 +28,8 @@ export type ConversationTaskEvent = Extract<
       | 'finish'
       | 'message-metadata'
       | 'message-patch'
+      | 'permission-request'
+      | 'permission-resolved'
       | 'status'
       | 'text-delta'
       | 'tool-call'
@@ -88,6 +91,7 @@ export class ConversationTaskService {
 
   constructor(
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
+    private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
   ) {}
 
   startTask(input: StartConversationTaskInput): void {
@@ -149,6 +153,24 @@ export class ConversationTaskService {
       toolResults: [],
     };
     let resolvedInput = input;
+    const unsubscribePermission = this.runtimeToolPermissionService.subscribe(
+      input.conversationId,
+      (event) => {
+        if (event.type === 'request') {
+          this.emit(task, {
+            messageId: event.request.messageId ?? input.assistantMessageId,
+            request: cloneJsonValue(event.request),
+            type: 'permission-request',
+          });
+          return;
+        }
+        this.emit(task, {
+          messageId: event.messageId ?? input.assistantMessageId,
+          result: cloneJsonValue(event.result),
+          type: 'permission-resolved',
+        });
+      },
+    );
 
     try {
       const streamSource = await input.createStream(task.abortController.signal);
@@ -202,6 +224,8 @@ export class ConversationTaskService {
             ? error.message
             : 'Conversation generation failed'),
       );
+    } finally {
+      unsubscribePermission();
     }
   }
 

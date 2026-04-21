@@ -1,6 +1,9 @@
 import type {
   Conversation,
   ConversationTodoItem,
+  RuntimePermissionDecision,
+  RuntimePermissionReplyResult,
+  RuntimePermissionRequest,
   SendMessagePayload,
   UpdateMessagePayload,
 } from '@garlic-claw/shared'
@@ -12,6 +15,8 @@ import {
   getConversation,
   getConversationTodo,
   listConversations,
+  listPendingRuntimePermissions,
+  replyRuntimePermission,
   retryMessageSSE,
   sendMessageSSE,
   stopConversationMessage,
@@ -42,6 +47,20 @@ export function loadConversationTodoRecord(
   conversationId: string,
 ): Promise<ConversationTodoItem[]> {
   return getConversationTodo(conversationId)
+}
+
+export function loadPendingRuntimePermissionsRecord(
+  conversationId: string,
+): Promise<RuntimePermissionRequest[]> {
+  return listPendingRuntimePermissions(conversationId)
+}
+
+export function replyRuntimePermissionRecord(
+  conversationId: string,
+  requestId: string,
+  decision: RuntimePermissionDecision,
+): Promise<RuntimePermissionReplyResult> {
+  return replyRuntimePermission(conversationId, requestId, decision)
 }
 
 export function sendConversationMessage(

@@ -79,6 +79,11 @@
         <p v-else class="chat-todo-empty">当前会话还没有待办。</p>
       </section>
 
+      <ChatRuntimePermissionPanel
+        :requests="pendingRuntimePermissions"
+        @reply="replyRuntimePermission"
+      />
+
       <ChatMessageList
         :assistant-persona="currentConversationPersona ? { avatar: currentConversationPersona.avatar, name: currentConversationPersona.name } : null"
         :loading="chat.loading"
@@ -119,6 +124,7 @@ import ModelQuickInput from '@/components/ModelQuickInput.vue'
 import { useChatView } from '@/features/chat/composables/use-chat-view'
 import ChatComposer from '@/features/chat/components/ChatComposer.vue'
 import ChatMessageList from '@/features/chat/components/ChatMessageList.vue'
+import ChatRuntimePermissionPanel from '@/features/chat/components/ChatRuntimePermissionPanel.vue'
 import { loadCurrentPersona } from '@/features/personas/composables/persona-settings.data'
 import { useChatStore } from '@/features/chat/store/chat'
 
@@ -133,6 +139,7 @@ const {
   compacting,
   commandSuggestions,
   displayedMessages,
+  pendingRuntimePermissions,
   selectedCapabilities,
   conversationHostServices,
   uploadNotices,
@@ -147,6 +154,7 @@ const {
   setConversationLlmEnabled,
   setConversationSessionEnabled,
   compactConversationContext,
+  replyRuntimePermission,
   applyCommandSuggestion,
 } = useChatView(chat)
 

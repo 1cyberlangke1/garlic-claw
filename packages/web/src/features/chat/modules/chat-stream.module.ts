@@ -1,7 +1,11 @@
 ﻿import { markRaw } from "vue";
 
 import type { Ref } from "vue";
+import type { SSEEvent } from "@garlic-claw/shared";
 import type { ChatSendInput } from "@/features/chat/store/chat-store.types";
+import type {
+  ChatPendingRuntimePermission,
+} from "@/features/chat/store/chat-store.types";
 import {
   retryConversationMessage,
   sendConversationMessage,
@@ -32,6 +36,7 @@ export interface ChatStreamState {
   streamController: Ref<AbortController | null>;
   recoveryTimer: Ref<number | null>;
   currentStreamingMessageId: Ref<string | null>;
+  pendingRuntimePermissions: Ref<ChatPendingRuntimePermission[]>;
   streaming: Ref<boolean>;
 }
 
@@ -144,6 +149,26 @@ export function syncChatStreamingState(state: ChatStreamState) {
   state.streaming.value = Boolean(state.currentStreamingMessageId.value);
 }
 
+function applyRuntimePermissionEvent(
+  state: ChatStreamState,
+  event: Extract<SSEEvent, { type: "permission-request" | "permission-resolved" }>,
+) {
+  if (event.type === "permission-request") {
+    state.pendingRuntimePermissions.value = [
+      ...state.pendingRuntimePermissions.value.filter(
+        (entry) => entry.id !== event.request.id,
+      ),
+      {
+        ...event.request,
+        resolving: false,
+      },
+    ].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return;
+  }
+  state.pendingRuntimePermissions.value = state.pendingRuntimePermissions.value
+    .filter((entry) => entry.id !== event.result.requestId);
+}
+
 export function abortChatStream(state: ChatStreamState) {
   state.streamController.value?.abort();
   state.streamController.value = null;
@@ -224,6 +249,14 @@ export async function dispatchSendMessage(
       payload,
       (event) => {
         if (state.currentConversationId.value !== requestConversationId) {
+          return;
+        }
+
+        if (
+          event.type === "permission-request" ||
+          event.type === "permission-resolved"
+        ) {
+          applyRuntimePermissionEvent(state, event);
           return;
         }
 
@@ -325,6 +358,14 @@ export async function dispatchRetryMessage(
       },
       (event) => {
         if (state.currentConversationId.value !== requestConversationId) {
+          return;
+        }
+
+        if (
+          event.type === "permission-request" ||
+          event.type === "permission-resolved"
+        ) {
+          applyRuntimePermissionEvent(state, event);
           return;
         }
 

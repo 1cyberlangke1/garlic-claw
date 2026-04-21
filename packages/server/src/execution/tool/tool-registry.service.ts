@@ -1,5 +1,17 @@
-import type { JsonObject, PluginActionName, PluginAvailableToolSummary, PluginCallContext, PluginParamSchema, SkillLoadResult, ToolInfo, ToolOverview, ToolSourceActionResult, ToolSourceInfo, ToolSourceKind } from '@garlic-claw/shared';
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type {
+  JsonObject,
+  PluginActionName,
+  PluginAvailableToolSummary,
+  PluginCallContext,
+  PluginParamSchema,
+  SkillLoadResult,
+  ToolInfo,
+  ToolOverview,
+  ToolSourceActionResult,
+  ToolSourceInfo,
+  ToolSourceKind,
+} from '@garlic-claw/shared';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import type { Tool } from 'ai';
 import { z } from 'zod';
@@ -10,10 +22,19 @@ import { RuntimeHostPluginDispatchService } from '../../runtime/host/runtime-hos
 import { isPluginEnabledForContext } from '../../runtime/kernel/runtime-plugin-hook-governance';
 import { RuntimePluginGovernanceService } from '../../runtime/kernel/runtime-plugin-governance.service';
 import { McpService } from '../mcp/mcp.service';
+import { EditToolService } from '../edit/edit-tool.service';
 import { SkillToolService } from '../skill/skill-tool.service';
 import { TaskToolService } from '../task/task-tool.service';
 import { TodoToolService } from '../todo/todo-tool.service';
 import { WebFetchToolService } from '../webfetch/webfetch-tool.service';
+import { BashToolService } from '../bash/bash-tool.service';
+import { ReadToolService } from '../read/read-tool.service';
+import { GlobToolService } from '../glob/glob-tool.service';
+import { GrepToolService } from '../grep/grep-tool.service';
+import { WriteToolService } from '../write/write-tool.service';
+import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';
+import { RuntimeToolPermissionService } from '../runtime/runtime-tool-permission.service';
+import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 
 interface ExecutableToolDefinition {
   availableTool: PluginAvailableToolSummary;
@@ -22,7 +43,12 @@ interface ExecutableToolDefinition {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
   internal?: boolean;
   parameters: Record<string, PluginParamSchema>;
+  runtimePermission?: RuntimePermissionDefinition;
   toModelOutput?: NonNullable<Tool['toModelOutput']>;
+}
+
+interface RuntimePermissionDefinition {
+  readAccess: (args: Record<string, unknown>, context: PluginCallContext) => RuntimeToolAccessRequest;
 }
 
 @Injectable()
@@ -30,7 +56,7 @@ export class ToolRegistryService {
   private readonly sourceEnabledOverrides = new Map<string, boolean>();
   private readonly toolEnabledOverrides = new Map<string, boolean>();
 
-  constructor(private readonly mcpService: McpService, private readonly invalidToolService: InvalidToolService, private readonly todoToolService: TodoToolService, private readonly webFetchToolService: WebFetchToolService, private readonly skillToolService: SkillToolService, private readonly taskToolService: TaskToolService, private readonly moduleRef: ModuleRef, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, @Inject(RuntimePluginGovernanceService) private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService) {}
+  constructor(private readonly mcpService: McpService, private readonly invalidToolService: InvalidToolService, private readonly todoToolService: TodoToolService, private readonly webFetchToolService: WebFetchToolService, private readonly skillToolService: SkillToolService, private readonly taskToolService: TaskToolService, private readonly bashToolService: BashToolService, private readonly readToolService: ReadToolService, private readonly globToolService: GlobToolService, private readonly grepToolService: GrepToolService, private readonly writeToolService: WriteToolService, private readonly editToolService: EditToolService, private readonly runtimeToolBackendService: RuntimeToolBackendService, private readonly runtimeToolPermissionService: RuntimeToolPermissionService, private readonly moduleRef: ModuleRef, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, @Inject(RuntimePluginGovernanceService) private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService) {}
 
   async listOverview(): Promise<ToolOverview> { const allSources = [this.buildPluginSources(), this.mcpService.listToolSources()] as const; return { sources: allSources.flatMap((entries) => entries.map((entry) => entry.source)), tools: allSources.flatMap((entries) => entries.flatMap((entry) => entry.tools)) }; }
 
@@ -62,7 +88,7 @@ export class ToolRegistryService {
     return readToolOrThrow(await this.listOverview(), toolId);
   }
 
-  async buildToolSet(input: { allowedToolNames?: string[]; context: PluginCallContext; excludedPluginId?: string }): Promise<Record<string, Tool> | undefined> {
+  async buildToolSet(input: { abortSignal?: AbortSignal; allowedToolNames?: string[]; assistantMessageId?: string; context: PluginCallContext; excludedPluginId?: string }): Promise<Record<string, Tool> | undefined> {
     const tools = await this.readExecutableTools(input);
     if (tools.length === 0) {return undefined;}
     const toolsWithInvalid = [...tools, this.readInternalInvalidTool()];
@@ -72,6 +98,7 @@ export class ToolRegistryService {
         description: entry.description,
         execute: async (args: Record<string, unknown>) => {
           try {
+            await this.reviewRuntimeToolPermission(entry, args, input);
             return await entry.execute(args);
           } catch (error) {
             if (entry.callName === this.invalidToolService.getToolName()) {
@@ -119,6 +146,12 @@ export class ToolRegistryService {
       ...await this.readNativeTaskTools(input),
       ...await this.readNativeTodoTools(input),
       ...await this.readNativeWebFetchTools(input),
+      ...await this.readNativeBashTools(input),
+      ...await this.readNativeReadTools(input),
+      ...await this.readNativeGlobTools(input),
+      ...await this.readNativeGrepTools(input),
+      ...await this.readNativeWriteTools(input),
+      ...await this.readNativeEditTools(input),
       ...await this.readNativeSkillTools(input),
     ];
   }
@@ -171,13 +204,14 @@ export class ToolRegistryService {
           throw new Error('RuntimeHostSubagentRunnerService is not available');
         }
         const result = await runner.runSubagent('native.task', input.context, this.taskToolService.buildSubagentParams(taskInput) as unknown as JsonObject);
+        const sessionId = (result as Record<string, unknown>).sessionId;
+        if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+          throw new Error('subagent.run did not return sessionId');
+        }
         return {
           description: taskInput.description,
-          modelId: String((result as Record<string, unknown>).modelId ?? ''),
-          providerId: String((result as Record<string, unknown>).providerId ?? ''),
-          ...(typeof (result as Record<string, unknown>).sessionId === 'string' ? { sessionId: (result as Record<string, unknown>).sessionId as string } : {}),
+          sessionId,
           ...(typeof (result as Record<string, unknown>).sessionMessageCount === 'number' ? { sessionMessageCount: (result as Record<string, unknown>).sessionMessageCount as number } : {}),
-          taskId: String((result as Record<string, unknown>).taskId ?? ''),
           ...(taskInput.subagentType ? { subagentType: taskInput.subagentType } : {}),
           text: String((result as Record<string, unknown>).text ?? ''),
         };
@@ -206,6 +240,132 @@ export class ToolRegistryService {
       }),
       parameters: this.webFetchToolService.getToolParameters(),
       toModelOutput: this.webFetchToolService.toModelOutput,
+    }];
+  }
+
+  private async readNativeBashTools(input: { allowedToolNames?: string[]; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
+    const toolName = this.bashToolService.getToolName();
+    if (input.allowedToolNames && !input.allowedToolNames.includes(toolName)) {return [];}
+    return [{
+      availableTool: {
+        callName: toolName,
+        description: this.bashToolService.buildToolDescription(),
+        name: toolName,
+        parameters: this.bashToolService.getToolParameters(),
+      },
+      callName: toolName,
+      description: this.bashToolService.buildToolDescription(),
+      execute: async (args) => this.bashToolService.execute(this.bashToolService.readInput(args, input.context.conversationId)),
+      parameters: this.bashToolService.getToolParameters(),
+      runtimePermission: {
+        readAccess: (args) => this.bashToolService.readRuntimeAccess(args, input.context.conversationId),
+      },
+      toModelOutput: this.bashToolService.toModelOutput,
+    }];
+  }
+
+  private async readNativeReadTools(input: { allowedToolNames?: string[]; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
+    const toolName = this.readToolService.getToolName();
+    if (input.allowedToolNames && !input.allowedToolNames.includes(toolName)) {return [];}
+    return [{
+      availableTool: {
+        callName: toolName,
+        description: this.readToolService.buildToolDescription(),
+        name: toolName,
+        parameters: this.readToolService.getToolParameters(),
+      },
+      callName: toolName,
+      description: this.readToolService.buildToolDescription(),
+      execute: async (args) => this.readToolService.execute(this.readToolService.readInput(args, input.context.conversationId)),
+      parameters: this.readToolService.getToolParameters(),
+      runtimePermission: {
+        readAccess: (args) => this.readToolService.readRuntimeAccess(args, input.context.conversationId),
+      },
+      toModelOutput: this.readToolService.toModelOutput,
+    }];
+  }
+
+  private async readNativeGlobTools(input: { allowedToolNames?: string[]; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
+    const toolName = this.globToolService.getToolName();
+    if (input.allowedToolNames && !input.allowedToolNames.includes(toolName)) {return [];}
+    return [{
+      availableTool: {
+        callName: toolName,
+        description: this.globToolService.buildToolDescription(),
+        name: toolName,
+        parameters: this.globToolService.getToolParameters(),
+      },
+      callName: toolName,
+      description: this.globToolService.buildToolDescription(),
+      execute: async (args) => this.globToolService.execute(this.globToolService.readInput(args, input.context.conversationId)),
+      parameters: this.globToolService.getToolParameters(),
+      runtimePermission: {
+        readAccess: (args) => this.globToolService.readRuntimeAccess(args, input.context.conversationId),
+      },
+      toModelOutput: this.globToolService.toModelOutput,
+    }];
+  }
+
+  private async readNativeGrepTools(input: { allowedToolNames?: string[]; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
+    const toolName = this.grepToolService.getToolName();
+    if (input.allowedToolNames && !input.allowedToolNames.includes(toolName)) {return [];}
+    return [{
+      availableTool: {
+        callName: toolName,
+        description: this.grepToolService.buildToolDescription(),
+        name: toolName,
+        parameters: this.grepToolService.getToolParameters(),
+      },
+      callName: toolName,
+      description: this.grepToolService.buildToolDescription(),
+      execute: async (args) => this.grepToolService.execute(this.grepToolService.readInput(args, input.context.conversationId)),
+      parameters: this.grepToolService.getToolParameters(),
+      runtimePermission: {
+        readAccess: (args) => this.grepToolService.readRuntimeAccess(args, input.context.conversationId),
+      },
+      toModelOutput: this.grepToolService.toModelOutput,
+    }];
+  }
+
+  private async readNativeWriteTools(input: { allowedToolNames?: string[]; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
+    const toolName = this.writeToolService.getToolName();
+    if (input.allowedToolNames && !input.allowedToolNames.includes(toolName)) {return [];}
+    return [{
+      availableTool: {
+        callName: toolName,
+        description: this.writeToolService.buildToolDescription(),
+        name: toolName,
+        parameters: this.writeToolService.getToolParameters(),
+      },
+      callName: toolName,
+      description: this.writeToolService.buildToolDescription(),
+      execute: async (args) => this.writeToolService.execute(this.writeToolService.readInput(args, input.context.conversationId)),
+      parameters: this.writeToolService.getToolParameters(),
+      runtimePermission: {
+        readAccess: (args) => this.writeToolService.readRuntimeAccess(args, input.context.conversationId),
+      },
+      toModelOutput: this.writeToolService.toModelOutput,
+    }];
+  }
+
+  private async readNativeEditTools(input: { allowedToolNames?: string[]; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
+    const toolName = this.editToolService.getToolName();
+    if (input.allowedToolNames && !input.allowedToolNames.includes(toolName)) {return [];}
+    return [{
+      availableTool: {
+        callName: toolName,
+        description: this.editToolService.buildToolDescription(),
+        name: toolName,
+        parameters: this.editToolService.getToolParameters(),
+      },
+      callName: toolName,
+      description: this.editToolService.buildToolDescription(),
+      execute: async (args) => this.editToolService.execute(this.editToolService.readInput(args, input.context.conversationId)),
+      parameters: this.editToolService.getToolParameters(),
+      runtimePermission: {
+        readAccess: (args) => this.editToolService.readRuntimeAccess(args, input.context.conversationId),
+      },
+      toModelOutput: this.editToolService.toModelOutput,
     }];
   }
 
@@ -276,6 +436,42 @@ export class ToolRegistryService {
       defaultEnabled: plugin.defaultEnabled,
     }, context);
     return sourceEnabled && (this.toolEnabledOverrides.get(tool.toolId) ?? true);
+  }
+
+  private async reviewRuntimeToolPermission(
+    entry: ExecutableToolDefinition,
+    args: Record<string, unknown>,
+    input: {
+      abortSignal?: AbortSignal;
+      assistantMessageId?: string;
+      context: PluginCallContext;
+    },
+  ): Promise<void> {
+    if (!entry.runtimePermission) {
+      return;
+    }
+    const access = entry.runtimePermission.readAccess(args, input.context);
+    const requiredCapabilities = access.requiredCapabilities;
+    if (requiredCapabilities.length === 0) {
+      return;
+    }
+    const backend = this.runtimeToolBackendService.getBackendDescriptor(access.role);
+    const requiresApproval = requiredCapabilities.some(
+      (capability) => backend.permissionPolicy[capability] === 'ask',
+    );
+    if (requiresApproval && !input.context.conversationId) {
+      throw new ForbiddenException('当前上下文没有 conversationId，无法完成 runtime 权限审批');
+    }
+    await this.runtimeToolPermissionService.review({
+      abortSignal: input.abortSignal,
+      backend,
+      conversationId: input.context.conversationId,
+      ...(input.assistantMessageId ? { messageId: input.assistantMessageId } : {}),
+      ...(access.metadata !== undefined ? { metadata: access.metadata } : {}),
+      requiredCapabilities,
+      summary: access.summary,
+      toolName: entry.callName,
+    });
   }
 }
 
@@ -363,7 +559,17 @@ function paramSchemaToZod(params: Record<string, PluginParamSchema>) {
 }
 
 function readToolExecutionErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : '工具执行失败';
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return '工具执行失败';
+  }
 }
 
 function readInvalidToolPhase(value: unknown): 'execute' | 'resolve' | 'validate' {

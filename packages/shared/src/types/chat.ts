@@ -1,4 +1,8 @@
 import type { JsonValue } from './json';
+import type {
+  RuntimePermissionReplyResult,
+  RuntimePermissionRequest,
+} from './runtime-permission';
 
 /**
  * 文本消息 part。
@@ -300,6 +304,16 @@ export type SSEEvent =
       type: 'message-metadata';
       messageId: string;
       metadata: ChatMessageMetadata;
+    }
+  | {
+      type: 'permission-request';
+      messageId: string;
+      request: RuntimePermissionRequest;
+    }
+  | {
+      type: 'permission-resolved';
+      messageId: string;
+      result: RuntimePermissionReplyResult;
     }
   | {
       type: 'finish';

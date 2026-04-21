@@ -4,17 +4,20 @@ import {
   serializeConversationMessage,
 } from '../../src/runtime/host/runtime-host-conversation-record.service';
 import { ConversationTaskService, type ConversationTaskEvent } from '../../src/conversation/conversation-task.service';
+import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
 
 describe('ConversationTaskService', () => {
   let conversationId: string;
   let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
   let runtimeHostConversationMessageService: RuntimeHostConversationMessageService;
+  let runtimeToolPermissionService: RuntimeToolPermissionService;
   let service: ConversationTaskService;
 
   beforeEach(() => {
     runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
     runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(runtimeHostConversationRecordService);
-    service = new ConversationTaskService(runtimeHostConversationMessageService);
+    runtimeToolPermissionService = new RuntimeToolPermissionService();
+    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeToolPermissionService);
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1' }) as { id: string }).id;
   });
 
@@ -230,6 +233,88 @@ describe('ConversationTaskService', () => {
         },
       ],
     });
+  });
+
+  it('forwards runtime permission request and resolution events into the task stream', async () => {
+    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const events: ConversationTaskEvent[] = [];
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream: async () => ({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            await runtimeToolPermissionService.review({
+              backend: {
+                capabilities: {
+                  networkAccess: true,
+                  persistentFilesystem: true,
+                  persistentShellState: false,
+                  shellExecution: true,
+                  workspaceRead: true,
+                  workspaceWrite: true,
+                },
+                kind: 'just-bash',
+                permissionPolicy: {
+                  networkAccess: 'allow',
+                  persistentFilesystem: 'allow',
+                  persistentShellState: 'deny',
+                  shellExecution: 'ask',
+                  workspaceRead: 'allow',
+                  workspaceWrite: 'allow',
+                },
+              },
+              conversationId,
+              messageId: String(assistantMessage.id),
+              requiredCapabilities: ['shellExecution'],
+              summary: '执行测试 bash 命令',
+              toolName: 'bash',
+            });
+            yield delta('权限已通过');
+          })(),
+        },
+      }),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    service.subscribe(String(assistantMessage.id), (event) => events.push(event));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const [pendingRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    expect(pendingRequest).toMatchObject({
+      capabilities: ['shellExecution'],
+      messageId: String(assistantMessage.id),
+      toolName: 'bash',
+    });
+
+    const replyResult = runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'once');
+    expect(replyResult).toEqual({
+      requestId: pendingRequest.id,
+      resolution: 'approved',
+    });
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(events).toEqual(expect.arrayContaining([
+      {
+        messageId: String(assistantMessage.id),
+        request: expect.objectContaining({
+          id: pendingRequest.id,
+          summary: '执行测试 bash 命令',
+        }),
+        type: 'permission-request',
+      },
+      {
+        messageId: String(assistantMessage.id),
+        result: {
+          requestId: pendingRequest.id,
+          resolution: 'approved',
+        },
+        type: 'permission-resolved',
+      },
+    ]));
   });
 });
 

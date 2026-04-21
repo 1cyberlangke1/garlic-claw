@@ -1,5 +1,11 @@
 import { computed, markRaw, ref, shallowRef } from "vue";
-import type { ChatMessagePart, Conversation, ConversationTodoItem } from "@garlic-claw/shared";
+import type {
+  ChatMessagePart,
+  Conversation,
+  ConversationTodoItem,
+  RuntimePermissionRequest,
+  RuntimePermissionDecision,
+} from "@garlic-claw/shared";
 import {
   abortChatStream,
   discardPendingMessageUpdates,
@@ -15,9 +21,11 @@ import {
   createConversationRecord,
   deleteConversationMessageRecord,
   deleteConversationRecord,
+  loadPendingRuntimePermissionsRecord,
   loadConversationList,
   loadConversationMessages,
   loadConversationTodoRecord,
+  replyRuntimePermissionRecord,
   stopConversationMessageRecord,
   updateConversationMessageRecord,
 } from "@/features/chat/modules/chat-conversation.data";
@@ -29,6 +37,7 @@ import {
 } from "@/features/chat/store/chat-store.runtime";
 import type {
   ChatMessage,
+  ChatPendingRuntimePermission,
   ChatSendInput,
 } from "@/features/chat/store/chat-store.types";
 
@@ -36,6 +45,7 @@ export function createChatStoreModule() {
   const conversations = ref<Conversation[]>([]);
   const currentConversationId = ref<string | null>(null);
   const messages = shallowRef<ChatMessage[]>([]);
+  const pendingRuntimePermissions = shallowRef<ChatPendingRuntimePermission[]>([]);
   const todoItems = ref<ConversationTodoItem[]>([]);
   const loading = ref(false);
   const streaming = ref(false);
@@ -44,23 +54,43 @@ export function createChatStoreModule() {
   const recoveryTimer = ref<number | null>(null);
   const selectedProvider = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
-  const streamState: ChatStreamState = {
+  const streamState = {
     currentConversationId,
     messages,
+    pendingRuntimePermissions,
     selectedProvider,
     selectedModel,
     streamController,
     recoveryTimer,
     currentStreamingMessageId,
     streaming,
-  };
+  } as ChatStreamState;
   let conversationListRequestId = 0;
   let conversationDetailRequestId = 0;
+  let conversationRuntimePermissionRequestId = 0;
   let conversationTodoRequestId = 0;
 
   const retryableMessageId = computed(() =>
     getRetryableMessageId(messages.value),
   );
+
+  function createPendingRuntimePermissionEntry(
+    entry: RuntimePermissionRequest,
+    resolving = false,
+  ): ChatPendingRuntimePermission {
+    return {
+      id: entry.id,
+      conversationId: entry.conversationId,
+      ...(entry.messageId ? { messageId: entry.messageId } : {}),
+      backendKind: entry.backendKind,
+      toolName: entry.toolName,
+      capabilities: entry.capabilities,
+      createdAt: entry.createdAt,
+      summary: entry.summary,
+      ...(entry.metadata !== undefined ? { metadata: entry.metadata } : {}),
+      resolving,
+    };
+  }
 
   function replaceMessages(nextMessages: ChatMessage[]) {
     messages.value = markRaw(nextMessages);
@@ -69,6 +99,7 @@ export function createChatStoreModule() {
   function invalidateConversationRequests() {
     conversationListRequestId += 1;
     conversationDetailRequestId += 1;
+    conversationRuntimePermissionRequestId += 1;
     conversationTodoRequestId += 1;
   }
 
@@ -86,6 +117,7 @@ export function createChatStoreModule() {
 
     await Promise.all([
       loadConversationDetail(conversationId),
+      loadConversationRuntimePermissions(conversationId),
       loadConversationTodo(conversationId),
     ]);
   }
@@ -130,6 +162,7 @@ export function createChatStoreModule() {
       currentConversationId.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
+      pendingRuntimePermissions.value = [];
       todoItems.value = [];
       replaceMessages([]);
       syncChatStreamingState(streamState);
@@ -150,11 +183,13 @@ export function createChatStoreModule() {
     currentConversationId.value = id;
     selectedProvider.value = null;
     selectedModel.value = null;
+    pendingRuntimePermissions.value = [];
     todoItems.value = [];
     loading.value = true;
     try {
       await Promise.all([
         loadConversationDetail(id),
+        loadConversationRuntimePermissions(id),
         loadConversationTodo(id),
       ]);
       await ensureModelSelection(messages.value);
@@ -180,6 +215,7 @@ export function createChatStoreModule() {
       currentConversationId.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
+      pendingRuntimePermissions.value = [];
       todoItems.value = [];
       replaceMessages([]);
       syncChatStreamingState(streamState);
@@ -333,10 +369,50 @@ export function createChatStoreModule() {
     todoItems.value = nextTodoItems;
   }
 
+  async function loadConversationRuntimePermissions(conversationId: string) {
+    const requestId = ++conversationRuntimePermissionRequestId;
+    const nextPermissions = await loadPendingRuntimePermissionsRecord(conversationId);
+    if (
+      requestId !== conversationRuntimePermissionRequestId ||
+      currentConversationId.value !== conversationId
+    ) {
+      return;
+    }
+    pendingRuntimePermissions.value = nextPermissions.map((entry) =>
+      createPendingRuntimePermissionEntry(entry),
+    );
+  }
+
+  async function replyRuntimePermission(requestId: string, decision: RuntimePermissionDecision) {
+    const conversationId = currentConversationId.value;
+    if (!conversationId) {
+      return;
+    }
+    pendingRuntimePermissions.value = pendingRuntimePermissions.value.map((entry) =>
+      entry.id === requestId
+        ? createPendingRuntimePermissionEntry(entry, true)
+        : entry,
+    );
+    try {
+      await replyRuntimePermissionRecord(conversationId, requestId, decision);
+      pendingRuntimePermissions.value = pendingRuntimePermissions.value.filter(
+        (entry) => entry.id !== requestId,
+      );
+    } catch (error) {
+      pendingRuntimePermissions.value = pendingRuntimePermissions.value.map((entry) =>
+        entry.id === requestId
+          ? createPendingRuntimePermissionEntry(entry)
+          : entry,
+      );
+      throw error;
+    }
+  }
+
   return {
     conversations,
     currentConversationId,
     messages,
+    pendingRuntimePermissions,
     todoItems,
     loading,
     streaming,
@@ -356,5 +432,6 @@ export function createChatStoreModule() {
     deleteMessage,
     stopStreaming,
     compactContext,
+    replyRuntimePermission,
   };
 }

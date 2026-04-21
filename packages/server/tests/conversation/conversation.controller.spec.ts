@@ -8,6 +8,7 @@ describe('ConversationController', () => {
   const assistantMessageId = '22222222-2222-4222-8222-222222222222';
   const conversationMessageLifecycleService = { retryMessageGeneration: jest.fn(), startMessageGeneration: jest.fn(), stopMessageGeneration: jest.fn() };
   const conversationTaskService = { stopTask: jest.fn(), subscribe: jest.fn(), waitForTask: jest.fn() };
+  const runtimeToolPermissionService = { listPendingRequests: jest.fn(), reply: jest.fn() };
   const runtimeHostConversationMessageService = { deleteMessage: jest.fn(), updateMessage: jest.fn() };
   const runtimeHostConversationRecordService = {
     createConversation: jest.fn(),
@@ -27,6 +28,7 @@ describe('ConversationController', () => {
     controller = new ConversationController(
       conversationMessageLifecycleService as never,
       conversationTaskService as never,
+      runtimeToolPermissionService as never,
       runtimeHostConversationMessageService as never,
       runtimeHostConversationRecordService as never,
     );
@@ -85,6 +87,33 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.readSessionTodo).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.updateSessionTodo('user-1', conversationId, { todos } as never)).toEqual(todos);
     expect(runtimeHostConversationRecordService.replaceSessionTodo).toHaveBeenCalledWith(conversationId, todos, 'user-1');
+  });
+
+  it('lists and replies runtime permission requests through owned conversation APIs', () => {
+    const pending = [
+      {
+        backendKind: 'just-bash',
+        capabilities: ['shellExecution'],
+        conversationId,
+        createdAt: '2026-04-20T00:00:00.000Z',
+        id: 'permission-1',
+        summary: '执行 bash 命令',
+        toolName: 'bash',
+      },
+    ];
+    runtimeToolPermissionService.listPendingRequests.mockReturnValue(pending);
+    runtimeToolPermissionService.reply.mockReturnValue({
+      requestId: 'permission-1',
+      resolution: 'approved',
+    });
+
+    expect(controller.listPendingRuntimePermissions('user-1', conversationId)).toEqual(pending);
+    expect(runtimeToolPermissionService.listPendingRequests).toHaveBeenCalledWith(conversationId);
+    expect(controller.replyRuntimePermission('user-1', conversationId, 'permission-1', { decision: 'always' } as never)).toEqual({
+      requestId: 'permission-1',
+      resolution: 'approved',
+    });
+    expect(runtimeToolPermissionService.reply).toHaveBeenCalledWith(conversationId, 'permission-1', 'always');
   });
 
   it('streams message-start and task events over SSE for sendMessage', async () => {

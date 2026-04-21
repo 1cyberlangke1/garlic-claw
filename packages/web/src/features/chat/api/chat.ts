@@ -5,6 +5,9 @@ import type {
   Conversation,
   ConversationDetail,
   ConversationHostServices,
+  RuntimePermissionDecision,
+  RuntimePermissionReplyResult,
+  RuntimePermissionRequest,
   ConversationTodoItem,
   Message,
   RetryMessagePayload,
@@ -28,6 +31,23 @@ export function getConversation(id: string) {
 
 export function getConversationTodo(conversationId: string) {
   return get<ConversationTodoItem[]>(`/chat/sessions/${conversationId}/todo`);
+}
+
+export function listPendingRuntimePermissions(conversationId: string) {
+  return get<RuntimePermissionRequest[]>(
+    `/chat/conversations/${conversationId}/runtime-permissions/pending`,
+  );
+}
+
+export function replyRuntimePermission(
+  conversationId: string,
+  requestId: string,
+  decision: RuntimePermissionDecision,
+) {
+  return post<RuntimePermissionReplyResult>(
+    `/chat/conversations/${conversationId}/runtime-permissions/${requestId}/reply`,
+    { decision },
+  );
 }
 
 export function deleteConversation(id: string) {

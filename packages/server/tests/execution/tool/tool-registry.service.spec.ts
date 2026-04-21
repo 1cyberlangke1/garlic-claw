@@ -1,14 +1,33 @@
+import fs from 'node:fs';
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { AiModelExecutionService } from '../../../src/ai/ai-model-execution.service';
 import { AiManagementService } from '../../../src/ai-management/ai-management.service';
 import { AiProviderSettingsService } from '../../../src/ai-management/ai-provider-settings.service';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
+import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
+import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
+import { RuntimeWorkspaceFileService } from '../../../src/execution/file/runtime-workspace-file.service';
+import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
+import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { InvalidToolService } from '../../../src/execution/invalid/invalid-tool.service';
+import { ReadToolService } from '../../../src/execution/read/read-tool.service';
+import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
+import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
+import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
+import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
+import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
+import { RuntimeWorkspaceBackendService } from '../../../src/execution/runtime/runtime-workspace-backend.service';
+import type { RuntimeWorkspaceBackend } from '../../../src/execution/runtime/runtime-workspace-backend.types';
+import { RuntimeWorkspaceService } from '../../../src/execution/runtime/runtime-workspace.service';
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 import { TaskToolService } from '../../../src/execution/task/task-tool.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
 import { WebFetchToolService } from '../../../src/execution/webfetch/webfetch-tool.service';
+import { WriteToolService } from '../../../src/execution/write/write-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -30,7 +49,21 @@ import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
 import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.service';
 
+const runtimeWorkspaceRoots: string[] = [];
+const originalRuntimeWorkspaceRoot = process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
+
 describe('ToolRegistryService', () => {
+  afterEach(() => {
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = originalRuntimeWorkspaceRoot;
+    while (runtimeWorkspaceRoots.length > 0) {
+      const nextRoot = runtimeWorkspaceRoots.pop();
+      if (!nextRoot) {
+        continue;
+      }
+      fs.rmSync(nextRoot, { force: true, recursive: true });
+    }
+  });
+
   it('lists plugin tool sources and tool records', async () => {
     const { service } = createFixture();
 
@@ -125,7 +158,7 @@ describe('ToolRegistryService', () => {
     expect(Object.keys(toolSet ?? {})).toContain('skill');
   });
 
-  it('includes native task, todowrite and webfetch tools in the executable tool set', async () => {
+  it('includes native task, todowrite, webfetch, bash, read, glob, grep, write and edit tools in the executable tool set', async () => {
     const { service } = createFixture();
 
     const toolSet = await service.buildToolSet({
@@ -141,6 +174,12 @@ describe('ToolRegistryService', () => {
       'task',
       'todowrite',
       'webfetch',
+      'bash',
+      'read',
+      'glob',
+      'grep',
+      'write',
+      'edit',
     ]));
   });
 
@@ -303,6 +342,12 @@ describe('ToolRegistryService', () => {
       'task',
       'todowrite',
       'webfetch',
+      'bash',
+      'read',
+      'glob',
+      'grep',
+      'write',
+      'edit',
       'skill',
       'invalid',
     ]);
@@ -326,6 +371,12 @@ describe('ToolRegistryService', () => {
       'task',
       'todowrite',
       'webfetch',
+      'bash',
+      'read',
+      'glob',
+      'grep',
+      'write',
+      'edit',
       'skill',
       'invalid',
     ]);
@@ -361,7 +412,7 @@ describe('ToolRegistryService', () => {
     const result = await (webFetchTool as any).execute({
       format: 'markdown',
       url: 'https://example.com/smoke',
-    }, {} as never);
+    });
     const modelOutput = await (webFetchTool as any).toModelOutput({
       input: {
         format: 'markdown',
@@ -386,6 +437,533 @@ describe('ToolRegistryService', () => {
     });
   });
 
+  it('dispatches native bash tool execution through the runtime owner and persists workspace files', async () => {
+    const { conversationId, runtimeToolPermissionService, service, runtimeWorkspaceRoot } = createFixture();
+
+    const toolSet = await service.buildToolSet({
+      assistantMessageId: 'assistant-message-allow-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['bash'],
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const writeExecution = (bashTool as any).execute({
+      command: 'mkdir -p logs && echo persisted > logs/run.txt && cat logs/run.txt',
+      description: '写入并校验运行日志',
+    });
+    const [writeRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    expect(writeRequest).toMatchObject({
+      messageId: 'assistant-message-allow-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, writeRequest.id, 'once');
+    const writeResult = await writeExecution;
+
+    const readExecution = (bashTool as any).execute({
+      command: 'cat logs/run.txt',
+      description: '读取刚才的运行日志',
+    });
+    const [readRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    expect(readRequest).toMatchObject({
+      messageId: 'assistant-message-allow-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, readRequest.id, 'once');
+    const readResult = await readExecution;
+    const modelOutput = await (bashTool as any).toModelOutput({
+      input: { command: 'cat logs/run.txt', description: '读取刚才的运行日志' },
+      output: readResult,
+      toolCallId: 'call-bash-1',
+    });
+
+    expect(writeResult).toEqual(expect.objectContaining({
+      backendKind: 'just-bash',
+      exitCode: 0,
+      stdout: 'persisted\n',
+    }));
+    expect(readResult).toEqual(expect.objectContaining({
+      exitCode: 0,
+      stdout: 'persisted\n',
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<bash_result>'),
+    }));
+    expect((modelOutput as { value: string }).value).toContain('cwd: /workspace');
+    expect((modelOutput as { value: string }).value).not.toContain('backend:');
+    expect(fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'logs', 'run.txt'), 'utf8')).toBe('persisted\n');
+  });
+
+  it('keeps bash description on stable workspace semantics instead of backend governance details', async () => {
+    const { service } = createFixture();
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['bash'],
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    expect((bashTool as { description: string }).description).toContain('在当前 session 的工作区中执行 bash 命令');
+    expect((bashTool as { description: string }).description).toContain('同一 session 下写入 /workspace 的文件');
+    expect((bashTool as { description: string }).description).not.toContain('当前默认 runtime 后端');
+    expect((bashTool as { description: string }).description).not.toContain('宿主工作区');
+    expect((bashTool as { description: string }).description).not.toContain('权限审批');
+  });
+
+  it('requires runtime approval before executing native bash tool', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'pwd',
+      description: '查看当前工作目录',
+    });
+    const [pendingRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('keeps bash workdir and timeout semantics stable through the native tool contract', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const slowServer = http.createServer(async (_request: http.IncomingMessage, response: http.ServerResponse) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end('slow-ok');
+    });
+    await new Promise<void>((resolve, reject) => {
+      slowServer.once('error', reject);
+      slowServer.listen(0, '127.0.0.1', () => resolve());
+    });
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-runtime-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const workdirExecution = (bashTool as any).execute({
+      command: 'pwd && printf "from-workdir\\n" > child.txt && cat child.txt',
+      description: '在指定目录执行 bash',
+      workdir: 'nested',
+    });
+    const [workdirRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    expect(workdirRequest).toMatchObject({
+      messageId: 'assistant-message-bash-runtime-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, workdirRequest.id, 'once');
+    const workdirResult = await workdirExecution;
+
+    expect(workdirResult).toEqual(expect.objectContaining({
+      cwd: '/workspace/nested',
+      exitCode: 0,
+      stdout: '/workspace/nested\nfrom-workdir\n',
+    }));
+
+    try {
+      const address = slowServer.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('failed to allocate slow test server port');
+      }
+      const timeoutExecution = (bashTool as any).execute({
+        command: `curl -s http://127.0.0.1:${address.port}/slow`,
+        description: '触发 bash 超时',
+        timeout: 50,
+      });
+      const [timeoutRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+      expect(timeoutRequest).toMatchObject({
+        messageId: 'assistant-message-bash-runtime-1',
+        toolName: 'bash',
+      });
+      runtimeToolPermissionService.reply(conversationId, timeoutRequest.id, 'once');
+      await expect(timeoutExecution).resolves.toEqual(expect.objectContaining({
+        error: 'bash 执行超时（>1 秒）',
+        phase: 'execute',
+        recovered: true,
+        tool: 'bash',
+        type: 'invalid-tool-result',
+      }));
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        slowServer.close((error?: Error | null) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
+  });
+
+  it('routes bash execution to the configured shell backend without changing tool contract', async () => {
+    const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
+    process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'mock-shell';
+    try {
+      const { conversationId, runtimeToolPermissionService, service } = createFixture({
+        runtimeBackends: [
+          createMockRuntimeBackend('just-bash'),
+          createMockRuntimeBackend('mock-shell'),
+        ],
+      });
+      const toolSet = await service.buildToolSet({
+        assistantMessageId: 'assistant-message-shell-route-1',
+        context: {
+          conversationId,
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        allowedToolNames: ['bash'],
+      });
+      const bashTool = toolSet?.bash;
+      expect(bashTool).toBeDefined();
+
+      const execution = (bashTool as any).execute({
+        command: 'echo routed',
+        description: '验证 shell backend 路由',
+      });
+      const [pendingRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+      expect(pendingRequest?.backendKind).toBe('mock-shell');
+      runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'once');
+      await expect(execution).resolves.toEqual(expect.objectContaining({
+        backendKind: 'mock-shell',
+        stdout: 'mock-shell:echo routed',
+      }));
+    } finally {
+      if (originalShellBackend === undefined) {
+        delete process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
+      } else {
+        process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = originalShellBackend;
+      }
+    }
+  });
+
+  it('routes workspace tool execution to the configured workspace backend without changing tool contract', async () => {
+    const originalWorkspaceBackend = process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = 'mock-workspace';
+    try {
+      const { conversationId, service } = createFixture({
+        runtimeWorkspaceBackends: [
+          createMockWorkspaceBackend('host-workspace'),
+          createMockWorkspaceBackend('mock-workspace'),
+        ],
+      });
+      const toolSet = await service.buildToolSet({
+        context: {
+          conversationId,
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        allowedToolNames: ['read'],
+      });
+      const readTool = toolSet?.read;
+      expect(readTool).toBeDefined();
+
+      const result = await (readTool as any).execute({
+        filePath: 'ignored.txt',
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        path: '/workspace/mock-workspace.txt',
+        type: 'file',
+      }));
+      expect((result as { output: string }).output).toContain('1: mock-workspace line');
+      expect((result as { output: string }).output).toContain('(end of file, total lines: 2)');
+    } finally {
+      if (originalWorkspaceBackend === undefined) {
+        delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+      } else {
+        process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = originalWorkspaceBackend;
+      }
+    }
+  });
+
+  it('routes glob, grep, write and edit to the configured workspace backend', async () => {
+    const originalWorkspaceBackend = process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = 'mock-workspace';
+    try {
+      const { conversationId, service } = createFixture({
+        runtimeWorkspaceBackends: [
+          createMockWorkspaceBackend('host-workspace'),
+          createMockWorkspaceBackend('mock-workspace'),
+        ],
+      });
+      const toolSet = await service.buildToolSet({
+        context: {
+          conversationId,
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        allowedToolNames: ['glob', 'grep', 'write', 'edit'],
+      });
+
+      const globResult = await (toolSet?.glob as any).execute({
+        pattern: '*.txt',
+      });
+      const grepResult = await (toolSet?.grep as any).execute({
+        pattern: 'mock-workspace',
+      });
+      const writeResult = await (toolSet?.write as any).execute({
+        content: 'created by mock workspace backend',
+        filePath: 'notes/output.txt',
+      });
+      const editResult = await (toolSet?.edit as any).execute({
+        filePath: 'notes/output.txt',
+        newString: 'updated',
+        oldString: 'created',
+      });
+
+      expect((globResult as { output: string }).output).toContain('/workspace/mock-workspace.txt');
+      expect((grepResult as { output: string }).output).toContain('/workspace/mock-workspace.txt:');
+      expect((grepResult as { output: string }).output).toContain('1: mock-workspace line');
+      expect(writeResult).toEqual(expect.objectContaining({
+        path: '/workspace/mock-workspace/notes/output.txt',
+      }));
+      expect(editResult).toEqual(expect.objectContaining({
+        occurrences: 7,
+        path: '/workspace/mock-workspace/notes/output.txt',
+      }));
+    } finally {
+      if (originalWorkspaceBackend === undefined) {
+        delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+      } else {
+        process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = originalWorkspaceBackend;
+      }
+    }
+  });
+
+  it('dispatches native read tool execution through the runtime workspace owner', async () => {
+    const { conversationId, service, runtimeWorkspaceRoot } = createFixture();
+    const workspaceRoot = path.join(runtimeWorkspaceRoot, conversationId);
+    fs.mkdirSync(path.join(workspaceRoot, 'notes'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'notes', 'runtime.txt'), 'line one\nline two\n', 'utf8');
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['read'],
+    });
+    const readTool = toolSet?.read;
+    expect(readTool).toBeDefined();
+
+    const result = await (readTool as any).execute({
+      filePath: 'notes/runtime.txt',
+      limit: 1,
+      offset: 1,
+    });
+    const modelOutput = await (readTool as any).toModelOutput({
+      input: { filePath: 'notes/runtime.txt', limit: 1, offset: 1 },
+      output: result,
+      toolCallId: 'call-read-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      path: '/workspace/notes/runtime.txt',
+      truncated: true,
+      type: 'file',
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<read_result>'),
+    }));
+    expect((modelOutput as { value: string }).value).toContain('1: line one');
+  });
+
+  it('dispatches native glob tool execution through the runtime workspace owner', async () => {
+    const { conversationId, service, runtimeWorkspaceRoot } = createFixture();
+    const workspaceRoot = path.join(runtimeWorkspaceRoot, conversationId);
+    fs.mkdirSync(path.join(workspaceRoot, 'notes'), { recursive: true });
+    fs.mkdirSync(path.join(workspaceRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'notes', 'runtime.txt'), 'smoke-workspace\n', 'utf8');
+    fs.writeFileSync(path.join(workspaceRoot, 'docs', 'guide.md'), '# smoke\n', 'utf8');
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['glob'],
+    });
+    const globTool = toolSet?.glob;
+    expect(globTool).toBeDefined();
+
+    const result = await (globTool as any).execute({
+      path: '/workspace',
+      pattern: '**/*.txt',
+    });
+    const modelOutput = await (globTool as any).toModelOutput({
+      input: { path: '/workspace', pattern: '**/*.txt' },
+      output: result,
+      toolCallId: 'call-glob-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      count: 1,
+      truncated: false,
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<glob_result>'),
+    }));
+    expect((modelOutput as { value: string }).value).toContain('/workspace/notes/runtime.txt');
+  });
+
+  it('dispatches native grep tool execution through the runtime workspace owner', async () => {
+    const { conversationId, service, runtimeWorkspaceRoot } = createFixture();
+    const workspaceRoot = path.join(runtimeWorkspaceRoot, conversationId);
+    fs.mkdirSync(path.join(workspaceRoot, 'notes'), { recursive: true });
+    fs.mkdirSync(path.join(workspaceRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'notes', 'runtime.txt'), 'smoke-workspace\nsecondary line\n', 'utf8');
+    fs.writeFileSync(path.join(workspaceRoot, 'docs', 'guide.md'), '# smoke\n', 'utf8');
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['grep'],
+    });
+    const grepTool = toolSet?.grep;
+    expect(grepTool).toBeDefined();
+
+    const result = await (grepTool as any).execute({
+      include: '*.txt',
+      path: '/workspace',
+      pattern: 'smoke-workspace',
+    });
+    const modelOutput = await (grepTool as any).toModelOutput({
+      input: { include: '*.txt', path: '/workspace', pattern: 'smoke-workspace' },
+      output: result,
+      toolCallId: 'call-grep-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      matches: 1,
+      truncated: false,
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<grep_result>'),
+    }));
+    expect((modelOutput as { value: string }).value).toContain('/workspace/notes/runtime.txt:');
+    expect((modelOutput as { value: string }).value).toContain('1: smoke-workspace');
+  });
+
+  it('dispatches native write tool execution through the runtime workspace owner', async () => {
+    const { conversationId, service, runtimeWorkspaceRoot } = createFixture();
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['write'],
+    });
+    const writeTool = toolSet?.write;
+    expect(writeTool).toBeDefined();
+    expect(typeof (writeTool as any).execute).toBe('function');
+    const wrappedResult = await (writeTool as any).execute({
+      content: 'generated file\n',
+      filePath: 'generated/output.txt',
+    });
+
+    const modelOutput = await (writeTool as any).toModelOutput({
+      input: { content: 'generated file\n', filePath: 'generated/output.txt' },
+      output: wrappedResult,
+      toolCallId: 'call-write-1',
+    });
+
+    expect(wrappedResult).toEqual(expect.objectContaining({
+      created: true,
+      path: '/workspace/generated/output.txt',
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<write_result>'),
+    }));
+    expect(fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'generated', 'output.txt'), 'utf8')).toBe('generated file\n');
+  });
+
+  it('dispatches native edit tool execution through the runtime workspace owner', async () => {
+    const { conversationId, service, runtimeWorkspaceRoot } = createFixture();
+    const workspaceRoot = path.join(runtimeWorkspaceRoot, conversationId);
+    fs.mkdirSync(path.join(workspaceRoot, 'generated'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'generated', 'output.txt'), 'generated file\n', 'utf8');
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['edit'],
+    });
+    const editTool = toolSet?.edit;
+    expect(editTool).toBeDefined();
+
+    const result = await (editTool as any).execute({
+      filePath: 'generated/output.txt',
+      newString: 'updated file',
+      oldString: 'generated file',
+    });
+    const modelOutput = await (editTool as any).toModelOutput({
+      input: { filePath: 'generated/output.txt', newString: 'updated file', oldString: 'generated file' },
+      output: result,
+      toolCallId: 'call-edit-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      occurrences: 1,
+      path: '/workspace/generated/output.txt',
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('<edit_result>'),
+    }));
+    expect(fs.readFileSync(path.join(workspaceRoot, 'generated', 'output.txt'), 'utf8')).toBe('updated file\n');
+  });
+
   it('converts recoverable tool execution errors into internal invalid results', async () => {
     const { service, webFetchService } = createFixture();
     webFetchService.fetch.mockRejectedValueOnce(new Error('request timeout'));
@@ -404,7 +982,7 @@ describe('ToolRegistryService', () => {
     const result = await (webFetchTool as any).execute({
       format: 'markdown',
       url: 'https://example.com/smoke',
-    }, {} as never);
+    });
     const modelOutput = await (webFetchTool as any).toModelOutput({
       input: {
         format: 'markdown',
@@ -473,7 +1051,7 @@ describe('ToolRegistryService', () => {
     });
     const mcpTool = toolSet?.weather__get_forecast;
     expect(mcpTool).toBeDefined();
-    const result = await (mcpTool as any).execute({ city: 'Shanghai' }, {} as never);
+    const result = await (mcpTool as any).execute({ city: 'Shanghai' });
 
     expect(Object.keys(toolSet ?? {})).toContain('weather__get_forecast');
     expect(result).toEqual({ forecast: 'sunny' });
@@ -487,16 +1065,16 @@ describe('ToolRegistryService', () => {
   it('dispatches native skill tool execution through the skill owner', async () => {
     const { service, skillRegistryService } = createFixture();
     skillRegistryService.getSkillByName.mockResolvedValue({
-      id: 'project/planner',
-      name: 'planner',
-      description: '先拆任务，再逐步执行。',
-      content: '# planner\n\n先拆任务，再逐步执行。',
-      entryPath: 'planner/SKILL.md',
+      id: 'project/weather-query',
+      name: 'weather-query',
+      description: '查询指定地点天气。',
+      content: '# weather-query\n\n请先确认地点，再查询天气。',
+      entryPath: 'weather-query/SKILL.md',
       governance: { loadPolicy: 'allow' },
-      promptPreview: '先拆任务，再逐步执行。',
+      promptPreview: '请先确认地点，再查询天气。',
       sourceKind: 'project',
       tags: [],
-      assets: [{ path: 'templates/task.md', kind: 'template', textReadable: true, executable: false }],
+      assets: [{ path: 'scripts/weather.js', kind: 'script', textReadable: true, executable: true }],
     });
 
     const toolSet = await service.buildToolSet({
@@ -509,23 +1087,23 @@ describe('ToolRegistryService', () => {
     });
     const skillTool = toolSet?.skill;
     expect(skillTool).toBeDefined();
-    const result = await (skillTool as any).execute({ name: 'planner' }, {} as never);
+    const result = await (skillTool as any).execute({ name: 'weather-query' });
     const modelOutput = await (skillTool as any).toModelOutput({
-      input: { name: 'planner' },
+      input: { name: 'weather-query' },
       output: result,
       toolCallId: 'call-skill-1',
     });
 
     expect(result).toEqual(expect.objectContaining({
-      name: 'planner',
-      entryPath: 'planner/SKILL.md',
-      modelOutput: expect.stringContaining('<skill_content name="planner">'),
+      name: 'weather-query',
+      entryPath: 'weather-query/SKILL.md',
+      modelOutput: expect.stringContaining('<skill_content name="weather-query">'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
-      value: expect.stringContaining('<skill_content name="planner">'),
+      value: expect.stringContaining('<skill_content name="weather-query">'),
     }));
-    expect(skillRegistryService.getSkillByName).toHaveBeenCalledWith('planner');
+    expect(skillRegistryService.getSkillByName).toHaveBeenCalledWith('weather-query');
   });
 
   it('dispatches native task tool execution through the subagent runner owner', async () => {
@@ -547,7 +1125,7 @@ describe('ToolRegistryService', () => {
       description: '仓库探索',
       subagentType: 'explore',
       prompt: '请总结当前仓库的技能目录',
-    }, {} as never);
+    });
     const modelOutput = await (taskTool as any).toModelOutput({
       input: {
         description: '仓库探索',
@@ -561,13 +1139,15 @@ describe('ToolRegistryService', () => {
     expect(result).toEqual(expect.objectContaining({
       description: '仓库探索',
       subagentType: 'explore',
-      taskId: expect.any(String),
       text: 'Generated: 请总结当前仓库的技能目录',
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
       value: expect.stringContaining('<task_result title="仓库探索">'),
     }));
+    expect((modelOutput as { value: string }).value).toContain('session_id: subagent-session-1');
+    expect((modelOutput as { value: string }).value).not.toContain('provider:');
+    expect((modelOutput as { value: string }).value).not.toContain('model:');
     expect(runSubagentSpy).toHaveBeenCalledWith('native.task', {
       conversationId: 'conversation-1',
       source: 'plugin',
@@ -601,7 +1181,7 @@ describe('ToolRegistryService', () => {
       { content: '分析现有实现', priority: 'high' as const, status: 'completed' as const },
       { content: '实现 todo 工具', priority: 'high' as const, status: 'in_progress' as const },
     ];
-    const result = await (todoTool as any).execute({ todos }, {} as never);
+    const result = await (todoTool as any).execute({ todos });
     const modelOutput = await (todoTool as any).toModelOutput({
       input: { todos },
       output: result,
@@ -654,7 +1234,13 @@ describe('ToolRegistryService', () => {
   });
 });
 
-function createFixture() {
+function createFixture(options: {
+  runtimeBackends?: RuntimeBackend[];
+  runtimeWorkspaceBackends?: RuntimeWorkspaceBackend[];
+} = {}) {
+  const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-tool-registry-runtime-'));
+  process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+  runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),
     new PluginPersistenceService(),
@@ -720,7 +1306,6 @@ function createFixture() {
     providerId: 'openai',
     sessionId: 'subagent-session-1',
     sessionMessageCount: 2,
-    taskId: 'subagent-task-inline-1',
     text: 'Generated: 请总结当前仓库的技能目录',
     toolCalls: [],
     toolResults: [],
@@ -792,19 +1377,38 @@ function createFixture() {
     getSkillByName: jest.fn(),
     listSkillSummaries: jest.fn().mockResolvedValue([
       {
-        id: 'project/planner',
-        name: 'planner',
-        description: '先拆任务，再逐步执行。',
-        entryPath: 'planner/SKILL.md',
+        id: 'project/weather-query',
+        name: 'weather-query',
+        description: '查询指定地点天气。',
+        entryPath: 'weather-query/SKILL.md',
         governance: { loadPolicy: 'allow' },
-        promptPreview: '先拆任务，再逐步执行。',
+        promptPreview: '请先确认地点，再查询天气。',
         sourceKind: 'project',
         tags: [],
       },
     ]),
-    resolveSkillDirectory: jest.fn().mockReturnValue('D:/repo/skills/planner'),
+    resolveSkillDirectory: jest.fn().mockReturnValue('D:/repo/skills/weather-query'),
   };
   const skillToolService = new SkillToolService(skillRegistryService as unknown as SkillRegistryService);
+  const runtimeWorkspaceService = new RuntimeWorkspaceService();
+  const runtimeWorkspaceFileService = new RuntimeWorkspaceFileService(runtimeWorkspaceService);
+  const runtimeCommandService = new RuntimeCommandService(
+    options.runtimeBackends ?? [new RuntimeJustBashService(runtimeWorkspaceService)],
+  );
+  const runtimeWorkspaceBackendService = new RuntimeWorkspaceBackendService(
+    options.runtimeWorkspaceBackends ?? [runtimeWorkspaceFileService],
+  );
+  const runtimeToolBackendService = new RuntimeToolBackendService(
+    runtimeCommandService,
+    runtimeWorkspaceBackendService,
+  );
+  const runtimeToolPermissionService = new RuntimeToolPermissionService();
+  const bashToolService = new BashToolService(runtimeCommandService, runtimeToolBackendService, runtimeWorkspaceService);
+  const readToolService = new ReadToolService(runtimeWorkspaceBackendService);
+  const globToolService = new GlobToolService(runtimeWorkspaceBackendService);
+  const grepToolService = new GrepToolService(runtimeWorkspaceBackendService);
+  const writeToolService = new WriteToolService(runtimeWorkspaceBackendService);
+  const editToolService = new EditToolService(runtimeWorkspaceBackendService);
   const invalidToolService = new InvalidToolService();
   const taskToolService = new TaskToolService(new RuntimeHostSubagentTypeRegistryService());
   const todoToolService = new TodoToolService(runtimeHostConversationRecordService as never);
@@ -819,7 +1423,6 @@ function createFixture() {
     }),
   };
   const webFetchToolService = new WebFetchToolService(webFetchService as never);
-
   return {
     conversationId,
     mcpService,
@@ -828,6 +1431,8 @@ function createFixture() {
     runtimePluginGovernanceService,
     runtimeHostSubagentRunnerService,
     skillRegistryService,
+    runtimeToolPermissionService,
+    runtimeWorkspaceRoot,
     webFetchService,
     service: new ToolRegistryService(
       mcpService as never,
@@ -836,12 +1441,150 @@ function createFixture() {
       webFetchToolService,
       skillToolService,
       taskToolService,
+      bashToolService,
+      readToolService,
+      globToolService,
+      grepToolService,
+      writeToolService,
+      editToolService,
+      runtimeToolBackendService,
+      runtimeToolPermissionService,
       {
         get: jest.fn().mockImplementation((token) => token === RuntimeHostSubagentRunnerService ? runtimeHostSubagentRunnerService : null),
       } as never,
       runtimeHostPluginDispatchService as never,
       runtimePluginGovernanceService as never,
     ),
+  };
+}
+
+function createMockRuntimeBackend(kind: string): RuntimeBackend {
+  return {
+    async executeCommand(input) {
+      return {
+        backendKind: kind,
+        cwd: input.workdir ?? '/workspace',
+        exitCode: 0,
+        sessionId: input.sessionId,
+        stderr: '',
+        stdout: `${kind}:${input.command}`,
+        workspaceRoot: '/tmp/mock-workspace',
+      };
+    },
+    getDescriptor() {
+      return {
+        capabilities: {
+          networkAccess: true,
+          persistentFilesystem: true,
+          persistentShellState: false,
+          shellExecution: true,
+          workspaceRead: true,
+          workspaceWrite: true,
+        },
+        kind,
+        permissionPolicy: {
+          networkAccess: 'ask' as const,
+          persistentFilesystem: 'allow' as const,
+          persistentShellState: 'deny' as const,
+          shellExecution: 'ask' as const,
+          workspaceRead: 'allow' as const,
+          workspaceWrite: 'allow' as const,
+        },
+      };
+    },
+    getKind() {
+      return kind;
+    },
+  };
+}
+
+function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
+  const backendFileName = `${kind}.txt`;
+  const backendVirtualPath = `/workspace/${backendFileName}`;
+  const backendContent = `${kind} line\nsecond line\n`;
+  return {
+    async editTextFile(_sessionId, input) {
+      return {
+        occurrences: kind === 'mock-workspace'
+          ? 7
+          : input.replaceAll ? 2 : 1,
+        path: input.filePath.trim()
+          ? `/workspace/${kind}/${input.filePath.replace(/^\/+/, '')}`
+          : backendVirtualPath,
+      };
+    },
+    getDescriptor() {
+      return {
+        capabilities: {
+          networkAccess: false,
+          persistentFilesystem: true,
+          persistentShellState: false,
+          shellExecution: false,
+          workspaceRead: true,
+          workspaceWrite: true,
+        },
+        kind,
+        permissionPolicy: {
+          networkAccess: 'deny' as const,
+          persistentFilesystem: 'allow' as const,
+          persistentShellState: 'deny' as const,
+          shellExecution: 'deny' as const,
+          workspaceRead: 'allow' as const,
+          workspaceWrite: 'allow' as const,
+        },
+      };
+    },
+    getKind() {
+      return kind;
+    },
+    getVirtualWorkspaceRoot() {
+      return '/workspace';
+    },
+    async listFiles() {
+      return {
+        basePath: '/workspace',
+        files: [
+          {
+            virtualPath: backendVirtualPath,
+          },
+        ],
+      };
+    },
+    async readDirectoryEntries() {
+      return {
+        entries: ['routed.txt'],
+        path: '/workspace',
+      };
+    },
+    async readExistingPath(_sessionId, inputPath) {
+      const normalizedInputPath = typeof inputPath === 'string' ? inputPath.trim() : '';
+      if (!normalizedInputPath || normalizedInputPath === '/workspace' || normalizedInputPath === '.') {
+        return {
+          exists: true,
+          type: 'directory' as const,
+          virtualPath: '/workspace',
+          workspaceRoot: 'D:/mock/runtime',
+        };
+      }
+      return {
+        exists: true,
+        type: 'file' as const,
+        virtualPath: backendVirtualPath,
+        workspaceRoot: 'D:/mock/runtime',
+      };
+    },
+    async readTextFile() {
+      return {
+        content: backendContent,
+        path: backendVirtualPath,
+      };
+    },
+    async writeTextFile(_sessionId, inputPath) {
+      return {
+        created: true,
+        path: `/workspace/${kind}/${inputPath.replace(/^\/+/, '')}`,
+      };
+    },
   };
 }
 

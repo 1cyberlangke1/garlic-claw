@@ -5,6 +5,7 @@ import ChatView from '@/features/chat/views/ChatView.vue'
 
 const compactConversationContext = vi.fn()
 const applyCommandSuggestion = vi.fn()
+const replyRuntimePermission = vi.fn()
 
 vi.mock('@/features/chat/store/chat', () => ({
   useChatStore: () => ({
@@ -30,6 +31,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     inputText: ref(''),
     pendingImages: ref([]),
     compacting: ref(false),
+    displayedMessages: ref([]),
     commandSuggestions: ref([
       {
         commandId: 'builtin.context-compaction:/compact:command',
@@ -43,6 +45,18 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
       },
     ]),
     selectedCapabilities: ref(null),
+    pendingRuntimePermissions: ref([
+      {
+        id: 'permission-1',
+        conversationId: 'conversation-1',
+        backendKind: 'just-bash',
+        toolName: 'bash',
+        capabilities: ['shellExecution'],
+        createdAt: '2026-04-20T09:00:00.000Z',
+        summary: '执行 pwd',
+        resolving: false,
+      },
+    ]),
     conversationHostServices: ref({
       sessionEnabled: true,
       llmEnabled: true,
@@ -64,6 +78,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     setConversationLlmEnabled: vi.fn(),
     setConversationSessionEnabled: vi.fn(),
     compactConversationContext,
+    replyRuntimePermission,
     applyCommandSuggestion,
   }),
 }))
@@ -174,5 +189,34 @@ describe('ChatView', () => {
     expect(wrapper.text()).toContain('当前待办')
     expect(wrapper.text()).toContain('实现 todo 面板')
     expect(wrapper.text()).toContain('进行中')
+  })
+
+  it('passes pending runtime permission requests into the approval panel', async () => {
+    replyRuntimePermission.mockReset()
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          ChatRuntimePermissionPanel: {
+            props: ['requests'],
+            emits: ['reply'],
+            template: '<button class="permission-panel" @click="$emit(\'reply\', requests[0]?.id, \'always\')">{{ requests[0]?.toolName }}</button>',
+          },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.permission-panel').text()).toContain('bash')
+
+    await wrapper.find('.permission-panel').trigger('click')
+
+    expect(replyRuntimePermission).toHaveBeenCalledWith('permission-1', 'always')
   })
 })

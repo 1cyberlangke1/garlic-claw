@@ -8,9 +8,11 @@ vi.mock('@/features/chat/modules/chat-conversation.data', () => ({
   createConversationRecord: vi.fn(),
   deleteConversationMessageRecord: vi.fn(),
   deleteConversationRecord: vi.fn(),
+  loadPendingRuntimePermissionsRecord: vi.fn(),
   loadConversationList: vi.fn(),
   loadConversationMessages: vi.fn(),
   loadConversationTodoRecord: vi.fn(),
+  replyRuntimePermissionRecord: vi.fn(),
   stopConversationMessageRecord: vi.fn(),
   updateConversationMessageRecord: vi.fn(),
 }))
@@ -37,6 +39,11 @@ import * as chatModelSelection from '@/features/chat/modules/chat-model-selectio
 describe('createChatStoreModule', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(chatConversationData.loadPendingRuntimePermissionsRecord).mockResolvedValue([])
+    vi.mocked(chatConversationData.replyRuntimePermissionRecord).mockResolvedValue({
+      requestId: 'permission-1',
+      resolution: 'approved',
+    })
   })
 
   it('clears the current chat state when the selected conversation is no longer returned by the server', async () => {
@@ -831,5 +838,66 @@ describe('createChatStoreModule', () => {
         content: '检查压缩结果',
       }),
     ])
+  })
+
+  it('loads pending runtime permissions for the selected conversation', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([])
+    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([])
+    vi.mocked(chatConversationData.loadPendingRuntimePermissionsRecord).mockResolvedValue([
+      {
+        id: 'permission-1',
+        conversationId: 'conversation-1',
+        backendKind: 'just-bash',
+        toolName: 'bash',
+        capabilities: ['shellExecution', 'networkAccess'],
+        createdAt: '2026-04-20T09:00:00.000Z',
+        summary: '执行 curl 请求',
+        metadata: {
+          command: 'curl https://example.com',
+        },
+      },
+    ])
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockResolvedValue()
+
+    const store = createChatStoreModule()
+
+    await store.selectConversation('conversation-1')
+
+    expect(chatConversationData.loadPendingRuntimePermissionsRecord).toHaveBeenCalledWith(
+      'conversation-1',
+    )
+    expect(store.pendingRuntimePermissions.value).toEqual([
+      expect.objectContaining({
+        id: 'permission-1',
+        resolving: false,
+        toolName: 'bash',
+      }),
+    ])
+  })
+
+  it('replies to a runtime permission request and removes it from the pending list', async () => {
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.pendingRuntimePermissions.value = [
+      {
+        id: 'permission-1',
+        conversationId: 'conversation-1',
+        backendKind: 'just-bash',
+        toolName: 'bash',
+        capabilities: ['shellExecution'],
+        createdAt: '2026-04-20T09:00:00.000Z',
+        summary: '执行 pwd',
+        resolving: false,
+      },
+    ]
+
+    await store.replyRuntimePermission('permission-1', 'always')
+
+    expect(chatConversationData.replyRuntimePermissionRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      'permission-1',
+      'always',
+    )
+    expect(store.pendingRuntimePermissions.value).toEqual([])
   })
 })

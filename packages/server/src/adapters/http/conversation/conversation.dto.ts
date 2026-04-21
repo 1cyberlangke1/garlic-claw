@@ -119,3 +119,8 @@ export class UpdateConversationTodoDto {
   @Type(() => ConversationTodoItemDto)
   todos!: ConversationTodoItemDto[];
 }
+
+export class ReplyRuntimePermissionDto {
+  @IsIn(['once', 'always', 'reject'])
+  decision!: 'once' | 'always' | 'reject';
+}

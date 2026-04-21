@@ -4,6 +4,7 @@ import type {
   ChatMessagePart,
   ChatMessageMetadata,
   ConversationHostServices,
+  RuntimePermissionDecision,
   UpdateConversationHostServicesPayload,
 } from '@garlic-claw/shared'
 import {
@@ -85,6 +86,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     ...uploadProcessingNotices.value,
   ])
   const displayedMessages = computed(() => chat.messages)
+  const pendingRuntimePermissions = computed(() => chat.pendingRuntimePermissions)
   const lastMessageRole = computed(() => {
     for (let index = displayedMessages.value.length - 1; index >= 0; index -= 1) {
       const message = displayedMessages.value[index]
@@ -506,12 +508,17 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     return pendingImageCount === 0 && Boolean(resolveMatchedCommand(text))
   }
 
+  async function replyRuntimePermission(requestId: string, decision: RuntimePermissionDecision) {
+    await chat.replyRuntimePermission(requestId, decision)
+  }
+
   return {
     inputText,
     compacting,
     pendingImages,
     commandSuggestions,
     displayedMessages,
+    pendingRuntimePermissions,
     selectedCapabilities,
     conversationHostServices,
     conversationSendDisabledReason,
@@ -531,6 +538,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     setConversationLlmEnabled,
     setConversationSessionEnabled,
     compactConversationContext,
+    replyRuntimePermission,
     applyCommandSuggestion,
   }
 }
