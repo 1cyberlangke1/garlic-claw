@@ -4,8 +4,8 @@ import * as path from 'node:path';
 import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillAssetSummary, SkillDetail, SkillGovernanceInfo, SkillSummary, UpdateSkillGovernancePayload } from '@garlic-claw/shared';
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import YAML from 'yaml';
+import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
-import { resolveProjectWorkspaceRoot } from '../../runtime/host/project-workspace-root';
 
 interface SkillGovernanceFile {
   skills: Record<string, SkillGovernanceInfo>;
@@ -31,6 +31,7 @@ export class SkillRegistryService {
 
   constructor(
     @Optional() @Inject(SKILL_DISCOVERY_OPTIONS) private readonly discoveryOptions: SkillDiscoveryOptions = {},
+    private readonly projectWorktreeRootService: ProjectWorktreeRootService,
     @Optional() private readonly runtimeEventLogService?: RuntimeEventLogService,
   ) {}
 
@@ -40,7 +41,7 @@ export class SkillRegistryService {
     }
 
     this.cachedSkills = (await Promise.all([
-      readSkillSource('project', this.discoveryOptions.skillsRoot ?? resolveProjectSkillsRoot()),
+      readSkillSource('project', this.discoveryOptions.skillsRoot ?? this.resolveProjectSkillsRoot()),
     ]))
       .flat()
       .map((skill) => ({
@@ -67,7 +68,7 @@ export class SkillRegistryService {
   }
 
   resolveSkillDirectory(skill: Pick<SkillDetail, 'entryPath' | 'sourceKind'>): string {
-    const sourceRoot = this.discoveryOptions.skillsRoot ?? resolveProjectSkillsRoot();
+    const sourceRoot = this.discoveryOptions.skillsRoot ?? this.resolveProjectSkillsRoot();
     return path.join(sourceRoot, path.dirname(skill.entryPath));
   }
 
@@ -102,10 +103,10 @@ export class SkillRegistryService {
   private getRuntimeEventLogService(): RuntimeEventLogService {
     return this.runtimeEventLogService ?? new RuntimeEventLogService();
   }
-}
 
-function resolveProjectSkillsRoot(): string {
-  return path.join(resolveProjectWorkspaceRoot(process.cwd()), 'skills');
+  private resolveProjectSkillsRoot(): string {
+    return path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'skills');
+  }
 }
 
 function resolveSkillGovernancePath(): string {

@@ -14,20 +14,24 @@ function onReply(requestId: string, decision: RuntimePermissionDecision) {
   emit('reply', requestId, decision)
 }
 
-function formatCapabilityLabel(value: ChatPendingRuntimePermission['capabilities'][number]) {
+function formatOperationLabel(value: ChatPendingRuntimePermission['operations'][number]) {
   switch (value) {
-    case 'workspaceRead':
-      return '读取工作区'
-    case 'workspaceWrite':
-      return '写入工作区'
-    case 'shellExecution':
-      return '执行 Shell'
-    case 'networkAccess':
+    case 'command.execute':
+      return '执行命令'
+    case 'file.delete':
+      return '删除文件'
+    case 'file.edit':
+      return '编辑文件'
+    case 'file.list':
+      return '遍历文件'
+    case 'file.read':
+      return '读取文件'
+    case 'file.symlink':
+      return '创建链接'
+    case 'file.write':
+      return '写入文件'
+    case 'network.access':
       return '访问网络'
-    case 'persistentFilesystem':
-      return '持久文件系统'
-    case 'persistentShellState':
-      return '持久 Shell 状态'
     default:
       return value
   }
@@ -54,11 +58,11 @@ function formatCapabilityLabel(value: ChatPendingRuntimePermission['capabilities
           <p class="permission-summary">{{ request.summary }}</p>
           <div class="permission-capabilities">
             <span
-              v-for="capability in request.capabilities"
-              :key="capability"
+              v-for="operation in request.operations"
+              :key="operation"
               class="capability-chip"
             >
-              {{ formatCapabilityLabel(capability) }}
+              {{ formatOperationLabel(operation) }}
             </span>
           </div>
           <pre v-if="request.metadata !== undefined" class="permission-metadata">{{ JSON.stringify(request.metadata, null, 2) }}</pre>

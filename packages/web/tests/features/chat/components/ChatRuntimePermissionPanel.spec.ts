@@ -12,7 +12,7 @@ describe('ChatRuntimePermissionPanel', () => {
             conversationId: 'conversation-1',
             backendKind: 'just-bash',
             toolName: 'bash',
-            capabilities: ['shellExecution', 'networkAccess'],
+            operations: ['command.execute', 'network.access'],
             createdAt: '2026-04-20T09:00:00.000Z',
             summary: '执行 curl 请求',
             metadata: {
@@ -26,7 +26,7 @@ describe('ChatRuntimePermissionPanel', () => {
 
     expect(wrapper.text()).toContain('运行时权限审批')
     expect(wrapper.text()).toContain('bash')
-    expect(wrapper.text()).toContain('执行 Shell')
+    expect(wrapper.text()).toContain('执行命令')
     expect(wrapper.text()).toContain('访问网络')
     expect(wrapper.text()).toContain('curl https://example.com')
 

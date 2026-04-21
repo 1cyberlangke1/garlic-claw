@@ -877,6 +877,84 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(webFetchToolResults) && webFetchToolResults.some((entry) => entry?.toolName === 'webfetch'), 'Expected webfetch loop assistant message to persist native webfetch tool result');
   });
 
+  await runStep('plugins.runtime-tools.config.get', async () => {
+    const config = await getJson(apiBase, '/plugins/builtin.runtime-tools/config');
+    ensure(typeof config === 'object' && config !== null, 'Expected runtime tools config snapshot');
+    ensure(config.schema?.items?.bashOutput?.type === 'object', 'Expected runtime tools bash output schema');
+  });
+
+  await runStep('plugins.runtime-tools.config.put.compact', async () => {
+    const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
+      body: {
+        values: {
+          bashOutput: {
+            maxBytes: 16 * 1024,
+            maxLines: 2,
+            showTruncationDetails: false,
+          },
+        },
+      },
+    });
+    ensure(config.values?.bashOutput?.maxLines === 2, 'Expected runtime tools config maxLines to persist');
+    ensure(config.values?.bashOutput?.showTruncationDetails === false, 'Expected runtime tools config truncation details toggle to persist');
+  });
+
+  await runStep('chat.messages.bash-config-loop', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请使用 bash 工具生成多行输出，并确认最后两行内容。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+      onEvent: async (event) => {
+        if (event.type === 'permission-request') {
+          await approveRuntimePermissionRequest(event);
+        }
+      },
+    });
+    await ensureRuntimePermissionExpectation(
+      events,
+      usesYoloApproval ? 'skipped' : 'requested',
+      'bash config loop SSE',
+    );
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash config loop SSE to include native bash tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash config loop SSE to include native bash tool result');
+    assertCompletedSse(events, '已读取 smoke workspace 文件。');
+  });
+
+  await runStep('chat.messages.bash-config-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请使用 bash 工具生成多行输出'));
+    ensure(firstRequest, 'Expected first bash config loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash config loop request to expose native bash tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
+    ensure(toolResultRequest, 'Expected bash config loop to issue a follow-up request with bash tool results');
+    const bashToolContent = readLatestBashToolContent(toolResultRequest.body);
+    ensure(typeof bashToolContent === 'string', 'Expected bash config loop follow-up request to include bash tool content');
+    ensure(readBashStreamSection(bashToolContent, 'stdout') === 'line-3\nline-4', 'Expected bash config loop follow-up request to keep only the bounded stdout tail');
+    ensure(!bashToolContent.includes('output truncated'), 'Expected bash config loop follow-up request to hide truncation details');
+  });
+
+  await runStep('plugins.runtime-tools.config.put.default', async () => {
+    const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
+      body: {
+        values: {
+          bashOutput: {
+            maxBytes: 16 * 1024,
+            maxLines: 200,
+            showTruncationDetails: true,
+          },
+        },
+      },
+    });
+    ensure(config.values?.bashOutput?.maxLines === 200, 'Expected runtime tools config maxLines to restore');
+    ensure(config.values?.bashOutput?.showTruncationDetails === true, 'Expected runtime tools config truncation details toggle to restore');
+  });
+
   await runStep('chat.messages.bash-write-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
@@ -3323,6 +3401,17 @@ function planSmokeChatResponse(body) {
       toolName: 'bash',
     };
   }
+  if (shouldTriggerBashConfigTool(body)) {
+    return {
+      arguments: {
+        command: 'printf "line-1\\nline-2\\nline-3\\nline-4\\n"',
+        description: '生成多行输出',
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_bash_config_0',
+      toolName: 'bash',
+    };
+  }
   if (shouldTriggerBashReadTool(body)) {
     return {
       arguments: {
@@ -3456,10 +3545,12 @@ function planSmokeChatResponse(body) {
       kind: 'text',
       text: readLatestUserText(body?.messages).includes('读取刚才写入的 smoke workspace 文件')
         ? '已读取 smoke workspace 文件。'
+        : readLatestUserText(body?.messages).includes('生成多行输出')
+          ? '已读取 smoke workspace 文件。'
         : readLatestUserText(body?.messages).includes('nested 子目录中执行命令')
           ? '已在指定 bash 工作目录中完成执行。'
-        : readLatestUserText(body?.messages).includes('很短超时触发 bash 超时')
-          ? '已收到 bash 超时错误。'
+          : readLatestUserText(body?.messages).includes('很短超时触发 bash 超时')
+            ? '已收到 bash 超时错误。'
           : readLatestUserText(body?.messages).includes('打包并还原一个 nested 目录树')
             ? '已完成 bash 打包与还原验证。'
             : '已写入 smoke workspace 文件。',
@@ -3529,6 +3620,12 @@ function shouldTriggerBashWriteTool(body) {
   return requestIncludesToolName(body, 'bash')
     && !requestContainsToolResult(body, 'bash')
     && readLatestUserText(body?.messages).includes('请使用 bash 工具在 smoke workspace 中写入文件');
+}
+
+function shouldTriggerBashConfigTool(body) {
+  return requestIncludesToolName(body, 'bash')
+    && !requestContainsToolResult(body, 'bash')
+    && readLatestUserText(body?.messages).includes('请使用 bash 工具生成多行输出');
 }
 
 function shouldTriggerBashReadTool(body) {
@@ -3621,6 +3718,7 @@ function requestContainsToolResult(body, toolName) {
       || (toolName === 'webfetch' && (toolCallId === 'call_smoke_webfetch_0' || content.includes('<webfetch_result>')))
       || (toolName === 'bash' && (
         toolCallId === 'call_smoke_bash_write_0'
+        || toolCallId === 'call_smoke_bash_config_0'
         || toolCallId === 'call_smoke_bash_read_0'
         || toolCallId === 'call_smoke_bash_workdir_0'
         || toolCallId === 'call_smoke_bash_timeout_0'
@@ -3723,6 +3821,19 @@ function requestContainsBashResult(body, contentFragment) {
     message?.role === 'tool'
     && readTextContent(message).includes('<bash_result>')
     && readTextContent(message).includes(contentFragment));
+}
+
+function readLatestBashToolContent(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const bashToolMessage = [...messages].reverse().find((message) =>
+    message?.role === 'tool'
+    && readTextContent(message).includes('<bash_result>'));
+  return bashToolMessage ? readTextContent(bashToolMessage) : null;
+}
+
+function readBashStreamSection(content, sectionName) {
+  const match = content.match(new RegExp(`<${sectionName}>\\n([\\s\\S]*?)\\n<\\/${sectionName}>`));
+  return match ? match[1] : null;
 }
 
 function isRenderedSubagentToolContent(content) {

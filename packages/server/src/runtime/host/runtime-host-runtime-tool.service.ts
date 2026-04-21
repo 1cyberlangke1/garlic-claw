@@ -65,8 +65,8 @@ export class RuntimeHostRuntimeToolService {
     toolName: string,
     access: RuntimeToolAccessRequest,
   ): Promise<void> {
-    const requiredCapabilities = access.requiredCapabilities;
-    if (requiredCapabilities.length === 0) {
+    const requiredOperations = access.requiredOperations;
+    if (requiredOperations.length === 0) {
       return;
     }
     const backend = this.runtimeToolBackendService.getBackendDescriptor(access.role);
@@ -77,7 +77,7 @@ export class RuntimeHostRuntimeToolService {
       conversationId: context.conversationId,
       ...(access.metadata !== undefined ? { metadata: access.metadata } : {}),
       ...(assistantMessageId ? { messageId: assistantMessageId } : {}),
-      requiredCapabilities,
+      requiredOperations,
       summary: access.summary,
       toolName,
     });

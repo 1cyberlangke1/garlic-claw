@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../../src/auth/single-user-auth';
-import { RuntimeWorkspaceService } from '../../../src/execution/runtime/runtime-workspace.service';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 
@@ -72,16 +72,16 @@ describe('RuntimeHostConversationRecordService', () => {
       { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
     ]);
     expect(service.readRuntimePermissionApprovals(conversationId)).toEqual([]);
-    expect(service.rememberRuntimePermissionApproval(conversationId, 'just-bash:shellExecution')).toEqual([
-      'just-bash:shellExecution',
+    expect(service.rememberRuntimePermissionApproval(conversationId, 'just-bash:command.execute')).toEqual([
+      'just-bash:command.execute',
     ]);
-    expect(service.rememberRuntimePermissionApproval(conversationId, 'just-bash:networkAccess')).toEqual([
-      'just-bash:networkAccess',
-      'just-bash:shellExecution',
+    expect(service.rememberRuntimePermissionApproval(conversationId, 'just-bash:network.access')).toEqual([
+      'just-bash:command.execute',
+      'just-bash:network.access',
     ]);
     expect(service.readRuntimePermissionApprovals(conversationId)).toEqual([
-      'just-bash:networkAccess',
-      'just-bash:shellExecution',
+      'just-bash:command.execute',
+      'just-bash:network.access',
     ]);
 
     const beforeRevision = service.readConversationRevision(conversationId);
@@ -125,8 +125,8 @@ describe('RuntimeHostConversationRecordService', () => {
       { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
     ]);
     expect(reloaded.readRuntimePermissionApprovals(conversationId)).toEqual([
-      'just-bash:networkAccess',
-      'just-bash:shellExecution',
+      'just-bash:command.execute',
+      'just-bash:network.access',
     ]);
     expect(service.deleteConversation(conversationId)).toEqual({ message: 'Conversation deleted' });
   });
@@ -335,17 +335,17 @@ describe('RuntimeHostConversationRecordService', () => {
   it('deletes runtime workspace together with the conversation', async () => {
     process.env[conversationsEnvKey] = storagePath;
     process.env[runtimeWorkspaceEnvKey] = runtimeWorkspaceRoot;
-    const runtimeWorkspaceService = new RuntimeWorkspaceService();
-    const service = new RuntimeHostConversationRecordService(undefined, runtimeWorkspaceService);
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostConversationRecordService(undefined, runtimeSessionEnvironmentService);
     const conversationId = (service.createConversation({ title: 'Runtime Chat' }) as { id: string }).id;
-    const workspaceRoot = await runtimeWorkspaceService.resolveWorkspaceRoot(conversationId);
-    fs.mkdirSync(path.join(workspaceRoot, 'notes'), { recursive: true });
-    fs.writeFileSync(path.join(workspaceRoot, 'notes', 'runtime.txt'), 'runtime');
+    const sessionRoot = (await runtimeSessionEnvironmentService.getSessionEnvironment(conversationId)).sessionRoot;
+    fs.mkdirSync(path.join(sessionRoot, 'notes'), { recursive: true });
+    fs.writeFileSync(path.join(sessionRoot, 'notes', 'runtime.txt'), 'runtime');
 
-    expect(fs.existsSync(path.join(workspaceRoot, 'notes', 'runtime.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(sessionRoot, 'notes', 'runtime.txt'))).toBe(true);
 
     expect(service.deleteConversation(conversationId)).toEqual({ message: 'Conversation deleted' });
-    expect(fs.existsSync(workspaceRoot)).toBe(false);
+    expect(fs.existsSync(sessionRoot)).toBe(false);
   });
 
   it('deletes persisted legacy user conversations that no longer符合单用户模型', () => {

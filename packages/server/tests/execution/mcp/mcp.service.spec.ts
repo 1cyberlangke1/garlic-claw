@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { McpServerConfig } from '@garlic-claw/shared';
 import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
 import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
 
@@ -36,7 +37,7 @@ describe('McpService', () => {
     process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
     service = new McpService(
       configService as never,
-      new McpConfigStoreService(),
+      new McpConfigStoreService(new ProjectWorktreeRootService()),
       new RuntimeEventLogService(),
     );
   });

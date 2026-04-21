@@ -1,9 +1,9 @@
-import path from 'node:path';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
-import { RuntimeWorkspaceBackendService } from '../runtime/runtime-workspace-backend.service';
+import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface GlobToolInput {
   path?: string;
@@ -34,14 +34,17 @@ export const GLOB_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class GlobToolService {
-  constructor(private readonly runtimeWorkspaceBackendService: RuntimeWorkspaceBackendService) {}
+  constructor(
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+  ) {}
 
   getToolName(): string {
     return 'glob';
   }
 
   buildToolDescription(): string {
-    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
+    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
     return [
       '在当前 backend 可见路径内按 glob 模式列出文件。',
       visibleRoot === '/'
@@ -71,30 +74,24 @@ export class GlobToolService {
   }
 
   async execute(input: GlobToolInput): Promise<GlobToolResult> {
-    const workspaceBackend = this.runtimeWorkspaceBackendService.getConfiguredBackend();
-    const target = await workspaceBackend.readExistingPath(input.sessionId, input.path);
-    if (target.type !== 'directory') {
-      throw new BadRequestException(`glob.path 不是目录: ${target.virtualPath}`);
-    }
-    const listed = await workspaceBackend.listFiles(input.sessionId, input.path);
-    const matches = listed.files
-      .map((entry) => entry.virtualPath)
-      .filter((virtualPath) => matchesRuntimeGlobPattern(input.pattern, toSearchRelativePath(listed.basePath, virtualPath)));
-    const truncated = matches.length > MAX_GLOB_RESULTS;
-    const visible = truncated ? matches.slice(0, MAX_GLOB_RESULTS) : matches;
+    const result = await this.runtimeFilesystemBackendService.globPaths(input.sessionId, {
+      maxResults: MAX_GLOB_RESULTS,
+      pattern: input.pattern,
+      ...(input.path ? { path: input.path } : {}),
+    });
     return {
-      count: matches.length,
+      count: result.totalMatches,
       output: [
         '<glob_result>',
-        `Base: ${listed.basePath}`,
+        `Base: ${result.basePath}`,
         `Pattern: ${input.pattern}`,
         '<matches>',
-        ...(visible.length > 0 ? visible : ['(no matches)']),
-        truncated ? `... truncated to first ${MAX_GLOB_RESULTS} matches` : `(total matches: ${matches.length})`,
+        ...(result.matches.length > 0 ? result.matches : ['(no matches)']),
+        result.truncated ? `... truncated to first ${MAX_GLOB_RESULTS} matches` : `(total matches: ${result.totalMatches})`,
         '</matches>',
         '</glob_result>',
       ].join('\n'),
-      truncated,
+      truncated: result.truncated,
     };
   }
 
@@ -105,9 +102,9 @@ export class GlobToolService {
         pattern: input.pattern,
         ...(input.path ? { path: input.path } : {}),
       },
-      requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
-      role: 'workspace',
-      summary: `按 glob 搜索路径 ${input.path ?? this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot()}`,
+      requiredOperations: ['file.list'],
+      role: 'filesystem',
+      summary: `按 glob 搜索路径 ${input.path ?? this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot}`,
     };
   }
 
@@ -115,17 +112,4 @@ export class GlobToolService {
     type: 'text',
     value: (output as GlobToolResult).output,
   });
-}
-
-function matchesRuntimeGlobPattern(pattern: string, relativePath: string): boolean {
-  return path.posix.matchesGlob(relativePath, pattern)
-    || (!pattern.includes('/') && path.posix.matchesGlob(path.posix.basename(relativePath), pattern));
-}
-
-function toSearchRelativePath(basePath: string, virtualPath: string): string {
-  if (basePath === virtualPath) {
-    return path.posix.basename(virtualPath);
-  }
-  const relative = path.posix.relative(basePath, virtualPath);
-  return relative || path.posix.basename(virtualPath);
 }

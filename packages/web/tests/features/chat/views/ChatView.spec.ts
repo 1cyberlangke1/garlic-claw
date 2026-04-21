@@ -51,7 +51,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
         conversationId: 'conversation-1',
         backendKind: 'just-bash',
         toolName: 'bash',
-        capabilities: ['shellExecution'],
+        operations: ['command.execute'],
         createdAt: '2026-04-20T09:00:00.000Z',
         summary: '执行 pwd',
         resolving: false,

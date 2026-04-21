@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
-  RuntimeCapabilityName,
+  RuntimeOperationName,
   RuntimePermissionDecision,
   RuntimePermissionReplyResult,
   RuntimePermissionRequest,
@@ -15,6 +15,7 @@ import {
 import type {
   RuntimeBackendDescriptor,
 } from './runtime-command.types';
+import { expandRuntimeOperationsToCapabilities } from './runtime-operation-policy';
 import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
 
 interface RuntimePermissionReviewInput {
@@ -23,7 +24,7 @@ interface RuntimePermissionReviewInput {
   conversationId?: string;
   messageId?: string;
   metadata?: RuntimePermissionRequest['metadata'];
-  requiredCapabilities: RuntimeCapabilityName[];
+  requiredOperations: RuntimeOperationName[];
   summary: string;
   toolName: string;
 }
@@ -58,7 +59,8 @@ export class RuntimeToolPermissionService {
   ) {}
 
   async review(input: RuntimePermissionReviewInput): Promise<void> {
-    const missingCapabilities = input.requiredCapabilities.filter(
+    const requiredCapabilities = expandRuntimeOperationsToCapabilities(input.requiredOperations);
+    const missingCapabilities = requiredCapabilities.filter(
       (capability) => !input.backend.capabilities[capability],
     );
     if (missingCapabilities.length > 0) {
@@ -67,7 +69,7 @@ export class RuntimeToolPermissionService {
       );
     }
 
-    const deniedCapabilities = input.requiredCapabilities.filter(
+    const deniedCapabilities = requiredCapabilities.filter(
       (capability) => input.backend.permissionPolicy[capability] === 'deny',
     );
     if (deniedCapabilities.length > 0) {
@@ -80,16 +82,17 @@ export class RuntimeToolPermissionService {
       return;
     }
 
-    const capabilitiesToAsk = input.requiredCapabilities.filter((capability) => {
-      if (input.backend.permissionPolicy[capability] !== 'ask') {
+    const operationsToAsk = input.requiredOperations.filter((operation) => {
+      const operationCapabilities = expandRuntimeOperationsToCapabilities([operation]);
+      if (!operationCapabilities.some((capability) => input.backend.permissionPolicy[capability] === 'ask')) {
         return false;
       }
       if (!input.conversationId) {
         return true;
       }
-      return !this.isApprovedAlways(input.conversationId, input.backend.kind, capability);
+      return !this.isApprovedAlways(input.conversationId, input.backend.kind, operation);
     });
-    if (capabilitiesToAsk.length === 0) {
+    if (operationsToAsk.length === 0) {
       return;
     }
     if (!input.conversationId) {
@@ -98,7 +101,7 @@ export class RuntimeToolPermissionService {
 
     const request: RuntimePermissionRequest = {
       backendKind: input.backend.kind,
-      capabilities: capabilitiesToAsk,
+      operations: operationsToAsk,
       conversationId: input.conversationId,
       createdAt: new Date().toISOString(),
       id: randomUUID(),
@@ -148,8 +151,8 @@ export class RuntimeToolPermissionService {
       throw new ForbiddenException('用户拒绝了本次 runtime 权限请求');
     }
     if (decision === 'always') {
-      for (const capability of capabilitiesToAsk) {
-        this.markApprovedAlways(request.conversationId, request.backendKind, capability);
+      for (const operation of operationsToAsk) {
+        this.markApprovedAlways(request.conversationId, request.backendKind, operation);
       }
     }
   }
@@ -214,18 +217,18 @@ export class RuntimeToolPermissionService {
   private isApprovedAlways(
     conversationId: string,
     backendKind: RuntimePermissionRequest['backendKind'],
-    capability: RuntimeCapabilityName,
+    operation: RuntimeOperationName,
   ): boolean {
     return this.readApprovalSet(conversationId)
-      .has(`${backendKind}:${capability}`);
+      .has(`${backendKind}:${operation}`);
   }
 
   private markApprovedAlways(
     conversationId: string,
     backendKind: RuntimePermissionRequest['backendKind'],
-    capability: RuntimeCapabilityName,
+    operation: RuntimeOperationName,
   ): void {
-    const approvalKey = `${backendKind}:${capability}`;
+    const approvalKey = `${backendKind}:${operation}`;
     const approvals = this.readApprovalSet(conversationId);
     approvals.add(approvalKey);
     this.approvals.set(conversationId, approvals);

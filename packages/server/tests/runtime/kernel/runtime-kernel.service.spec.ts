@@ -3,6 +3,8 @@ import { AiManagementService } from '../../../src/ai-management/ai-management.se
 import { AiProviderSettingsService } from '../../../src/ai-management/ai-provider-settings.service';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
+import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -17,6 +19,7 @@ import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-h
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
+import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
 import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
@@ -464,6 +467,8 @@ function createService() {
       invokeHook: jest.fn(),
     } as never,
     new RuntimeHostSubagentStoreService(),
+    new RuntimeHostSubagentSessionStoreService(),
+    new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
   );
   const runtimeHostAutomationService = new AutomationService(
     new AutomationExecutionService(
@@ -497,7 +502,7 @@ function createService() {
     {} as never,
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
-    new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+    new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();
   return {

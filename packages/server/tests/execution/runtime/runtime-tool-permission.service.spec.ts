@@ -40,7 +40,7 @@ describe('RuntimeToolPermissionService', () => {
     }
   });
 
-  it('allows immediately when required capabilities are already allowed', async () => {
+  it('allows immediately when required operations are already allowed', async () => {
     await expect(service.review({
       backend: {
         capabilities: {
@@ -60,10 +60,9 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
-      requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
+      requiredOperations: ['file.read'],
       summary: '读取工作区文件',
       toolName: 'read',
     })).resolves.toBeUndefined();
@@ -89,18 +88,17 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
       messageId: 'message-1',
-      requiredCapabilities: ['shellExecution'],
+      requiredOperations: ['command.execute'],
       summary: '执行 bash 命令',
       toolName: 'bash',
     });
 
     const [pendingRequest] = service.listPendingRequests(conversationId);
     expect(pendingRequest).toMatchObject({
-      capabilities: ['shellExecution'],
+      operations: ['command.execute'],
       messageId: 'message-1',
       toolName: 'bash',
     });
@@ -130,10 +128,9 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
-      requiredCapabilities: ['shellExecution'],
+      requiredOperations: ['command.execute'],
       summary: '再次执行 bash 命令',
       toolName: 'bash',
     })).resolves.toBeUndefined();
@@ -166,10 +163,9 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
-      requiredCapabilities: ['shellExecution'],
+      requiredOperations: ['command.execute'],
       summary: '执行 bash 命令',
       toolName: 'bash',
     });
@@ -201,17 +197,16 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
-      requiredCapabilities: ['shellExecution'],
+      requiredOperations: ['command.execute'],
       summary: '再次执行 bash 命令',
       toolName: 'bash',
     })).resolves.toBeUndefined();
     expect(secondService.listPendingRequests(conversationId)).toEqual([]);
   });
 
-  it('rejects unsupported or denied capabilities', async () => {
+  it('rejects unsupported or denied operations', async () => {
     await expect(service.review({
       backend: {
         capabilities: {
@@ -231,10 +226,9 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
-      requiredCapabilities: ['networkAccess'],
+      requiredOperations: ['network.access'],
       summary: '联网执行命令',
       toolName: 'bash',
     })).rejects.toThrow('不支持能力');
@@ -258,10 +252,9 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
-      requiredCapabilities: ['networkAccess'],
+      requiredOperations: ['network.access'],
       summary: '联网执行命令',
       toolName: 'bash',
     })).rejects.toThrow('权限策略拒绝');
@@ -289,10 +282,9 @@ describe('RuntimeToolPermissionService', () => {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       },
       conversationId,
-      requiredCapabilities: ['shellExecution', 'networkAccess'],
+      requiredOperations: ['command.execute', 'network.access'],
       summary: '联网执行 bash 命令',
       toolName: 'bash',
     })).resolves.toBeUndefined();

@@ -14,6 +14,7 @@ import type {
 } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
+import { ProjectSubagentTypeRegistryService } from '../../execution/project/project-subagent-type-registry.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../kernel/runtime-plugin-hook-governance';
 import { RuntimeHostConversationMessageService } from './runtime-host-conversation-message.service';
@@ -29,7 +30,6 @@ import {
 } from './runtime-host-values';
 import { RuntimeHostSubagentSessionStoreService, type RuntimeSubagentSessionRecord } from './runtime-host-subagent-session-store.service';
 import { RuntimeHostSubagentStoreService, type RuntimeSubagentRecord } from './runtime-host-subagent-store.service';
-import { RuntimeHostSubagentTypeRegistryService } from './runtime-host-subagent-type-registry.service';
 
 interface ResolvedSubagentInvocation {
   request: PluginSubagentRequest;
@@ -48,8 +48,8 @@ export class RuntimeHostSubagentRunnerService {
     @Inject(RuntimeHostPluginDispatchService)
     private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
     private readonly runtimeHostSubagentStoreService: RuntimeHostSubagentStoreService,
-    private readonly runtimeHostSubagentSessionStoreService: RuntimeHostSubagentSessionStoreService = new RuntimeHostSubagentSessionStoreService(),
-    private readonly runtimeHostSubagentTypeRegistryService: RuntimeHostSubagentTypeRegistryService = new RuntimeHostSubagentTypeRegistryService(),
+    private readonly runtimeHostSubagentSessionStoreService: RuntimeHostSubagentSessionStoreService,
+    private readonly projectSubagentTypeRegistryService: ProjectSubagentTypeRegistryService,
   ) {}
 
   resumePendingSubagents(pluginId?: string): void {
@@ -449,11 +449,11 @@ export class RuntimeHostSubagentRunnerService {
   }
 
   listTypes() {
-    return this.runtimeHostSubagentTypeRegistryService.listTypes();
+    return this.projectSubagentTypeRegistryService.listTypes();
   }
 
   private resolveEffectiveSubagentRequest(request: PluginSubagentRequest): {
-    subagentType: ReturnType<RuntimeHostSubagentTypeRegistryService['getType']>;
+    subagentType: ReturnType<ProjectSubagentTypeRegistryService['getType']>;
     request: PluginSubagentRequest;
   } {
     if (!request.subagentType) {
@@ -462,7 +462,7 @@ export class RuntimeHostSubagentRunnerService {
         request: cloneJsonValue(request) as PluginSubagentRequest,
       };
     }
-    const subagentType = this.runtimeHostSubagentTypeRegistryService.getType(request.subagentType);
+    const subagentType = this.projectSubagentTypeRegistryService.getType(request.subagentType);
     if (!subagentType) {
       throw new BadRequestException(`Unknown subagent type: ${request.subagentType}`);
     }

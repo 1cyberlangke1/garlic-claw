@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 
 describe('SkillRegistryService', () => {
@@ -39,7 +40,7 @@ describe('SkillRegistryService', () => {
 
     const service = new SkillRegistryService({
       skillsRoot,
-    });
+    }, new ProjectWorktreeRootService());
 
     await expect(service.listSkills()).resolves.toEqual([
       expect.objectContaining({
@@ -75,7 +76,7 @@ describe('SkillRegistryService', () => {
 
     const service = new SkillRegistryService({
       skillsRoot,
-    });
+    }, new ProjectWorktreeRootService());
 
     await expect(service.listSkills()).resolves.toEqual([
       expect.objectContaining({
@@ -93,7 +94,7 @@ describe('SkillRegistryService', () => {
     const skillsRoot = path.join(tempRoot, 'skills');
     const service = new SkillRegistryService({
       skillsRoot,
-    });
+    }, new ProjectWorktreeRootService());
 
     expect(service.resolveSkillDirectory({
       entryPath: 'weather-query/SKILL.md',
@@ -116,7 +117,7 @@ describe('SkillRegistryService', () => {
 
     const service = new SkillRegistryService({
       skillsRoot,
-    });
+    }, new ProjectWorktreeRootService());
 
     const [skill] = await service.listSkills();
     expect(skill?.assets).toEqual(expect.arrayContaining([

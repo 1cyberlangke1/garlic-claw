@@ -1,12 +1,12 @@
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
+import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
+import type { RuntimeFilesystemBackend } from '../../../src/execution/runtime/runtime-filesystem-backend.types';
 import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
-import { RuntimeWorkspaceBackendService } from '../../../src/execution/runtime/runtime-workspace-backend.service';
-import type { RuntimeWorkspaceBackend } from '../../../src/execution/runtime/runtime-workspace-backend.types';
 
 describe('RuntimeToolBackendService', () => {
   const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
-  const originalWorkspaceBackend = process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+  const originalFilesystemBackend = process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
 
   afterEach(() => {
     if (originalShellBackend === undefined) {
@@ -14,56 +14,56 @@ describe('RuntimeToolBackendService', () => {
     } else {
       process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = originalShellBackend;
     }
-    if (originalWorkspaceBackend === undefined) {
-      delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+    if (originalFilesystemBackend === undefined) {
+      delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
     } else {
-      process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = originalWorkspaceBackend;
+      process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = originalFilesystemBackend;
     }
   });
 
-  it('uses default backend for shell and workspace when no routing override is configured', () => {
+  it('uses default backend for shell and filesystem when no routing override is configured', () => {
     delete process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
-    delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+    delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
     const service = new RuntimeToolBackendService(
       new RuntimeCommandService([
         createRuntimeBackend('alpha'),
         createRuntimeBackend('beta'),
       ]),
-      new RuntimeWorkspaceBackendService([
-        createWorkspaceBackend('alpha-workspace'),
-        createWorkspaceBackend('beta-workspace'),
+      new RuntimeFilesystemBackendService([
+        createFilesystemBackend('alpha-filesystem'),
+        createFilesystemBackend('beta-filesystem'),
       ]),
     );
 
     expect(service.getShellBackendKind()).toBe('alpha');
-    expect(service.getWorkspaceBackendKind()).toBe('alpha-workspace');
+    expect(service.getFilesystemBackendKind()).toBe('alpha-filesystem');
   });
 
-  it('supports independent shell and workspace backend routing', () => {
+  it('supports independent shell and filesystem backend routing', () => {
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'beta';
-    process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = 'alpha-workspace';
+    process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = 'alpha-filesystem';
     const service = new RuntimeToolBackendService(
       new RuntimeCommandService([
         createRuntimeBackend('alpha'),
         createRuntimeBackend('beta'),
       ]),
-      new RuntimeWorkspaceBackendService([
-        createWorkspaceBackend('alpha-workspace'),
-        createWorkspaceBackend('beta-workspace'),
+      new RuntimeFilesystemBackendService([
+        createFilesystemBackend('alpha-filesystem'),
+        createFilesystemBackend('beta-filesystem'),
       ]),
     );
 
     expect(service.getShellBackendKind()).toBe('beta');
-    expect(service.getWorkspaceBackendKind()).toBe('alpha-workspace');
+    expect(service.getFilesystemBackendKind()).toBe('alpha-filesystem');
     expect(service.getBackendKind('shell')).toBe('beta');
-    expect(service.getBackendKind('workspace')).toBe('alpha-workspace');
+    expect(service.getBackendKind('filesystem')).toBe('alpha-filesystem');
   });
 
   it('rejects unknown configured backend kind', () => {
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'missing';
     const service = new RuntimeToolBackendService(
       new RuntimeCommandService([createRuntimeBackend('alpha')]),
-      new RuntimeWorkspaceBackendService([createWorkspaceBackend('alpha-workspace')]),
+      new RuntimeFilesystemBackendService([createFilesystemBackend('alpha-filesystem')]),
     );
 
     expect(() => service.getShellBackendDescriptor()).toThrow(
@@ -71,15 +71,15 @@ describe('RuntimeToolBackendService', () => {
     );
   });
 
-  it('rejects unknown configured workspace backend kind', () => {
-    process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = 'missing-workspace';
+  it('rejects unknown configured filesystem backend kind', () => {
+    process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = 'missing-filesystem';
     const service = new RuntimeToolBackendService(
       new RuntimeCommandService([createRuntimeBackend('alpha')]),
-      new RuntimeWorkspaceBackendService([createWorkspaceBackend('alpha-workspace')]),
+      new RuntimeFilesystemBackendService([createFilesystemBackend('alpha-filesystem')]),
     );
 
-    expect(() => service.getWorkspaceBackendDescriptor()).toThrow(
-      'Unknown runtime workspace backend: missing-workspace',
+    expect(() => service.getFilesystemBackendDescriptor()).toThrow(
+      'Unknown runtime filesystem backend: missing-filesystem',
     );
   });
 });
@@ -94,7 +94,6 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
         sessionId: input.sessionId,
         stderr: '',
         stdout: `${kind}:${input.command}`,
-        workspaceRoot: '/tmp/workspace',
       };
     },
     getDescriptor() {
@@ -116,7 +115,6 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       };
     },
     getKind() {
@@ -125,12 +123,44 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
   };
 }
 
-function createWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
+function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
   return {
+    async copyPath() {
+      return {
+        fromPath: '/mock.txt',
+        path: '/mock-copy.txt',
+      };
+    },
+    async createSymlink() {
+      return {
+        path: '/mock-link.txt',
+        target: '/mock.txt',
+      };
+    },
+    async deletePath() {
+      return {
+        deleted: true,
+        path: '/mock.txt',
+      };
+    },
     async editTextFile() {
       return {
         occurrences: 1,
         path: '/mock.txt',
+      };
+    },
+    async ensureDirectory() {
+      return {
+        created: true,
+        path: '/mock-dir',
+      };
+    },
+    async globPaths() {
+      return {
+        basePath: '/',
+        matches: ['/mock.txt'],
+        totalMatches: 1,
+        truncated: false,
       };
     },
     getDescriptor() {
@@ -152,19 +182,34 @@ function createWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       };
     },
     getKind() {
       return kind;
     },
-    getVisibleRoot() {
-      return '/';
+    async grepText() {
+      return {
+        matches: [
+          {
+            line: 1,
+            text: 'mock content',
+            virtualPath: '/mock.txt',
+          },
+        ],
+        totalMatches: 1,
+        truncated: false,
+      };
     },
     async listFiles() {
       return {
         basePath: '/',
         files: [],
+      };
+    },
+    async movePath() {
+      return {
+        fromPath: '/mock.txt',
+        path: '/mock-moved.txt',
       };
     },
     async readDirectoryEntries() {
@@ -173,13 +218,37 @@ function createWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
         path: '/',
       };
     },
-    async readExistingPath() {
+    async readPathRange(_sessionId, input) {
+      return {
+        limit: input.limit,
+        lines: ['mock'],
+        offset: input.offset,
+        path: '/mock.txt',
+        totalLines: 1,
+        truncated: false,
+        type: 'file' as const,
+      };
+    },
+    async readSymlink() {
+      return {
+        path: '/mock-link.txt',
+        target: '/mock.txt',
+      };
+    },
+    async resolvePath() {
       return {
         exists: true,
-        hostPath: '/tmp/mock.txt',
         type: 'file' as const,
         virtualPath: '/mock.txt',
-        workspaceRoot: '/tmp',
+      };
+    },
+    async statPath() {
+      return {
+        exists: true,
+        mtime: '2026-04-21T00:00:00.000Z',
+        size: 4,
+        type: 'file' as const,
+        virtualPath: '/mock.txt',
       };
     },
     async readTextFile() {

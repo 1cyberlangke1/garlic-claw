@@ -20,6 +20,7 @@ import { PluginGatewayWsModule } from './adapters/ws/plugin-gateway/plugin-gatew
 import { ConversationMessagePlanningService } from './conversation/conversation-message-planning.service';
 import { ConversationMessageLifecycleService } from './conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from './conversation/conversation-task.service';
+import { ProjectWorktreeOverlayModule } from './execution/project/project-worktree-overlay.module';
 import { PluginModule } from './plugin/plugin.module';
 import { RuntimeHostModule } from './runtime/host/runtime-host.module';
 import { RuntimeKernelModule } from './runtime/kernel/runtime-kernel.module';
@@ -33,6 +34,7 @@ import { RuntimeKernelModule } from './runtime/kernel/runtime-kernel.module';
     JwtModule.register({}),
     PluginGatewayWsModule,
     PluginModule,
+    ProjectWorktreeOverlayModule,
     RuntimeHostModule,
     RuntimeKernelModule,
   ],

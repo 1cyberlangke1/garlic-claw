@@ -13,14 +13,23 @@ export interface RuntimeCommandRequest {
   workdir?: string;
 }
 
-export interface RuntimeCommandResult {
+export interface RuntimeCommandBackendResult {
   backendKind: RuntimeBackendKind;
   cwd: string;
   exitCode: number;
   sessionId: string;
   stderr: string;
   stdout: string;
-  workspaceRoot: string;
+}
+
+export interface RuntimeCommandResult extends RuntimeCommandBackendResult {
+  stderrStats: RuntimeCommandStreamStats;
+  stdoutStats: RuntimeCommandStreamStats;
+}
+
+export interface RuntimeCommandStreamStats {
+  bytes: number;
+  lines: number;
 }
 
 export type RuntimeCapabilitySet = Record<RuntimeCapabilityName, boolean>;
@@ -31,11 +40,10 @@ export interface RuntimeBackendDescriptor {
   capabilities: RuntimeCapabilitySet;
   kind: RuntimeBackendKind;
   permissionPolicy: RuntimePermissionPolicy;
-  visibleRoot: string;
 }
 
 export interface RuntimeBackend {
-  executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandResult>;
+  executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandBackendResult>;
   getDescriptor(): RuntimeBackendDescriptor;
   getKind(): RuntimeBackendKind;
 }

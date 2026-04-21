@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { BadRequestException } from '@nestjs/common';
 import { ProjectWorktreeFileService } from '../../../src/execution/project/project-worktree-file.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 
 describe('ProjectWorktreeFileService', () => {
   let originalCwd: string;
@@ -18,7 +19,7 @@ describe('ProjectWorktreeFileService', () => {
     fs.writeFileSync(path.join(projectRoot, 'package.json'), '{}', 'utf8');
     fs.mkdirSync(path.join(projectRoot, 'src'), { recursive: true });
     process.chdir(projectRoot);
-    service = new ProjectWorktreeFileService();
+    service = new ProjectWorktreeFileService(new ProjectWorktreeRootService());
   });
 
   afterEach(() => {

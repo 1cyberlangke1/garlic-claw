@@ -14,6 +14,10 @@ describe('RuntimeCommandService', () => {
       sessionId: 'session-1',
     })).resolves.toEqual(expect.objectContaining({
       backendKind: 'alpha',
+      stdoutStats: {
+        bytes: Buffer.byteLength('alpha:echo default', 'utf8'),
+        lines: 1,
+      },
       stdout: 'alpha:echo default',
     }));
     await expect(service.executeCommand({
@@ -22,6 +26,10 @@ describe('RuntimeCommandService', () => {
       sessionId: 'session-1',
     })).resolves.toEqual(expect.objectContaining({
       backendKind: 'beta',
+      stdoutStats: {
+        bytes: Buffer.byteLength('beta:echo explicit', 'utf8'),
+        lines: 1,
+      },
       stdout: 'beta:echo explicit',
     }));
   });
@@ -48,7 +56,6 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
         sessionId: input.sessionId,
         stderr: '',
         stdout: `${kind}:${input.command}`,
-        workspaceRoot: '/tmp/workspace',
       };
     },
     getDescriptor() {
@@ -70,7 +77,6 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
           workspaceRead: 'allow',
           workspaceWrite: 'allow',
         },
-        visibleRoot: '/',
       };
     },
     getKind() {

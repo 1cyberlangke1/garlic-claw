@@ -6,6 +6,37 @@
 
 ## 2026-04-21
 
+- 当前 `storageRoot / visibleRoot / workspaceRoot` 同时散在 backend descriptor、workspace service 和工具描述里时，会带来两个坏结果：
+  - session 环境语义没有独立 owner
+  - backend descriptor 被迫携带不属于 backend 自身的会话态信息
+- 先把 `RuntimeSessionEnvironment` 抽出来是对的：
+  - `just-bash` 和 `host-workspace` 都需要它
+  - 会话删除时的工作区清理也天然属于它
+  - 这样 `RuntimeBackendDescriptor` 可以回到“能力 + 权限 + backend kind”这种更稳定的语义
+- 当前 `host-workspace` backend 之前虽然能支撑 `read / write / edit / glob / grep`，但接口仍偏“文件工具私有能力”，还不够像通用 filesystem backend：
+  - `readExistingPath` 这种命名把“必须存在”硬编码进了接口语义
+  - `mkdir / delete / move / copy / symlink / readlink / stat` 都没有正式 contract
+- 这轮第一段更合理的收口方式是：
+  - 保留现有公开工具不变
+  - 先把 backend 接口补齐
+  - 再让工具层逐步从旧命名切到更稳定的 `resolvePath` 语义
+- 如果接口已经补成 filesystem backend，但 service、env 和 runtime access role 还叫 `workspace backend`，那仍然属于旧 owner 残留：
+  - 后续新人会继续把“session 文件系统”和“旧 workspace 语义”混成一层
+  - 因此这轮把 `runtime-filesystem-backend.*`、`GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND` 和 `role: 'filesystem'` 一起改掉是值得的
+- 文件工具继续自己调用 `getConfiguredBackend()` 也会让 backend 决议细节泄漏回工具层：
+  - 更稳的是 `RuntimeFilesystemBackendService` 自己提供 pass-through contract
+  - 这样工具层就只面向“文件系统操作 owner”，不再关心 backend 是怎么选出来的
+- runtime 审批继续直接暴露 capability 也会把后端实现细节泄漏到审批链和前端：
+  - `shellExecution / workspaceRead / persistentFilesystem` 这些能力更像底层实现条件，不是用户真正要批准的动作
+  - 把请求面切到 `command.execute / file.read / file.write / network.access` 之后，工具声明、pending request 和记忆 key 都更稳定
+  - capability 仍保留在 backend 能力矩阵里，但只作为 runtime owner 的内部展开依据
+- 命名没有一起收口时，也会把旧 owner 继续留下来：
+  - `runtime-filesystem-backend.types.ts` 里如果还保留 `RuntimeWorkspace*`，后续新增 backend 时很容易重新把“session workspace”误当成统一抽象
+  - 把类型和默认实现名改成 `RuntimeFilesystem*`、`RuntimeHostFilesystemBackendService` 后，filesystem owner 与 host backend owner 的边界更直观
+- `glob / grep` 如果继续在工具层自己做文件枚举、include 过滤和 regex 匹配，工具层仍然会持有太多 filesystem 细节：
+  - backend 才是最清楚“如何列文件、如何读取文本、什么算二进制跳过”的 owner
+  - 把这几段逻辑下沉到 `RuntimeFilesystemBackend` 之后，`GlobToolService / GrepToolService` 才更接近稳定 contract 消费者
+
 - 当前本地插件执行链虽然已经能承载工具与 hook，但它拿到的宿主能力仍停在 `plugin-sdk host facade` 既有白名单：
   - `bash / read / glob / grep / write / edit` 之所以还挂在 `ToolRegistryService`，不是因为 builtin local plugin 形态本身不行
   - 而是因为还没有正式的 runtime host method 可以让本地插件安全复用 runtime backend 与审批链
@@ -782,7 +813,7 @@
   - `persona-store`
   - `mcp-config-store`
   - `skill-registry`
-  - `runtime-host-subagent-type-registry`
+  - `project-subagent-type-registry`
 - 先把这层路径真相源统一成 `project-workspace-root` 是值得的：
   - 它不会改变现有 runtime/workspace 语义
   - 但能为后续 project/worktree backend 与 `lsp` owner 提供共同锚点
@@ -792,7 +823,7 @@
   - 但后续无论是接 `lsp`，还是把 OpenCode 风格 `read / write / edit / grep / glob` 迁回项目语义，都已经有了可复用底座
 - 再往前走一步时，显式 project root override 也值得先补：
   - 未来如果要让受控上下文指向某个特定项目目录，不能一直隐式依赖 `process.cwd()`
-  - 用 `GARLIC_CLAW_PROJECT_WORKSPACE_PATH` 先把这层入口做出来，可以避免后续 project/worktree 工具链再重复发明“根目录从哪来”
+  - 用 `GARLIC_CLAW_PROJECT_WORKTREE_PATH` 先把这层入口做出来，可以避免后续 project/worktree 工具链再重复发明“根目录从哪来”
 - Node 测试里恢复环境变量时，`process.env.KEY = undefined` 不是“删除变量”，而是把值写成字符串 `'undefined'`：
   - 对 `readRuntimeJustBashOptions()` 这类严格读取布尔值/整数的逻辑，会被误判成非法配置
   - 这次 `runtime-just-bash.service.spec.ts` 连续失败的真实原因不是后端坏了，而是 spec 的 `afterEach()` 污染了后续用例环境
@@ -801,3 +832,121 @@
   - 仓库主代码里没有真正的 `lsp` 工具、LSP 服务或前后端接线实现
   - 当前只存在 `TODO.md / task_plan.md / findings.md` 里的预备设计结论
   - 因此这次移除的是规划项，不是运行时代码
+- `write / edit` 当前其实已经接近 `G18-4` 的目标边界：
+  - `write` 只剩参数校验、调用 backend 与稳定结果包装
+  - `edit` 的行尾归一化、匹配计数、replaceAll 判定与写回都已经在 filesystem backend owner
+  - 因此这轮更值得继续下沉的是 `read`，而不是为了“看起来平均”去强拆 `write / edit`
+- `read` 在这轮之前仍保留了最多 filesystem 细节：
+  - 目录/文件分支
+  - `offset` 越界诊断
+  - 行切片与单行截断
+  - 这些都更像 filesystem backend 对“如何读取某个路径范围”的 owner，而不是工具层 owner
+- 用 `readPathRange` 这一层 contract 收口后，边界变得更清楚：
+  - tool 继续负责参数校验与对模文本包装
+  - backend 负责把某个路径解释成“目录项范围”或“文本行范围”
+  - 后续如果接第二个 filesystem backend，只需要实现同一 read-range 语义，不必把 `read` 的切片和诊断逻辑再复制一遍
+- 默认 backend kind 如果还叫 `host-workspace`，即使接口已经收口成 filesystem backend，旧 owner 还是会继续漏到 descriptor、审批记录和测试语义里：
+  - 把它改成 `host-filesystem` 后，当前默认 backend 的公开语义终于和 runtime 这轮收口方向一致
+  - 这类名字虽然看起来只是字符串，但它会直接进入 backend descriptor，因此不是纯内部细节
+- `RuntimeCommandResult.workspaceRoot` 和 shared `PluginRuntimeCommandResult.workspaceRoot` 这类字段如果已经没有真实消费者，就不该继续留在 host contract：
+  - 它们会把“宿主某个会话目录”误传成公开语义
+  - 对当前 runtime 工具来说，稳定真相只需要 `backendKind / cwd / stdout / stderr / exitCode / sessionId`
+- `RuntimeSessionEnvironment` 里的 per-session 实际目录更适合叫 `sessionRoot`，不是 `workspaceRoot`：
+  - 这层是 session 存储 owner，不是项目 worktree owner
+  - 一旦内部 owner 名字也跟着改掉，生产代码里关于 filesystem/runtime 的旧 `workspace` 语义几乎就全部消失了
+- `RuntimeFilesystemResolvedPath.workspaceRoot` 也属于 backend 私有宿主信息泄漏：
+  - 工具层并不消费它
+  - 把它从 filesystem contract 收掉后，第二 backend 的实现自由度会更高，不必伪造一个同名宿主根字段
+- `project/worktree overlay` 的第一刀更适合先收口 root owner，而不是直接把更多 project 能力塞进 runtime 主链：
+  - `ProjectWorktreeRootService` 统一提供项目根解析
+  - `ProjectWorktreeFileService / skill / mcp / persona / subagent-type` 都只消费这个 owner
+  - 这样 project/worktree 相关能力至少先共享同一个 overlay 真相源，不再各自引用自由函数
+- 再往前走一步，把 project/worktree provider 收成独立 module 也是值得的：
+  - `RuntimeHostModule` 可以继续导入 overlay，但不再亲自拥有这两个 provider
+  - 这更符合 `G18-6` “可选 overlay owner” 的方向，后续如果要继续拆 project-only 能力，会比现在更顺
+- 仅仅新建 overlay module 还不够；如果 `RuntimeHostModule` 继续直接注册 `SkillRegistryService / McpConfigStoreService / PersonaStoreService / ProjectSubagentTypeRegistryService`，那 owner 还是没迁走：
+  - 真正有效的做法是让 overlay module 直接持有这些 provider
+  - `RuntimeHostModule` 只 import，不再重复注册
+- `AppModule` 也应该直接 import overlay module，而不是只依赖 `RuntimeHostModule` 的转手导出：
+  - 这样 HTTP 控制器对 project/worktree provider 的依赖关系更直白
+  - `RuntimeHostModule` 的公开面也会更接近“runtime 主链”，不会继续把 overlay 一起抬出去
+- overlay module 拆出来之后，如果 service 构造函数里还留着 `new ProjectWorktreeRootService()` 这类默认实例化，owner 仍然会被偷偷带回业务类内部：
+  - 测试里手动 `new Service()` 看起来能跑，但真链路已经不再依赖同一套装配语义
+  - 这类默认实例化本质上仍是隐形兼容层，必须删掉，让测试也显式传真实 owner
+- `RuntimeHostSubagentRunnerService` 里的默认 `new RuntimeHostSubagentSessionStoreService()` / `new ProjectSubagentTypeRegistryService()` 同样会污染判断：
+  - 它会让 runtime host 在缺少 provider 时默默生出另一份状态 owner
+  - 把它们改回正式注入后，session/type 的边界才真正留在 runtime host 装配层，而不是 runner 自己兜底
+- overlay 侧的环境变量和测试命名也要同步收口，否则旧词还会继续误导后续实现：
+  - `GARLIC_CLAW_PROJECT_WORKSPACE_PATH` 已经不再准确表达当前 owner，改成 `GARLIC_CLAW_PROJECT_WORKTREE_PATH` 更一致
+  - 测试文件名如果继续保留 `project-workspace-root.spec.ts`，会让“旧概念只是换目录”这种假完成更难被发现
+- 当前 judge 复核后的更精确结论是：
+  - `G18-6` 已完成的是“project/worktree owner 改为 overlay 挂载，并从 runtime 主链中剥离直接持有”
+  - 还没有完成的是“runtime host 在无 overlay 时可独立装配”
+  - 这两者不应混成同一阶段，否则会把下一阶段 `G18-7` 的 backend 迁移性验收边界搞乱
+- `G18-7` 当前最关键的事实不是“能不能再写一个 mock”，而是现有 runtime owner 是否已经把“描述、执行、权限”都收到了同一条 backend 决议链：
+  - `RuntimeCommandService` 负责 shell backend registry
+  - `RuntimeFilesystemBackendService` 负责 filesystem backend registry 与实际文件操作分发
+  - `RuntimeToolBackendService` 负责把工具角色映射到当前生效 backend descriptor
+- 这意味着第二 backend 的有效证据不能只看 `RuntimeCommandService` 的单测：
+  - 还要看工具层是否真的走到了第二 backend
+  - `tool-registry.service.spec.ts` 里 `mock-shell` 与 `mock-filesystem` 的回归正好补上了这条链
+- 当前这组第二 backend 测试之所以足够作为 `G18-7` 的第一层实现证据，是因为它们验证的不是“能注册两个名字”，而是：
+  - `bash` 的 pending request 与执行结果都会反映第二 shell backend
+  - `read / glob / grep / write / edit` 的结果都来自同一个第二 filesystem backend
+  - 工具 contract 本身没有跟着 backend 类型膨胀
+- 独立 judge 对 `G18-7` 的补充结论是：
+  - 当前第二 backend 证据已经真正穿过 `builtin.runtime-tools -> host facade -> runtime owner -> backend`，不是把关键 owner 全部 mock 掉后的假通过
+  - shell 和 filesystem 的描述、执行、权限 backend 决议链当前没有发现阻塞性的错位
+  - 本阶段仍刻意停在“抽象可迁移性已证明”，不额外声称“生产第二 backend 已完成”
+- 对 `G18-2 ~ G18-5` 当前更精确的判断是：
+  - `RuntimeSessionEnvironmentService` 已经是 session 存储根与 visible root 的正式 owner，`RuntimeJustBashService`、`RuntimeHostFilesystemBackendService` 与会话删除清理链都在消费它
+  - `RuntimeFilesystemBackendService` 已经把 `resolve/stat/read/glob/grep/write/edit/mkdir/delete/move/copy/symlink/readlink` 收成稳定 contract，工具层不再直接碰 configured backend 决议
+  - runtime 权限请求的前后端公开面已经切到 `operations`， capability 只剩 runtime owner 内部展开语义
+  - 当前更像“阶段状态未及时回写”，不是“这些阶段还缺一块必须先改代码的功能”
+- 独立 judge 对 `G18-2 ~ G18-5` 的补充结论是：
+  - 这四段现在可以一起标完成，不属于“换名留壳”或“局部通过但公开契约未迁移”的假完成
+  - 残余风险主要是成熟度提升方向，例如 operation 进一步细分、更多输出治理与后处理；这些应进入下一阶段，而不是继续阻塞本阶段状态
+- `bash` 输出治理当前最适合先做“正式后处理 owner”，而不是直接把截断逻辑散回聊天链或本地插件：
+  - 主聊天 `BashToolService.toModelOutput()` 和 `builtin.runtime-tools` 都需要同一套 `<bash_result>` 结构
+  - 把这层收口到 `runtime-command-output.ts` 后，至少可以避免两条链继续各写一份格式化逻辑
+  - 当前先做尾部截断是合理的第一步：相比保留前缀，命令输出最后几行通常更接近真实错误或完成态
+- 浏览器 smoke 对 `type="number"` 的上下文长度输入仍然有一个真实脆弱点：
+  - 单次设置 `value + input/change` 在组件重渲染时仍可能失效
+  - 更稳的方式是在等待“保存上下文”按钮启用的循环里反复写入数值并派发事件
+  - 这样 smoke 的等待条件和表单状态变更合在同一条重试链里，不会出现“等待通过了，但点击时按钮又 disabled”的抖动
+- `bash` 输出治理如果每次都在最终渲染阶段重新扫描 `stdout/stderr`，会让统计信息 owner 不稳定：
+  - 聊天主链、本地 runtime 插件和未来其他消费者都可能各自再算一遍字节数与行数
+  - 更稳的是由 `RuntimeCommandService` 在 backend 原始结果上统一补 `stdoutStats / stderrStats`
+  - 这样输出截断提示和后续 usage/诊断扩展都能复用同一份统计真相
+- `runtime-command-output.ts` 里直接写跨包联合 `Pick<RuntimeCommandResult> | Pick<PluginRuntimeCommandResult>` 在当前 TypeScript 构建链上并不稳：
+  - 即使 shared 的 `.d.ts` 已经更新，server build 仍可能把联合键推导坏，出现 `stderrStats / stdoutStats` 不属于类型的误报
+  - 对这种“只需要结构”的渲染 owner，更合适的是声明本地最小输入接口
+  - 这样可以保留 shared/server 契约扩展，同时避免渲染层再次绑死到跨包泛型推导细节
+- 这轮前端配置实现不需要新建页面或新写专用组件：
+  - 插件页原本就会按 `manifest.config` 自动渲染 schema
+  - 对 `builtin.runtime-tools` 来说，真正缺的是 manifest 没声明 config，而不是前端少一个 runtime 设置入口
+  - 因此把 bash 输出治理参数挂回插件 schema，前端自然就能接上
+- 本地插件想读自己的配置时，权限上不能漏 `config:read`：
+  - `context.host.getConfig()` 走的仍是插件宿主权限链
+  - 即使是本地 builtin，也不会因为“实现就在仓库里”自动跳过权限声明
+  - 这次 `builtin.runtime-tools` 的第一版接线之所以返回 `invalid-tool-result`，真实原因就是 manifest 少了这项权限
+- 这轮 `smoke:server` 暴露出的“bash 输出治理配置没有进聊天主链”并不是运行时代码缺口，而是 smoke 本身的顺序错误：
+  - `plugins.runtime-tools.config.put.compact` 原先在 `chat.messages.bash-config-loop` 之后执行
+  - 因此 follow-up request 里出现完整 `stdout`，只是因为那一轮真实还没写入紧缩配置
+  - 这类问题不能只看失败断言文本，必须同时对照脚本步骤顺序和日志时间线
+- 浏览器 smoke 里，插件页验证不能继续依赖“当前侧栏页码和默认展开状态刚好命中目标插件”：
+  - `Runtime Tools` 属于系统本地插件，默认可能被侧栏隐藏
+  - 即使已显示，也可能因为排序和分页不在当前页
+  - 更稳的验收方式是直接走 `?plugin=<pluginId>` 详情入口，再只对真正需要的 UI 状态做最小操作，例如展开折叠配置
+- 对隐藏式开关控件，Playwright 不能机械地对内部 `input` 调 `check()`：
+  - 当前插件侧栏的系统插件开关是隐藏 `input + label/switch` 结构
+  - 对这类控件更稳的方式是操作可见 `label`，或者显式基于可见元素触发状态切换
+- 对会在重渲染中反复失焦的数值表单，`waitFor(enabled) -> click()` 仍然存在窗口期：
+  - 更稳的 smoke 语义是把“写入值、派发事件、判断按钮可点、立即点击”放进同一条重试循环
+  - 这样可以避免刚判定为 enabled，下一次渲染又把按钮打回 disabled 的抖动
+- 当前这批 runtime 文件工具改动已经满足“可提交但未完成最终目标”的判断边界：
+  - 真正完成的是 runtime owner 收口、`builtin.runtime-tools` 接管、bash 输出治理第一段和 smoke 验收修正
+  - 还没完成的是和 OpenCode 100% 对齐的文件工具成熟度、诊断层和后端抽象进一步压实
+- 因此当前最合适的节奏是：
+  - 先把这批改动作为稳定提交点保存
+  - 再进入 `G20-2`，逐项补 `read / write / edit / glob / grep / bash` 的成熟度差异

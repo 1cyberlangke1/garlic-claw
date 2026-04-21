@@ -5,7 +5,7 @@ import os from 'node:os';
 import { BadRequestException } from '@nestjs/common';
 import { readRuntimeJustBashOptions, readRuntimeJustBashTimeout } from '../../../src/execution/runtime/runtime-just-bash-options';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
-import { RuntimeWorkspaceService } from '../../../src/execution/runtime/runtime-workspace.service';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 
 describe('RuntimeJustBashService', () => {
   const workspaceRoots: string[] = [];
@@ -44,8 +44,8 @@ describe('RuntimeJustBashService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const runtimeWorkspaceService = new RuntimeWorkspaceService();
-    const service = new RuntimeJustBashService(runtimeWorkspaceService);
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeJustBashService(runtimeSessionEnvironmentService);
 
     const first = await service.executeCommand({
       command: 'mkdir -p logs && echo persisted > logs/run.txt && cat logs/run.txt',
@@ -71,7 +71,7 @@ describe('RuntimeJustBashService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+    const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
     const result = await service.executeCommand({
       command: 'mkdir -p src && echo first > src/a.txt && echo second >> src/a.txt && cp src/a.txt nested/b.txt && mv nested/b.txt final/c.txt && cat final/c.txt && rm src/a.txt && test ! -f src/a.txt && printf "removed\\n" && find final -type f | sort',
       sessionId: 'session-1',
@@ -88,7 +88,7 @@ describe('RuntimeJustBashService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+    const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
 
     const first = await service.executeCommand({
       command: 'mkdir -p src && cd src && export DEMO=1 && pwd && echo $DEMO',
@@ -108,7 +108,7 @@ describe('RuntimeJustBashService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+    const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
 
     const relativeLink = await service.executeCommand({
       command: 'echo hello > source.txt && ln -s source.txt link.txt && readlink link.txt && cat link.txt',
@@ -136,7 +136,7 @@ describe('RuntimeJustBashService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+    const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
     const result = await service.executeCommand({
       command: 'mkdir -p etc && echo safe > etc/passwd && ln -s /etc/passwd safe-link.txt && readlink safe-link.txt && cat safe-link.txt',
       sessionId: 'session-1',
@@ -165,7 +165,7 @@ describe('RuntimeJustBashService', () => {
       if (!address || typeof address === 'string') {
         throw new Error('failed to allocate local test server port');
       }
-      const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+      const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
       const result = await service.executeCommand({
         command: `curl -s http://127.0.0.1:${address.port}/`,
         sessionId: 'session-1',
@@ -206,7 +206,7 @@ describe('RuntimeJustBashService', () => {
       if (!address || typeof address === 'string') {
         throw new Error('failed to allocate local slow test server port');
       }
-      const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+      const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
       await expect(service.executeCommand({
         command: `curl -s http://127.0.0.1:${address.port}/slow`,
         sessionId: 'session-1',
@@ -230,7 +230,7 @@ describe('RuntimeJustBashService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+    const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
     await service.executeCommand({
       command: 'mkdir -p nested',
       sessionId: 'session-1',
@@ -251,7 +251,7 @@ describe('RuntimeJustBashService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeJustBashService(new RuntimeWorkspaceService());
+    const service = new RuntimeJustBashService(new RuntimeSessionEnvironmentService());
     const result = await service.executeCommand({
       command: 'mkdir -p tree/a tree/b && printf "one\\n" > tree/a/one.txt && printf "two\\n" > tree/b/two.txt && tar -cf bundle.tar tree && mkdir -p restored && tar -xf bundle.tar -C restored && find restored -type f | sort && cat restored/tree/a/one.txt && cat restored/tree/b/two.txt',
       sessionId: 'session-1',

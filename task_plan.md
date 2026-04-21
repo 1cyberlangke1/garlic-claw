@@ -187,6 +187,88 @@
 - 当前仍缺：
   - 更宽命令面，例如压缩、`tar`、更复杂目录树与边界性能
 
+## 2026-04-21 G18 runtime 二次收口
+
+## 目标
+
+- 把 session 环境从 command backend 和 filesystem backend 中拆成独立 owner。
+- 把当前 `host-filesystem` backend 补成更接近通用 filesystem backend 的稳定接口。
+- 保持现有工具公开行为不变，不引入兼容壳。
+
+## 阶段
+
+| 阶段 | 状态 | 内容 |
+| --- | --- | --- |
+| G18-2 | 已完成 | 新增 `RuntimeSessionEnvironmentService`，收走 `storageRoot / visibleRoot / workspaceRoot` owner，并让命令链、文件链、会话删除清理链统一依赖它 |
+| G18-3 | 已完成 | 为 `host-filesystem` backend 补 `resolve/stat/mkdir/delete/move/copy/symlink/readlink`，并把 `workspace backend` 命名继续收口成 `filesystem backend` |
+| G18-4 | 已完成 | 让文件工具统一通过 `RuntimeFilesystemBackendService` 的稳定 contract 执行，不再自己持有 configured backend 细节 |
+| G18-5 | 已完成 | 把 runtime 审批请求、工具 access 声明和前端审批面板从 capability 语义切到 operation 语义 |
+| G18-6 | 已完成 | 把 project/worktree 相关 owner 下沉为可选 overlay，并通过 fresh 验证与独立 judge |
+| G18-7 | 已完成 | 用第二 shell backend 和第二 filesystem backend 的真路由测试，复核 runtime 抽象的可迁移性 |
+
+## 当前进展
+
+- `G19-1` 已开始：
+  - 已把 `bash` 结果文本渲染收口到 `execution/runtime/runtime-command-output.ts`
+  - `BashToolService.toModelOutput()` 与 `builtin.runtime-tools` 当前共用 `renderRuntimeCommandTextOutput()`
+  - 当前已补输出尾部截断语义：每个 stream 最多保留最后 `200` 行、`16 KiB`
+  - `RuntimeCommandService` 当前会在 backend 原始结果上统一补 `stdoutStats / stderrStats`
+  - `runtime-command-output.ts` 已改成消费本地稳定渲染输入接口，不再依赖跨包联合 `Pick<>`
+  - `builtin.runtime-tools` 当前已声明 `config schema`，前端插件配置页会直接渲染 bash 输出治理项
+  - 插件配置链已接通 `maxLines / maxBytes / showTruncationDetails` 三个字段，并实际影响 `bash` 工具返回文本
+  - 已通过定向验证：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-command-output.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+    - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+    - `packages/shared`: `npm run build`
+    - `packages/plugin-sdk`: `npm run build`
+    - `packages/server`: `npm run build`
+    - root: `npm run lint`
+    - root: `npm run smoke:server`
+    - root: `npm run smoke:web-ui`
+  - 已补浏览器 smoke 的数值输入稳定性：
+    - `context-length` 输入现在会在等待按钮启用时反复写值并派发 `input/change`
+    - 本轮 `smoke:server` 与 `smoke:web-ui` 已重新通过
+- `G18-4` 已新增 `RuntimeFilesystemBackend.readPathRange`，把 `read` 的目录/文件分支、offset 越界诊断、行切片与行截断继续下沉到 filesystem backend owner。
+- `ReadToolService` 当前只保留参数校验、stable contract 调用与结果文本包装。
+- `write / edit` 复核后暂不继续拆；当前已经基本满足“工具层只剩参数校验 + contract 调用 + 结果包装”的目标。
+- `RuntimeCommandResult / PluginRuntimeCommandResult` 已移除不再使用的 `workspaceRoot`。
+- `RuntimeSessionEnvironment.workspaceRoot` 已收口为 `sessionRoot`，`RuntimeFilesystemResolvedPath.workspaceRoot` 也已移除。
+- 当前生产代码里和本阶段相关的旧 `workspace` owner 命名已经清空；后续若继续推进，重点应转向 `G18-6 project/worktree overlay`，而不是再做同类命名清理。
+- `G18-6` 第一刀已开始：
+  - project root 判定已从自由函数收口为 `ProjectWorktreeRootService`
+  - `ProjectWorktreeOverlayModule` 已建立，当前由 `RuntimeHostModule` import/export
+  - project/worktree 相关服务的下一步重点应是继续判断哪些能力可以彻底移出 runtime host 主模块
+- `G18-6` 第二刀已完成：
+  - `ProjectWorktreeOverlayModule` 已直接持有 `skill / mcp / persona / subagent-type` 这些 project/worktree 相关 provider
+  - `RuntimeHostModule` 不再直接注册这些 provider
+  - `AppModule` 已直接导入 overlay module，`RuntimeHostModule` 也不再转手导出 overlay
+- `G18-6` 第三刀已完成：
+  - `ProjectWorktreeFileService / SkillRegistryService / McpConfigStoreService / PersonaStoreService / ProjectSubagentTypeRegistryService` 已移除默认 `new ProjectWorktreeRootService()`，强制回到 overlay module 装配
+  - `RuntimeHostSubagentRunnerService` 已移除默认 `new RuntimeHostSubagentSessionStoreService()` 与 `new ProjectSubagentTypeRegistryService()`，不再把 session/type owner 偷带回 runtime host
+  - 相关 server 定向测试构造已统一显式传入这些 owner，避免测试链路继续掩盖真实装配问题
+- `G18-6` 第四刀已完成：
+  - `RuntimeHostSubagentTypeRegistryService` 已迁到 overlay owner `ProjectSubagentTypeRegistryService`
+  - 对应测试已迁到 `tests/execution/project/project-subagent-type-registry.service.spec.ts`
+  - `RuntimeHostSubagentRunnerService` 只消费 overlay 侧 registry，不再依赖 runtime/host 目录中的 project owner 命名
+- `G18-6` 独立 judge 已 PASS：
+  - judge 确认 overlay provider 目前已真正落在 `ProjectWorktreeOverlayModule`
+  - judge 确认 `ProjectSubagentTypeRegistryService` 迁移是真迁移，不是换名留壳
+  - judge 确认当前 residual risk 仅剩“runtime host 仍硬 import overlay”，但按本阶段验收口径不构成阻塞
+- `G18-7` 已完成实现摸底：
+  - `RuntimeCommandService`、`RuntimeFilesystemBackendService` 与 `RuntimeToolBackendService` 现有 owner 已能稳定注册多个 backend，并按环境变量切换 shell/filesystem 路由
+  - `tests/execution/tool/tool-registry.service.spec.ts` 已补第二 backend 真路由回归：
+    - `mock-shell` 证明 `bash` 经 runtime 权限链后会切到第二 shell backend
+    - `mock-filesystem` 证明 `read / glob / grep / write / edit` 会统一切到第二 filesystem backend
+  - `tests/execution/runtime/runtime-command.service.spec.ts` 与 `tests/execution/runtime/runtime-tool-backend.service.spec.ts` 已继续覆盖默认 backend、显式 backend 与未知 backend 拒绝
+- `G18-7` 独立 judge 已 PASS：
+  - judge 确认第二 shell/filesystem backend 证据不是只换名字或只包一层壳
+  - judge 确认 `bash` 与文件工具都真正穿过 runtime owner 到达第二 backend
+  - judge 确认当前残余风险只剩“第二 backend 仍是测试实现，不是生产级实现”，不阻塞本阶段完成判定
+- `G18-2 ~ G18-5` 独立 judge 已 PASS：
+  - judge 确认 session environment owner、filesystem backend contract、工具层稳定 contract 和 operation 公开语义都已真实成立
+  - judge 确认当前残余风险主要是工具成熟度增强项，不阻塞这四段阶段完成判定
+
 ## 2026-04-21 通用环境工具语义修正
 
 ## 目标
@@ -274,7 +356,7 @@
       - `requestPreview` 继续保留真实请求预览，不再复用 `description`
 - 当前已补第三段 `subagent type` 语义：
   - shared / plugin-sdk / server / web 都已接通 `subagentType`
-  - 宿主已落真实 `RuntimeHostSubagentTypeRegistryService`，通过仓库根 `subagent/*.yaml` 扫描类型
+  - 宿主已落真实 `ProjectSubagentTypeRegistryService`，通过仓库根 `subagent/*.yaml` 扫描类型
   - 默认 `general / explore` 会自动补齐到目录中；`explore` 仍会补默认只读工具与探索导向提示词
   - 显式 `providerId / modelId / system / toolNames` 仍可覆盖类型默认值
   - 后台任务会持久化 `subagentType / subagentTypeName`
@@ -836,3 +918,20 @@
 | C16-4 | 已完成 | 实现 `builtin.context-compaction` 插件的自动/手动压缩 |
 | C16-5 | 已完成 | 更新前端配置和聊天界面 |
 | C16-6 | 已完成 | 已通过定向测试、fresh 验收、浏览器 smoke 稳定性修复与独立 judge |
+
+## 2026-04-21 文件工具与执行抽象 100% 对齐 OpenCode
+
+### 目标
+
+- 压缩 `TODO.md` 已完成部分，只保留项目级真相。
+- 把 `bash / read / glob / grep / write / edit` 的使用体验、结果质量、错误提示和工程化能力推进到接近 `other/opencode` 的水平。
+- 继续压实 runtime 中间抽象，保证后续接更多执行后端时不需要回改工具层 owner。
+- 在进入下一轮实现前，先对当前阶段做独立 judge，并只在 judge 通过后提交。
+
+### 阶段
+
+| 阶段 | 状态 | 内容 |
+| --- | --- | --- |
+| G20-0 | 已完成 | 压缩 `TODO.md` 已完成部分，并冻结 OpenCode 100% 对齐主路线 |
+| G20-1 | 已完成 | 已完成独立 judge，确认当前执行层与 smoke 修复可作为提交点 |
+| G20-2 | 进行中 | 按 `TODO.md` 的 G20-0 ~ G20-7 逐段推进文件工具成熟度和中间抽象 |

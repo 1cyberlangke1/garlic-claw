@@ -10,6 +10,16 @@ export type RuntimeCapabilityName =
   | 'persistentFilesystem'
   | 'persistentShellState';
 
+export type RuntimeOperationName =
+  | 'command.execute'
+  | 'file.delete'
+  | 'file.edit'
+  | 'file.list'
+  | 'file.read'
+  | 'file.symlink'
+  | 'file.write'
+  | 'network.access';
+
 export type RuntimePermissionPolicyAction = 'allow' | 'ask' | 'deny';
 
 export type RuntimePermissionDecision = 'once' | 'always' | 'reject';
@@ -22,7 +32,7 @@ export interface RuntimePermissionRequest {
   messageId?: string;
   backendKind: RuntimeBackendKind;
   toolName: string;
-  capabilities: RuntimeCapabilityName[];
+  operations: RuntimeOperationName[];
   createdAt: string;
   summary: string;
   metadata?: JsonValue;

@@ -266,11 +266,10 @@ describe('ConversationTaskService', () => {
                   workspaceRead: 'allow',
                   workspaceWrite: 'allow',
                 },
-                visibleRoot: '/',
               },
               conversationId,
               messageId: String(assistantMessage.id),
-              requiredCapabilities: ['shellExecution'],
+              requiredOperations: ['command.execute'],
               summary: '执行测试 bash 命令',
               toolName: 'bash',
             });
@@ -286,7 +285,7 @@ describe('ConversationTaskService', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const [pendingRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
     expect(pendingRequest).toMatchObject({
-      capabilities: ['shellExecution'],
+      operations: ['command.execute'],
       messageId: String(assistantMessage.id),
       toolName: 'bash',
     });

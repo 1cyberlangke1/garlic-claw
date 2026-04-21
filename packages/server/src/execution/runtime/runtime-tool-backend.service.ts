@@ -2,19 +2,19 @@ import type { RuntimeToolBackendRole } from './runtime-tool-access';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
 import { Injectable } from '@nestjs/common';
 import { RuntimeCommandService } from './runtime-command.service';
-import { RuntimeWorkspaceBackendService } from './runtime-workspace-backend.service';
+import { RuntimeFilesystemBackendService } from './runtime-filesystem-backend.service';
 
 @Injectable()
 export class RuntimeToolBackendService {
   constructor(
     private readonly runtimeCommandService: RuntimeCommandService,
-    private readonly runtimeWorkspaceBackendService: RuntimeWorkspaceBackendService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
   ) {}
 
   getBackendDescriptor(role: RuntimeToolBackendRole): RuntimeBackendDescriptor {
     return role === 'shell'
       ? this.getShellBackendDescriptor()
-      : this.getWorkspaceBackendDescriptor();
+      : this.getFilesystemBackendDescriptor();
   }
 
   getBackendKind(role: RuntimeToolBackendRole): RuntimeBackendDescriptor['kind'] {
@@ -32,17 +32,17 @@ export class RuntimeToolBackendService {
     return this.getShellBackendDescriptor().kind;
   }
 
-  getWorkspaceBackendDescriptor(): RuntimeBackendDescriptor {
-    return this.runtimeWorkspaceBackendService.getConfiguredBackendDescriptor();
+  getFilesystemBackendDescriptor(): RuntimeBackendDescriptor {
+    return this.runtimeFilesystemBackendService.getConfiguredBackendDescriptor();
   }
 
-  getWorkspaceBackendKind(): RuntimeBackendDescriptor['kind'] {
-    return this.getWorkspaceBackendDescriptor().kind;
+  getFilesystemBackendKind(): RuntimeBackendDescriptor['kind'] {
+    return this.getFilesystemBackendDescriptor().kind;
   }
 
   private readConfiguredBackendDescriptor(
     configuredBackendKind: string | undefined,
-    role: 'shell' | 'workspace',
+    role: 'filesystem' | 'shell',
   ): RuntimeBackendDescriptor {
     const normalizedBackendKind = configuredBackendKind?.trim();
     if (!normalizedBackendKind) {

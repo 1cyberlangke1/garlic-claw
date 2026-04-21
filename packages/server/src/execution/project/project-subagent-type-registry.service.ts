@@ -3,9 +3,9 @@ import * as path from 'node:path';
 import type { PluginSubagentTypeSummary } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import YAML from 'yaml';
-import { resolveProjectWorkspaceRoot } from './project-workspace-root';
+import { ProjectWorktreeRootService } from './project-worktree-root.service';
 
-export interface RuntimeHostSubagentTypeDefinition {
+export interface ProjectSubagentTypeDefinition {
   id: string;
   name: string;
   description?: string;
@@ -15,11 +15,11 @@ export interface RuntimeHostSubagentTypeDefinition {
   toolNames?: string[];
 }
 
-type StoredSubagentTypeRecord = Partial<RuntimeHostSubagentTypeDefinition>;
+type StoredSubagentTypeRecord = Partial<ProjectSubagentTypeDefinition>;
 
 const SUBAGENT_TYPE_FILE_EXTENSION = '.yaml';
 
-const DEFAULT_SUBAGENT_TYPES: RuntimeHostSubagentTypeDefinition[] = [
+const DEFAULT_SUBAGENT_TYPES: ProjectSubagentTypeDefinition[] = [
   {
     id: 'general',
     name: '通用',
@@ -39,9 +39,14 @@ const DEFAULT_SUBAGENT_TYPES: RuntimeHostSubagentTypeDefinition[] = [
 ];
 
 @Injectable()
-export class RuntimeHostSubagentTypeRegistryService {
-  private readonly storageRoot = resolveSubagentTypeStorageRoot();
-  private types = loadSubagentTypes(this.storageRoot);
+export class ProjectSubagentTypeRegistryService {
+  private readonly storageRoot: string;
+  private types: ProjectSubagentTypeDefinition[];
+
+  constructor(private readonly projectWorktreeRootService: ProjectWorktreeRootService) {
+    this.storageRoot = this.resolveSubagentTypeStorageRoot();
+    this.types = loadSubagentTypes(this.storageRoot);
+  }
 
   listTypes(): PluginSubagentTypeSummary[] {
     this.types = loadSubagentTypes(this.storageRoot);
@@ -52,16 +57,23 @@ export class RuntimeHostSubagentTypeRegistryService {
     }));
   }
 
-  getType(subagentType: string): RuntimeHostSubagentTypeDefinition | null {
+  getType(subagentType: string): ProjectSubagentTypeDefinition | null {
     this.types = loadSubagentTypes(this.storageRoot);
     return this.types.find((entry) => entry.id === subagentType) ?? null;
   }
+
+  private resolveSubagentTypeStorageRoot(): string {
+    if (process.env.GARLIC_CLAW_SUBAGENT_PATH) {
+      return path.resolve(process.env.GARLIC_CLAW_SUBAGENT_PATH);
+    }
+    return path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'subagent');
+  }
 }
 
-function loadSubagentTypes(storageRoot: string): RuntimeHostSubagentTypeDefinition[] {
+function loadSubagentTypes(storageRoot: string): ProjectSubagentTypeDefinition[] {
   fs.mkdirSync(storageRoot, { recursive: true });
   seedDefaultSubagentTypes(storageRoot);
-  const collected = new Map<string, RuntimeHostSubagentTypeDefinition>();
+  const collected = new Map<string, ProjectSubagentTypeDefinition>();
   for (const entry of fs.readdirSync(storageRoot, { withFileTypes: true })) {
     if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== SUBAGENT_TYPE_FILE_EXTENSION) {
       continue;
@@ -85,7 +97,7 @@ function seedDefaultSubagentTypes(storageRoot: string): void {
   }
 }
 
-function readStoredSubagentType(filePath: string): RuntimeHostSubagentTypeDefinition | null {
+function readStoredSubagentType(filePath: string): ProjectSubagentTypeDefinition | null {
   try {
     const parsed = YAML.parse(fs.readFileSync(filePath, 'utf-8')) as StoredSubagentTypeRecord;
     const fallbackId = decodeURIComponent(path.basename(filePath, SUBAGENT_TYPE_FILE_EXTENSION));
@@ -98,7 +110,7 @@ function readStoredSubagentType(filePath: string): RuntimeHostSubagentTypeDefini
 function normalizeStoredSubagentType(
   record: StoredSubagentTypeRecord,
   fallbackId: string,
-): RuntimeHostSubagentTypeDefinition | null {
+): ProjectSubagentTypeDefinition | null {
   const id = normalizeOptionalText(record.id) ?? fallbackId;
   if (!id) {
     return null;
@@ -143,7 +155,7 @@ function readSubagentTypeFilePath(storageRoot: string, subagentTypeId: string): 
   return path.join(storageRoot, `${encodeURIComponent(subagentTypeId)}${SUBAGENT_TYPE_FILE_EXTENSION}`);
 }
 
-function readSubagentTypeYaml(entry: RuntimeHostSubagentTypeDefinition): string {
+function readSubagentTypeYaml(entry: ProjectSubagentTypeDefinition): string {
   return [
     '# Subagent Type 配置',
     '# 每个类型一个文件；新增文件后，重启服务或再次读取列表即可生效。',
@@ -183,11 +195,4 @@ function formatSubagentTypeField(fieldName: string, value: unknown): string[] {
     `${fieldName}:`,
     ...serialized.split('\n').map((line) => `  ${line}`),
   ];
-}
-
-function resolveSubagentTypeStorageRoot(): string {
-  if (process.env.GARLIC_CLAW_SUBAGENT_PATH) {
-    return path.resolve(process.env.GARLIC_CLAW_SUBAGENT_PATH);
-  }
-  return path.join(resolveProjectWorkspaceRoot(process.cwd()), 'subagent');
 }

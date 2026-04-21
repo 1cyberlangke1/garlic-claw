@@ -3,7 +3,9 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import type { RuntimeCommandResult } from '../runtime/runtime-command.types';
+import { renderRuntimeCommandTextOutput } from '../runtime/runtime-command-output';
 import { RuntimeCommandService } from '../runtime/runtime-command.service';
+import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';
 
 export interface BashToolInput {
@@ -41,6 +43,7 @@ export const BASH_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 export class BashToolService {
   constructor(
     private readonly runtimeCommandService: RuntimeCommandService,
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
     private readonly runtimeToolBackendService: RuntimeToolBackendService,
   ) {}
 
@@ -50,7 +53,7 @@ export class BashToolService {
 
   buildToolDescription(): string {
     const backend = this.runtimeToolBackendService.getShellBackendDescriptor();
-    const visibleRoot = backend.visibleRoot;
+    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
     return [
       '在当前 session 的执行后端中执行 bash 命令。',
       visibleRoot === '/'
@@ -102,22 +105,18 @@ export class BashToolService {
 
   readRuntimeAccess(args: Record<string, unknown>, sessionId?: string): RuntimeToolAccessRequest {
     const input = this.readInput(args, sessionId);
-    const backend = this.runtimeToolBackendService.getShellBackendDescriptor();
     return {
       metadata: {
         command: input.command,
         description: input.description,
         ...(input.workdir ? { workdir: input.workdir } : {}),
       },
-      requiredCapabilities: [
-        'shellExecution',
-        'workspaceRead',
-        'workspaceWrite',
-        'persistentFilesystem',
-        ...(requiresBashNetworkAccess(input.command) ? ['networkAccess' as const] : []),
+      requiredOperations: [
+        'command.execute',
+        ...(requiresBashNetworkAccess(input.command) ? ['network.access' as const] : []),
       ],
       role: 'shell',
-      summary: `${input.description} (${input.workdir ?? backend.visibleRoot})`,
+      summary: `${input.description} (${input.workdir ?? this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot})`,
     };
   }
 
@@ -125,18 +124,7 @@ export class BashToolService {
     const result = output as RuntimeCommandResult;
     return {
       type: 'text',
-      value: [
-        '<bash_result>',
-        `cwd: ${result.cwd}`,
-        `exit_code: ${result.exitCode}`,
-        '<stdout>',
-        result.stdout || '(empty)',
-        '</stdout>',
-        '<stderr>',
-        result.stderr || '(empty)',
-        '</stderr>',
-        '</bash_result>',
-      ].join('\n'),
+      value: renderRuntimeCommandTextOutput(result),
     };
   };
 }

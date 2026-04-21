@@ -1,10 +1,10 @@
-import type { JsonValue, RuntimeCapabilityName } from '@garlic-claw/shared';
+import type { JsonValue, RuntimeOperationName } from '@garlic-claw/shared';
 
-export type RuntimeToolBackendRole = 'shell' | 'workspace';
+export type RuntimeToolBackendRole = 'filesystem' | 'shell';
 
 export interface RuntimeToolAccessRequest {
   role: RuntimeToolBackendRole;
-  requiredCapabilities: RuntimeCapabilityName[];
+  requiredOperations: RuntimeOperationName[];
   summary: string;
   metadata?: JsonValue;
 }

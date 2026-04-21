@@ -2,7 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
-import { RuntimeWorkspaceBackendService } from '../runtime/runtime-workspace-backend.service';
+import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface WriteToolInput {
   content: string;
@@ -31,14 +32,17 @@ export const WRITE_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class WriteToolService {
-  constructor(private readonly runtimeWorkspaceBackendService: RuntimeWorkspaceBackendService) {}
+  constructor(
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+  ) {}
 
   getToolName(): string {
     return 'write';
   }
 
   buildToolDescription(): string {
-    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
+    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
     return [
       '在当前 backend 可见路径内整文件写入内容。',
       visibleRoot === '/'
@@ -72,7 +76,11 @@ export class WriteToolService {
   }
 
   async execute(input: WriteToolInput): Promise<WriteToolResult> {
-    const result = await this.runtimeWorkspaceBackendService.getConfiguredBackend().writeTextFile(input.sessionId, input.filePath, input.content);
+    const result = await this.runtimeFilesystemBackendService.writeTextFile(
+      input.sessionId,
+      input.filePath,
+      input.content,
+    );
     return {
       created: result.created,
       output: [
@@ -91,8 +99,8 @@ export class WriteToolService {
       metadata: {
         filePath: input.filePath,
       },
-      requiredCapabilities: ['workspaceWrite', 'persistentFilesystem'],
-      role: 'workspace',
+      requiredOperations: ['file.write'],
+      role: 'filesystem',
       summary: `写入路径 ${input.filePath}`,
     };
   }

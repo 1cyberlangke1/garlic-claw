@@ -1,6 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 
@@ -25,7 +26,7 @@ describe('SkillToolService', () => {
     await fs.writeFile(path.join(tempRoot, 'skills', 'weather-query', 'scripts', 'weather.js'), 'console.log("weather")\n', 'utf8');
     registry = new SkillRegistryService({
       skillsRoot: path.join(tempRoot, 'skills'),
-    });
+    }, new ProjectWorktreeRootService());
     service = new SkillToolService(registry);
   });
 

@@ -1,9 +1,9 @@
-import path from 'node:path';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
-import { RuntimeWorkspaceBackendService } from '../runtime/runtime-workspace-backend.service';
+import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface GrepToolInput {
   include?: string;
@@ -41,14 +41,17 @@ export const GREP_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class GrepToolService {
-  constructor(private readonly runtimeWorkspaceBackendService: RuntimeWorkspaceBackendService) {}
+  constructor(
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+  ) {}
 
   getToolName(): string {
     return 'grep';
   }
 
   buildToolDescription(): string {
-    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
+    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
     return [
       '在当前 backend 可见路径内按正则搜索文本文件内容。',
       visibleRoot === '/'
@@ -79,67 +82,27 @@ export class GrepToolService {
   }
 
   async execute(input: GrepToolInput): Promise<GrepToolResult> {
-    let matcher: RegExp;
-    try {
-      matcher = new RegExp(input.pattern);
-    } catch (error) {
-      throw new BadRequestException(`grep.pattern 不是合法正则: ${(error as Error).message}`);
-    }
-    const workspaceBackend = this.runtimeWorkspaceBackendService.getConfiguredBackend();
-    const listed = await workspaceBackend.listFiles(input.sessionId, input.path);
-    const rows: Array<{ line: number; text: string; virtualPath: string }> = [];
-    for (const file of listed.files) {
-      const relativePath = toGrepRelativePath(listed.basePath, file.virtualPath);
-      if (input.include && !matchesGrepInclude(input.include, relativePath)) {
-        continue;
-      }
-      let textFile: { content: string; path: string };
-      try {
-        textFile = await workspaceBackend.readTextFile(input.sessionId, file.virtualPath);
-      } catch (error) {
-        if (isBinaryReadError(error)) {
-          continue;
-        }
-        throw error;
-      }
-      if (!textFile.content.length) {
-        continue;
-      }
-      const lines = splitGrepLines(textFile.content);
-      for (let index = 0; index < lines.length; index += 1) {
-        matcher.lastIndex = 0;
-        if (!matcher.test(lines[index])) {
-          continue;
-        }
-        rows.push({
-          line: index + 1,
-          text: truncateGrepLine(lines[index]),
-          virtualPath: file.virtualPath,
-        });
-        if (rows.length > MAX_GREP_MATCHES) {
-          break;
-        }
-      }
-      if (rows.length > MAX_GREP_MATCHES) {
-        break;
-      }
-    }
-    const truncated = rows.length > MAX_GREP_MATCHES;
-    const visible = truncated ? rows.slice(0, MAX_GREP_MATCHES) : rows;
-    const groupedOutput = buildGrepOutput(visible);
+    const result = await this.runtimeFilesystemBackendService.grepText(input.sessionId, {
+      ...(input.include ? { include: input.include } : {}),
+      maxLineLength: MAX_GREP_LINE_LENGTH,
+      maxMatches: MAX_GREP_MATCHES,
+      ...(input.path ? { path: input.path } : {}),
+      pattern: input.pattern,
+    });
+    const groupedOutput = buildGrepOutput(result.matches);
     return {
-      matches: rows.length,
+      matches: result.totalMatches,
       output: [
         '<grep_result>',
         `Pattern: ${input.pattern}`,
         input.include ? `Include: ${input.include}` : undefined,
         '<matches>',
         ...(groupedOutput.length > 0 ? groupedOutput : ['(no matches)']),
-        truncated ? `... truncated to first ${MAX_GREP_MATCHES} matches` : `(total matches: ${rows.length})`,
+        result.truncated ? `... truncated to first ${MAX_GREP_MATCHES} matches` : `(total matches: ${result.totalMatches})`,
         '</matches>',
         '</grep_result>',
       ].filter((entry): entry is string => Boolean(entry)).join('\n'),
-      truncated,
+      truncated: result.truncated,
     };
   }
 
@@ -151,9 +114,9 @@ export class GrepToolService {
         ...(input.include ? { include: input.include } : {}),
         ...(input.path ? { path: input.path } : {}),
       },
-      requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
-      role: 'workspace',
-      summary: `按正则搜索路径 ${input.path ?? this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot()}`,
+      requiredOperations: ['file.read', 'file.list'],
+      role: 'filesystem',
+      summary: `按正则搜索路径 ${input.path ?? this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot}`,
     };
   }
 
@@ -177,37 +140,4 @@ function buildGrepOutput(rows: Array<{ line: number; text: string; virtualPath: 
     output.push(`  ${row.line}: ${row.text}`);
   }
   return output;
-}
-
-function matchesGrepInclude(pattern: string, relativePath: string): boolean {
-  return path.posix.matchesGlob(relativePath, pattern)
-    || (!pattern.includes('/') && path.posix.matchesGlob(path.posix.basename(relativePath), pattern));
-}
-
-function toGrepRelativePath(basePath: string, virtualPath: string): string {
-  if (basePath === virtualPath) {
-    return path.posix.basename(virtualPath);
-  }
-  const relative = path.posix.relative(basePath, virtualPath);
-  return relative || path.posix.basename(virtualPath);
-}
-
-function splitGrepLines(content: string): string[] {
-  if (!content.length) {
-    return [];
-  }
-  return content.endsWith('\n')
-    ? content.slice(0, -1).split('\n')
-    : content.split('\n');
-}
-
-function truncateGrepLine(line: string): string {
-  return line.length > MAX_GREP_LINE_LENGTH
-    ? `${line.slice(0, MAX_GREP_LINE_LENGTH)}...`
-    : line;
-}
-
-function isBinaryReadError(error: unknown): boolean {
-  return error instanceof BadRequestException
-    && error.message.includes('暂不支持读取二进制文件');
 }

@@ -84,7 +84,7 @@ export function createChatStoreModule() {
       ...(entry.messageId ? { messageId: entry.messageId } : {}),
       backendKind: entry.backendKind,
       toolName: entry.toolName,
-      capabilities: entry.capabilities,
+      operations: entry.operations,
       createdAt: entry.createdAt,
       summary: entry.summary,
       ...(entry.metadata !== undefined ? { metadata: entry.metadata } : {}),

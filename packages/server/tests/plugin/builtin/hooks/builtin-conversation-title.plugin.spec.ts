@@ -1,5 +1,6 @@
 import { AiManagementService } from '../../../../src/ai-management/ai-management.service';
 import { AiProviderSettingsService } from '../../../../src/ai-management/ai-provider-settings.service';
+import { ProjectWorktreeRootService } from '../../../../src/execution/project/project-worktree-root.service';
 import { BuiltinPluginRegistryService } from '../../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../../src/plugin/governance/plugin-governance.service';
@@ -191,7 +192,7 @@ function createRuntimeFixture() {
       startTask: jest.fn(),
     } as unknown as RuntimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
-    new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+    new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();
 

@@ -17,6 +17,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { AiModelExecutionService } from '../../../src/ai/ai-model-execution.service';
 import { AiProviderSettingsService } from '../../../src/ai-management/ai-provider-settings.service';
+import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
 import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin-persistence.service';
@@ -135,6 +137,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     const result = await runner.runSubagent('builtin.memory-context', {
@@ -261,6 +265,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
       toolRegistryService as never,
       runtimeKernelService as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     const hookedResult = await runner.runSubagent('builtin.memory-context', {
@@ -317,6 +323,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     await runner.runSubagent('builtin.memory-context', {
@@ -356,6 +364,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     await runner.runSubagent('builtin.memory-context', {
@@ -449,6 +459,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       } as never,
       subagentStore,
       sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     await runner.runSubagent('builtin.memory-context', {
@@ -567,6 +578,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       } as never,
       subagentStore,
       sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
@@ -632,6 +644,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
@@ -674,6 +688,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
       subagentStore,
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
@@ -769,6 +785,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
       toolRegistryService as never,
       runtimeKernelService as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     const result = await runner.runSubagent('builtin.memory-context', {
@@ -841,6 +859,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: jest.fn().mockReturnValue([]),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
     const result = await runner.runSubagent('builtin.memory-context', {
@@ -937,6 +957,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
       } as never,
       runtimeKernelService as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
     (runner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',
@@ -998,6 +1020,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
     originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: 'conversation-1',
@@ -1025,6 +1049,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
     (resumedRunner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',
@@ -1080,6 +1106,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
     await originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: 'conversation-1',
@@ -1113,6 +1141,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
     (resumedRunner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',
@@ -1179,6 +1209,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
     await originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
       conversationId: originalConversationId,
@@ -1225,6 +1257,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         listPlugins: () => pluginBootstrapService.listPlugins(),
       } as never,
       new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
     (resumedRunner as any).executeSubagent = async ({ request }: any) => ({
       finishReason: 'stop',

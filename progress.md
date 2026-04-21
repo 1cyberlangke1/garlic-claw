@@ -6,6 +6,57 @@
 
 ## 2026-04-21
 
+- 已开始推进 `G18`：
+  - 已重新读取 `TODO.md / task_plan.md / findings.md / progress.md`
+  - 已确认当前最先要收口的是 `RuntimeSessionEnvironment`，而不是继续先堆更多工具
+- 已继续推进 `G18-5`：
+  - shared `RuntimePermissionRequest` 已从 `capabilities` 切到 `operations`
+  - `RuntimeToolAccessRequest`、`RuntimeHostRuntimeToolService` 与 6 个 runtime 工具声明都已改用 `requiredOperations`
+  - 已新增 `runtime-operation-policy`，由 runtime owner 统一做 operation -> capability 展开
+  - 聊天审批面板、chat store 与相关 server/web 测试夹具已同步切换
+- 已继续推进 `G18-3 / G18-4` 的 owner 命名收口：
+  - `RuntimeWorkspace*` backend 类型已统一改成 `RuntimeFilesystem*`
+  - `RuntimeWorkspaceFileService` 已改名为 `RuntimeHostFilesystemBackendService`
+  - `RuntimeHostModule`、runtime 定向测试与 tool registry 装配都已改用新 owner 名称
+- 已继续推进 `G18-4`：
+  - `RuntimeFilesystemBackend` 已新增 `globPaths / grepText` contract
+  - `RuntimeHostFilesystemBackendService` 已收走 glob 匹配、include 过滤、regex 搜索与二进制文件跳过
+  - `GlobToolService / GrepToolService` 当前主要只保留参数校验、runtime access 声明与结果文本格式化
+- 已重新通过本轮验证：
+  - `packages/shared`: `npm run build`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-workspace-file.service.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `packages/web`: `node ../../node_modules/vitest/vitest.mjs run tests/features/chat/components/ChatRuntimePermissionPanel.spec.ts tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+- 已完成 `G18-2` 第一刀代码落地，但暂不标记完成：
+  - 新增 `RuntimeSessionEnvironmentService` 与正式类型
+  - `RuntimeJustBashService`、`RuntimeWorkspaceFileService`、`RuntimeHostConversationRecordService` 都已改为依赖新的 session environment owner
+  - `RuntimeBackendDescriptor` 已不再携带 `visibleRoot`
+  - `bash / read / glob / grep / write / edit` 已改为从 session environment 读取可见根语义
+- 已继续推进 `G18-3` 第一段：
+  - `RuntimeWorkspaceBackend` 已新增 `resolvePath / statPath / ensureDirectory / deletePath / movePath / copyPath / createSymlink / readSymlink`
+  - `RuntimeWorkspaceFileService` 已完成上述接口的首个 `host-workspace` 实现
+  - `read / glob` 已从旧 `readExistingPath` 切到 `resolvePath`
+  - 已新增 `runtime-session-environment.service.spec.ts` 与 `runtime-workspace-file.service.spec.ts`
+- 已继续把 `workspace backend` 旧 owner 名字收口成 `filesystem backend`：
+  - `runtime-filesystem-backend.*` 已替代原先的 `runtime-workspace-backend.*`
+  - 环境变量已切到 `GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND`
+  - `RuntimeToolAccessRequest.role` 已从 `workspace` 改成 `filesystem`
+- 已继续推进 `G18-4` 第一段：
+  - `ReadToolService / GlobToolService / GrepToolService / WriteToolService / EditToolService` 已不再自己抓 configured backend
+  - `RuntimeFilesystemBackendService` 已补统一 pass-through contract，工具层只消费稳定 service API
+- 已重新通过当前定向验证：
+  - `packages/server`: `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand tests/execution/file/runtime-workspace-file.service.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `packages/server`: `npm run build`
+
 - 已重新读取 `TODO.md / task_plan.md / findings.md / progress.md`，并把“runtime 工具本地大插件化”补进规划文件：
   - 新增 `R17-12`
   - 当前阶段先补 runtime host contract，再迁 builtin `runtime-tools`
@@ -1382,7 +1433,7 @@
   - 因此接 `lsp` 前还差一个更基础的 owner 判定：本地项目工具层是否应从 runtime workspace 工具层中独立出来
 - 已先补项目 worktree 根路径的统一 owner：
   - 新增 `packages/server/src/runtime/host/project-workspace-root.ts`
-  - `persona-store`、`mcp-config-store`、`skill-registry`、`runtime-host-subagent-type-registry` 已统一复用这层根路径判定
+  - `persona-store`、`mcp-config-store`、`skill-registry`、`project-subagent-type-registry` 已统一复用这层根路径判定
   - 已补并通过定向验证：
     - `packages/server`: `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand tests/runtime/host/project-workspace-root.spec.ts tests/runtime/host/runtime-host-subagent-type-registry.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/execution/mcp/mcp-config.service.spec.ts`
     - `packages/server`: `npm run build`
@@ -1396,9 +1447,9 @@
     - `packages/server`: `npm run build`
   - root: `npm run smoke:server`
 - 已补 project worktree 根路径的显式 override：
-  - `project-workspace-root` 现支持 `GARLIC_CLAW_PROJECT_WORKSPACE_PATH`
+  - `project-worktree-root` 现支持 `GARLIC_CLAW_PROJECT_WORKTREE_PATH`
   - 默认行为不变；只有显式配置时才切到指定项目目录
-  - `project-workspace-root.spec.ts` 已新增环境变量优先级回归
+  - `project-worktree-root.service.spec.ts` 已新增环境变量优先级回归
   - 已重新通过定向验证：
     - `packages/server`: `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand tests/execution/project/project-worktree-file.service.spec.ts tests/runtime/host/project-workspace-root.spec.ts tests/runtime/host/runtime-host-subagent-type-registry.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/execution/mcp/mcp-config.service.spec.ts`
     - `packages/server`: `npm run build`
@@ -1413,3 +1464,205 @@
   - root: `npm run lint`
   - root: `npm run smoke:server`
   - root: `npm run smoke:web-ui`
+- 已继续推进 `G18-4` 的 `read` 收口：
+  - `RuntimeFilesystemBackend` 已新增 `readPathRange`
+  - `RuntimeHostFilesystemBackendService` 已收走 `read` 的目录/文件分支、offset 越界诊断、行切片与行截断
+  - `ReadToolService` 当前只保留参数校验、stable contract 调用与最终结果文本包装
+  - `write / edit` 这轮复核后暂保持现状，当前已基本只剩参数校验和结果包装
+- 已补并通过这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `npm run build`
+- 已继续扩大这轮验收范围：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- 已继续收掉一个当前 owner 命名残留：
+  - 默认 filesystem backend kind 已从 `host-workspace` 改成 `host-filesystem`
+  - `RuntimeHostFilesystemBackendService` 的 descriptor、相关 routing 测试和 mock backend 命名已同步改完
+  - 已重新通过：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts`
+    - `packages/server`: `npm run build`
+- 已继续推进 `G18-2 / G18-3 / G18-4` 的 contract 收口：
+  - `RuntimeCommandResult` 与 shared `PluginRuntimeCommandResult` 已移除不再使用的 `workspaceRoot`
+  - `RuntimeSessionEnvironment.workspaceRoot` 已收口为 `sessionRoot`
+  - `RuntimeFilesystemResolvedPath` 已移除 `workspaceRoot`
+  - `runtime-host-filesystem-backend` 与 `runtime-just-bash` 里的内部 `workspace` 路径辅助命名已同步收口
+  - 当前生产代码中已不存在 `host-workspace / RuntimeWorkspace / workspace backend / workspaceRoot` 这类旧 owner 残留
+- 已重新通过这轮验证：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已开始推进 `G18-6` 第一刀：
+  - 新增 `ProjectWorktreeRootService`，把 project root 判定从自由函数收口成正式 owner
+  - `ProjectWorktreeFileService / SkillRegistryService / McpConfigStoreService / ProjectSubagentTypeRegistryService / PersonaStoreService` 已统一改为依赖这个 owner
+  - 已删除旧的 `runtime/host/project-workspace-root.ts`
+  - 已新增 `ProjectWorktreeOverlayModule`，并由 `RuntimeHostModule` 通过 import/export 接入，不再直接把 project/worktree provider 混在 runtime host provider 列表里
+- 已重新通过这轮验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/project/project-worktree-root.service.spec.ts tests/execution/project/project-subagent-type-registry.service.spec.ts tests/execution/project/project-worktree-file.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/execution/mcp/mcp-config.service.spec.ts tests/persona/persona.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已继续推进 `G18-6` 第二刀：
+  - `ProjectWorktreeOverlayModule` 现在正式拥有 `SkillRegistryService / McpConfigStoreService / PersonaStoreService / ProjectSubagentTypeRegistryService`
+  - `RuntimeHostModule` 已移除这些 project/worktree 相关 provider 的直接注册，只保留对 overlay module 的 import
+  - `AppModule` 已直接导入 `ProjectWorktreeOverlayModule`，`RuntimeHostModule` 不再把 overlay 当成自己的公开出口
+- 已重新通过这轮验证：
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已继续推进 `G18-6` 第三刀：
+  - `ProjectWorktreeFileService / SkillRegistryService / McpConfigStoreService / PersonaStoreService / ProjectSubagentTypeRegistryService` 已移除默认实例化，不再在 service 内部偷偷创建 `ProjectWorktreeRootService`
+  - `RuntimeHostSubagentRunnerService` 已改成显式注入 `RuntimeHostSubagentSessionStoreService / ProjectSubagentTypeRegistryService`
+  - 相关 server 测试构造已统一显式传 owner，避免手动 `new` 链路继续掩盖真实 DI 装配问题
+- 已继续收掉一处 overlay 命名残留：
+  - `project-workspace-root.spec.ts` 已改名为 `project-worktree-root.service.spec.ts`
+  - `GARLIC_CLAW_PROJECT_WORKSPACE_PATH` 已改成 `GARLIC_CLAW_PROJECT_WORKTREE_PATH`
+- 已继续推进 `G18-6` 第四刀：
+  - `RuntimeHostSubagentTypeRegistryService` 已迁到 overlay owner `ProjectSubagentTypeRegistryService`
+  - `RuntimeHostSubagentRunnerService` 当前只消费 project overlay 侧的 subagent type registry，不再依赖 runtime/host 目录里的 project owner 命名
+  - 对应测试已迁到 `tests/execution/project/project-subagent-type-registry.service.spec.ts`
+- 已重新通过这轮验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/project/project-worktree-file.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/execution/skill/skill-tool.service.spec.ts tests/execution/mcp/mcp-config.service.spec.ts tests/execution/mcp/mcp.service.spec.ts tests/persona/persona.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/plugin/builtin/hooks/builtin-conversation-title.plugin.spec.ts tests/plugin/builtin/hooks/builtin-memory-context.plugin.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/project/project-worktree-root.service.spec.ts tests/execution/project/project-subagent-type-registry.service.spec.ts tests/execution/project/project-worktree-file.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/execution/mcp/mcp-config.service.spec.ts tests/persona/persona.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/project/project-subagent-type-registry.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+- 已完成 `G18-6` 独立 judge 复核，结论为 PASS：
+  - judge 确认 overlay provider 现已真正归属 `ProjectWorktreeOverlayModule`
+  - judge 确认 `ProjectSubagentTypeRegistryService` 迁移是真迁移，不是仅换名
+  - judge 确认当前残余风险不阻塞 `G18-6` 完成判定
+- 已开始推进 `G18-7`：
+  - 已重新读取 `TODO.md / task_plan.md / findings.md / progress.md`
+  - 已复核 `RuntimeCommandService / RuntimeFilesystemBackendService / RuntimeToolBackendService` 的 backend 注册与路由 owner
+  - 已确认第二 backend 证据当前主要落在定向测试链，不需要再补新的兼容壳
+- 已重新通过 `G18-7` 第一轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：3 suites / 33 tests 全部通过
+- 已确认这轮第二 backend 证据链：
+  - `tool-registry.service.spec.ts` 已覆盖第二 shell backend `mock-shell`，验证 `bash` 工具仍走原有 contract，但实际执行切到第二 backend
+  - `tool-registry.service.spec.ts` 已覆盖第二 filesystem backend `mock-filesystem`，验证 `read / glob / grep / write / edit` 都走同一第二 backend
+  - `runtime-command.service.spec.ts` 与 `runtime-tool-backend.service.spec.ts` 已证明默认 backend、显式 backend 与未知 backend 拒绝语义成立
+- 已完成 `G18-7` 的 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：3 suites / 33 tests 全部通过
+    - `smoke:server`：`173 checks`
+    - `smoke:web-ui`：通过
+- 已完成 `G18-7` 独立 judge，结论为 PASS：
+  - judge 确认第二 shell/filesystem backend 不是只换名字或只包测试壳
+  - judge 确认 `bash` 与 `read / glob / grep / write / edit` 的第二 backend 证据已经穿过 runtime owner 与工具层
+  - judge 同时提示 residual risk：当前第二 backend 仍是测试实现，不是生产级 backend；这不阻塞 `G18-7` 完成判定
+- 已继续复核 `G18-2 ~ G18-5` 是否可以收口为已完成：
+  - 已检查 `RuntimeSessionEnvironmentService`、`RuntimeFilesystemBackendService`、`RuntimeToolPermissionService`、6 个 runtime 工具与 chat 前端审批链
+  - 当前判断是：session environment owner、filesystem contract、工具层稳定 contract 和 operation 语义都已成形，剩余更像 TODO 状态滞后，而不是代码缺口
+- 已重新通过 `G18-2 ~ G18-5` 的 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `packages/web`: `node ../../node_modules/vitest/vitest.mjs run tests/features/chat/components/ChatRuntimePermissionPanel.spec.ts tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - `packages/server`: `npm run build`
+  - `packages/web`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：11 suites / 88 tests 全部通过
+    - web 定向 vitest：3 files / 20 tests 全部通过
+    - `smoke:server`：`173 checks`
+    - `smoke:web-ui`：通过
+- 已完成 `G18-2 ~ G18-5` 独立 judge，结论为 PASS：
+  - judge 确认 `RuntimeSessionEnvironmentService` 已成为正式 owner，不是换名留壳
+  - judge 确认 filesystem backend contract 已覆盖本阶段要求的稳定文件语义
+  - judge 确认 6 个 runtime 工具当前已主要只剩参数校验、stable contract 调用与结果包装
+  - judge 确认前后端 runtime 权限公开面已统一切到 operations
+- 已开始推进 `G19-1 bash 输出治理与后处理 owner`：
+  - 新增 `packages/server/src/execution/runtime/runtime-command-output.ts`
+  - `BashToolService.toModelOutput()` 与 `packages/server/src/plugin/builtin/tools/builtin-runtime-tools.plugin.ts` 当前都改为复用 `renderRuntimeCommandTextOutput()`
+  - 当前已为 `stdout/stderr` 增加尾部截断：每个 stream 最多保留最后 `200` 行、`16 KiB`
+- 已通过 `G19-1` 当前定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-command-output.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：2 suites / 30 tests 全部通过
+- 已补一次浏览器 smoke 稳定性修正：
+  - `packages/web/tests/smoke/browser-smoke.mjs` 的上下文长度输入不再只写值一次后等待
+  - 现在会在等待按钮启用期间反复用原生 setter 写入 `type="number"` 输入并派发 `input/change`
+  - 这样即使组件中途重渲染，也不会把“保存上下文”按钮重新打回 disabled
+- 已重新通过本轮冒烟：
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `smoke:server`：`173 checks`
+    - `smoke:web-ui`：通过
+- 已继续收口 `G19-1` 的结果契约与类型稳定性：
+  - shared `PluginRuntimeCommandResult` 已正式补 `stdoutStats / stderrStats`
+  - `RuntimeCommandResult` 已拆成 `RuntimeCommandBackendResult + stats`，由 `RuntimeCommandService` 统一补统计信息
+  - `runtime-command-output.ts` 已改成使用本地稳定渲染输入接口，移除跨包联合 `Pick<>`，`packages/server` build 不再被 `stdoutStats / stderrStats` 推导卡住
+- 已重新通过这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-command-output.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：3 suites / 32 tests 全部通过
+    - `smoke:server`：`173 checks`
+    - `smoke:web-ui`：通过
+- 已继续把 `G19-1` 接到插件配置 UI：
+  - `builtin.runtime-tools` manifest 已新增 `config schema`
+  - 当前 bash 输出治理配置由插件页直接渲染，不额外新建 runtime 专用页面
+  - `bashOutput.maxLines / maxBytes / showTruncationDetails` 已接入 `context.host.getConfig()` 并影响实际工具输出
+  - 同时补上了 `config:read` 权限，避免插件读取自身配置时被治理链拒绝
+- 已重新通过这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-command-output.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：3 suites / 38 tests 全部通过
+    - web 定向 vitest：1 file / 9 tests 全部通过
+    - `smoke:server`：`173 checks`
+    - `smoke:web-ui`：通过
+- 已继续复核这轮 fresh 证据，并修掉两个 smoke 级真实阻塞：
+  - `packages/server/scripts/http-smoke.mjs` 里 `plugins.runtime-tools.config.put.compact` 原先写在 `chat.messages.bash-config-loop` 之后，导致 HTTP smoke 误把“验证顺序写反”看成“配置链失效”；当前已提前到 bash loop 之前，同时移除了临时 `DEBUG_BASH_TOOL_CONTENT_*` 输出
+  - `packages/web/tests/smoke/browser-smoke.mjs` 原先把 `Runtime Tools` 验证绑在侧栏当前页、隐藏系统插件开关和折叠面板默认状态上；当前已收口为：
+    - 直接路由到 `?plugin=builtin.runtime-tools`
+    - 对系统本地插件开关按可见 `label` 操作
+    - 上下文长度保存把“置脏 + 点击”放回同一条重试链
+    - 显式展开插件配置里的折叠项后再校验 runtime tools schema
+- 已重新通过这轮 fresh 验证：
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run lint`
+  - 结果：
+    - `smoke:server`：`178 checks`
+    - `smoke:web-ui`：通过
+- 已完成 `G20-1` 独立 judge，结论为 PASS：
+  - judge 确认当前 runtime 文件工具主链已经真实走通 `builtin.runtime-tools -> host facade -> runtime owner -> backend`
+  - judge 确认本轮 smoke 修复是在修正真实验收缺口，不是在测试里掩盖问题
+  - judge 确认当前 worktree 可以作为本阶段提交点
+  - judge 同时提示 residual risk：
+    - `RuntimeFilesystemBackend` contract 仍带少量工具语义
+    - 浏览器 smoke 现在偏向详情页直达验证，侧栏自然发现覆盖更窄
+- 已冻结本次提交点的 fresh 证据：
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - root: `npm run lint`
+  - 结果：
+    - `smoke:server`：`178 checks`
+    - `smoke:web-ui`：通过
+    - `lint`：通过
+- 已同步阶段状态：
+  - `task_plan.md` 中 `G20-1` 改为已完成
+  - `task_plan.md` 中 `G20-2` 改为进行中
+  - 当前下一步是提交这一阶段，然后进入 OpenCode 差异矩阵与文件工具成熟度增强

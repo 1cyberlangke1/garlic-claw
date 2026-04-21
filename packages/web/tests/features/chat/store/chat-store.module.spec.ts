@@ -849,7 +849,7 @@ describe('createChatStoreModule', () => {
         conversationId: 'conversation-1',
         backendKind: 'just-bash',
         toolName: 'bash',
-        capabilities: ['shellExecution', 'networkAccess'],
+        operations: ['command.execute', 'network.access'],
         createdAt: '2026-04-20T09:00:00.000Z',
         summary: '执行 curl 请求',
         metadata: {
@@ -884,7 +884,7 @@ describe('createChatStoreModule', () => {
         conversationId: 'conversation-1',
         backendKind: 'just-bash',
         toolName: 'bash',
-        capabilities: ['shellExecution'],
+        operations: ['command.execute'],
         createdAt: '2026-04-20T09:00:00.000Z',
         summary: '执行 pwd',
         resolving: false,

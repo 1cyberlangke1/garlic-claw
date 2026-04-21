@@ -12,7 +12,7 @@ import type {
 } from '@garlic-claw/shared';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
-import { RuntimeWorkspaceService } from '../../execution/runtime/runtime-workspace.service';
+import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
@@ -29,7 +29,7 @@ export class RuntimeHostConversationRecordService {
 
   constructor(
     @Optional() private readonly runtimeHostPluginDispatchService?: RuntimeHostPluginDispatchService,
-    @Optional() private readonly runtimeWorkspaceService?: RuntimeWorkspaceService,
+    @Optional() private readonly runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
   ) {
     const loaded = this.loadConversations();
     this.conversations = loaded.records;
@@ -48,7 +48,7 @@ export class RuntimeHostConversationRecordService {
     this.requireConversation(conversationId, userId);
     this.conversations.delete(conversationId);
     this.conversationTodos.delete(conversationId);
-    this.runtimeWorkspaceService?.deleteWorkspace(conversationId);
+    this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(conversationId);
     this.saveConversations();
     return { message: 'Conversation deleted' };
   }

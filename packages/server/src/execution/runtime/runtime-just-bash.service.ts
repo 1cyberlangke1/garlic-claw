@@ -1,15 +1,22 @@
 import { Bash } from 'just-bash';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { RuntimeBackend, RuntimeBackendDescriptor, RuntimeCommandRequest, RuntimeCommandResult } from './runtime-command.types';
-import { RuntimeWorkspaceService } from './runtime-workspace.service';
+import type {
+  RuntimeBackend,
+  RuntimeBackendDescriptor,
+  RuntimeCommandBackendResult,
+  RuntimeCommandRequest,
+} from './runtime-command.types';
 import { RuntimeMountedWorkspaceFileSystem } from './runtime-mounted-workspace-file-system';
 import { readRuntimeJustBashOptions, readRuntimeJustBashTimeout } from './runtime-just-bash-options';
+import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
 
 const RUNTIME_BASH_TIMEOUT_CODE = 'runtime-bash-timeout';
 
 @Injectable()
 export class RuntimeJustBashService implements RuntimeBackend {
-  constructor(private readonly runtimeWorkspaceService: RuntimeWorkspaceService) {}
+  constructor(
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+  ) {}
 
   getDescriptor(): RuntimeBackendDescriptor {
     return readRuntimeJustBashOptions().descriptor;
@@ -19,20 +26,24 @@ export class RuntimeJustBashService implements RuntimeBackend {
     return 'just-bash';
   }
 
-  async executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandResult> {
+  async executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandBackendResult> {
     const options = readRuntimeJustBashOptions();
-    const workspaceRoot = await this.runtimeWorkspaceService.resolveWorkspaceRoot(input.sessionId);
-    const visibleRoot = this.runtimeWorkspaceService.getVisibleRoot();
-    const filesystem = new RuntimeMountedWorkspaceFileSystem(workspaceRoot, visibleRoot);
+    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
+      input.sessionId,
+    );
+    const filesystem = new RuntimeMountedWorkspaceFileSystem(
+      sessionEnvironment.sessionRoot,
+      sessionEnvironment.visibleRoot,
+    );
     const bash = new Bash({
-      cwd: visibleRoot,
+      cwd: sessionEnvironment.visibleRoot,
       fs: filesystem,
       network: {
         dangerouslyAllowFullInternetAccess: options.descriptor.capabilities.networkAccess,
       },
     });
 
-    const cwd = resolveRuntimeWorkingDirectory(visibleRoot, input.workdir);
+    const cwd = resolveRuntimeWorkingDirectory(sessionEnvironment.visibleRoot, input.workdir);
     const timeoutMs = readRuntimeJustBashTimeout(input.timeout);
     const controller = new AbortController();
     let timeoutHandle: NodeJS.Timeout | null = null;
@@ -76,7 +87,6 @@ export class RuntimeJustBashService implements RuntimeBackend {
       sessionId: input.sessionId,
       stderr: result.stderr,
       stdout: result.stdout,
-      workspaceRoot,
     };
   }
 }
@@ -126,15 +136,15 @@ async function executeRuntimeBashCommandWithTimeout(
   return Promise.race([executionPromise, timeoutPromise]);
 }
 
-function resolveRuntimeWorkingDirectory(workspaceRoot: string, inputWorkdir?: string): string {
+function resolveRuntimeWorkingDirectory(visibleRoot: string, inputWorkdir?: string): string {
   if (!inputWorkdir || !inputWorkdir.trim()) {
-    return workspaceRoot;
+    return visibleRoot;
   }
   const normalized = inputWorkdir.trim().startsWith('/')
     ? normalizePosixPath(inputWorkdir.trim())
-    : normalizePosixPath(`${workspaceRoot}/${inputWorkdir.trim()}`);
-  if (workspaceRoot !== '/' && normalized !== workspaceRoot && !normalized.startsWith(`${workspaceRoot}/`)) {
-    throw new BadRequestException(`bash.workdir 必须位于 ${workspaceRoot} 内`);
+    : normalizePosixPath(`${visibleRoot}/${inputWorkdir.trim()}`);
+  if (visibleRoot !== '/' && normalized !== visibleRoot && !normalized.startsWith(`${visibleRoot}/`)) {
+    throw new BadRequestException(`bash.workdir 必须位于 ${visibleRoot} 内`);
   }
   return normalized;
 }

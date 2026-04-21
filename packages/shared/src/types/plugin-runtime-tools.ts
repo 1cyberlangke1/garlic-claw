@@ -7,14 +7,20 @@ export interface PluginRuntimeCommandParams {
   workdir?: string;
 }
 
+export interface PluginRuntimeCommandStreamStats {
+  bytes: number;
+  lines: number;
+}
+
 export interface PluginRuntimeCommandResult {
   backendKind: RuntimeBackendKind;
   cwd: string;
   exitCode: number;
   sessionId: string;
   stderr: string;
+  stderrStats: PluginRuntimeCommandStreamStats;
   stdout: string;
-  workspaceRoot: string;
+  stdoutStats: PluginRuntimeCommandStreamStats;
 }
 
 export interface PluginRuntimeReadParams {

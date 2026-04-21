@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common'
 import YAML from 'yaml'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
-import { resolveProjectWorkspaceRoot } from '../runtime/host/project-workspace-root'
+import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service'
 
 export interface StoredPersonaRecord extends PluginPersonaDetail {}
 
@@ -32,8 +32,13 @@ const AVATAR_IMAGE_EXTENSIONS = new Set([
 
 @Injectable()
 export class PersonaStoreService {
-  private readonly storageRoot = resolvePersonaStorageRoot()
-  private personas = loadPersonaStore(this.storageRoot)
+  private readonly storageRoot: string
+  private personas: StoredPersonaRecord[]
+
+  constructor(private readonly projectWorktreeRootService: ProjectWorktreeRootService) {
+    this.storageRoot = this.resolvePersonaStorageRoot()
+    this.personas = loadPersonaStore(this.storageRoot)
+  }
 
   list(): StoredPersonaRecord[] {
     return this.personas.map((persona) => structuredClone(persona))
@@ -55,20 +60,20 @@ export class PersonaStoreService {
     this.personas = nextPersonas
     return this.list()
   }
-}
 
-export function resolvePersonaStorageRoot(): string {
-  if (process.env.GARLIC_CLAW_PERSONAS_PATH) {
-    return path.resolve(process.env.GARLIC_CLAW_PERSONAS_PATH)
+  private resolvePersonaStorageRoot(): string {
+    if (process.env.GARLIC_CLAW_PERSONAS_PATH) {
+      return path.resolve(process.env.GARLIC_CLAW_PERSONAS_PATH)
+    }
+    if (process.env.JEST_WORKER_ID) {
+      return path.join(
+        process.cwd(),
+        'tmp',
+        `personas.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      )
+    }
+    return path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'persona')
   }
-  if (process.env.JEST_WORKER_ID) {
-    return path.join(
-      process.cwd(),
-      'tmp',
-      `personas.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    )
-  }
-  return path.join(resolveProjectWorkspaceRoot(process.cwd()), 'persona')
 }
 
 function loadPersonaStore(storageRoot: string): StoredPersonaRecord[] {

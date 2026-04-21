@@ -1,6 +1,13 @@
 import type { RuntimeBackendKind } from '@garlic-claw/shared';
 import { Inject, Injectable } from '@nestjs/common';
-import type { RuntimeBackend, RuntimeBackendDescriptor, RuntimeCommandRequest, RuntimeCommandResult } from './runtime-command.types';
+import type {
+  RuntimeBackend,
+  RuntimeCommandBackendResult,
+  RuntimeBackendDescriptor,
+  RuntimeCommandRequest,
+  RuntimeCommandResult,
+  RuntimeCommandStreamStats,
+} from './runtime-command.types';
 import { RUNTIME_BACKENDS, type RuntimeBackendList } from './runtime-backend.constants';
 
 @Injectable()
@@ -23,7 +30,7 @@ export class RuntimeCommandService {
 
   async executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandResult> {
     const backend = this.requireBackend(input.backendKind);
-    return backend.executeCommand(input);
+    return describeRuntimeCommandResult(await backend.executeCommand(input));
   }
 
   getBackendDescriptor(backendKind?: RuntimeBackendKind): RuntimeBackendDescriptor {
@@ -54,4 +61,19 @@ export class RuntimeCommandService {
     }
     return backend;
   }
+}
+
+function describeRuntimeCommandResult(result: RuntimeCommandBackendResult): RuntimeCommandResult {
+  return {
+    ...result,
+    stderrStats: readRuntimeCommandStreamStats(result.stderr),
+    stdoutStats: readRuntimeCommandStreamStats(result.stdout),
+  };
+}
+
+function readRuntimeCommandStreamStats(text: string): RuntimeCommandStreamStats {
+  return {
+    bytes: Buffer.byteLength(text, 'utf8'),
+    lines: text.length === 0 ? 0 : text.replace(/\r\n/g, '\n').split('\n').length,
+  };
 }

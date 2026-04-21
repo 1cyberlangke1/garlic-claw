@@ -1,9 +1,10 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { RuntimeHostSubagentTypeRegistryService } from '../../../src/runtime/host/runtime-host-subagent-type-registry.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
+import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
 
-describe('RuntimeHostSubagentTypeRegistryService', () => {
+describe('ProjectSubagentTypeRegistryService', () => {
   const envKey = 'GARLIC_CLAW_SUBAGENT_PATH';
   let storageRoot: string;
 
@@ -18,7 +19,7 @@ describe('RuntimeHostSubagentTypeRegistryService', () => {
   });
 
   it('loads builtin defaults from independent yaml files and picks up user-defined types', () => {
-    const service = new RuntimeHostSubagentTypeRegistryService();
+    const service = new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService());
 
     expect(service.listTypes()).toEqual([
       {

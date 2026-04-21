@@ -298,6 +298,13 @@ describe('PluginBootstrapService', () => {
         expect.objectContaining({ pluginId: 'builtin.memory-context' }),
         expect.objectContaining({
           manifest: expect.objectContaining({
+            config: expect.objectContaining({
+              items: expect.objectContaining({
+                bashOutput: expect.objectContaining({
+                  type: 'object',
+                }),
+              }),
+            }),
             tools: expect.arrayContaining([
               expect.objectContaining({ name: 'bash' }),
               expect.objectContaining({ name: 'read' }),

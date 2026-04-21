@@ -356,4 +356,64 @@ describe('PluginConfigForm', () => {
 
     expect(wrapper.text()).toContain('JSON 数组格式无效')
   })
+
+  it('renders builtin runtime-tools bash output config schema for the host plugin UI', async () => {
+    const wrapper = mount(PluginConfigForm, {
+      props: {
+        saving: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              bashOutput: {
+                type: 'object',
+                description: 'bash 输出治理',
+                collapsed: true,
+                items: {
+                  maxLines: {
+                    type: 'int',
+                    defaultValue: 200,
+                  },
+                  maxBytes: {
+                    type: 'int',
+                    defaultValue: 16384,
+                  },
+                  showTruncationDetails: {
+                    type: 'bool',
+                    defaultValue: true,
+                  },
+                },
+              },
+            },
+          },
+          values: {
+            bashOutput: {
+              maxLines: 80,
+              maxBytes: 8192,
+              showTruncationDetails: false,
+            },
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('展开高级配置')
+
+    await wrapper.get('button.collapsed-toggle').trigger('click')
+
+    expect(wrapper.text()).toContain('bash 输出治理')
+    await wrapper.get('button').trigger('click')
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          bashOutput: {
+            maxLines: 80,
+            maxBytes: 8192,
+            showTruncationDetails: false,
+          },
+        },
+      ],
+    ])
+  })
 })

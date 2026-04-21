@@ -1,11 +1,49 @@
-import type { PluginManifest, PluginRuntimeCommandResult } from '@garlic-claw/shared';
+import type {
+  JsonValue,
+  PluginConfigSchema,
+  PluginManifest,
+  PluginRuntimeCommandResult,
+} from '@garlic-claw/shared';
 import { BASH_TOOL_PARAMETERS } from '../../../execution/bash/bash-tool.service';
 import { EDIT_TOOL_PARAMETERS } from '../../../execution/edit/edit-tool.service';
 import { GLOB_TOOL_PARAMETERS } from '../../../execution/glob/glob-tool.service';
 import { GREP_TOOL_PARAMETERS } from '../../../execution/grep/grep-tool.service';
 import { READ_TOOL_PARAMETERS } from '../../../execution/read/read-tool.service';
+import {
+  renderRuntimeCommandTextOutput,
+  type RuntimeCommandTextOutputOptions,
+} from '../../../execution/runtime/runtime-command-output';
 import { WRITE_TOOL_PARAMETERS } from '../../../execution/write/write-tool.service';
 import type { BuiltinPluginDefinition } from '../builtin-plugin-definition';
+
+const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
+  type: 'object',
+  items: {
+    bashOutput: {
+      type: 'object',
+      description: 'bash 输出治理',
+      hint: '控制写回模型上下文的 bash 文本结果截断策略。',
+      collapsed: true,
+      items: {
+        maxLines: {
+          type: 'int',
+          description: '单个 stdout/stderr 最多保留的尾部行数。设为 0 时不按行截断。',
+          defaultValue: 200,
+        },
+        maxBytes: {
+          type: 'int',
+          description: '单个 stdout/stderr 最多保留的尾部字节数。设为 0 时不按字节截断。',
+          defaultValue: 16 * 1024,
+        },
+        showTruncationDetails: {
+          type: 'bool',
+          description: '截断时是否显示总行数、总字节数与保留范围说明。',
+          defaultValue: true,
+        },
+      },
+    },
+  },
+};
 
 const RUNTIME_TOOLS_MANIFEST: PluginManifest = {
   id: 'builtin.runtime-tools',
@@ -13,7 +51,8 @@ const RUNTIME_TOOLS_MANIFEST: PluginManifest = {
   version: '1.0.0',
   runtime: 'local',
   description: '暴露当前 runtime backend 的命令与文件系统工具。',
-  permissions: ['runtime:command', 'runtime:read', 'runtime:write'],
+  config: RUNTIME_TOOLS_CONFIG_SCHEMA,
+  permissions: ['config:read', 'runtime:command', 'runtime:read', 'runtime:write'],
   tools: [
     {
       name: 'bash',
@@ -75,12 +114,18 @@ export const BUILTIN_RUNTIME_TOOLS_PLUGIN: BuiltinPluginDefinition = {
   },
   manifest: RUNTIME_TOOLS_MANIFEST,
   tools: {
-    bash: async (params, context) => renderToolTextOutput(formatBashOutput(await context.host.executeRuntimeCommand({
-      command: String(params.command ?? ''),
-      description: String(params.description ?? ''),
-      ...(typeof params.timeout === 'number' ? { timeout: params.timeout } : {}),
-      ...(typeof params.workdir === 'string' ? { workdir: params.workdir } : {}),
-    }))),
+    bash: async (params, context) => {
+      const [result, config] = await Promise.all([
+        context.host.executeRuntimeCommand({
+          command: String(params.command ?? ''),
+          description: String(params.description ?? ''),
+          ...(typeof params.timeout === 'number' ? { timeout: params.timeout } : {}),
+          ...(typeof params.workdir === 'string' ? { workdir: params.workdir } : {}),
+        }),
+        context.host.getConfig(),
+      ]);
+      return renderToolTextOutput(formatBashOutput(result, readRuntimeToolsBashOutputOptions(config)));
+    },
     read: async (params, context) => renderToolTextOutput((await context.host.readRuntimePath({
       filePath: String(params.filePath ?? ''),
       ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
@@ -115,17 +160,26 @@ function renderToolTextOutput(value: string) {
   } as const;
 }
 
-function formatBashOutput(result: PluginRuntimeCommandResult): string {
-  return [
-    '<bash_result>',
-    `cwd: ${result.cwd}`,
-    `exit_code: ${result.exitCode}`,
-    '<stdout>',
-    result.stdout || '(empty)',
-    '</stdout>',
-    '<stderr>',
-    result.stderr || '(empty)',
-    '</stderr>',
-    '</bash_result>',
-  ].join('\n');
+function formatBashOutput(
+  result: PluginRuntimeCommandResult,
+  options?: RuntimeCommandTextOutputOptions,
+): string {
+  return renderRuntimeCommandTextOutput(result, options);
+}
+
+function readRuntimeToolsBashOutputOptions(config: JsonValue): RuntimeCommandTextOutputOptions {
+  if (!isRecord(config) || !isRecord(config.bashOutput)) {
+    return {};
+  }
+  return {
+    ...(typeof config.bashOutput.maxLines === 'number' ? { maxLines: config.bashOutput.maxLines } : {}),
+    ...(typeof config.bashOutput.maxBytes === 'number' ? { maxBytes: config.bashOutput.maxBytes } : {}),
+    ...(typeof config.bashOutput.showTruncationDetails === 'boolean'
+      ? { showTruncationDetails: config.bashOutput.showTruncationDetails }
+      : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

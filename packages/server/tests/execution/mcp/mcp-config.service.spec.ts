@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
 
 describe('McpConfigStoreService', () => {
@@ -23,7 +24,7 @@ describe('McpConfigStoreService', () => {
 
   it('returns an empty snapshot when the MCP config directory does not exist', async () => {
     process.env[envKey] = tempConfigRoot;
-    const service = new McpConfigStoreService();
+    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
     expect(service.getSnapshot()).toEqual({
       configPath: tempConfigRoot,
@@ -50,7 +51,7 @@ describe('McpConfigStoreService', () => {
     process.chdir(nestedServerRoot);
 
     try {
-      const service = new McpConfigStoreService();
+      const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
       expect(service.getSnapshot()).toEqual({
         configPath: 'mcp/servers',
@@ -84,7 +85,7 @@ describe('McpConfigStoreService', () => {
       args: ['-y', '@mariox/weather-mcp-server'],
     }, null, 2));
 
-    const service = new McpConfigStoreService();
+    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
     expect(service.saveServer({
       name: 'tavily',
@@ -168,7 +169,7 @@ describe('McpConfigStoreService', () => {
       args: ['-y', 'tavily-mcp@latest'],
     }, null, 2));
 
-    const service = new McpConfigStoreService();
+    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
     expect(service.deleteServer('weather')).toEqual({
       deleted: true,

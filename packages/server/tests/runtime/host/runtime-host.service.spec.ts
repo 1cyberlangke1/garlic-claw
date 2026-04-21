@@ -9,16 +9,18 @@ import { AutomationExecutionService } from '../../../src/execution/automation/au
 import { AutomationService } from '../../../src/execution/automation/automation.service';
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
-import { RuntimeWorkspaceFileService } from '../../../src/execution/file/runtime-workspace-file.service';
+import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
 import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
 import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
+import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
 import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
+import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
 import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
-import { RuntimeWorkspaceBackendService } from '../../../src/execution/runtime/runtime-workspace-backend.service';
-import { RuntimeWorkspaceService } from '../../../src/execution/runtime/runtime-workspace.service';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { WriteToolService } from '../../../src/execution/write/write-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
@@ -35,6 +37,7 @@ import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runt
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
 import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
+import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
 import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
@@ -110,7 +113,7 @@ describe('RuntimeHostService', () => {
       {} as never,
       {} as never,
       new RuntimeHostUserContextService(),
-      new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+      new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
     );
 
     (builtinPluginRegistryService as unknown as {
@@ -1066,6 +1069,8 @@ function createFixture(input?: {
       invokeHook: jest.fn(),
     } as never,
     new RuntimeHostSubagentStoreService(),
+    new RuntimeHostSubagentSessionStoreService(),
+    new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
   );
   (runtimeHostSubagentRunnerService as any).executeSubagent = async ({ request }: any) => ({
     finishReason: 'stop',
@@ -1131,19 +1136,27 @@ function createFixture(input?: {
       const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-host-'));
       process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
       runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
-      const runtimeWorkspaceService = new RuntimeWorkspaceService();
-      const runtimeWorkspaceFileService = new RuntimeWorkspaceFileService(runtimeWorkspaceService);
-      const runtimeCommandService = new RuntimeCommandService([new RuntimeJustBashService(runtimeWorkspaceService)]);
-      const runtimeWorkspaceBackendService = new RuntimeWorkspaceBackendService([runtimeWorkspaceFileService]);
-      const runtimeToolBackendService = new RuntimeToolBackendService(runtimeCommandService, runtimeWorkspaceBackendService);
+      const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+      const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+        runtimeSessionEnvironmentService,
+      );
+      const runtimeCommandService = new RuntimeCommandService([
+        new RuntimeJustBashService(runtimeSessionEnvironmentService),
+      ]);
+      const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService([runtimeHostFilesystemBackendService]);
+      const runtimeToolBackendService = new RuntimeToolBackendService(runtimeCommandService, runtimeFilesystemBackendService);
       const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
       const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
-        new BashToolService(runtimeCommandService, runtimeToolBackendService),
-        new ReadToolService(runtimeWorkspaceBackendService),
-        new GlobToolService(runtimeWorkspaceBackendService),
-        new GrepToolService(runtimeWorkspaceBackendService),
-        new WriteToolService(runtimeWorkspaceBackendService),
-        new EditToolService(runtimeWorkspaceBackendService),
+        new BashToolService(
+          runtimeCommandService,
+          runtimeSessionEnvironmentService,
+          runtimeToolBackendService,
+        ),
+        new ReadToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
+        new GlobToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
+        new GrepToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
+        new WriteToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
+        new EditToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
         runtimeToolBackendService,
         runtimeToolPermissionService,
       );
@@ -1161,7 +1174,7 @@ function createFixture(input?: {
         runtimeHostRuntimeToolService,
         runtimeHostSubagentRunnerService,
         new RuntimeHostUserContextService(),
-        new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+        new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
       );
       service.onModuleInit();
       return service;

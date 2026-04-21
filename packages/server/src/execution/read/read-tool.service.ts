@@ -2,7 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
-import { RuntimeWorkspaceBackendService } from '../runtime/runtime-workspace-backend.service';
+import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface ReadToolInput {
   filePath: string;
@@ -42,14 +43,17 @@ export const READ_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class ReadToolService {
-  constructor(private readonly runtimeWorkspaceBackendService: RuntimeWorkspaceBackendService) {}
+  constructor(
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+  ) {}
 
   getToolName(): string {
     return 'read';
   }
 
   buildToolDescription(): string {
-    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
+    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
     return [
       '读取当前 backend 可见路径内的文本文件，或列出目录内容。',
       visibleRoot === '/'
@@ -85,58 +89,50 @@ export class ReadToolService {
   }
 
   async execute(input: ReadToolInput): Promise<ReadToolResult> {
-    const offset = input.offset ?? 1;
-    const limit = input.limit ?? DEFAULT_READ_LIMIT;
-    const workspaceBackend = this.runtimeWorkspaceBackendService.getConfiguredBackend();
-    const target = await workspaceBackend.readExistingPath(input.sessionId, input.filePath);
-    if (target.type === 'directory') {
-      const directory = await workspaceBackend.readDirectoryEntries(input.sessionId, input.filePath);
-      const startIndex = offset - 1;
-      const items = directory.entries.slice(startIndex, startIndex + limit);
-      const truncated = startIndex + items.length < directory.entries.length;
+    const result = await this.runtimeFilesystemBackendService.readPathRange(input.sessionId, {
+      limit: input.limit ?? DEFAULT_READ_LIMIT,
+      maxLineLength: MAX_LINE_LENGTH,
+      offset: input.offset ?? 1,
+      path: input.filePath,
+    });
+    if (result.type === 'directory') {
+      const startIndex = result.offset - 1;
       return {
         output: [
           '<read_result>',
-          `Path: ${directory.path}`,
+          `Path: ${result.path}`,
           'Type: directory',
           '<entries>',
-          ...(items.length > 0 ? items : ['(empty)']),
-          truncated
-            ? `... more entries available after ${startIndex + items.length}`
-            : `(total entries: ${directory.entries.length})`,
+          ...(result.entries.length > 0 ? result.entries : ['(empty)']),
+          result.truncated
+            ? `... more entries available after ${startIndex + result.entries.length}`
+            : `(total entries: ${result.totalEntries})`,
           '</entries>',
           '</read_result>',
         ].join('\n'),
-        path: directory.path,
-        truncated,
+        path: result.path,
+        truncated: result.truncated,
         type: 'directory',
       };
     }
-    const file = await workspaceBackend.readTextFile(input.sessionId, input.filePath);
-    const lines = splitReadLines(file.content);
-    const startIndex = offset - 1;
-    if (startIndex > lines.length && !(startIndex === 0 && lines.length === 0)) {
-      throw new BadRequestException(`read.offset 超出范围: ${offset}`);
-    }
-    const selected = lines.slice(startIndex, startIndex + limit);
-    const truncated = startIndex + selected.length < lines.length;
+    const startIndex = result.offset - 1;
     return {
       output: [
         '<read_result>',
-        `Path: ${file.path}`,
+        `Path: ${result.path}`,
         'Type: file',
         '<content>',
-        ...(selected.length > 0
-          ? selected.map((line, index) => `${startIndex + index + 1}: ${truncateReadLine(line)}`)
+        ...(result.lines.length > 0
+          ? result.lines.map((line, index) => `${startIndex + index + 1}: ${line}`)
           : ['(empty)']),
-        truncated
-          ? `... more lines available after ${startIndex + selected.length}`
-          : `(end of file, total lines: ${lines.length})`,
+        result.truncated
+          ? `... more lines available after ${startIndex + result.lines.length}`
+          : `(end of file, total lines: ${result.totalLines})`,
         '</content>',
         '</read_result>',
       ].join('\n'),
-      path: file.path,
-      truncated,
+      path: result.path,
+      truncated: result.truncated,
       type: 'file',
     };
   }
@@ -149,8 +145,8 @@ export class ReadToolService {
         ...(input.limit !== undefined ? { limit: input.limit } : {}),
         ...(input.offset !== undefined ? { offset: input.offset } : {}),
       },
-      requiredCapabilities: ['workspaceRead', 'persistentFilesystem'],
-      role: 'workspace',
+      requiredOperations: ['file.read'],
+      role: 'filesystem',
       summary: `读取路径 ${input.filePath}`,
     };
   }
@@ -169,19 +165,4 @@ function readPositiveInteger(value: unknown, fieldName: string): number | undefi
     throw new BadRequestException(`${fieldName} 必须是大于 0 的整数`);
   }
   return value;
-}
-
-function splitReadLines(content: string): string[] {
-  if (!content.length) {
-    return [];
-  }
-  return content.endsWith('\n')
-    ? content.slice(0, -1).split('\n')
-    : content.split('\n');
-}
-
-function truncateReadLine(line: string): string {
-  return line.length > MAX_LINE_LENGTH
-    ? `${line.slice(0, MAX_LINE_LENGTH)}...`
-    : line;
 }

@@ -1,7 +1,7 @@
 import * as fsPromises from 'node:fs/promises';
 import * as path from 'node:path';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { resolveProjectWorkspaceRoot } from '../../runtime/host/project-workspace-root';
+import { ProjectWorktreeRootService } from './project-worktree-root.service';
 
 export interface ProjectWorktreeResolvedPath {
   absolutePath: string;
@@ -28,8 +28,10 @@ export interface ProjectWorktreeEditResult {
 
 @Injectable()
 export class ProjectWorktreeFileService {
+  constructor(private readonly projectWorktreeRootService: ProjectWorktreeRootService) {}
+
   getProjectRoot(): string {
-    return resolveProjectWorkspaceRoot();
+    return this.projectWorktreeRootService.resolveRoot();
   }
 
   async resolvePath(inputPath?: string): Promise<ProjectWorktreeResolvedPath> {

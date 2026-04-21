@@ -204,16 +204,30 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
   const currentContextLengthValue = Number(await contextLengthInput.inputValue());
   const targetContextLength = currentContextLengthValue === 65536 ? 65537 : 65536;
-  await contextLengthInput.evaluate((input, nextValue) => {
-    input.focus();
-    input.value = String(nextValue);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.blur();
-  }, targetContextLength);
   const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
-  await waitFor(async () => (await saveButton.isDisabled()) ? null : true, '等待上下文长度保存按钮可用');
-  await saveButton.click();
+  await waitFor(async () => {
+    await contextLengthInput.evaluate((input, nextValue) => {
+      input.focus();
+      const next = String(nextValue);
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      valueSetter?.call(input, next);
+      input.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        data: next,
+        inputType: 'insertText',
+      }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.blur();
+    }, targetContextLength);
+    if (await saveButton.isDisabled()) {
+      return null;
+    }
+    await saveButton.click();
+    return true;
+  }, '等待上下文长度保存按钮可用');
 
   await waitFor(async () => {
     const models = await requestJson(`/ai/providers/${PROVIDER_ID}/models`, {
@@ -365,6 +379,23 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="plugin-remote-access-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="plugin-remote-access-key"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+
+  const systemToggle = page.locator('[data-test="plugin-sidebar-toggle-system"]');
+  const systemToggleInput = systemToggle.locator('input');
+  if (await systemToggleInput.count() > 0 && !(await systemToggleInput.isChecked())) {
+    await systemToggle.click();
+    await page.waitForLoadState('networkidle');
+  }
+
+  await page.goto(`/plugins?plugin=${encodeURIComponent('builtin.runtime-tools')}`, { waitUntil: 'networkidle' });
+  await expectText(page, 'Runtime Tools');
+  await expectText(page, '插件配置')
+  const collapsedToggle = page.locator('button.collapsed-toggle').first()
+  if (await collapsedToggle.count() > 0) {
+    await collapsedToggle.click()
+    await expectText(page, '收起高级配置')
+  }
+  await expectText(page, 'bash 输出治理')
   return remotePluginHandle
 }
 

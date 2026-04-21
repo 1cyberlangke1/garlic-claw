@@ -2,9 +2,10 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import YAML from 'yaml'
+import { ProjectWorktreeRootService } from '../../src/execution/project/project-worktree-root.service'
 import { DEFAULT_PERSONA_PROMPT } from '../../src/persona/default-persona'
 import { PersonaService } from '../../src/persona/persona.service'
-import { PersonaStoreService, resolvePersonaStorageRoot } from '../../src/persona/persona-store.service'
+import { PersonaStoreService } from '../../src/persona/persona-store.service'
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service'
 
 describe('PersonaService', () => {
@@ -21,7 +22,7 @@ describe('PersonaService', () => {
     process.env.GARLIC_CLAW_PERSONAS_PATH = storageRoot
     conversationRecordService = new RuntimeHostConversationRecordService()
     service = new PersonaService(
-      new PersonaStoreService(),
+      new PersonaStoreService(new ProjectWorktreeRootService()),
       conversationRecordService,
     )
   })
@@ -232,7 +233,7 @@ describe('PersonaService', () => {
     fs.writeFileSync(avatarPath, 'fake-avatar', 'utf-8')
 
     const reloadedService = new PersonaService(
-      new PersonaStoreService(),
+      new PersonaStoreService(new ProjectWorktreeRootService()),
       conversationRecordService,
     )
 
@@ -252,9 +253,15 @@ describe('PersonaService', () => {
     delete process.env.JEST_WORKER_ID
 
     try {
-      expect(resolvePersonaStorageRoot()).toBe(
-        path.resolve(__dirname, '..', '..', '..', '..', 'persona'),
+      const store = new PersonaStoreService(new ProjectWorktreeRootService())
+      const expectedRoot = path.resolve(__dirname, '..', '..', '..', '..', 'persona')
+
+      expect(store.read('builtin.default-assistant')).toEqual(
+        expect.objectContaining({
+          id: 'builtin.default-assistant',
+        }),
       )
+      expect(fs.existsSync(path.join(expectedRoot, 'builtin.default-assistant', 'SYSTEM.md'))).toBe(true)
     } finally {
       if (originalPersonaPath) {
         process.env.GARLIC_CLAW_PERSONAS_PATH = originalPersonaPath

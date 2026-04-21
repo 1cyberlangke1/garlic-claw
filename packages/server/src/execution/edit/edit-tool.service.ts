@@ -2,7 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
-import { RuntimeWorkspaceBackendService } from '../runtime/runtime-workspace-backend.service';
+import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface EditToolInput {
   filePath: string;
@@ -43,14 +44,17 @@ export const EDIT_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class EditToolService {
-  constructor(private readonly runtimeWorkspaceBackendService: RuntimeWorkspaceBackendService) {}
+  constructor(
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+  ) {}
 
   getToolName(): string {
     return 'edit';
   }
 
   buildToolDescription(): string {
-    const visibleRoot = this.runtimeWorkspaceBackendService.getConfiguredBackend().getVisibleRoot();
+    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
     return [
       '在当前 backend 可见路径内对文本文件执行精确字符串替换。',
       visibleRoot === '/'
@@ -93,7 +97,7 @@ export class EditToolService {
   }
 
   async execute(input: EditToolInput): Promise<EditToolResult> {
-    const result = await this.runtimeWorkspaceBackendService.getConfiguredBackend().editTextFile(input.sessionId, {
+    const result = await this.runtimeFilesystemBackendService.editTextFile(input.sessionId, {
       filePath: input.filePath,
       newString: input.newString,
       oldString: input.oldString,
@@ -119,8 +123,8 @@ export class EditToolService {
         filePath: input.filePath,
         ...(input.replaceAll !== undefined ? { replaceAll: input.replaceAll } : {}),
       },
-      requiredCapabilities: ['workspaceRead', 'workspaceWrite', 'persistentFilesystem'],
-      role: 'workspace',
+      requiredOperations: ['file.edit'],
+      role: 'filesystem',
       summary: `修改路径 ${input.filePath}`,
     };
   }

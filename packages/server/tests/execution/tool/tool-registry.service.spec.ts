@@ -9,19 +9,21 @@ import { AutomationExecutionService } from '../../../src/execution/automation/au
 import { AutomationService } from '../../../src/execution/automation/automation.service';
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
-import { RuntimeWorkspaceFileService } from '../../../src/execution/file/runtime-workspace-file.service';
+import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
 import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
 import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { InvalidToolService } from '../../../src/execution/invalid/invalid-tool.service';
+import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
+import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
+import type { RuntimeFilesystemBackend } from '../../../src/execution/runtime/runtime-filesystem-backend.types';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
 import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
-import { RuntimeWorkspaceBackendService } from '../../../src/execution/runtime/runtime-workspace-backend.service';
-import type { RuntimeWorkspaceBackend } from '../../../src/execution/runtime/runtime-workspace-backend.types';
-import { RuntimeWorkspaceService } from '../../../src/execution/runtime/runtime-workspace.service';
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
@@ -43,6 +45,7 @@ import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runti
 import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
+import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
 import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
@@ -494,6 +497,47 @@ describe('ToolRegistryService', () => {
     expect(fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'logs', 'run.txt'), 'utf8')).toBe('persisted\n');
   });
 
+  it('applies builtin runtime-tools bash output config through the plugin config chain', async () => {
+    const { conversationId, pluginBootstrapService, runtimeToolPermissionService, service } = createFixture();
+    const pluginPersistenceService = (pluginBootstrapService as unknown as {
+      pluginPersistenceService: PluginPersistenceService;
+    }).pluginPersistenceService;
+    pluginPersistenceService.updatePluginConfig('builtin.runtime-tools', {
+      bashOutput: {
+        maxLines: 2,
+        showTruncationDetails: false,
+      },
+    });
+
+    const toolSet = await service.buildToolSet({
+      assistantMessageId: 'assistant-message-allow-2',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['bash'],
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'printf "line-1\\nline-2\\nline-3\\nline-4\\n"',
+      description: '生成多行输出',
+    });
+    const [request] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    runtimeToolPermissionService.reply(conversationId, request.id, 'once');
+    const result = await execution;
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('<bash_result>'),
+    }));
+    expect((result as { value: string }).value).toContain('<stdout>\nline-3\nline-4\n</stdout>');
+    expect((result as { value: string }).value).not.toContain('output truncated');
+    expect((result as { value: string }).value).not.toContain('line-2\nline-3');
+  });
+
   it('keeps bash description on stable workspace semantics instead of backend governance details', async () => {
     const { service } = createFixture();
 
@@ -669,14 +713,14 @@ describe('ToolRegistryService', () => {
     }
   });
 
-  it('routes workspace tool execution to the configured workspace backend without changing tool contract', async () => {
-    const originalWorkspaceBackend = process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
-    process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = 'mock-workspace';
+  it('routes filesystem tool execution to the configured filesystem backend without changing tool contract', async () => {
+    const originalFilesystemBackend = process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
+    process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = 'mock-filesystem';
     try {
       const { conversationId, service } = createFixture({
-        runtimeWorkspaceBackends: [
-          createMockWorkspaceBackend('host-workspace'),
-          createMockWorkspaceBackend('mock-workspace'),
+        runtimeFilesystemBackends: [
+          createMockFilesystemBackend('host-filesystem'),
+          createMockFilesystemBackend('mock-filesystem'),
         ],
       });
       const toolSet = await service.buildToolSet({
@@ -696,27 +740,27 @@ describe('ToolRegistryService', () => {
 
       expect(result).toEqual(expect.objectContaining({
         kind: 'tool:text',
-        value: expect.stringContaining('/mock-workspace.txt'),
+        value: expect.stringContaining('/mock-filesystem.txt'),
       }));
-      expect((result as { value: string }).value).toContain('1: mock-workspace line');
+      expect((result as { value: string }).value).toContain('1: mock-filesystem line');
       expect((result as { value: string }).value).toContain('(end of file, total lines: 2)');
     } finally {
-      if (originalWorkspaceBackend === undefined) {
-        delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+      if (originalFilesystemBackend === undefined) {
+        delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
       } else {
-        process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = originalWorkspaceBackend;
+        process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = originalFilesystemBackend;
       }
     }
   });
 
-  it('routes glob, grep, write and edit to the configured workspace backend', async () => {
-    const originalWorkspaceBackend = process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
-    process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = 'mock-workspace';
+  it('routes glob, grep, write and edit to the configured filesystem backend', async () => {
+    const originalFilesystemBackend = process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
+    process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = 'mock-filesystem';
     try {
       const { conversationId, service } = createFixture({
-        runtimeWorkspaceBackends: [
-          createMockWorkspaceBackend('host-workspace'),
-          createMockWorkspaceBackend('mock-workspace'),
+        runtimeFilesystemBackends: [
+          createMockFilesystemBackend('host-filesystem'),
+          createMockFilesystemBackend('mock-filesystem'),
         ],
       });
       const toolSet = await service.buildToolSet({
@@ -732,10 +776,10 @@ describe('ToolRegistryService', () => {
         pattern: '*.txt',
       });
       const grepResult = await (toolSet?.grep as any).execute({
-        pattern: 'mock-workspace',
+        pattern: 'mock-filesystem',
       });
       const writeResult = await (toolSet?.write as any).execute({
-        content: 'created by mock workspace backend',
+        content: 'created by mock filesystem backend',
         filePath: 'notes/output.txt',
       });
       const editResult = await (toolSet?.edit as any).execute({
@@ -744,22 +788,22 @@ describe('ToolRegistryService', () => {
         oldString: 'created',
       });
 
-      expect((globResult as { value: string }).value).toContain('/mock-workspace.txt');
-      expect((grepResult as { value: string }).value).toContain('/mock-workspace.txt:');
-      expect((grepResult as { value: string }).value).toContain('1: mock-workspace line');
+      expect((globResult as { value: string }).value).toContain('/mock-filesystem.txt');
+      expect((grepResult as { value: string }).value).toContain('/mock-filesystem.txt:');
+      expect((grepResult as { value: string }).value).toContain('1: mock-filesystem line');
       expect(writeResult).toEqual(expect.objectContaining({
         kind: 'tool:text',
-        value: expect.stringContaining('/mock-workspace/notes/output.txt'),
+        value: expect.stringContaining('/mock-filesystem/notes/output.txt'),
       }));
       expect(editResult).toEqual(expect.objectContaining({
         kind: 'tool:text',
-        value: expect.stringContaining('/mock-workspace/notes/output.txt'),
+        value: expect.stringContaining('/mock-filesystem/notes/output.txt'),
       }));
     } finally {
-      if (originalWorkspaceBackend === undefined) {
-        delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND;
+      if (originalFilesystemBackend === undefined) {
+        delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
       } else {
-        process.env.GARLIC_CLAW_RUNTIME_WORKSPACE_BACKEND = originalWorkspaceBackend;
+        process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = originalFilesystemBackend;
       }
     }
   });
@@ -1174,7 +1218,7 @@ describe('ToolRegistryService', () => {
 
 function createFixture(options: {
   runtimeBackends?: RuntimeBackend[];
-  runtimeWorkspaceBackends?: RuntimeWorkspaceBackend[];
+  runtimeFilesystemBackends?: RuntimeFilesystemBackend[];
 } = {}) {
   const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-tool-registry-runtime-'));
   process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -1233,6 +1277,8 @@ function createFixture(options: {
       listPlugins: jest.fn().mockReturnValue([]),
     } as never,
     new RuntimeHostSubagentStoreService(),
+    new RuntimeHostSubagentSessionStoreService(),
+    new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
   );
   jest.spyOn(runtimeHostSubagentRunnerService, 'runSubagent').mockResolvedValue({
     finishReason: 'stop',
@@ -1319,25 +1365,46 @@ function createFixture(options: {
     resolveSkillDirectory: jest.fn().mockReturnValue('D:/repo/skills/weather-query'),
   };
   const skillToolService = new SkillToolService(skillRegistryService as unknown as SkillRegistryService);
-  const runtimeWorkspaceService = new RuntimeWorkspaceService();
-  const runtimeWorkspaceFileService = new RuntimeWorkspaceFileService(runtimeWorkspaceService);
-  const runtimeCommandService = new RuntimeCommandService(
-    options.runtimeBackends ?? [new RuntimeJustBashService(runtimeWorkspaceService)],
+  const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+  const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+    runtimeSessionEnvironmentService,
   );
-  const runtimeWorkspaceBackendService = new RuntimeWorkspaceBackendService(
-    options.runtimeWorkspaceBackends ?? [runtimeWorkspaceFileService],
+  const runtimeCommandService = new RuntimeCommandService(
+    options.runtimeBackends ?? [new RuntimeJustBashService(runtimeSessionEnvironmentService)],
+  );
+  const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
+    options.runtimeFilesystemBackends ?? [runtimeHostFilesystemBackendService],
   );
   const runtimeToolBackendService = new RuntimeToolBackendService(
     runtimeCommandService,
-    runtimeWorkspaceBackendService,
+    runtimeFilesystemBackendService,
   );
   const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
-  const bashToolService = new BashToolService(runtimeCommandService, runtimeToolBackendService);
-  const readToolService = new ReadToolService(runtimeWorkspaceBackendService);
-  const globToolService = new GlobToolService(runtimeWorkspaceBackendService);
-  const grepToolService = new GrepToolService(runtimeWorkspaceBackendService);
-  const writeToolService = new WriteToolService(runtimeWorkspaceBackendService);
-  const editToolService = new EditToolService(runtimeWorkspaceBackendService);
+  const bashToolService = new BashToolService(
+    runtimeCommandService,
+    runtimeSessionEnvironmentService,
+    runtimeToolBackendService,
+  );
+  const readToolService = new ReadToolService(
+    runtimeSessionEnvironmentService,
+    runtimeFilesystemBackendService,
+  );
+  const globToolService = new GlobToolService(
+    runtimeSessionEnvironmentService,
+    runtimeFilesystemBackendService,
+  );
+  const grepToolService = new GrepToolService(
+    runtimeSessionEnvironmentService,
+    runtimeFilesystemBackendService,
+  );
+  const writeToolService = new WriteToolService(
+    runtimeSessionEnvironmentService,
+    runtimeFilesystemBackendService,
+  );
+  const editToolService = new EditToolService(
+    runtimeSessionEnvironmentService,
+    runtimeFilesystemBackendService,
+  );
   const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
     bashToolService,
     readToolService,
@@ -1361,7 +1428,7 @@ function createFixture(options: {
     runtimeHostRuntimeToolService,
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
-    new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+    new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();
   const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
@@ -1414,7 +1481,6 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
         sessionId: input.sessionId,
         stderr: '',
         stdout: `${kind}:${input.command}`,
-        workspaceRoot: '/tmp/mock-workspace',
       };
     },
     getDescriptor() {
@@ -1436,7 +1502,6 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
           workspaceRead: 'allow' as const,
           workspaceWrite: 'allow' as const,
         },
-        visibleRoot: '/',
       };
     },
     getKind() {
@@ -1445,19 +1510,55 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
   };
 }
 
-function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
+function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
   const backendFileName = `${kind}.txt`;
   const backendVirtualPath = `/${backendFileName}`;
   const backendContent = `${kind} line\nsecond line\n`;
   return {
+    async copyPath(_sessionId, fromPath, toPath) {
+      return {
+        fromPath: fromPath.trim() ? `/${kind}/${fromPath.replace(/^\/+/, '')}` : backendVirtualPath,
+        path: toPath.trim() ? `/${kind}/${toPath.replace(/^\/+/, '')}` : backendVirtualPath,
+      };
+    },
+    async createSymlink(_sessionId, input) {
+      return {
+        path: input.linkPath.trim() ? `/${kind}/${input.linkPath.replace(/^\/+/, '')}` : backendVirtualPath,
+        target: input.targetPath,
+      };
+    },
+    async deletePath(_sessionId, inputPath) {
+      return {
+        deleted: true,
+        path: inputPath.trim() ? `/${kind}/${inputPath.replace(/^\/+/, '')}` : backendVirtualPath,
+      };
+    },
     async editTextFile(_sessionId, input) {
       return {
-        occurrences: kind === 'mock-workspace'
+        occurrences: kind === 'mock-filesystem'
           ? 7
           : input.replaceAll ? 2 : 1,
         path: input.filePath.trim()
           ? `/${kind}/${input.filePath.replace(/^\/+/, '')}`
           : backendVirtualPath,
+      };
+    },
+    async ensureDirectory(_sessionId, inputPath) {
+      return {
+        created: true,
+        path: inputPath.trim() ? `/${kind}/${inputPath.replace(/^\/+/, '')}` : backendVirtualPath,
+      };
+    },
+    async globPaths(_sessionId, input) {
+      const normalizedPath = input.path?.trim();
+      const resolvedPath = normalizedPath
+        ? `/${kind}/${normalizedPath.replace(/^\/+/, '')}`
+        : '/';
+      return {
+        basePath: resolvedPath,
+        matches: [backendVirtualPath],
+        totalMatches: 1,
+        truncated: false,
       };
     },
     getDescriptor() {
@@ -1479,14 +1580,29 @@ function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
           workspaceRead: 'allow' as const,
           workspaceWrite: 'allow' as const,
         },
-        visibleRoot: '/',
       };
     },
     getKind() {
       return kind;
     },
-    getVisibleRoot() {
-      return '/';
+    async grepText() {
+      return {
+        matches: [
+          {
+            line: 1,
+            text: `${kind} line`,
+            virtualPath: backendVirtualPath,
+          },
+        ],
+        totalMatches: 1,
+        truncated: false,
+      };
+    },
+    async movePath(_sessionId, fromPath, toPath) {
+      return {
+        fromPath: fromPath.trim() ? `/${kind}/${fromPath.replace(/^\/+/, '')}` : backendVirtualPath,
+        path: toPath.trim() ? `/${kind}/${toPath.replace(/^\/+/, '')}` : backendVirtualPath,
+      };
     },
     async listFiles() {
       return {
@@ -1504,21 +1620,59 @@ function createMockWorkspaceBackend(kind: string): RuntimeWorkspaceBackend {
         path: '/',
       };
     },
-    async readExistingPath(_sessionId, inputPath) {
+    async readPathRange(_sessionId, input) {
+      const normalizedPath = input.path?.trim();
+      if (!normalizedPath || normalizedPath === '/' || normalizedPath === '.') {
+        return {
+          entries: ['routed.txt'],
+          limit: input.limit,
+          offset: input.offset,
+          path: '/',
+          totalEntries: 1,
+          truncated: false,
+          type: 'directory' as const,
+        };
+      }
+      return {
+        limit: input.limit,
+        lines: backendContent
+          .trimEnd()
+          .split('\n')
+          .slice(input.offset - 1, input.offset - 1 + input.limit),
+        offset: input.offset,
+        path: backendVirtualPath,
+        totalLines: 2,
+        truncated: false,
+        type: 'file' as const,
+      };
+    },
+    async readSymlink(_sessionId, inputPath) {
+      return {
+        path: inputPath.trim() ? `/${kind}/${inputPath.replace(/^\/+/, '')}` : backendVirtualPath,
+        target: backendVirtualPath,
+      };
+    },
+    async resolvePath(_sessionId, inputPath) {
       const normalizedInputPath = typeof inputPath === 'string' ? inputPath.trim() : '';
       if (!normalizedInputPath || normalizedInputPath === '/' || normalizedInputPath === '.') {
         return {
           exists: true,
           type: 'directory' as const,
           virtualPath: '/',
-          workspaceRoot: 'D:/mock/runtime',
         };
       }
       return {
         exists: true,
         type: 'file' as const,
         virtualPath: backendVirtualPath,
-        workspaceRoot: 'D:/mock/runtime',
+      };
+    },
+    async statPath(_sessionId, inputPath) {
+      const resolved = await this.resolvePath(_sessionId, inputPath);
+      return {
+        ...resolved,
+        mtime: '2026-04-21T00:00:00.000Z',
+        size: resolved.type === 'file' ? backendContent.length : 0,
       };
     },
     async readTextFile() {
