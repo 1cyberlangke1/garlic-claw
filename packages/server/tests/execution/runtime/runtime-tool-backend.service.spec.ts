@@ -147,6 +147,7 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
       return {
         occurrences: 1,
         path: '/mock.txt',
+        strategy: 'exact',
       };
     },
     async ensureDirectory() {
@@ -196,6 +197,7 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
             virtualPath: '/mock.txt',
           },
         ],
+        partial: false,
         totalMatches: 1,
         truncated: false,
       };
@@ -220,10 +222,13 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     },
     async readPathRange(_sessionId, input) {
       return {
+        byteLimited: false,
         limit: input.limit,
         lines: ['mock'],
+        mimeType: 'text/plain',
         offset: input.offset,
         path: '/mock.txt',
+        totalBytes: 4,
         totalLines: 1,
         truncated: false,
         type: 'file' as const,
@@ -260,7 +265,9 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     async writeTextFile() {
       return {
         created: true,
+        lineCount: 1,
         path: '/mock.txt',
+        size: 4,
       };
     },
   };

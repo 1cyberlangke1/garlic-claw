@@ -16,12 +16,13 @@ export interface ReadToolResult {
   output: string;
   path: string;
   truncated: boolean;
-  type: 'directory' | 'file';
+  type: 'binary' | 'directory' | 'file' | 'image' | 'pdf';
 }
 
 const DEFAULT_READ_LIMIT = 2000;
 const MAX_READ_LIMIT = 2000;
 const MAX_LINE_LENGTH = 2000;
+const MAX_READ_BYTES_LABEL = '50 KB';
 
 export const READ_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   filePath: {
@@ -97,6 +98,7 @@ export class ReadToolService {
     });
     if (result.type === 'directory') {
       const startIndex = result.offset - 1;
+      const endIndex = startIndex + result.entries.length;
       return {
         output: [
           '<read_result>',
@@ -105,7 +107,7 @@ export class ReadToolService {
           '<entries>',
           ...(result.entries.length > 0 ? result.entries : ['(empty)']),
           result.truncated
-            ? `... more entries available after ${startIndex + result.entries.length}`
+            ? `(showing entries ${startIndex + 1}-${endIndex} of ${result.totalEntries}. Use offset=${endIndex + 1} to continue.)`
             : `(total entries: ${result.totalEntries})`,
           '</entries>',
           '</read_result>',
@@ -115,19 +117,46 @@ export class ReadToolService {
         type: 'directory',
       };
     }
+    if (result.type === 'image' || result.type === 'pdf' || result.type === 'binary') {
+      return {
+        output: [
+          '<read_result>',
+          `Path: ${result.path}`,
+          `Type: ${result.type}`,
+          `Mime: ${result.mimeType}`,
+          `Size: ${formatReadSize(result.size)}`,
+          result.type === 'image'
+            ? 'Image file detected. Text content was not expanded.'
+            : result.type === 'pdf'
+              ? 'PDF file detected. Text content was not expanded.'
+              : 'Binary file detected. Text content was not expanded.',
+          '</read_result>',
+        ].join('\n'),
+        path: result.path,
+        truncated: false,
+        type: result.type,
+      };
+    }
+    if (result.type !== 'file') {
+      throw new BadRequestException(`不支持的 read 结果类型: ${String((result as { type?: unknown }).type)}`);
+    }
     const startIndex = result.offset - 1;
+    const endIndex = startIndex + result.lines.length;
     return {
       output: [
         '<read_result>',
         `Path: ${result.path}`,
         'Type: file',
+        `Mime: ${result.mimeType}`,
         '<content>',
         ...(result.lines.length > 0
-          ? result.lines.map((line, index) => `${startIndex + index + 1}: ${line}`)
+          ? result.lines.map((line: string, index: number) => `${startIndex + index + 1}: ${line}`)
           : ['(empty)']),
-        result.truncated
-          ? `... more lines available after ${startIndex + result.lines.length}`
-          : `(end of file, total lines: ${result.totalLines})`,
+        result.byteLimited
+          ? `(output capped at ${MAX_READ_BYTES_LABEL}. Showing lines ${startIndex + 1}-${endIndex}. Use offset=${endIndex + 1} to continue.)`
+          : result.truncated
+            ? `(showing lines ${startIndex + 1}-${endIndex} of ${result.totalLines}. Use offset=${endIndex + 1} to continue.)`
+            : `(end of file, total lines: ${result.totalLines}, total bytes: ${formatReadSize(result.totalBytes)})`,
         '</content>',
         '</read_result>',
       ].join('\n'),
@@ -165,4 +194,14 @@ function readPositiveInteger(value: unknown, fieldName: string): number | undefi
     throw new BadRequestException(`${fieldName} 必须是大于 0 的整数`);
   }
   return value;
+}
+
+function formatReadSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -1,11 +1,14 @@
+import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import readline from 'node:readline';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { RuntimeBackendDescriptor } from '../runtime/runtime-command.types';
 import type { RuntimeFilesystemBackend } from '../runtime/runtime-filesystem-backend.types';
 import { RuntimeMountedWorkspaceFileSystem } from '../runtime/runtime-mounted-workspace-file-system';
 import type { RuntimeSessionEnvironment } from '../runtime/runtime-session-environment.types';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { replaceRuntimeText } from './runtime-text-replace';
 import type {
   RuntimeFilesystemDeleteResult,
   RuntimeFilesystemDirectoryResult,
@@ -23,6 +26,8 @@ import type {
 } from '../runtime/runtime-filesystem-backend.types';
 
 const HOST_FILESYSTEM_BACKEND_KIND = 'host-filesystem';
+const MAX_READ_BYTES = 50 * 1024;
+const MAX_READ_LINE_SUFFIX = '... (line truncated)';
 const HOST_FILESYSTEM_BACKEND_DESCRIPTOR: RuntimeBackendDescriptor = {
   capabilities: {
     networkAccess: false,
@@ -154,12 +159,21 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
       throw new BadRequestException(`glob.path 不是目录: ${target.virtualPath}`);
     }
     const listed = await this.listFiles(sessionId, input.path);
-    const matches = listed.files
-      .map((entry) => entry.virtualPath)
-      .filter((virtualPath) => matchesFilesystemGlobPattern(input.pattern, toFilesystemRelativePath(listed.basePath, virtualPath)));
+    const matches = await Promise.all(
+      listed.files
+        .filter((entry) => matchesFilesystemGlobPattern(
+          input.pattern,
+          toFilesystemRelativePath(listed.basePath, entry.virtualPath),
+        ))
+        .map(async (entry) => ({
+          mtime: await readFilesystemMtime(entry.hostPath),
+          virtualPath: entry.virtualPath,
+        })),
+    );
+    matches.sort((left, right) => right.mtime - left.mtime || left.virtualPath.localeCompare(right.virtualPath));
     return {
       basePath: listed.basePath,
-      matches: matches.slice(0, input.maxResults),
+      matches: matches.slice(0, input.maxResults).map((entry) => entry.virtualPath),
       totalMatches: matches.length,
       truncated: matches.length > input.maxResults,
     };
@@ -182,6 +196,9 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
       throw new BadRequestException(`grep.pattern 不是合法正则: ${(error as Error).message}`);
     }
     const listed = await this.listFiles(sessionId, input.path);
+    const matchRows = new Map<string, Array<{ line: number; text: string }>>();
+    const fileTimes = new Map<string, number>();
+    let partial = false;
     const rows: RuntimeFilesystemGrepMatch[] = [];
     for (const file of listed.files) {
       const relativePath = toFilesystemRelativePath(listed.basePath, file.virtualPath);
@@ -195,22 +212,43 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
         if (isBinaryReadError(error)) {
           continue;
         }
-        throw error;
+        partial = true;
+        continue;
       }
       const lines = splitFilesystemTextLines(textFile.content);
+      const currentRows: Array<{ line: number; text: string }> = [];
       for (let index = 0; index < lines.length; index += 1) {
         matcher.lastIndex = 0;
         if (!matcher.test(lines[index])) {
           continue;
         }
-        rows.push({
+        currentRows.push({
           line: index + 1,
           text: truncateFilesystemLine(lines[index], input.maxLineLength),
-          virtualPath: file.virtualPath,
+        });
+      }
+      if (currentRows.length === 0) {
+        continue;
+      }
+      matchRows.set(file.virtualPath, currentRows);
+      fileTimes.set(file.virtualPath, await readFilesystemMtime(file.hostPath));
+    }
+    const orderedPaths = Array.from(matchRows.keys()).sort(
+      (left, right) =>
+        (fileTimes.get(right) ?? 0) - (fileTimes.get(left) ?? 0) || left.localeCompare(right),
+    );
+    for (const virtualPath of orderedPaths) {
+      const fileRows = matchRows.get(virtualPath) ?? [];
+      for (const row of fileRows) {
+        rows.push({
+          line: row.line,
+          text: row.text,
+          virtualPath,
         });
         if (rows.length >= input.maxMatches) {
           return {
             matches: rows,
+            partial,
             totalMatches: rows.length,
             truncated: true,
           };
@@ -219,6 +257,7 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     }
     return {
       matches: rows,
+      partial,
       totalMatches: rows.length,
       truncated: false,
     };
@@ -293,22 +332,48 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
         type: 'directory',
       };
     }
-    const file = await this.readTextFile(sessionId, input.path);
-    const lines = splitFilesystemTextLines(file.content);
-    const startIndex = input.offset - 1;
-    if (startIndex > lines.length && !(startIndex === 0 && lines.length === 0)) {
-      throw new BadRequestException(`read.offset 超出范围: ${input.offset}`);
+    const stat = await fsPromises.stat(target.hostPath);
+    const mimeType = detectFilesystemMimeType(target.virtualPath);
+    if (isFilesystemImageMimeType(mimeType)) {
+      return {
+        mimeType,
+        path: target.virtualPath,
+        size: stat.size,
+        type: 'image',
+      };
     }
-    const rangedLines = lines
-      .slice(startIndex, startIndex + input.limit)
-      .map((line) => truncateFilesystemLine(line, input.maxLineLength));
-    return {
+    if (mimeType === 'application/pdf') {
+      return {
+        mimeType,
+        path: target.virtualPath,
+        size: stat.size,
+        type: 'pdf',
+      };
+    }
+    if (isBinaryFilesystemPath(target.virtualPath) || await containsBinaryContent(target.hostPath, stat.size)) {
+      return {
+        mimeType,
+        path: target.virtualPath,
+        size: stat.size,
+        type: 'binary',
+      };
+    }
+    const file = await readFilesystemTextRange(target.hostPath, {
       limit: input.limit,
-      lines: rangedLines,
+      maxBytes: MAX_READ_BYTES,
+      maxLineLength: input.maxLineLength,
       offset: input.offset,
-      path: file.path,
-      totalLines: lines.length,
-      truncated: startIndex + rangedLines.length < lines.length,
+    });
+    return {
+      byteLimited: file.byteLimited,
+      limit: input.limit,
+      lines: file.lines,
+      mimeType,
+      offset: input.offset,
+      path: target.virtualPath,
+      totalBytes: stat.size,
+      totalLines: file.totalLines,
+      truncated: file.truncated,
       type: 'file',
     };
   }
@@ -351,8 +416,14 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
       throw new BadRequestException(`路径不是文件: ${target.virtualPath}`);
     }
     const buffer = await fsPromises.readFile(target.hostPath);
-    if (containsBinaryContent(buffer)) {
-      throw new BadRequestException(`暂不支持读取二进制文件: ${target.virtualPath}`);
+    const mimeType = detectFilesystemMimeType(target.virtualPath);
+    if (
+      mimeType === 'application/pdf'
+      || isFilesystemImageMimeType(mimeType)
+      || isBinaryFilesystemPath(target.virtualPath)
+      || containsBinarySample(buffer)
+    ) {
+      throw new BadRequestException(`暂不支持读取二进制文件: ${target.virtualPath} (${mimeType})`);
     }
     return {
       content: buffer.toString('utf8').replace(/\r\n/g, '\n'),
@@ -404,7 +475,9 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     await fsPromises.writeFile(target.hostPath, content, 'utf8');
     return {
       created: !target.exists,
+      lineCount: countFilesystemTextLines(content),
       path: target.virtualPath,
+      size: Buffer.byteLength(content, 'utf8'),
     };
   }
 
@@ -424,20 +497,12 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     const lineEnding = detectWorkspaceLineEnding(file.content);
     const oldString = normalizeWorkspaceLineEnding(input.oldString, lineEnding);
     const newString = normalizeWorkspaceLineEnding(input.newString, lineEnding);
-    const matchCount = countWorkspaceOccurrences(file.content, oldString);
-    if (matchCount === 0) {
-      throw new BadRequestException('edit.oldString 未在文件中找到');
-    }
-    if (!input.replaceAll && matchCount > 1) {
-      throw new BadRequestException('edit.oldString 匹配到多个位置，请补更多上下文或使用 replaceAll');
-    }
-    const nextContent = input.replaceAll
-      ? file.content.split(oldString).join(newString)
-      : replaceWorkspaceFirst(file.content, oldString, newString);
-    const writeResult = await this.writeTextFile(sessionId, file.path, nextContent);
+    const replaced = replaceRuntimeText(file.content, oldString, newString, input.replaceAll);
+    const writeResult = await this.writeTextFile(sessionId, file.path, replaced.content);
     return {
-      occurrences: matchCount,
+      occurrences: replaced.occurrences,
       path: writeResult.path,
+      strategy: replaced.strategy,
     };
   }
 
@@ -456,9 +521,25 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
   ): Promise<RuntimeHostFilesystemResolvedPath> {
     const target = await this.resolvePath(sessionId, inputPath);
     if (!target.exists) {
-      throw new NotFoundException(`路径不存在: ${target.virtualPath}`);
+      throw await this.createMissingPathException(sessionId, target.virtualPath);
     }
     return target;
+  }
+
+  private async createMissingPathException(
+    sessionId: string,
+    virtualPath: string,
+  ): Promise<NotFoundException> {
+    const suggestions = await readNearbyVisiblePaths(
+      await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId),
+      virtualPath,
+    );
+    if (suggestions.length === 0) {
+      return new NotFoundException(`路径不存在: ${virtualPath}`);
+    }
+    return new NotFoundException(
+      `路径不存在: ${virtualPath}\n可选路径：\n${suggestions.join('\n')}`,
+    );
   }
 }
 
@@ -567,14 +648,21 @@ function normalizeRuntimeVirtualPath(input: string): string {
   return `/${stack.join('/')}`;
 }
 
-function containsBinaryContent(buffer: Buffer): boolean {
-  const sampleSize = Math.min(buffer.length, 8000);
+function containsBinarySample(buffer: Buffer): boolean {
+  const sampleSize = Math.min(buffer.length, 4096);
+  if (sampleSize === 0) {
+    return false;
+  }
+  let nonPrintableCount = 0;
   for (let index = 0; index < sampleSize; index += 1) {
     if (buffer[index] === 0) {
       return true;
     }
+    if (buffer[index] < 9 || (buffer[index] > 13 && buffer[index] < 32)) {
+      nonPrintableCount += 1;
+    }
   }
-  return false;
+  return nonPrintableCount / sampleSize > 0.3;
 }
 
 function isNotFound(error: unknown): boolean {
@@ -587,6 +675,212 @@ function isNotFound(error: unknown): boolean {
 function isBinaryReadError(error: unknown): boolean {
   return error instanceof BadRequestException
     && error.message.includes('暂不支持读取二进制文件');
+}
+
+async function containsBinaryContent(hostPath: string, size: number): Promise<boolean> {
+  if (size === 0) {
+    return false;
+  }
+  const file = await fsPromises.open(hostPath, 'r');
+  try {
+    const sampleSize = Math.min(size, 4096);
+    const buffer = Buffer.alloc(sampleSize);
+    const result = await file.read(buffer, 0, sampleSize, 0);
+    return containsBinarySample(buffer.subarray(0, result.bytesRead));
+  } finally {
+    await file.close();
+  }
+}
+
+function detectFilesystemMimeType(virtualPath: string): string {
+  const extension = path.extname(virtualPath).toLowerCase();
+  switch (extension) {
+    case '.txt':
+    case '.log':
+      return 'text/plain';
+    case '.md':
+      return 'text/markdown';
+    case '.json':
+      return 'application/json';
+    case '.js':
+    case '.jsx':
+    case '.ts':
+    case '.tsx':
+    case '.mjs':
+    case '.cjs':
+    case '.css':
+    case '.html':
+    case '.xml':
+    case '.yml':
+    case '.yaml':
+    case '.sh':
+    case '.py':
+    case '.rs':
+    case '.go':
+    case '.java':
+    case '.c':
+    case '.cc':
+    case '.cpp':
+    case '.h':
+    case '.hpp':
+      return 'text/plain';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.bmp':
+      return 'image/bmp';
+    case '.webp':
+      return 'image/webp';
+    case '.svg':
+    case '.svgz':
+      return 'image/svg+xml';
+    case '.avif':
+      return 'image/avif';
+    case '.pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+function isFilesystemImageMimeType(mimeType: string): boolean {
+  return mimeType.startsWith('image/')
+    && mimeType !== 'image/svg+xml'
+    && mimeType !== 'image/vnd.fastbidsheet';
+}
+
+function isBinaryFilesystemPath(virtualPath: string): boolean {
+  switch (path.extname(virtualPath).toLowerCase()) {
+    case '.zip':
+    case '.tar':
+    case '.gz':
+    case '.exe':
+    case '.dll':
+    case '.so':
+    case '.class':
+    case '.jar':
+    case '.war':
+    case '.7z':
+    case '.doc':
+    case '.docx':
+    case '.xls':
+    case '.xlsx':
+    case '.ppt':
+    case '.pptx':
+    case '.odt':
+    case '.ods':
+    case '.odp':
+    case '.bin':
+    case '.dat':
+    case '.obj':
+    case '.o':
+    case '.a':
+    case '.lib':
+    case '.wasm':
+    case '.pyc':
+    case '.pyo':
+      return true;
+    default:
+      return false;
+  }
+}
+
+async function readFilesystemTextRange(
+  hostPath: string,
+  input: {
+    limit: number;
+    maxBytes: number;
+    maxLineLength: number;
+    offset: number;
+  },
+): Promise<{
+  byteLimited: boolean;
+  lines: string[];
+  totalLines: number;
+  truncated: boolean;
+}> {
+  const stream = fs.createReadStream(hostPath, { encoding: 'utf8' });
+  const lineReader = readline.createInterface({
+    crlfDelay: Infinity,
+    input: stream,
+  });
+  const startIndex = input.offset - 1;
+  const lines: string[] = [];
+  let bytes = 0;
+  let byteLimited = false;
+  let moreLines = false;
+  let totalLines = 0;
+  try {
+    for await (const lineText of lineReader) {
+      totalLines += 1;
+      if (totalLines <= startIndex) {
+        continue;
+      }
+      if (lines.length >= input.limit) {
+        moreLines = true;
+        continue;
+      }
+      const renderedLine = truncateFilesystemLine(lineText, input.maxLineLength);
+      const renderedBytes = Buffer.byteLength(renderedLine, 'utf8') + (lines.length > 0 ? 1 : 0);
+      if (bytes + renderedBytes > input.maxBytes) {
+        byteLimited = true;
+        moreLines = true;
+        break;
+      }
+      lines.push(renderedLine);
+      bytes += renderedBytes;
+    }
+  } finally {
+    lineReader.close();
+    stream.destroy();
+  }
+  if (startIndex > totalLines && !(startIndex === 0 && totalLines === 0)) {
+    throw new BadRequestException(`read.offset 超出范围: ${input.offset}，文件总行数为 ${totalLines}`);
+  }
+  return {
+    byteLimited,
+    lines,
+    totalLines,
+    truncated: moreLines,
+  };
+}
+
+async function readFilesystemMtime(hostPath: string): Promise<number> {
+  const stat = await fsPromises.stat(hostPath);
+  return stat.mtime.getTime();
+}
+
+async function readNearbyVisiblePaths(
+  sessionEnvironment: RuntimeSessionEnvironment,
+  virtualPath: string,
+): Promise<string[]> {
+  const virtualDirectory = path.posix.dirname(virtualPath);
+  const directoryVirtualPath = virtualDirectory === '.' ? sessionEnvironment.visibleRoot : virtualDirectory;
+  const directoryHostPath = toRuntimeHostPath(
+    sessionEnvironment.sessionRoot,
+    sessionEnvironment.visibleRoot,
+    directoryVirtualPath,
+  );
+  let entries: fs.Dirent[];
+  try {
+    entries = await fsPromises.readdir(directoryHostPath, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const missingName = path.posix.basename(virtualPath).toLowerCase();
+  return entries
+    .map((entry) => entry.isDirectory() ? `${entry.name}/` : entry.name)
+    .filter((entryName) => {
+      const normalized = entryName.toLowerCase();
+      return normalized.includes(missingName) || missingName.includes(normalized.replace(/\/$/, ''));
+    })
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, 3)
+    .map((entryName) => normalizeRuntimeVirtualPath(`${directoryVirtualPath}/${entryName}`));
 }
 
 function matchesFilesystemGlobPattern(pattern: string, relativePath: string): boolean {
@@ -609,7 +903,7 @@ function splitFilesystemTextLines(content: string): string[] {
 
 function truncateFilesystemLine(line: string, maxLineLength: number): string {
   return line.length > maxLineLength
-    ? `${line.slice(0, maxLineLength)}...`
+    ? `${line.slice(0, maxLineLength)}${MAX_READ_LINE_SUFFIX}`
     : line;
 }
 
@@ -618,27 +912,6 @@ function normalizeWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'
   return lineEnding === '\n' ? normalized : normalized.replace(/\n/g, '\r\n');
 }
 
-function countWorkspaceOccurrences(content: string, target: string): number {
-  if (!target.length) {
-    return 0;
-  }
-  let count = 0;
-  let index = 0;
-  while (index <= content.length) {
-    const matchedIndex = content.indexOf(target, index);
-    if (matchedIndex < 0) {
-      break;
-    }
-    count += 1;
-    index = matchedIndex + target.length;
-  }
-  return count;
-}
-
-function replaceWorkspaceFirst(content: string, oldString: string, newString: string): string {
-  const matchedIndex = content.indexOf(oldString);
-  if (matchedIndex < 0) {
-    return content;
-  }
-  return `${content.slice(0, matchedIndex)}${newString}${content.slice(matchedIndex + oldString.length)}`;
+function countFilesystemTextLines(content: string): number {
+  return splitFilesystemTextLines(content).length;
 }

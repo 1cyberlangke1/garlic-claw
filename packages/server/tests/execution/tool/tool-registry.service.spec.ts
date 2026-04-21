@@ -743,7 +743,7 @@ describe('ToolRegistryService', () => {
         value: expect.stringContaining('/mock-filesystem.txt'),
       }));
       expect((result as { value: string }).value).toContain('1: mock-filesystem line');
-      expect((result as { value: string }).value).toContain('(end of file, total lines: 2)');
+      expect((result as { value: string }).value).toContain('(end of file, total lines: 2, total bytes:');
     } finally {
       if (originalFilesystemBackend === undefined) {
         delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
@@ -1541,6 +1541,7 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
         path: input.filePath.trim()
           ? `/${kind}/${input.filePath.replace(/^\/+/, '')}`
           : backendVirtualPath,
+        strategy: kind === 'mock-filesystem' ? 'indentation-flexible' : 'exact',
       };
     },
     async ensureDirectory(_sessionId, inputPath) {
@@ -1594,6 +1595,7 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
             virtualPath: backendVirtualPath,
           },
         ],
+        partial: false,
         totalMatches: 1,
         truncated: false,
       };
@@ -1634,13 +1636,16 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
         };
       }
       return {
+        byteLimited: false,
         limit: input.limit,
         lines: backendContent
           .trimEnd()
           .split('\n')
           .slice(input.offset - 1, input.offset - 1 + input.limit),
+        mimeType: 'text/plain',
         offset: input.offset,
         path: backendVirtualPath,
+        totalBytes: backendContent.length,
         totalLines: 2,
         truncated: false,
         type: 'file' as const,
@@ -1684,7 +1689,9 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     async writeTextFile(_sessionId, inputPath) {
       return {
         created: true,
+        lineCount: 2,
         path: `/${kind}/${inputPath.replace(/^\/+/, '')}`,
+        size: 33,
       };
     },
   };

@@ -950,3 +950,19 @@
 - 因此当前最合适的节奏是：
   - 先把这批改动作为稳定提交点保存
   - 再进入 `G20-2`，逐项补 `read / write / edit / glob / grep / bash` 的成熟度差异
+- `G20-2` 第一批实现后，当前差异判断更细了一层：
+  - `read` 的路径 miss 提示、媒体/二进制分流、字节级截断已经开始逼近 OpenCode，可继续补附件级能力与 reminder/loaded-files owner
+  - `glob / grep` 的排序语义已补到“更接近 OpenCode 实际使用感”，但还缺更完整的局部失败诊断和更强的搜索后处理
+  - 真正仍落差最大的部分已经转向 `edit / write` 的 diff、freshness、格式化与匹配纠错
+- `edit / write` 第一批增强完成后，差异重心再次前移：
+  - `edit` 已经不再只会“精确命中或报错”，当前对缩进和空白差异的容忍度明显更接近 OpenCode
+  - 但还没有补到 OpenCode 那种更强的 block-anchor / context-aware / diagnostics / diff metadata 深度
+  - `write` 现在有了基础元数据，但还没有 diff/diagnostics/freshness 语义
+  - 因此下一步最值得继续补的，应是 `edit / write` 的工程化反馈，而不是再回头给 `read` 堆表层文案
+- 第一轮 judge 复核后新增的关键约束已经明确：
+  - `edit` 的宽松策略只能在更严格策略完全没命中的前提下回退，不能在精确多命中后“挑一个更像的”继续改
+  - 否则就会出现 smoke 和 build 都过，但真实文件被静默误改的危险假通过
+- 因此当前 `runtime-text-replace` 的更合理语义是：
+  - 策略严格度从上到下
+  - 第一层出现匹配后，就由该层决定“成功替换 / 报多命中”
+  - 不允许跨层继续碰运气

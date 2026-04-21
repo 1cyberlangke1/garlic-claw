@@ -1666,3 +1666,52 @@
   - `task_plan.md` 中 `G20-1` 改为已完成
   - `task_plan.md` 中 `G20-2` 改为进行中
   - 当前下一步是提交这一阶段，然后进入 OpenCode 差异矩阵与文件工具成熟度增强
+- 已开始推进 `G20-2` 第一批差异收口：
+  - `read` 已补媒体/二进制分流，当前会区分 `image / pdf / binary / file / directory`
+  - `read` 已补字节级截断窗口，文本大文件不再无界读入
+  - `read` 已补缺失路径建议，缺文件时会回带同目录近似路径
+  - `glob` 当前已按文件修改时间倒序返回匹配结果
+  - `grep` 当前已按文件修改时间倒序聚合匹配，并能回报 `partial` 跳过状态
+- 已新增并通过这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：4 suites / 40 tests 全部通过
+    - `packages/server build`：通过
+- 已继续把 `G20-2` 第一批改动扩到 `write / edit`：
+  - `write` 现在会回带 `lineCount / size`
+  - `edit` 现在会回带匹配 `strategy`
+  - runtime filesystem backend 已新增领域级文本替换策略文件 `runtime-text-replace.ts`
+  - 当前已覆盖：
+    - `exact`
+    - `line-trimmed`
+    - `whitespace-normalized`
+    - `replaceAll`
+    - `精确多命中拒绝继续回退`
+- 已重新通过这轮 fresh 验证：
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `lint`：通过
+    - `smoke:server`：`178 checks`
+    - `smoke:web-ui`：通过
+- 已收到第一轮独立 judge 的 FAIL，并已按结论修复：
+  - `grep` 现在与 `read` 共用媒体/二进制跳过语义，`image / pdf` 不再被当成文本继续搜索
+  - 已新增 `glob` mtime 排序断言、`grep` partial 输出断言、`write / edit` tool 输出断言、`runtime-text-replace` 定向测试
+  - `edit` 的公开描述已从“精确匹配”收口为“优先精确，必要时尝试更宽松文本策略”
+  - `runtime-text-replace` 已修掉“精确多命中后继续回退到宽松策略”的静默误改风险
+- 已通过修复后的定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-text-replace.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：8 suites / 49 tests 全部通过
+    - `packages/server build`：通过
+- 已完成修复后的独立 judge，结论为 PASS：
+  - judge 确认当前没有阻塞级问题，可以作为提交点
+  - judge 确认 `grep` 已与 `read` 对齐媒体/二进制跳过语义
+  - judge 确认 `runtime-text-replace` 已阻止“精确多命中后继续回退”的静默误改
+  - judge 提示 residual risk：
+    - `pdf` 仍主要靠共享分支间接保障，缺单独定向断言
+    - `indentation-flexible / trimmed-boundary` 仍缺各自独立回归样例
+    - 这两点不阻塞当前提交，但仍属于后续可继续补强的成熟度项

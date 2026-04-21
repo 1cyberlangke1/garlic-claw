@@ -13,8 +13,10 @@ export interface WriteToolInput {
 
 export interface WriteToolResult {
   created: boolean;
+  lineCount: number;
   output: string;
   path: string;
+  size: number;
 }
 
 export const WRITE_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
@@ -83,13 +85,17 @@ export class WriteToolService {
     );
     return {
       created: result.created,
+      lineCount: result.lineCount,
       output: [
         '<write_result>',
         `Path: ${result.path}`,
         `Status: ${result.created ? 'created' : 'overwritten'}`,
+        `Lines: ${result.lineCount}`,
+        `Size: ${formatWriteSize(result.size)}`,
         '</write_result>',
       ].join('\n'),
       path: result.path,
+      size: result.size,
     };
   }
 
@@ -109,4 +115,14 @@ export class WriteToolService {
     type: 'text',
     value: (output as WriteToolResult).output,
   });
+}
+
+function formatWriteSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

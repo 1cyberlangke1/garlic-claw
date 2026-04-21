@@ -99,8 +99,9 @@ export class GrepToolService {
         '<matches>',
         ...(groupedOutput.length > 0 ? groupedOutput : ['(no matches)']),
         result.truncated ? `... truncated to first ${MAX_GREP_MATCHES} matches` : `(total matches: ${result.totalMatches})`,
+        result.partial ? '(some files were skipped during search)' : undefined,
         '</matches>',
-        '</grep_result>',
+      '</grep_result>',
       ].filter((entry): entry is string => Boolean(entry)).join('\n'),
       truncated: result.truncated,
     };

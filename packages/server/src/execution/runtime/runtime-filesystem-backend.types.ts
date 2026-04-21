@@ -27,14 +27,25 @@ export interface RuntimeFilesystemReadDirectoryResult extends RuntimeFilesystemR
 }
 
 export interface RuntimeFilesystemReadFileResult extends RuntimeFilesystemReadBaseResult {
+  byteLimited: boolean;
   lines: string[];
+  mimeType: string;
+  totalBytes: number;
   totalLines: number;
   type: 'file';
 }
 
+export interface RuntimeFilesystemReadAssetResult {
+  mimeType: string;
+  path: string;
+  size: number;
+  type: 'binary' | 'image' | 'pdf';
+}
+
 export type RuntimeFilesystemReadResult =
   | RuntimeFilesystemReadDirectoryResult
-  | RuntimeFilesystemReadFileResult;
+  | RuntimeFilesystemReadFileResult
+  | RuntimeFilesystemReadAssetResult;
 
 export interface RuntimeFilesystemFileEntry {
   virtualPath: string;
@@ -47,12 +58,15 @@ export interface RuntimeFilesystemDirectoryResult {
 
 export interface RuntimeFilesystemWriteResult {
   created: boolean;
+  lineCount: number;
   path: string;
+  size: number;
 }
 
 export interface RuntimeFilesystemEditResult {
   occurrences: number;
   path: string;
+  strategy: string;
 }
 
 export interface RuntimeFilesystemDeleteResult {
@@ -85,6 +99,7 @@ export interface RuntimeFilesystemGrepMatch {
 
 export interface RuntimeFilesystemGrepResult {
   matches: RuntimeFilesystemGrepMatch[];
+  partial: boolean;
   totalMatches: number;
   truncated: boolean;
 }
