@@ -1375,3 +1375,10 @@
   - 只在 `git bundle create` 子命令链上生效
   - 只认 `create` 之后第一个显式 positional token
   - 不去补完整 git 语法解析，也不把 `git` 全量抬成粗粒度写命令白名单
+- `git format-patch -o/--output-directory <dir>` 也是同一类高价值边界：
+  - 它会显式写出一组补丁文件到目标目录
+  - 对审批来说，明确输出目录和明确输出文件都属于同一层高价值风险信号
+- 这条边界继续适合留在“子命令 + 明确输出 flag”层：
+  - 只在 `git format-patch` 子命令上生效
+  - 只认 `-o / --output-directory` 这类明确输出目录参数位
+  - 不去猜默认当前目录或其他隐式行为，避免把 hints 重新做成半成品 parser

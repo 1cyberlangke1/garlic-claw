@@ -70,6 +70,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
+const GIT_FORMAT_PATCH_WRITE_PATH_FLAGS = new Set(['-o', '--output-directory']);
 const GIT_SUBMODULE_ADD_VALUE_FLAGS = new Set(['-b', '--branch', '--depth', '--name', '--reference']);
 const GIT_WORKTREE_ADD_VALUE_FLAGS = new Set(['-b', '-B', '--orphan', '--reason']);
 const WGET_WRITE_PATH_FLAGS = new Set(['-O', '--output-document', '--output-file', '-P', '--directory-prefix']);
@@ -476,6 +477,9 @@ function readGitWritePathTokens(tokens: string[]): string[] {
   if (subcommand === 'bundle' && normalizeShellCommandToken(tokens[1] ?? '') === 'create') {
     const destination = readShellPositionalTokens(tokens.slice(2), new Set())[0];
     return destination ? [destination] : [];
+  }
+  if (subcommand === 'format-patch') {
+    return readShellFlaggedPathTokens(tokens.slice(1), GIT_FORMAT_PATCH_WRITE_PATH_FLAGS);
   }
   if (subcommand === 'worktree' && normalizeShellCommandToken(tokens[1] ?? '') === 'add') {
     const destination = readShellPositionalTokens(tokens.slice(2), GIT_WORKTREE_ADD_VALUE_FLAGS)[0];
