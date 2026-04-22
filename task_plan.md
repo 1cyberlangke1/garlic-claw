@@ -935,3 +935,252 @@
 | G20-0 | 已完成 | 压缩 `TODO.md` 已完成部分，并冻结 OpenCode 100% 对齐主路线 |
 | G20-1 | 已完成 | 已完成独立 judge，确认当前执行层与 smoke 修复可作为提交点 |
 | G20-2 | 进行中 | 按 `TODO.md` 的 G20-0 ~ G20-7 逐段推进文件工具成熟度和中间抽象；当前已完成 `read / glob / grep / write / edit` 第一批成熟度增强并通过独立 judge，可作为阶段性提交点 |
+
+## 2026-04-22 G20-2 第二批推进
+
+### 本轮目标
+
+- 继续补 `write / edit` 的工程化反馈，不把 diff owner 重新抬回工具层。
+- 收掉上一轮 judge 提示的 `pdf`、`indentation-flexible`、`trimmed-boundary` 测试缺口。
+- 在继续下一批实现前，重新拿到 fresh 验收证据。
+
+### 当前结果
+
+- `write / edit` 现在都会回带 diff 摘要，当前最小 contract 已包含：
+  - `additions / deletions`
+  - `beforeLineCount / afterLineCount`
+  - `patch`
+- diff 计算已下沉到 `packages/server/src/execution/file/runtime-file-diff.ts`，由 runtime filesystem owner 统一生成。
+- `runtime-text-replace` 已把策略顺序改成：
+  - `exact`
+  - `trimmed-boundary`
+  - `indentation-flexible`
+  - `line-trimmed`
+  - `whitespace-normalized`
+- `read` 已补独立 PDF 格式化断言。
+- `write / edit` 已继续补 session 级 freshness：
+  - 已有文件必须先 `read`
+  - 写入前会校验 `mtime / size` 未变化
+  - `edit` 还会按解析后的 virtual path 串行加锁
+- `glob / grep` 已补空结果与截断 totals 文案。
+- `glob / grep` 已继续补 `partial + skippedPaths` 诊断：
+  - host filesystem backend 会在遍历或读取失败时保留 skipped path
+  - tool 输出会显式提示“哪些路径被跳过”
+- `glob / grep` 已继续补更细失败分类：
+  - backend 结果现在额外保留 `skippedEntries`
+  - `glob` 会标记不可达路径
+  - `grep` 会区分不可达 / 不可读 / 二进制文件跳过
+  - tool 输出会把“搜索不完整”和“非文本文件跳过”拆开提示
+- 已继续补 judge 指出的真实缺口：
+  - `edit` 现已保留 CRLF 行尾，不再把 Windows 文本改写成 LF
+  - `grep` 截断时 `totalMatches` 已改成真实总数，不再只等于已回传条数
+  - freshness path lock 已按 `sessionId + virtualPath` 隔离
+  - `smoke:server` 已补 stale-read 拒绝分支，端到端会验证 invalid edit result
+
+### 下一步
+
+- 继续补 `write / edit` 的 diagnostics / formatting 入口。
+- 继续补 `glob / grep` 的更细失败分类，而不是只停在 skipped path 提示。
+- 本轮如要收口为提交点，仍需独立 judge。
+
+## 2026-04-22 G20-2 第三批推进
+
+### 本轮目标
+
+- 继续把 `edit` 的文本定位能力和失败反馈向 OpenCode 靠齐。
+- 避免出现“替换失败但没有告诉模型该补什么上下文”的弱错误信息。
+
+### 当前结果
+
+- `runtime-text-replace.ts` 当前已新增两类多行定位策略：
+  - `context-aware`
+  - `block-anchor`
+- 匹配顺序已继续收口成：
+  - `exact`
+  - `trimmed-boundary`
+  - `indentation-flexible`
+  - `context-aware`
+  - `block-anchor`
+  - `line-trimmed`
+  - `whitespace-normalized`
+- 当前不再只按“候选文本内容”计数；内部已改为按真实命中位置跟踪：
+  - `candidate`
+  - `startIndex`
+  - `line`
+- 多命中报错现在会显式回显：
+  - 命中的策略名
+  - 命中的总数
+  - 前几处命中的起始行
+  - `replaceAll` 与“补更多上下文”分别该怎么用
+- 未命中报错现在也会明确提示：
+  - 重新读取当前文件
+  - 确保 oldString 与当前文本一致
+  - 给出更多稳定锚点
+- 已同步通过的回归：
+  - `tests/execution/file/runtime-text-replace.spec.ts`
+  - `tests/execution/file/runtime-host-filesystem-backend.service.spec.ts`
+  - `tests/execution/edit/edit-tool.service.spec.ts`
+
+### 下一步
+
+- 通过后做独立 judge，确认不是“策略名变多了，但真实可用性没提升”。
+- 如果 judge 仍挑出真实误改风险，继续先修语义，再谈阶段状态。
+
+### 当前判定
+
+- 本批次独立 judge 已 PASS。
+- 当前可以继续推进 `G20-2 / G20-3 / G20-4` 的剩余成熟度差距，不需要回滚这批 edit 匹配增强。
+
+## 2026-04-22 G20-4 第一批推进
+
+### 本轮目标
+
+- 把 `bash` 的结果文本从“只有原始 stdout/stderr”补到更接近可执行诊断的程度。
+- 把网络策略和 shell 状态语义写成稳定描述，避免模型把当前 backend 误判成持久 shell。
+
+### 当前结果
+
+- `runtime-command-output.ts` 现在会显式输出：
+  - `status: success | failed`
+  - 按成功 / 失败 / 仅 stderr 告警 / 完全无输出 4 类分支给出 `diagnostic`
+  - `stdout_summary / stderr_summary`
+- `BashToolService.buildToolDescription()` 已把环境语义收口为：
+  - 文件在 session 中持续可见
+  - shell 进程状态不会跨调用保留
+  - `workdir` 优先于命令内 `cd`
+  - 文件读写搜索优先用专用工具，不要滥用 `bash`
+  - 网络策略按 `allow / ask / deny` 明示
+- 已新增 `packages/server/tests/execution/bash/bash-tool.service.spec.ts`，钉住 `ask / deny` 两类环境说明。
+
+### 下一步
+
+- 继续补更细的 stderr / exit_code 诊断质量。
+- 视情况补更稳定的 stream summary / structured metadata 提示。
+
+## 2026-04-22 G20-4 第二批推进
+
+### 本轮目标
+
+- 把被截断的 `bash` 完整输出保留为 session 可见文件路径，而不是只给 tail view。
+- 保持主聊天链路与 `builtin.runtime-tools` 继续共用同一条运行时 contract，不再各自特判。
+
+### 当前结果
+
+- 已新增 `packages/server/src/execution/runtime/runtime-command-capture.service.ts`。
+- `RuntimeCommandService` 当前会在 backend 返回后统一判定 stdout/stderr 是否超过默认渲染阈值：
+  - 超过时，把完整输出写入 `/.garlic-claw/runtime-command-output/command-*.txt`
+  - 并把 `outputPath` 带回 `RuntimeCommandResult`
+- shared `PluginRuntimeCommandResult` 已补 `outputPath?: string`，插件宿主链不再丢这条信息。
+- `runtime-command-output.ts` 当前在实际发生截断时会额外回显：
+  - `full_output_path: ...`
+- 已新增并通过定向回归：
+  - `tests/execution/runtime/runtime-command-capture.service.spec.ts`
+  - `tests/execution/runtime/runtime-command.service.spec.ts`
+  - `tests/execution/runtime/runtime-command-output.spec.ts`
+  - `tests/execution/runtime/runtime-tool-backend.service.spec.ts`
+  - `tests/runtime/host/runtime-host.service.spec.ts`
+  - `tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 继续补 `bash` 和 OpenCode 仍未对齐的执行结果治理项。
+- 视情况把完整输出文件索引、清理策略和更多结构化命令元数据继续收口到 runtime owner。
+
+## 2026-04-22 G20-5 第一批推进
+
+### 本轮目标
+
+- 把 `write / edit` 的 diagnostics / formatting 做成正式 overlay owner，不把这类增强语义写死进工具层。
+- 保持 runtime 主链可脱离 overlay 单独工作；overlay 存在时再额外增强结果。
+
+### 当前结果
+
+- 已新增 `packages/server/src/execution/project/project-worktree-post-write.service.ts`。
+- 已新增 `packages/server/src/execution/runtime/runtime-filesystem-post-write.service.ts`。
+- 当前 `RuntimeHostFilesystemBackendService` 只通过 runtime `post-write` owner 消费 overlay 增强：
+  - overlay 存在时执行 post-write 增强
+  - overlay 缺席时回退到 `diagnostics: [] / formatting: null`
+- `write / edit` 结果 contract 已新增：
+  - `postWrite.formatting`
+  - `postWrite.diagnostics`
+- 当前第一轮增强能力：
+  - `.json` 自动 pretty format
+  - `.json / .js / .jsx / .ts / .tsx / .mjs / .cjs` 语法诊断
+- `write / edit` 对模输出已补：
+  - `Formatting: ...`
+  - `Diagnostics: none | N issue(s)`
+  - `<diagnostics file="..."> ... </diagnostics>`
+
+### 下一步
+
+- 继续把 post-write owner 和 runtime filesystem/backend 分层整理到更稳定的中间 contract。
+- 继续确认哪些增强能力应留在 overlay，哪些该继续下沉成通用 runtime owner。
+
+## 2026-04-22 G20-6 第一批推进
+
+### 本轮目标
+
+- 把 shell/filesystem backend 路由的环境变量读取从多个 service 中收走。
+- 让 descriptor 决议、权限审查和实际 backend 选择继续共用同一条 runtime 路由真相。
+
+### 当前结果
+
+- 已新增 `packages/server/src/execution/runtime/runtime-backend-routing.service.ts`。
+- 已新增 `packages/server/src/execution/runtime/runtime-visible-path.ts`。
+- 当前 shell/filesystem backend 路由环境变量只由该 service 读取：
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND`
+  - `GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND`
+- `RuntimeFilesystemBackendService` 当前不再自己读环境变量。
+- `RuntimeToolBackendService` 当前不再自己直接读 shell/filesystem 路由环境变量，而是统一消费 runtime 路由 owner。
+- `RuntimeJustBashService` 与 `RuntimeHostFilesystemBackendService` 当前已共用 visible path 规范化、拼接和越界校验逻辑。
+- `read / glob / grep / write / edit` 当前都会先拿固定 filesystem backend kind，再把同一个 kind 继续传给：
+  - runtime filesystem 执行
+  - freshness 读戳 / 锁
+  - descriptor / 审批链
+- 这条改动已覆盖到：
+  - runtime backend 路由定向测试
+  - runtime visible path 定向测试
+  - `read / glob / grep / write / edit` 定向测试
+  - freshness 定向测试
+  - `tool-registry`
+  - `runtime-host`
+
+### 下一步
+
+- 继续确认 runtime 中层里还有哪些“配置读取 + backend 决议 + 执行”没有完全对齐到同一 owner。
+- 继续压实 command/filesystem/session 三层稳定 contract，减少后续接新 backend 时的回改点。
+
+## 2026-04-22 G20-6 第二批推进
+
+### 本轮目标
+
+- 把 `RuntimeHostRuntimeToolService` 从“同次调用分散准备”收成“单次调用只固定一次 backend kind”。
+- 让 `bash / read / glob / grep / write / edit` 不再在 `execute()` 阶段重复读取当前 backend。
+
+### 当前结果
+
+- `RuntimeToolAccessRequest` 已新增显式 `backendKind`。
+- `RuntimeToolBackendService` 当前支持按显式传入的 kind 读取 backend descriptor，不再只能走当前路由默认值。
+- `RuntimeHostRuntimeToolService` 现在每次 host facade 调用都会：
+  - 先固定 shell 或 filesystem backend kind
+  - 再把同一个 kind 传给 `readInput`
+  - 再把同一个 kind 传给 `readRuntimeAccess`
+  - 最后把同一个 kind 传给 `execute`
+- `RuntimeHostRuntimeToolService` 内部已继续收成两条明确执行通路：
+  - `runShellTool()`
+  - `runFilesystemTool()`
+  - 共同复用 `runPreparedTool()`，避免 6 个 host 方法重复复制同一段准备流程
+- `reviewAccess()` 当前不再自己重新决议 backend，而是直接按 access 上携带的 `backendKind` 读取 descriptor。
+- `bash / read / glob / grep / write / edit` 当前都已把 backend kind 改成输入的一部分：
+  - 文件工具已移除对 `RuntimeToolBackendService` 的直接依赖
+  - `execute()` 只消费准备好的 `backendKind`
+  - 非 host 场景若直接调用 `readInput()`，默认只回到 runtime filesystem default backend，不再读取路由配置
+- 已新增 `packages/server/tests/runtime/host/runtime-host-runtime-tool.service.spec.ts`：
+  - shell 调用会验证 `getShellBackendKind()` 只执行一次
+  - filesystem 调用会验证 `getFilesystemBackendKind()` 只执行一次
+  - 并验证 permission review 与 tool execute 使用的是同一个 backend kind
+
+### 下一步
+
+- 继续确认 `runShellTool / runFilesystemTool / runPreparedTool` 这层是否已足够稳定，还是仍需继续下沉成更正式的 runtime prepared contract。
+- 本轮如要标阶段完成，仍需 fresh 主链和独立 judge。

@@ -966,3 +966,159 @@
   - 策略严格度从上到下
   - 第一层出现匹配后，就由该层决定“成功替换 / 报多命中”
   - 不允许跨层继续碰运气
+- 这轮继续补 judge 残余项后，当前又确认了两件事：
+  - `trimmed-boundary` 和 `indentation-flexible` 如果放在 `line-trimmed` 之后，测试上会长期缺证据，语义上也会被更宽松策略提前吃掉
+  - 更合理的顺序是“更具体、更窄的替换策略优先；真正宽松的 `line-trimmed / whitespace-normalized` 靠后”
+- `write / edit` 的 diff metadata 继续放在 runtime filesystem owner 是对的：
+  - 这样 `builtin.runtime-tools`、主聊天链路和未来 overlay 都能消费同一份 patch/增删行真相
+  - 不需要把 diff 计算重新抬回工具层或聊天层
+- 对 `write` 来说，旧文件不一定总是可安全生成文本 diff：
+  - 如果原文件是图片、PDF 或二进制，继续硬算文本 patch 只会制造噪音
+  - 当前 contract 允许 `write.diff = null`，比伪造一份错误 patch 更稳
+- 当前继续对齐 OpenCode 后确认：
+  - freshness owner 最适合放在 runtime 层，而不是塞进 `write / edit` 两个工具私有状态
+  - `read -> rememberRead -> write/edit assertCanWrite` 这条链足够稳定，而且不会把 session 级“读过什么、什么时候读的”重新抬回 host facade 或 plugin 层
+- path 级锁也不能直接用原始输入字符串做 key：
+  - 同一文件若分别以相对路径和 backend 可见绝对路径进入，会拿到两把不同的锁
+  - 当前把锁键收口到 runtime 解析后的 `virtualPath` 后，这条歧义已经消失
+- 对 `glob / grep` 来说，当前真正影响使用体验的不是继续堆更多字段，而是反馈文本是否让模型知道：
+  - 有没有结果
+  - 当前只看到了多少条
+  - 总共有多少条
+  - 是否因为局部失败而不完整
+  这轮先把空结果和截断 totals 收清楚，是比继续扩返回结构更值的一步
+
+## 2026-04-22 独立复核：G20-2 / G20-3 当前工作树
+
+- `RuntimeFileFreshnessService` 已经是真实 owner，下沉点成立：
+  - `read` 会记录 session 级读戳
+  - `write` 会在写前做已有文件 freshness 校验
+  - `edit` 会在同一 freshness 校验外再套 path 级串行锁
+  - 这条链路不是工具层本地临时变量，而是 runtime 层独立 service
+- 但 `edit` 的“保持原文件换行风格”目前并不成立：
+  - `readTextFile()` 先把 `\r\n` 归一成 `\n`
+  - `editTextFile()` 再基于已归一内容判断行尾风格
+  - 因此 CRLF 文件进入 `edit` 后会被写回成 LF；这会让 rewrite 与 diff 语义偏大，且当前没有定向测试钉住
+- `glob / grep` 的 `partial / skippedPaths` 本身确实来自 filesystem backend：
+  - 目录遍历失败由 `collectRuntimeVisibleFiles()` 标记 `partial + skippedPaths`
+  - `grep` 读取单文件失败时也会继续把跳过路径记录回 backend 结果
+  - 工具层只做结果文本格式化，没有重新拼接 owner
+- 但 `grep` 新增的“showing first X of Y matches”截断 totals 目前不是 backend 真实能力：
+  - host backend 一旦达到 `maxMatches` 就直接返回，`totalMatches` 只会等于当前已收集的行数
+  - `grep-tool.service.spec.ts` 里用 mock 伪造了 `totalMatches: 140` 的截断场景，真实 backend 代码现在给不出这个值
+  - 因此 G20-3 当前可以说 `partial / skippedPaths` owner 下沉成立，但不能说“截断 totals 语义”也已经被 fresh 证据坐实
+- 当前给出的 fresh 验收证据不足以支持 G20-2 / G20-3 继续推进：
+  - 列出的 fresh 命令只覆盖了 `runtime-host-filesystem-backend / glob-tool / grep-tool` 三组定向 jest
+  - 但本轮新增还涉及 `runtime-file-freshness.service.ts`、`write-tool.service.ts`、`edit-tool.service.ts`、`read-tool.service.ts`、`runtime-text-replace.ts`
+  - `smoke:server` 新增的 overwrite happy path 只能证明“读后覆盖成功”，不能证明 freshness 拒绝分支、diff 元数据和 CRLF rewrite 语义
+- 在这条基础上，`partial` 如果仍只有布尔值，工具层就只能回“有东西被跳过”，模型无法据此调整下一步路径：
+  - 更稳的是由 filesystem backend 在真实遍历/读取失败处记录 `skippedPaths`
+  - `glob / grep` 工具层只消费 `partial + skippedPaths`，负责把诊断文本渲染出来
+  - 这样 skipped 语义仍留在 backend owner，不会把不可达路径判断重新抬回工具层
+- `glob` 的 skipped path 不该只在 `grep` 里补：
+  - 遍历阶段就可能因为目录不可达、坏符号链接或 `readdir` 失败而缺文件
+  - 如果 `glob` 不回显这些 skipped path，模型会把“没搜到”误当成“真没有”
+- `grep` 的 skipped path 需要同时覆盖两层：
+  - 遍历阶段没能枚举出来的目录/文件
+  - 已枚举到，但文本读取失败的文件
+  当前把这两层都并回同一个 `skippedPaths` 列表后，输出和 owner 边界都更清楚
+- `edit` 如果先把 CRLF 归一成 LF，再基于归一化文本猜测原行尾，最终写回就会把 Windows 文件偷偷改成 LF：
+  - 这不仅会扩大 rewrite 范围
+  - 还会让 diff metadata 偏大
+  - 更稳的做法是：替换阶段对归一化文本做匹配，但 diff 和最终写回仍基于原始文本与原始行尾
+- `grep.totalMatches` 不能靠“达到 maxMatches 就提前返回”实现：
+  - 那样拿到的只是“当前已收集条数”，不是总数
+  - 工具层再显示“showing first X of Y”就会变成伪 totals
+  - 当前改成 backend 继续统计真实总数，再只截断返回 matches，语义才和文案一致
+- freshness 的 path lock 如果不带 `sessionId`，就会把不同 session 的同名路径串成一把锁：
+  - 这不影响单 session 正确性
+  - 但会把 session owner 边界做脏
+  - 当前锁键改成 `sessionId + virtualPath` 后，这条串扰已经消失
+- stale-read 拒绝分支只靠 service/unit test 还不够：
+  - 需要证明主聊天链路里，tool error 会以 invalid tool result 回到模型
+  - 也需要证明失败后文件不会被错误覆写
+  - 当前把这条链补进 `smoke:server` 后，freshness 语义终于不只停在定向 jest
+- `bash` 结果如果只回 `cwd / exit_code / stdout / stderr`，模型仍要自己猜“这次算成功、失败还是只是有 warning”：
+  - 在统一渲染层补一条稳定的 `status` 和 `diagnostic`，比把这些判断散到聊天链或插件实现里更稳
+  - 这层诊断不改变底层 contract，只是把现有 `exitCode + stdout + stderr` 翻译成更容易消费的文本
+- `bash` 的环境提示也不能只写“如需访问网络，请把依赖写进同一条命令中”：
+  - `allow / ask / deny` 三种网络策略对模型行为差异很大
+  - 把这三态直接写进 `BashToolService.buildToolDescription()` 后，工具描述和 runtime permission 语义终于一致
+- `glob / grep` 如果只有 `skippedPaths`，模型仍不知道“为什么被跳过”：
+  - `glob` 更关心不可达目录或坏路径
+  - `grep` 还要区分“正常跳过的二进制文件”和“真正导致搜索不完整的不可达 / 不可读路径”
+  - 因此把跳过项继续细分成 `skippedEntries[{ path, reason }]` 是值得的；工具层再把“搜索可能不完整”和“非文本文件被跳过”分开提示，后续动作更明确
+- `bash` 结果只给 `status + diagnostic` 还不够：
+  - 当 stdout/stderr 被尾部裁剪时，模型需要知道当前看到的是完整输出还是 tail view
+  - 统一渲染层补 `stdout_summary / stderr_summary` 后，可以稳定说明总行数、总字节数与是否为尾部视图，而不需要把这些细节散回聊天链或插件实现
+- 仅有 tail view 仍不够接近 OpenCode：
+  - 当输出被截断时，模型往往还需要继续 `read` 完整日志
+  - 因此更稳的 contract 是在 runtime command owner 统一写出完整输出文件，并把 `full_output_path` 作为渲染层可选元数据回显
+  - 这样主聊天链路和 `builtin.runtime-tools` 可以继续共用同一条命令结果真相，而不是各自特判“去哪里找完整输出”
+- `edit` 的“只告诉你没找到或有多个”还是偏基础版：
+  - 模型并不知道是精确匹配失败、锚点匹配失败，还是命中了哪几处
+  - 更接近 OpenCode 的做法，是在替换 owner 内部记录真实命中位置，再把“策略名 + 起始行号 + 下一步建议”拼成可执行错误
+  - 这样不用把更多推断抬回 tool service，也不会把歧义解释散到前端或聊天链
+- `context-aware` 和 `block-anchor` 都适合放在 `runtime-text-replace`：
+  - 它们属于纯文本定位策略，不属于 filesystem backend 或 edit tool 的 owner
+  - 继续收在替换 owner 内，后续 `edit` 不管挂哪个 backend，只要最后进入文本替换，都能复用同一套策略顺序和错误语义
+- `bash` 的说明文本继续向 OpenCode 靠时，最有价值的不是再堆 shell 特性，而是减少误用：
+  - 明确 `workdir` 优先，不要在命令里写 `cd`
+  - 明确文件读写搜索优先走专用工具，不要把 `bash` 当成万能文件工具
+- `AiProviderModelsPanel` 里如果每次 `props.models` 变化都整表重置 `contextLengthDraftByModelId`，真实页面会出现一个单测里不明显的问题：
+  - 父层同值重渲染时，用户刚输入的 draft 也会被抹掉
+  - 结果就是“保存上下文”按钮在浏览器里可能一直保持 disabled
+  - 更稳的做法是同时维护 draft 和 base：base 不变时保留 draft，base 变化时再回收
+- 这条 `smoke:web-ui` 还暴露了一个纯测试错误：
+  - 模型上下文长度保存调用的是 `upsertAiModel()`，HTTP 方法是 `POST`
+  - smoke 之前却一直在等 `PUT`
+  - 因此哪怕真实 UI 已经发出请求，验收也会被错误卡死
+- `write / edit` 的 diagnostics / formatting 如果直接塞回工具层，只会把当前第一轮增强再次写死成工具私有逻辑：
+  - 工具层只该消费稳定结果，不该知道“哪些文件类型要格式化、哪些语言怎么报语法错”
+  - 更稳的 owner 是 overlay 侧独立 `post-write` service，由 filesystem backend 以可选依赖消费
+- `post-write` owner 以 filesystem backend 为接入点是合理的：
+  - 它天然拿得到最终虚拟路径、原内容、最终写入内容
+  - diff、freshness、formatting、diagnostics 这些结果都能围绕“真实最终落盘内容”收口
+  - 工具层只需把结果渲染给模型，不需要再碰写后策略
+- 但让 filesystem backend 直接认识具体 overlay service，仍然会把中间抽象做薄：
+  - backend 会知道“project 层到底是哪一个 service”
+  - 后续若再挂第二个、第三个 post-write provider，就会重新回到 backend 改装配
+  - 更稳的是补一层 runtime `post-write` owner，统一聚合 provider，再让 backend 只依赖这个稳定 contract
+- shell/filesystem backend 路由如果继续一半在 `RuntimeToolBackendService`、一半在具体 backend service 里直接读环境变量，中层 owner 仍然不够稳定：
+  - descriptor 决议和真实执行可能各自读不同配置源
+  - 测试夹具一多，也会到处手工记住“这个 service 需要自己读哪个环境变量”
+  - 更稳的是把路由读取收成单独 runtime owner，让 descriptor、权限审查和执行都围绕同一个 backend route 真相
+- visible path 解析如果继续在 `RuntimeJustBashService` 和 filesystem backend 各写一份，也会留下下一轮接 backend 时最容易漂移的语义：
+  - 相对路径怎样挂到 visible root
+  - `..` 怎样归一
+  - 越界时抛什么错误
+  - 更稳的是把这三件事收成 runtime 领域模块，让 command/filesystem 继续共用同一套 path truth
+- filesystem backend 如果继续在执行时自己隐式读“当前 configured backend”，而 descriptor / 审批链走的是另一套 route 决议，文件工具就会保留一条细小但真实的错位风险：
+  - 同一次调用里，审查的 backend 和真正执行的 backend 可能不是同一个 owner 决出来的
+  - freshness 读戳和锁如果再跟着“当前配置”单独判断，边界会更脏
+  - 更稳的方式是：工具先拿到固定 filesystem backend kind，再把同一个 kind 继续传给审批、freshness 和执行
+- 仅把文件工具 `execute()` 改成显式接收 backend kind 还不够：
+  - 如果 `RuntimeHostRuntimeToolService` 仍分别调用 `readInput()`、`readRuntimeAccess()` 和 `reviewAccess()` 时各自取一次 backend
+  - 那同一次 host facade 调用里仍然可能留下“准备阶段重复决议”的 owner 漂移点
+  - 更稳的方式是 host facade 先固定一次 backend kind，再把这一个值贯穿 input、access 和 review
+- `RuntimeToolAccessRequest` 挂显式 `backendKind` 是值得的：
+  - permission review 不再需要根据 role 回头猜“当前 backend 是哪个”
+  - access 自身就能完整表达“本次动作是针对哪个 backend 做审查”
+  - 这也让独立测试更容易直接钉住“review 和 execute 用的是同一个 backend”
+- host facade 继续保留 6 份几乎相同的“读取 backend / 读 input / review / execute”模板也不理想：
+  - 这会让下一次新增 runtime 工具时再次复制控制流
+  - 更稳的是在 `RuntimeHostRuntimeToolService` 内收成两条清晰执行通路：
+    - shell tool
+    - filesystem tool
+  - 再让它们共用一条 prepared execution 模板，但这层仍然留在 host owner 内，不额外扩散到工具层
+- 文件工具去掉 `RuntimeToolBackendService` 直依赖后，owner 边界更干净：
+  - `read / glob / grep / write / edit` 只负责参数校验、稳定 contract 调用和结果包装
+  - backend 路由真相继续只留在 runtime host facade 与 runtime backend owner
+  - 非 host 场景若直接构造输入，仍可回到 runtime filesystem default backend，不会把“当前路由配置”偷偷带进工具层
+- 这条链如果没有“overlay 缺席时的正式空结果”，很容易退化成运行时报错或隐式兼容：
+  - 当前显式回退为 `diagnostics: [] / formatting: null`
+  - 这样无 overlay 仍可工作，有 overlay 再增强，不需要旧兼容壳
+- 在当前仓库能力下，第一轮最划算的增强不是直接造 LSP 子系统，而是先落最小可用的静态增强：
+  - `.json` 自动 pretty format
+  - `.json / .js / .jsx / .ts / .tsx / .mjs / .cjs` 语法诊断
+  - 这能先把 contract 和结果呈现钉住，后续再替换成更强 owner 也不需要回改工具层

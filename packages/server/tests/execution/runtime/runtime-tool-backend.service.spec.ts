@@ -1,7 +1,10 @@
+import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
+import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
 import type { RuntimeFilesystemBackend } from '../../../src/execution/runtime/runtime-filesystem-backend.types';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
 
 describe('RuntimeToolBackendService', () => {
@@ -25,10 +28,11 @@ describe('RuntimeToolBackendService', () => {
     delete process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
     const service = new RuntimeToolBackendService(
+      new RuntimeBackendRoutingService(),
       new RuntimeCommandService([
         createRuntimeBackend('alpha'),
         createRuntimeBackend('beta'),
-      ]),
+      ], new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService())),
       new RuntimeFilesystemBackendService([
         createFilesystemBackend('alpha-filesystem'),
         createFilesystemBackend('beta-filesystem'),
@@ -43,10 +47,11 @@ describe('RuntimeToolBackendService', () => {
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'beta';
     process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = 'alpha-filesystem';
     const service = new RuntimeToolBackendService(
+      new RuntimeBackendRoutingService(),
       new RuntimeCommandService([
         createRuntimeBackend('alpha'),
         createRuntimeBackend('beta'),
-      ]),
+      ], new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService())),
       new RuntimeFilesystemBackendService([
         createFilesystemBackend('alpha-filesystem'),
         createFilesystemBackend('beta-filesystem'),
@@ -62,7 +67,11 @@ describe('RuntimeToolBackendService', () => {
   it('rejects unknown configured backend kind', () => {
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'missing';
     const service = new RuntimeToolBackendService(
-      new RuntimeCommandService([createRuntimeBackend('alpha')]),
+      new RuntimeBackendRoutingService(),
+      new RuntimeCommandService(
+        [createRuntimeBackend('alpha')],
+        new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService()),
+      ),
       new RuntimeFilesystemBackendService([createFilesystemBackend('alpha-filesystem')]),
     );
 
@@ -74,7 +83,11 @@ describe('RuntimeToolBackendService', () => {
   it('rejects unknown configured filesystem backend kind', () => {
     process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND = 'missing-filesystem';
     const service = new RuntimeToolBackendService(
-      new RuntimeCommandService([createRuntimeBackend('alpha')]),
+      new RuntimeBackendRoutingService(),
+      new RuntimeCommandService(
+        [createRuntimeBackend('alpha')],
+        new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService()),
+      ),
       new RuntimeFilesystemBackendService([createFilesystemBackend('alpha-filesystem')]),
     );
 
@@ -145,8 +158,19 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     },
     async editTextFile() {
       return {
+        diff: {
+          additions: 1,
+          afterLineCount: 1,
+          beforeLineCount: 1,
+          deletions: 1,
+          patch: 'mock patch',
+        },
         occurrences: 1,
         path: '/mock.txt',
+        postWrite: {
+          diagnostics: [],
+          formatting: null,
+        },
         strategy: 'exact',
       };
     },
@@ -160,6 +184,9 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
       return {
         basePath: '/',
         matches: ['/mock.txt'],
+        partial: false,
+        skippedEntries: [],
+        skippedPaths: [],
         totalMatches: 1,
         truncated: false,
       };
@@ -198,6 +225,8 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
           },
         ],
         partial: false,
+        skippedEntries: [],
+        skippedPaths: [],
         totalMatches: 1,
         truncated: false,
       };
@@ -265,8 +294,19 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     async writeTextFile() {
       return {
         created: true,
+        diff: {
+          additions: 1,
+          afterLineCount: 1,
+          beforeLineCount: 0,
+          deletions: 0,
+          patch: 'mock patch',
+        },
         lineCount: 1,
         path: '/mock.txt',
+        postWrite: {
+          diagnostics: [],
+          formatting: null,
+        },
         size: 4,
       };
     },

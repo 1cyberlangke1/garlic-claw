@@ -11,6 +11,17 @@ import type { RuntimeToolAccessRequest } from '../../execution/runtime/runtime-t
 import { WriteToolService } from '../../execution/write/write-tool.service';
 import { readJsonObject, readOptionalString } from './runtime-host-values';
 
+interface RuntimeHostToolDefinition<TInput, TResult> {
+  execute(input: TInput): Promise<TResult>;
+  getToolName(): string;
+  readInput(
+    args: Record<string, unknown>,
+    sessionId?: string,
+    backendKind?: string,
+  ): TInput;
+  readRuntimeAccess(input: TInput): RuntimeToolAccessRequest;
+}
+
 @Injectable()
 export class RuntimeHostRuntimeToolService {
   constructor(
@@ -25,39 +36,56 @@ export class RuntimeHostRuntimeToolService {
   ) {}
 
   async executeCommand(context: PluginCallContext, params: JsonObject) {
-    const input = this.bashToolService.readInput(params, context.conversationId);
-    await this.reviewAccess(context, this.bashToolService.getToolName(), this.bashToolService.readRuntimeAccess(params, context.conversationId));
-    return this.bashToolService.execute(input);
+    return this.runShellTool(context, params, this.bashToolService);
   }
 
   async readPath(context: PluginCallContext, params: JsonObject) {
-    const input = this.readToolService.readInput(params, context.conversationId);
-    await this.reviewAccess(context, this.readToolService.getToolName(), this.readToolService.readRuntimeAccess(params, context.conversationId));
-    return this.readToolService.execute(input);
+    return this.runFilesystemTool(context, params, this.readToolService);
   }
 
   async globPaths(context: PluginCallContext, params: JsonObject) {
-    const input = this.globToolService.readInput(params, context.conversationId);
-    await this.reviewAccess(context, this.globToolService.getToolName(), this.globToolService.readRuntimeAccess(params, context.conversationId));
-    return this.globToolService.execute(input);
+    return this.runFilesystemTool(context, params, this.globToolService);
   }
 
   async grepContent(context: PluginCallContext, params: JsonObject) {
-    const input = this.grepToolService.readInput(params, context.conversationId);
-    await this.reviewAccess(context, this.grepToolService.getToolName(), this.grepToolService.readRuntimeAccess(params, context.conversationId));
-    return this.grepToolService.execute(input);
+    return this.runFilesystemTool(context, params, this.grepToolService);
   }
 
   async writeFile(context: PluginCallContext, params: JsonObject) {
-    const input = this.writeToolService.readInput(params, context.conversationId);
-    await this.reviewAccess(context, this.writeToolService.getToolName(), this.writeToolService.readRuntimeAccess(params, context.conversationId));
-    return this.writeToolService.execute(input);
+    return this.runFilesystemTool(context, params, this.writeToolService);
   }
 
   async editFile(context: PluginCallContext, params: JsonObject) {
-    const input = this.editToolService.readInput(params, context.conversationId);
-    await this.reviewAccess(context, this.editToolService.getToolName(), this.editToolService.readRuntimeAccess(params, context.conversationId));
-    return this.editToolService.execute(input);
+    return this.runFilesystemTool(context, params, this.editToolService);
+  }
+
+  private async runFilesystemTool<TInput, TResult>(
+    context: PluginCallContext,
+    params: JsonObject,
+    tool: RuntimeHostToolDefinition<TInput, TResult>,
+  ): Promise<TResult> {
+    const backendKind = this.runtimeToolBackendService.getFilesystemBackendKind();
+    return this.runPreparedTool(context, params, tool, backendKind);
+  }
+
+  private async runPreparedTool<TInput, TResult>(
+    context: PluginCallContext,
+    params: JsonObject,
+    tool: RuntimeHostToolDefinition<TInput, TResult>,
+    backendKind: string,
+  ): Promise<TResult> {
+    const input = tool.readInput(params, context.conversationId, backendKind);
+    await this.reviewAccess(context, tool.getToolName(), tool.readRuntimeAccess(input));
+    return tool.execute(input);
+  }
+
+  private async runShellTool<TInput, TResult>(
+    context: PluginCallContext,
+    params: JsonObject,
+    tool: RuntimeHostToolDefinition<TInput, TResult>,
+  ): Promise<TResult> {
+    const backendKind = this.runtimeToolBackendService.getShellBackendKind();
+    return this.runPreparedTool(context, params, tool, backendKind);
   }
 
   private async reviewAccess(
@@ -69,7 +97,7 @@ export class RuntimeHostRuntimeToolService {
     if (requiredOperations.length === 0) {
       return;
     }
-    const backend = this.runtimeToolBackendService.getBackendDescriptor(access.role);
+    const backend = this.runtimeToolBackendService.getBackendDescriptor(access.role, access.backendKind);
     const metadata = readJsonObject(context.metadata);
     const assistantMessageId = metadata ? readOptionalString(metadata, 'assistantMessageId') : null;
     await this.runtimeToolPermissionService.review({

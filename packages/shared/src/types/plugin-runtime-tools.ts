@@ -16,6 +16,7 @@ export interface PluginRuntimeCommandResult {
   backendKind: RuntimeBackendKind;
   cwd: string;
   exitCode: number;
+  outputPath?: string;
   sessionId: string;
   stderr: string;
   stderrStats: PluginRuntimeCommandStreamStats;
@@ -33,7 +34,7 @@ export interface PluginRuntimeReadResult {
   output: string;
   path: string;
   truncated: boolean;
-  type: 'directory' | 'file';
+  type: 'binary' | 'directory' | 'file' | 'image' | 'pdf';
 }
 
 export interface PluginRuntimeGlobParams {
@@ -64,10 +65,21 @@ export interface PluginRuntimeWriteParams {
   filePath: string;
 }
 
+export interface PluginRuntimeFileDiffSummary {
+  additions: number;
+  afterLineCount: number;
+  beforeLineCount: number;
+  deletions: number;
+  patch: string;
+}
+
 export interface PluginRuntimeWriteResult {
   created: boolean;
+  diff?: PluginRuntimeFileDiffSummary | null;
+  lineCount?: number;
   output: string;
   path: string;
+  size?: number;
 }
 
 export interface PluginRuntimeEditParams {
@@ -78,7 +90,9 @@ export interface PluginRuntimeEditParams {
 }
 
 export interface PluginRuntimeEditResult {
+  diff?: PluginRuntimeFileDiffSummary;
   occurrences: number;
   output: string;
   path: string;
+  strategy?: string;
 }

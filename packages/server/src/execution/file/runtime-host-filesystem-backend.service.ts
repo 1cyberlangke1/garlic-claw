@@ -2,12 +2,19 @@ import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { RuntimeBackendDescriptor } from '../runtime/runtime-command.types';
 import type { RuntimeFilesystemBackend } from '../runtime/runtime-filesystem-backend.types';
+import { RuntimeFilesystemPostWriteService } from '../runtime/runtime-filesystem-post-write.service';
 import { RuntimeMountedWorkspaceFileSystem } from '../runtime/runtime-mounted-workspace-file-system';
 import type { RuntimeSessionEnvironment } from '../runtime/runtime-session-environment.types';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import {
+  joinRuntimeVisiblePath,
+  normalizeRuntimeVisiblePath,
+  resolveRuntimeVisiblePath,
+} from '../runtime/runtime-visible-path';
+import { buildRuntimeFilesystemDiff } from './runtime-file-diff';
 import { replaceRuntimeText } from './runtime-text-replace';
 import type {
   RuntimeFilesystemDeleteResult,
@@ -20,6 +27,8 @@ import type {
   RuntimeFilesystemPathStat,
   RuntimeFilesystemReadResult,
   RuntimeFilesystemResolvedPath,
+  RuntimeFilesystemSkippedEntry,
+  RuntimeFilesystemSkippedReason,
   RuntimeFilesystemSymlinkResult,
   RuntimeFilesystemTransferResult,
   RuntimeFilesystemWriteResult,
@@ -60,6 +69,8 @@ interface RuntimeHostFilesystemFileEntry extends RuntimeFilesystemFileEntry {
 export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBackend {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    @Optional()
+    private readonly runtimeFilesystemPostWriteService?: RuntimeFilesystemPostWriteService,
   ) {}
 
   getKind(): string {
@@ -174,6 +185,9 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     return {
       basePath: listed.basePath,
       matches: matches.slice(0, input.maxResults).map((entry) => entry.virtualPath),
+      partial: listed.partial,
+      skippedEntries: listed.skippedEntries,
+      skippedPaths: listed.skippedPaths,
       totalMatches: matches.length,
       truncated: matches.length > input.maxResults,
     };
@@ -198,8 +212,10 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     const listed = await this.listFiles(sessionId, input.path);
     const matchRows = new Map<string, Array<{ line: number; text: string }>>();
     const fileTimes = new Map<string, number>();
-    let partial = false;
+    let partial = listed.partial;
     const rows: RuntimeFilesystemGrepMatch[] = [];
+    const skippedEntries = [...listed.skippedEntries];
+    const skippedPaths = [...listed.skippedPaths];
     for (const file of listed.files) {
       const relativePath = toFilesystemRelativePath(listed.basePath, file.virtualPath);
       if (input.include && !matchesFilesystemGlobPattern(input.include, relativePath)) {
@@ -210,9 +226,12 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
         textFile = await this.readTextFile(sessionId, file.virtualPath);
       } catch (error) {
         if (isBinaryReadError(error)) {
+          pushRuntimeSkippedEntry(skippedEntries, file.virtualPath, 'binary');
           continue;
         }
         partial = true;
+        pushRuntimeSkippedPath(skippedPaths, file.virtualPath);
+        pushRuntimeSkippedEntry(skippedEntries, file.virtualPath, 'unreadable');
         continue;
       }
       const lines = splitFilesystemTextLines(textFile.content);
@@ -245,21 +264,16 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
           text: row.text,
           virtualPath,
         });
-        if (rows.length >= input.maxMatches) {
-          return {
-            matches: rows,
-            partial,
-            totalMatches: rows.length,
-            truncated: true,
-          };
-        }
       }
     }
+    const truncated = rows.length > input.maxMatches;
     return {
-      matches: rows,
+      matches: truncated ? rows.slice(0, input.maxMatches) : rows,
       partial,
+      skippedEntries,
+      skippedPaths,
       totalMatches: rows.length,
-      truncated: false,
+      truncated,
     };
   }
 
@@ -431,20 +445,43 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     };
   }
 
-  async listFiles(sessionId: string, inputPath?: string): Promise<{ basePath: string; files: RuntimeHostFilesystemFileEntry[] }> {
+  async listFiles(sessionId: string, inputPath?: string): Promise<{
+    basePath: string;
+    files: RuntimeHostFilesystemFileEntry[];
+    partial: boolean;
+    skippedEntries: RuntimeFilesystemSkippedEntry[];
+    skippedPaths: string[];
+  }> {
     const target = await this.requireExistingPath(sessionId, inputPath);
     if (target.type === 'file') {
       return {
         basePath: target.virtualPath,
         files: [{ hostPath: target.hostPath, virtualPath: target.virtualPath }],
+        partial: false,
+        skippedEntries: [],
+        skippedPaths: [],
       };
     }
     const files: RuntimeHostFilesystemFileEntry[] = [];
-    await collectRuntimeVisibleFiles(target.hostPath, target.virtualPath, files, new Set<string>());
+    const traversal = {
+      partial: false,
+      skippedEntries: [] as RuntimeFilesystemSkippedEntry[],
+      skippedPaths: [] as string[],
+    };
+    await collectRuntimeVisibleFiles(
+      target.hostPath,
+      target.virtualPath,
+      files,
+      new Set<string>(),
+      traversal,
+    );
     files.sort((left, right) => left.virtualPath.localeCompare(right.virtualPath));
     return {
       basePath: target.virtualPath,
       files,
+      partial: traversal.partial,
+      skippedEntries: traversal.skippedEntries,
+      skippedPaths: traversal.skippedPaths,
     };
   }
 
@@ -468,16 +505,37 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
 
   async writeTextFile(sessionId: string, inputPath: string, content: string): Promise<RuntimeFilesystemWriteResult> {
     const target = await this.resolvePath(sessionId, inputPath);
+    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
+      sessionId,
+    );
     if (target.exists && target.type !== 'file') {
       throw new BadRequestException(`路径不是文件: ${target.virtualPath}`);
     }
+    const previousContent = await readRuntimeDiffBaseContent(target);
+    const processed = this.runtimeFilesystemPostWriteService?.processTextFile({
+      content,
+      hostPath: target.hostPath,
+      path: target.virtualPath,
+      sessionRoot: sessionEnvironment.sessionRoot,
+      visibleRoot: sessionEnvironment.visibleRoot,
+    }) ?? {
+      content,
+      postWrite: {
+        diagnostics: [],
+        formatting: null,
+      },
+    };
     await fsPromises.mkdir(path.dirname(target.hostPath), { recursive: true });
-    await fsPromises.writeFile(target.hostPath, content, 'utf8');
+    await fsPromises.writeFile(target.hostPath, processed.content, 'utf8');
     return {
       created: !target.exists,
-      lineCount: countFilesystemTextLines(content),
+      diff: previousContent === null
+        ? null
+        : buildRuntimeFilesystemDiff(target.virtualPath, previousContent, processed.content),
+      lineCount: countFilesystemTextLines(processed.content),
+      postWrite: processed.postWrite,
       path: target.virtualPath,
-      size: Buffer.byteLength(content, 'utf8'),
+      size: Buffer.byteLength(processed.content, 'utf8'),
     };
   }
 
@@ -493,14 +551,17 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     if (input.oldString === input.newString) {
       throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');
     }
-    const file = await this.readTextFile(sessionId, input.filePath);
-    const lineEnding = detectWorkspaceLineEnding(file.content);
-    const oldString = normalizeWorkspaceLineEnding(input.oldString, lineEnding);
-    const newString = normalizeWorkspaceLineEnding(input.newString, lineEnding);
-    const replaced = replaceRuntimeText(file.content, oldString, newString, input.replaceAll);
-    const writeResult = await this.writeTextFile(sessionId, file.path, replaced.content);
+    const file = await readRuntimeEditableTextFile(this, sessionId, input.filePath);
+    const lineEnding = detectWorkspaceLineEnding(file.rawContent);
+    const oldString = normalizeWorkspaceTextForReplacement(input.oldString);
+    const newString = normalizeWorkspaceTextForReplacement(input.newString);
+    const replaced = replaceRuntimeText(file.normalizedContent, oldString, newString, input.replaceAll);
+    const nextContent = applyWorkspaceLineEnding(replaced.content, lineEnding);
+    const writeResult = await this.writeTextFile(sessionId, file.path, nextContent);
     return {
+      diff: writeResult.diff ?? buildRuntimeFilesystemDiff(writeResult.path, file.rawContent, nextContent),
       occurrences: replaced.occurrences,
+      postWrite: writeResult.postWrite,
       path: writeResult.path,
       strategy: replaced.strategy,
     };
@@ -543,19 +604,6 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
   }
 }
 
-function resolveRuntimeVisiblePath(visibleRoot: string, inputPath?: string): string {
-  if (!inputPath || !inputPath.trim()) {
-    return visibleRoot;
-  }
-  const normalized = inputPath.trim().startsWith('/')
-    ? normalizeRuntimeVirtualPath(inputPath.trim())
-    : normalizeRuntimeVirtualPath(`${visibleRoot}/${inputPath.trim()}`);
-  if (visibleRoot !== '/' && normalized !== visibleRoot && !normalized.startsWith(`${visibleRoot}/`)) {
-    throw new BadRequestException(`路径必须位于 ${visibleRoot} 内`);
-  }
-  return normalized;
-}
-
 function toRuntimeHostPath(sessionRoot: string, virtualRoot: string, virtualPath: string): string {
   const relativePath = readRelativeRuntimePath(virtualRoot, virtualPath);
   const hostPath = relativePath ? path.join(sessionRoot, ...relativePath.split('/')) : sessionRoot;
@@ -587,23 +635,48 @@ async function collectRuntimeVisibleFiles(
   virtualPath: string,
   files: RuntimeHostFilesystemFileEntry[],
   visitedDirectories: Set<string>,
+  traversal: {
+    partial: boolean;
+    skippedEntries: RuntimeFilesystemSkippedEntry[];
+    skippedPaths: string[];
+  },
 ): Promise<void> {
-  const stat = await fsPromises.lstat(hostPath);
+  let stat: fs.Stats;
+  try {
+    stat = await fsPromises.lstat(hostPath);
+  } catch {
+    markRuntimeTraversalSkipped(traversal, virtualPath);
+    return;
+  }
   if (stat.isSymbolicLink()) {
-    const resolved = await fsPromises.realpath(hostPath);
-    const targetStat = await fsPromises.stat(hostPath);
+    let resolved: string;
+    let targetStat: fs.Stats;
+    try {
+      resolved = await fsPromises.realpath(hostPath);
+      targetStat = await fsPromises.stat(hostPath);
+    } catch {
+      markRuntimeTraversalSkipped(traversal, virtualPath);
+      return;
+    }
     if (targetStat.isDirectory()) {
       if (visitedDirectories.has(resolved)) {
         return;
       }
       visitedDirectories.add(resolved);
-      const entries = await fsPromises.readdir(hostPath, { withFileTypes: true });
+      let entries: fs.Dirent[];
+      try {
+        entries = await fsPromises.readdir(hostPath, { withFileTypes: true });
+      } catch {
+        markRuntimeTraversalSkipped(traversal, virtualPath);
+        return;
+      }
       for (const entry of entries) {
         await collectRuntimeVisibleFiles(
           path.join(hostPath, entry.name),
           joinRuntimeVirtualPath(virtualPath, entry.name),
           files,
           visitedDirectories,
+          traversal,
         );
       }
       return;
@@ -612,18 +685,31 @@ async function collectRuntimeVisibleFiles(
     return;
   }
   if (stat.isDirectory()) {
-    const resolved = await fsPromises.realpath(hostPath);
+    let resolved: string;
+    try {
+      resolved = await fsPromises.realpath(hostPath);
+    } catch {
+      markRuntimeTraversalSkipped(traversal, virtualPath);
+      return;
+    }
     if (visitedDirectories.has(resolved)) {
       return;
     }
     visitedDirectories.add(resolved);
-    const entries = await fsPromises.readdir(hostPath, { withFileTypes: true });
+    let entries: fs.Dirent[];
+    try {
+      entries = await fsPromises.readdir(hostPath, { withFileTypes: true });
+    } catch {
+      markRuntimeTraversalSkipped(traversal, virtualPath);
+      return;
+    }
     for (const entry of entries) {
       await collectRuntimeVisibleFiles(
         path.join(hostPath, entry.name),
         joinRuntimeVirtualPath(virtualPath, entry.name),
         files,
         visitedDirectories,
+        traversal,
       );
     }
     return;
@@ -632,20 +718,7 @@ async function collectRuntimeVisibleFiles(
 }
 
 function joinRuntimeVirtualPath(basePath: string, nextPath: string): string {
-  return normalizeRuntimeVirtualPath(`${basePath}/${nextPath}`);
-}
-
-function normalizeRuntimeVirtualPath(input: string): string {
-  const parts = input.split('/').filter((entry) => entry.length > 0 && entry !== '.');
-  const stack: string[] = [];
-  for (const part of parts) {
-    if (part === '..') {
-      stack.pop();
-      continue;
-    }
-    stack.push(part);
-  }
-  return `/${stack.join('/')}`;
+  return joinRuntimeVisiblePath(basePath, nextPath);
 }
 
 function containsBinarySample(buffer: Buffer): boolean {
@@ -690,6 +763,25 @@ async function containsBinaryContent(hostPath: string, size: number): Promise<bo
   } finally {
     await file.close();
   }
+}
+
+async function readRuntimeDiffBaseContent(
+  target: RuntimeHostFilesystemResolvedPath,
+): Promise<string | null> {
+  if (!target.exists || target.type !== 'file') {
+    return '';
+  }
+  const stat = await fsPromises.stat(target.hostPath);
+  const mimeType = detectFilesystemMimeType(target.virtualPath);
+  if (
+    isFilesystemImageMimeType(mimeType)
+    || mimeType === 'application/pdf'
+    || isBinaryFilesystemPath(target.virtualPath)
+    || await containsBinaryContent(target.hostPath, stat.size)
+  ) {
+    return null;
+  }
+  return fsPromises.readFile(target.hostPath, 'utf8');
 }
 
 function detectFilesystemMimeType(virtualPath: string): string {
@@ -880,7 +972,7 @@ async function readNearbyVisiblePaths(
     })
     .sort((left, right) => left.localeCompare(right))
     .slice(0, 3)
-    .map((entryName) => normalizeRuntimeVirtualPath(`${directoryVirtualPath}/${entryName}`));
+    .map((entryName) => normalizeRuntimeVisiblePath(`${directoryVirtualPath}/${entryName}`));
 }
 
 function matchesFilesystemGlobPattern(pattern: string, relativePath: string): boolean {
@@ -914,4 +1006,77 @@ function normalizeWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'
 
 function countFilesystemTextLines(content: string): number {
   return splitFilesystemTextLines(content).length;
+}
+
+async function readRuntimeEditableTextFile(
+  backend: RuntimeHostFilesystemBackendService,
+  sessionId: string,
+  inputPath: string,
+): Promise<{
+  normalizedContent: string;
+  path: string;
+  rawContent: string;
+}> {
+  const target = await backend.resolvePath(sessionId, inputPath);
+  if (!target.exists || target.type !== 'file') {
+    throw new BadRequestException(`路径不是文件: ${target.virtualPath}`);
+  }
+  const buffer = await fsPromises.readFile(target.hostPath);
+  const mimeType = detectFilesystemMimeType(target.virtualPath);
+  if (
+    mimeType === 'application/pdf'
+    || isFilesystemImageMimeType(mimeType)
+    || isBinaryFilesystemPath(target.virtualPath)
+    || containsBinarySample(buffer)
+  ) {
+    throw new BadRequestException(`暂不支持读取二进制文件: ${target.virtualPath} (${mimeType})`);
+  }
+  const rawContent = buffer.toString('utf8');
+  return {
+    normalizedContent: normalizeWorkspaceTextForReplacement(rawContent),
+    path: target.virtualPath,
+    rawContent,
+  };
+}
+
+function normalizeWorkspaceTextForReplacement(content: string): string {
+  return content.replace(/\r\n/g, '\n');
+}
+
+function applyWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'): string {
+  return normalizeWorkspaceLineEnding(content, lineEnding);
+}
+
+function markRuntimeTraversalSkipped(
+  traversal: {
+    partial: boolean;
+    skippedEntries: RuntimeFilesystemSkippedEntry[];
+    skippedPaths: string[];
+  },
+  virtualPath: string,
+): void {
+  traversal.partial = true;
+  pushRuntimeSkippedPath(traversal.skippedPaths, virtualPath);
+  pushRuntimeSkippedEntry(traversal.skippedEntries, virtualPath, 'inaccessible');
+}
+
+function pushRuntimeSkippedPath(skippedPaths: string[], virtualPath: string): void {
+  if (skippedPaths.includes(virtualPath)) {
+    return;
+  }
+  skippedPaths.push(virtualPath);
+}
+
+function pushRuntimeSkippedEntry(
+  skippedEntries: RuntimeFilesystemSkippedEntry[],
+  virtualPath: string,
+  reason: RuntimeFilesystemSkippedReason,
+): void {
+  if (skippedEntries.some((entry) => entry.path === virtualPath && entry.reason === reason)) {
+    return;
+  }
+  skippedEntries.push({
+    path: virtualPath,
+    reason,
+  });
 }

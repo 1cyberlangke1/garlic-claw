@@ -1,43 +1,67 @@
 import type { RuntimeToolBackendRole } from './runtime-tool-access';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
 import { Injectable } from '@nestjs/common';
+import { RuntimeBackendRoutingService } from './runtime-backend-routing.service';
 import { RuntimeCommandService } from './runtime-command.service';
 import { RuntimeFilesystemBackendService } from './runtime-filesystem-backend.service';
 
 @Injectable()
 export class RuntimeToolBackendService {
   constructor(
+    private readonly runtimeBackendRoutingService: RuntimeBackendRoutingService,
     private readonly runtimeCommandService: RuntimeCommandService,
     private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
   ) {}
 
-  getBackendDescriptor(role: RuntimeToolBackendRole): RuntimeBackendDescriptor {
+  getBackendDescriptor(
+    role: RuntimeToolBackendRole,
+    backendKind?: RuntimeBackendDescriptor['kind'],
+  ): RuntimeBackendDescriptor {
     return role === 'shell'
-      ? this.getShellBackendDescriptor()
-      : this.getFilesystemBackendDescriptor();
+      ? this.getShellBackendDescriptor(backendKind)
+      : this.getFilesystemBackendDescriptor(backendKind);
   }
 
-  getBackendKind(role: RuntimeToolBackendRole): RuntimeBackendDescriptor['kind'] {
-    return this.getBackendDescriptor(role).kind;
+  getBackendKind(
+    role: RuntimeToolBackendRole,
+    backendKind?: RuntimeBackendDescriptor['kind'],
+  ): RuntimeBackendDescriptor['kind'] {
+    return this.getBackendDescriptor(role, backendKind).kind;
   }
 
-  getShellBackendDescriptor(): RuntimeBackendDescriptor {
+  getShellBackendDescriptor(backendKind?: RuntimeBackendDescriptor['kind']): RuntimeBackendDescriptor {
     return this.readConfiguredBackendDescriptor(
-      process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND,
+      backendKind ?? this.runtimeBackendRoutingService.getConfiguredShellBackendKind(),
       'shell',
     );
   }
 
-  getShellBackendKind(): RuntimeBackendDescriptor['kind'] {
-    return this.getShellBackendDescriptor().kind;
+  getShellBackendKind(backendKind?: RuntimeBackendDescriptor['kind']): RuntimeBackendDescriptor['kind'] {
+    return this.getShellBackendDescriptor(backendKind).kind;
   }
 
-  getFilesystemBackendDescriptor(): RuntimeBackendDescriptor {
-    return this.runtimeFilesystemBackendService.getConfiguredBackendDescriptor();
+  getFilesystemBackendDescriptor(backendKind?: RuntimeBackendDescriptor['kind']): RuntimeBackendDescriptor {
+    return this.readConfiguredFilesystemBackendDescriptor(
+      backendKind ?? this.runtimeBackendRoutingService.getConfiguredFilesystemBackendKind(),
+    );
   }
 
-  getFilesystemBackendKind(): RuntimeBackendDescriptor['kind'] {
-    return this.getFilesystemBackendDescriptor().kind;
+  getFilesystemBackendKind(backendKind?: RuntimeBackendDescriptor['kind']): RuntimeBackendDescriptor['kind'] {
+    return this.getFilesystemBackendDescriptor(backendKind).kind;
+  }
+
+  private readConfiguredFilesystemBackendDescriptor(
+    configuredBackendKind?: RuntimeBackendDescriptor['kind'],
+  ): RuntimeBackendDescriptor {
+    if (!configuredBackendKind) {
+      return this.runtimeFilesystemBackendService.getDefaultBackendDescriptor();
+    }
+    if (!this.runtimeFilesystemBackendService.hasBackend(configuredBackendKind)) {
+      throw new Error(
+        `Unknown runtime filesystem backend: ${configuredBackendKind}. Available backends: ${this.runtimeFilesystemBackendService.listBackendKinds().join(', ')}`,
+      );
+    }
+    return this.runtimeFilesystemBackendService.getBackendDescriptor(configuredBackendKind);
   }
 
   private readConfiguredBackendDescriptor(

@@ -1,5 +1,5 @@
 import { Bash } from 'just-bash';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type {
   RuntimeBackend,
   RuntimeBackendDescriptor,
@@ -9,6 +9,7 @@ import type {
 import { RuntimeMountedWorkspaceFileSystem } from './runtime-mounted-workspace-file-system';
 import { readRuntimeJustBashOptions, readRuntimeJustBashTimeout } from './runtime-just-bash-options';
 import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
+import { resolveRuntimeVisiblePath } from './runtime-visible-path';
 
 const RUNTIME_BASH_TIMEOUT_CODE = 'runtime-bash-timeout';
 
@@ -43,7 +44,11 @@ export class RuntimeJustBashService implements RuntimeBackend {
       },
     });
 
-    const cwd = resolveRuntimeWorkingDirectory(sessionEnvironment.visibleRoot, input.workdir);
+    const cwd = resolveRuntimeVisiblePath(
+      sessionEnvironment.visibleRoot,
+      input.workdir,
+      `bash.workdir 必须位于 ${sessionEnvironment.visibleRoot} 内`,
+    );
     const timeoutMs = readRuntimeJustBashTimeout(input.timeout);
     const controller = new AbortController();
     let timeoutHandle: NodeJS.Timeout | null = null;
@@ -134,30 +139,4 @@ async function executeRuntimeBashCommandWithTimeout(
     input.onTimerCreated(handle);
   });
   return Promise.race([executionPromise, timeoutPromise]);
-}
-
-function resolveRuntimeWorkingDirectory(visibleRoot: string, inputWorkdir?: string): string {
-  if (!inputWorkdir || !inputWorkdir.trim()) {
-    return visibleRoot;
-  }
-  const normalized = inputWorkdir.trim().startsWith('/')
-    ? normalizePosixPath(inputWorkdir.trim())
-    : normalizePosixPath(`${visibleRoot}/${inputWorkdir.trim()}`);
-  if (visibleRoot !== '/' && normalized !== visibleRoot && !normalized.startsWith(`${visibleRoot}/`)) {
-    throw new BadRequestException(`bash.workdir 必须位于 ${visibleRoot} 内`);
-  }
-  return normalized;
-}
-
-function normalizePosixPath(input: string): string {
-  const parts = input.split('/').filter((entry) => entry.length > 0 && entry !== '.');
-  const stack: string[] = [];
-  for (const part of parts) {
-    if (part === '..') {
-      stack.pop();
-      continue;
-    }
-    stack.push(part);
-  }
-  return `/${stack.join('/')}`;
 }

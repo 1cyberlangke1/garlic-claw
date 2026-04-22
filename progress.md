@@ -1715,3 +1715,386 @@
     - `pdf` 仍主要靠共享分支间接保障，缺单独定向断言
     - `indentation-flexible / trimmed-boundary` 仍缺各自独立回归样例
     - 这两点不阻塞当前提交，但仍属于后续可继续补强的成熟度项
+- 已继续推进 `G20-2` 第二批差异收口：
+  - 新增 `packages/server/src/execution/file/runtime-file-diff.ts`
+  - `write / edit` 当前都已回带 `diff` 摘要，文本输出也会回显 `Diff` 与 `Line delta`
+  - `RuntimeHostFilesystemBackendService` 已统一生成 diff metadata；覆盖写时若原文件是文本则会保留 patch 摘要，若原文件是二进制/图片/PDF 则显式回 `null`
+  - `runtime-text-replace` 已把策略顺序改成“更具体优先、更宽松靠后”，当前 `trimmed-boundary / indentation-flexible` 都有独立回归样例
+  - `ReadToolService` 已补 PDF 格式化断言，收掉上一轮 judge 指出的单独测试缺口
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-text-replace.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：7 suites / 51 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `lint`：通过
+    - `smoke:server`：`178 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-2` 第三批差异收口：
+  - 新增 `packages/server/src/execution/runtime/runtime-file-freshness.service.ts`
+  - `read` 成功读取文件或非文本资产后，当前会记录 session 级读戳
+  - `write` 覆盖已有文件前，当前会要求该文件已被 read 且自读取后未变化
+  - `edit` 当前会同时走 freshness 校验和 path 级串行锁；锁键已收口到 runtime 解析后的 virtual path，避免相对/绝对路径拿到不同锁
+  - `write / edit` 的对模说明和 `builtin.runtime-tools` manifest 描述已同步更新为“已有文件先 read”
+- 已补 freshness 与构造链回归：
+  - 新增 `packages/server/tests/execution/runtime/runtime-file-freshness.service.spec.ts`
+  - `ReadToolService / WriteToolService / EditToolService` 的单测已补 freshness 接线断言
+  - `tool-registry` 与 `runtime-host` 的大夹具继续使用显式 freshness stub，避免非 freshness 用例被噪音拦住
+- 已继续推进 `G20-3` 第一批反馈文案收口：
+  - 新增 `packages/server/tests/execution/glob/glob-tool.service.spec.ts`
+  - `grep` 已补截断 totals 文案断言
+  - `glob / grep` 现在在空结果和截断场景下都会返回更明确的 totals 说明
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-text-replace.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - 定向 jest：9 suites / 67 tests 全部通过
+    - `glob / grep / freshness` 二轮定向 jest：5 suites / 48 tests 全部通过
+    - `shared / plugin-sdk / server build`：通过
+
+## 2026-04-22 独立复核：G20-2 / G20-3 当前工作树
+
+- 已按用户要求只复核 runtime 文件工具与 smoke 验收，不重复实现。
+- 已读：
+  - `runtime-host-filesystem-backend.service.ts`
+  - `runtime-filesystem-backend.types.ts`
+  - `glob-tool.service.ts`
+  - `grep-tool.service.ts`
+  - `runtime-file-freshness.service.ts`
+  - `runtime-file-diff.ts`
+  - `http-smoke.mjs`
+  - 对应 `tests/execution/*` 定向测试
+- 当前独立判断：
+  - `freshness` owner 下沉为真实 runtime service，`partial / skippedPaths` 也是真实 filesystem backend owner
+  - 但 `edit` 的 CRLF 保持语义未真正成立
+  - `grep` 截断 totals 断言存在“测试 mock 能过、真实 backend 给不出总数”的问题
+  - 当前用户列出的 fresh 证据不足以支持直接继续推进下一阶段
+- 已继续推进 `G20-3` 第二批反馈文案收口：
+  - `RuntimeFilesystemGlobResult / RuntimeFilesystemGrepResult` 已正式补 `skippedPaths`
+  - `RuntimeHostFilesystemBackendService` 现在会在目录遍历失败、符号链接解析失败、文本读取失败时保留 skipped path，并把 `partial` 继续留在 backend owner
+  - `GlobToolService / GrepToolService` 只负责把这些 skipped path 渲染成对模型可读的诊断文本，不再自己猜测失败来源
+  - 已新增回归：
+    - `packages/server/tests/execution/file/runtime-host-filesystem-backend.service.spec.ts` partial traversal 用例
+    - `packages/server/tests/execution/glob/glob-tool.service.spec.ts` partial skipped path 输出用例
+    - `packages/server/tests/execution/grep/grep-tool.service.spec.ts` skipped path 输出用例
+- 已重新通过这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：3 suites / 12 tests 全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`180 checks`
+    - `smoke:web-ui`：通过
+- 已收到第二轮独立 judge 的 FAIL，并已按结论修复：
+  - `edit` 已不再通过归一化后的文本猜行尾；当前会保留原文件 CRLF，并按原始内容生成 diff
+  - `grep` backend 已不再在达到 `maxMatches` 后提前返回；现在会继续统计真实总数，再只截断输出结果
+  - `RuntimeFileFreshnessService` 的 path lock 已改成 `sessionId + virtualPath`，避免不同 session 的同名路径互相串行
+  - `write / edit` 与 `builtin.runtime-tools` 的公开描述已收口为“先拿到当前内容”，不再把语义写成“每次都必须显式 read”
+  - 已新增回归：
+    - `runtime-host-filesystem-backend.service.spec.ts` 的 CRLF rewrite 用例
+    - `runtime-host-filesystem-backend.service.spec.ts` 的 grep truncated total 用例
+    - `runtime-file-freshness.service.spec.ts` 的跨 session 锁隔离用例
+- 已重新通过这轮更完整的定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-text-replace.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：11 suites / 76 tests 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`180 checks`
+    - `smoke:web-ui`：通过
+- 已继续补端到端 stale-read 拒绝分支：
+  - `packages/server/scripts/http-smoke.mjs` 已新增 `chat.messages.edit-stale-loop` 与 `.verify`
+  - 当前会在 session 已记录旧读戳后，直接外部改写 `generated/output.txt`，再验证 `edit` follow-up 请求里出现 `文件在上次读取后已被修改`
+  - 同时验证失败后工作区文件仍保持外部改写结果，不会被错误覆写
+- 已重新通过这轮 fresh 验证：
+  - root: `npm run smoke:server`
+  - root: `npm run lint`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `smoke:server`：`182 checks`
+    - `lint`：通过
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-4` 第一批结果诊断增强：
+  - `packages/server/src/execution/runtime/runtime-command-output.ts` 已新增 `status` 和 `diagnostic` 行
+  - 当前已区分：
+    - 失败且有 stderr
+    - 失败但无 stderr
+    - 成功但 stderr 有告警
+    - 成功且完全无输出
+  - `packages/server/src/execution/bash/bash-tool.service.ts` 已把网络策略从模糊文案收口成 `allow / ask / deny` 三态说明，并更明确写出“shell 状态不会跨调用保留”
+  - 已新增 `packages/server/tests/execution/bash/bash-tool.service.spec.ts`
+- 已重新通过这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/runtime/runtime-command-output.spec.ts tests/execution/runtime/runtime-command.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：4 suites / 39 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过这轮 fresh 验证：
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-3 / G20-4`：
+  - `RuntimeFilesystemGlobResult / RuntimeFilesystemGrepResult` 已新增 `skippedEntries`
+  - `RuntimeHostFilesystemBackendService` 现在会把搜索跳过进一步细分为：
+    - `inaccessible`
+    - `unreadable`
+    - `binary`
+  - `GlobToolService / GrepToolService` 已把“搜索可能不完整”和“非文本文件被跳过”拆开渲染，不再只回一条笼统 skipped path 文案
+  - `runtime-command-output.ts` 已新增 `stdout_summary / stderr_summary`
+  - `diagnostic` 已继续补成带 `exit_code` 的更具体文案
+  - `BashToolService.buildToolDescription()` 与 `builtin.runtime-tools` manifest 已继续补：
+    - `workdir` 优先，不要用 `cd`
+    - 文件读写搜索优先用专用工具，不要滥用 `bash`
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/runtime/runtime-command-output.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - server 定向 jest：7 suites / 55 tests 全部通过
+- 已修复一条 fresh `smoke:web-ui` 暴露的真实前端问题：
+  - `AiProviderModelsPanel` 原先会在模型列表同值重渲染时无条件重置 `contextLength` draft，导致“保存上下文”按钮在真实页面里可能一直 disabled
+  - 当前已改成“base 值没变则保留草稿，base 值变了才重置”
+  - 已新增 `AiProviderModelsPanel.spec.ts` 覆盖“保留未保存草稿 / 保存后回收草稿”
+- 已修复一条浏览器 smoke 自身的等待错误：
+  - 模型上下文长度保存真实请求是 `POST /ai/providers/:providerId/models/:modelId`
+  - smoke 之前错误等待成了 `PUT`
+  - 当前已改成先确认按钮可用，再等待正确的 `POST` 响应并点击
+- 已重新通过本轮 fresh 验证：
+  - `packages/web`: `npm run test:run -- tests/features/ai-settings/components/AiProviderModelsPanel.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - web 定向 vitest：1 file / 3 tests 全部通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-5` 第一批 overlay owner 收口：
+  - 新增 `ProjectWorktreePostWriteService`，把 `write / edit` 的 post-write 增强收成 overlay owner
+  - 新增 `RuntimeFilesystemPostWriteService`，把 runtime 对 post-write provider 的聚合从 backend 里抽出来
+  - `RuntimeHostFilesystemBackendService` 当前只依赖 runtime `post-write` owner；overlay 缺席时保持原行为，不引入兼容壳
+  - `RuntimeFilesystemWriteResult / RuntimeFilesystemEditResult` 已新增 `postWrite`
+  - `write / edit` 对模输出已补 `Formatting` 与 `Diagnostics` 摘要，并可回显 `<diagnostics file="...">` 文本块
+  - 当前第一轮已落地：
+    - `.json` 自动 pretty format
+    - `.json / .js / .jsx / .ts / .tsx / .mjs / .cjs` 语法诊断
+- 已新增并通过当前定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-filesystem-post-write.service.spec.ts tests/execution/project/project-worktree-post-write.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：8 suites / 60 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已收到本轮独立 judge 的首次结论为 FAIL：
+  - `trimmed-boundary` 在同一行多命中时仍会静默改首个位置
+  - 相关 backend/tool 透传与多命中断言覆盖不足
+- 已按 judge 结论修复：
+  - `readRuntimeTextExactMatches()` 已收口精确命中位置枚举
+  - `trimmed-boundary` 现在会枚举所有 inline 命中，不再只记首个
+  - 已新增 `trimmed-boundary` 多命中拒绝、`replaceAll` 宽松候选不一致拒绝、backend 不误改文件、edit tool 透传错误等回归
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-text-replace.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/write/write-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - 结果：
+    - 第一组 server 定向 jest：3 suites / 24 tests 全部通过
+    - 第二组 server 定向 jest：4 suites / 44 tests 全部通过
+- 已重新通过修复后的 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已完成二次独立 judge，结论为 PASS：
+  - judge 确认 `trimmed-boundary` 同一行多命中已不再静默改首个位置
+  - judge 确认新增测试已覆盖上一轮 FAIL 的真实误改风险与 tool/backend 透传链
+  - judge 仅保留一条非阻塞残余：`context-aware / block-anchor` 的多候选歧义用例仍可继续补
+- 已继续推进 `G20-4` 第二批完整输出捕获：
+  - 已新增 `RuntimeCommandCaptureService`，当 stdout/stderr 超过默认渲染阈值时，会把完整输出写到当前 session 可见路径下的 `/.garlic-claw/runtime-command-output/command-*.txt`
+  - `RuntimeCommandService` 当前已统一回带 `outputPath`
+  - shared `PluginRuntimeCommandResult` 已补 `outputPath?: string`
+  - `runtime-command-output.ts` 当前在实际发生截断时会额外回显 `full_output_path: ...`
+  - `RuntimeHostModule`、`runtime-host.service.spec.ts` 与 `tool-registry.service.spec.ts` 的构造链已同步接入新 owner
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-command.service.spec.ts tests/execution/runtime/runtime-command-output.spec.ts tests/execution/runtime/runtime-command-capture.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - 第一组 server 定向 jest：4 suites / 17 tests 全部通过
+    - 第二组 server 定向 jest：2 suites / 39 tests 全部通过
+    - `shared / plugin-sdk / server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-2` 第三批 `edit` 匹配增强：
+  - `runtime-text-replace.ts` 当前已从“按候选文本去重”改成“按真实命中位置跟踪”
+  - 已新增 `context-aware / block-anchor` 多行策略
+  - 匹配歧义报错当前会回显策略名、命中总数和起始行号
+  - 未命中报错当前会明确提示重新读取文件并补更多稳定锚点
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-text-replace.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/write/write-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - 第一组 server 定向 jest：3 suites / 20 tests 全部通过
+    - 第二组 server 定向 jest：4 suites / 44 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续把 `RuntimeHostRuntimeToolService` 内部执行通路收成：
+  - `runShellTool()`
+  - `runFilesystemTool()`
+  - `runPreparedTool()`
+  - 当前 6 个 host runtime tool 方法都不再复制同一段“取 backend -> 构造 input -> review -> execute”模板
+- 已重新通过收口后的验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/runtime/host/runtime-host-runtime-tool.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：3 suites / 41 tests 全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-6` 第三批中层抽象收口：
+  - `RuntimeToolAccessRequest` 已新增显式 `backendKind`
+  - `RuntimeHostRuntimeToolService` 当前每次 host tool 调用都会先固定一次 backend kind，再把同一个 kind 传给：
+    - `readInput`
+    - `readRuntimeAccess`
+    - `execute`
+  - `reviewAccess()` 当前改为直接使用 access 自带的 `backendKind` 读取 descriptor，不再在 review 阶段重新决议 backend
+  - `read / glob / grep / write / edit` 已移除对 `RuntimeToolBackendService` 的直接依赖
+  - `bash / read / glob / grep / write / edit` 当前都已改成消费准备好的 `backendKind` 输入
+  - 已新增 `packages/server/tests/runtime/host/runtime-host-runtime-tool.service.spec.ts`
+    - 覆盖 shell 调用只决议一次 backend kind
+    - 覆盖 filesystem 调用只决议一次 backend kind
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/runtime/host/runtime-host-runtime-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - 第一组 server 定向 jest：6 suites / 13 tests 全部通过
+    - 第二组 server 定向 jest：3 suites / 43 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-6` 第一批中层抽象收口：
+  - 新增 `RuntimeBackendRoutingService`
+  - 新增 `runtime-visible-path.ts`
+  - shell/filesystem backend 路由环境变量当前已收口到该 owner
+  - `RuntimeFilesystemBackendService` 当前已不再持有“configured filesystem backend”这条隐式 owner
+  - `RuntimeToolBackendService` 不再自己直接读 shell/filesystem 路由环境变量，而是统一消费 runtime 路由 owner
+  - `bash` 权限审查链、descriptor 决议和 filesystem 实际 backend 选择，当前继续共用同一条 runtime 路由真相
+  - `RuntimeJustBashService` 与 `RuntimeHostFilesystemBackendService` 当前已共用 visible path 规范化、拼接与越界校验逻辑
+  - `read / glob / grep / write / edit` 当前都会先显式解析 filesystem backend kind，再把同一个 kind 传给：
+    - runtime filesystem 执行
+    - freshness 读戳 / 锁
+    - descriptor / 审批链
+- 已新增并通过当前定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/runtime/runtime-visible-path.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：11 suites / 76 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过最新一轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-6` 第二批中层抽象收口：
+  - `RuntimeFilesystemBackendService` 的文件操作当前已不再隐式读取“configured filesystem backend”
+  - `RuntimeToolBackendService` 当前负责解析 filesystem backend kind
+  - `read / glob / grep / write / edit` 当前都会先拿固定 filesystem backend kind，再把同一个 kind 传给：
+    - runtime filesystem 执行
+    - freshness 读戳 / 锁
+    - descriptor / 审批链
+- 已重新通过这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/runtime/runtime-visible-path.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：11 suites / 76 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

@@ -131,6 +131,9 @@ describe('RuntimeHostFilesystemBackendService', () => {
     })).resolves.toEqual({
       basePath: '/docs',
       matches: ['/docs/nested/chart.png', '/docs/nested/binary.bin', '/docs/nested/notes.txt', '/docs/readme.md'],
+      partial: false,
+      skippedEntries: [],
+      skippedPaths: [],
       totalMatches: 4,
       truncated: false,
     });
@@ -155,8 +158,178 @@ describe('RuntimeHostFilesystemBackendService', () => {
         },
       ],
       partial: false,
+      skippedEntries: [
+        {
+          path: '/docs/nested/binary.bin',
+          reason: 'binary',
+        },
+        {
+          path: '/docs/nested/chart.png',
+          reason: 'binary',
+        },
+      ],
+      skippedPaths: [],
       totalMatches: 2,
       truncated: false,
+    });
+  });
+
+  it('reports skipped paths for partial glob and grep traversal', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-partial-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-partial');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'private'), { recursive: true });
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'public.txt'), 'needle public\n', 'utf8');
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'private', 'secret.txt'), 'needle secret\n', 'utf8');
+
+    const originalReaddir = fs.promises.readdir;
+    jest.spyOn(fs.promises, 'readdir').mockImplementation(async (targetPath, options) => {
+      if (String(targetPath) === path.join(sessionEnvironment.sessionRoot, 'docs', 'private')) {
+        const error = new Error('EACCES') as NodeJS.ErrnoException;
+        error.code = 'EACCES';
+        throw error;
+      }
+      return originalReaddir.call(fs.promises, targetPath as Parameters<typeof fs.promises.readdir>[0], options as Parameters<typeof fs.promises.readdir>[1]);
+    });
+
+    await expect(service.globPaths('session-partial', {
+      maxResults: 10,
+      path: 'docs',
+      pattern: '**/*.txt',
+    })).resolves.toEqual({
+      basePath: '/docs',
+      matches: ['/docs/public.txt'],
+      partial: true,
+      skippedEntries: [
+        {
+          path: '/docs/private',
+          reason: 'inaccessible',
+        },
+      ],
+      skippedPaths: ['/docs/private'],
+      totalMatches: 1,
+      truncated: false,
+    });
+
+    await expect(service.grepText('session-partial', {
+      include: '**/*.txt',
+      maxLineLength: 2000,
+      maxMatches: 10,
+      path: 'docs',
+      pattern: 'needle',
+    })).resolves.toEqual({
+      matches: [
+        {
+          line: 1,
+          text: 'needle public',
+          virtualPath: '/docs/public.txt',
+        },
+      ],
+      partial: true,
+      skippedEntries: [
+        {
+          path: '/docs/private',
+          reason: 'inaccessible',
+        },
+      ],
+      skippedPaths: ['/docs/private'],
+      totalMatches: 1,
+      truncated: false,
+    });
+  });
+
+  it('preserves CRLF line endings when edit rewrites a text file', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-crlf-edit-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-crlf');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionEnvironment.sessionRoot, 'docs', 'windows.txt'),
+      'alpha\r\nbeta\r\n',
+      'utf8',
+    );
+
+    await expect(service.editTextFile('session-crlf', {
+      filePath: 'docs/windows.txt',
+      newString: 'beta updated',
+      oldString: 'beta',
+    })).resolves.toEqual({
+      diff: {
+        additions: 1,
+        afterLineCount: 2,
+        beforeLineCount: 2,
+        deletions: 1,
+        patch: expect.stringContaining('@@'),
+      },
+      occurrences: 1,
+      path: '/docs/windows.txt',
+      postWrite: {
+        diagnostics: [],
+        formatting: null,
+      },
+      strategy: 'exact',
+    });
+    expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'windows.txt'), 'utf8')).toBe(
+      'alpha\r\nbeta updated\r\n',
+    );
+  });
+
+  it('reports full grep totals even when visible matches are truncated', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-grep-total-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-grep-total');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionEnvironment.sessionRoot, 'docs', 'many.txt'),
+      Array.from({ length: 5 }, (_, index) => `needle-${index}`).join('\n'),
+      'utf8',
+    );
+
+    await expect(service.grepText('session-grep-total', {
+      include: '**/*.txt',
+      maxLineLength: 2000,
+      maxMatches: 2,
+      path: 'docs',
+      pattern: 'needle',
+    })).resolves.toEqual({
+      matches: [
+        {
+          line: 1,
+          text: 'needle-0',
+          virtualPath: '/docs/many.txt',
+        },
+        {
+          line: 2,
+          text: 'needle-1',
+          virtualPath: '/docs/many.txt',
+        },
+      ],
+      partial: false,
+      skippedEntries: [],
+      skippedPaths: [],
+      totalMatches: 5,
+      truncated: true,
     });
   });
 
@@ -319,8 +492,19 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
     await expect(service.writeTextFile('session-6', 'docs/output.txt', 'first line\nsecond line\n')).resolves.toEqual({
       created: true,
+      diff: {
+        additions: 2,
+        afterLineCount: 2,
+        beforeLineCount: 0,
+        deletions: 0,
+        patch: expect.stringContaining('@@'),
+      },
       lineCount: 2,
       path: '/docs/output.txt',
+      postWrite: {
+        diagnostics: [],
+        formatting: null,
+      },
       size: 23,
     });
 
@@ -335,12 +519,156 @@ describe('RuntimeHostFilesystemBackendService', () => {
       newString: 'if (true) {\n    console.log("beta");\n}\n',
       oldString: 'if (true) {\nconsole.log("alpha");\n}\n',
     })).resolves.toEqual({
+      diff: {
+        additions: 1,
+        afterLineCount: 3,
+        beforeLineCount: 3,
+        deletions: 1,
+        patch: expect.stringContaining('@@'),
+      },
       occurrences: 1,
       path: '/docs/block.ts',
-      strategy: 'line-trimmed',
+      postWrite: {
+        diagnostics: [],
+        formatting: null,
+      },
+      strategy: 'context-aware',
     });
     expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'block.ts'), 'utf8')).toBe(
       'if (true) {\n    console.log("beta");\n}\n',
+    );
+  });
+
+  it('applies post-write formatting and diagnostics through the overlay owner', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-post-write-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(
+      runtimeSessionEnvironmentService,
+      {
+        processTextFile: jest.fn(({
+          content,
+          path: nextPath,
+        }: {
+          content: string;
+          hostPath: string;
+          path: string;
+          sessionRoot: string;
+          visibleRoot: string;
+        }) => ({
+          content: nextPath.endsWith('.json') ? '{\n  "value": 1\n}\n' : content,
+          postWrite: {
+            diagnostics: nextPath.endsWith('.ts')
+              ? [
+                {
+                  column: 17,
+                  line: 1,
+                  message: 'Expression expected.',
+                  path: nextPath,
+                  severity: 'error',
+                  source: 'typescript',
+                },
+              ]
+              : [],
+            formatting: nextPath.endsWith('.json')
+              ? {
+                kind: 'json-pretty',
+                label: 'json-pretty',
+              }
+              : null,
+          },
+        })),
+      } as never,
+    );
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-post-write');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+
+    await expect(service.writeTextFile('session-post-write', 'docs/config.json', '{"value":1}\n')).resolves.toEqual({
+      created: true,
+      diff: {
+        additions: 3,
+        afterLineCount: 3,
+        beforeLineCount: 0,
+        deletions: 0,
+        patch: expect.stringContaining('@@'),
+      },
+      lineCount: 3,
+      path: '/docs/config.json',
+      postWrite: {
+        diagnostics: [],
+        formatting: {
+          kind: 'json-pretty',
+          label: 'json-pretty',
+        },
+      },
+      size: Buffer.byteLength('{\n  "value": 1\n}\n', 'utf8'),
+    });
+    expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'config.json'), 'utf8')).toBe(
+      '{\n  "value": 1\n}\n',
+    );
+
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'broken.ts'), 'const answer = 1;\n', 'utf8');
+    await expect(service.editTextFile('session-post-write', {
+      filePath: 'docs/broken.ts',
+      newString: '{',
+      oldString: '1',
+    })).resolves.toEqual({
+      diff: {
+        additions: 1,
+        afterLineCount: 1,
+        beforeLineCount: 1,
+        deletions: 1,
+        patch: expect.stringContaining('@@'),
+      },
+      occurrences: 1,
+      path: '/docs/broken.ts',
+      postWrite: {
+        diagnostics: [
+          {
+            column: 17,
+            line: 1,
+            message: 'Expression expected.',
+            path: '/docs/broken.ts',
+            severity: 'error',
+            source: 'typescript',
+          },
+        ],
+        formatting: null,
+      },
+      strategy: 'exact',
+    });
+  });
+
+  it('surfaces ambiguous trimmed-boundary matches instead of editing the first inline hit', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-edit-ambiguous-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-edit-ambiguous');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionEnvironment.sessionRoot, 'docs', 'ambiguous.txt'),
+      'alpha middle alpha\n',
+      'utf8',
+    );
+
+    await expect(service.editTextFile('session-edit-ambiguous', {
+      filePath: 'docs/ambiguous.txt',
+      newString: 'beta',
+      oldString: '  alpha  ',
+    })).rejects.toThrow('trimmed-boundary');
+    expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'ambiguous.txt'), 'utf8')).toBe(
+      'alpha middle alpha\n',
     );
   });
 });

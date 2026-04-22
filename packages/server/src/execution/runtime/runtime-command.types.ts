@@ -23,6 +23,7 @@ export interface RuntimeCommandBackendResult {
 }
 
 export interface RuntimeCommandResult extends RuntimeCommandBackendResult {
+  outputPath?: string;
   stderrStats: RuntimeCommandStreamStats;
   stdoutStats: RuntimeCommandStreamStats;
 }

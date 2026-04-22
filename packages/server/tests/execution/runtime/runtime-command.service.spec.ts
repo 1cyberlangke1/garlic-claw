@@ -1,11 +1,16 @@
+import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 
 describe('RuntimeCommandService', () => {
   it('uses the first registered backend as default and supports explicit backend selection', async () => {
     const alphaBackend = createRuntimeBackend('alpha');
     const betaBackend = createRuntimeBackend('beta');
-    const service = new RuntimeCommandService([alphaBackend, betaBackend]);
+    const service = new RuntimeCommandService(
+      [alphaBackend, betaBackend],
+      new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService()),
+    );
 
     expect(service.getDefaultBackendKind()).toBe('alpha');
     expect(service.getDefaultBackendDescriptor()).toEqual(alphaBackend.getDescriptor());
@@ -35,7 +40,10 @@ describe('RuntimeCommandService', () => {
   });
 
   it('rejects unknown backend kind', async () => {
-    const service = new RuntimeCommandService([createRuntimeBackend('alpha')]);
+    const service = new RuntimeCommandService(
+      [createRuntimeBackend('alpha')],
+      new RuntimeCommandCaptureService(new RuntimeSessionEnvironmentService()),
+    );
 
     await expect(service.executeCommand({
       backendKind: 'missing',
@@ -44,9 +52,32 @@ describe('RuntimeCommandService', () => {
     })).rejects.toThrow('Unknown runtime backend: missing');
     expect(() => service.getBackendDescriptor('missing')).toThrow('Unknown runtime backend: missing');
   });
+
+  it('stores oversized stdout in a visible output file path', async () => {
+    const service = new RuntimeCommandService(
+      [createRuntimeBackend('alpha', { stdout: Array.from({ length: 240 }, (_, index) => `line-${index + 1}`).join('\n') })],
+      {
+        captureIfNeeded: jest.fn().mockResolvedValue('/.garlic-claw/runtime-command-output/command-test.txt'),
+      } as never,
+    );
+
+    await expect(service.executeCommand({
+      command: 'printf "oversized"',
+      sessionId: 'session-1',
+    })).resolves.toEqual(expect.objectContaining({
+      outputPath: '/.garlic-claw/runtime-command-output/command-test.txt',
+      stdoutStats: {
+        bytes: expect.any(Number),
+        lines: 240,
+      },
+    }));
+  });
 });
 
-function createRuntimeBackend(kind: string): RuntimeBackend {
+function createRuntimeBackend(
+  kind: string,
+  overrides?: Partial<{ stderr: string; stdout: string }>,
+): RuntimeBackend {
   return {
     async executeCommand(input) {
       return {
@@ -54,8 +85,8 @@ function createRuntimeBackend(kind: string): RuntimeBackend {
         cwd: input.workdir ?? '/',
         exitCode: 0,
         sessionId: input.sessionId,
-        stderr: '',
-        stdout: `${kind}:${input.command}`,
+        stderr: overrides?.stderr ?? '',
+        stdout: overrides?.stdout ?? `${kind}:${input.command}`,
       };
     },
     getDescriptor() {

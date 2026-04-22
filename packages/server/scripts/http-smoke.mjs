@@ -132,8 +132,12 @@ async function main() {
     grepLoopAssistantText: null,
     editLoopAssistantMessageId: null,
     editLoopAssistantText: null,
+    staleEditAssistantMessageId: null,
+    staleEditAssistantText: null,
     readLoopAssistantMessageId: null,
     readLoopAssistantText: null,
+    writeOverwriteAssistantMessageId: null,
+    writeOverwriteAssistantText: null,
     writeLoopAssistantMessageId: null,
     writeLoopAssistantText: null,
   };
@@ -1315,6 +1319,47 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(grepToolResults) && grepToolResults.some((entry) => entry?.toolName === 'grep'), 'Expected grep loop assistant message to persist native grep tool result');
   });
 
+  await runStep('chat.messages.write-overwrite-loop', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请使用 write 工具覆盖刚才读取的 smoke workspace 文件，并确认结果。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.writeOverwriteAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.writeOverwriteAssistantMessageId === 'string', 'Expected overwrite write loop to create assistant message');
+    state.writeOverwriteAssistantText = assertCompletedSse(events, '已通过 write 工具覆盖 smoke workspace 已有文件。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'write'), 'Expected overwrite write loop SSE to include native write tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'write'), 'Expected overwrite write loop SSE to include native write tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected overwrite write loop SSE to finish');
+  });
+
+  await runStep('chat.messages.write-overwrite-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请使用 write 工具覆盖刚才读取的 smoke workspace 文件'));
+    ensure(firstRequest, 'Expected first overwrite write loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'write'), 'Expected overwrite write loop request to expose native write tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'write'));
+    ensure(toolResultRequest, 'Expected overwrite write loop to issue a follow-up request with write tool results');
+    ensure(requestContainsWriteResult(toolResultRequest.body, '/notes/runtime.txt'), 'Expected overwrite write loop follow-up request to include rendered write result');
+    ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'notes', 'runtime.txt'), 'utf8') === 'overwritten workspace\n', 'Expected overwrite write loop to replace existing file content');
+
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const writeAssistant = conversation.messages.find((entry) => entry.id === state.writeOverwriteAssistantMessageId);
+    const writeToolCalls = parseSerializedJsonValue(writeAssistant?.toolCalls);
+    const writeToolResults = parseSerializedJsonValue(writeAssistant?.toolResults);
+    ensure(writeAssistant?.content === state.writeOverwriteAssistantText, 'Expected overwrite write loop assistant message to persist generated content');
+    ensure(Array.isArray(writeToolCalls) && writeToolCalls.some((entry) => entry?.toolName === 'write'), 'Expected overwrite write loop assistant message to persist native write tool call');
+    ensure(Array.isArray(writeToolResults) && writeToolResults.some((entry) => entry?.toolName === 'write'), 'Expected overwrite write loop assistant message to persist native write tool result');
+  });
+
   await runStep('chat.messages.write-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
@@ -1396,6 +1441,51 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(editAssistant?.content === state.editLoopAssistantText, 'Expected edit loop assistant message to persist generated content');
     ensure(Array.isArray(editToolCalls) && editToolCalls.some((entry) => entry?.toolName === 'edit'), 'Expected edit loop assistant message to persist native edit tool call');
     ensure(Array.isArray(editToolResults) && editToolResults.some((entry) => entry?.toolName === 'edit'), 'Expected edit loop assistant message to persist native edit tool result');
+  });
+
+  await runStep('chat.messages.edit-stale-loop', async () => {
+    fs.writeFileSync(path.join(readSessionWorkspaceRoot(), 'generated', 'output.txt'), 'externally changed\n', 'utf8');
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请使用 edit 工具再次修改刚才生成的 generated 文件，并说明文件已在读取后变化，需要重新读取。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.staleEditAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.staleEditAssistantMessageId === 'string', 'Expected stale edit loop to create assistant message');
+    state.staleEditAssistantText = assertCompletedSse(events, '已确认文件在读取后发生变化，需要重新读取。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'edit'), 'Expected stale edit loop SSE to include native edit tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'edit'), 'Expected stale edit loop SSE to include native edit tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected stale edit loop SSE to finish');
+  });
+
+  await runStep('chat.messages.edit-stale-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请使用 edit 工具再次修改刚才生成的 generated 文件'));
+    ensure(firstRequest, 'Expected first stale edit loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'edit'), 'Expected stale edit loop request to expose native edit tool');
+    const toolResultRequest = requests.find((entry) =>
+      requestContainsInvalidToolResult(entry.body, 'edit', '文件在上次读取后已被修改'));
+    ensure(toolResultRequest, 'Expected stale edit loop to issue a follow-up request with invalid edit tool result');
+    ensure(
+      fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'generated', 'output.txt'), 'utf8') === 'externally changed\n',
+      'Expected stale edit loop to keep externally changed file content untouched',
+    );
+
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const editAssistant = conversation.messages.find((entry) => entry.id === state.staleEditAssistantMessageId);
+    const editToolCalls = parseSerializedJsonValue(editAssistant?.toolCalls);
+    const editToolResults = parseSerializedJsonValue(editAssistant?.toolResults);
+    ensure(editAssistant?.content === state.staleEditAssistantText, 'Expected stale edit loop assistant message to persist generated content');
+    ensure(Array.isArray(editToolCalls) && editToolCalls.some((entry) => entry?.toolName === 'edit'), 'Expected stale edit loop assistant message to persist native edit tool call');
+    ensure(Array.isArray(editToolResults) && editToolResults.some((entry) => entry?.toolName === 'edit'), 'Expected stale edit loop assistant message to persist native edit tool result');
   });
 
   await runStep('chat.messages.patch', async () => {
@@ -3504,6 +3594,17 @@ function planSmokeChatResponse(body) {
       toolName: 'write',
     };
   }
+  if (shouldTriggerWriteOverwriteTool(body)) {
+    return {
+      arguments: {
+        content: 'overwritten workspace\n',
+        filePath: 'notes/runtime.txt',
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_write_overwrite_0',
+      toolName: 'write',
+    };
+  }
   if (shouldTriggerEditTool(body)) {
     return {
       arguments: {
@@ -3513,6 +3614,18 @@ function planSmokeChatResponse(body) {
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_edit_0',
+      toolName: 'edit',
+    };
+  }
+  if (shouldTriggerStaleEditTool(body)) {
+    return {
+      arguments: {
+        filePath: 'generated/output.txt',
+        newString: 'stale file',
+        oldString: 'updated file',
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_edit_stale_0',
       toolName: 'edit',
     };
   }
@@ -3577,13 +3690,21 @@ function planSmokeChatResponse(body) {
   if (requestContainsToolResult(body, 'write')) {
     return {
       kind: 'text',
-      text: '已通过 write 工具写入 smoke workspace 文件。',
+      text: readLatestUserText(body?.messages).includes('覆盖刚才读取的 smoke workspace 文件')
+        ? '已通过 write 工具覆盖 smoke workspace 已有文件。'
+        : '已通过 write 工具写入 smoke workspace 文件。',
     };
   }
   if (requestContainsToolResult(body, 'edit')) {
     return {
       kind: 'text',
       text: '已通过 edit 工具修改 smoke workspace 文件。',
+    };
+  }
+  if (requestContainsInvalidToolResult(body, 'edit', '文件在上次读取后已被修改')) {
+    return {
+      kind: 'text',
+      text: '已确认文件在读取后发生变化，需要重新读取。',
     };
   }
   return {
@@ -3676,10 +3797,23 @@ function shouldTriggerWriteTool(body) {
     && readLatestUserText(body?.messages).includes('请使用 write 工具在 smoke workspace 中创建一个 generated 文件');
 }
 
+function shouldTriggerWriteOverwriteTool(body) {
+  return requestIncludesToolName(body, 'write')
+    && !requestContainsToolResult(body, 'write')
+    && readLatestUserText(body?.messages).includes('请使用 write 工具覆盖刚才读取的 smoke workspace 文件');
+}
+
 function shouldTriggerEditTool(body) {
   return requestIncludesToolName(body, 'edit')
     && !requestContainsToolResult(body, 'edit')
     && readLatestUserText(body?.messages).includes('请使用 edit 工具修改刚才生成的 generated 文件');
+}
+
+function shouldTriggerStaleEditTool(body) {
+  return requestIncludesToolName(body, 'edit')
+    && !requestContainsToolResult(body, 'edit')
+    && !requestContainsInvalidToolResult(body, 'edit', '文件在上次读取后已被修改')
+    && readLatestUserText(body?.messages).includes('请使用 edit 工具再次修改刚才生成的 generated 文件');
 }
 
 function requestHasToolList(body) {

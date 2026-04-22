@@ -1,11 +1,16 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
-import type { PluginParamSchema } from '@garlic-claw/shared';
+import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
+import type { RuntimeFilesystemDiffSummary } from '../file/runtime-file-diff';
+import { renderRuntimeFilesystemPostWriteLines } from '../file/runtime-file-post-write-report';
+import { RuntimeFileFreshnessService } from '../runtime/runtime-file-freshness.service';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
+import type { RuntimeFilesystemPostWriteResult } from '../runtime/runtime-filesystem-backend.types';
 
 export interface WriteToolInput {
+  backendKind: RuntimeBackendKind;
   content: string;
   filePath: string;
   sessionId: string;
@@ -13,9 +18,11 @@ export interface WriteToolInput {
 
 export interface WriteToolResult {
   created: boolean;
+  diff: RuntimeFilesystemDiffSummary | null;
   lineCount: number;
   output: string;
   path: string;
+  postWrite: RuntimeFilesystemPostWriteResult;
   size: number;
 }
 
@@ -37,6 +44,7 @@ export class WriteToolService {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
     private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+    private readonly runtimeFileFreshnessService: RuntimeFileFreshnessService,
   ) {}
 
   getToolName(): string {
@@ -50,7 +58,9 @@ export class WriteToolService {
       visibleRoot === '/'
         ? 'filePath 可传相对路径或 backend 可见的绝对路径。'
         : `filePath 必须位于 ${visibleRoot} 内。`,
-      '如果文件已存在，会被完整覆盖；如果文件不存在，会自动创建父目录。',
+      '如果文件不存在，会自动创建父目录。',
+      '如果文件已存在，写入前必须先拿到该文件的当前内容；可先用 read 工具读取，或沿用同一 session 中最新一次成功 write/edit 后记录的当前版本。',
+      '如果文件自上次读取或修改后又发生变化，需要重新 read 再写入。',
       '该工具不执行命令，只负责文件系统写入。',
     ].join('\n');
   }
@@ -59,7 +69,11 @@ export class WriteToolService {
     return WRITE_TOOL_PARAMETERS;
   }
 
-  readInput(args: Record<string, unknown>, sessionId?: string): WriteToolInput {
+  readInput(
+    args: Record<string, unknown>,
+    sessionId?: string,
+    backendKind?: RuntimeBackendKind,
+  ): WriteToolInput {
     if (!sessionId) {
       throw new BadRequestException('write 工具只能在 session 上下文中使用');
     }
@@ -71,6 +85,7 @@ export class WriteToolService {
       throw new BadRequestException('write.content 必须是字符串');
     }
     return {
+      backendKind: backendKind ?? this.runtimeFilesystemBackendService.getDefaultBackendKind(),
       content: args.content,
       filePath,
       sessionId,
@@ -78,13 +93,17 @@ export class WriteToolService {
   }
 
   async execute(input: WriteToolInput): Promise<WriteToolResult> {
+    await this.runtimeFileFreshnessService.assertCanWrite(input.sessionId, input.filePath, input.backendKind);
     const result = await this.runtimeFilesystemBackendService.writeTextFile(
       input.sessionId,
       input.filePath,
       input.content,
+      input.backendKind,
     );
+    await this.runtimeFileFreshnessService.rememberRead(input.sessionId, result.path, input.backendKind);
     return {
       created: result.created,
+      diff: result.diff,
       lineCount: result.lineCount,
       output: [
         '<write_result>',
@@ -92,16 +111,24 @@ export class WriteToolService {
         `Status: ${result.created ? 'created' : 'overwritten'}`,
         `Lines: ${result.lineCount}`,
         `Size: ${formatWriteSize(result.size)}`,
+        ...(result.diff
+          ? [
+            `Diff: +${result.diff.additions} / -${result.diff.deletions}`,
+            `Line delta: ${result.diff.beforeLineCount} -> ${result.diff.afterLineCount}`,
+          ]
+          : []),
+        ...renderRuntimeFilesystemPostWriteLines(result.postWrite),
         '</write_result>',
       ].join('\n'),
       path: result.path,
+      postWrite: result.postWrite,
       size: result.size,
     };
   }
 
-  readRuntimeAccess(args: Record<string, unknown>, sessionId?: string): RuntimeToolAccessRequest {
-    const input = this.readInput(args, sessionId);
+  readRuntimeAccess(input: WriteToolInput): RuntimeToolAccessRequest {
     return {
+      backendKind: input.backendKind,
       metadata: {
         filePath: input.filePath,
       },

@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
-import type { PluginParamSchema } from '@garlic-claw/shared';
+import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
+import type { RuntimeFilesystemSkippedEntry } from '../runtime/runtime-filesystem-backend.types';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface GlobToolInput {
+  backendKind: RuntimeBackendKind;
   path?: string;
   pattern: string;
   sessionId: string;
@@ -58,7 +60,11 @@ export class GlobToolService {
     return GLOB_TOOL_PARAMETERS;
   }
 
-  readInput(args: Record<string, unknown>, sessionId?: string): GlobToolInput {
+  readInput(
+    args: Record<string, unknown>,
+    sessionId?: string,
+    backendKind?: RuntimeBackendKind,
+  ): GlobToolInput {
     if (!sessionId) {
       throw new BadRequestException('glob 工具只能在 session 上下文中使用');
     }
@@ -67,6 +73,7 @@ export class GlobToolService {
       throw new BadRequestException('glob.pattern 不能为空');
     }
     return {
+      backendKind: backendKind ?? this.runtimeFilesystemBackendService.getDefaultBackendKind(),
       ...(typeof args.path === 'string' && args.path.trim() ? { path: args.path.trim() } : {}),
       pattern,
       sessionId,
@@ -78,7 +85,7 @@ export class GlobToolService {
       maxResults: MAX_GLOB_RESULTS,
       pattern: input.pattern,
       ...(input.path ? { path: input.path } : {}),
-    });
+    }, input.backendKind);
     return {
       count: result.totalMatches,
       output: [
@@ -87,17 +94,20 @@ export class GlobToolService {
         `Pattern: ${input.pattern}`,
         '<matches>',
         ...(result.matches.length > 0 ? result.matches : ['(no matches)']),
-        result.truncated ? `... truncated to first ${MAX_GLOB_RESULTS} matches` : `(total matches: ${result.totalMatches})`,
+        result.truncated
+          ? `(showing first ${result.matches.length} of ${result.totalMatches} matches. Refine path or pattern to continue.)`
+          : `(total matches: ${result.totalMatches})`,
+        ...formatGlobSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths),
         '</matches>',
         '</glob_result>',
-      ].join('\n'),
+      ].filter((entry): entry is string => Boolean(entry)).join('\n'),
       truncated: result.truncated,
     };
   }
 
-  readRuntimeAccess(args: Record<string, unknown>, sessionId?: string): RuntimeToolAccessRequest {
-    const input = this.readInput(args, sessionId);
+  readRuntimeAccess(input: GlobToolInput): RuntimeToolAccessRequest {
     return {
+      backendKind: input.backendKind,
       metadata: {
         pattern: input.pattern,
         ...(input.path ? { path: input.path } : {}),
@@ -112,4 +122,37 @@ export class GlobToolService {
     type: 'text',
     value: (output as GlobToolResult).output,
   });
+}
+
+function formatGlobSearchDiagnostics(
+  partial: boolean,
+  skippedEntries: RuntimeFilesystemSkippedEntry[],
+  skippedPaths: string[],
+): string[] {
+  if (!partial && skippedEntries.length === 0 && skippedPaths.length === 0) {
+    return [];
+  }
+  const inaccessibleEntries = skippedEntries.filter((entry) => entry.reason === 'inaccessible');
+  const preview = inaccessibleEntries.map((entry) => entry.path);
+  if (preview.length > 0) {
+    return [formatSkippedEntrySummary('search may be incomplete; inaccessible paths were skipped', preview)];
+  }
+  if (skippedPaths.length > 0) {
+    return [formatSkippedEntrySummary('search may be incomplete; inaccessible paths were skipped', skippedPaths)];
+  }
+  return ['(search may be incomplete; some paths were skipped)'];
+}
+
+function formatSkippedEntrySummary(prefix: string, paths: string[]): string {
+  if (paths.length === 0) {
+    return `(${prefix})`;
+  }
+  const previewLimit = 3;
+  const visiblePaths = paths.slice(0, previewLimit);
+  const hiddenCount = paths.length - visiblePaths.length;
+  return [
+    `(${prefix}: ${visiblePaths.join(', ')}`,
+    hiddenCount > 0 ? `, +${hiddenCount} more` : '',
+    ')',
+  ].join('');
 }

@@ -16,6 +16,8 @@ import { ProjectSubagentTypeRegistryService } from '../../../src/execution/proje
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
+import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
+import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
 import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
@@ -1140,11 +1142,23 @@ function createFixture(input?: {
       const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
         runtimeSessionEnvironmentService,
       );
+      const runtimeBackendRoutingService = new RuntimeBackendRoutingService();
       const runtimeCommandService = new RuntimeCommandService([
         new RuntimeJustBashService(runtimeSessionEnvironmentService),
-      ]);
-      const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService([runtimeHostFilesystemBackendService]);
-      const runtimeToolBackendService = new RuntimeToolBackendService(runtimeCommandService, runtimeFilesystemBackendService);
+      ], new RuntimeCommandCaptureService(runtimeSessionEnvironmentService));
+      const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
+        [runtimeHostFilesystemBackendService],
+      );
+      const runtimeFileFreshnessService = {
+        assertCanWrite: jest.fn().mockResolvedValue(undefined),
+        rememberRead: jest.fn().mockResolvedValue(undefined),
+        withFileLock: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
+      } as never;
+      const runtimeToolBackendService = new RuntimeToolBackendService(
+        runtimeBackendRoutingService,
+        runtimeCommandService,
+        runtimeFilesystemBackendService,
+      );
       const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
       const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
         new BashToolService(
@@ -1152,11 +1166,15 @@ function createFixture(input?: {
           runtimeSessionEnvironmentService,
           runtimeToolBackendService,
         ),
-        new ReadToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
+        new ReadToolService(
+          runtimeSessionEnvironmentService,
+          runtimeFilesystemBackendService,
+          runtimeFileFreshnessService,
+        ),
         new GlobToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
         new GrepToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
-        new WriteToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
-        new EditToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
+        new WriteToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService, runtimeFileFreshnessService),
+        new EditToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService, runtimeFileFreshnessService),
         runtimeToolBackendService,
         runtimeToolPermissionService,
       );

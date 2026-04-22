@@ -17,7 +17,9 @@ import { ProjectSubagentTypeRegistryService } from '../../../src/execution/proje
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
+import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
+import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
 import type { RuntimeFilesystemBackend } from '../../../src/execution/runtime/runtime-filesystem-backend.types';
@@ -1369,16 +1371,24 @@ function createFixture(options: {
   const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
     runtimeSessionEnvironmentService,
   );
+  const runtimeBackendRoutingService = new RuntimeBackendRoutingService();
   const runtimeCommandService = new RuntimeCommandService(
     options.runtimeBackends ?? [new RuntimeJustBashService(runtimeSessionEnvironmentService)],
+    new RuntimeCommandCaptureService(runtimeSessionEnvironmentService),
   );
   const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
     options.runtimeFilesystemBackends ?? [runtimeHostFilesystemBackendService],
   );
   const runtimeToolBackendService = new RuntimeToolBackendService(
+    runtimeBackendRoutingService,
     runtimeCommandService,
     runtimeFilesystemBackendService,
   );
+  const runtimeFileFreshnessService = {
+    assertCanWrite: jest.fn().mockResolvedValue(undefined),
+    rememberRead: jest.fn().mockResolvedValue(undefined),
+    withFileLock: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
+  } as never;
   const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
   const bashToolService = new BashToolService(
     runtimeCommandService,
@@ -1388,6 +1398,7 @@ function createFixture(options: {
   const readToolService = new ReadToolService(
     runtimeSessionEnvironmentService,
     runtimeFilesystemBackendService,
+    runtimeFileFreshnessService,
   );
   const globToolService = new GlobToolService(
     runtimeSessionEnvironmentService,
@@ -1400,10 +1411,12 @@ function createFixture(options: {
   const writeToolService = new WriteToolService(
     runtimeSessionEnvironmentService,
     runtimeFilesystemBackendService,
+    runtimeFileFreshnessService,
   );
   const editToolService = new EditToolService(
     runtimeSessionEnvironmentService,
     runtimeFilesystemBackendService,
+    runtimeFileFreshnessService,
   );
   const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
     bashToolService,
@@ -1535,12 +1548,23 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     },
     async editTextFile(_sessionId, input) {
       return {
+        diff: {
+          additions: kind === 'mock-filesystem' ? 3 : 1,
+          afterLineCount: kind === 'mock-filesystem' ? 7 : 2,
+          beforeLineCount: kind === 'mock-filesystem' ? 7 : 2,
+          deletions: 1,
+          patch: `${kind} edit patch`,
+        },
         occurrences: kind === 'mock-filesystem'
           ? 7
           : input.replaceAll ? 2 : 1,
         path: input.filePath.trim()
           ? `/${kind}/${input.filePath.replace(/^\/+/, '')}`
           : backendVirtualPath,
+        postWrite: {
+          diagnostics: [],
+          formatting: null,
+        },
         strategy: kind === 'mock-filesystem' ? 'indentation-flexible' : 'exact',
       };
     },
@@ -1558,6 +1582,9 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
       return {
         basePath: resolvedPath,
         matches: [backendVirtualPath],
+        partial: false,
+        skippedEntries: [],
+        skippedPaths: [],
         totalMatches: 1,
         truncated: false,
       };
@@ -1596,6 +1623,8 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
           },
         ],
         partial: false,
+        skippedEntries: [],
+        skippedPaths: [],
         totalMatches: 1,
         truncated: false,
       };
@@ -1689,8 +1718,19 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     async writeTextFile(_sessionId, inputPath) {
       return {
         created: true,
+        diff: {
+          additions: 2,
+          afterLineCount: 2,
+          beforeLineCount: 0,
+          deletions: 0,
+          patch: `${kind} write patch`,
+        },
         lineCount: 2,
         path: `/${kind}/${inputPath.replace(/^\/+/, '')}`,
+        postWrite: {
+          diagnostics: [],
+          formatting: null,
+        },
         size: 33,
       };
     },

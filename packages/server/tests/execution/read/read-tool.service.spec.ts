@@ -2,6 +2,9 @@ import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 
 describe('ReadToolService', () => {
   it('formats directory windows with continuation hints', async () => {
+    const freshness = {
+      rememberRead: jest.fn().mockResolvedValue(undefined),
+    };
     const service = new ReadToolService(
       {
         getDescriptor: () => ({ visibleRoot: '/' }),
@@ -17,9 +20,11 @@ describe('ReadToolService', () => {
           type: 'directory',
         }),
       } as never,
+      freshness as never,
     );
 
     await expect(service.execute({
+      backendKind: 'host-filesystem',
       filePath: 'docs',
       limit: 2,
       offset: 3,
@@ -40,6 +45,7 @@ describe('ReadToolService', () => {
       truncated: true,
       type: 'directory',
     });
+    expect(freshness.rememberRead).not.toHaveBeenCalled();
   });
 
   it('formats byte-limited file reads with explicit continuation hints', async () => {
@@ -61,9 +67,13 @@ describe('ReadToolService', () => {
           type: 'file',
         }),
       } as never,
+      {
+        rememberRead: jest.fn().mockResolvedValue(undefined),
+      } as never,
     );
 
     await expect(service.execute({
+      backendKind: 'host-filesystem',
       filePath: 'docs/readme.txt',
       limit: 2,
       offset: 4,
@@ -100,9 +110,13 @@ describe('ReadToolService', () => {
           type: 'image',
         }),
       } as never,
+      {
+        rememberRead: jest.fn().mockResolvedValue(undefined),
+      } as never,
     );
 
     await expect(service.execute({
+      backendKind: 'host-filesystem',
       filePath: 'docs/chart.png',
       sessionId: 'session-1',
     })).resolves.toEqual({
@@ -118,6 +132,44 @@ describe('ReadToolService', () => {
       path: '/docs/chart.png',
       truncated: false,
       type: 'image',
+    });
+  });
+
+  it('formats pdf reads as non-text assets', async () => {
+    const service = new ReadToolService(
+      {
+        getDescriptor: () => ({ visibleRoot: '/' }),
+      } as never,
+      {
+        readPathRange: jest.fn().mockResolvedValue({
+          mimeType: 'application/pdf',
+          path: '/docs/guide.pdf',
+          size: 6144,
+          type: 'pdf',
+        }),
+      } as never,
+      {
+        rememberRead: jest.fn().mockResolvedValue(undefined),
+      } as never,
+    );
+
+    await expect(service.execute({
+      backendKind: 'host-filesystem',
+      filePath: 'docs/guide.pdf',
+      sessionId: 'session-1',
+    })).resolves.toEqual({
+      output: [
+        '<read_result>',
+        'Path: /docs/guide.pdf',
+        'Type: pdf',
+        'Mime: application/pdf',
+        'Size: 6.0 KB',
+        'PDF file detected. Text content was not expanded.',
+        '</read_result>',
+      ].join('\n'),
+      path: '/docs/guide.pdf',
+      truncated: false,
+      type: 'pdf',
     });
   });
 });

@@ -1,4 +1,4 @@
-import type { PluginParamSchema } from '@garlic-claw/shared';
+import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
@@ -9,6 +9,7 @@ import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-env
 import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';
 
 export interface BashToolInput {
+  backendKind: RuntimeBackendKind;
   command: string;
   description: string;
   sessionId: string;
@@ -59,10 +60,10 @@ export class BashToolService {
       visibleRoot === '/'
         ? '同一 session 下写入 backend 当前可见路径的文件，会在后续工具调用中继续可见。'
         : `同一 session 下写入 ${visibleRoot} 内的文件，会在后续工具调用中继续可见。`,
-      '不要假设 shell 进程状态会跨调用延续；每次调用都应写成自包含命令。',
-      backend.permissionPolicy.networkAccess === 'deny'
-        ? '当前执行环境不提供网络访问。'
-        : '如需访问网络，请把依赖写进同一条命令中。',
+      '当前后端不会保留 shell 进程状态；不要依赖 cd、export、alias 或 shell function 在跨调用时继续存在。',
+      '优先使用 workdir 指定目录，不要把 cd 写进命令里。',
+      '读取、搜索或编辑文件时优先使用 read / glob / grep / write / edit，不要用 bash 代替。',
+      readBashNetworkPolicyDescription(backend.permissionPolicy.networkAccess),
       visibleRoot === '/'
         ? 'workdir 必须位于当前 backend 可见路径内。'
         : `workdir 参数只能位于 ${visibleRoot} 内。`,
@@ -73,7 +74,11 @@ export class BashToolService {
     return BASH_TOOL_PARAMETERS;
   }
 
-  readInput(args: Record<string, unknown>, sessionId?: string): BashToolInput {
+  readInput(
+    args: Record<string, unknown>,
+    sessionId?: string,
+    backendKind?: RuntimeBackendKind,
+  ): BashToolInput {
     if (!sessionId) {
       throw new BadRequestException('bash 工具只能在 session 上下文中使用');
     }
@@ -88,6 +93,7 @@ export class BashToolService {
     const workdir = typeof args.workdir === 'string' && args.workdir.trim() ? args.workdir.trim() : undefined;
     const timeout = typeof args.timeout === 'number' ? args.timeout : undefined;
     return {
+      backendKind: backendKind ?? this.runtimeToolBackendService.getShellBackendKind(),
       command,
       description,
       sessionId,
@@ -99,13 +105,12 @@ export class BashToolService {
   async execute(input: BashToolInput): Promise<RuntimeCommandResult> {
     return this.runtimeCommandService.executeCommand({
       ...input,
-      backendKind: this.runtimeToolBackendService.getShellBackendKind(),
     });
   }
 
-  readRuntimeAccess(args: Record<string, unknown>, sessionId?: string): RuntimeToolAccessRequest {
-    const input = this.readInput(args, sessionId);
+  readRuntimeAccess(input: BashToolInput): RuntimeToolAccessRequest {
     return {
+      backendKind: input.backendKind,
       metadata: {
         command: input.command,
         description: input.description,
@@ -133,4 +138,14 @@ function requiresBashNetworkAccess(command: string): boolean {
   return /\b(curl|wget|fetch|nc|telnet|ssh|scp|sftp)\b/u.test(command)
     || /\bgit\s+(clone|fetch|pull)\b/u.test(command)
     || /\b(npm|pnpm|yarn|bun)\s+(install|add)\b/u.test(command);
+}
+
+function readBashNetworkPolicyDescription(policy: 'allow' | 'ask' | 'deny'): string {
+  if (policy === 'deny') {
+    return '当前执行环境不提供网络访问。';
+  }
+  if (policy === 'ask') {
+    return '当前执行环境的网络访问可能需要审批；如需联网，请把依赖写进同一条命令中。';
+  }
+  return '当前执行环境允许网络访问；如需联网，请把依赖写进同一条命令中。';
 }

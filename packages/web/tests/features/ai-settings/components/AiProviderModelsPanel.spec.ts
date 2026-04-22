@@ -137,4 +137,46 @@ describe('AiProviderModelsPanel', () => {
       ],
     ])
   })
+
+  it('keeps unsaved context length drafts across model list rerenders and resets after saved value changes', async () => {
+    const wrapper = mount(AiProviderModelsPanel, {
+      props: {
+        provider: createProvider(),
+        catalog,
+        models: [createModel('deepseek-chat')],
+        discoveringModels: false,
+        testingConnection: false,
+        connectionResult: null,
+      },
+      global: {
+        stubs: {
+          AiModelCapabilityToggles: {
+            template: '<div class="capability-toggles-stub" />',
+          },
+        },
+      },
+    })
+
+    const input = wrapper.get('.context-length-field input')
+    await input.setValue('65536')
+
+    await wrapper.setProps({
+      models: [createModel('deepseek-chat')],
+    })
+
+    expect((wrapper.get('.context-length-field input').element as HTMLInputElement).value).toBe('65536')
+    expect((wrapper.get('.context-length-row .ghost-button').element as HTMLButtonElement).disabled).toBe(false)
+
+    await wrapper.setProps({
+      models: [
+        {
+          ...createModel('deepseek-chat'),
+          contextLength: 65536,
+        },
+      ],
+    })
+
+    expect((wrapper.get('.context-length-field input').element as HTMLInputElement).value).toBe('65536')
+    expect((wrapper.get('.context-length-row .ghost-button').element as HTMLButtonElement).disabled).toBe(true)
+  })
 })

@@ -1,5 +1,6 @@
 import type { RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
+import type { RuntimeFilesystemDiffSummary } from '../file/runtime-file-diff';
 
 export interface RuntimeFilesystemResolvedPath {
   exists: boolean;
@@ -51,6 +52,35 @@ export interface RuntimeFilesystemFileEntry {
   virtualPath: string;
 }
 
+export type RuntimeFilesystemSkippedReason = 'binary' | 'inaccessible' | 'unreadable';
+
+export interface RuntimeFilesystemSkippedEntry {
+  path: string;
+  reason: RuntimeFilesystemSkippedReason;
+}
+
+export type RuntimeFilesystemDiagnosticSeverity = 'error' | 'hint' | 'info' | 'warning';
+
+export interface RuntimeFilesystemDiagnosticEntry {
+  code?: string;
+  column: number;
+  line: number;
+  message: string;
+  path: string;
+  severity: RuntimeFilesystemDiagnosticSeverity;
+  source: string;
+}
+
+export interface RuntimeFilesystemFormattingResult {
+  kind: string;
+  label: string;
+}
+
+export interface RuntimeFilesystemPostWriteResult {
+  diagnostics: RuntimeFilesystemDiagnosticEntry[];
+  formatting: RuntimeFilesystemFormattingResult | null;
+}
+
 export interface RuntimeFilesystemDirectoryResult {
   created: boolean;
   path: string;
@@ -58,13 +88,17 @@ export interface RuntimeFilesystemDirectoryResult {
 
 export interface RuntimeFilesystemWriteResult {
   created: boolean;
+  diff: RuntimeFilesystemDiffSummary | null;
   lineCount: number;
+  postWrite: RuntimeFilesystemPostWriteResult;
   path: string;
   size: number;
 }
 
 export interface RuntimeFilesystemEditResult {
+  diff: RuntimeFilesystemDiffSummary;
   occurrences: number;
+  postWrite: RuntimeFilesystemPostWriteResult;
   path: string;
   strategy: string;
 }
@@ -87,6 +121,9 @@ export interface RuntimeFilesystemSymlinkResult {
 export interface RuntimeFilesystemGlobResult {
   basePath: string;
   matches: string[];
+  partial: boolean;
+  skippedEntries: RuntimeFilesystemSkippedEntry[];
+  skippedPaths: string[];
   totalMatches: number;
   truncated: boolean;
 }
@@ -100,6 +137,8 @@ export interface RuntimeFilesystemGrepMatch {
 export interface RuntimeFilesystemGrepResult {
   matches: RuntimeFilesystemGrepMatch[];
   partial: boolean;
+  skippedEntries: RuntimeFilesystemSkippedEntry[];
+  skippedPaths: string[];
   totalMatches: number;
   truncated: boolean;
 }

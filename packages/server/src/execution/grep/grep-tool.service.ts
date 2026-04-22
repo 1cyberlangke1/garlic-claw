@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
-import type { PluginParamSchema } from '@garlic-claw/shared';
+import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
+import type { RuntimeFilesystemSkippedEntry } from '../runtime/runtime-filesystem-backend.types';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface GrepToolInput {
+  backendKind: RuntimeBackendKind;
   include?: string;
   path?: string;
   pattern: string;
@@ -65,7 +67,11 @@ export class GrepToolService {
     return GREP_TOOL_PARAMETERS;
   }
 
-  readInput(args: Record<string, unknown>, sessionId?: string): GrepToolInput {
+  readInput(
+    args: Record<string, unknown>,
+    sessionId?: string,
+    backendKind?: RuntimeBackendKind,
+  ): GrepToolInput {
     if (!sessionId) {
       throw new BadRequestException('grep 工具只能在 session 上下文中使用');
     }
@@ -74,6 +80,7 @@ export class GrepToolService {
       throw new BadRequestException('grep.pattern 不能为空');
     }
     return {
+      backendKind: backendKind ?? this.runtimeFilesystemBackendService.getDefaultBackendKind(),
       ...(typeof args.include === 'string' && args.include.trim() ? { include: args.include.trim() } : {}),
       ...(typeof args.path === 'string' && args.path.trim() ? { path: args.path.trim() } : {}),
       pattern,
@@ -88,7 +95,7 @@ export class GrepToolService {
       maxMatches: MAX_GREP_MATCHES,
       ...(input.path ? { path: input.path } : {}),
       pattern: input.pattern,
-    });
+    }, input.backendKind);
     const groupedOutput = buildGrepOutput(result.matches);
     return {
       matches: result.totalMatches,
@@ -98,8 +105,10 @@ export class GrepToolService {
         input.include ? `Include: ${input.include}` : undefined,
         '<matches>',
         ...(groupedOutput.length > 0 ? groupedOutput : ['(no matches)']),
-        result.truncated ? `... truncated to first ${MAX_GREP_MATCHES} matches` : `(total matches: ${result.totalMatches})`,
-        result.partial ? '(some files were skipped during search)' : undefined,
+        result.truncated
+          ? `(showing first ${result.matches.length} of ${result.totalMatches} matches. Refine path, include or pattern to continue.)`
+          : `(total matches: ${result.totalMatches})`,
+        ...formatGrepSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths),
         '</matches>',
       '</grep_result>',
       ].filter((entry): entry is string => Boolean(entry)).join('\n'),
@@ -107,9 +116,9 @@ export class GrepToolService {
     };
   }
 
-  readRuntimeAccess(args: Record<string, unknown>, sessionId?: string): RuntimeToolAccessRequest {
-    const input = this.readInput(args, sessionId);
+  readRuntimeAccess(input: GrepToolInput): RuntimeToolAccessRequest {
     return {
+      backendKind: input.backendKind,
       metadata: {
         pattern: input.pattern,
         ...(input.include ? { include: input.include } : {}),
@@ -125,6 +134,45 @@ export class GrepToolService {
     type: 'text',
     value: (output as GrepToolResult).output,
   });
+}
+
+function formatGrepSearchDiagnostics(
+  partial: boolean,
+  skippedEntries: RuntimeFilesystemSkippedEntry[],
+  skippedPaths: string[],
+): string[] {
+  const binaryEntries = skippedEntries
+    .filter((entry) => entry.reason === 'binary')
+    .map((entry) => entry.path);
+  const incompleteEntries = skippedEntries
+    .filter((entry) => entry.reason !== 'binary')
+    .map((entry) => entry.path);
+  const diagnostics: string[] = [];
+  if (binaryEntries.length > 0) {
+    diagnostics.push(formatSkippedEntrySummary('non-text files were skipped during search', binaryEntries));
+  }
+  if (incompleteEntries.length > 0) {
+    diagnostics.push(formatSkippedEntrySummary('search may be incomplete; some paths could not be searched', incompleteEntries));
+  } else if (partial && skippedPaths.length > 0) {
+    diagnostics.push(formatSkippedEntrySummary('search may be incomplete; some paths could not be searched', skippedPaths));
+  } else if (partial) {
+    diagnostics.push('(search may be incomplete; some paths were skipped)');
+  }
+  return diagnostics;
+}
+
+function formatSkippedEntrySummary(prefix: string, paths: string[]): string {
+  if (paths.length === 0) {
+    return `(${prefix})`;
+  }
+  const previewLimit = 3;
+  const visiblePaths = paths.slice(0, previewLimit);
+  const hiddenCount = paths.length - visiblePaths.length;
+  return [
+    `(${prefix}: ${visiblePaths.join(', ')}`,
+    hiddenCount > 0 ? `, +${hiddenCount} more` : '',
+    ')',
+  ].join('');
 }
 
 function buildGrepOutput(rows: Array<{ line: number; text: string; virtualPath: string }>): string[] {

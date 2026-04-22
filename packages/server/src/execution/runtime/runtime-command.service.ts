@@ -9,6 +9,7 @@ import type {
   RuntimeCommandStreamStats,
 } from './runtime-command.types';
 import { RUNTIME_BACKENDS, type RuntimeBackendList } from './runtime-backend.constants';
+import { RuntimeCommandCaptureService } from './runtime-command-capture.service';
 
 @Injectable()
 export class RuntimeCommandService {
@@ -18,6 +19,7 @@ export class RuntimeCommandService {
   constructor(
     @Inject(RUNTIME_BACKENDS)
     runtimeBackends: RuntimeBackendList,
+    private readonly runtimeCommandCaptureService: RuntimeCommandCaptureService,
   ) {
     if (runtimeBackends.length === 0) {
       throw new Error('RuntimeCommandService 至少需要一个 runtime backend');
@@ -30,7 +32,9 @@ export class RuntimeCommandService {
 
   async executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandResult> {
     const backend = this.requireBackend(input.backendKind);
-    return describeRuntimeCommandResult(await backend.executeCommand(input));
+    const backendResult = await backend.executeCommand(input);
+    const outputPath = await this.runtimeCommandCaptureService.captureIfNeeded(backendResult);
+    return describeRuntimeCommandResult(backendResult, outputPath);
   }
 
   getBackendDescriptor(backendKind?: RuntimeBackendKind): RuntimeBackendDescriptor {
@@ -63,9 +67,13 @@ export class RuntimeCommandService {
   }
 }
 
-function describeRuntimeCommandResult(result: RuntimeCommandBackendResult): RuntimeCommandResult {
+function describeRuntimeCommandResult(
+  result: RuntimeCommandBackendResult,
+  outputPath?: string | null,
+): RuntimeCommandResult {
   return {
     ...result,
+    ...(outputPath ? { outputPath } : {}),
     stderrStats: readRuntimeCommandStreamStats(result.stderr),
     stdoutStats: readRuntimeCommandStreamStats(result.stdout),
   };

@@ -43,14 +43,6 @@ export class RuntimeFilesystemBackendService {
     return this.requireBackend(backendKind);
   }
 
-  getConfiguredBackend(): RuntimeFilesystemBackend {
-    const configuredBackendKind = process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND?.trim();
-    if (!configuredBackendKind) {
-      return this.requireBackend();
-    }
-    return this.requireConfiguredBackend(configuredBackendKind);
-  }
-
   getBackendDescriptor(backendKind?: RuntimeBackendKind): RuntimeBackendDescriptor {
     return this.requireBackend(backendKind).getDescriptor();
   }
@@ -59,8 +51,9 @@ export class RuntimeFilesystemBackendService {
     sessionId: string,
     fromPath: string,
     toPath: string,
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemTransferResult> {
-    return this.getConfiguredBackend().copyPath(sessionId, fromPath, toPath);
+    return this.requireBackend(backendKind).copyPath(sessionId, fromPath, toPath);
   }
 
   async createSymlink(
@@ -69,16 +62,17 @@ export class RuntimeFilesystemBackendService {
       linkPath: string;
       targetPath: string;
     },
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemSymlinkResult> {
-    return this.getConfiguredBackend().createSymlink(sessionId, input);
+    return this.requireBackend(backendKind).createSymlink(sessionId, input);
   }
 
-  async deletePath(sessionId: string, inputPath: string): Promise<RuntimeFilesystemDeleteResult> {
-    return this.getConfiguredBackend().deletePath(sessionId, inputPath);
-  }
-
-  getConfiguredBackendDescriptor(): RuntimeBackendDescriptor {
-    return this.getConfiguredBackend().getDescriptor();
+  async deletePath(
+    sessionId: string,
+    inputPath: string,
+    backendKind?: RuntimeBackendKind,
+  ): Promise<RuntimeFilesystemDeleteResult> {
+    return this.requireBackend(backendKind).deletePath(sessionId, inputPath);
   }
 
   getDefaultBackend(): RuntimeFilesystemBackend {
@@ -101,15 +95,17 @@ export class RuntimeFilesystemBackendService {
       oldString: string;
       replaceAll?: boolean;
     },
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemEditResult> {
-    return this.getConfiguredBackend().editTextFile(sessionId, input);
+    return this.requireBackend(backendKind).editTextFile(sessionId, input);
   }
 
   async ensureDirectory(
     sessionId: string,
     inputPath: string,
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemDirectoryResult> {
-    return this.getConfiguredBackend().ensureDirectory(sessionId, inputPath);
+    return this.requireBackend(backendKind).ensureDirectory(sessionId, inputPath);
   }
 
   async globPaths(
@@ -119,8 +115,9 @@ export class RuntimeFilesystemBackendService {
       pattern: string;
       path?: string;
     },
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemGlobResult> {
-    return this.getConfiguredBackend().globPaths(sessionId, input);
+    return this.requireBackend(backendKind).globPaths(sessionId, input);
   }
 
   async grepText(
@@ -132,8 +129,9 @@ export class RuntimeFilesystemBackendService {
       path?: string;
       pattern: string;
     },
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemGrepResult> {
-    return this.getConfiguredBackend().grepText(sessionId, input);
+    return this.requireBackend(backendKind).grepText(sessionId, input);
   }
 
   hasBackend(backendKind: RuntimeBackendKind): boolean {
@@ -143,11 +141,12 @@ export class RuntimeFilesystemBackendService {
   async listFiles(
     sessionId: string,
     inputPath?: string,
+    backendKind?: RuntimeBackendKind,
   ): Promise<{
     basePath: string;
     files: RuntimeFilesystemFileEntry[];
   }> {
-    return this.getConfiguredBackend().listFiles(sessionId, inputPath);
+    return this.requireBackend(backendKind).listFiles(sessionId, inputPath);
   }
 
   listBackendKinds(): RuntimeBackendKind[] {
@@ -158,18 +157,20 @@ export class RuntimeFilesystemBackendService {
     sessionId: string,
     fromPath: string,
     toPath: string,
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemTransferResult> {
-    return this.getConfiguredBackend().movePath(sessionId, fromPath, toPath);
+    return this.requireBackend(backendKind).movePath(sessionId, fromPath, toPath);
   }
 
   async readDirectoryEntries(
     sessionId: string,
     inputPath?: string,
+    backendKind?: RuntimeBackendKind,
   ): Promise<{
-    entries: string[];
+    entries: string[]; 
     path: string;
   }> {
-    return this.getConfiguredBackend().readDirectoryEntries(sessionId, inputPath);
+    return this.requireBackend(backendKind).readDirectoryEntries(sessionId, inputPath);
   }
 
   async readPathRange(
@@ -180,47 +181,53 @@ export class RuntimeFilesystemBackendService {
       offset: number;
       path?: string;
     },
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemReadResult> {
-    return this.getConfiguredBackend().readPathRange(sessionId, input);
+    return this.requireBackend(backendKind).readPathRange(sessionId, input);
   }
 
-  async readSymlink(sessionId: string, inputPath: string): Promise<RuntimeFilesystemSymlinkResult> {
-    return this.getConfiguredBackend().readSymlink(sessionId, inputPath);
+  async readSymlink(
+    sessionId: string,
+    inputPath: string,
+    backendKind?: RuntimeBackendKind,
+  ): Promise<RuntimeFilesystemSymlinkResult> {
+    return this.requireBackend(backendKind).readSymlink(sessionId, inputPath);
   }
 
-  async resolvePath(sessionId: string, inputPath?: string): Promise<RuntimeFilesystemResolvedPath> {
-    return this.getConfiguredBackend().resolvePath(sessionId, inputPath);
+  async resolvePath(
+    sessionId: string,
+    inputPath?: string,
+    backendKind?: RuntimeBackendKind,
+  ): Promise<RuntimeFilesystemResolvedPath> {
+    return this.requireBackend(backendKind).resolvePath(sessionId, inputPath);
   }
 
-  async statPath(sessionId: string, inputPath?: string): Promise<RuntimeFilesystemPathStat> {
-    return this.getConfiguredBackend().statPath(sessionId, inputPath);
+  async statPath(
+    sessionId: string,
+    inputPath?: string,
+    backendKind?: RuntimeBackendKind,
+  ): Promise<RuntimeFilesystemPathStat> {
+    return this.requireBackend(backendKind).statPath(sessionId, inputPath);
   }
 
   async readTextFile(
     sessionId: string,
     inputPath?: string,
+    backendKind?: RuntimeBackendKind,
   ): Promise<{
     content: string;
     path: string;
   }> {
-    return this.getConfiguredBackend().readTextFile(sessionId, inputPath);
+    return this.requireBackend(backendKind).readTextFile(sessionId, inputPath);
   }
 
   async writeTextFile(
     sessionId: string,
     inputPath: string,
     content: string,
+    backendKind?: RuntimeBackendKind,
   ): Promise<RuntimeFilesystemWriteResult> {
-    return this.getConfiguredBackend().writeTextFile(sessionId, inputPath, content);
-  }
-
-  private requireConfiguredBackend(backendKind: RuntimeBackendKind): RuntimeFilesystemBackend {
-    if (!this.hasBackend(backendKind)) {
-      throw new Error(
-        `Unknown runtime filesystem backend: ${backendKind}. Available backends: ${this.listBackendKinds().join(', ')}`,
-      );
-    }
-    return this.requireBackend(backendKind);
+    return this.requireBackend(backendKind).writeTextFile(sessionId, inputPath, content);
   }
 
   private requireBackend(backendKind?: RuntimeBackendKind): RuntimeFilesystemBackend {

@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
-import type { PluginParamSchema } from '@garlic-claw/shared';
+import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
+import { RuntimeFileFreshnessService } from '../runtime/runtime-file-freshness.service';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
 export interface ReadToolInput {
+  backendKind: RuntimeBackendKind;
   filePath: string;
   limit?: number;
   offset?: number;
@@ -47,6 +49,7 @@ export class ReadToolService {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
     private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+    private readonly runtimeFileFreshnessService: RuntimeFileFreshnessService,
   ) {}
 
   getToolName(): string {
@@ -68,7 +71,11 @@ export class ReadToolService {
     return READ_TOOL_PARAMETERS;
   }
 
-  readInput(args: Record<string, unknown>, sessionId?: string): ReadToolInput {
+  readInput(
+    args: Record<string, unknown>,
+    sessionId?: string,
+    backendKind?: RuntimeBackendKind,
+  ): ReadToolInput {
     if (!sessionId) {
       throw new BadRequestException('read 工具只能在 session 上下文中使用');
     }
@@ -82,6 +89,7 @@ export class ReadToolService {
       throw new BadRequestException(`read.limit 不能超过 ${MAX_READ_LIMIT}`);
     }
     return {
+      backendKind: backendKind ?? this.runtimeFilesystemBackendService.getDefaultBackendKind(),
       filePath,
       ...(limit !== undefined ? { limit } : {}),
       ...(offset !== undefined ? { offset } : {}),
@@ -95,7 +103,10 @@ export class ReadToolService {
       maxLineLength: MAX_LINE_LENGTH,
       offset: input.offset ?? 1,
       path: input.filePath,
-    });
+    }, input.backendKind);
+    if (result.type !== 'directory') {
+      await this.runtimeFileFreshnessService.rememberRead(input.sessionId, result.path, input.backendKind);
+    }
     if (result.type === 'directory') {
       const startIndex = result.offset - 1;
       const endIndex = startIndex + result.entries.length;
@@ -166,9 +177,9 @@ export class ReadToolService {
     };
   }
 
-  readRuntimeAccess(args: Record<string, unknown>, sessionId?: string): RuntimeToolAccessRequest {
-    const input = this.readInput(args, sessionId);
+  readRuntimeAccess(input: ReadToolInput): RuntimeToolAccessRequest {
     return {
+      backendKind: input.backendKind,
       metadata: {
         filePath: input.filePath,
         ...(input.limit !== undefined ? { limit: input.limit } : {}),

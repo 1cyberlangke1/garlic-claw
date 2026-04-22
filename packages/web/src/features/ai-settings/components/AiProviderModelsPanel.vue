@@ -168,6 +168,7 @@ const newModelId = ref('')
 const newModelName = ref('')
 const searchKeyword = ref('')
 const contextLengthDraftByModelId = ref<Record<string, string>>({})
+const contextLengthBaseByModelId = ref<Record<string, string>>({})
 
 const filteredModels = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
@@ -208,9 +209,21 @@ watch(
 watch(
   () => props.models,
   (models) => {
-    contextLengthDraftByModelId.value = Object.fromEntries(
-      models.map((model) => [model.id, String(model.contextLength)]),
-    )
+    const nextDrafts: Record<string, string> = {}
+    const nextBases: Record<string, string> = {}
+    for (const model of models) {
+      const nextBase = String(model.contextLength)
+      const previousBase = contextLengthBaseByModelId.value[model.id]
+      const previousDraft = contextLengthDraftByModelId.value[model.id]
+      nextBases[model.id] = nextBase
+      if (previousDraft === undefined) {
+        nextDrafts[model.id] = nextBase
+        continue
+      }
+      nextDrafts[model.id] = previousBase !== nextBase ? nextBase : previousDraft
+    }
+    contextLengthBaseByModelId.value = nextBases
+    contextLengthDraftByModelId.value = nextDrafts
   },
   { immediate: true },
 )
