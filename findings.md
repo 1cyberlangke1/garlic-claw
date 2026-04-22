@@ -1443,3 +1443,7 @@
   - `destination` 规则
   - `path + leaf-name` 规则
   - `value-flag 跳过` 规则
+- 共享路径拼接规则还有一个值得单独钉住的 Windows 边界：裸盘符路径不能混出 `/`。
+  - `New-Item -Path C:\\temp -Name created-drive.txt -ItemType File`
+  - `Rename-Item -Path C:\\temp\\old-drive.txt -NewName renamed-drive.txt`
+- 若这条边界不补齐，虽然 still absolute，但结果会出现 `C:\\temp/created-drive.txt` 这类混合分隔符，提示质量会明显下降。

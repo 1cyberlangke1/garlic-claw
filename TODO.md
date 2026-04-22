@@ -176,6 +176,7 @@
     - 已把 `New-Item / Rename-Item` 的 PowerShell 目标路径拼接 owner 收口成共享最小规则：
       - `path + leaf-name` 这类命令当前可直接回显真正写入目标
       - positional 写法当前也已并入这条规则，不再只依赖 `-Path`
+      - 裸 Windows 盘符路径当前也会保留反斜杠，不再混出 `/`
       - 后续同类 PowerShell 命令可继续复用这条低膨胀路径拼接能力
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract

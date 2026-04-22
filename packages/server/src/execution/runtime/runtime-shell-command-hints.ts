@@ -550,7 +550,8 @@ function joinShellPathToken(basePath: string, leafName: string): string {
   }
   const trimmedBasePath = basePath.replace(/[\\/]+$/u, '');
   const trimmedLeafName = leafName.replace(/^[\\/]+/u, '');
-  if (/^filesystem::/iu.test(trimmedBasePath)) {
+  if (/^filesystem::/iu.test(trimmedBasePath) || /^[a-zA-Z]:$/u.test(trimmedBasePath)
+    || /^[a-zA-Z]:[\\/]/u.test(trimmedBasePath) || trimmedBasePath.includes('\\')) {
     return `${trimmedBasePath}\\${trimmedLeafName}`;
   }
   return `${trimmedBasePath}/${trimmedLeafName}`;
@@ -569,6 +570,9 @@ function readShellParentPathToken(inputPath: string): string {
     return match?.[1] ?? inputPath;
   }
   const normalized = inputPath.replace(/[\\/]+$/u, '');
+  if (/^[a-zA-Z]:[\\/][^\\/]+$/u.test(normalized)) {
+    return normalized.slice(0, 3);
+  }
   const separatorIndex = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
   if (separatorIndex <= 0) {
     return normalized.startsWith('/') ? '/' : normalized;

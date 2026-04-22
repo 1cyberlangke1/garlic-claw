@@ -2469,3 +2469,41 @@
 
 - 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能继续收成显式目标参数、value-flag 跳过或共享路径拼接规则的命令。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第三十批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 PowerShell 路径拼接 owner 的 Windows 裸盘符边界，但保持单点 owner。
+- 把 `C:\...` 这类裸盘符路径从“可能混出 `/`”收成“稳定保留反斜杠”的目标路径拼接。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 PowerShell parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把共享路径拼接规则补到裸盘符边界：
+  - `New-Item -Path C:\\temp -Name created-drive.txt -ItemType File` 当前会把 `C:\\temp\\created-drive.txt` 记为 `externalWritePaths`
+  - `Rename-Item -Path C:\\temp\\old-drive.txt -NewName renamed-drive.txt` 当前会把 `C:\\temp\\renamed-drive.txt` 记为 `externalWritePaths`
+- 这说明当前 PowerShell 路径拼接 owner 已经同时覆盖：
+  - `filesystem::...`
+  - 裸 `C:\\...`
+  - positional `path + leaf-name`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把共享路径拼接规则补齐到 Windows 裸盘符语义
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能继续收成显式目标参数、value-flag 跳过或共享路径拼接规则的命令。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

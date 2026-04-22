@@ -2062,6 +2062,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('keeps windows drive separators in new-item external write targets', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'New-Item -Path C:\\temp -Name created-drive.txt -ItemType File',
+      description: '检查 new-item 裸盘符外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'New-Item -Path C:\\temp -Name created-drive.txt -ItemType File',
+        commandHints: {
+          absolutePaths: ['C:\\temp'],
+          externalAbsolutePaths: ['C:\\temp'],
+          externalWritePaths: ['C:\\temp\\created-drive.txt'],
+          fileCommands: ['new-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 new-item 裸盘符外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 new-item 裸盘符外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\created-drive.txt、文件命令: new-item、外部绝对路径: C:\\temp',
+    });
+  });
+
+  it('keeps windows drive separators in rename-item external write targets', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Rename-Item -Path C:\\temp\\old-drive.txt -NewName renamed-drive.txt',
+      description: '检查 rename-item 裸盘符外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Rename-Item -Path C:\\temp\\old-drive.txt -NewName renamed-drive.txt',
+        commandHints: {
+          absolutePaths: ['C:\\temp\\old-drive.txt'],
+          externalAbsolutePaths: ['C:\\temp\\old-drive.txt'],
+          externalWritePaths: ['C:\\temp\\renamed-drive.txt'],
+          fileCommands: ['rename-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 rename-item 裸盘符外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 rename-item 裸盘符外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\renamed-drive.txt、文件命令: rename-item、外部绝对路径: C:\\temp\\old-drive.txt',
+    });
+  });
+
   it('recognizes invoke-webrequest outfile writes as combined network and external write hints', () => {
     const service = new BashToolService(
       {} as never,

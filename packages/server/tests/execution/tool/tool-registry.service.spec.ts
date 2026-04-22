@@ -2367,6 +2367,96 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('keeps windows drive separators in new-item external write targets in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-new-item-drive-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'New-Item -Path C:\\temp -Name created-drive.txt -ItemType File',
+      description: '检查 bash new-item 裸盘符外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-new-item-drive-hints-1',
+      metadata: {
+        command: 'New-Item -Path C:\\temp -Name created-drive.txt -ItemType File',
+        commandHints: {
+          absolutePaths: ['C:\\temp'],
+          externalAbsolutePaths: ['C:\\temp'],
+          externalWritePaths: ['C:\\temp\\created-drive.txt'],
+          fileCommands: ['new-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash new-item 裸盘符外部写入提示',
+      },
+      summary: '检查 bash new-item 裸盘符外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\created-drive.txt、文件命令: new-item、外部绝对路径: C:\\temp',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('keeps windows drive separators in rename-item external write targets in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-rename-item-drive-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'Rename-Item -Path C:\\temp\\old-drive.txt -NewName renamed-drive.txt',
+      description: '检查 bash rename-item 裸盘符外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-rename-item-drive-hints-1',
+      metadata: {
+        command: 'Rename-Item -Path C:\\temp\\old-drive.txt -NewName renamed-drive.txt',
+        commandHints: {
+          absolutePaths: ['C:\\temp\\old-drive.txt'],
+          externalAbsolutePaths: ['C:\\temp\\old-drive.txt'],
+          externalWritePaths: ['C:\\temp\\renamed-drive.txt'],
+          fileCommands: ['rename-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash rename-item 裸盘符外部写入提示',
+      },
+      summary: '检查 bash rename-item 裸盘符外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\renamed-drive.txt、文件命令: rename-item、外部绝对路径: C:\\temp\\old-drive.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces invoke-webrequest outfile write hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({
