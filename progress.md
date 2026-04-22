@@ -2721,3 +2721,19 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `git archive --output` 外部写入识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `git archive --output/-o <path>` 并入 `git` 命令特定写路径提取。
+  - 当前只在显式给出 `--output / -o` 时，才把该路径视为归档输出文件。
+  - 因此 `git archive --output /tmp/repo.tar HEAD` 现在也会进入 `externalWritePaths / writesExternalPath`。
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 84 tests` 全部通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

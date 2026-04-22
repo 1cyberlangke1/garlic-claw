@@ -1277,6 +1277,51 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces git archive output file as an external write in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-git-archive-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'git archive --output ~/repo.tar HEAD',
+      description: '检查 bash git archive 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-git-archive-external-hints-1',
+      metadata: {
+        command: 'git archive --output ~/repo.tar HEAD',
+        commandHints: {
+          absolutePaths: ['~/repo.tar'],
+          externalAbsolutePaths: ['~/repo.tar'],
+          externalWritePaths: ['~/repo.tar'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash git archive 外部写入提示',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash git archive 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: ~/repo.tar、外部绝对路径: ~/repo.tar',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces git worktree add external destination as an external write in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

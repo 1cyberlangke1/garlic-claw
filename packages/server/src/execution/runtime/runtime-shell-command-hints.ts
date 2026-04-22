@@ -68,6 +68,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
   '-outputfile',
 ]);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
+const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
 const GIT_SUBMODULE_ADD_VALUE_FLAGS = new Set(['-b', '--branch', '--depth', '--name', '--reference']);
 const GIT_WORKTREE_ADD_VALUE_FLAGS = new Set(['-b', '-B', '--orphan', '--reason']);
@@ -468,6 +469,9 @@ function readGitWritePathTokens(tokens: string[]): string[] {
     const positional = tokens.slice(1).filter((token) => !token.startsWith('-'));
     const destination = positional[0];
     return uniquePreview(destination ? [...writePaths, destination] : writePaths);
+  }
+  if (subcommand === 'archive') {
+    return readShellFlaggedPathTokens(tokens.slice(1), GIT_ARCHIVE_WRITE_PATH_FLAGS);
   }
   if (subcommand === 'worktree' && normalizeShellCommandToken(tokens[1] ?? '') === 'add') {
     const destination = readShellPositionalTokens(tokens.slice(2), GIT_WORKTREE_ADD_VALUE_FLAGS)[0];
