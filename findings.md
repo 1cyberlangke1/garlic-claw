@@ -1122,3 +1122,122 @@
   - `.json` 自动 pretty format
   - `.json / .js / .jsx / .ts / .tsx / .mjs / .cjs` 语法诊断
   - 这能先把 contract 和结果呈现钉住，后续再替换成更强 owner 也不需要回改工具层
+- 这轮继续对照 `other/opencode` 后，又确认了 `glob / grep` 还差的一层不是“再多回几个 totals 字段”，而是搜索上下文本身：
+  - `glob` 已回显 `Base`
+  - `grep` 之前没有这条基路径，模型看到结果后仍要自己反推搜索根
+  - 把 `basePath` 直接下沉到 backend result，比在工具层临时猜更稳
+- `glob / grep` 当前最容易膨胀的不是执行逻辑，而是 skipped diagnostics 文案：
+  - 两个 tool service 原先都各自维护一套“partial / skippedEntries / skippedPaths -> 文案”分支
+  - 继续这样堆下去，只会让 OpenCode 对齐过程在工具层越写越厚
+  - 这轮把它们收进共享 `runtime-search-diagnostics` owner 后，后续若还要补 reason/count/preview，只需要改一处
+- 第二 shell backend 落成后，真正剩下的阻塞不在 runtime command/tool owner，而在验收资产：
+  - `packages/server/scripts/http-smoke.mjs` 里原先 5 组 bash smoke 命令模板都写死了 bash 语法
+  - Windows `native-shell` 下最先暴露的失败点因此不是 backend 注册或路由，而是烟测脚本本身
+  - 把 shell 选择收成少量 helper 后，运行时主链无需再改
+- Windows `native-shell` 下的文件内容断言不能再把 `\n` 写死成唯一真相：
+  - PowerShell 默认文本写入会落 `CRLF`
+  - 对这类 smoke，真正要验证的是“内容与路径语义”而不是宿主换行风格
+  - 因此烟测断言应在读取侧统一做 `CRLF -> LF` 规范化
+- `bash-tar` 的 PowerShell 版本不能直接照搬 bash 的 `find | sort` 结果假设：
+  - Windows 路径枚举默认回的是反斜杠
+  - 如果不在命令模板里统一转成 `/` 并补回 `restored/` 前缀，follow-up request 断言会误判失败
+- WSL 下如果把整个 `tool-registry.service.spec.ts` 放进全局 `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell` 环境执行，失败并不代表产品回归：
+  - 这个 spec 文件里大量用例的默认夹具只注册 `RuntimeJustBashService`
+  - 因此全局改 shell backend 会让这些非 native-shell 用例失去前置条件
+  - 真正有效的 Linux 证据应是：
+    - `runtime-native-shell.service.spec.ts`
+    - `tool-registry` 中明确验证 real native-shell route 的目标用例
+    - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- 但这条测试前提并不值得长期保留：
+  - 如果 `tool-registry.service.spec.ts` 的默认夹具只注册 `just-bash`，每次切换全局 shell backend 都会把整文件回归口径做脏
+  - 更稳的方式是默认夹具同时注册 `just-bash + native-shell`，再让命令模板按当前 shell backend 选择 bash / PowerShell
+  - 这样测试仍保持单一 owner，代码体积只增加少量 helper，却能避免整文件再次出现“环境一切就假失败”
+- 对照 `other/opencode/packages/opencode/src/tool/bash.ts`，当前 Garlic Claw 还没补上的最大 bash 差距已经比“输出治理”更偏前置分析：
+  - OpenCode 会按实际 shell 解析命令，并在执行前静态收集 cwd / 文件路径 / 外部目录访问模式
+  - 当前 Garlic Claw 虽然已有 runtime permission、网络策略和 shell backend 切换，但还没有这层命令级静态预扫
+  - 这意味着：
+    - 对外部目录的提示还不够早
+    - 文件型命令仍主要靠工具描述约束，而不是命令 AST 级别的预判
+  - 这条差距是后续 `G20-4 / G20-6` 里最值得继续补的 bash 项，但实现面会明显大于本轮，不能和当前小改混做
+- 另一条和 OpenCode 相比仍明显存在的差距是 `read` 的 loaded-files / system-reminder 生态：
+  - OpenCode `read` 已把已加载文件和 reminder 链接进返回结果
+  - 当前 Garlic Claw 的 `read` 仍以路径、切片、二进制分流和截断保护为主
+  - 这条差距更适合作为后续独立 owner 收口，而不是把提醒逻辑重新抬回工具层
+- 当前这轮先落轻量静态预扫是合适的：
+  - 新增一个小 owner，先做明显 `cd`、明显文件型命令、明显外部绝对路径
+  - 它先进入 permission request metadata 和 summary
+  - 这样能先把“执行前提示”接进正式链路，而不必现在就把 `tree-sitter` 级 parser 带进服务端
+- 这条轻量预扫和 OpenCode 的差距也已经明确：
+  - 现在仍是启发式 token 扫描，不是 AST 级解析
+  - 对复杂 quoting、变量展开、PowerShell provider path、命令替换的理解仍然很浅
+  - 因此当前应把它视为“先补前置信号”，不是“已达到 OpenCode 级静态分析”
+- 但这条实现仍然值：
+  - 它把“不要把 `cd`、文件型命令、外部路径误用完全留给长文案”这件事前移到了审批链
+  - 并且 owner 边界是干净的：`BashToolService` 只消费结果，不自己做更多解析
+- 继续往 Windows / `native-shell` 方向补时，最值的不是再加更多 shell 语法描述，而是先补最常见的 PowerShell 词汇归一：
+  - `gc / sc / ac / sl / ni / md / rd / ren`
+  - `filesystem::...`
+  这类 token 如果完全不识别，静态预扫在 Windows 侧的价值会明显掉下去
+- 审批 `summary` 只写“含文件命令 / 含外部绝对路径”还不够：
+  - 用户或前端还得展开 metadata 才知道到底是哪几个命令、哪几条路径
+  - 先在 summary 里直接带上预览值，是低成本但很有效的补强
+- 预扫里的路径边界也要收稳，否则提示很容易一边漏、一边吵：
+  - 裸 `~` 不该继续漏掉
+  - `filesystem::/workspace/...` 这类仍在可见根内的 provider 路径，不该被误报为外部路径
+- 静态预扫真正高价值的提示，不一定都来自“路径”，也包括明显控制流误用：
+  - 已经提供 `workdir` 还继续 `cd`
+  - Windows `native-shell` 下继续写 `&&`
+  这两类错误一旦等到执行后才暴露，代价比普通路径提示更高
+- 联网命令识别如果继续留在 `BashToolService` 私有逻辑里，会让静态 hints 和 operation 审批再次分裂：
+  - 更稳的是把它并回同一个 shell hint owner
+  - 这样“需要 `network.access`”和“审批摘要里应提示这是联网命令”继续共用同一条判断真相
+- 这条联网判断如果只认 `curl / wget`，Windows `native-shell` 的价值还是会偏低：
+  - `iwr / irm / Invoke-WebRequest / Invoke-RestMethod` 也是宿主真实常用词汇
+  - 把它们补进同一 owner，比在 Windows 分支里再写另一套特判更干净
+- 单独的“联网命令”和“外部绝对路径”提示还不够：
+  - 真正更值得提前拦住的是两者同时出现
+  - 把这层组合风险单独写进审批摘要，比让前端或人工自己拼读两个标签更直接
+- 只有“外部绝对路径”这一个标签也不够：
+  - 对审批来说，更高价值的问题是“这条命令是不是在改外部路径”
+  - 把“写入命令触碰外部绝对路径”单独抬出来后，风险层级比普通读取外部路径更清楚
+- 在不引 parser 的前提下，按命令段切分再叠一层最小参数位识别，是当前性价比最高的增强：
+  - 先按 `; / && / || / |` 这类边界切命令段
+  - 再识别 PowerShell `-Path / -LiteralPath / -Destination`
+  - 这样能明显减少 `Copy-Item / Set-Content` 一类命令的静态提示误差，同时不把复杂度抬回工具层
+- 只提示“含 cd”还不够：
+  - `cd ..`、`cat ../file` 这类命令的高价值信号，其实是上级目录穿越倾向
+  - 把 `../`、`..\\`、`..` 单独抬成 `parentTraversalPaths` 后，审批摘要对目录逃逸风险的表达更接近 OpenCode 的前置分析
+- 当前仓库的 fresh 验收还有一条执行层约束：
+  - `smoke:server` 与 `smoke:web-ui` 都会重建 `shared / plugin-sdk / server`
+  - 并行执行两条 smoke，可能打出和本轮代码无关的构建竞争误报
+  - 因此这类重构后的 fresh 证据应继续按串行口径采信
+- 插件配置快照当前会把 schema `defaultValue` 合并进 `context.host.getConfig()`：
+  - 这对纯展示或静态参数是合理的
+  - 但对 `shellBackend` 这种“运行时路由覆盖项”不成立
+  - 一旦给它默认值 `just-bash`，前端未设置时也会把 runtime 全局 shell route 强行压回 `just-bash`
+- 更稳的 owner 是：
+  - 运行时全局路由继续由 runtime backend routing owner 决议
+  - 插件配置只表达“用户显式覆盖”
+  - 因此前端切换 shell backend 这条链里，`shellBackend` 不应再携带 schema 默认值
+- `read` 和 OpenCode 当前最适合先补的，不是再造一个独立 loaded-files 子系统，而是先把“session 已读取文件”这条真相从现有 freshness owner 暴露出来：
+  - freshness 已经掌握“哪些文件被当前 session 成功 read 过”
+  - 先在这层补只读查询，比重新引入第二套 loaded-files 账本更省 owner 和代码体积
+- 这条提醒现在适合保持最小：
+  - 只回显其他已读文件路径
+  - 不直接在 `ReadToolService` 里继续堆更复杂的 instruction/system-reminder 推断
+  - 后续如果要继续接近 OpenCode，再把它收成更稳定的 loaded-files / reminder owner
+- `write / edit` 当前只有数字 diff 摘要时，模型还得自己猜实际改了什么：
+  - 已有 `RuntimeFilesystemDiffSummary.patch` 时，继续只回 `+/-` 和 line delta 的信息密度偏低
+  - 直接复用现有 patch 真相补最小预览，比再造一套新 diff owner 成本更低
+- 这条 patch 预览适合继续收成共享渲染 owner：
+  - `write` 和 `edit` 都消费同一份 diff 结构
+  - 若各自再拼一套 `<patch>` 文案，会把结果格式再次复制到两个 tool service
+  - 因此把 patch 预览抽成共享 `runtime-file-diff-report`，比继续在工具层复制分支更干净
+- `write / edit` 的 freshness 拒绝如果只提示“先 read”，模型仍然缺少“我刚才读过哪些相关文件”的最小上下文：
+  - 这类信息本来就已经存在 freshness owner 里
+  - 因此更省代码体积的做法不是新建 loaded-files / write-history 子系统，而是在拒绝分支直接复用最近已读文件真相
+  - 这样能把恢复提示继续留在同一个 owner，而不是散到 `write-tool`、`edit-tool` 或聊天链
+- 大型测试夹具在这条线上也要同步补 owner 接口：
+  - `ReadToolService` 开始消费 `listRecentReads()` 后，旧 freshness mock 如果不补这个方法，会把非目标用例打成假失败
+  - 这说明当前 read / write / edit 的 session reminder 与 freshness 语义已经共用同一个真相源
+  - 后续若继续扩 freshness owner，夹具也必须跟着接口一起收口，不能再依赖残缺 mock 侥幸通过

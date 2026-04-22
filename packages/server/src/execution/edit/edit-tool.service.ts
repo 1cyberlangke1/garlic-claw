@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeFilesystemDiffSummary } from '../file/runtime-file-diff';
+import { renderRuntimeFilesystemDiffLines } from '../file/runtime-file-diff-report';
 import { renderRuntimeFilesystemPostWriteLines } from '../file/runtime-file-post-write-report';
 import { RuntimeFileFreshnessService } from '../runtime/runtime-file-freshness.service';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
@@ -136,6 +137,7 @@ export class EditToolService {
         `Strategy: ${result.strategy}`,
         `Diff: +${result.diff.additions} / -${result.diff.deletions}`,
         `Line delta: ${result.diff.beforeLineCount} -> ${result.diff.afterLineCount}`,
+        ...renderRuntimeFilesystemDiffLines(result.diff),
         ...renderRuntimeFilesystemPostWriteLines(result.postWrite),
         '</edit_result>',
       ].join('\n'),

@@ -98,10 +98,14 @@ export class RuntimeJustBashService implements RuntimeBackend {
 
 function normalizeRuntimeBashError(error: unknown, timeoutMs: number): Error {
   if (error instanceof Error && error.message === RUNTIME_BASH_TIMEOUT_CODE) {
-    return new Error(`bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）`);
+    return new Error(
+      `bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`,
+    );
   }
   if (error instanceof Error && error.name === 'AbortError') {
-    return new Error(`bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）`);
+    return new Error(
+      `bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`,
+    );
   }
   return error instanceof Error ? error : new Error('bash 执行失败');
 }

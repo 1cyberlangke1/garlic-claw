@@ -38,42 +38,31 @@
 
 当前主要短板：
 
-- `read / write / edit / glob / grep` 仍偏基础版，离 OpenCode 的文件工具成熟度还有明显差距。
-- `bash` 还缺更强的输出治理、环境语义说明、诊断反馈与执行后处理。
-- 当前 runtime 中层方向正确，但还没有稳定到“接第二个、第三个生产级执行后端时几乎不用回改工具层”。
+- `bash`：仍缺 OpenCode 那种 parser/AST 级静态分析；当前还是启发式 hints，复杂 quoting / 变量展开 / 命令替换 / 更深 PowerShell 语法还不够强。
+- `read`：当前已具备缺失路径建议、分流和截断保护，但还缺 OpenCode 那层更成熟的 loaded-files / system-reminder 生态 owner。
+- `glob / grep`：当前已有 base path、partial 与 skipped diagnostics，但搜索后处理、排序与 project-aware overlay 仍弱于 OpenCode。
+- `write / edit`：当前已有 diff / freshness / post-write 第一轮增强，但写后诊断、格式化和更复杂 rewrite 纠偏仍未到 OpenCode 水平。
+- runtime 抽象：第二 backend 已成立，但还缺“第三个生产级 backend 几乎不用回改工具层”的 judge 级证据。
 
 ## 当前主路线：文件工具与执行抽象对齐 OpenCode 到 100%
 
-### G20-0 差异基线冻结
+### 当前执行计划
 
-- 状态：已完成
-- 目标：
-  - 为 `bash / read / glob / grep / write / edit` 逐个建立 Garlic Claw vs OpenCode 差异表。
-  - 差异必须拆成三层：
-    - 公开语义
-    - 结果质量 / 使用体验
-    - 中间 owner / 抽象边界
-- 验收：
-  - 每个工具都给出“已对齐 / 故意不对齐 / 必须补齐”的明确矩阵。
-  - `TODO.md` 与 `task_plan.md` 同步固化优先级。
+- `P20-1 [已完成]` 压缩已完成阶段记录，只保留摘要与活跃路线。
+- `P20-2 [已完成]` 前端 `builtin.runtime-tools` 已支持实时切换 shell backend，且未设置时回退全局 runtime route。
+- `P20-3 [已完成]` `read` 已补最小 session loaded-files reminder：
+  - 当前会基于 `RuntimeFileFreshnessService` 回显“本 session 近期还读取过这些文件”
+  - 先补最小提醒，不引入新的 loaded-files 大系统
+- `P20-4 [进行中]` 把 `bash` 从启发式静态预扫继续推进到更结构化分析，但不把 parser 复杂度抬回工具层。
+- `P20-5 [进行中]` 继续补 `glob / grep / write / edit` 的成熟度差距，优先做低膨胀 owner 收口：
+  - `write / edit` 当前已补共享 patch 预览渲染，不再只回数字 diff 摘要
+  - freshness 写入阻塞当前会附带本 session 最近已读文件，减少“先 read 哪些文件”这类上下文丢失
+- `P20-6 [待开始]` 对 `G20-4 / G20-6` 做 fresh 验收后的独立 judge；judge 未 PASS 前，不把阶段标成已完成。
 
-### G20-1 Read 对齐到 OpenCode 水平
+### 已完成阶段归档
 
-- 状态：已完成
-- 目标：
-  - 把 `read` 提升到接近 OpenCode 的成熟度，而不是只做文本切片。
-  - 重点补齐：
-    - 缺失路径猜测与更友好的 miss 提示
-    - 更明确的目录读取语义与 offset/limit 提示
-    - 文件读取的字节级保护与更稳定的截断文案
-    - 图片 / PDF / 二进制文件分流策略
-    - 为未来 instruction/system-reminder/loaded-files owner 预留稳定接口
-- 验收：
-  - `read` 有定向测试覆盖 miss / directory / text / binary / image-or-pdf 分支
-  - 输出质量与 OpenCode 对齐到“模型可直接继续操作”的水平
-- 已完成摘要：
-  - 已补缺失路径建议、目录窗口提示、字节级截断保护。
-  - 已补 `image / pdf / binary / file / directory` 分流与定向测试。
+- `G20-0` 差异基线冻结：已完成，详细矩阵与判断过程转入 `task_plan.md / findings.md`。
+- `G20-1` Read 第一轮对齐：已完成，缺失路径建议、目录窗口、字节级截断与二进制/图片/PDF 分流已不再在本文件逐段展开。
 
 ### G20-2 Write / Edit 对齐到 OpenCode 水平
 
@@ -90,12 +79,11 @@
   - `write / edit` 输出至少能稳定返回修改摘要与 diff 元数据
   - 多位置匹配、空文件创建、覆盖写、行尾差异、重复替换都有定向测试
 - 当前进展：
-  - `write` 已回带 `lineCount / size / diff` 摘要，`edit` 已回带 `strategy / diff` 摘要。
-  - runtime 已新增 `runtime-file-diff.ts`，把 diff metadata 继续收口在 filesystem owner。
-  - `trimmed-boundary / indentation-flexible` 已补独立回归样例，并修正策略顺序为“更具体优先、更宽松靠后”。
-  - `edit` 当前已补 `context-aware / block-anchor` 多行定位策略；匹配失败或多命中时会明确回显策略名、命中行号和下一步建议，不再只给笼统报错。
-  - 已补 session 级 file freshness owner；`write / edit` 现已要求“已有文件先 read，再写入时校验 mtime/size 未变”，`edit` 还会按解析后的 virtual path 串行加锁。
-  - `smoke:server` 已补 stale-read 拒绝分支，端到端会验证“文件在读取后被外部改动时，edit 会失败并要求重新读取”。
+  - `write / edit` 已稳定回带 `diff / lineCount / size / strategy` 等工程化摘要，diff owner 已下沉到 filesystem 层。
+  - `edit` 已补 `context-aware / block-anchor` 等多行定位策略；匹配失败或多命中时会明确回显策略名、命中行号和下一步建议。
+  - session 级 freshness、path lock 与 stale-read smoke 已落地；当前仍待继续补更强的写后增强与更细诊断。
+  - `write / edit` 当前都会通过共享 owner 回显最小 `<patch>` 预览，不再只剩数字 diff 摘要。
+  - 未先 `read` 就尝试覆盖已有文件时，freshness 拒绝信息当前会附带同 session 最近已读文件列表，便于模型直接回到正确上下文继续修改。
 
 ### G20-3 Glob / Grep 对齐到 OpenCode 水平
 
@@ -112,12 +100,10 @@
   - `glob / grep` 都有“结果为空 / 有结果 / 截断 / 局部失败”定向测试
   - 输出结构与 OpenCode 接近到“模型可直接据此继续 read/edit/write”的水平
 - 当前进展：
-  - 已补 mtime 倒序、partial 语义、媒体/二进制跳过对齐。
-  - 已补空结果与截断时的更明确 totals 文案。
-  - 已补 `partial + skippedPaths` 诊断，工具输出会显式提示被跳过的不可达路径。
-  - 已补 `skippedEntries` 细分类：`glob` 会区分不可达路径，`grep` 会区分不可达 / 不可读 / 二进制跳过。
-  - `glob / grep` 当前都会把“搜索可能不完整”和“非文本文件被跳过”分开提示，不再只回一条笼统 skipped path 文案。
-  - 仍待补 formatting / diagnostics overlay。
+  - 已补 mtime 倒序、空结果 / 截断 totals、`partial + skippedEntries` 细分类。
+  - `glob / grep` 当前都会把“搜索可能不完整”和“非文本文件被跳过”分开提示；`grep` 已补 `Base` 搜索基路径上下文。
+  - `glob / grep` 的 skipped diagnostics 现已收成共享格式化 owner，工具层重复文案已压缩。
+  - 仍待补更强的搜索后处理与 project-aware overlay。
 
 ### G20-4 Bash 结果质量与后处理补齐
 
@@ -127,16 +113,27 @@
   - 主聊天链路与 `builtin.runtime-tools` 必须复用同一渲染链。
   - 避免超长 `stdout/stderr` 与不稳定元信息无界进入模型上下文。
 - 当前进展：
-  - 已新增 `runtime-command-output.ts`
-  - 已接通 `bashOutput.maxLines / maxBytes / showTruncationDetails`
-  - 已补 `stdout_summary / stderr_summary` 与更具体的 `exit_code` 诊断。
-  - 已新增 `RuntimeCommandCaptureService`，stdout/stderr 超过默认渲染阈值时会把完整输出写到 session 可见路径下的 `/.garlic-claw/runtime-command-output/...`。
-  - `RuntimeCommandService`、主聊天链路和 `builtin.runtime-tools` 当前都已共用这条完整输出捕获 contract；渲染被截断时会额外回显 `full_output_path`。
-  - `bash` 公开说明已继续补齐 `workdir` 优先与“不要用 bash 代替文件工具”的约束文案。
-  - 已通过 `smoke:server / smoke:web-ui / lint`
+  - `runtime-command-output.ts`、`RuntimeCommandCaptureService` 与 `bashOutput.*` 配置已接通；截断时会稳定回显 `stdout_summary / stderr_summary / full_output_path`。
+  - 主聊天链路与 `builtin.runtime-tools` 当前已共用同一条 bash 渲染与完整输出捕获 contract。
+  - `bash` 公开说明已补 `workdir` 优先、网络策略三态和“不要用 bash 代替文件工具”的约束文案。
+  - `bash` 当前已补 shell-specific chaining 提示：
+    - bash 场景明确建议依赖顺序的命令使用 `&&`
+    - Windows `native-shell` 明确提示不要用 `&&`，改用 PowerShell 条件写法
+  - `just-bash / native-shell` 当前都已补更可执行的超时错误文案：超时后会明确提示“如非交互等待，请调大 timeout 重试”。
+  - `bash` 已新增轻量静态预扫 owner：
+    - 审批前会识别明显 `cd`
+    - 会识别明显文件型命令
+    - 会识别明显外部绝对路径并写入审批 metadata / summary
+    - 已补 PowerShell 常见别名与 `filesystem::` provider 路径识别，Windows `native-shell` 下不再只认 bash 风格 token
+    - 已补两类高价值误用提示：`workdir` 已提供却仍写 `cd`，以及 Windows `native-shell` 中误用 `&&`
+    - 联网命令识别已并回同一静态预扫 owner，当前审批摘要也会直接提示“含联网命令”
+    - 已补 PowerShell 原生联网命令识别：`iwr / irm / Invoke-WebRequest / Invoke-RestMethod`
+    - 当同一条命令既联网又触碰外部绝对路径时，审批摘要会单独抬出这层组合风险
+    - 已把“写入命令触碰外部绝对路径”从普通外部路径提示中单独抬出，并补 `-Path / -LiteralPath / -Destination` 这类 PowerShell 轻量参数位识别
+    - 已补 `../`、`..\\`、`cd ..` 这类上级目录穿越倾向提示，审批摘要会单独回显相对上级路径预览
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
-  - 继续补与执行后端能力矩阵一致的环境提示文案
+  - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层
 - 验收：
   - `bash` 至少一组渲染/截断/错误分支定向测试
   - 主聊天与 `builtin.runtime-tools` 的结果文本完全共用
@@ -156,17 +153,9 @@
   - 没有 project/worktree overlay 时，runtime 文件工具仍可工作
   - 有 overlay 时，工具结果能额外带上 diagnostics / formatting / metadata
 - 当前进展：
-  - 已新增 `ProjectWorktreePostWriteService`，作为 overlay 侧正式 `post-write` owner。
-  - 已新增 `RuntimeFilesystemPostWriteService`，由 runtime 主链统一聚合 post-write provider。
-  - `RuntimeHostFilesystemBackendService` 当前只依赖 runtime `post-write` owner；overlay 缺席时保持原行为，不需要兼容壳。
-  - `write / edit` 结果当前已正式带上 `postWrite.formatting / postWrite.diagnostics`。
-  - 第一轮已落地的增强能力：
-    - `.json` 自动 pretty format
-    - `.json / .js / .jsx / .ts / .tsx / .mjs / .cjs` 语法诊断
-  - 工具输出当前会显式回显：
-    - `Formatting: ...`
-    - `Diagnostics: none | N issue(s)`
-    - `<diagnostics file="..."> ... </diagnostics>`
+  - `ProjectWorktreePostWriteService + RuntimeFilesystemPostWriteService` 已形成正式 overlay 链；overlay 缺席时会回退为空结果，不需要兼容壳。
+  - `write / edit` 当前已正式带上 `postWrite.formatting / postWrite.diagnostics`，第一轮增强覆盖 `.json` pretty format + JS/TS 语法诊断。
+  - 工具输出会显式回显 `Formatting` 与 `Diagnostics` 摘要，后续增强继续沿 post-write owner 追加。
 
 ### G20-6 执行后端抽象继续压实
 
@@ -182,21 +171,20 @@
   - 新增一个生产风格的第二 backend 试点时，不需要回改 `read / glob / grep / write / edit / bash` 工具服务
   - 独立 judge 明确确认“不是只靠 mock backend 的假迁移性”
 - 当前进展：
-  - 已新增 `RuntimeBackendRoutingService`，把 shell/filesystem backend 路由的环境变量读取收口成单点。
-  - `RuntimeFilesystemBackendService` 当前已不再持有“configured filesystem backend”这条隐式 owner。
-  - `RuntimeToolBackendService` 不再自己直接读取 shell/filesystem 路由环境变量，而是统一消费 runtime 路由 owner。
-  - 当前 `bash` 权限审查链、filesystem 实际执行链与 backend descriptor 决议，已继续共用同一条 runtime 路由真相。
-  - 已新增 `runtime-visible-path.ts`，把 backend 可见路径的规范化、拼接与越界校验收口成单个 runtime 领域模块。
-  - `RuntimeJustBashService` 与 `RuntimeHostFilesystemBackendService` 当前已共用同一套 visible path 解析语义。
-  - `read / glob / grep / write / edit` 当前都会先显式解析 filesystem backend kind，再把同一个 kind 传给：
-    - descriptor / 审批链
-    - freshness 读戳 / 锁
-    - 真正的 filesystem backend 执行
-  - `RuntimeHostRuntimeToolService` 当前也已改成“单次 host 调用只决议一次 backend kind”：
-    - host facade 会先固定 backend kind
-    - 再把同一个 kind 传给 `readInput / readRuntimeAccess / execute`
-    - `reviewAccess()` 也改为直接消费 access 上显式携带的 `backendKind`
+  - `RuntimeBackendRoutingService` 与 `runtime-visible-path.ts` 已把 backend 路由和可见路径真相收口成单点 owner。
+  - `RuntimeFilesystemBackendService`、`RuntimeToolBackendService` 与 `RuntimeHostRuntimeToolService` 当前都已改成“单次调用只固定一次 backend kind，再贯穿 input / access / review / execute”。
+  - 当前剩余重点不是继续改工具层，而是继续验证中层 prepared contract 是否已经足够稳定。
   - `bash / read / glob / grep / write / edit` 当前已不再在工具 `execute()` 里重复决议 backend kind。
+  - `native-shell` 已作为真实第二 shell backend 落地：
+    - Windows 宿主进程走 PowerShell
+    - Linux / WSL 宿主进程走 bash
+  - `packages/server/scripts/http-smoke.mjs` 已补 shell-aware 命令模板，Windows `native-shell` 不再被 bash-only smoke 误伤。
+  - 前端实时切换 shell backend 已并回 `builtin.runtime-tools` 现有配置链：
+    - `shellBackend` 当前只在用户显式选择时覆盖 runtime shell route
+    - 未设置时继续跟随后端全局默认路由，不会被 schema 默认值误压回 `just-bash`
+  - 2026-04-22 已重新拿到 fresh 证据：
+    - Windows：默认 `smoke:server`、`GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell smoke:server`、`smoke:web-ui`
+    - WSL 内部目录：`runtime-native-shell` 定向 jest、real native-shell route 定向 jest、`GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell smoke:server`
 
 ### G20-7 端到端验收与独立 judge
 

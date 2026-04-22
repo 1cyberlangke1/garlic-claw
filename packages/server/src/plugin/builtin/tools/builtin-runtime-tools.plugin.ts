@@ -2,6 +2,7 @@ import type {
   JsonValue,
   PluginConfigSchema,
   PluginManifest,
+  RuntimeBackendKind,
   PluginRuntimeCommandResult,
 } from '@garlic-claw/shared';
 import { BASH_TOOL_PARAMETERS } from '../../../execution/bash/bash-tool.service';
@@ -19,6 +20,21 @@ import type { BuiltinPluginDefinition } from '../builtin-plugin-definition';
 const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
   type: 'object',
   items: {
+    shellBackend: {
+      type: 'string',
+      description: 'bash 执行后端',
+      hint: '未设置时跟随后端全局默认路由；显式选择后，当前前端发起的 bash 工具会立即切到对应后端。',
+      options: [
+        {
+          value: 'just-bash',
+          label: 'just-bash',
+        },
+        {
+          value: 'native-shell',
+          label: 'native-shell',
+        },
+      ],
+    },
     bashOutput: {
       type: 'object',
       description: 'bash 输出治理',
@@ -57,7 +73,8 @@ const RUNTIME_TOOLS_MANIFEST: PluginManifest = {
     {
       name: 'bash',
       description: [
-        '在当前 session 的执行后端中执行 bash 命令。',
+        '在当前 session 的执行后端中执行命令。',
+        '命令语法跟随当前 shell backend：just-bash 与 Linux/WSL native-shell 使用 bash，Windows native-shell 使用 PowerShell。',
         '同一 session 下写入 backend 当前可见路径的文件，会在后续工具调用中继续可见。',
         '每次调用都应写成自包含命令，不要假设 shell 状态会跨调用延续。',
         '优先使用 workdir 指定目录，不要把 cd 写进命令里。',
@@ -121,15 +138,15 @@ export const BUILTIN_RUNTIME_TOOLS_PLUGIN: BuiltinPluginDefinition = {
   manifest: RUNTIME_TOOLS_MANIFEST,
   tools: {
     bash: async (params, context) => {
-      const [result, config] = await Promise.all([
-        context.host.executeRuntimeCommand({
-          command: String(params.command ?? ''),
-          description: String(params.description ?? ''),
-          ...(typeof params.timeout === 'number' ? { timeout: params.timeout } : {}),
-          ...(typeof params.workdir === 'string' ? { workdir: params.workdir } : {}),
-        }),
-        context.host.getConfig(),
-      ]);
+      const config = await context.host.getConfig();
+      const shellBackend = readRuntimeToolsShellBackend(config);
+      const result = await context.host.executeRuntimeCommand({
+        ...(shellBackend ? { backendKind: shellBackend } : {}),
+        command: String(params.command ?? ''),
+        description: String(params.description ?? ''),
+        ...(typeof params.timeout === 'number' ? { timeout: params.timeout } : {}),
+        ...(typeof params.workdir === 'string' ? { workdir: params.workdir } : {}),
+      });
       return renderToolTextOutput(formatBashOutput(result, readRuntimeToolsBashOutputOptions(config)));
     },
     read: async (params, context) => renderToolTextOutput((await context.host.readRuntimePath({
@@ -158,6 +175,17 @@ export const BUILTIN_RUNTIME_TOOLS_PLUGIN: BuiltinPluginDefinition = {
     })).output),
   },
 };
+
+function readRuntimeToolsShellBackend(config: JsonValue): RuntimeBackendKind | undefined {
+  if (!isRecord(config)) {
+    return undefined;
+  }
+  const backendKind = typeof config.shellBackend === 'string' ? config.shellBackend.trim() : '';
+  if (backendKind === 'just-bash' || backendKind === 'native-shell') {
+    return backendKind;
+  }
+  return undefined;
+}
 
 function renderToolTextOutput(value: string) {
   return {

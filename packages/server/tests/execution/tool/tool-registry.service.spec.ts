@@ -19,6 +19,7 @@ import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
 import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
+import { RuntimeNativeShellService } from '../../../src/execution/runtime/runtime-native-shell.service';
 import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
@@ -454,10 +455,10 @@ describe('ToolRegistryService', () => {
     expect(bashTool).toBeDefined();
 
     const writeExecution = (bashTool as any).execute({
-      command: 'mkdir -p logs && echo persisted > logs/run.txt && cat logs/run.txt',
+      command: buildRuntimeShellPersistAndReadCommand('logs/run.txt', 'persisted'),
       description: '写入并校验运行日志',
     });
-    const [writeRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    const writeRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
     expect(writeRequest).toMatchObject({
       messageId: 'assistant-message-allow-1',
       toolName: 'bash',
@@ -466,10 +467,10 @@ describe('ToolRegistryService', () => {
     const writeResult = await writeExecution;
 
     const readExecution = (bashTool as any).execute({
-      command: 'cat logs/run.txt',
+      command: buildRuntimeShellReadCommand('logs/run.txt'),
       description: '读取刚才的运行日志',
     });
-    const [readRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    const readRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
     expect(readRequest).toMatchObject({
       messageId: 'assistant-message-allow-1',
       toolName: 'bash',
@@ -477,7 +478,7 @@ describe('ToolRegistryService', () => {
     runtimeToolPermissionService.reply(conversationId, readRequest.id, 'once');
     const readResult = await readExecution;
     const modelOutput = await (bashTool as any).toModelOutput({
-      input: { command: 'cat logs/run.txt', description: '读取刚才的运行日志' },
+      input: { command: buildRuntimeShellReadCommand('logs/run.txt'), description: '读取刚才的运行日志' },
       output: readResult,
       toolCallId: 'call-bash-1',
     });
@@ -496,7 +497,9 @@ describe('ToolRegistryService', () => {
     }));
     expect((modelOutput as { value: string }).value).toContain('cwd: /');
     expect((modelOutput as { value: string }).value).not.toContain('backend:');
-    expect(fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'logs', 'run.txt'), 'utf8')).toBe('persisted\n');
+    expect(
+      fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'logs', 'run.txt'), 'utf8').replace(/\r\n/g, '\n'),
+    ).toBe('persisted\n');
   });
 
   it('applies builtin runtime-tools bash output config through the plugin config chain', async () => {
@@ -524,10 +527,10 @@ describe('ToolRegistryService', () => {
     expect(bashTool).toBeDefined();
 
     const execution = (bashTool as any).execute({
-      command: 'printf "line-1\\nline-2\\nline-3\\nline-4\\n"',
+      command: buildRuntimeShellMultilineOutputCommand(['line-1', 'line-2', 'line-3', 'line-4']),
       description: '生成多行输出',
     });
-    const [request] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    const request = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
 
@@ -538,6 +541,46 @@ describe('ToolRegistryService', () => {
     expect((result as { value: string }).value).toContain('<stdout>\nline-3\nline-4\n</stdout>');
     expect((result as { value: string }).value).not.toContain('output truncated');
     expect((result as { value: string }).value).not.toContain('line-2\nline-3');
+  });
+
+  it('routes builtin runtime-tools bash execution through the configured shell backend', async () => {
+    const { conversationId, pluginBootstrapService, runtimeToolPermissionService, service } = createFixture();
+    const pluginPersistenceService = (pluginBootstrapService as unknown as {
+      pluginPersistenceService: PluginPersistenceService;
+    }).pluginPersistenceService;
+    pluginPersistenceService.updatePluginConfig('builtin.runtime-tools', {
+      shellBackend: 'native-shell',
+    });
+
+    const toolSet = await service.buildToolSet({
+      assistantMessageId: 'assistant-message-shell-config-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['bash'],
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'echo configured-backend',
+      description: '验证配置指定 shell backend',
+    });
+    const request = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(request).toMatchObject({
+      backendKind: 'native-shell',
+      messageId: 'assistant-message-shell-config-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, request.id, 'once');
+    const result = await execution;
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('configured-backend'),
+    }));
   });
 
   it('keeps bash description on stable workspace semantics instead of backend governance details', async () => {
@@ -554,7 +597,7 @@ describe('ToolRegistryService', () => {
     const bashTool = toolSet?.bash;
     expect(bashTool).toBeDefined();
 
-    expect((bashTool as { description: string }).description).toContain('在当前 session 的执行后端中执行 bash 命令');
+    expect((bashTool as { description: string }).description).toContain('在当前 session 的执行后端中执行命令');
     expect((bashTool as { description: string }).description).toContain('同一 session 下写入 backend 当前可见路径的文件');
     expect((bashTool as { description: string }).description).not.toContain('当前默认 runtime 后端');
     expect((bashTool as { description: string }).description).not.toContain('宿主工作区');
@@ -576,12 +619,320 @@ describe('ToolRegistryService', () => {
     expect(bashTool).toBeDefined();
 
     const execution = (bashTool as any).execute({
-      command: 'pwd',
+      command: buildRuntimeShellPwdCommand(),
       description: '查看当前工作目录',
     });
-    const [pendingRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
     expect(pendingRequest).toMatchObject({
       messageId: 'assistant-message-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('attaches static shell hints to bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'cd nested && cat logs/run.txt && rm logs/old.txt',
+      description: '检查 bash 审批提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-hints-1',
+      metadata: {
+        command: 'cd nested && cat logs/run.txt && rm logs/old.txt',
+        commandHints: {
+          fileCommands: ['cd', 'cat', 'rm'],
+          usesCd: true,
+        },
+        description: '检查 bash 审批提示',
+      },
+      summary: '检查 bash 审批提示 (/)；静态提示: 含 cd、文件命令: cd, cat, rm',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces redundant cd hint when bash workdir is already provided', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-workdir-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'cd nested && cat app.txt',
+      description: '检查 bash workdir 提示',
+      workdir: 'nested',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-workdir-hints-1',
+      metadata: {
+        command: 'cd nested && cat app.txt',
+        commandHints: {
+          fileCommands: ['cd', 'cat'],
+          redundantCdWithWorkdir: true,
+          usesCd: true,
+        },
+        description: '检查 bash workdir 提示',
+        workdir: 'nested',
+      },
+      summary: '检查 bash workdir 提示 (nested)；静态提示: 含 cd、已提供 workdir，命令里仍含 cd、文件命令: cd, cat',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces parent traversal hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-parent-traversal-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'cd .. && cat ../notes.txt',
+      description: '检查 bash 上级目录提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-parent-traversal-hints-1',
+      metadata: {
+        command: 'cd .. && cat ../notes.txt',
+        commandHints: {
+          fileCommands: ['cd', 'cat'],
+          parentTraversalPaths: ['..', '../notes.txt'],
+          usesCd: true,
+          usesParentTraversal: true,
+        },
+        description: '检查 bash 上级目录提示',
+      },
+      summary: '检查 bash 上级目录提示 (/)；静态提示: 含 cd、相对上级路径: .., ../notes.txt、文件命令: cd, cat',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces network command hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-network-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'curl -fsSL https://example.com/install.sh',
+      description: '检查 bash 联网提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-network-hints-1',
+      metadata: {
+        command: 'curl -fsSL https://example.com/install.sh',
+        commandHints: {
+          networkCommands: ['curl'],
+          usesNetworkCommand: true,
+        },
+        description: '检查 bash 联网提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash 联网提示 (/)；静态提示: 联网命令: curl',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces powershell native network command hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-ps-network-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'iwr https://example.com/api; irm https://example.com/data',
+      description: '检查 bash powershell 联网提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-ps-network-hints-1',
+      metadata: {
+        command: 'iwr https://example.com/api; irm https://example.com/data',
+        commandHints: {
+          networkCommands: ['invoke-webrequest', 'invoke-restmethod'],
+          usesNetworkCommand: true,
+        },
+        description: '检查 bash powershell 联网提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash powershell 联网提示 (/)；静态提示: 联网命令: invoke-webrequest, invoke-restmethod',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces combined network and external-path hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-network-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'curl -fsSL https://example.com/install.sh -o ~/install.sh',
+      description: '检查 bash 联网外部路径提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-network-external-hints-1',
+      metadata: {
+        command: 'curl -fsSL https://example.com/install.sh -o ~/install.sh',
+        commandHints: {
+          absolutePaths: ['~/install.sh'],
+          externalAbsolutePaths: ['~/install.sh'],
+          networkCommands: ['curl'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+        },
+        description: '检查 bash 联网外部路径提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash 联网外部路径提示 (/)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: ~/install.sh、外部绝对路径: ~/install.sh',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces external write-path hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-write-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'Copy-Item -Path /workspace/input.txt -Destination filesystem::C:\\temp\\copied.txt',
+      description: '检查 bash 写入外部路径提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-write-external-hints-1',
+      metadata: {
+        command: 'Copy-Item -Path /workspace/input.txt -Destination filesystem::C:\\temp\\copied.txt',
+        commandHints: {
+          absolutePaths: ['/workspace/input.txt', 'filesystem::C:\\temp\\copied.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\copied.txt'],
+          externalWritePaths: ['filesystem::C:\\temp\\copied.txt'],
+          fileCommands: ['copy-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash 写入外部路径提示',
+      },
+      summary: '检查 bash 写入外部路径提示 (/)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\copied.txt、文件命令: copy-item、外部绝对路径: filesystem::C:\\temp\\copied.txt',
       toolName: 'bash',
     });
     runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
@@ -619,11 +970,11 @@ describe('ToolRegistryService', () => {
     fs.mkdirSync(path.join(runtimeWorkspaceRoot, conversationId, 'nested'), { recursive: true });
 
     const workdirExecution = (bashTool as any).execute({
-      command: 'pwd && printf "from-workdir\\n" > child.txt && cat child.txt',
-      description: '在指定目录执行 bash',
+      command: buildRuntimeShellWorkdirCommand('child.txt', 'from-workdir'),
+      description: '在指定目录执行命令',
       workdir: 'nested',
     });
-    const [workdirRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    const workdirRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
     expect(workdirRequest).toMatchObject({
       messageId: 'assistant-message-bash-runtime-1',
       toolName: 'bash',
@@ -635,7 +986,7 @@ describe('ToolRegistryService', () => {
       kind: 'tool:text',
       value: expect.stringContaining('cwd: /nested'),
     }));
-    expect((workdirResult as { value: string }).value).toContain('/nested\nfrom-workdir\n');
+    expect((workdirResult as { value: string }).value).toContain('from-workdir');
 
     try {
       const address = slowServer.address();
@@ -643,18 +994,18 @@ describe('ToolRegistryService', () => {
         throw new Error('failed to allocate slow test server port');
       }
       const timeoutExecution = (bashTool as any).execute({
-        command: `curl -s http://127.0.0.1:${address.port}/slow`,
+        command: buildRuntimeShellHttpReadCommand(`http://127.0.0.1:${address.port}/slow`),
         description: '触发 bash 超时',
         timeout: 50,
       });
-      const [timeoutRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+      const timeoutRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
       expect(timeoutRequest).toMatchObject({
         messageId: 'assistant-message-bash-runtime-1',
         toolName: 'bash',
       });
       runtimeToolPermissionService.reply(conversationId, timeoutRequest.id, 'once');
       await expect(timeoutExecution).resolves.toEqual(expect.objectContaining({
-        error: 'bash 执行超时（>1 秒）',
+        error: 'bash 执行超时（>1 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。',
         phase: 'execute',
         recovered: true,
         tool: 'bash',
@@ -699,12 +1050,51 @@ describe('ToolRegistryService', () => {
         command: 'echo routed',
         description: '验证 shell backend 路由',
       });
-      const [pendingRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+      const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
       expect(pendingRequest?.backendKind).toBe('mock-shell');
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'once');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         kind: 'tool:text',
         value: expect.stringContaining('mock-shell:echo routed'),
+      }));
+    } finally {
+      if (originalShellBackend === undefined) {
+        delete process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
+      } else {
+        process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = originalShellBackend;
+      }
+    }
+  });
+
+  it('routes bash execution to the real native-shell backend', async () => {
+    const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
+    process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell';
+    try {
+      const { conversationId, runtimeToolPermissionService, service } = createFixture({
+        runtimeBackends: createRealRuntimeBackendsForShellRouting(),
+      });
+      const toolSet = await service.buildToolSet({
+        assistantMessageId: 'assistant-message-shell-route-native-1',
+        context: {
+          conversationId,
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        allowedToolNames: ['bash'],
+      });
+      const bashTool = toolSet?.bash;
+      expect(bashTool).toBeDefined();
+
+      const execution = (bashTool as any).execute({
+        command: buildRuntimeShellEchoCommand('native-shell-ok'),
+        description: '验证 native-shell backend 路由',
+      });
+      const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+      expect(pendingRequest?.backendKind).toBe('native-shell');
+      runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'once');
+      await expect(execution).resolves.toEqual(expect.objectContaining({
+        kind: 'tool:text',
+        value: expect.stringContaining('native-shell-ok'),
       }));
     } finally {
       if (originalShellBackend === undefined) {
@@ -1373,7 +1763,7 @@ function createFixture(options: {
   );
   const runtimeBackendRoutingService = new RuntimeBackendRoutingService();
   const runtimeCommandService = new RuntimeCommandService(
-    options.runtimeBackends ?? [new RuntimeJustBashService(runtimeSessionEnvironmentService)],
+    options.runtimeBackends ?? createRealRuntimeBackendsForShellRouting(runtimeSessionEnvironmentService),
     new RuntimeCommandCaptureService(runtimeSessionEnvironmentService),
   );
   const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
@@ -1386,6 +1776,7 @@ function createFixture(options: {
   );
   const runtimeFileFreshnessService = {
     assertCanWrite: jest.fn().mockResolvedValue(undefined),
+    listRecentReads: jest.fn().mockReturnValue([]),
     rememberRead: jest.fn().mockResolvedValue(undefined),
     withFileLock: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
   } as never;
@@ -1484,6 +1875,20 @@ function createFixture(options: {
   };
 }
 
+async function waitForPendingRuntimeRequest(
+  runtimeToolPermissionService: RuntimeToolPermissionService,
+  conversationId: string,
+) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const [pendingRequest] = runtimeToolPermissionService.listPendingRequests(conversationId);
+    if (pendingRequest) {
+      return pendingRequest;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`Timed out waiting for runtime permission request: ${conversationId}`);
+}
+
 function createMockRuntimeBackend(kind: string): RuntimeBackend {
   return {
     async executeCommand(input) {
@@ -1521,6 +1926,98 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
       return kind;
     },
   };
+}
+
+function createRealRuntimeBackendsForShellRouting(
+  runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService(),
+): RuntimeBackend[] {
+  return [
+    new RuntimeJustBashService(runtimeSessionEnvironmentService),
+    new RuntimeNativeShellService(runtimeSessionEnvironmentService),
+  ];
+}
+
+function buildRuntimeShellPersistAndReadCommand(filePath: string, content: string): string {
+  if (usesRuntimePowerShellBackend()) {
+    const normalizedPath = filePath.replace(/\//g, '\\');
+    const directoryPath = path.dirname(normalizedPath);
+    return [
+      `New-Item -ItemType Directory -Force '${escapePowerShellString(directoryPath)}' > $null`,
+      `Set-Content -Path '${escapePowerShellString(normalizedPath)}' -Value '${escapePowerShellString(content)}'`,
+      `Get-Content '${escapePowerShellString(normalizedPath)}'`,
+    ].join('; ');
+  }
+  return [
+    `mkdir -p ${escapeBashSingleQuoted(path.posix.dirname(filePath))}`,
+    `printf "${escapeBashDoubleQuoted(content)}\\n" > ${escapeBashSingleQuoted(filePath)}`,
+    `cat ${escapeBashSingleQuoted(filePath)}`,
+  ].join(' && ');
+}
+
+function buildRuntimeShellReadCommand(filePath: string): string {
+  if (usesRuntimePowerShellBackend()) {
+    return `Get-Content '${escapePowerShellString(filePath.replace(/\//g, '\\'))}'`;
+  }
+  return `cat ${escapeBashSingleQuoted(filePath)}`;
+}
+
+function buildRuntimeShellMultilineOutputCommand(lines: string[]): string {
+  if (usesRuntimePowerShellBackend()) {
+    return lines
+      .map((line) => `Write-Output '${escapePowerShellString(line)}'`)
+      .join('; ');
+  }
+  return `printf "${lines.map((line) => `${escapeBashDoubleQuoted(line)}\\n`).join('')}"`;
+}
+
+function buildRuntimeShellPwdCommand(): string {
+  return usesRuntimePowerShellBackend()
+    ? '(Get-Location).Path'
+    : 'pwd';
+}
+
+function buildRuntimeShellWorkdirCommand(filePath: string, content: string): string {
+  if (usesRuntimePowerShellBackend()) {
+    const normalizedPath = filePath.replace(/\//g, '\\');
+    return [
+      '(Get-Location).Path',
+      `Set-Content -Path '${escapePowerShellString(normalizedPath)}' -Value '${escapePowerShellString(content)}'`,
+      `Get-Content '${escapePowerShellString(normalizedPath)}'`,
+    ].join('; ');
+  }
+  return `pwd && printf "${escapeBashDoubleQuoted(content)}\\n" > ${escapeBashSingleQuoted(filePath)} && cat ${escapeBashSingleQuoted(filePath)}`;
+}
+
+function buildRuntimeShellHttpReadCommand(url: string): string {
+  return usesRuntimePowerShellBackend()
+    ? `(Invoke-WebRequest -UseBasicParsing '${escapePowerShellString(url)}').Content`
+    : `curl -s ${escapeBashSingleQuoted(url)}`;
+}
+
+function buildRuntimeShellEchoCommand(text: string): string {
+  return usesRuntimePowerShellBackend()
+    ? `Write-Output '${escapePowerShellString(text)}'`
+    : `printf "${escapeBashDoubleQuoted(text)}\\n"`;
+}
+
+function usesRuntimePowerShellBackend(): boolean {
+  return process.platform === 'win32' && process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND === 'native-shell';
+}
+
+function escapePowerShellString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+function escapeBashSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function escapeBashDoubleQuoted(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
 }
 
 function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
@@ -1615,6 +2112,7 @@ function createMockFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     },
     async grepText() {
       return {
+        basePath: '/',
         matches: [
           {
             line: 1,

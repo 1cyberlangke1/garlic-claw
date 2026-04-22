@@ -300,6 +300,9 @@ describe('PluginBootstrapService', () => {
           manifest: expect.objectContaining({
             config: expect.objectContaining({
               items: expect.objectContaining({
+                shellBackend: expect.objectContaining({
+                  type: 'string',
+                }),
                 bashOutput: expect.objectContaining({
                   type: 'object',
                 }),

@@ -401,6 +401,7 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
     await collapsedToggle.click()
     await expectText(page, '收起高级配置')
   }
+  await expectText(page, 'bash 执行后端')
   await expectText(page, 'bash 输出治理')
   return remotePluginHandle
 }

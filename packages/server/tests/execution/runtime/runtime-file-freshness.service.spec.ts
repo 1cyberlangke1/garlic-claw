@@ -37,6 +37,30 @@ describe('RuntimeFileFreshnessService', () => {
     );
   });
 
+  it('surfaces other recently read files when overwrite is blocked before read', async () => {
+    const { service } = await createFixture({
+      initialFiles: {
+        'docs/existing.txt': 'alpha\n',
+        'docs/notes.txt': 'beta\n',
+        'docs/todo.md': 'gamma\n',
+      },
+    });
+
+    await service.rememberRead('session-1', 'docs/notes.txt');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.rememberRead('session-1', 'docs/todo.md');
+
+    await expect(service.assertCanWrite('session-1', 'docs/existing.txt')).rejects.toThrow(
+      [
+        '修改已有文件前必须先读取: /docs/existing.txt',
+        '请先使用 read 工具读取该文件。',
+        '本 session 近期还读取过：',
+        '- /docs/todo.md',
+        '- /docs/notes.txt',
+      ].join('\n'),
+    );
+  });
+
   it('accepts overwriting an existing file after a fresh read stamp is recorded', async () => {
     const { service } = await createFixture({
       initialFiles: {
@@ -116,6 +140,32 @@ describe('RuntimeFileFreshnessService', () => {
 
     await expect(Promise.all([first, second])).resolves.toEqual(['first', 'second']);
     expect(steps).toEqual(['first:start', 'second:start', 'second:end', 'first:end']);
+  });
+
+  it('lists recent reads in reverse chronological order and supports exclude/limit', async () => {
+    const { service } = await createFixture({
+      initialFiles: {
+        'docs/a.txt': 'alpha\n',
+        'docs/b.txt': 'beta\n',
+        'docs/c.txt': 'gamma\n',
+      },
+    });
+
+    await service.rememberRead('session-1', 'docs/a.txt');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.rememberRead('session-1', 'docs/b.txt');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await service.rememberRead('session-1', 'docs/c.txt');
+
+    expect(service.listRecentReads('session-1')).toEqual([
+      '/docs/c.txt',
+      '/docs/b.txt',
+      '/docs/a.txt',
+    ]);
+    expect(service.listRecentReads('session-1', {
+      excludePath: '/docs/c.txt',
+      limit: 1,
+    })).toEqual(['/docs/b.txt']);
   });
 });
 

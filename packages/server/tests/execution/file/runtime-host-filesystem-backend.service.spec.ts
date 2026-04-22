@@ -145,6 +145,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
       path: 'docs',
       pattern: 'needle',
     })).resolves.toEqual({
+      basePath: '/docs',
       matches: [
         {
           line: 2,
@@ -225,6 +226,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
       path: 'docs',
       pattern: 'needle',
     })).resolves.toEqual({
+      basePath: '/docs',
       matches: [
         {
           line: 1,
@@ -313,6 +315,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
       path: 'docs',
       pattern: 'needle',
     })).resolves.toEqual({
+      basePath: '/docs',
       matches: [
         {
           line: 1,

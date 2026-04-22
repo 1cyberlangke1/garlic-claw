@@ -365,6 +365,19 @@ describe('PluginConfigForm', () => {
           schema: {
             type: 'object',
             items: {
+              shellBackend: {
+                type: 'string',
+                options: [
+                  {
+                    value: 'just-bash',
+                    label: 'just-bash',
+                  },
+                  {
+                    value: 'native-shell',
+                    label: 'native-shell',
+                  },
+                ],
+              },
               bashOutput: {
                 type: 'object',
                 description: 'bash 输出治理',
@@ -387,6 +400,7 @@ describe('PluginConfigForm', () => {
             },
           },
           values: {
+            shellBackend: 'native-shell',
             bashOutput: {
               maxLines: 80,
               maxBytes: 8192,
@@ -398,6 +412,9 @@ describe('PluginConfigForm', () => {
     })
 
     expect(wrapper.text()).toContain('展开高级配置')
+    const options = wrapper.findAll('option').map((node) => node.text())
+    expect(options).toContain('just-bash')
+    expect(options).toContain('native-shell')
 
     await wrapper.get('button.collapsed-toggle').trigger('click')
 
@@ -407,6 +424,7 @@ describe('PluginConfigForm', () => {
     expect(wrapper.emitted('save')).toEqual([
       [
         {
+          shellBackend: 'native-shell',
           bashOutput: {
             maxLines: 80,
             maxBytes: 8192,

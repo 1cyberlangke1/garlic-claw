@@ -8,6 +8,11 @@ interface RuntimeFileReadStamp {
   size: number | null;
 }
 
+interface ListRecentReadsOptions {
+  excludePath?: string;
+  limit?: number;
+}
+
 @Injectable()
 export class RuntimeFileFreshnessService {
   private readonly readStamps = new Map<string, Map<string, RuntimeFileReadStamp>>();
@@ -27,7 +32,14 @@ export class RuntimeFileFreshnessService {
     const stamp = this.readStamps.get(sessionId)?.get(stat.virtualPath);
     if (!stamp) {
       throw new BadRequestException(
-        `修改已有文件前必须先读取: ${stat.virtualPath}\n请先使用 read 工具读取该文件。`,
+        [
+          `修改已有文件前必须先读取: ${stat.virtualPath}`,
+          '请先使用 read 工具读取该文件。',
+          ...renderRecentReadHints(this.listRecentReads(sessionId, {
+            excludePath: stat.virtualPath,
+            limit: 5,
+          })),
+        ].join('\n'),
       );
     }
     if (stamp.mtime === stat.mtime && stamp.size === stat.size) {
@@ -64,6 +76,20 @@ export class RuntimeFileFreshnessService {
     });
   }
 
+  listRecentReads(sessionId: string, options: ListRecentReadsOptions = {}): string[] {
+    const sessionStamps = this.readStamps.get(sessionId);
+    if (!sessionStamps) {
+      return [];
+    }
+    const excludePath = options.excludePath?.trim();
+    const limit = options.limit ?? 5;
+    return [...sessionStamps.entries()]
+      .filter(([virtualPath]) => !excludePath || virtualPath !== excludePath)
+      .sort((left, right) => right[1].readAt.localeCompare(left[1].readAt))
+      .slice(0, limit)
+      .map(([virtualPath]) => virtualPath);
+  }
+
   async withFileLock<T>(
     sessionId: string,
     filePath: string,
@@ -89,4 +115,14 @@ export class RuntimeFileFreshnessService {
       }
     }
   }
+}
+
+function renderRecentReadHints(recentReads: string[]): string[] {
+  if (recentReads.length === 0) {
+    return [];
+  }
+  return [
+    '本 session 近期还读取过：',
+    ...recentReads.map((virtualPath) => `- ${virtualPath}`),
+  ];
 }

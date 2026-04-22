@@ -1,0 +1,425 @@
+import type { RuntimeBackendKind } from '@garlic-claw/shared';
+import { normalizeRuntimeVisiblePath } from './runtime-visible-path';
+
+const FILE_COMMANDS = new Set([
+  'cd',
+  'pushd',
+  'popd',
+  'cat',
+  'cp',
+  'mv',
+  'rm',
+  'mkdir',
+  'touch',
+  'chmod',
+  'chown',
+  'tar',
+  'get-content',
+  'set-content',
+  'add-content',
+  'copy-item',
+  'move-item',
+  'remove-item',
+  'new-item',
+  'rename-item',
+  'set-location',
+  'push-location',
+]);
+
+const CD_COMMANDS = new Set(['cd', 'pushd', 'popd', 'set-location', 'push-location']);
+const WRITE_COMMANDS = new Set([
+  'cp',
+  'mv',
+  'rm',
+  'mkdir',
+  'touch',
+  'chmod',
+  'chown',
+  'tar',
+  'set-content',
+  'add-content',
+  'copy-item',
+  'move-item',
+  'remove-item',
+  'new-item',
+  'rename-item',
+]);
+const COMMAND_ALIASES = new Map<string, string>([
+  ['gc', 'get-content'],
+  ['irm', 'invoke-restmethod'],
+  ['iwr', 'invoke-webrequest'],
+  ['sc', 'set-content'],
+  ['ac', 'add-content'],
+  ['sl', 'set-location'],
+  ['ni', 'new-item'],
+  ['md', 'mkdir'],
+  ['rd', 'remove-item'],
+  ['ren', 'rename-item'],
+]);
+const POWERSHELL_PATH_PARAMETER_FLAGS = new Set(['-path', '-literalpath', '-destination']);
+const MAX_PREVIEW_ITEMS = 3;
+
+export interface RuntimeShellCommandHintMetadata {
+  absolutePaths?: string[];
+  externalAbsolutePaths?: string[];
+  externalWritePaths?: string[];
+  fileCommands?: string[];
+  networkTouchesExternalPath?: boolean;
+  networkCommands?: string[];
+  parentTraversalPaths?: string[];
+  usesNetworkCommand?: boolean;
+  usesParentTraversal?: boolean;
+  redundantCdWithWorkdir?: boolean;
+  usesCd?: boolean;
+  usesWindowsAndAnd?: boolean;
+  writesExternalPath?: boolean;
+}
+
+export interface RuntimeShellCommandHints {
+  metadata?: RuntimeShellCommandHintMetadata;
+  summary?: string;
+}
+
+interface ReadRuntimeShellCommandHintsInput {
+  backendKind: RuntimeBackendKind;
+  command: string;
+  visibleRoot: string;
+  workdir?: string;
+}
+
+interface ShellCommandTokenEntry {
+  kind: 'separator' | 'token';
+  text: string;
+}
+
+interface RuntimeShellCommandSegment {
+  command: string;
+  tokens: string[];
+}
+
+export function readRuntimeShellCommandHints(
+  input: ReadRuntimeShellCommandHintsInput,
+): RuntimeShellCommandHints {
+  const tokenEntries = tokenizeShellCommand(input.command);
+  const tokens = tokenEntries
+    .filter((entry) => entry.kind === 'token')
+    .map((entry) => entry.text);
+  if (tokens.length === 0) {
+    return {};
+  }
+
+  const segments = readShellCommandSegments(tokenEntries);
+  const fileCommands = uniquePreview(
+    segments
+      .map((segment) => segment.command)
+      .filter((command) => FILE_COMMANDS.has(command)),
+  );
+  const networkCommands = readRuntimeShellNetworkCommands(tokens);
+  const usesNetworkCommand = networkCommands.length > 0;
+  const usesCd = segments.some((segment) => CD_COMMANDS.has(segment.command));
+  const redundantCdWithWorkdir = Boolean(input.workdir && usesCd);
+  const usesWindowsAndAnd = input.backendKind === 'native-shell'
+    && process.platform === 'win32'
+    && input.command.includes('&&');
+  const absolutePaths = uniquePreview(
+    tokens.filter((token) => isShellAbsolutePathToken(token, input.backendKind)),
+  );
+  const parentTraversalPaths = uniquePreview(
+    tokens.filter((token) => isShellParentTraversalToken(token)),
+  );
+  const externalAbsolutePaths = uniquePreview(
+    absolutePaths.filter((token) => isExternalAbsolutePathToken(token, input.visibleRoot)),
+  );
+  const externalWritePaths = uniquePreview(
+    segments.flatMap((segment) => {
+      if (!WRITE_COMMANDS.has(segment.command)) {
+        return [];
+      }
+      return readShellCommandPathTokens(segment.tokens)
+        .filter((token) => isShellAbsolutePathToken(token, input.backendKind))
+        .filter((token) => isExternalAbsolutePathToken(token, input.visibleRoot));
+    }),
+  );
+  const networkTouchesExternalPath = usesNetworkCommand && externalAbsolutePaths.length > 0;
+  const writesExternalPath = externalWritePaths.length > 0;
+  const usesParentTraversal = parentTraversalPaths.length > 0;
+
+  const metadata: RuntimeShellCommandHintMetadata = {
+    ...(externalWritePaths.length > 0 ? { externalWritePaths } : {}),
+    ...(networkTouchesExternalPath ? { networkTouchesExternalPath: true } : {}),
+    ...(networkCommands.length > 0 ? { networkCommands } : {}),
+    ...(parentTraversalPaths.length > 0 ? { parentTraversalPaths } : {}),
+    ...(usesNetworkCommand ? { usesNetworkCommand: true } : {}),
+    ...(usesParentTraversal ? { usesParentTraversal: true } : {}),
+    ...(redundantCdWithWorkdir ? { redundantCdWithWorkdir: true } : {}),
+    ...(usesCd ? { usesCd: true } : {}),
+    ...(usesWindowsAndAnd ? { usesWindowsAndAnd: true } : {}),
+    ...(writesExternalPath ? { writesExternalPath: true } : {}),
+    ...(fileCommands.length > 0 ? { fileCommands } : {}),
+    ...(absolutePaths.length > 0 ? { absolutePaths } : {}),
+    ...(externalAbsolutePaths.length > 0 ? { externalAbsolutePaths } : {}),
+  };
+  const summaryParts = readRuntimeShellCommandHintSummaryParts({
+    externalWritePaths,
+    externalAbsolutePaths,
+    fileCommands,
+    networkTouchesExternalPath,
+    networkCommands,
+    parentTraversalPaths,
+    redundantCdWithWorkdir,
+    usesCd,
+    usesNetworkCommand,
+    usesParentTraversal,
+    usesWindowsAndAnd,
+    writesExternalPath,
+  });
+  return {
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+    ...(summaryParts.length > 0 ? { summary: `静态提示: ${summaryParts.join('、')}` } : {}),
+  };
+}
+
+function tokenizeShellCommand(command: string): ShellCommandTokenEntry[] {
+  const matches = command.match(/&&|\|\||[;|()]|"[^"]*"|'[^']*'|`[^`]*`|[^\s;|&(){}<>]+/gmu);
+  return (matches ?? [])
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+    .reduce<ShellCommandTokenEntry[]>((entries, token) => {
+      if (isShellCommandSeparator(token)) {
+        entries.push({ kind: 'separator', text: token });
+        return entries;
+      }
+      const stripped = stripOuterQuotes(token);
+      if (!stripped) {
+        return entries;
+      }
+      entries.push({ kind: 'token', text: stripped });
+      return entries;
+    }, []);
+}
+
+function stripOuterQuotes(token: string): string {
+  if (token.length < 2) {
+    return token;
+  }
+  const first = token[0];
+  const last = token[token.length - 1];
+  if ((first === '"' || first === '\'' || first === '`') && first === last) {
+    return token.slice(1, -1).trim();
+  }
+  return token;
+}
+
+function isShellCommandSeparator(token: string): boolean {
+  return ['&&', '||', ';', '|', '(', ')'].includes(token);
+}
+
+function readShellCommandSegments(entries: ShellCommandTokenEntry[]): RuntimeShellCommandSegment[] {
+  const segments: RuntimeShellCommandSegment[] = [];
+  let current: string[] = [];
+  for (const entry of entries) {
+    if (entry.kind === 'separator') {
+      if (current.length > 0) {
+        segments.push({
+          command: normalizeShellCommandToken(current[0]),
+          tokens: current,
+        });
+        current = [];
+      }
+      continue;
+    }
+    current.push(entry.text);
+  }
+  if (current.length > 0) {
+    segments.push({
+      command: normalizeShellCommandToken(current[0]),
+      tokens: current,
+    });
+  }
+  return segments;
+}
+
+function isShellAbsolutePathToken(token: string, backendKind: RuntimeBackendKind): boolean {
+  const normalizedToken = unwrapFilesystemProviderToken(token);
+  if (normalizedToken !== token) {
+    return isShellAbsolutePathToken(normalizedToken, backendKind);
+  }
+  if (!token || token.startsWith('-')) {
+    return false;
+  }
+  if (/^(https?|git|ssh|ftp):\/\//iu.test(token)) {
+    return false;
+  }
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(token) && !/^[A-Za-z]:[\\/]/u.test(token)) {
+    return false;
+  }
+  if (/^[A-Za-z]:[\\/]/u.test(token) || token.startsWith('\\\\')) {
+    return true;
+  }
+  if (token === '~') {
+    return true;
+  }
+  if (token.startsWith('~/') || token.startsWith('~\\')) {
+    return true;
+  }
+  if (token.startsWith('/')) {
+    return true;
+  }
+  if (backendKind === 'native-shell' && /^~[\\/]/u.test(token)) {
+    return true;
+  }
+  return false;
+}
+
+function isExternalAbsolutePathToken(token: string, visibleRoot: string): boolean {
+  const normalizedToken = unwrapFilesystemProviderToken(token);
+  if (normalizedToken !== token) {
+    return isExternalAbsolutePathToken(normalizedToken, visibleRoot);
+  }
+  if (/^[A-Za-z]:[\\/]/u.test(token) || token.startsWith('\\\\') || token.startsWith('~/') || token.startsWith('~\\')) {
+    return true;
+  }
+  if (token === '~') {
+    return true;
+  }
+  if (!token.startsWith('/')) {
+    return false;
+  }
+  if (visibleRoot === '/') {
+    return false;
+  }
+  const normalized = normalizeRuntimeVisiblePath(token);
+  return normalized !== visibleRoot && !normalized.startsWith(`${visibleRoot}/`);
+}
+
+function isShellParentTraversalToken(token: string): boolean {
+  const normalizedToken = unwrapFilesystemProviderToken(token);
+  if (normalizedToken !== token) {
+    return isShellParentTraversalToken(normalizedToken);
+  }
+  if (!token || token.startsWith('-')) {
+    return false;
+  }
+  return /^\.\.([\\/]|$)/u.test(token);
+}
+
+function uniquePreview(values: string[]): string[] {
+  return Array.from(new Set(values)).slice(0, MAX_PREVIEW_ITEMS);
+}
+
+function readRuntimeShellCommandHintSummaryParts(input: {
+  externalWritePaths: string[];
+  externalAbsolutePaths: string[];
+  fileCommands: string[];
+  networkTouchesExternalPath: boolean;
+  networkCommands: string[];
+  parentTraversalPaths: string[];
+  redundantCdWithWorkdir: boolean;
+  usesCd: boolean;
+  usesNetworkCommand: boolean;
+  usesParentTraversal: boolean;
+  usesWindowsAndAnd: boolean;
+  writesExternalPath: boolean;
+}): string[] {
+  return [
+    ...(input.usesCd ? ['含 cd'] : []),
+    ...(input.redundantCdWithWorkdir ? ['已提供 workdir，命令里仍含 cd'] : []),
+    ...(input.usesParentTraversal
+      ? [`相对上级路径: ${input.parentTraversalPaths.join(', ')}`]
+      : []),
+    ...(input.usesNetworkCommand ? [`联网命令: ${input.networkCommands.join(', ')}`] : []),
+    ...(input.networkTouchesExternalPath
+      ? [`联网命令涉及外部绝对路径: ${input.externalAbsolutePaths.join(', ')}`]
+      : []),
+    ...(input.writesExternalPath
+      ? [`写入命令涉及外部绝对路径: ${input.externalWritePaths.join(', ')}`]
+      : []),
+    ...(input.usesWindowsAndAnd ? ['Windows native-shell 中不建议使用 &&'] : []),
+    ...(input.fileCommands.length > 0 ? [`文件命令: ${input.fileCommands.join(', ')}`] : []),
+    ...(input.externalAbsolutePaths.length > 0
+      ? [`外部绝对路径: ${input.externalAbsolutePaths.join(', ')}`]
+      : []),
+  ];
+}
+
+function readShellCommandPathTokens(tokens: string[]): string[] {
+  const normalizedCommand = normalizeShellCommandToken(tokens[0] ?? '');
+  const args = tokens.slice(1);
+  if (normalizedCommand.includes('-')) {
+    const flaggedPaths = readPowerShellFlaggedPathTokens(args);
+    if (flaggedPaths.length > 0) {
+      return flaggedPaths;
+    }
+  }
+  return args.filter((token) => !token.startsWith('-') && !(normalizedCommand === 'chmod' && token.startsWith('+')));
+}
+
+function readPowerShellFlaggedPathTokens(tokens: string[]): string[] {
+  const paths: string[] = [];
+  let wantsPath = false;
+  for (const token of tokens) {
+    if (wantsPath) {
+      if (!token.startsWith('-')) {
+        paths.push(token);
+      }
+      wantsPath = false;
+      continue;
+    }
+    if (!token.startsWith('-')) {
+      continue;
+    }
+    wantsPath = POWERSHELL_PATH_PARAMETER_FLAGS.has(token.toLowerCase());
+  }
+  return paths;
+}
+
+function normalizeShellCommandToken(token: string): string {
+  const normalized = token.toLowerCase();
+  return COMMAND_ALIASES.get(normalized) ?? normalized;
+}
+
+function unwrapFilesystemProviderToken(token: string): string {
+  const match = token.match(/^filesystem::(.+)$/iu);
+  return match?.[1] ?? token;
+}
+
+export function requiresRuntimeShellNetworkAccess(command: string): boolean {
+  return readRuntimeShellNetworkCommands(
+    tokenizeShellCommand(command)
+      .filter((entry) => entry.kind === 'token')
+      .map((entry) => entry.text),
+  ).length > 0;
+}
+
+function readRuntimeShellNetworkCommands(tokens: string[]): string[] {
+  const normalizedTokens = tokens.map(normalizeShellCommandToken);
+  const result: string[] = [];
+  for (let index = 0; index < normalizedTokens.length; index += 1) {
+    const token = normalizedTokens[index];
+    const nextToken = normalizedTokens[index + 1];
+    if ([
+      'curl',
+      'wget',
+      'fetch',
+      'nc',
+      'telnet',
+      'ssh',
+      'scp',
+      'sftp',
+      'invoke-webrequest',
+      'invoke-restmethod',
+    ].includes(token)) {
+      result.push(token);
+      continue;
+    }
+    if (token === 'git' && nextToken && ['clone', 'fetch', 'pull'].includes(nextToken)) {
+      result.push(`git ${nextToken}`);
+      continue;
+    }
+    if (['npm', 'pnpm', 'yarn', 'bun'].includes(token) && nextToken && ['install', 'add'].includes(nextToken)) {
+      result.push(`${token} ${nextToken}`);
+      continue;
+    }
+  }
+  return uniquePreview(result);
+}

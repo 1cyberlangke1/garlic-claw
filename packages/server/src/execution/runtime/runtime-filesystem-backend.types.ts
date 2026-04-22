@@ -135,6 +135,7 @@ export interface RuntimeFilesystemGrepMatch {
 }
 
 export interface RuntimeFilesystemGrepResult {
+  basePath: string;
   matches: RuntimeFilesystemGrepMatch[];
   partial: boolean;
   skippedEntries: RuntimeFilesystemSkippedEntry[];

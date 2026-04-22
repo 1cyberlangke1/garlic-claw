@@ -84,7 +84,9 @@ export class RuntimeHostRuntimeToolService {
     params: JsonObject,
     tool: RuntimeHostToolDefinition<TInput, TResult>,
   ): Promise<TResult> {
-    const backendKind = this.runtimeToolBackendService.getShellBackendKind();
+    const backendKind = this.runtimeToolBackendService.getShellBackendKind(
+      readOptionalString(params, 'backendKind') ?? undefined,
+    );
     return this.runPreparedTool(context, params, tool, backendKind);
   }
 

@@ -1,6 +1,7 @@
 import type { RuntimeBackendKind } from './runtime-permission';
 
 export interface PluginRuntimeCommandParams {
+  backendKind?: RuntimeBackendKind;
   command: string;
   description: string;
   timeout?: number;

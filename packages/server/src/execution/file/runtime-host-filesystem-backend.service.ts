@@ -9,6 +9,7 @@ import { RuntimeFilesystemPostWriteService } from '../runtime/runtime-filesystem
 import { RuntimeMountedWorkspaceFileSystem } from '../runtime/runtime-mounted-workspace-file-system';
 import type { RuntimeSessionEnvironment } from '../runtime/runtime-session-environment.types';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { toRuntimeHostPath } from '../runtime/runtime-host-path';
 import {
   joinRuntimeVisiblePath,
   normalizeRuntimeVisiblePath,
@@ -268,6 +269,7 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     }
     const truncated = rows.length > input.maxMatches;
     return {
+      basePath: listed.basePath,
       matches: truncated ? rows.slice(0, input.maxMatches) : rows,
       partial,
       skippedEntries,
@@ -602,24 +604,6 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
       `路径不存在: ${virtualPath}\n可选路径：\n${suggestions.join('\n')}`,
     );
   }
-}
-
-function toRuntimeHostPath(sessionRoot: string, virtualRoot: string, virtualPath: string): string {
-  const relativePath = readRelativeRuntimePath(virtualRoot, virtualPath);
-  const hostPath = relativePath ? path.join(sessionRoot, ...relativePath.split('/')) : sessionRoot;
-  const resolved = path.resolve(hostPath);
-  const normalizedSessionRoot = path.resolve(sessionRoot);
-  if (resolved !== normalizedSessionRoot && !resolved.startsWith(`${normalizedSessionRoot}${path.sep}`)) {
-    throw new BadRequestException(`路径越界: ${virtualPath}`);
-  }
-  return resolved;
-}
-
-function readRelativeRuntimePath(virtualRoot: string, virtualPath: string): string {
-  if (virtualRoot === '/') {
-    return virtualPath.replace(/^\/+/, '');
-  }
-  return virtualPath === virtualRoot ? '' : virtualPath.slice(virtualRoot.length + 1);
 }
 
 function toFilesystemRelativePath(basePath: string, virtualPath: string): string {

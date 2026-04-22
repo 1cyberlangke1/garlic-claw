@@ -1184,3 +1184,352 @@
 
 - 继续确认 `runShellTool / runFilesystemTool / runPreparedTool` 这层是否已足够稳定，还是仍需继续下沉成更正式的 runtime prepared contract。
 - 本轮如要标阶段完成，仍需 fresh 主链和独立 judge。
+
+## 2026-04-22 G20-3 第二批推进
+
+### 本轮目标
+
+- 对照 `other/opencode` 复核 `glob / grep` 当前差距，不再只停留在 totals 与 skipped path。
+- 在不把搜索后处理抬回工具层的前提下，补 `grep` 的搜索基路径上下文。
+- 把 `glob / grep` 当前重复的 skipped diagnostics 文案收成共享 owner，继续压住工具层代码体积。
+
+### 预期收口
+
+- `grep` 输出和 `glob` 一样显式回显搜索基路径，模型能更直接继续 `read / edit / write`。
+- `glob / grep` 的 skipped diagnostics 改为共用一套格式化逻辑，不再各自复制同类字符串拼装。
+- 如果后续还要补更细 reason/count 文案，优先继续加在共享 owner，不再往单个 tool service 堆分支。
+
+### 当前结果
+
+- `RuntimeFilesystemGrepResult` 已新增 `basePath`，`grep` 对模输出现已显式回显 `Base: ...`。
+- `glob / grep` 的 skipped diagnostics 已抽到 `runtime-search-diagnostics.ts`，当前不再各自维护同类文案分支。
+- 这轮代码净变化仍保持收缩方向：
+- `glob-tool.service.ts` 与 `grep-tool.service.ts` 删除了重复 diagnostics 拼装。
+- 新增 shared owner 后，总 diff 仍以删除重复代码为主。
+
+## 2026-04-22 G20-6 第三批推进
+
+### 本轮目标
+
+- 落一个真实可运行的第二 shell backend，而不是继续只靠 mock backend 证明可迁移性。
+- 第二 backend 先收口为 `native-shell`：
+  - Windows 宿主进程走 PowerShell
+  - Linux / WSL 宿主进程走 bash
+- filesystem 先继续复用现有 `host-filesystem`，本轮重点只验证 command backend 可迁移性。
+
+### 设计收口
+
+- `native-shell` 继续实现现有 `RuntimeBackend` contract，不改工具公开语义。
+- backend kind 继续通过 `GARLIC_CLAW_RUNTIME_SHELL_BACKEND` 显式切换，不在本轮改默认值。
+- `native-shell` 的 `cwd` 与可见路径校验继续复用现有 runtime visible path / session environment owner，不新增平行路径解析。
+- 本轮 fresh 证据必须覆盖：
+  - Windows 当前工作树下的 native-shell 定向与 smoke
+  - WSL 内部目录下的 native-shell 定向与 smoke
+
+### 验收重点
+
+- `RuntimeCommandService` 真能注册并执行 `native-shell`，不是只挂 descriptor。
+- `RuntimeToolBackendService`、`RuntimeHostRuntimeToolService` 与 `ToolRegistryService` 在 shell route 切到 `native-shell` 后无需改工具层代码。
+- Windows 与 WSL 内部目录各至少一条真实 `bash`/PowerShell command round-trip 证据。
+
+### 当前结果
+
+- `native-shell` 已作为真实第二 shell backend 落地：
+  - Windows 宿主进程走 PowerShell
+  - Linux / WSL 宿主进程走 bash
+- `http-smoke.mjs` 已补 shell-aware 命令模板：
+  - `bash-config / bash-write / bash-read / bash-workdir / bash-tar` 不再写死 bash 语法
+  - bash 相关文件内容断言已统一做换行规范化
+- Windows fresh 验收已通过：
+  - 默认 `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run smoke:web-ui`
+- WSL 内部目录 fresh 证据已补齐：
+  - `other/test-logs/2026-04-22-native-shell/wsl-node-version.log`
+  - `other/test-logs/2026-04-22-native-shell/wsl-native-shell-runtime-jest.log`
+  - `other/test-logs/2026-04-22-native-shell/wsl-native-shell-route-jest.log`
+  - `other/test-logs/2026-04-22-native-shell/wsl-native-shell-smoke-server.log`
+- WSL 首次整文件执行 `tool-registry.service.spec.ts` 的失败已确认属于测试前置条件不成立：
+  - 该文件中多数默认夹具只注册 `just-bash`
+  - 因此本轮 Linux 证据改为只跑 native-shell 直接相关用例，不再误把无关失败算成产品阻塞
+
+### 下一步
+
+- 继续按 `G20-6` 总目标补 judge，而不是提前把整个阶段标成完成。
+- 如果继续扩第三个 command backend，优先复核：
+  - timeout / output capture / permission review 是否仍然完全不动工具层
+  - smoke 资产是否还残留宿主 shell 私有假设
+
+## 2026-04-22 G20-4 第三批推进
+
+### 本轮目标
+
+- 继续补 `bash` 与 `other/opencode` 在“执行前静态分析”上的差距，但只做轻量切片。
+- 不引入 parser，不把 shell 预判逻辑散回工具描述或审批 service。
+- 先把最容易误用、最值得提前提示的 3 类信号收进独立 owner：
+  - 明显 `cd`
+  - 明显文件型命令
+  - 明显外部绝对路径
+
+### 设计收口
+
+- 新增单独的 runtime owner，专门从命令字符串里提取静态 hints。
+- `BashToolService` 只消费该 owner 的结果，并把 hints 注入：
+  - runtime permission request metadata
+  - runtime permission request summary
+- 当前阶段只做启发式识别，不承诺 AST 级准确率；更重的语法分析留给后续阶段。
+
+### 当前结果
+
+- 已新增 `packages/server/src/execution/runtime/runtime-shell-command-hints.ts`。
+- `BashToolService.readRuntimeAccess()` 当前会把静态 hints 写进 `commandHints`：
+  - `usesCd`
+  - `fileCommands`
+  - `absolutePaths`
+  - `externalAbsolutePaths`
+- 权限审批摘要当前也会回显最关键的静态提示，减少只靠长描述文案约束的情况。
+- 这轮继续补了 Windows / PowerShell 口径：
+  - `gc / sc / ac / sl / ni / md / rd / ren` 这类常见别名会先归一到正式命令名
+  - `filesystem::...` provider 路径会参与绝对路径与外部路径识别
+- 审批 `summary` 现在不只写“含文件命令 / 含外部绝对路径”，而是直接回显已识别的命令名和路径预览。
+- 当前路径边界也补了一层：
+  - 裸 `~` 会进入绝对路径 / 外部路径提示
+  - `filesystem::/workspace/...` 若仍位于可见根内，不会被误报成外部路径
+- 当前又补了两类高价值误用提示：
+  - 如果已经提供 `workdir`，但命令里仍然写 `cd`，审批链会直接提示
+  - Windows `native-shell` 下若命令里出现 `&&`，静态 hints 会直接标出来
+- 联网命令识别也已收回同一个静态预扫 owner：
+  - `curl / wget / ssh / scp / npm install / git clone` 这类命令不再只由 `bash-tool` 私有 regex 识别
+  - 当前审批 `summary` 会直接补 `含联网命令`
+- 当前又补了 PowerShell 原生命令口径：
+  - `iwr / irm` 会先归一为 `invoke-webrequest / invoke-restmethod`
+  - 这两类命令现在也会触发 `network.access` 与联网命令静态提示
+- 当前又补了组合风险提示：
+  - 如果同一条命令既联网又碰外部绝对路径，审批摘要会单独回显这一层组合风险
+  - 这样不会和普通“联网命令”或“外部绝对路径”提示混在一起
+- 已补两层回归：
+  - `bash-tool.service.spec.ts`：覆盖静态 hints 的 metadata / summary
+  - `tool-registry.service.spec.ts`：覆盖真实 bash 审批请求里能看到静态 hints
+
+### 下一步
+
+- 如果继续补这条线，优先把“轻量启发式”升级到更结构化的 shell 语法分析。
+- 继续保持 owner 单点，不把解析分支重新散回 `BashToolService`、permission service 或 smoke 资产。
+
+## 2026-04-22 G20-4 第四批推进
+
+### 本轮目标
+
+- 不引 parser，继续补审批前最值钱的风险信号。
+- 把“普通外部绝对路径”与“写入外部绝对路径”分开，避免审批摘要只给平铺标签。
+- 给 PowerShell 的 `-Path / -LiteralPath / -Destination` 补最小参数位识别，先抬高 Windows `native-shell` 的静态提示质量。
+
+### 当前结果
+
+- `runtime-shell-command-hints.ts` 当前已按命令段做轻量切分，不再只按整条命令平铺 token。
+- 写入型命令若触碰外部绝对路径，当前会单独写入：
+  - `writesExternalPath`
+  - `externalWritePaths`
+- 审批 `summary` 现在会直接回显：
+  - `写入命令涉及外部绝对路径: ...`
+- PowerShell 命令当前已补轻量参数位识别：
+  - `-Path`
+  - `-LiteralPath`
+  - `-Destination`
+- `Copy-Item -Path ... -Destination ...` 这类命令的外部写入风险，当前不再只落成“有外部绝对路径”。
+- 已补定向回归：
+  - `packages/server`: `tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/tool/tool-registry.service.spec.ts` 目标审批用例
+- 已重新通过 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补这条线，优先继续增强“命令段 + 参数位”这层结构化启发式，而不是直接跳到重 parser。
+- `G20-4 / G20-6` 当前仍未做独立 judge，不能标阶段完成。
+
+## 2026-04-22 G20-4 第五批推进
+
+### 本轮目标
+
+- 继续补最小但高价值的 bash 执行前信号，不引 parser。
+- 把 `../`、`..\\`、`cd ..` 这类上级目录穿越倾向从普通 token 中单独抬出来。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不把解析分支散回工具层。
+
+### 当前结果
+
+- 当前已新增：
+  - `usesParentTraversal`
+  - `parentTraversalPaths`
+- 审批摘要现在会直接回显：
+  - `相对上级路径: .., ../notes.txt`
+- `cd .. && cat ../notes.txt` 这类命令，当前不再只显示 `含 cd`，而会额外提示上级目录穿越倾向。
+- 已补定向回归：
+  - `packages/server`: `tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/tool/tool-registry.service.spec.ts` 目标审批用例
+- 已重新通过 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+
+### 补充约束
+
+- `smoke:server` 与 `smoke:web-ui` 当前都带构建链；不要并行执行两条会同时重建 `shared / plugin-sdk / server` 的 smoke，否则容易出现非代码语义的并发构建误报。
+
+### 下一步
+
+- 如果继续补这条线，优先继续围绕“命令段 + 路径参数位 + 目录穿越倾向”做结构化启发式。
+- `G20-4 / G20-6` 当前仍未做独立 judge，不能标阶段完成。
+
+## 2026-04-22 G20-6 第四批推进
+
+### 本轮目标
+
+- 让前端能实时切换 `bash` 执行后端，但不新起页面、不引入新的配置 owner。
+- 保持 runtime 全局 shell route 仍然是默认真相；只有前端显式选择时才覆盖。
+- 收掉 `tool-registry.service.spec.ts` 因 `builtin.runtime-tools` 先读配置而产生的异步时序假设。
+
+### 当前结果
+
+- `builtin.runtime-tools` 当前已把 shell backend 切换收进既有配置链：
+  - `shellBackend` 会通过 `context.host.getConfig()` 读取
+  - 显式选择 `just-bash / native-shell` 时，会把 `backendKind` 传给 `runtime.command.execute`
+- 这轮又补了一条关键语义修正：
+  - `shellBackend` schema 已移除 `defaultValue: 'just-bash'`
+  - 未设置时不再把 runtime 全局默认路由压回 `just-bash`
+  - 前端下拉仍可显式切到 `just-bash / native-shell`，也可清空回“跟随后端默认路由”
+- `tool-registry.service.spec.ts` 已补 `waitForPendingRuntimeRequest(...)`，bash 审批请求不再依赖“同 tick 立即出现”的旧假设。
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/runtime/host/runtime-host-runtime-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 继续按 `G20-6` 总目标补独立 judge，当前仍不能标阶段完成。
+- 如果后续继续扩更多 shell backend，优先保持“未设置跟随默认、显式配置才覆盖”这条 owner 真相，不再把 schema 默认值做成运行时路由。
+
+## 2026-04-22 G20-1 补充收口
+
+### 本轮目标
+
+- 对照 `other/opencode`，在不新造 loaded-files 大系统的前提下，给 `read` 补一条最小可用的 session reminder。
+- 保持实现继续复用现有 freshness owner，不把提醒逻辑抬回聊天链、工具层外或前端。
+- 同时继续压缩 `TODO.md` 中已完成阶段，只保留活跃路线和差距真相。
+
+### 当前结果
+
+- `RuntimeFileFreshnessService` 已新增 `listRecentReads()`：
+  - 按最近读取时间倒序返回当前 session 已读取文件
+  - 支持 `excludePath / limit`
+- `ReadToolService` 当前在成功读取文本文件后，会追加最小 `<system-reminder>`：
+  - 回显“本 session 近期还读取过这些文件”
+  - 提示跨文件继续修改时优先复用已读内容；如文件可能已变更，先重新 `read`
+- 这条实现继续保持低膨胀：
+  - 没有新增新的 loaded-files service
+  - 没有改 shared 契约
+  - 只是在既有 freshness owner 上补只读查询，再由 `read` 渲染最小提醒
+- `TODO.md` 已继续压缩：
+  - 已完成阶段收成归档摘要
+  - 当前短板改成按 `bash / read / glob-grep / write-edit / runtime` 的差距矩阵
+  - 新增 `P20-*` 当前执行计划，并把本轮 `read` reminder 标成已执行
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts`
+- `packages/server`: `npm run build`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `read`，优先把 loaded-files reminder 继续收成更稳定 owner，而不是把更多 session 提示直接堆进 `ReadToolService`。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-2 第四批推进
+
+### 本轮目标
+
+- 继续把 `write / edit` 的结果从“只有数字摘要”向更可执行反馈推进。
+- 不新增新的 diff 子系统，直接复用现有 `RuntimeFilesystemDiffSummary.patch`。
+- 避免 `write` 和 `edit` 各自拼一套 patch 文案，保持低膨胀。
+
+### 当前结果
+
+- 已新增 `packages/server/src/execution/file/runtime-file-diff-report.ts`。
+- `write` 与 `edit` 当前都通过同一个共享 owner 回显最小 `<patch>` 预览：
+  - 默认最多显示前 `20` 行 patch
+  - 超出时会提示剩余 patch 行数
+- 这轮没有改 shared 契约，也没有把 diff 逻辑抬回工具层：
+  - diff 真相仍在 filesystem/backend owner
+  - 工具层只消费共享渲染 helper
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts`
+- `packages/server`: `npm run build`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `write / edit`，优先让 patch / diagnostics / formatting 继续共用共享 owner，而不是再往两个 tool service 分别堆输出分支。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-2 第五批推进
+
+### 本轮目标
+
+- 继续补 `write / edit` 与 `other/opencode` 的可恢复性差距，但保持 owner 不外扩。
+- 在“已有文件未先 `read` 就修改”被 freshness 拒绝时，补最小但直接可执行的上下文提示。
+- 不新造 loaded-files 或 write-session 子系统，继续复用既有 freshness owner。
+
+### 当前结果
+
+- `RuntimeFileFreshnessService.assertCanWrite()` 当前在拒绝“未先 read 就覆盖已有文件”时，会附带：
+  - 当前 session 最近已读文件列表
+  - 自动排除当前目标文件
+  - 默认最多回显 `5` 条
+- 这条增强继续复用已有 `listRecentReads()`，没有新增新的 session 状态 owner。
+- `tool-registry.service.spec.ts` 的大夹具已同步补 `listRecentReads()` stub，避免旧 mock 让 read 工具在非目标用例里出现假回归。
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/execution/runtime/runtime-native-shell.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/host/runtime-host-runtime-tool.service.spec.ts`
+- `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-2`，优先把 freshness / patch / diagnostics 的结果组织继续稳定到共享 owner，而不是给单个工具追加更多私有提示分支。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

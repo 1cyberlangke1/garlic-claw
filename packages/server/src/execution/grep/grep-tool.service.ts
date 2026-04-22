@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
-import type { RuntimeFilesystemSkippedEntry } from '../runtime/runtime-filesystem-backend.types';
+import { renderRuntimeGrepSearchDiagnostics } from '../file/runtime-search-diagnostics';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
 
@@ -101,6 +101,7 @@ export class GrepToolService {
       matches: result.totalMatches,
       output: [
         '<grep_result>',
+        `Base: ${result.basePath}`,
         `Pattern: ${input.pattern}`,
         input.include ? `Include: ${input.include}` : undefined,
         '<matches>',
@@ -108,9 +109,9 @@ export class GrepToolService {
         result.truncated
           ? `(showing first ${result.matches.length} of ${result.totalMatches} matches. Refine path, include or pattern to continue.)`
           : `(total matches: ${result.totalMatches})`,
-        ...formatGrepSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths),
+        ...renderRuntimeGrepSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths),
         '</matches>',
-      '</grep_result>',
+        '</grep_result>',
       ].filter((entry): entry is string => Boolean(entry)).join('\n'),
       truncated: result.truncated,
     };
@@ -134,45 +135,6 @@ export class GrepToolService {
     type: 'text',
     value: (output as GrepToolResult).output,
   });
-}
-
-function formatGrepSearchDiagnostics(
-  partial: boolean,
-  skippedEntries: RuntimeFilesystemSkippedEntry[],
-  skippedPaths: string[],
-): string[] {
-  const binaryEntries = skippedEntries
-    .filter((entry) => entry.reason === 'binary')
-    .map((entry) => entry.path);
-  const incompleteEntries = skippedEntries
-    .filter((entry) => entry.reason !== 'binary')
-    .map((entry) => entry.path);
-  const diagnostics: string[] = [];
-  if (binaryEntries.length > 0) {
-    diagnostics.push(formatSkippedEntrySummary('non-text files were skipped during search', binaryEntries));
-  }
-  if (incompleteEntries.length > 0) {
-    diagnostics.push(formatSkippedEntrySummary('search may be incomplete; some paths could not be searched', incompleteEntries));
-  } else if (partial && skippedPaths.length > 0) {
-    diagnostics.push(formatSkippedEntrySummary('search may be incomplete; some paths could not be searched', skippedPaths));
-  } else if (partial) {
-    diagnostics.push('(search may be incomplete; some paths were skipped)');
-  }
-  return diagnostics;
-}
-
-function formatSkippedEntrySummary(prefix: string, paths: string[]): string {
-  if (paths.length === 0) {
-    return `(${prefix})`;
-  }
-  const previewLimit = 3;
-  const visiblePaths = paths.slice(0, previewLimit);
-  const hiddenCount = paths.length - visiblePaths.length;
-  return [
-    `(${prefix}: ${visiblePaths.join(', ')}`,
-    hiddenCount > 0 ? `, +${hiddenCount} more` : '',
-    ')',
-  ].join('');
 }
 
 function buildGrepOutput(rows: Array<{ line: number; text: string; virtualPath: string }>): string[] {

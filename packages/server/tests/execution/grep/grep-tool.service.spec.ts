@@ -8,6 +8,7 @@ describe('GrepToolService', () => {
       } as never,
       {
         grepText: jest.fn().mockResolvedValue({
+          basePath: '/docs',
           matches: [
             {
               line: 7,
@@ -43,6 +44,7 @@ describe('GrepToolService', () => {
       matches: 1,
       output: [
         '<grep_result>',
+        'Base: /docs',
         'Pattern: needle',
         'Include: **/*.md',
         '<matches>',
@@ -65,6 +67,7 @@ describe('GrepToolService', () => {
       } as never,
       {
         grepText: jest.fn().mockResolvedValue({
+          basePath: '/docs',
           matches: [
             {
               line: 3,
@@ -96,6 +99,7 @@ describe('GrepToolService', () => {
       matches: 140,
       output: [
         '<grep_result>',
+        'Base: /docs',
         'Pattern: needle',
         'Include: **/*.md',
         '<matches>',

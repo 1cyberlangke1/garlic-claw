@@ -169,6 +169,12 @@ export class ReadToolService {
             ? `(showing lines ${startIndex + 1}-${endIndex} of ${result.totalLines}. Use offset=${endIndex + 1} to continue.)`
             : `(end of file, total lines: ${result.totalLines}, total bytes: ${formatReadSize(result.totalBytes)})`,
         '</content>',
+        ...buildReadSystemReminder(
+          this.runtimeFileFreshnessService.listRecentReads(input.sessionId, {
+            excludePath: result.path,
+            limit: 5,
+          }),
+        ),
         '</read_result>',
       ].join('\n'),
       path: result.path,
@@ -215,4 +221,17 @@ function formatReadSize(bytes: number): string {
     return `${(bytes / 1024).toFixed(1)} KB`;
   }
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function buildReadSystemReminder(loadedPaths: string[]): string[] {
+  if (loadedPaths.length === 0) {
+    return [];
+  }
+  return [
+    '<system-reminder>',
+    '本 session 近期还读取过这些文件：',
+    ...loadedPaths.map((virtualPath) => `- ${virtualPath}`),
+    '如需跨文件继续修改，优先复用这些已读取内容；若文件可能已变化，请先重新 read。',
+    '</system-reminder>',
+  ];
 }

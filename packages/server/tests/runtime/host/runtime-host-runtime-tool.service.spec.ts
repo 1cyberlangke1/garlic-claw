@@ -176,4 +176,82 @@ describe('RuntimeHostRuntimeToolService', () => {
       sessionId: 'conversation-2',
     });
   });
+
+  it('allows shell tools to override backend kind through host params', async () => {
+    const bashToolService = {
+      execute: jest.fn().mockResolvedValue({ cwd: '/', exitCode: 0, stderr: '', stdout: 'override-ok' }),
+      getToolName: () => 'bash',
+      readInput: jest.fn((_params, sessionId, backendKind) => ({
+        backendKind,
+        command: 'pwd',
+        description: '打印当前目录',
+        sessionId,
+      })),
+      readRuntimeAccess: jest.fn((input) => ({
+        backendKind: input.backendKind,
+        requiredOperations: ['command.execute'],
+        role: 'shell',
+        summary: input.description,
+      })),
+    };
+    const runtimeToolBackendService = {
+      getBackendDescriptor: jest.fn().mockReturnValue({
+        capabilities: {
+          networkAccess: true,
+          persistentFilesystem: true,
+          persistentShellState: false,
+          shellExecution: true,
+          workspaceRead: true,
+          workspaceWrite: true,
+        },
+        kind: 'native-shell',
+        permissionPolicy: {
+          networkAccess: 'ask',
+          persistentFilesystem: 'allow',
+          persistentShellState: 'deny',
+          shellExecution: 'ask',
+          workspaceRead: 'allow',
+          workspaceWrite: 'allow',
+        },
+      }),
+      getShellBackendKind: jest.fn().mockReturnValue('native-shell'),
+    };
+    const runtimeToolPermissionService = {
+      review: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new RuntimeHostRuntimeToolService(
+      bashToolService as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      runtimeToolBackendService as never,
+      runtimeToolPermissionService as never,
+    );
+
+    await expect(service.executeCommand({
+      conversationId: 'conversation-3',
+      source: 'plugin',
+      userId: 'user-1',
+    } as never, {
+      backendKind: 'native-shell',
+      command: 'pwd',
+      description: '打印当前目录',
+    } as never)).resolves.toEqual({ cwd: '/', exitCode: 0, stderr: '', stdout: 'override-ok' });
+
+    expect(runtimeToolBackendService.getShellBackendKind).toHaveBeenCalledWith('native-shell');
+    expect(bashToolService.readInput).toHaveBeenCalledWith(
+      { backendKind: 'native-shell', command: 'pwd', description: '打印当前目录' },
+      'conversation-3',
+      'native-shell',
+    );
+    expect(runtimeToolBackendService.getBackendDescriptor).toHaveBeenCalledWith('shell', 'native-shell');
+    expect(bashToolService.execute).toHaveBeenCalledWith({
+      backendKind: 'native-shell',
+      command: 'pwd',
+      description: '打印当前目录',
+      sessionId: 'conversation-3',
+    });
+  });
 });

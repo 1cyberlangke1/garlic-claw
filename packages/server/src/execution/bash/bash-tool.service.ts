@@ -1,9 +1,13 @@
-import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
+import type { JsonObject, PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import type { RuntimeCommandResult } from '../runtime/runtime-command.types';
 import { renderRuntimeCommandTextOutput } from '../runtime/runtime-command-output';
+import {
+  readRuntimeShellCommandHints,
+  requiresRuntimeShellNetworkAccess,
+} from '../runtime/runtime-shell-command-hints';
 import { RuntimeCommandService } from '../runtime/runtime-command.service';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';
@@ -19,7 +23,7 @@ export interface BashToolInput {
 
 export const BASH_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   command: {
-    description: '要执行的 bash 命令。命令语法必须按 bash 编写，不是 PowerShell。',
+    description: '要执行的命令。命令语法跟随当前 shell backend：just-bash 与 Linux/WSL native-shell 使用 bash，Windows native-shell 使用 PowerShell。',
     required: true,
     type: 'string',
   },
@@ -56,7 +60,9 @@ export class BashToolService {
     const backend = this.runtimeToolBackendService.getShellBackendDescriptor();
     const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
     return [
-      '在当前 session 的执行后端中执行 bash 命令。',
+      '在当前 session 的执行后端中执行命令。',
+      readBashShellSyntaxDescription(backend.kind),
+      readBashShellChainingDescription(backend.kind),
       visibleRoot === '/'
         ? '同一 session 下写入 backend 当前可见路径的文件，会在后续工具调用中继续可见。'
         : `同一 session 下写入 ${visibleRoot} 内的文件，会在后续工具调用中继续可见。`,
@@ -109,19 +115,31 @@ export class BashToolService {
   }
 
   readRuntimeAccess(input: BashToolInput): RuntimeToolAccessRequest {
+    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
+    const commandHints = readRuntimeShellCommandHints({
+      backendKind: input.backendKind,
+      command: input.command,
+      visibleRoot,
+      ...(input.workdir ? { workdir: input.workdir } : {}),
+    });
+    const metadata: JsonObject = {
+      command: input.command,
+      description: input.description,
+      ...(input.workdir ? { workdir: input.workdir } : {}),
+      ...(commandHints.metadata ? { commandHints: commandHints.metadata as unknown as JsonObject } : {}),
+    };
     return {
       backendKind: input.backendKind,
-      metadata: {
-        command: input.command,
-        description: input.description,
-        ...(input.workdir ? { workdir: input.workdir } : {}),
-      },
+      metadata,
       requiredOperations: [
         'command.execute',
-        ...(requiresBashNetworkAccess(input.command) ? ['network.access' as const] : []),
+        ...(requiresRuntimeShellNetworkAccess(input.command) ? ['network.access' as const] : []),
       ],
       role: 'shell',
-      summary: `${input.description} (${input.workdir ?? this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot})`,
+      summary: [
+        `${input.description} (${input.workdir ?? visibleRoot})`,
+        ...(commandHints.summary ? [commandHints.summary] : []),
+      ].join('；'),
     };
   }
 
@@ -134,12 +152,6 @@ export class BashToolService {
   };
 }
 
-function requiresBashNetworkAccess(command: string): boolean {
-  return /\b(curl|wget|fetch|nc|telnet|ssh|scp|sftp)\b/u.test(command)
-    || /\bgit\s+(clone|fetch|pull)\b/u.test(command)
-    || /\b(npm|pnpm|yarn|bun)\s+(install|add)\b/u.test(command);
-}
-
 function readBashNetworkPolicyDescription(policy: 'allow' | 'ask' | 'deny'): string {
   if (policy === 'deny') {
     return '当前执行环境不提供网络访问。';
@@ -148,4 +160,18 @@ function readBashNetworkPolicyDescription(policy: 'allow' | 'ask' | 'deny'): str
     return '当前执行环境的网络访问可能需要审批；如需联网，请把依赖写进同一条命令中。';
   }
   return '当前执行环境允许网络访问；如需联网，请把依赖写进同一条命令中。';
+}
+
+function readBashShellSyntaxDescription(backendKind: RuntimeBackendKind): string {
+  if (backendKind === 'native-shell' && process.platform === 'win32') {
+    return '当前 shell backend 使用 PowerShell 语法。';
+  }
+  return '当前 shell backend 使用 bash 语法。';
+}
+
+function readBashShellChainingDescription(backendKind: RuntimeBackendKind): string {
+  if (backendKind === 'native-shell' && process.platform === 'win32') {
+    return '如果后续命令依赖前序命令成功，不要使用 &&；请改用 PowerShell 条件写法，例如 cmd1; if ($?) { cmd2 }。';
+  }
+  return '如果后续命令依赖前序命令成功，请把它们放进同一条命令，并用 && 串起来。';
 }

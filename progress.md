@@ -2098,3 +2098,406 @@
     - `lint`：通过
     - `smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已开始本轮 `G20-3` 第二批推进：
+  - 重新对照 `other/opencode` 的 `glob / grep / write / edit / bash` 实现，确认当前最值得继续补的是搜索工具的上下文与诊断，而不是再给 `write / edit` 叠表层文案。
+  - 当前实现目标已收口为两点：
+    - 给 `grep` 结果补搜索基路径上下文
+    - 把 `glob / grep` 的 skipped diagnostics 拼装抽成共享 owner，继续压代码重复
+- 已完成本轮 `G20-3` 第二批实现：
+  - 新增 `packages/server/src/execution/file/runtime-search-diagnostics.ts`，统一承接 `glob / grep` 的 skipped diagnostics 文案。
+  - `RuntimeFilesystemGrepResult` 已新增 `basePath`，`grep` 输出当前会显式回显 `Base: ...`。
+  - 本轮 `git diff --stat` 结果仍是“删多于加”：当前为 `36 insertions / 77 deletions` 外加 1 个新 shared owner 文件。
+- 已重新通过本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：5 suites / 48 tests 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已开始本轮 `G20-6` 第三批推进：
+  - 已重新读取 `TODO.md / task_plan.md / findings.md / progress.md`。
+  - 已把第二后端设计收口为 `native-shell`：
+    - Windows 用 PowerShell
+    - Linux / WSL 用 bash
+    - filesystem 暂时继续复用 `host-filesystem`
+  - 当前实现策略是不改默认 backend，只通过 `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell` 进入第二后端。
+- 已完成 `http-smoke.mjs` 的 shell-aware 适配：
+  - 新增少量 helper，按 `GARLIC_CLAW_RUNTIME_SHELL_BACKEND + process.platform` 在 bash / PowerShell 命令模板之间切换
+  - `bash-config / bash-write / bash-read / bash-workdir / bash-tar` 这 5 组 smoke 命令不再写死 bash 语法
+  - bash 相关文件内容断言已统一按 `CRLF -> LF` 规范化，避免把 PowerShell 默认换行误判成后端失败
+- 已重新通过 Windows fresh 验证：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-4` 第五批轻量静态预扫：
+  - `runtime-shell-command-hints.ts` 当前已补 `../`、`..\\`、`cd ..` 这类上级目录穿越倾向识别。
+  - 新增 hints：
+    - `usesParentTraversal`
+    - `parentTraversalPaths`
+  - 审批摘要当前会直接回显 `相对上级路径: ...`，不再只剩 `含 cd` 这类弱提示。
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "surfaces parent traversal hints in bash permission requests|surfaces external write-path hints in bash permission requests|surfaces combined network and external-path hints in bash permission requests|surfaces powershell native network command hints in bash permission requests|surfaces network command hints in bash permission requests|surfaces redundant cd hint when bash workdir is already provided|attaches static shell hints to bash permission requests"`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 13 tests` 通过
+    - `tool-registry.service.spec.ts` 目标审批用例：`7` 个通过
+    - `packages/server build`：通过
+- 已重新通过最新一轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已补一条验收层真相：
+  - `smoke:server` 与 `smoke:web-ui` 都会触发共享构建链，不应并行执行
+  - 否则可能出现 `plugin-sdk` 引用 shared 导出时的并发构建误报
+- 已继续推进 `G20-4` 第四批轻量静态预扫：
+  - `runtime-shell-command-hints.ts` 当前已按命令段做轻量切分，不再只按整条命令平铺 token。
+  - 写入型文件命令若触碰外部绝对路径，当前会单独写入：
+    - `writesExternalPath`
+    - `externalWritePaths`
+  - 审批摘要当前会直接回显 `写入命令涉及外部绝对路径: ...`，不再只把它混在普通外部路径提示里。
+  - PowerShell `-Path / -LiteralPath / -Destination` 当前已补最小参数位识别，`Copy-Item` 一类命令的风险提示更准。
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "surfaces external write-path hints in bash permission requests|surfaces combined network and external-path hints in bash permission requests|surfaces powershell native network command hints in bash permission requests|surfaces network command hints in bash permission requests|surfaces redundant cd hint when bash workdir is already provided|attaches static shell hints to bash permission requests"`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 12 tests` 通过
+    - `tool-registry.service.spec.ts` 目标审批用例：`6` 个通过
+    - `packages/server build`：通过
+- 已重新通过最新一轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续把这轮静态预扫往 Windows / PowerShell 方向补了一小段：
+  - `runtime-shell-command-hints.ts` 当前已识别常见 PowerShell 别名：`gc / sc / ac / sl / ni / md / rd / ren`
+  - `filesystem::...` provider 路径当前也会参与绝对路径 / 外部路径识别
+  - permission request `summary` 已从“只有类别”改成“类别 + 预览值”，例如文件命令名和外部绝对路径预览
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "attaches static shell hints to bash permission requests"`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 5 tests` 通过
+    - `tool-registry.service.spec.ts -t "attaches static shell hints to bash permission requests"`：通过
+    - `packages/server build`：通过
+- 已再次通过 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续补“联网 + 外部路径”组合风险提示：
+  - 新增 `networkTouchesExternalPath`
+  - 当前若同一条命令既联网又触碰外部绝对路径，审批摘要会单独回显这一层组合风险
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "surfaces combined network and external-path hints in bash permission requests|surfaces powershell native network command hints in bash permission requests|surfaces network command hints in bash permission requests"`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 11 tests` 通过
+    - `tool-registry.service.spec.ts` 目标用例：通过
+    - `packages/server build`：通过
+- 已再次通过 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续补 PowerShell 原生命令的联网识别：
+  - `iwr / irm` 当前会先归一成 `invoke-webrequest / invoke-restmethod`
+  - 这两类命令现在既会触发 `network.access`，也会进入静态 hints / 审批摘要
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "surfaces network command hints in bash permission requests|surfaces powershell native network command hints in bash permission requests"`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 10 tests` 通过
+    - `tool-registry.service.spec.ts` 目标用例：通过
+    - `packages/server build`：通过
+- 已再次通过 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续把联网命令提示并回静态预扫 owner：
+  - `requiresRuntimeShellNetworkAccess()` 当前已从 `bash-tool` 私有逻辑迁到 `runtime-shell-command-hints.ts`
+  - `bash` 审批摘要当前会直接提示 `含联网命令`
+  - 这样 network permission 与静态提示不再各自维护一份判断逻辑
+- 已补本轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "surfaces network command hints in bash permission requests|surfaces redundant cd hint when bash workdir is already provided|attaches static shell hints to bash permission requests"`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 9 tests` 通过
+    - `tool-registry.service.spec.ts` 目标用例：通过
+    - `packages/server build`：通过
+- 已再次通过 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续把静态预扫往“减少高频误用”方向补了一小段：
+  - 若已提供 `workdir` 但命令里仍写 `cd`，当前会给出 `redundantCdWithWorkdir` hint，并写进审批摘要
+  - Windows `native-shell` 下若命令里出现 `&&`，当前会给出 `usesWindowsAndAnd` hint
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "attaches static shell hints to bash permission requests|surfaces redundant cd hint when bash workdir is already provided"`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 8 tests` 通过
+    - `tool-registry.service.spec.ts` 目标用例：通过
+    - `packages/server build`：通过
+- 已再次通过 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续补静态预扫的路径边界：
+  - 裸 `~` 当前也会被当成绝对 home 路径提示，不再漏掉
+  - `filesystem::/workspace/...` 这类 provider 路径如果仍位于可见根内，不会被误报为外部路径
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 6 tests` 通过
+    - `packages/server build`：通过
+- 已再次通过 fresh 验收：
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已补 2026-04-22 的 WSL 内部目录证据：
+  - 当前工作树已同步到 `/home/test/garlic-claw-wsl-internal`
+  - `node -v` 日志：`other/test-logs/2026-04-22-native-shell/wsl-node-version.log`
+    - 结果：`v24.9.0`
+  - `runtime-native-shell.service.spec.ts` 日志：`other/test-logs/2026-04-22-native-shell/wsl-native-shell-runtime-jest.log`
+    - 结果：`1 suite / 4 tests` 全部通过
+  - `tool-registry.service.spec.ts -t "routes bash execution to the real native-shell backend"` 日志：`other/test-logs/2026-04-22-native-shell/wsl-native-shell-route-jest.log`
+    - 结果：目标路由用例通过
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server` 日志：`other/test-logs/2026-04-22-native-shell/wsl-native-shell-smoke-server.log`
+    - 结果：`server HTTP smoke passed: 182 checks`
+- 已确认一条非代码结论：
+  - 把整个 `tool-registry.service.spec.ts` 放进全局 `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell` 环境下执行，在 WSL 会误伤默认只注册 `just-bash` 的夹具用例
+  - 这不是产品阻塞，本轮 WSL 证据已改成“native-shell 相关定向 spec + 真实 smoke”
+- 已继续收口 `tool-registry.service.spec.ts` 的 shell 假设：
+  - 默认夹具当前已同时注册 `RuntimeJustBashService + RuntimeNativeShellService`
+  - bash 相关测试命令已改成跟随当前 shell backend 的 helper，不再只按宿主平台猜语法
+  - `mock-shell` 路由用例保持最小字符串命令，不把伪后端也绑进 shell-aware helper
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --forceExit tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell node ../../node_modules/jest/bin/jest.js --runInBand --forceExit tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - 结果：
+    - `tool-registry.service.spec.ts`：默认 / native-shell 两组各 `29 tests` 全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+- 已继续补一轮和 `other/opencode` 的 bash 体验差距，但保持小改：
+  - `BashToolService.buildToolDescription()` 已新增 shell-specific chaining 提示：
+    - bash 场景明确建议把依赖顺序的命令放进同一条调用并使用 `&&`
+    - Windows `native-shell` 明确提示不要用 `&&`，改用 `; if ($?) { ... }`
+  - `RuntimeJustBashService` 与 `RuntimeNativeShellService` 的超时错误已补成更可执行文案：
+    - 超时后会明确提示“如果不是在等待交互输入，请调大 timeout 重试”
+- 已重新通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-just-bash.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-native-shell.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `bash-tool / runtime-just-bash / runtime-native-shell` 定向 jest：全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `G20-4` 第三批轻量静态预扫：
+  - 新增 `packages/server/src/execution/runtime/runtime-shell-command-hints.ts`，集中承接 bash 命令的静态 hints，不把预判逻辑散回工具层和审批层
+  - 当前会识别 3 类明显信号：
+    - `cd / pushd / set-location` 这类切目录命令
+    - `cat / rm / cp / mv / mkdir / get-content / set-content` 这类文件型命令
+    - 明显绝对路径，以及落在可见根之外的明显外部绝对路径
+  - `BashToolService.readRuntimeAccess()` 当前已把这些 hints 接进：
+    - `metadata.commandHints`
+    - permission request `summary`
+  - 这轮保持小改，没有引入 parser，也没有新增第二套权限 owner
+- 已补本轮受影响测试：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/tool/tool-registry.service.spec.ts -t "bash"`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 4 tests` 通过
+    - `tool-registry.service.spec.ts -t "bash"`：`1 suite / 9 tests` 通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进“前端实时切换 shell backend”这轮收尾：
+  - `packages/server/tests/execution/tool/tool-registry.service.spec.ts` 已补 `waitForPendingRuntimeRequest(...)`，修掉 `builtin.runtime-tools` 先读配置后审批导致的旧时序假设。
+  - 已确认 `PluginPersistenceService` 对外返回的插件配置快照会合并 schema 默认值；因此 `shellBackend.defaultValue = 'just-bash'` 会错误压住 runtime 全局 shell route。
+  - `packages/server/src/plugin/builtin/tools/builtin-runtime-tools.plugin.ts` 当前已移除 `shellBackend` 默认值，并把 hint 改成“未设置跟随后端全局默认路由”。
+  - 这样前端下拉显式选 `just-bash / native-shell` 时仍会即时切换；未设置时则继续尊重 `GARLIC_CLAW_RUNTIME_SHELL_BACKEND`。
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/runtime/host/runtime-host-runtime-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+  - `packages/server`: `npm run build`
+  - 结果：
+    - server 定向 jest：`3 suites / 45 tests` 全部通过
+    - web 定向 vitest：`1 file / 9 tests` 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 `write / edit` 的结果质量，但保持低膨胀：
+  - 新增 `packages/server/src/execution/file/runtime-file-diff-report.ts`
+  - `WriteToolService` 与 `EditToolService` 当前都会通过共享 helper 回显最小 `<patch>` 预览，不再只剩 `Diff: +/-` 与 `Line delta`
+  - patch 预览默认最多显示前 `20` 行；超出时会提示剩余 patch 行数
+- 已补这轮受影响测试：
+  - `packages/server`: `tests/execution/write/write-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/edit/edit-tool.service.spec.ts`
+  - 结果：
+    - 定向 jest：`2 suites / 3 tests` 全部通过
+    - `packages/server build`：通过
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续推进 OpenCode 差距里 `read` 的 loaded-files / system-reminder 方向，但保持最小实现：
+  - `packages/server/src/execution/runtime/runtime-file-freshness.service.ts` 已新增 `listRecentReads()`，按 session 读取顺序倒序返回近期已读文件，并支持 `excludePath / limit`。
+  - `packages/server/src/execution/read/read-tool.service.ts` 当前在文本文件读取成功后，会追加最小 `<system-reminder>`，回显本 session 近期还读取过的其他文件。
+  - 这轮没有新增新的 loaded-files owner，也没有改 shared 契约；先复用 freshness owner，继续压住代码体积。
+- 已补这轮受影响测试：
+  - `packages/server`: `tests/execution/read/read-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/runtime/runtime-file-freshness.service.spec.ts`
+  - 结果：
+    - 定向 jest：`2 suites / 12 tests` 全部通过
+    - `packages/server build`：通过
+- 已继续压缩 `TODO.md`：
+  - 删除 `G20-0 / G20-1` 的大段已完成展开，只保留已完成阶段归档摘要
+  - 当前短板已改成更紧凑的 OpenCode 差距矩阵
+  - 已新增 `P20-1 ~ P20-6` 当前执行计划，并把本轮 `read` reminder 标成已执行
+- 已重新通过本轮 fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - `shared / plugin-sdk build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续补 `G20-2` 的 freshness 拒绝提示，但保持小改：
+  - `RuntimeFileFreshnessService.assertCanWrite()` 当前在“已有文件未先 read”时报错时，会附带本 session 最近已读文件列表，减少模型丢失先前上下文后只能盲猜下一步的问题。
+  - 这条增强继续复用 freshness owner，没有新增 loaded-files / write-session 新状态。
+  - `packages/server/tests/execution/tool/tool-registry.service.spec.ts` 的大夹具已同步补 `listRecentReads()` stub；首次整组定向回归因此暴露并修掉了一条测试夹具假失败，不是产品代码回归。
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/execution/runtime/runtime-native-shell.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/host/runtime-host-runtime-tool.service.spec.ts`
+  - `packages/web`: `npm run test:run -- tests/features/plugins/components/PluginConfigForm.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：`13 suites / 108 tests` 全部通过
+    - web 定向 vitest：`1 file / 9 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

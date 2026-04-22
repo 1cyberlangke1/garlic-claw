@@ -211,7 +211,7 @@ describe('RuntimeJustBashService', () => {
         command: `curl -s http://127.0.0.1:${address.port}/slow`,
         sessionId: 'session-1',
         timeout: 50,
-      })).rejects.toThrow('bash 执行超时（>1 秒）');
+      })).rejects.toThrow('bash 执行超时（>1 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。');
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {

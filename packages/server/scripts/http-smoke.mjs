@@ -40,6 +40,79 @@ const visitedHttpRoutes = [];
 let smokeWebFetchUrl = '';
 let smokeBashTimeoutUrl = '';
 
+function readSmokeShellBackendKind() {
+  return process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND || 'just-bash';
+}
+
+function usesNativePowerShellBackend() {
+  return readSmokeShellBackendKind() === 'native-shell' && process.platform === 'win32';
+}
+
+function buildSmokeShellCommand({ bash, powershell }) {
+  if (usesNativePowerShellBackend()) {
+    return powershell;
+  }
+  return bash;
+}
+
+function buildSmokeBashWriteCommand() {
+  return buildSmokeShellCommand({
+    bash: 'mkdir -p notes nested && echo smoke-workspace > notes/runtime.txt && cat notes/runtime.txt',
+    powershell: [
+      'New-Item -ItemType Directory -Force notes, nested > $null',
+      "Set-Content -Path notes/runtime.txt -Value 'smoke-workspace'",
+      'Get-Content notes/runtime.txt',
+    ].join('; '),
+  });
+}
+
+function buildSmokeBashConfigCommand() {
+  return buildSmokeShellCommand({
+    bash: 'printf "line-1\\nline-2\\nline-3\\nline-4\\n"',
+    powershell: [
+      "Write-Output 'line-1'",
+      "Write-Output 'line-2'",
+      "Write-Output 'line-3'",
+      "Write-Output 'line-4'",
+    ].join('; '),
+  });
+}
+
+function buildSmokeBashReadCommand() {
+  return buildSmokeShellCommand({
+    bash: 'cat notes/runtime.txt',
+    powershell: 'Get-Content notes/runtime.txt',
+  });
+}
+
+function buildSmokeBashWorkdirCommand() {
+  return buildSmokeShellCommand({
+    bash: 'pwd && printf "from-workdir\\n" > child.txt && cat child.txt',
+    powershell: [
+      "Set-Content -Path child.txt -Value 'from-workdir'",
+      'Get-Content child.txt',
+    ].join('; '),
+  });
+}
+
+function buildSmokeBashTarCommand() {
+  return buildSmokeShellCommand({
+    bash: 'mkdir -p tree/a tree/b && printf "one\\n" > tree/a/one.txt && printf "two\\n" > tree/b/two.txt && tar -cf bundle.tar tree && mkdir -p restored && tar -xf bundle.tar -C restored && find restored -type f | sort && cat restored/tree/a/one.txt && cat restored/tree/b/two.txt',
+    powershell: [
+      'New-Item -ItemType Directory -Force tree/a, tree/b > $null',
+      "Set-Content -Path tree/a/one.txt -Value 'one'",
+      "Set-Content -Path tree/b/two.txt -Value 'two'",
+      'tar -cf bundle.tar tree',
+      'New-Item -ItemType Directory -Force restored > $null',
+      'tar -xf bundle.tar -C restored',
+      "$root = (Resolve-Path restored).Path",
+      "Get-ChildItem restored -File -Recurse | ForEach-Object { \"restored/$($_.FullName.Substring($root.Length + 1) -replace '\\\\', '/')\" } | Sort-Object",
+      'Get-Content restored/tree/a/one.txt',
+      'Get-Content restored/tree/b/two.txt',
+    ].join('; '),
+  });
+}
+
 async function main() {
   const cli = parseCliArgs(process.argv.slice(2));
   const serverRoutes = collectServerHttpRoutes(PROJECT_ROOT);
@@ -884,6 +957,7 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('plugins.runtime-tools.config.get', async () => {
     const config = await getJson(apiBase, '/plugins/builtin.runtime-tools/config');
     ensure(typeof config === 'object' && config !== null, 'Expected runtime tools config snapshot');
+    ensure(config.schema?.items?.shellBackend?.type === 'string', 'Expected runtime tools shell backend schema');
     ensure(config.schema?.items?.bashOutput?.type === 'object', 'Expected runtime tools bash output schema');
   });
 
@@ -891,6 +965,7 @@ async function runHttpFlow(apiBase, state, input) {
     const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
       body: {
         values: {
+          shellBackend: readSmokeShellBackendKind(),
           bashOutput: {
             maxBytes: 16 * 1024,
             maxLines: 2,
@@ -899,6 +974,7 @@ async function runHttpFlow(apiBase, state, input) {
         },
       },
     });
+    ensure(config.values?.shellBackend === readSmokeShellBackendKind(), 'Expected runtime tools shell backend to persist');
     ensure(config.values?.bashOutput?.maxLines === 2, 'Expected runtime tools config maxLines to persist');
     ensure(config.values?.bashOutput?.showTruncationDetails === false, 'Expected runtime tools config truncation details toggle to persist');
   });
@@ -947,6 +1023,7 @@ async function runHttpFlow(apiBase, state, input) {
     const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
       body: {
         values: {
+          shellBackend: readSmokeShellBackendKind(),
           bashOutput: {
             maxBytes: 16 * 1024,
             maxLines: 200,
@@ -955,6 +1032,7 @@ async function runHttpFlow(apiBase, state, input) {
         },
       },
     });
+    ensure(config.values?.shellBackend === readSmokeShellBackendKind(), 'Expected runtime tools shell backend to restore');
     ensure(config.values?.bashOutput?.maxLines === 200, 'Expected runtime tools config maxLines to restore');
     ensure(config.values?.bashOutput?.showTruncationDetails === true, 'Expected runtime tools config truncation details toggle to restore');
   });
@@ -1000,7 +1078,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(toolResultRequest, 'Expected bash write loop to issue a follow-up request with bash tool results');
     ensure(requestContainsBashResult(toolResultRequest.body, 'smoke-workspace'), 'Expected bash write loop follow-up request to include rendered bash result');
     ensure(fs.existsSync(path.join(readSessionWorkspaceRoot(), 'notes', 'runtime.txt')), 'Expected bash write loop to persist file in runtime workspace');
-    ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'notes', 'runtime.txt'), 'utf8') === 'smoke-workspace\n', 'Expected persisted runtime workspace file content');
+    ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'notes', 'runtime.txt')) === 'smoke-workspace\n', 'Expected persisted runtime workspace file content');
   });
 
   await runStep('chat.messages.bash-read-loop', async () => {
@@ -1086,7 +1164,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(toolResultRequest, 'Expected bash workdir loop to issue a follow-up request with bash tool results');
     ensure(requestContainsBashResult(toolResultRequest.body, 'cwd: /nested'), 'Expected bash workdir loop follow-up request to include rendered cwd');
     ensure(requestContainsBashResult(toolResultRequest.body, 'from-workdir'), 'Expected bash workdir loop follow-up request to include rendered workdir output');
-    ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'nested', 'child.txt'), 'utf8') === 'from-workdir\n', 'Expected bash workdir loop to persist file under nested workdir');
+    ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'nested', 'child.txt')) === 'from-workdir\n', 'Expected bash workdir loop to persist file under nested workdir');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const bashAssistant = conversation.messages.find((entry) => entry.id === state.bashWorkdirAssistantMessageId);
@@ -1187,8 +1265,8 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestContainsBashResult(toolResultRequest.body, 'one'), 'Expected bash tar loop follow-up request to include first restored content');
     ensure(requestContainsBashResult(toolResultRequest.body, 'two'), 'Expected bash tar loop follow-up request to include second restored content');
     ensure(fs.existsSync(path.join(readSessionWorkspaceRoot(), 'bundle.tar')), 'Expected bash tar loop to persist archive file');
-    ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'restored', 'tree', 'a', 'one.txt'), 'utf8') === 'one\n', 'Expected bash tar loop to restore first file');
-    ensure(fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'restored', 'tree', 'b', 'two.txt'), 'utf8') === 'two\n', 'Expected bash tar loop to restore second file');
+    ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'restored', 'tree', 'a', 'one.txt')) === 'one\n', 'Expected bash tar loop to restore first file');
+    ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'restored', 'tree', 'b', 'two.txt')) === 'two\n', 'Expected bash tar loop to restore second file');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const bashAssistant = conversation.messages.find((entry) => entry.id === state.bashTarAssistantMessageId);
@@ -3483,7 +3561,7 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerBashWriteTool(body)) {
     return {
       arguments: {
-        command: 'mkdir -p notes nested && echo smoke-workspace > notes/runtime.txt && cat notes/runtime.txt',
+        command: buildSmokeBashWriteCommand(),
         description: '写入 smoke workspace 文件',
       },
       kind: 'tool-call',
@@ -3494,7 +3572,7 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerBashConfigTool(body)) {
     return {
       arguments: {
-        command: 'printf "line-1\\nline-2\\nline-3\\nline-4\\n"',
+        command: buildSmokeBashConfigCommand(),
         description: '生成多行输出',
       },
       kind: 'tool-call',
@@ -3505,7 +3583,7 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerBashReadTool(body)) {
     return {
       arguments: {
-        command: 'cat notes/runtime.txt',
+        command: buildSmokeBashReadCommand(),
         description: '读取 smoke workspace 文件',
       },
       kind: 'tool-call',
@@ -3516,8 +3594,8 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerBashWorkdirTool(body)) {
     return {
       arguments: {
-        command: 'pwd && printf "from-workdir\\n" > child.txt && cat child.txt',
-        description: '在指定工作目录执行 bash',
+        command: buildSmokeBashWorkdirCommand(),
+        description: '在指定工作目录执行命令',
         workdir: 'nested',
       },
       kind: 'tool-call',
@@ -3540,7 +3618,7 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerBashTarTool(body)) {
     return {
       arguments: {
-        command: 'mkdir -p tree/a tree/b && printf "one\\n" > tree/a/one.txt && printf "two\\n" > tree/b/two.txt && tar -cf bundle.tar tree && mkdir -p restored && tar -xf bundle.tar -C restored && find restored -type f | sort && cat restored/tree/a/one.txt && cat restored/tree/b/two.txt',
+        command: buildSmokeBashTarCommand(),
         description: '打包并还原目录树',
       },
       kind: 'tool-call',
@@ -3968,6 +4046,10 @@ function readLatestBashToolContent(body) {
 function readBashStreamSection(content, sectionName) {
   const match = content.match(new RegExp(`<${sectionName}>\\n([\\s\\S]*?)\\n<\\/${sectionName}>`));
   return match ? match[1] : null;
+}
+
+function readNormalizedFileContent(filePath) {
+  return fs.readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
 }
 
 function isRenderedSubagentToolContent(content) {

@@ -217,6 +217,7 @@ function createFilesystemBackend(kind: string): RuntimeFilesystemBackend {
     },
     async grepText() {
       return {
+        basePath: '/',
         matches: [
           {
             line: 1,
