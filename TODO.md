@@ -132,6 +132,7 @@
     - 已把“写入命令触碰外部绝对路径”从普通外部路径提示中单独抬出，并补 `-Path / -LiteralPath / -Destination` 这类 PowerShell 轻量参数位识别
     - 已补 `../`、`..\\`、`cd ..` 这类上级目录穿越倾向提示，审批摘要会单独回显相对上级路径预览
     - 已补 shell 重定向目标识别：`>` / `>>` / `1>` 这类写入外部绝对路径时，也会进入 `externalWritePaths` 与审批摘要
+    - 已补 PowerShell `Out-File -FilePath` 写文件识别，这类常用外部写入现在也会进入 `externalWritePaths`
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

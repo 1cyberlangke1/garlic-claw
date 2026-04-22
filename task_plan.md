@@ -1570,3 +1570,36 @@
 
 - 如果继续补 `G20-4`，优先沿“命令段 + 参数位 + 重定向目标”继续增强结构化启发式，而不是直接引入重 parser。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第七批推进
+
+### 本轮目标
+
+- 继续按 `other/opencode` 对照 `bash` 执行前预扫，但仍保持单点 owner。
+- 补 PowerShell 常用写文件形式 `Out-File -FilePath ...` 的外部写入提示。
+- 保持实现继续收在 `runtime-shell-command-hints.ts`，不扩散到工具层和审批层。
+
+### 当前结果
+
+- 当前已把 `out-file` 纳入：
+  - `FILE_COMMANDS`
+  - `WRITE_COMMANDS`
+- PowerShell 路径参数位当前已补 `-FilePath`。
+- 因此 `Get-Content ... | Out-File -FilePath filesystem::C:\\temp\\copied.txt` 这类命令现在会稳定回显：
+  - `fileCommands: ['get-content', 'out-file']`
+  - `externalWritePaths`
+  - `writesExternalPath`
+  - 审批摘要里的 `写入命令涉及外部绝对路径`
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续围绕 PowerShell / bash 常见写法补结构化命令段识别，而不是新增第二套审批前解析逻辑。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

@@ -989,6 +989,51 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces out-file filepath write hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-out-file-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'Get-Content /workspace/input.txt | Out-File -FilePath filesystem::C:\\temp\\copied.txt',
+      description: '检查 bash out-file 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-out-file-external-hints-1',
+      metadata: {
+        command: 'Get-Content /workspace/input.txt | Out-File -FilePath filesystem::C:\\temp\\copied.txt',
+        commandHints: {
+          absolutePaths: ['/workspace/input.txt', 'filesystem::C:\\temp\\copied.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\copied.txt'],
+          externalWritePaths: ['filesystem::C:\\temp\\copied.txt'],
+          fileCommands: ['get-content', 'out-file'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash out-file 外部写入提示',
+      },
+      summary: '检查 bash out-file 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\copied.txt、文件命令: get-content, out-file、外部绝对路径: filesystem::C:\\temp\\copied.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('keeps bash workdir and timeout semantics stable through the native tool contract', async () => {
     const { conversationId, runtimeToolPermissionService, runtimeWorkspaceRoot, service } = createFixture();
     const slowServer = http.createServer(async (_request: http.IncomingMessage, response: http.ServerResponse) => {

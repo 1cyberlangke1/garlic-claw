@@ -386,6 +386,60 @@ describe('BashToolService', () => {
     });
   });
 
+  it('recognizes out-file filepath writes as external write hints', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Get-Content /workspace/input.txt | Out-File -FilePath filesystem::C:\\temp\\copied.txt',
+      description: '检查 out-file 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Get-Content /workspace/input.txt | Out-File -FilePath filesystem::C:\\temp\\copied.txt',
+        commandHints: {
+          absolutePaths: ['/workspace/input.txt', 'filesystem::C:\\temp\\copied.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\copied.txt'],
+          externalWritePaths: ['filesystem::C:\\temp\\copied.txt'],
+          fileCommands: ['get-content', 'out-file'],
+          writesExternalPath: true,
+        },
+        description: '检查 out-file 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 out-file 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\copied.txt、文件命令: get-content, out-file、外部绝对路径: filesystem::C:\\temp\\copied.txt',
+    });
+  });
+
   it('recognizes powershell native network commands in static hints', () => {
     const service = new BashToolService(
       {} as never,

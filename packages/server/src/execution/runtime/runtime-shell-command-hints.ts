@@ -15,6 +15,7 @@ const FILE_COMMANDS = new Set([
   'chown',
   'tar',
   'get-content',
+  'out-file',
   'set-content',
   'add-content',
   'copy-item',
@@ -36,6 +37,7 @@ const WRITE_COMMANDS = new Set([
   'chmod',
   'chown',
   'tar',
+  'out-file',
   'set-content',
   'add-content',
   'copy-item',
@@ -56,7 +58,7 @@ const COMMAND_ALIASES = new Map<string, string>([
   ['rd', 'remove-item'],
   ['ren', 'rename-item'],
 ]);
-const POWERSHELL_PATH_PARAMETER_FLAGS = new Set(['-path', '-literalpath', '-destination']);
+const POWERSHELL_PATH_PARAMETER_FLAGS = new Set(['-path', '-filepath', '-literalpath', '-destination']);
 const MAX_PREVIEW_ITEMS = 3;
 
 export interface RuntimeShellCommandHintMetadata {

@@ -2517,3 +2517,22 @@
     - `lint`：通过
     - `smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续按 `other/opencode` 对照补 `G20-4`，但保持小改：
+  - 已把 PowerShell `Out-File -FilePath ...` 这类常用写文件形式纳入静态预扫。
+  - 当前 `out-file` 已进入 `FILE_COMMANDS / WRITE_COMMANDS`，`-FilePath` 也已并入 PowerShell 路径参数位识别。
+  - 这样 `Get-Content ... | Out-File -FilePath filesystem::C:\\temp\\copied.txt` 现在也会稳定进入 `externalWritePaths` 与审批摘要。
+- 这轮仍按 TDD 落地：
+  - 先补 `bash-tool.service.spec.ts` 与 `tool-registry.service.spec.ts` 的红灯
+  - 再只改 `runtime-shell-command-hints.ts` 一处 owner
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：`2 suites / 54 tests` 全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

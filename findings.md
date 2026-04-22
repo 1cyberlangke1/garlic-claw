@@ -1249,3 +1249,10 @@
   - 目标只是补 `externalWritePaths` 的真相，不需要让 `BashToolService` 自己认识 `>`
   - 也不需要把审批 service 改成再解析一次命令字符串
   - 因此用单独的“重定向目标提取”函数并回既有 `externalWritePaths` 流程，是当前最省膨胀的补法
+- 对照 `other/opencode` 再往 PowerShell 常见写法看，当前还有一类高频写文件口径同样值得补：
+  - `Out-File -FilePath ...`
+  - 这类命令本质上就是正式的写文件命令，不该只靠普通绝对路径提示
+- 这条补法仍然适合继续收在同一个 owner：
+  - 把 `out-file` 并入 `FILE_COMMANDS / WRITE_COMMANDS`
+  - 把 `-FilePath` 并进 PowerShell 路径参数位集合
+  - 这样 `externalWritePaths`、`writesExternalPath` 和摘要文案可以继续复用现有管线，不需要新增分支 owner
