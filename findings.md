@@ -1432,3 +1432,14 @@
   - 同时存在 `-Path / -LiteralPath` 与 `-NewName` 时直接拼出目标路径
   - 否则回退到原始路径参数
   - 这样能提升提示精度，同时不需要引入更重的 PowerShell parser
+- 到目前为止，PowerShell 侧已经形成一条可复用的低膨胀规律：
+  - `path + leaf-name` 形态优先走最小路径拼接
+  - `destination` 形态优先走显式目标参数
+  - 这比继续把所有 PowerShell 文件命令都留在通用 `-Path` 扫描里更稳定，也更接近真实 CLI 语义
+- `New-Item / Rename-Item` 继续补到 positional 写法后，这条规律已经不再只服务于 flag 语法：
+  - `New-Item filesystem::C:\\temp -Name created-positional.txt -ItemType File`
+  - `Rename-Item filesystem::C:\\temp\\old-positional.txt renamed-positional.txt`
+- 这说明当前最值的方向不是继续扩命令名单，而是继续把同类命令收口到少量共享规则：
+  - `destination` 规则
+  - `path + leaf-name` 规则
+  - `value-flag 跳过` 规则

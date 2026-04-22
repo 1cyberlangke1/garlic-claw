@@ -70,6 +70,8 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
 const POWERSHELL_DESTINATION_PARAMETER_FLAGS = new Set(['-destination']);
 const POWERSHELL_NAME_PARAMETER_FLAGS = new Set(['-name']);
 const POWERSHELL_NEW_NAME_PARAMETER_FLAGS = new Set(['-newname']);
+const POWERSHELL_NEW_ITEM_VALUE_FLAGS = new Set(['-path', '-literalpath', '-name', '-itemtype', '-value']);
+const POWERSHELL_RENAME_ITEM_VALUE_FLAGS = new Set(['-path', '-literalpath', '-newname']);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const CP_MV_DESTINATION_FLAGS = new Set(['-t', '--target-directory']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
@@ -433,8 +435,9 @@ function readPowerShellDestinationPathTokens(tokens: string[]): string[] {
 }
 
 function readPowerShellNewItemWritePathTokens(tokens: string[]): string[] {
-  const basePath = readPowerShellFlaggedPathTokensWithFlags(tokens, new Set(['-path', '-literalpath']))[0];
-  const itemName = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_NAME_PARAMETER_FLAGS)[0];
+  const positional = readPowerShellPositionalTokens(tokens, POWERSHELL_NEW_ITEM_VALUE_FLAGS);
+  const basePath = readPowerShellFlaggedPathTokensWithFlags(tokens, new Set(['-path', '-literalpath']))[0] ?? positional[0];
+  const itemName = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_NAME_PARAMETER_FLAGS)[0] ?? positional[1];
   if (basePath && itemName) {
     return [joinShellPathToken(basePath, itemName)];
   }
@@ -442,8 +445,9 @@ function readPowerShellNewItemWritePathTokens(tokens: string[]): string[] {
 }
 
 function readPowerShellRenameItemWritePathTokens(tokens: string[]): string[] {
-  const basePath = readPowerShellFlaggedPathTokensWithFlags(tokens, new Set(['-path', '-literalpath']))[0];
-  const newName = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_NEW_NAME_PARAMETER_FLAGS)[0];
+  const positional = readPowerShellPositionalTokens(tokens, POWERSHELL_RENAME_ITEM_VALUE_FLAGS);
+  const basePath = readPowerShellFlaggedPathTokensWithFlags(tokens, new Set(['-path', '-literalpath']))[0] ?? positional[0];
+  const newName = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_NEW_NAME_PARAMETER_FLAGS)[0] ?? positional[1];
   if (basePath && newName) {
     return [resolveRenameShellPathToken(basePath, newName)];
   }
@@ -467,6 +471,25 @@ function readPowerShellFlaggedPathTokensWithFlags(tokens: string[], flags: Set<s
     wantsPath = flags.has(token.toLowerCase());
   }
   return paths;
+}
+
+function readPowerShellPositionalTokens(tokens: string[], valueFlags: Set<string>): string[] {
+  const positional: string[] = [];
+  let skipNextValue = false;
+  for (const token of tokens) {
+    if (skipNextValue) {
+      skipNextValue = false;
+      continue;
+    }
+    if (token.startsWith('-')) {
+      if (valueFlags.has(token.toLowerCase())) {
+        skipNextValue = true;
+      }
+      continue;
+    }
+    positional.push(token);
+  }
+  return positional;
 }
 
 function readShellFlaggedPathTokens(tokens: string[], flags: Set<string>): string[] {

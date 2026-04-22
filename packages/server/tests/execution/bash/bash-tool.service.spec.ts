@@ -1954,6 +1954,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats new-item positional path plus name as the external write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'New-Item filesystem::C:\\temp -Name created-positional.txt -ItemType File',
+      description: '检查 new-item positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'New-Item filesystem::C:\\temp -Name created-positional.txt -ItemType File',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp'],
+          externalAbsolutePaths: ['filesystem::C:\\temp'],
+          externalWritePaths: ['filesystem::C:\\temp\\created-positional.txt'],
+          fileCommands: ['new-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 new-item positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 new-item positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\created-positional.txt、文件命令: new-item、外部绝对路径: filesystem::C:\\temp',
+    });
+  });
+
+  it('treats rename-item positional path plus positional newname as the external write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Rename-Item filesystem::C:\\temp\\old-positional.txt renamed-positional.txt',
+      description: '检查 rename-item positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Rename-Item filesystem::C:\\temp\\old-positional.txt renamed-positional.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\old-positional.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\old-positional.txt'],
+          externalWritePaths: ['filesystem::C:\\temp\\renamed-positional.txt'],
+          fileCommands: ['rename-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 rename-item positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 rename-item positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\renamed-positional.txt、文件命令: rename-item、外部绝对路径: filesystem::C:\\temp\\old-positional.txt',
+    });
+  });
+
   it('recognizes invoke-webrequest outfile writes as combined network and external write hints', () => {
     const service = new BashToolService(
       {} as never,

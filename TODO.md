@@ -173,6 +173,10 @@
     - 已把 `Rename-Item -Path <old> -NewName <leaf>` 收成真正重命名目标路径识别：
       - `Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt` 当前把 `filesystem::C:\\temp\\renamed.txt` 记为 `externalWritePaths`
       - 不再只把旧路径 `filesystem::C:\\temp\\old.txt` 当成写入目标
+    - 已把 `New-Item / Rename-Item` 的 PowerShell 目标路径拼接 owner 收口成共享最小规则：
+      - `path + leaf-name` 这类命令当前可直接回显真正写入目标
+      - positional 写法当前也已并入这条规则，不再只依赖 `-Path`
+      - 后续同类 PowerShell 命令可继续复用这条低膨胀路径拼接能力
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层
