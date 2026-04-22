@@ -67,6 +67,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
   '-outfile',
   '-outputfile',
 ]);
+const POWERSHELL_DESTINATION_PARAMETER_FLAGS = new Set(['-destination']);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
@@ -375,7 +376,10 @@ function readShellCommandPathTokens(tokens: string[]): string[] {
 
 function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): string[] {
   if (segment.command === 'cp' || segment.command === 'mv') {
-    return readShellDestinationPathTokens(segment.tokens.slice(1));
+    return readShellDestinationPathTokens(segment.tokens.slice(1), 2);
+  }
+  if (segment.command === 'copy-item' || segment.command === 'move-item') {
+    return readPowerShellDestinationPathTokens(segment.tokens.slice(1));
   }
   if (segment.command === 'curl') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), CURL_WRITE_PATH_FLAGS);
@@ -407,6 +411,18 @@ function readShellRedirectionPathTokens(command: string): string[] {
 }
 
 function readPowerShellFlaggedPathTokens(tokens: string[]): string[] {
+  return readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_PATH_PARAMETER_FLAGS);
+}
+
+function readPowerShellDestinationPathTokens(tokens: string[]): string[] {
+  const flaggedDestinations = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_DESTINATION_PARAMETER_FLAGS);
+  if (flaggedDestinations.length > 0) {
+    return flaggedDestinations;
+  }
+  return readShellDestinationPathTokens(tokens, 2);
+}
+
+function readPowerShellFlaggedPathTokensWithFlags(tokens: string[], flags: Set<string>): string[] {
   const paths: string[] = [];
   let wantsPath = false;
   for (const token of tokens) {
@@ -420,7 +436,7 @@ function readPowerShellFlaggedPathTokens(tokens: string[]): string[] {
     if (!token.startsWith('-')) {
       continue;
     }
-    wantsPath = POWERSHELL_PATH_PARAMETER_FLAGS.has(token.toLowerCase());
+    wantsPath = flags.has(token.toLowerCase());
   }
   return paths;
 }
@@ -457,13 +473,14 @@ function matchesShellFlagToken(token: string, flag: string): boolean {
 }
 
 function readScpWritePathTokens(tokens: string[]): string[] {
-  const positional = tokens.filter((token) => !token.startsWith('-'));
-  const destination = positional[positional.length - 1];
-  return destination ? [destination] : [];
+  return readShellDestinationPathTokens(tokens, 2);
 }
 
-function readShellDestinationPathTokens(tokens: string[]): string[] {
+function readShellDestinationPathTokens(tokens: string[], minPositionalCount = 1): string[] {
   const positional = tokens.filter((token) => !token.startsWith('-'));
+  if (positional.length < minPositionalCount) {
+    return [];
+  }
   const destination = positional[positional.length - 1];
   return destination ? [destination] : [];
 }

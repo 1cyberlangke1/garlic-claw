@@ -158,6 +158,9 @@
     - 已把 `cp / mv` 从粗粒度写命令收成“最后一个 positional token 为目标路径”：
       - `cp ~/source.txt /tmp/copied.txt` 当前只把 `/tmp/copied.txt` 记为 `externalWritePaths`
       - `mv ~/source.txt /tmp/moved.txt` 当前只把 `/tmp/moved.txt` 记为 `externalWritePaths`
+    - 已把 `Copy-Item / Move-Item` 从通用 PowerShell 路径参数收成“优先认 `-Destination`，否则回退到最后一个 positional token”为目标路径：
+      - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt` 当前只把目标路径记为 `externalWritePaths`
+      - `Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt` 当前只把目标路径记为 `externalWritePaths`
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

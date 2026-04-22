@@ -1419,6 +1419,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats Copy-Item destination as external write but keeps external source out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt',
+      description: '检查 Copy-Item 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\copied.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\copied.txt'],
+          externalWritePaths: ['filesystem::D:\\temp\\copied.txt'],
+          fileCommands: ['copy-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 Copy-Item 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 Copy-Item 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::D:\\temp\\copied.txt、文件命令: copy-item、外部绝对路径: filesystem::C:\\temp\\input.txt, filesystem::D:\\temp\\copied.txt',
+    });
+  });
+
+  it('treats Move-Item destination as external write but keeps external source out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt',
+      description: '检查 Move-Item 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\moved.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\moved.txt'],
+          externalWritePaths: ['filesystem::D:\\temp\\moved.txt'],
+          fileCommands: ['move-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 Move-Item 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 Move-Item 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::D:\\temp\\moved.txt、文件命令: move-item、外部绝对路径: filesystem::C:\\temp\\input.txt, filesystem::D:\\temp\\moved.txt',
+    });
+  });
+
   it('treats shell redirection to external absolute paths as external writes', () => {
     const service = new BashToolService(
       {} as never,

@@ -2208,3 +2208,40 @@
 
 - 如果继续补 `G20-4`，优先继续找 PowerShell 侧仍偏粗粒度、但也能收成少量真实参数位的命令，例如 `Copy-Item / Move-Item`。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第二十三批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 PowerShell 侧仍偏粗粒度的 `Copy-Item / Move-Item` 写路径识别，但保持单点 owner。
+- 把这两类命令从“`-Path / -Destination` 一起视为写路径”收成“优先认 `-Destination`，否则只取最后一个 positional token 作为目标路径”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `Copy-Item / Move-Item` 改成目标路径提取：
+  - 若显式给出 `-Destination`，当前只把该参数值视为写入目标
+  - 未显式给出 `-Destination` 时，当前回退到最后一个 positional token
+- 因此：
+  - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt` 当前只会把 `filesystem::D:\\temp\\copied.txt` 记为 `externalWritePaths`
+  - `Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt` 当前只会把 `filesystem::D:\\temp\\moved.txt` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把现有 PowerShell 复制/移动命令从通用路径参数扫描收成最小目标路径规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续看 PowerShell 侧仍偏粗粒度、但也能收成少量真实参数位的命令，例如 `Rename-Item / New-Item` 等明确写入边界。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

@@ -1396,3 +1396,11 @@
   - 能直接压掉当前误报
   - 不需要把 `cp / mv` 重新做成更重的 parser
   - 下一步优先级应转向 PowerShell 对应命令 `Copy-Item / Move-Item`
+- `Copy-Item / Move-Item` 当前也有同一类边界，只是语法换成了 PowerShell 参数位：
+  - `-Path / -LiteralPath` 是输入
+  - `-Destination` 才是写入目标
+  - 若省略显式 `-Destination`，当前最小可接受回退仍是最后一个 positional token
+- 这类命令继续适合留在同一个 hints owner 内用最小规则表达：
+  - 先认 `-Destination`
+  - 不存在时再回退到最后一个 positional token
+  - 这样能压掉外部源路径误报，同时不需要引入 PowerShell parser

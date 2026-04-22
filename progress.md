@@ -2806,3 +2806,23 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `Copy-Item / Move-Item` 写路径识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把这两类 PowerShell 命令从通用路径参数扫描收成目标路径提取。
+  - 当前优先认 `-Destination`，未显式给出时再回退到最后一个 positional token，不再把源路径一起抬成 `externalWritePaths`。
+  - 因此 `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt` 与 `Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt` 现在都只会把目标路径视为外部写入。
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 100 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

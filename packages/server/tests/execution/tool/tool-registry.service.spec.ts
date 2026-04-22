@@ -1871,6 +1871,96 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces Copy-Item destination as external write without promoting external source path', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-copy-item-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt',
+      description: '检查 bash Copy-Item 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-copy-item-external-hints-1',
+      metadata: {
+        command: 'Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\copied.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\copied.txt'],
+          externalWritePaths: ['filesystem::D:\\temp\\copied.txt'],
+          fileCommands: ['copy-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash Copy-Item 外部写入提示',
+      },
+      summary: '检查 bash Copy-Item 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: filesystem::D:\\temp\\copied.txt、文件命令: copy-item、外部绝对路径: filesystem::C:\\temp\\input.txt, filesystem::D:\\temp\\copied.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces Move-Item destination as external write without promoting external source path', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-move-item-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt',
+      description: '检查 bash Move-Item 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-move-item-external-hints-1',
+      metadata: {
+        command: 'Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\moved.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\moved.txt'],
+          externalWritePaths: ['filesystem::D:\\temp\\moved.txt'],
+          fileCommands: ['move-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash Move-Item 外部写入提示',
+      },
+      summary: '检查 bash Move-Item 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: filesystem::D:\\temp\\moved.txt、文件命令: move-item、外部绝对路径: filesystem::C:\\temp\\input.txt, filesystem::D:\\temp\\moved.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces redirection write-path hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({
