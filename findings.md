@@ -1425,3 +1425,10 @@
   - 同时存在 `-Path / -LiteralPath` 与 `-Name` 时直接拼出目标路径
   - 否则回退到原始路径参数
   - 这样能提升提示精度，同时不需要引入更重的 PowerShell parser
+- `Rename-Item` 这条线上也有同类信息损失：`-Path` 和 `-NewName` 同时存在时，真正写入目标不等于旧路径本身。
+  - `Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt` 里，真实写入目标是 `filesystem::C:\\temp\\renamed.txt`
+  - 若只回显旧路径，审批提示仍然停留在“会改这个旧文件”，而不是“最终会写到哪里”
+- 这类边界继续适合留在同一个 hints owner 内用最小目标路径拼接表达：
+  - 同时存在 `-Path / -LiteralPath` 与 `-NewName` 时直接拼出目标路径
+  - 否则回退到原始路径参数
+  - 这样能提升提示精度，同时不需要引入更重的 PowerShell parser

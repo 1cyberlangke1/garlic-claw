@@ -69,6 +69,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
 ]);
 const POWERSHELL_DESTINATION_PARAMETER_FLAGS = new Set(['-destination']);
 const POWERSHELL_NAME_PARAMETER_FLAGS = new Set(['-name']);
+const POWERSHELL_NEW_NAME_PARAMETER_FLAGS = new Set(['-newname']);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const CP_MV_DESTINATION_FLAGS = new Set(['-t', '--target-directory']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
@@ -387,6 +388,9 @@ function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): s
   if (segment.command === 'new-item') {
     return readPowerShellNewItemWritePathTokens(segment.tokens.slice(1));
   }
+  if (segment.command === 'rename-item') {
+    return readPowerShellRenameItemWritePathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'curl') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), CURL_WRITE_PATH_FLAGS);
   }
@@ -433,6 +437,15 @@ function readPowerShellNewItemWritePathTokens(tokens: string[]): string[] {
   const itemName = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_NAME_PARAMETER_FLAGS)[0];
   if (basePath && itemName) {
     return [joinShellPathToken(basePath, itemName)];
+  }
+  return basePath ? [basePath] : [];
+}
+
+function readPowerShellRenameItemWritePathTokens(tokens: string[]): string[] {
+  const basePath = readPowerShellFlaggedPathTokensWithFlags(tokens, new Set(['-path', '-literalpath']))[0];
+  const newName = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_NEW_NAME_PARAMETER_FLAGS)[0];
+  if (basePath && newName) {
+    return [resolveRenameShellPathToken(basePath, newName)];
   }
   return basePath ? [basePath] : [];
 }
@@ -518,6 +531,26 @@ function joinShellPathToken(basePath: string, leafName: string): string {
     return `${trimmedBasePath}\\${trimmedLeafName}`;
   }
   return `${trimmedBasePath}/${trimmedLeafName}`;
+}
+
+function resolveRenameShellPathToken(basePath: string, newName: string): string {
+  if (/^(?:~(?:[\\/]|$)|\/|[a-zA-Z]:[\\/]|filesystem::)/u.test(newName)) {
+    return newName;
+  }
+  return joinShellPathToken(readShellParentPathToken(basePath), newName);
+}
+
+function readShellParentPathToken(inputPath: string): string {
+  if (/^filesystem::/iu.test(inputPath)) {
+    const match = inputPath.match(/^(filesystem::.*?)[\\/][^\\/]+$/u);
+    return match?.[1] ?? inputPath;
+  }
+  const normalized = inputPath.replace(/[\\/]+$/u, '');
+  const separatorIndex = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'));
+  if (separatorIndex <= 0) {
+    return normalized.startsWith('/') ? '/' : normalized;
+  }
+  return normalized.slice(0, separatorIndex);
 }
 
 function readGitWritePathTokens(tokens: string[]): string[] {

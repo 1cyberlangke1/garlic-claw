@@ -2356,3 +2356,40 @@
 
 - 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能收成少量显式目标参数、路径拼接或 value-flag 跳过规则的命令。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第二十七批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 `Rename-Item` 仍偏粗粒度的目标路径识别，但保持单点 owner。
+- 把 `Rename-Item -Path <old> -NewName <leaf>` 从“只认旧路径”收成“直接回显真正重命名目标路径”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 PowerShell parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `Rename-Item` 改成最小目标路径拼接：
+  - 若同时存在 `-Path / -LiteralPath` 与 `-NewName`，当前会直接拼出真正的重命名目标
+  - 若只有 `-Path / -LiteralPath`，当前仍回退到该路径本身
+- 因此：
+  - `Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt` 当前会把 `filesystem::C:\\temp\\renamed.txt` 记为 `externalWritePaths`
+  - 不再只把旧路径 `filesystem::C:\\temp\\old.txt` 视为写入目标
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把既有 `rename-item` owner 从单一路径参数收成最小目标路径拼接规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能收成少量显式目标参数、路径拼接或 value-flag 跳过规则的命令。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

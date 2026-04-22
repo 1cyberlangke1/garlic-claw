@@ -2232,6 +2232,51 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces rename-item path plus newname as the external write target in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-rename-item-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt',
+      description: '检查 bash rename-item 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-rename-item-external-hints-1',
+      metadata: {
+        command: 'Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\old.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\old.txt'],
+          externalWritePaths: ['filesystem::C:\\temp\\renamed.txt'],
+          fileCommands: ['rename-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash rename-item 外部写入提示',
+      },
+      summary: '检查 bash rename-item 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\renamed.txt、文件命令: rename-item、外部绝对路径: filesystem::C:\\temp\\old.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces invoke-webrequest outfile write hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

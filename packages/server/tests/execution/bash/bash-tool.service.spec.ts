@@ -1900,6 +1900,60 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats rename-item path plus newname as the external write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt',
+      description: '检查 rename-item 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\old.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\old.txt'],
+          externalWritePaths: ['filesystem::C:\\temp\\renamed.txt'],
+          fileCommands: ['rename-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 rename-item 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 rename-item 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\renamed.txt、文件命令: rename-item、外部绝对路径: filesystem::C:\\temp\\old.txt',
+    });
+  });
+
   it('recognizes invoke-webrequest outfile writes as combined network and external write hints', () => {
     const service = new BashToolService(
       {} as never,

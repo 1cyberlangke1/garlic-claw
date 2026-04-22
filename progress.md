@@ -2886,3 +2886,23 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `Rename-Item -Path + -NewName` 目标路径识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `Rename-Item` 从“只认旧路径”收成最小目标路径拼接。
+  - 当前在同时存在 `-Path / -LiteralPath` 与 `-NewName` 时，会直接拼出真正的重命名目标路径；若只有 `-Path`，则继续回退到该路径本身。
+  - 因此 `Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt` 现在会把 `filesystem::C:\\temp\\renamed.txt` 视为外部写入，而不再只回显旧路径。
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 110 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

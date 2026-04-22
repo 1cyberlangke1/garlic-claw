@@ -170,6 +170,9 @@
     - 已把 `New-Item -Path <dir> -Name <leaf>` 收成真正创建目标路径识别：
       - `New-Item -Path filesystem::C:\\temp -Name created.txt -ItemType File` 当前把 `filesystem::C:\\temp\\created.txt` 记为 `externalWritePaths`
       - 不再只把父目录 `filesystem::C:\\temp` 当成写入目标
+    - 已把 `Rename-Item -Path <old> -NewName <leaf>` 收成真正重命名目标路径识别：
+      - `Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt` 当前把 `filesystem::C:\\temp\\renamed.txt` 记为 `externalWritePaths`
+      - 不再只把旧路径 `filesystem::C:\\temp\\old.txt` 当成写入目标
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层
