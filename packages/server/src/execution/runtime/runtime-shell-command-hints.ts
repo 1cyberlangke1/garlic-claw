@@ -69,6 +69,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
 ]);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
+const GIT_SUBMODULE_ADD_VALUE_FLAGS = new Set(['-b', '--branch', '--depth', '--name', '--reference']);
 const GIT_WORKTREE_ADD_VALUE_FLAGS = new Set(['-b', '-B', '--orphan', '--reason']);
 const WGET_WRITE_PATH_FLAGS = new Set(['-O', '--output-document', '--output-file', '-P', '--directory-prefix']);
 const MAX_PREVIEW_ITEMS = 3;
@@ -469,13 +470,19 @@ function readGitWritePathTokens(tokens: string[]): string[] {
     return uniquePreview(destination ? [...writePaths, destination] : writePaths);
   }
   if (subcommand === 'worktree' && normalizeShellCommandToken(tokens[1] ?? '') === 'add') {
-    const destination = readShellFirstPositionalToken(tokens.slice(2), GIT_WORKTREE_ADD_VALUE_FLAGS);
+    const destination = readShellPositionalTokens(tokens.slice(2), GIT_WORKTREE_ADD_VALUE_FLAGS)[0];
+    return destination ? [destination] : [];
+  }
+  if (subcommand === 'submodule' && normalizeShellCommandToken(tokens[1] ?? '') === 'add') {
+    const positional = readShellPositionalTokens(tokens.slice(2), GIT_SUBMODULE_ADD_VALUE_FLAGS);
+    const destination = positional.length >= 2 ? positional[positional.length - 1] : undefined;
     return destination ? [destination] : [];
   }
   return [];
 }
 
-function readShellFirstPositionalToken(tokens: string[], valueFlags: Set<string>): string | undefined {
+function readShellPositionalTokens(tokens: string[], valueFlags: Set<string>): string[] {
+  const positional: string[] = [];
   let skipNextValue = false;
   for (const token of tokens) {
     if (skipNextValue) {
@@ -488,9 +495,9 @@ function readShellFirstPositionalToken(tokens: string[], valueFlags: Set<string>
       }
       continue;
     }
-    return token;
+    positional.push(token);
   }
-  return undefined;
+  return positional;
 }
 
 function normalizeShellCommandToken(token: string): string {

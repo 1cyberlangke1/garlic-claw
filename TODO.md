@@ -147,6 +147,7 @@
       - `--separate-git-dir <path>` 落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
     - 已补 `git init <path>` 显式目标目录识别：当初始化目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
     - 已补 `git worktree add <path>` 显式目标目录识别：当 worktree 目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
+    - 已补 `git submodule add <repo> <path>` 显式目标目录识别：当 submodule 目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

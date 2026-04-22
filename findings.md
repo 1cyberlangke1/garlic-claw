@@ -1354,3 +1354,10 @@
   - 只在 `git worktree add` 子命令链上生效
   - 跳过少量已知取值 flag 后，取第一个真正的 positional token 作为路径
   - 这样能补到常见 `-b feature <path> main` 场景，同时不把 `git` 解析抬成半成品 parser
+- `git submodule add <repo> <path>` 也属于同一类高价值边界：
+  - 它会显式创建 submodule 目录
+  - 当用户明确给出 `<path>` 时，审批前最有价值的就是把这个落盘目标提前抬出来
+- 这条边界继续说明当前路线应该坚持：
+  - 只在 `git submodule add` 子命令链上生效
+  - 跳过少量已知取值 flag 后，再取显式 path positional
+  - 不去补一个“懂所有 git 语法”的 parser，也不把整类命令一股脑加进写命令白名单
