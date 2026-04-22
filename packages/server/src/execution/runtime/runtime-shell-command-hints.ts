@@ -30,7 +30,6 @@ const FILE_COMMANDS = new Set([
 const CD_COMMANDS = new Set(['cd', 'pushd', 'popd', 'set-location', 'push-location']);
 const WRITE_COMMANDS = new Set([
   'cp',
-  'curl',
   'mv',
   'rm',
   'mkdir',
@@ -47,8 +46,6 @@ const WRITE_COMMANDS = new Set([
   'remove-item',
   'new-item',
   'rename-item',
-  'scp',
-  'wget',
 ]);
 const COMMAND_ALIASES = new Map<string, string>([
   ['gc', 'get-content'],
@@ -70,6 +67,8 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
   '-outfile',
   '-outputfile',
 ]);
+const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
+const WGET_WRITE_PATH_FLAGS = new Set(['-o', '--output-document', '--output-file', '-p', '--directory-prefix']);
 const MAX_PREVIEW_ITEMS = 3;
 
 export interface RuntimeShellCommandHintMetadata {
@@ -146,10 +145,7 @@ export function readRuntimeShellCommandHints(
   const externalWritePaths = uniquePreview(
     [
       ...segments.flatMap((segment) => {
-        if (!WRITE_COMMANDS.has(segment.command)) {
-          return [];
-        }
-        return readShellCommandPathTokens(segment.tokens);
+        return readShellCommandWritePathTokens(segment);
       }),
       ...readShellRedirectionPathTokens(input.command),
     ]
@@ -370,6 +366,22 @@ function readShellCommandPathTokens(tokens: string[]): string[] {
   return args.filter((token) => !token.startsWith('-') && !(normalizedCommand === 'chmod' && token.startsWith('+')));
 }
 
+function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): string[] {
+  if (segment.command === 'curl') {
+    return readShellFlaggedPathTokens(segment.tokens.slice(1), CURL_WRITE_PATH_FLAGS);
+  }
+  if (segment.command === 'wget') {
+    return readShellFlaggedPathTokens(segment.tokens.slice(1), WGET_WRITE_PATH_FLAGS);
+  }
+  if (segment.command === 'scp') {
+    return readScpWritePathTokens(segment.tokens.slice(1));
+  }
+  if (!WRITE_COMMANDS.has(segment.command)) {
+    return [];
+  }
+  return readShellCommandPathTokens(segment.tokens);
+}
+
 function readShellRedirectionPathTokens(command: string): string[] {
   const matches = command.matchAll(/(?:^|[\s;|()])(?:\d*>>?|\*>)\s*("[^"]*"|'[^']*'|`[^`]*`|[^\s;|&(){}<>]+)/gmu);
   return uniquePreview(
@@ -395,6 +407,40 @@ function readPowerShellFlaggedPathTokens(tokens: string[]): string[] {
     wantsPath = POWERSHELL_PATH_PARAMETER_FLAGS.has(token.toLowerCase());
   }
   return paths;
+}
+
+function readShellFlaggedPathTokens(tokens: string[], flags: Set<string>): string[] {
+  const paths: string[] = [];
+  let wantsPath = false;
+  for (const token of tokens) {
+    if (wantsPath) {
+      if (!token.startsWith('-')) {
+        paths.push(token);
+      }
+      wantsPath = false;
+      continue;
+    }
+    const normalized = token.toLowerCase();
+    const matchedFlag = Array.from(flags).find((flag) => normalized === flag || normalized.startsWith(`${flag}=`));
+    if (matchedFlag) {
+      if (normalized.startsWith(`${matchedFlag}=`)) {
+        paths.push(token.slice(matchedFlag.length + 1));
+        continue;
+      }
+      if (matchedFlag.startsWith('-') && !matchedFlag.startsWith('--') && token.length > matchedFlag.length) {
+        paths.push(token.slice(matchedFlag.length));
+        continue;
+      }
+      wantsPath = true;
+    }
+  }
+  return paths;
+}
+
+function readScpWritePathTokens(tokens: string[]): string[] {
+  const positional = tokens.filter((token) => !token.startsWith('-'));
+  const destination = positional[positional.length - 1];
+  return destination ? [destination] : [];
 }
 
 function normalizeShellCommandToken(token: string): string {

@@ -1739,3 +1739,47 @@
 
 - 如果继续补 `G20-4`，优先考虑把更多“命令名 + 少量关键参数位”继续收成同一 owner，而不是直接跳到重 parser。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第十批推进
+
+### 本轮目标
+
+- 把上一刀 `curl / wget / scp` 的联网写文件识别从粗粒度命令名单，收紧到“命令名 + 关键参数位”。
+- 先修掉两类真实误报：
+  - `curl --upload-file <local>`
+  - `scp <local> <remote>`
+- 保持实现继续留在 `runtime-shell-command-hints.ts`，不把逻辑散回工具层。
+
+### 当前结果
+
+- 当前已新增命令特定写路径提取：
+  - `curl`: `-o / --output`
+  - `wget`: `-O / --output-document / --output-file / -P / --directory-prefix`
+  - `scp`: 仅把最后一个 positional token 当作目标路径
+- 因此当前既能继续识别：
+  - `curl -o`
+  - `wget -O`
+  - `scp <remote> <dest>`
+- 也不会再把这些命令里的本地输入路径误报成：
+  - `externalWritePaths`
+  - `writesExternalPath`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是在同一 owner 内把粗粒度命令名单收成少量结构化参数位
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续沿“命令名 + 少量关键参数位”的方式扩高价值场景，而不是退回大而粗的命令白名单。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

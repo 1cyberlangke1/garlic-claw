@@ -1278,6 +1278,18 @@
   - 默认 fixture 的 `visibleRoot` 是 `/`
   - 因此 `/tmp/...` 在那条链路里不属于“外部路径”
   - 若要验证真实外部路径提示，应改用 `~/...` 或 Windows 绝对路径
+- 继续把 `curl / wget / scp` 直接并进 `WRITE_COMMANDS` 会留下真实误报：
+  - `curl --upload-file /tmp/input.txt https://...`
+  - `scp /tmp/input.txt user@host:/remote.txt`
+  - 这两类命令都碰了本地绝对路径，但那是输入路径，不是落盘目标
+- 因此更稳的方式不是继续扩粗粒度写命令名单，而是把这几类命令收成“命令名 + 少量关键参数位”：
+  - `curl`: `-o / --output`
+  - `wget`: `-O / --output-document / --output-file / -P / --directory-prefix`
+  - `scp`: 只认最后一个 positional token 为目标
+- 这条实现的收益是双向的：
+  - 正例仍然能进入 `externalWritePaths / writesExternalPath`
+  - 反例不会再把本地输入路径误报成外部写入
+  - 复杂度仍然留在同一个 owner，没有退回 parser，也没有把判断散到工具层
 - `glob / grep` 当前和 `other/opencode` 还有一类差距不在 backend，而在结果摘要重复：
   - 两个 tool service 之前都各自维护截断提示
   - 一旦继续补隐藏结果数、续查提示或空结果提示，重复文案会越堆越多

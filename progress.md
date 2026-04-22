@@ -2596,3 +2596,20 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续把 `G20-4` 的 Unix 联网写文件识别从粗粒度名单收紧到结构化参数位：
+  - `runtime-shell-command-hints.ts` 当前已不再把 `curl / wget / scp` 直接当成通用写命令。
+  - 当前改成了命令特定路径提取：
+    - `curl`: `-o / --output`
+    - `wget`: `-O / --output-document / --output-file / -P / --directory-prefix`
+    - `scp`: 最后一个 positional token 作为目标路径
+  - 因此 `curl --upload-file` 与 `scp <local> <remote>` 现在不会再误报成 `writesExternalPath`。
+- 已补这轮受影响测试：
+  - `packages/server`: `tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向 jest：`2 suites / 66 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
