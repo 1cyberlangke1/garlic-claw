@@ -720,6 +720,59 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats git init external destination as write target but keeps template path out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'git init --template /tmp/template-dir /tmp/repo-copy',
+      description: '检查 git init 模板参数误报',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'git init --template /tmp/template-dir /tmp/repo-copy',
+        commandHints: {
+          absolutePaths: ['/tmp/template-dir', '/tmp/repo-copy'],
+          externalAbsolutePaths: ['/tmp/template-dir', '/tmp/repo-copy'],
+          externalWritePaths: ['/tmp/repo-copy'],
+          writesExternalPath: true,
+        },
+        description: '检查 git init 模板参数误报',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 git init 模板参数误报 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/repo-copy、外部绝对路径: /tmp/template-dir, /tmp/repo-copy',
+    });
+  });
+
   it('treats git archive output file as an external write', () => {
     const service = new BashToolService(
       {} as never,

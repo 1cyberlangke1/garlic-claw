@@ -1404,3 +1404,10 @@
   - 先认 `-Destination`
   - 不存在时再回退到最后一个 positional token
   - 这样能压掉外部源路径误报，同时不需要引入 PowerShell parser
+- `git init` 这条线上也还有一个同类误报来源：value flag 的参数值不应被当成目标目录。
+  - `git init --template /tmp/template-dir /tmp/repo-copy` 里，`/tmp/template-dir` 是模板路径，不是初始化目标目录
+  - 若仍按“第一个 positional token”取值，就会把模板路径误报成 `externalWritePaths`
+- 这类边界继续适合沿现有 `git worktree / git submodule` 的做法补最小规则：
+  - 跳过少量已知取值参数
+  - 再取真正的 positional 目标目录
+  - 这样能压掉误报，同时不需要把 `git init` 提升成更重的 parser

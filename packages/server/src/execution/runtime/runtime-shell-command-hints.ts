@@ -72,6 +72,7 @@ const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
 const GIT_FORMAT_PATCH_WRITE_PATH_FLAGS = new Set(['-o', '--output-directory']);
+const GIT_INIT_VALUE_FLAGS = new Set(['-b', '-c', '--initial-branch', '--object-format', '--ref-format', '--template']);
 const GIT_SUBMODULE_ADD_VALUE_FLAGS = new Set(['-b', '--branch', '--depth', '--name', '--reference']);
 const GIT_WORKTREE_ADD_VALUE_FLAGS = new Set(['-b', '-B', '--orphan', '--reason']);
 const TAR_CREATE_LONG_FLAGS = new Set(['--append', '--catenate', '--concatenate', '--create', '--update']);
@@ -498,7 +499,7 @@ function readGitWritePathTokens(tokens: string[]): string[] {
   }
   if (subcommand === 'init') {
     const writePaths = readShellFlaggedPathTokens(tokens.slice(1), GIT_CLONE_WRITE_PATH_FLAGS);
-    const positional = tokens.slice(1).filter((token) => !token.startsWith('-'));
+    const positional = readShellPositionalTokens(tokens.slice(1), GIT_INIT_VALUE_FLAGS);
     const destination = positional[0];
     return uniquePreview(destination ? [...writePaths, destination] : writePaths);
   }

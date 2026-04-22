@@ -1277,6 +1277,51 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces git init destination as external write without promoting template path', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-git-init-template-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'git init --template ~/template-dir ~/repo-copy',
+      description: '检查 bash git init 模板参数误报',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-git-init-template-hints-1',
+      metadata: {
+        command: 'git init --template ~/template-dir ~/repo-copy',
+        commandHints: {
+          absolutePaths: ['~/template-dir', '~/repo-copy'],
+          externalAbsolutePaths: ['~/template-dir', '~/repo-copy'],
+          externalWritePaths: ['~/repo-copy'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash git init 模板参数误报',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash git init 模板参数误报 (/)；静态提示: 写入命令涉及外部绝对路径: ~/repo-copy、外部绝对路径: ~/template-dir, ~/repo-copy',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces git archive output file as an external write in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({
