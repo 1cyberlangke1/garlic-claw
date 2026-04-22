@@ -473,6 +473,10 @@ function readGitWritePathTokens(tokens: string[]): string[] {
   if (subcommand === 'archive') {
     return readShellFlaggedPathTokens(tokens.slice(1), GIT_ARCHIVE_WRITE_PATH_FLAGS);
   }
+  if (subcommand === 'bundle' && normalizeShellCommandToken(tokens[1] ?? '') === 'create') {
+    const destination = readShellPositionalTokens(tokens.slice(2), new Set())[0];
+    return destination ? [destination] : [];
+  }
   if (subcommand === 'worktree' && normalizeShellCommandToken(tokens[1] ?? '') === 'add') {
     const destination = readShellPositionalTokens(tokens.slice(2), GIT_WORKTREE_ADD_VALUE_FLAGS)[0];
     return destination ? [destination] : [];

@@ -1368,3 +1368,10 @@
   - 只在 `git archive` 子命令上生效
   - 只认 `--output / -o` 这类明确输出参数位
   - 不去猜标准输出重定向之外的隐式行为，避免把简单 hints 重新做成半成品 parser
+- `git bundle create <file>` 也是同一类高价值边界：
+  - 它会显式写出 bundle 文件
+  - 对审批来说，这类导出命令和 `git archive --output` 属于同一层“明确输出文件”信号
+- 这条边界继续说明当前路线仍然成立：
+  - 只在 `git bundle create` 子命令链上生效
+  - 只认 `create` 之后第一个显式 positional token
+  - 不去补完整 git 语法解析，也不把 `git` 全量抬成粗粒度写命令白名单

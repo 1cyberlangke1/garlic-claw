@@ -773,6 +773,59 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats git bundle create output file as an external write', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'git bundle create /tmp/repo.bundle HEAD',
+      description: '检查 git bundle 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'git bundle create /tmp/repo.bundle HEAD',
+        commandHints: {
+          absolutePaths: ['/tmp/repo.bundle'],
+          externalAbsolutePaths: ['/tmp/repo.bundle'],
+          externalWritePaths: ['/tmp/repo.bundle'],
+          writesExternalPath: true,
+        },
+        description: '检查 git bundle 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 git bundle 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/repo.bundle、外部绝对路径: /tmp/repo.bundle',
+    });
+  });
+
   it('treats git worktree add explicit external destination as an external write', () => {
     const service = new BashToolService(
       {} as never,

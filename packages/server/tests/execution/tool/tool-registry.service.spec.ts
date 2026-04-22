@@ -1322,6 +1322,51 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces git bundle create output file as an external write in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-git-bundle-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'git bundle create ~/repo.bundle HEAD',
+      description: '检查 bash git bundle 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-git-bundle-external-hints-1',
+      metadata: {
+        command: 'git bundle create ~/repo.bundle HEAD',
+        commandHints: {
+          absolutePaths: ['~/repo.bundle'],
+          externalAbsolutePaths: ['~/repo.bundle'],
+          externalWritePaths: ['~/repo.bundle'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash git bundle 外部写入提示',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash git bundle 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: ~/repo.bundle、外部绝对路径: ~/repo.bundle',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces git worktree add external destination as an external write in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

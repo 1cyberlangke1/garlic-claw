@@ -2067,3 +2067,38 @@
 
 - 如果继续补 `G20-4`，优先继续找“命令子语义明确、并且能复用现有 flag/positional 提取”的边界，而不是把这层 hints 膨胀成零散特判集合。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第十九批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 `git` 的导出落盘边界，但保持单点 owner。
+- 让 `git bundle create <file>` 在输出文件落到外部绝对路径时，也进入 `externalWritePaths / writesExternalPath`。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 git parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `git bundle create` 并入 `git` 命令特定写路径提取：
+  - 仅在子命令链为 `git bundle create` 时生效
+  - 当前把 `create` 之后第一个显式 positional token 视为 bundle 输出文件
+- 因此 `git bundle create /tmp/repo.bundle HEAD` 现在也会稳定回显：
+  - `externalWritePaths`
+  - `writesExternalPath`
+  - 审批摘要里的 `写入命令涉及外部绝对路径`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是在既有 `git` 子命令 owner 上补一个明确的 positional 输出文件规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找“命令子语义明确、并且只需最小 positional/flag 规则”的边界，而不是把 hints 继续膨胀成命令大全。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
