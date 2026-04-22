@@ -69,6 +69,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
 ]);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
+const GIT_WORKTREE_ADD_VALUE_FLAGS = new Set(['-b', '-B', '--orphan', '--reason']);
 const WGET_WRITE_PATH_FLAGS = new Set(['-O', '--output-document', '--output-file', '-P', '--directory-prefix']);
 const MAX_PREVIEW_ITEMS = 3;
 
@@ -467,7 +468,29 @@ function readGitWritePathTokens(tokens: string[]): string[] {
     const destination = positional[0];
     return uniquePreview(destination ? [...writePaths, destination] : writePaths);
   }
+  if (subcommand === 'worktree' && normalizeShellCommandToken(tokens[1] ?? '') === 'add') {
+    const destination = readShellFirstPositionalToken(tokens.slice(2), GIT_WORKTREE_ADD_VALUE_FLAGS);
+    return destination ? [destination] : [];
+  }
   return [];
+}
+
+function readShellFirstPositionalToken(tokens: string[], valueFlags: Set<string>): string | undefined {
+  let skipNextValue = false;
+  for (const token of tokens) {
+    if (skipNextValue) {
+      skipNextValue = false;
+      continue;
+    }
+    if (token.startsWith('-')) {
+      if (valueFlags.has(token)) {
+        skipNextValue = true;
+      }
+      continue;
+    }
+    return token;
+  }
+  return undefined;
 }
 
 function normalizeShellCommandToken(token: string): string {

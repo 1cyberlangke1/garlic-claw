@@ -1347,3 +1347,10 @@
   - `clone` 识别 `<repo> <dest>` 和 `--separate-git-dir`
   - `init` 只在显式给出 `<path>` 时认定为写入目标
   - 不去猜当前目录或隐式 `.git`，避免把语义重新做成半吊子的 parser
+- `git worktree add <path>` 也是同类高价值边界：
+  - 它会显式创建新的 worktree 目录
+  - 对审批来说，这和 `git init <path>` 一样属于明确的本地落盘目标
+- 这条边界依然适合保留在“子命令 + 少量取值 flag”层：
+  - 只在 `git worktree add` 子命令链上生效
+  - 跳过少量已知取值 flag 后，取第一个真正的 positional token 作为路径
+  - 这样能补到常见 `-b feature <path> main` 场景，同时不把 `git` 解析抬成半成品 parser

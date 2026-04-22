@@ -1962,3 +1962,38 @@
 
 - 如果继续补 `G20-4`，优先继续找“命令子语义明确、但当前 hints 还没覆盖”的本地/联网落盘边界，而不是把整类命令抬成粗粒度白名单。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第十六批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 `git` 的本地目录扩展边界，但保持单点 owner。
+- 让 `git worktree add <path>` 在目标目录落到外部绝对路径时，也进入 `externalWritePaths / writesExternalPath`。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 git parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `git worktree add` 并入 `git` 命令特定写路径提取：
+  - 仅在子命令链为 `git worktree add` 时生效
+  - 当前会跳过 `-b / -B / --orphan / --reason` 这类已知取值参数，再取第一个真正的 positional token 作为目标目录
+- 因此 `git worktree add -b feature /tmp/repo-copy main` 现在也会稳定回显：
+  - `externalWritePaths`
+  - `writesExternalPath`
+  - 审批摘要里的 `写入命令涉及外部绝对路径`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是在既有 `git` 子命令 owner 上补少量取值参数跳过规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找“命令子语义明确、且只需少量 flag/positional 规则就能表达”的边界，而不是退回粗粒度命令名单。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
