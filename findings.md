@@ -1389,3 +1389,10 @@
   - create / append / update 模式只认 `-f / --file`
   - extract 模式只认 `-C / --directory`
   - 这样既补了真实输出路径，又顺手压掉了旧误报，而且不需要引 parser
+- `cp / mv` 当前也暴露了同一类误报来源：粗粒度写命令会把源路径和目标路径一并抬成外部写入。
+  - `cp ~/source.txt /tmp/copied.txt` 里，`~/source.txt` 是输入，`/tmp/copied.txt` 才是写入目标
+  - `mv ~/source.txt /tmp/moved.txt` 里，`~/source.txt` 是输入，`/tmp/moved.txt` 才是写入目标
+- 这类命令在当前 hints owner 里继续适合用“最后一个 positional token”表达最小目标路径规则：
+  - 能直接压掉当前误报
+  - 不需要把 `cp / mv` 重新做成更重的 parser
+  - 下一步优先级应转向 PowerShell 对应命令 `Copy-Item / Move-Item`

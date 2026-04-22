@@ -987,6 +987,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats cp destination as external write but keeps source out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'cp ~/source.txt /tmp/copied.txt',
+      description: '检查 cp 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'cp ~/source.txt /tmp/copied.txt',
+        commandHints: {
+          absolutePaths: ['~/source.txt', '/tmp/copied.txt'],
+          externalAbsolutePaths: ['~/source.txt', '/tmp/copied.txt'],
+          externalWritePaths: ['/tmp/copied.txt'],
+          fileCommands: ['cp'],
+          writesExternalPath: true,
+        },
+        description: '检查 cp 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 cp 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/copied.txt、文件命令: cp、外部绝对路径: ~/source.txt, /tmp/copied.txt',
+    });
+  });
+
+  it('treats mv destination as external write but keeps source out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'mv ~/source.txt /tmp/moved.txt',
+      description: '检查 mv 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'mv ~/source.txt /tmp/moved.txt',
+        commandHints: {
+          absolutePaths: ['~/source.txt', '/tmp/moved.txt'],
+          externalAbsolutePaths: ['~/source.txt', '/tmp/moved.txt'],
+          externalWritePaths: ['/tmp/moved.txt'],
+          fileCommands: ['mv'],
+          writesExternalPath: true,
+        },
+        description: '检查 mv 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 mv 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/moved.txt、文件命令: mv、外部绝对路径: ~/source.txt, /tmp/moved.txt',
+    });
+  });
+
   it('treats git worktree add explicit external destination as an external write', () => {
     const service = new BashToolService(
       {} as never,

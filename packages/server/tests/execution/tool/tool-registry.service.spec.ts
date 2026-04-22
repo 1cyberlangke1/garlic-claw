@@ -1504,6 +1504,98 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces cp destination as external write without promoting source path', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-cp-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'cp /workspace/source.txt ~/copied.txt',
+      description: '检查 bash cp 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-cp-external-hints-1',
+      metadata: {
+        command: 'cp /workspace/source.txt ~/copied.txt',
+        commandHints: {
+          absolutePaths: ['/workspace/source.txt', '~/copied.txt'],
+          externalAbsolutePaths: ['~/copied.txt'],
+          externalWritePaths: ['~/copied.txt'],
+          fileCommands: ['cp'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash cp 外部写入提示',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash cp 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: ~/copied.txt、文件命令: cp、外部绝对路径: ~/copied.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces mv destination as external write without promoting source path', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-mv-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'mv /workspace/source.txt ~/moved.txt',
+      description: '检查 bash mv 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-mv-external-hints-1',
+      metadata: {
+        command: 'mv /workspace/source.txt ~/moved.txt',
+        commandHints: {
+          absolutePaths: ['/workspace/source.txt', '~/moved.txt'],
+          externalAbsolutePaths: ['~/moved.txt'],
+          externalWritePaths: ['~/moved.txt'],
+          fileCommands: ['mv'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash mv 外部写入提示',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash mv 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: ~/moved.txt、文件命令: mv、外部绝对路径: ~/moved.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces git worktree add external destination as an external write in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

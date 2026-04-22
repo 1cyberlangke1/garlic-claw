@@ -2786,3 +2786,23 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `cp / mv` 写路径识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `cp / mv` 从粗粒度写命令收成目标路径提取。
+  - 当前只把最后一个 positional token 视为写入目标，不再把源路径一起抬成 `externalWritePaths`。
+  - 因此 `cp ~/source.txt /tmp/copied.txt` 与 `mv ~/source.txt /tmp/moved.txt` 现在都只会把目标路径视为外部写入。
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 96 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

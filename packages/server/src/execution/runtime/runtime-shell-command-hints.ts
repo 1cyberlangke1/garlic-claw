@@ -374,6 +374,9 @@ function readShellCommandPathTokens(tokens: string[]): string[] {
 }
 
 function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): string[] {
+  if (segment.command === 'cp' || segment.command === 'mv') {
+    return readShellDestinationPathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'curl') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), CURL_WRITE_PATH_FLAGS);
   }
@@ -454,6 +457,12 @@ function matchesShellFlagToken(token: string, flag: string): boolean {
 }
 
 function readScpWritePathTokens(tokens: string[]): string[] {
+  const positional = tokens.filter((token) => !token.startsWith('-'));
+  const destination = positional[positional.length - 1];
+  return destination ? [destination] : [];
+}
+
+function readShellDestinationPathTokens(tokens: string[]): string[] {
   const positional = tokens.filter((token) => !token.startsWith('-'));
   const destination = positional[positional.length - 1];
   return destination ? [destination] : [];
