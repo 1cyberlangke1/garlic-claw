@@ -2319,3 +2319,40 @@
 
 - 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能收成少量显式目标参数或 value-flag 跳过规则的命令。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第二十六批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 `New-Item` 仍偏粗粒度的目标路径识别，但保持单点 owner。
+- 把 `New-Item -Path <dir> -Name <leaf>` 从“只认父目录路径”收成“直接回显真正创建的目标路径”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 PowerShell parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `New-Item` 改成最小目标路径拼接：
+  - 若同时存在 `-Path / -LiteralPath` 与 `-Name`，当前会直接拼出真正写入目标
+  - 若只有 `-Path / -LiteralPath`，当前仍回退到该路径本身
+- 因此：
+  - `New-Item -Path filesystem::C:\\temp -Name created.txt -ItemType File` 当前会把 `filesystem::C:\\temp\\created.txt` 记为 `externalWritePaths`
+  - 不再只把父目录 `filesystem::C:\\temp` 视为写入目标
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把既有 `new-item` owner 从单一路径参数收成最小目标路径拼接规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能收成少量显式目标参数、路径拼接或 value-flag 跳过规则的命令。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

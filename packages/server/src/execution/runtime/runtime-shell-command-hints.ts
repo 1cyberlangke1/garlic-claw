@@ -68,6 +68,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
   '-outputfile',
 ]);
 const POWERSHELL_DESTINATION_PARAMETER_FLAGS = new Set(['-destination']);
+const POWERSHELL_NAME_PARAMETER_FLAGS = new Set(['-name']);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const CP_MV_DESTINATION_FLAGS = new Set(['-t', '--target-directory']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
@@ -383,6 +384,9 @@ function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): s
   if (segment.command === 'copy-item' || segment.command === 'move-item') {
     return readPowerShellDestinationPathTokens(segment.tokens.slice(1));
   }
+  if (segment.command === 'new-item') {
+    return readPowerShellNewItemWritePathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'curl') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), CURL_WRITE_PATH_FLAGS);
   }
@@ -422,6 +426,15 @@ function readPowerShellDestinationPathTokens(tokens: string[]): string[] {
     return flaggedDestinations;
   }
   return readShellDestinationPathTokens(tokens, 2);
+}
+
+function readPowerShellNewItemWritePathTokens(tokens: string[]): string[] {
+  const basePath = readPowerShellFlaggedPathTokensWithFlags(tokens, new Set(['-path', '-literalpath']))[0];
+  const itemName = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_NAME_PARAMETER_FLAGS)[0];
+  if (basePath && itemName) {
+    return [joinShellPathToken(basePath, itemName)];
+  }
+  return basePath ? [basePath] : [];
 }
 
 function readPowerShellFlaggedPathTokensWithFlags(tokens: string[], flags: Set<string>): string[] {
@@ -493,6 +506,18 @@ function readShellDestinationPathTokens(tokens: string[], minPositionalCount = 1
   }
   const destination = positional[positional.length - 1];
   return destination ? [destination] : [];
+}
+
+function joinShellPathToken(basePath: string, leafName: string): string {
+  if (/^(?:~(?:[\\/]|$)|\/|[a-zA-Z]:[\\/]|filesystem::)/u.test(leafName)) {
+    return leafName;
+  }
+  const trimmedBasePath = basePath.replace(/[\\/]+$/u, '');
+  const trimmedLeafName = leafName.replace(/^[\\/]+/u, '');
+  if (/^filesystem::/iu.test(trimmedBasePath)) {
+    return `${trimmedBasePath}\\${trimmedLeafName}`;
+  }
+  return `${trimmedBasePath}/${trimmedLeafName}`;
 }
 
 function readGitWritePathTokens(tokens: string[]): string[] {

@@ -1418,3 +1418,10 @@
   - 先认 `-t / --target-directory`
   - 不存在时再回退到最后一个 positional token
   - 这样能压掉源路径误报，同时不需要把 `cp / mv` 做成更重的 parser
+- `New-Item` 这条线上还有一类信息损失：`-Path` 和 `-Name` 同时存在时，真正的创建目标路径并不等于父目录本身。
+  - `New-Item -Path filesystem::C:\\temp -Name created.txt -ItemType File` 里，真实写入目标是 `filesystem::C:\\temp\\created.txt`
+  - 若只回显 `filesystem::C:\\temp`，审批提示仍然偏粗
+- 这类边界继续适合留在同一个 hints owner 内用最小路径拼接表达：
+  - 同时存在 `-Path / -LiteralPath` 与 `-Name` 时直接拼出目标路径
+  - 否则回退到原始路径参数
+  - 这样能提升提示精度，同时不需要引入更重的 PowerShell parser

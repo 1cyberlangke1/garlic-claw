@@ -1846,6 +1846,60 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats new-item path plus name as the external write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'New-Item -Path filesystem::C:\\temp -Name created.txt -ItemType File',
+      description: '检查 new-item 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'New-Item -Path filesystem::C:\\temp -Name created.txt -ItemType File',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp'],
+          externalAbsolutePaths: ['filesystem::C:\\temp'],
+          externalWritePaths: ['filesystem::C:\\temp\\created.txt'],
+          fileCommands: ['new-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 new-item 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 new-item 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\created.txt、文件命令: new-item、外部绝对路径: filesystem::C:\\temp',
+    });
+  });
+
   it('recognizes invoke-webrequest outfile writes as combined network and external write hints', () => {
     const service = new BashToolService(
       {} as never,
