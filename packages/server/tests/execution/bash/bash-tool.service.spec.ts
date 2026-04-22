@@ -1148,6 +1148,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats cp target-directory flag as external write but keeps sources out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'cp -t /tmp/copied-dir ~/source-a.txt ~/source-b.txt',
+      description: '检查 cp target-directory 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'cp -t /tmp/copied-dir ~/source-a.txt ~/source-b.txt',
+        commandHints: {
+          absolutePaths: ['/tmp/copied-dir', '~/source-a.txt', '~/source-b.txt'],
+          externalAbsolutePaths: ['/tmp/copied-dir', '~/source-a.txt', '~/source-b.txt'],
+          externalWritePaths: ['/tmp/copied-dir'],
+          fileCommands: ['cp'],
+          writesExternalPath: true,
+        },
+        description: '检查 cp target-directory 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 cp target-directory 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/copied-dir、文件命令: cp、外部绝对路径: /tmp/copied-dir, ~/source-a.txt, ~/source-b.txt',
+    });
+  });
+
+  it('treats mv target-directory flag as external write but keeps sources out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'mv --target-directory /tmp/moved-dir ~/source-a.txt ~/source-b.txt',
+      description: '检查 mv target-directory 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'mv --target-directory /tmp/moved-dir ~/source-a.txt ~/source-b.txt',
+        commandHints: {
+          absolutePaths: ['/tmp/moved-dir', '~/source-a.txt', '~/source-b.txt'],
+          externalAbsolutePaths: ['/tmp/moved-dir', '~/source-a.txt', '~/source-b.txt'],
+          externalWritePaths: ['/tmp/moved-dir'],
+          fileCommands: ['mv'],
+          writesExternalPath: true,
+        },
+        description: '检查 mv target-directory 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 mv target-directory 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/moved-dir、文件命令: mv、外部绝对路径: /tmp/moved-dir, ~/source-a.txt, ~/source-b.txt',
+    });
+  });
+
   it('treats git worktree add explicit external destination as an external write', () => {
     const service = new BashToolService(
       {} as never,

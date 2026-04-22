@@ -2282,3 +2282,40 @@
 
 - 如果继续补 `G20-4`，优先继续找 `git` 或 PowerShell 侧仍偏粗粒度、但也能继续收成少量 value flag/目标路径规则的命令。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第二十五批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 `cp / mv` 仍偏粗粒度的目标目录识别，但保持单点 owner。
+- 把 `cp / mv` 的 `-t / --target-directory` 从“继续靠最后一个 positional token 猜目标”收成“优先认显式目标目录参数”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `cp / mv` 改成 target-directory aware 的目标路径提取：
+  - 若显式给出 `-t / --target-directory`，当前只把该参数值视为写入目标
+  - 未显式给出时，当前仍回退到最后一个 positional token
+- 因此：
+  - `cp -t /tmp/copied-dir ~/source-a.txt ~/source-b.txt` 当前只会把 `/tmp/copied-dir` 记为 `externalWritePaths`
+  - `mv --target-directory /tmp/moved-dir ~/source-a.txt ~/source-b.txt` 当前只会把 `/tmp/moved-dir` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把既有 `cp / mv` owner 从单一 positional 规则收成显式目标目录参数 + positional 回退规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能收成少量显式目标参数或 value-flag 跳过规则的命令。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

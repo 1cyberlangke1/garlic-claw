@@ -1411,3 +1411,10 @@
   - 跳过少量已知取值参数
   - 再取真正的 positional 目标目录
   - 这样能压掉误报，同时不需要把 `git init` 提升成更重的 parser
+- `cp / mv` 这条线上还有另一类真实 CLI 边界：显式目标目录参数会推翻“最后一个 positional token 是目标”的假设。
+  - `cp -t /tmp/copied-dir ~/source-a.txt ~/source-b.txt` 里，目标是 `-t` 的参数值，不是最后一个源文件
+  - `mv --target-directory /tmp/moved-dir ~/source-a.txt ~/source-b.txt` 也同理
+- 这类边界继续适合留在同一个 hints owner 内用最小规则表达：
+  - 先认 `-t / --target-directory`
+  - 不存在时再回退到最后一个 positional token
+  - 这样能压掉源路径误报，同时不需要把 `cp / mv` 做成更重的 parser

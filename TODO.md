@@ -164,6 +164,9 @@
     - 已把 `git init` 从“第一个 positional token 直接当目标目录”收成“跳过已知取值参数后，再取初始化目标目录”：
       - `git init --template /tmp/template-dir /tmp/repo-copy` 当前只把 `/tmp/repo-copy` 记为 `externalWritePaths`
       - `--template` 这类参数值不再误报成初始化目标目录
+    - 已把 `cp / mv` 的 `-t / --target-directory` 收成显式目标目录识别：
+      - `cp -t /tmp/copied-dir ~/source-a.txt ~/source-b.txt` 当前只把 `/tmp/copied-dir` 记为 `externalWritePaths`
+      - `mv --target-directory /tmp/moved-dir ~/source-a.txt ~/source-b.txt` 当前只把 `/tmp/moved-dir` 记为 `externalWritePaths`
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

@@ -2846,3 +2846,23 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `cp / mv -t` 目标目录识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `cp / mv` 从单一“最后一个 positional token”规则收成 target-directory aware 的目标路径提取。
+  - 当前优先认 `-t / --target-directory`，未显式给出时再回退到最后一个 positional token。
+  - 因此 `cp -t /tmp/copied-dir ~/source-a.txt ~/source-b.txt` 与 `mv --target-directory /tmp/moved-dir ~/source-a.txt ~/source-b.txt` 现在都只会把目标目录视为外部写入。
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 106 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

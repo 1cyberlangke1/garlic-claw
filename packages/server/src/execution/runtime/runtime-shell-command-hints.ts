@@ -69,6 +69,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
 ]);
 const POWERSHELL_DESTINATION_PARAMETER_FLAGS = new Set(['-destination']);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
+const CP_MV_DESTINATION_FLAGS = new Set(['-t', '--target-directory']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
 const GIT_FORMAT_PATCH_WRITE_PATH_FLAGS = new Set(['-o', '--output-directory']);
@@ -377,7 +378,7 @@ function readShellCommandPathTokens(tokens: string[]): string[] {
 
 function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): string[] {
   if (segment.command === 'cp' || segment.command === 'mv') {
-    return readShellDestinationPathTokens(segment.tokens.slice(1), 2);
+    return readCopyMoveWritePathTokens(segment.tokens.slice(1));
   }
   if (segment.command === 'copy-item' || segment.command === 'move-item') {
     return readPowerShellDestinationPathTokens(segment.tokens.slice(1));
@@ -474,6 +475,14 @@ function matchesShellFlagToken(token: string, flag: string): boolean {
 }
 
 function readScpWritePathTokens(tokens: string[]): string[] {
+  return readShellDestinationPathTokens(tokens, 2);
+}
+
+function readCopyMoveWritePathTokens(tokens: string[]): string[] {
+  const flaggedDestinations = readShellFlaggedPathTokens(tokens, CP_MV_DESTINATION_FLAGS);
+  if (flaggedDestinations.length > 0) {
+    return flaggedDestinations;
+  }
   return readShellDestinationPathTokens(tokens, 2);
 }
 
