@@ -114,4 +114,57 @@ describe('GrepToolService', () => {
       truncated: true,
     });
   });
+
+  it('omits include guidance from grep truncation summary when include is not provided', async () => {
+    const service = new GrepToolService(
+      {
+        getDescriptor: () => ({ visibleRoot: '/' }),
+      } as never,
+      {
+        grepText: jest.fn().mockResolvedValue({
+          basePath: '/docs',
+          matches: [
+            {
+              line: 3,
+              text: 'needle one',
+              virtualPath: '/docs/a.md',
+            },
+            {
+              line: 8,
+              text: 'needle two',
+              virtualPath: '/docs/b.md',
+            },
+          ],
+          partial: false,
+          skippedEntries: [],
+          skippedPaths: [],
+          totalMatches: 140,
+          truncated: true,
+        }),
+      } as never,
+    );
+
+    await expect(service.execute({
+      backendKind: 'host-filesystem',
+      path: 'docs',
+      pattern: 'needle',
+      sessionId: 'session-1',
+    })).resolves.toEqual({
+      matches: 140,
+      output: [
+        '<grep_result>',
+        'Base: /docs',
+        'Pattern: needle',
+        '<matches>',
+        '/docs/a.md:',
+        '  3: needle one',
+        '/docs/b.md:',
+        '  8: needle two',
+        '(showing first 2 of 140 matches, 138 hidden. Refine path or pattern to continue.)',
+        '</matches>',
+        '</grep_result>',
+      ].join('\n'),
+      truncated: true,
+    });
+  });
 });

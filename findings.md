@@ -1263,3 +1263,10 @@
   - backend 继续只负责 `totalMatches / truncated`
   - 结果摘要由单独 shared report owner 统一生成
   - 这样后续继续向 `other/opencode` 靠近时，`glob / grep` 只改一处就够
+- `grep` 的 continuation hint 还存在一类容易忽略的误导：
+  - 未传 `include` 时，如果仍提示 `Refine include`
+  - 模型会把注意力错误地放到一个本次根本没设置的过滤项上
+- 这条修正也适合继续留在 shared search report owner：
+  - `grep-tool.service.ts` 只传当前输入有没有 `include`
+  - 真实文案由共享 owner 决定
+  - 这样后续如果还要继续按 `path/include/pattern` 动态调整提示，不需要把判断分散到多个 tool service

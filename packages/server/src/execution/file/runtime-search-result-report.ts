@@ -7,3 +7,9 @@ export function renderRuntimeSearchTruncationSummary(input: {
   const hiddenLabel = hidden > 0 ? `, ${hidden} hidden` : '';
   return `(showing first ${input.shown} of ${input.total} matches${hiddenLabel}. ${input.continuationHint})`;
 }
+
+export function renderRuntimeGrepContinuationHint(include?: string): string {
+  return include
+    ? 'Refine path, include or pattern to continue.'
+    : 'Refine path or pattern to continue.';
+}

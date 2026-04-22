@@ -2552,3 +2552,19 @@
     - `lint`：通过
     - `smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-3` 的搜索摘要精度，但仍保持在 shared owner：
+  - `runtime-search-result-report.ts` 当前已新增 `renderRuntimeGrepContinuationHint(include?)`。
+  - `grep` 截断提示现在会按是否传入 `include` 决定是否回显 `Refine include`，不再在未传 `include` 时给出误导提示。
+  - 这条改动没有触碰 backend contract，也没有把条件分支重新写回 `grep-tool.service.ts`。
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：`2 suites / 6 tests` 全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

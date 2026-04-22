@@ -1634,3 +1634,34 @@
 
 - 如果继续补 `G20-3`，优先继续把搜索结果摘要、空结果提示和后续 continuation hint 收成共享 owner，而不是回到 `glob / grep` 各自拼文案。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-3 第四批推进
+
+### 本轮目标
+
+- 继续补 `grep` 与 `other/opencode` 在结果摘要上的细小但真实差距。
+- 让 continuation hint 只提示当前真实可调的过滤项，避免未传 `include` 时仍回显 `Refine include`。
+- 保持实现继续收在 shared search report owner，不把判断分支重新放回 `grep-tool.service.ts`。
+
+### 当前结果
+
+- `runtime-search-result-report.ts` 当前已新增 `renderRuntimeGrepContinuationHint(include?)`。
+- `grep` 截断提示现在会按输入动态回显：
+  - 有 `include`：`Refine path, include or pattern to continue.`
+  - 无 `include`：`Refine path or pattern to continue.`
+- 这条增强继续保持低膨胀：
+  - 没有改 backend contract
+  - 没有在 `grep-tool.service.ts` 再堆一段字符串分支
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-3`，优先继续收口空结果提示、totals 和 continuation hint 这类结果摘要，而不是回到工具层复制格式化分支。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

@@ -2,7 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
-import { renderRuntimeSearchTruncationSummary } from '../file/runtime-search-result-report';
+import {
+  renderRuntimeGrepContinuationHint,
+  renderRuntimeSearchTruncationSummary,
+} from '../file/runtime-search-result-report';
 import { renderRuntimeGrepSearchDiagnostics } from '../file/runtime-search-diagnostics';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
@@ -109,7 +112,7 @@ export class GrepToolService {
         ...(groupedOutput.length > 0 ? groupedOutput : ['(no matches)']),
         result.truncated
           ? renderRuntimeSearchTruncationSummary({
-            continuationHint: 'Refine path, include or pattern to continue.',
+            continuationHint: renderRuntimeGrepContinuationHint(input.include),
             shown: result.matches.length,
             total: result.totalMatches,
           })
