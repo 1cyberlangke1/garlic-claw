@@ -1333,3 +1333,10 @@
   - 仅在 `segment.command === 'git'` 且首个 positional token 为 `clone` 时识别
   - `clone` 后至少有两个 positional token 才把最后一个视为目标目录
   - 未显式给出目标目录时先不猜默认目录名，避免把 repo URL、flag 值或错误 token 误抬成写入路径
+- `git clone` 除了显式 `<repo> <dest>`，还有一条同样明确的写路径参数位：
+  - `--separate-git-dir <path>`
+  - 这条路径本身就是 git 元数据落盘目标，适合直接并入 `externalWritePaths / writesExternalPath`
+- 这类边界继续说明当前路线是成立的：
+  - 不需要把整个 `git` 提升成写命令白名单
+  - 只要在 `git clone` owner 里继续补少量真正有写语义的参数位
+  - 同时保留“未显式给路径就不猜”的约束，避免误把 repo URL 或普通 flag 值当成落盘目标

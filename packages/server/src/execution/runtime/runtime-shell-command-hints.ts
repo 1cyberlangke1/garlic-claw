@@ -68,6 +68,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
   '-outputfile',
 ]);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
+const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
 const WGET_WRITE_PATH_FLAGS = new Set(['-O', '--output-document', '--output-file', '-P', '--directory-prefix']);
 const MAX_PREVIEW_ITEMS = 3;
 
@@ -453,12 +454,13 @@ function readGitWritePathTokens(tokens: string[]): string[] {
   if (normalizeShellCommandToken(tokens[0] ?? '') !== 'clone') {
     return [];
   }
+  const writePaths = readShellFlaggedPathTokens(tokens.slice(1), GIT_CLONE_WRITE_PATH_FLAGS);
   const positional = tokens.slice(1).filter((token) => !token.startsWith('-'));
   if (positional.length < 2) {
-    return [];
+    return writePaths;
   }
   const destination = positional[positional.length - 1];
-  return destination ? [destination] : [];
+  return uniquePreview(destination ? [...writePaths, destination] : writePaths);
 }
 
 function normalizeShellCommandToken(token: string): string {

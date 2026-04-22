@@ -2656,3 +2656,20 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `git clone --separate-git-dir` 外部写入识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `--separate-git-dir` 并入 `git clone` 的命令特定写路径提取。
+  - 因此 `git clone --separate-git-dir /tmp/repo.git https://example.com/repo.git` 现在也会进入 `externalWritePaths / writesExternalPath`。
+  - 如果命令同时还带显式 `<repo> <dest>`，当前会把 `--separate-git-dir` 路径和目标目录一起去重后回显。
+  - 这轮仍只改同一个 owner，没有把 `git` 扩成新的粗粒度命令白名单。
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 76 tests` 全部通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

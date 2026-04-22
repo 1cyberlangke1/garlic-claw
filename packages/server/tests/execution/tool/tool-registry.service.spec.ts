@@ -1184,6 +1184,54 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces git clone separate git dir as an external write in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-git-clone-separate-git-dir-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'git clone --separate-git-dir ~/repo.git https://example.com/repo.git',
+      description: '检查 bash git clone 单独 git 目录提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-git-clone-separate-git-dir-hints-1',
+      metadata: {
+        command: 'git clone --separate-git-dir ~/repo.git https://example.com/repo.git',
+        commandHints: {
+          absolutePaths: ['~/repo.git'],
+          externalAbsolutePaths: ['~/repo.git'],
+          externalWritePaths: ['~/repo.git'],
+          networkCommands: ['git clone'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 bash git clone 单独 git 目录提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash git clone 单独 git 目录提示 (/)；静态提示: 联网命令: git clone、联网命令涉及外部绝对路径: ~/repo.git、写入命令涉及外部绝对路径: ~/repo.git、外部绝对路径: ~/repo.git',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces scp destination external write hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({
