@@ -1256,3 +1256,10 @@
   - 把 `out-file` 并入 `FILE_COMMANDS / WRITE_COMMANDS`
   - 把 `-FilePath` 并进 PowerShell 路径参数位集合
   - 这样 `externalWritePaths`、`writesExternalPath` 和摘要文案可以继续复用现有管线，不需要新增分支 owner
+- `glob / grep` 当前和 `other/opencode` 还有一类差距不在 backend，而在结果摘要重复：
+  - 两个 tool service 之前都各自维护截断提示
+  - 一旦继续补隐藏结果数、续查提示或空结果提示，重复文案会越堆越多
+- 这类差距最适合优先收成共享 owner：
+  - backend 继续只负责 `totalMatches / truncated`
+  - 结果摘要由单独 shared report owner 统一生成
+  - 这样后续继续向 `other/opencode` 靠近时，`glob / grep` 只改一处就够

@@ -72,7 +72,7 @@ describe('GlobToolService', () => {
         '<matches>',
         '/docs/a.ts',
         '/docs/b.ts',
-        '(showing first 2 of 120 matches. Refine path or pattern to continue.)',
+        '(showing first 2 of 120 matches, 118 hidden. Refine path or pattern to continue.)',
         '</matches>',
         '</glob_result>',
       ].join('\n'),

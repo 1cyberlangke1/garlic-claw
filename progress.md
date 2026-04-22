@@ -2536,3 +2536,19 @@
     - `lint`：通过
     - `smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续推进 `G20-3`，但把重点放在“压工具层重复”而不是再扩一套搜索子系统：
+  - 新增 `packages/server/src/execution/file/runtime-search-result-report.ts`。
+  - `glob / grep` 当前已共用同一条截断摘要 owner，不再各自维护“showing first X of Y”这类文案。
+  - 截断提示现在会额外回显隐藏结果数，例如 `118 hidden`，和 `other/opencode` 的结果摘要更接近。
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：`2 suites / 5 tests` 全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

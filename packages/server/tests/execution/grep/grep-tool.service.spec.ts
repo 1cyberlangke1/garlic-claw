@@ -107,7 +107,7 @@ describe('GrepToolService', () => {
         '  3: needle one',
         '/docs/b.md:',
         '  8: needle two',
-        '(showing first 2 of 140 matches. Refine path, include or pattern to continue.)',
+        '(showing first 2 of 140 matches, 138 hidden. Refine path, include or pattern to continue.)',
         '</matches>',
         '</grep_result>',
       ].join('\n'),

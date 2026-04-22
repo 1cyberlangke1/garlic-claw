@@ -1603,3 +1603,34 @@
 
 - 如果继续补 `G20-4`，优先继续围绕 PowerShell / bash 常见写法补结构化命令段识别，而不是新增第二套审批前解析逻辑。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-3 第三批推进
+
+### 本轮目标
+
+- 继续补 `glob / grep` 与 `other/opencode` 的结果摘要差距，但保持工具层不增厚。
+- 把截断提示里“隐藏了多少结果”这类文案收成共享 owner，不再由两个 tool service 各自维护。
+- 顺手继续压缩 `TODO.md` 中对当前已做差异的记录。
+
+### 当前结果
+
+- 已新增 `packages/server/src/execution/file/runtime-search-result-report.ts`。
+- `glob / grep` 当前都通过同一个共享 owner 输出截断摘要：
+  - 统一回显 `showing first X of Y matches`
+  - 若存在剩余结果，会额外回显 `N hidden`
+- 这条实现继续保持低膨胀：
+  - 没有改 backend contract
+  - 没有把搜索摘要文案继续散在两个 tool service
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-3`，优先继续把搜索结果摘要、空结果提示和后续 continuation hint 收成共享 owner，而不是回到 `glob / grep` 各自拼文案。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

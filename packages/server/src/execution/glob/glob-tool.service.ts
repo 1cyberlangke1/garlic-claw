@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
 import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
+import { renderRuntimeSearchTruncationSummary } from '../file/runtime-search-result-report';
 import { renderRuntimeGlobSearchDiagnostics } from '../file/runtime-search-diagnostics';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
@@ -95,7 +96,11 @@ export class GlobToolService {
         '<matches>',
         ...(result.matches.length > 0 ? result.matches : ['(no matches)']),
         result.truncated
-          ? `(showing first ${result.matches.length} of ${result.totalMatches} matches. Refine path or pattern to continue.)`
+          ? renderRuntimeSearchTruncationSummary({
+            continuationHint: 'Refine path or pattern to continue.',
+            shown: result.matches.length,
+            total: result.totalMatches,
+          })
           : `(total matches: ${result.totalMatches})`,
         ...renderRuntimeGlobSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths),
         '</matches>',

@@ -57,6 +57,7 @@
 - `P20-5 [进行中]` 继续补 `glob / grep / write / edit` 的成熟度差距，优先做低膨胀 owner 收口：
   - `write / edit` 当前已补共享 patch 预览渲染，不再只回数字 diff 摘要
   - freshness 写入阻塞当前会附带本 session 最近已读文件，减少“先 read 哪些文件”这类上下文丢失
+  - `glob / grep` 当前已把截断提示收成共享 owner，并补隐藏结果数，继续压缩重复文案
 - `P20-6 [待开始]` 对 `G20-4 / G20-6` 做 fresh 验收后的独立 judge；judge 未 PASS 前，不把阶段标成已完成。
 
 ### 已完成阶段归档
@@ -103,6 +104,7 @@
   - 已补 mtime 倒序、空结果 / 截断 totals、`partial + skippedEntries` 细分类。
   - `glob / grep` 当前都会把“搜索可能不完整”和“非文本文件被跳过”分开提示；`grep` 已补 `Base` 搜索基路径上下文。
   - `glob / grep` 的 skipped diagnostics 现已收成共享格式化 owner，工具层重复文案已压缩。
+  - `glob / grep` 当前已把截断提示收成共享 owner；截断时会明确回显隐藏结果数，和 `other/opencode` 的结果摘要更接近。
   - 仍待补更强的搜索后处理与 project-aware overlay。
 
 ### G20-4 Bash 结果质量与后处理补齐
