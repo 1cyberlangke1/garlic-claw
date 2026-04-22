@@ -73,6 +73,8 @@ const GIT_CLONE_WRITE_PATH_FLAGS = new Set(['--separate-git-dir']);
 const GIT_FORMAT_PATCH_WRITE_PATH_FLAGS = new Set(['-o', '--output-directory']);
 const GIT_SUBMODULE_ADD_VALUE_FLAGS = new Set(['-b', '--branch', '--depth', '--name', '--reference']);
 const GIT_WORKTREE_ADD_VALUE_FLAGS = new Set(['-b', '-B', '--orphan', '--reason']);
+const TAR_CREATE_LONG_FLAGS = new Set(['--append', '--catenate', '--concatenate', '--create', '--update']);
+const TAR_EXTRACT_LONG_FLAGS = new Set(['--extract', '--get']);
 const WGET_WRITE_PATH_FLAGS = new Set(['-O', '--output-document', '--output-file', '-P', '--directory-prefix']);
 const MAX_PREVIEW_ITEMS = 3;
 
@@ -378,6 +380,9 @@ function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): s
   if (segment.command === 'git') {
     return readGitWritePathTokens(segment.tokens.slice(1));
   }
+  if (segment.command === 'tar') {
+    return readTarWritePathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'wget') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), WGET_WRITE_PATH_FLAGS);
   }
@@ -510,6 +515,75 @@ function readShellPositionalTokens(tokens: string[], valueFlags: Set<string>): s
     positional.push(token);
   }
   return positional;
+}
+
+function readTarWritePathTokens(tokens: string[]): string[] {
+  const writes: string[] = [];
+  if (usesTarCreateMode(tokens)) {
+    writes.push(...readTarFlagValues(tokens, 'f', new Set(['--file'])));
+  }
+  if (usesTarExtractMode(tokens)) {
+    writes.push(...readTarFlagValues(tokens, 'C', new Set(['--directory'])));
+  }
+  return uniquePreview(writes);
+}
+
+function usesTarCreateMode(tokens: string[]): boolean {
+  return tokens.some((token) => TAR_CREATE_LONG_FLAGS.has(token) || tokenHasTarShortFlag(token, 'c')
+    || tokenHasTarShortFlag(token, 'r') || tokenHasTarShortFlag(token, 'u'));
+}
+
+function usesTarExtractMode(tokens: string[]): boolean {
+  return tokens.some((token) => TAR_EXTRACT_LONG_FLAGS.has(token) || tokenHasTarShortFlag(token, 'x'));
+}
+
+function tokenHasTarShortFlag(token: string, flag: string): boolean {
+  if (!token.startsWith('-') || token.startsWith('--')) {
+    return false;
+  }
+  return token.slice(1).includes(flag);
+}
+
+function readTarFlagValues(tokens: string[], shortFlag: string, longFlags: Set<string>): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.startsWith('--')) {
+      const matchedFlag = Array.from(longFlags).find((flag) => matchesShellFlagToken(token, flag));
+      if (!matchedFlag) {
+        continue;
+      }
+      if (token.startsWith(`${matchedFlag}=`)) {
+        values.push(token.slice(matchedFlag.length + 1));
+        continue;
+      }
+      const nextToken = tokens[index + 1];
+      if (nextToken && !nextToken.startsWith('-')) {
+        values.push(nextToken);
+        index += 1;
+      }
+      continue;
+    }
+    if (!token.startsWith('-')) {
+      continue;
+    }
+    const raw = token.slice(1);
+    const flagIndex = raw.indexOf(shortFlag);
+    if (flagIndex === -1) {
+      continue;
+    }
+    const attachedValue = raw.slice(flagIndex + 1);
+    if (attachedValue.length > 0) {
+      values.push(attachedValue);
+      continue;
+    }
+    const nextToken = tokens[index + 1];
+    if (nextToken && !nextToken.startsWith('-')) {
+      values.push(nextToken);
+      index += 1;
+    }
+  }
+  return values;
 }
 
 function normalizeShellCommandToken(token: string): string {

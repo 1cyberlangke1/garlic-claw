@@ -1382,3 +1382,10 @@
   - 只在 `git format-patch` 子命令上生效
   - 只认 `-o / --output-directory` 这类明确输出目录参数位
   - 不去猜默认当前目录或其他隐式行为，避免把 hints 重新做成半成品 parser
+- `tar` 当前暴露了另一类高价值问题：粗粒度写命令名单会直接制造假提示。
+  - `tar -cf /tmp/archive.tar ~/source.txt` 里，`~/source.txt` 是输入，不是输出
+  - `tar -xf ~/archive.tar -C /tmp/output` 里，`~/archive.tar` 是输入，`/tmp/output` 才是写入目标
+- 这类命令更适合改成“模式 + 参数位”而不是继续留在粗粒度名单：
+  - create / append / update 模式只认 `-f / --file`
+  - extract 模式只认 `-C / --directory`
+  - 这样既补了真实输出路径，又顺手压掉了旧误报，而且不需要引 parser

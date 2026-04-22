@@ -2137,3 +2137,37 @@
 
 - 如果继续补 `G20-4`，优先继续找“命令子语义明确、并且能继续复用少量 flag/positional 规则”的边界，而不是转向更重的 parser 或命令大全。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第二十一批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里仍然偏粗粒度的 `tar` 写路径识别，但保持单点 owner。
+- 把 `tar` 从“所有非 flag 路径都可能写”收成“按 create/extract 模式识别真正的输出路径”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `tar` 改成模式化写路径提取：
+  - create / append / update 模式只认 `-f / --file` 为输出归档文件
+  - extract 模式只认 `-C / --directory` 为输出目录
+- 因此：
+  - `tar -cf /tmp/archive.tar ~/source.txt` 当前只会把 `/tmp/archive.tar` 记为 `externalWritePaths`
+  - `tar -xf ~/archive.tar -C /tmp/output` 当前只会把 `/tmp/output` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把现有 `tar` 粗粒度 owner 收成少量真实模式与参数位
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找“当前仍是粗粒度名单，但可以压成少量真实参数位/模式”的命令，而不是把 hints 膨胀成大而散的特判集合。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

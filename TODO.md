@@ -151,6 +151,10 @@
     - 已补 `git archive --output/-o <path>` 显式输出文件识别：当输出文件落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
     - 已补 `git bundle create <file>` 显式输出文件识别：当 bundle 文件落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
     - 已补 `git format-patch -o/--output-directory <dir>` 显式输出目录识别：当输出目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
+    - 已把 `tar` 从粗粒度写命令收成模式化识别：
+      - 创建归档时只把 `-f/--file` 识别为输出文件
+      - 解包时只把 `-C/--directory` 识别为输出目录
+      - 不再把归档输入文件或源文件路径误报成 `externalWritePaths`
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

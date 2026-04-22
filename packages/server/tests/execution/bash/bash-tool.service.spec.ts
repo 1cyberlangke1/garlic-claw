@@ -879,6 +879,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats tar create archive file as external write but not source paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'tar -cf /tmp/archive.tar ~/source.txt',
+      description: '检查 tar create 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'tar -cf /tmp/archive.tar ~/source.txt',
+        commandHints: {
+          absolutePaths: ['/tmp/archive.tar', '~/source.txt'],
+          externalAbsolutePaths: ['/tmp/archive.tar', '~/source.txt'],
+          externalWritePaths: ['/tmp/archive.tar'],
+          fileCommands: ['tar'],
+          writesExternalPath: true,
+        },
+        description: '检查 tar create 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 tar create 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/archive.tar、文件命令: tar、外部绝对路径: /tmp/archive.tar, ~/source.txt',
+    });
+  });
+
+  it('treats tar extract directory as external write but not archive input', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'tar -xf ~/archive.tar -C /tmp/output',
+      description: '检查 tar extract 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'tar -xf ~/archive.tar -C /tmp/output',
+        commandHints: {
+          absolutePaths: ['~/archive.tar', '/tmp/output'],
+          externalAbsolutePaths: ['~/archive.tar', '/tmp/output'],
+          externalWritePaths: ['/tmp/output'],
+          fileCommands: ['tar'],
+          writesExternalPath: true,
+        },
+        description: '检查 tar extract 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 tar extract 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: /tmp/output、文件命令: tar、外部绝对路径: ~/archive.tar, /tmp/output',
+    });
+  });
+
   it('treats git worktree add explicit external destination as an external write', () => {
     const service = new BashToolService(
       {} as never,

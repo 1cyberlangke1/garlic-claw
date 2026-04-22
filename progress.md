@@ -2769,3 +2769,20 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `tar` 写路径识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `tar` 从粗粒度写命令收成模式化识别。
+  - create / append / update 模式当前只把 `-f / --file` 视为输出归档文件。
+  - extract 模式当前只把 `-C / --directory` 视为输出目录。
+  - 因此 `tar -cf /tmp/archive.tar ~/source.txt` 与 `tar -xf ~/archive.tar -C /tmp/output` 现在都不会再把输入路径误报成 `externalWritePaths`。
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 92 tests` 全部通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

@@ -1412,6 +1412,98 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces tar create archive file as external write without promoting source paths', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-tar-create-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'tar -cf ~/archive.tar /workspace/source.txt',
+      description: '检查 bash tar create 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-tar-create-external-hints-1',
+      metadata: {
+        command: 'tar -cf ~/archive.tar /workspace/source.txt',
+        commandHints: {
+          absolutePaths: ['~/archive.tar', '/workspace/source.txt'],
+          externalAbsolutePaths: ['~/archive.tar'],
+          externalWritePaths: ['~/archive.tar'],
+          fileCommands: ['tar'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash tar create 外部写入提示',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash tar create 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: ~/archive.tar、文件命令: tar、外部绝对路径: ~/archive.tar',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces tar extract directory as external write without promoting archive input', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-tar-extract-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'tar -xf /workspace/archive.tar -C ~/output',
+      description: '检查 bash tar extract 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-tar-extract-external-hints-1',
+      metadata: {
+        command: 'tar -xf /workspace/archive.tar -C ~/output',
+        commandHints: {
+          absolutePaths: ['/workspace/archive.tar', '~/output'],
+          externalAbsolutePaths: ['~/output'],
+          externalWritePaths: ['~/output'],
+          fileCommands: ['tar'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash tar extract 外部写入提示',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash tar extract 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: ~/output、文件命令: tar、外部绝对路径: ~/output',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces git worktree add external destination as an external write in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({
