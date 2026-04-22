@@ -138,6 +138,7 @@
     - 已补 shell 重定向目标识别：`>` / `>>` / `1>` 这类写入外部绝对路径时，也会进入 `externalWritePaths` 与审批摘要
     - 已补 PowerShell `Out-File -FilePath` 写文件识别，这类常用外部写入现在也会进入 `externalWritePaths`
     - 已补联网命令输出文件参数识别：`curl -o / --output` 与 `Invoke-WebRequest -OutFile / -OutputFile` 当前也会进入 `externalWritePaths`，联网下载直写外部路径时不再只提示“联网 + 外部路径”
+    - 已补常见下载/拷贝命令写入识别：`wget -O` 与 `scp ... <dest>` 当前也会进入 `externalWritePaths`，Unix 侧联网落盘提示更完整
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

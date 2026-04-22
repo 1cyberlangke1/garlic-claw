@@ -47,6 +47,8 @@ const WRITE_COMMANDS = new Set([
   'remove-item',
   'new-item',
   'rename-item',
+  'scp',
+  'wget',
 ]);
 const COMMAND_ALIASES = new Map<string, string>([
   ['gc', 'get-content'],

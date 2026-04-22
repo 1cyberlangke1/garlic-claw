@@ -337,6 +337,118 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats wget output-document external paths as external writes', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'wget -O /tmp/install.sh https://example.com/install.sh',
+      description: '检查 wget 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'wget -O /tmp/install.sh https://example.com/install.sh',
+        commandHints: {
+          absolutePaths: ['/tmp/install.sh'],
+          externalAbsolutePaths: ['/tmp/install.sh'],
+          externalWritePaths: ['/tmp/install.sh'],
+          networkCommands: ['wget'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 wget 外部写入提示',
+      },
+      requiredOperations: ['command.execute', 'network.access'],
+      role: 'shell',
+      summary: '检查 wget 外部写入提示 (/workspace)；静态提示: 联网命令: wget、联网命令涉及外部绝对路径: /tmp/install.sh、写入命令涉及外部绝对路径: /tmp/install.sh、外部绝对路径: /tmp/install.sh',
+    });
+  });
+
+  it('treats scp destination external paths as external writes', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'scp user@example.com:/var/log/app.log /tmp/app.log',
+      description: '检查 scp 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'scp user@example.com:/var/log/app.log /tmp/app.log',
+        commandHints: {
+          absolutePaths: ['/tmp/app.log'],
+          externalAbsolutePaths: ['/tmp/app.log'],
+          externalWritePaths: ['/tmp/app.log'],
+          networkCommands: ['scp'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 scp 外部写入提示',
+      },
+      requiredOperations: ['command.execute', 'network.access'],
+      role: 'shell',
+      summary: '检查 scp 外部写入提示 (/workspace)；静态提示: 联网命令: scp、联网命令涉及外部绝对路径: /tmp/app.log、写入命令涉及外部绝对路径: /tmp/app.log、外部绝对路径: /tmp/app.log',
+    });
+  });
+
   it('highlights when a write command targets external absolute paths', () => {
     const service = new BashToolService(
       {} as never,

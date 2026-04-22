@@ -950,6 +950,102 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces wget output-document external write hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-wget-output-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'wget -O ~/install.sh https://example.com/install.sh',
+      description: '检查 bash wget 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-wget-output-external-hints-1',
+      metadata: {
+        command: 'wget -O ~/install.sh https://example.com/install.sh',
+        commandHints: {
+          absolutePaths: ['~/install.sh'],
+          externalAbsolutePaths: ['~/install.sh'],
+          externalWritePaths: ['~/install.sh'],
+          networkCommands: ['wget'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 bash wget 外部写入提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash wget 外部写入提示 (/)；静态提示: 联网命令: wget、联网命令涉及外部绝对路径: ~/install.sh、写入命令涉及外部绝对路径: ~/install.sh、外部绝对路径: ~/install.sh',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces scp destination external write hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-scp-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'scp user@example.com:/var/log/app.log ~/app.log',
+      description: '检查 bash scp 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-scp-external-hints-1',
+      metadata: {
+        command: 'scp user@example.com:/var/log/app.log ~/app.log',
+        commandHints: {
+          absolutePaths: ['~/app.log'],
+          externalAbsolutePaths: ['~/app.log'],
+          externalWritePaths: ['~/app.log'],
+          networkCommands: ['scp'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 bash scp 外部写入提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash scp 外部写入提示 (/)；静态提示: 联网命令: scp、联网命令涉及外部绝对路径: ~/app.log、写入命令涉及外部绝对路径: ~/app.log、外部绝对路径: ~/app.log',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces external write-path hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

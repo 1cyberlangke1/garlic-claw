@@ -2582,3 +2582,17 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续推进 `G20-4` 的 Unix 联网写文件静态预扫，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `wget` 与 `scp` 并入 `WRITE_COMMANDS`。
+  - `wget -O / --output-document` 与 `scp <remote> <dest>` 现在都会进入 `externalWritePaths / writesExternalPath`，不再只显示“联网命令”。
+  - `tool-registry.service.spec.ts` 这轮同时暴露了一个真实边界：fixture 可见根是 `/`，因此外部路径断言要用 `~/...` 而不是 `/tmp/...`。
+- 已补这轮受影响测试：
+  - `packages/server`: `tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向 jest：`2 suites / 62 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

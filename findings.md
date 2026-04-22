@@ -1267,6 +1267,17 @@
   - `curl` 直接并入 `WRITE_COMMANDS`
   - PowerShell 继续只补 `-OutFile / -OutputFile` 这类参数位
   - 不新增单独的 network-write parser，不把判断重新散回 `BashToolService`
+- Unix 侧联网写文件还有两类高频口径同样值得补：
+  - `wget -O / --output-document`
+  - `scp <remote> <dest>`
+- 这两类命令的性价比高：
+  - 联网命令识别已经存在
+  - 现有 bash 参数扫描已经能拿到目标路径 token
+  - 只要并入 `WRITE_COMMANDS`，就能直接复用 `externalWritePaths / writesExternalPath` 现有管线
+- `tool-registry.service.spec.ts` 这轮还再次提醒了一条可见根边界：
+  - 默认 fixture 的 `visibleRoot` 是 `/`
+  - 因此 `/tmp/...` 在那条链路里不属于“外部路径”
+  - 若要验证真实外部路径提示，应改用 `~/...` 或 Windows 绝对路径
 - `glob / grep` 当前和 `other/opencode` 还有一类差距不在 backend，而在结果摘要重复：
   - 两个 tool service 之前都各自维护截断提示
   - 一旦继续补隐藏结果数、续查提示或空结果提示，重复文案会越堆越多

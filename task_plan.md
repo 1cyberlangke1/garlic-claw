@@ -1702,3 +1702,40 @@
 
 - 如果继续补 `G20-4`，优先继续围绕联网命令的结构化参数位识别补高价值场景，而不是引入重 parser。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第九批推进
+
+### 本轮目标
+
+- 继续补 Unix 侧联网命令的外部写入识别，但保持单点 owner。
+- 让 `wget -O` 与 `scp ... <dest>` 这类常见下载/拷贝命令也进入 `externalWritePaths / writesExternalPath`。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不增加第二套 shell 预扫逻辑。
+
+### 当前结果
+
+- 当前已把两类 Unix 常见联网写文件口径并入静态预扫：
+  - `wget -O / --output-document`
+  - `scp <remote> <dest>`
+- 因此这几类命令现在也会稳定回显：
+  - `externalWritePaths`
+  - `writesExternalPath`
+  - 审批摘要里的 `写入命令涉及外部绝对路径`
+- 这条增强继续保持低膨胀：
+  - 只补 `WRITE_COMMANDS` 词汇
+  - 没有新增 parser、没有改审批 service、没有改工具层
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先考虑把更多“命令名 + 少量关键参数位”继续收成同一 owner，而不是直接跳到重 parser。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
