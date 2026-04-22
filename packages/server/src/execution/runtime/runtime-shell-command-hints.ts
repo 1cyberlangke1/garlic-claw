@@ -370,6 +370,9 @@ function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): s
   if (segment.command === 'curl') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), CURL_WRITE_PATH_FLAGS);
   }
+  if (segment.command === 'git') {
+    return readGitWritePathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'wget') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), WGET_WRITE_PATH_FLAGS);
   }
@@ -442,6 +445,18 @@ function matchesShellFlagToken(token: string, flag: string): boolean {
 
 function readScpWritePathTokens(tokens: string[]): string[] {
   const positional = tokens.filter((token) => !token.startsWith('-'));
+  const destination = positional[positional.length - 1];
+  return destination ? [destination] : [];
+}
+
+function readGitWritePathTokens(tokens: string[]): string[] {
+  if (normalizeShellCommandToken(tokens[0] ?? '') !== 'clone') {
+    return [];
+  }
+  const positional = tokens.slice(1).filter((token) => !token.startsWith('-'));
+  if (positional.length < 2) {
+    return [];
+  }
   const destination = positional[positional.length - 1];
   return destination ? [destination] : [];
 }

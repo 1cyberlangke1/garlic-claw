@@ -1857,3 +1857,38 @@
 
 - 如果继续补 `G20-4`，优先继续沿“少量关键参数位 + 真实 CLI 语义边界”推进，而不是扩大命令名单或退回粗粒度启发式。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第十三批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里和 `other/opencode` 仍有差距的“联网命令显式目标目录落盘”场景，但保持单点 owner。
+- 让 `git clone <repo> <dest>` 在显式目标目录落到外部绝对路径时，也进入 `externalWritePaths / writesExternalPath`。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 git parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已新增 `git clone` 的最小写路径提取：
+  - 仅在首个 positional token 为 `clone` 时生效
+  - `clone` 之后至少存在 `repo + dest` 两个 positional token 时，取最后一个作为目标目录
+- 因此 `git clone https://example.com/repo.git /tmp/repo-copy` 现在会稳定回显：
+  - `externalWritePaths`
+  - `writesExternalPath`
+  - 审批摘要里的 `写入命令涉及外部绝对路径`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 没有把 `git` 做成粗粒度写命令白名单
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续沿“命令名 + 少量关键参数位 + 明确落盘目标”推进，而不是把更多命令粗暴并入写命令名单。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

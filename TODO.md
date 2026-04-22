@@ -142,6 +142,7 @@
     - 已把 `curl / wget / scp` 从粗粒度写命令名单收回到“命令名 + 关键参数位”识别，`curl --upload-file` 与 `scp <local> <remote>` 这类本地输入路径不再误报成外部写入
     - 已补 short flag 大小写边界：`wget -P` 继续视为目录输出路径，`wget -p` 不再被误判成写入外部路径
     - 已补 Unix long flag 大小写边界：`curl --output`、`wget --directory-prefix` 继续识别；`--Output`、`--Directory-Prefix` 这类大小写错误参数不再误报成写入外部路径
+    - 已补 `git clone <repo> <dest>` 显式目标目录识别：当 `clone` 带目标目录且落到外部绝对路径时，当前也会进入 `externalWritePaths / writesExternalPath`
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

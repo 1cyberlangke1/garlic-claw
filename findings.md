@@ -1326,3 +1326,10 @@
   - `grep-tool.service.ts` 只传当前输入有没有 `include`
   - 真实文案由共享 owner 决定
   - 这样后续如果还要继续按 `path/include/pattern` 动态调整提示，不需要把判断分散到多个 tool service
+- `git clone` 这类联网落盘命令也有一条高价值边界：
+  - 当命令显式写出 `<repo> <dest>` 时，最后一个 positional token 就是最值得提前抬出的目标目录
+  - 这类场景不需要引 git parser，也不值得把整个 `git` 都并进写命令名单
+- 当前更稳的做法是继续沿“子命令 + 少量 positional 规则”补最小启发式：
+  - 仅在 `segment.command === 'git'` 且首个 positional token 为 `clone` 时识别
+  - `clone` 后至少有两个 positional token 才把最后一个视为目标目录
+  - 未显式给出目标目录时先不猜默认目录名，避免把 repo URL、flag 值或错误 token 误抬成写入路径

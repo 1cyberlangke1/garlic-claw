@@ -2639,3 +2639,20 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `git clone` 显式目标目录写入识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已新增 `readGitWritePathTokens()`。
+  - 仅在 `git clone` 显式带 `repo + dest` 两个 positional token 时，取最后一个 positional token 作为目标目录。
+  - 因此 `git clone https://example.com/repo.git /tmp/repo-copy` 现在会进入 `externalWritePaths / writesExternalPath`，审批摘要也会抬出 `写入命令涉及外部绝对路径`。
+  - 这轮仍只改同一个 owner，没有把 `git` 扩成粗粒度写命令名单。
+- 已补这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 74 tests` 全部通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
