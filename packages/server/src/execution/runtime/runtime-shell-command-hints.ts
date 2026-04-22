@@ -437,11 +437,6 @@ function readShellFlaggedPathTokens(tokens: string[], flags: Set<string>): strin
 }
 
 function matchesShellFlagToken(token: string, flag: string): boolean {
-  if (flag.startsWith('--')) {
-    const normalizedToken = token.toLowerCase();
-    const normalizedFlag = flag.toLowerCase();
-    return normalizedToken === normalizedFlag || normalizedToken.startsWith(`${normalizedFlag}=`);
-  }
   return token === flag || token.startsWith(`${flag}=`);
 }
 

@@ -1044,6 +1044,98 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('does not surface uppercase curl --Output as an external write in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-curl-uppercase-output-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'curl --Output ~/download.txt https://example.com/file.txt',
+      description: '检查 bash curl 长参数大小写',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-curl-uppercase-output-hints-1',
+      metadata: {
+        command: 'curl --Output ~/download.txt https://example.com/file.txt',
+        commandHints: {
+          absolutePaths: ['~/download.txt'],
+          externalAbsolutePaths: ['~/download.txt'],
+          networkCommands: ['curl'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+        },
+        description: '检查 bash curl 长参数大小写',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash curl 长参数大小写 (/)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: ~/download.txt、外部绝对路径: ~/download.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('does not surface mixed-case wget --Directory-Prefix as an external write in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-wget-mixedcase-directory-prefix-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'wget --Directory-Prefix ~/downloads https://example.com/index.html',
+      description: '检查 bash wget 长参数大小写',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-wget-mixedcase-directory-prefix-hints-1',
+      metadata: {
+        command: 'wget --Directory-Prefix ~/downloads https://example.com/index.html',
+        commandHints: {
+          absolutePaths: ['~/downloads'],
+          externalAbsolutePaths: ['~/downloads'],
+          networkCommands: ['wget'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+        },
+        description: '检查 bash wget 长参数大小写',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash wget 长参数大小写 (/)；静态提示: 联网命令: wget、联网命令涉及外部绝对路径: ~/downloads、外部绝对路径: ~/downloads',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces scp destination external write hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

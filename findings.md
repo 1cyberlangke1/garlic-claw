@@ -1300,6 +1300,18 @@
   - short flag 按原样精确匹配
   - long flag 再做大小写归一
   - 这样既保住了 Unix CLI 的真实语义，也不会影响 `--output-document / --directory-prefix` 这类长参数匹配
+- Unix long flag 其实也有同一类语义边界：
+  - `curl --output`
+  - `wget --directory-prefix`
+  这类 GNU/Unix 长参数本身也是大小写敏感的
+- 如果 helper 继续把 long flag lower-case 后再匹配，就会把错误大小写参数也误抬成写入路径：
+  - `curl --Output`
+  - `wget --Directory-Prefix`
+- 对当前这条 owner，更稳的方式是：
+  - Unix short flag 精确匹配
+  - Unix long flag 也精确匹配
+  - PowerShell 参数继续留在独立的大小写不敏感识别函数里
+  - 这样边界按 shell/命令生态自然分开，不需要引更重 parser
 - `glob / grep` 当前和 `other/opencode` 还有一类差距不在 backend，而在结果摘要重复：
   - 两个 tool service 之前都各自维护截断提示
   - 一旦继续补隐藏结果数、续查提示或空结果提示，重复文案会越堆越多

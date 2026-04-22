@@ -2626,3 +2626,16 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 Unix long flag 大小写边界，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 Unix long flag 改成按原样精确匹配。
+  - `curl --output`、`wget --directory-prefix` 继续识别为写入路径；`--Output`、`--Directory-Prefix` 不再误报成 `externalWritePaths / writesExternalPath`。
+- 已补这轮受影响测试：
+  - `packages/server`: `tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向 jest：`2 suites / 72 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

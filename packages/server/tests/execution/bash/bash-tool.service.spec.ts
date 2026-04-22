@@ -447,6 +447,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('does not treat uppercase curl --Output as a write path flag', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'curl --Output ~/download.txt https://example.com/file.txt',
+      description: '检查 curl 长参数大小写',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'curl --Output ~/download.txt https://example.com/file.txt',
+        commandHints: {
+          absolutePaths: ['~/download.txt'],
+          externalAbsolutePaths: ['~/download.txt'],
+          networkCommands: ['curl'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+        },
+        description: '检查 curl 长参数大小写',
+      },
+      requiredOperations: ['command.execute', 'network.access'],
+      role: 'shell',
+      summary: '检查 curl 长参数大小写 (/workspace)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: ~/download.txt、外部绝对路径: ~/download.txt',
+    });
+  });
+
+  it('does not treat mixed-case wget --Directory-Prefix as a write path flag', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'wget --Directory-Prefix ~/downloads https://example.com/index.html',
+      description: '检查 wget 长参数大小写',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'wget --Directory-Prefix ~/downloads https://example.com/index.html',
+        commandHints: {
+          absolutePaths: ['~/downloads'],
+          externalAbsolutePaths: ['~/downloads'],
+          networkCommands: ['wget'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+        },
+        description: '检查 wget 长参数大小写',
+      },
+      requiredOperations: ['command.execute', 'network.access'],
+      role: 'shell',
+      summary: '检查 wget 长参数大小写 (/workspace)；静态提示: 联网命令: wget、联网命令涉及外部绝对路径: ~/downloads、外部绝对路径: ~/downloads',
+    });
+  });
+
   it('treats scp destination external paths as external writes', () => {
     const service = new BashToolService(
       {} as never,
