@@ -68,7 +68,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
   '-outputfile',
 ]);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
-const WGET_WRITE_PATH_FLAGS = new Set(['-o', '--output-document', '--output-file', '-p', '--directory-prefix']);
+const WGET_WRITE_PATH_FLAGS = new Set(['-O', '--output-document', '--output-file', '-P', '--directory-prefix']);
 const MAX_PREVIEW_ITEMS = 3;
 
 export interface RuntimeShellCommandHintMetadata {
@@ -420,10 +420,9 @@ function readShellFlaggedPathTokens(tokens: string[], flags: Set<string>): strin
       wantsPath = false;
       continue;
     }
-    const normalized = token.toLowerCase();
-    const matchedFlag = Array.from(flags).find((flag) => normalized === flag || normalized.startsWith(`${flag}=`));
+    const matchedFlag = Array.from(flags).find((flag) => matchesShellFlagToken(token, flag));
     if (matchedFlag) {
-      if (normalized.startsWith(`${matchedFlag}=`)) {
+      if (token.startsWith(`${matchedFlag}=`)) {
         paths.push(token.slice(matchedFlag.length + 1));
         continue;
       }
@@ -435,6 +434,15 @@ function readShellFlaggedPathTokens(tokens: string[], flags: Set<string>): strin
     }
   }
   return paths;
+}
+
+function matchesShellFlagToken(token: string, flag: string): boolean {
+  if (flag.startsWith('--')) {
+    const normalizedToken = token.toLowerCase();
+    const normalizedFlag = flag.toLowerCase();
+    return normalizedToken === normalizedFlag || normalizedToken.startsWith(`${normalizedFlag}=`);
+  }
+  return token === flag || token.startsWith(`${flag}=`);
 }
 
 function readScpWritePathTokens(tokens: string[]): string[] {

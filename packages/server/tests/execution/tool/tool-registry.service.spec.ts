@@ -998,6 +998,52 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('does not surface lowercase wget -p as an external write in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-wget-lowercase-p-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'wget -p ~/downloads https://example.com/index.html',
+      description: '检查 bash wget 短参数大小写',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-wget-lowercase-p-hints-1',
+      metadata: {
+        command: 'wget -p ~/downloads https://example.com/index.html',
+        commandHints: {
+          absolutePaths: ['~/downloads'],
+          externalAbsolutePaths: ['~/downloads'],
+          networkCommands: ['wget'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+        },
+        description: '检查 bash wget 短参数大小写',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash wget 短参数大小写 (/)；静态提示: 联网命令: wget、联网命令涉及外部绝对路径: ~/downloads、外部绝对路径: ~/downloads',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces scp destination external write hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

@@ -1290,6 +1290,16 @@
   - 正例仍然能进入 `externalWritePaths / writesExternalPath`
   - 反例不会再把本地输入路径误报成外部写入
   - 复杂度仍然留在同一个 owner，没有退回 parser，也没有把判断散到工具层
+- short flag 这条线上还有一类容易漏的语义边界：大小写本身就是语义。
+  - `wget -P` 是目录前缀
+  - `wget -p` 是 page requisites，不是路径参数
+- 如果 helper 先把 token 全部 lower-case，再去匹配 short flag，就会把这两者混掉：
+  - `-P` 的正确正例虽然还能误打误撞通过
+  - `-p` 会被误抬成写入路径
+- 更稳的方式是：
+  - short flag 按原样精确匹配
+  - long flag 再做大小写归一
+  - 这样既保住了 Unix CLI 的真实语义，也不会影响 `--output-document / --directory-prefix` 这类长参数匹配
 - `glob / grep` 当前和 `other/opencode` 还有一类差距不在 backend，而在结果摘要重复：
   - 两个 tool service 之前都各自维护截断提示
   - 一旦继续补隐藏结果数、续查提示或空结果提示，重复文案会越堆越多
