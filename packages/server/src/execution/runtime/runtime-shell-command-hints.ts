@@ -131,14 +131,17 @@ export function readRuntimeShellCommandHints(
     absolutePaths.filter((token) => isExternalAbsolutePathToken(token, input.visibleRoot)),
   );
   const externalWritePaths = uniquePreview(
-    segments.flatMap((segment) => {
-      if (!WRITE_COMMANDS.has(segment.command)) {
-        return [];
-      }
-      return readShellCommandPathTokens(segment.tokens)
-        .filter((token) => isShellAbsolutePathToken(token, input.backendKind))
-        .filter((token) => isExternalAbsolutePathToken(token, input.visibleRoot));
-    }),
+    [
+      ...segments.flatMap((segment) => {
+        if (!WRITE_COMMANDS.has(segment.command)) {
+          return [];
+        }
+        return readShellCommandPathTokens(segment.tokens);
+      }),
+      ...readShellRedirectionPathTokens(input.command),
+    ]
+      .filter((token) => isShellAbsolutePathToken(token, input.backendKind))
+      .filter((token) => isExternalAbsolutePathToken(token, input.visibleRoot)),
   );
   const networkTouchesExternalPath = usesNetworkCommand && externalAbsolutePaths.length > 0;
   const writesExternalPath = externalWritePaths.length > 0;
@@ -352,6 +355,14 @@ function readShellCommandPathTokens(tokens: string[]): string[] {
     }
   }
   return args.filter((token) => !token.startsWith('-') && !(normalizedCommand === 'chmod' && token.startsWith('+')));
+}
+
+function readShellRedirectionPathTokens(command: string): string[] {
+  const matches = command.matchAll(/(?:^|[\s;|()])(?:\d*>>?|\*>)\s*("[^"]*"|'[^']*'|`[^`]*`|[^\s;|&(){}<>]+)/gmu);
+  return uniquePreview(
+    Array.from(matches, (match) => stripOuterQuotes(match[1]?.trim() ?? ''))
+      .filter((token) => token.length > 0),
+  );
 }
 
 function readPowerShellFlaggedPathTokens(tokens: string[]): string[] {

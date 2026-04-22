@@ -333,6 +333,59 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats shell redirection to external absolute paths as external writes', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Write-Output done > filesystem::C:\\temp\\redirected.txt',
+      description: '检查重定向写入外部路径提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Write-Output done > filesystem::C:\\temp\\redirected.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\redirected.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\redirected.txt'],
+          externalWritePaths: ['filesystem::C:\\temp\\redirected.txt'],
+          writesExternalPath: true,
+        },
+        description: '检查重定向写入外部路径提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查重定向写入外部路径提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\redirected.txt、外部绝对路径: filesystem::C:\\temp\\redirected.txt',
+    });
+  });
+
   it('recognizes powershell native network commands in static hints', () => {
     const service = new BashToolService(
       {} as never,

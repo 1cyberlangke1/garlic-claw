@@ -2501,3 +2501,19 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续推进 `G20-4` 的 shell 静态预扫，但保持小改：
+  - 新增“重定向写外部路径”识别，当前 `>` / `>>` / `1>` / `2>` / `*>` 的目标若落到外部绝对路径，也会进入 `externalWritePaths` 与 `writesExternalPath`。
+  - 这条增强继续只改 `runtime-shell-command-hints.ts`，没有把解析逻辑散回 `BashToolService` 或审批链。
+  - 本轮先按 TDD 落地：先补 `bash-tool.service.spec.ts` 和 `tool-registry.service.spec.ts` 的红灯，再补最小实现。
+- 已重新通过这轮受影响验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - server 定向 jest：`2 suites / 52 tests` 全部通过
+    - `packages/server build`：通过
+    - `lint`：通过
+    - `smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

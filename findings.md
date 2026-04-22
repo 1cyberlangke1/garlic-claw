@@ -1241,3 +1241,11 @@
   - `ReadToolService` 开始消费 `listRecentReads()` 后，旧 freshness mock 如果不补这个方法，会把非目标用例打成假失败
   - 这说明当前 read / write / edit 的 session reminder 与 freshness 语义已经共用同一个真相源
   - 后续若继续扩 freshness owner，夹具也必须跟着接口一起收口，不能再依赖残缺 mock 侥幸通过
+- shell 静态预扫如果只看命令名和参数位，仍会漏掉一类高价值写入：
+  - `echo x > /tmp/out.txt`
+  - `Write-Output x > filesystem::C:\temp\out.txt`
+  - 这类命令本身未必是已知写命令，但重定向目标已经决定了会写文件
+- 这条能力最适合继续收在 `runtime-shell-command-hints.ts`：
+  - 目标只是补 `externalWritePaths` 的真相，不需要让 `BashToolService` 自己认识 `>`
+  - 也不需要把审批 service 改成再解析一次命令字符串
+  - 因此用单独的“重定向目标提取”函数并回既有 `externalWritePaths` 流程，是当前最省膨胀的补法

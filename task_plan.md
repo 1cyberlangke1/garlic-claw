@@ -1533,3 +1533,40 @@
 
 - 如果继续补 `G20-2`，优先把 freshness / patch / diagnostics 的结果组织继续稳定到共享 owner，而不是给单个工具追加更多私有提示分支。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第六批推进
+
+### 本轮目标
+
+- 继续补 `bash` 执行前静态预扫，但保持实现集中在 `runtime-shell-command-hints.ts`。
+- 把 shell 重定向写文件这类高价值误用也纳入外部写入风险提示。
+- 不引 parser，不把这层判断散回 `BashToolService` 或审批 service。
+
+### 当前结果
+
+- 当前已新增 shell 重定向目标识别：
+  - `>`
+  - `>>`
+  - `1>`
+  - `2>`
+  - `*>`
+- 当重定向目标落到外部绝对路径时，当前也会进入：
+  - `externalWritePaths`
+  - `writesExternalPath`
+  - 审批摘要里的 `写入命令涉及外部绝对路径`
+- 这条增强继续保持单点 owner：
+  - `BashToolService` 无新增解析分支
+  - `ToolRegistryService` 无新增特判
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先沿“命令段 + 参数位 + 重定向目标”继续增强结构化启发式，而不是直接引入重 parser。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
