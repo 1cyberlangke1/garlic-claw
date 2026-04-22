@@ -1232,6 +1232,51 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('surfaces git init external destination as an external write in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-git-init-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'git init ~/repo-copy',
+      description: '检查 bash git init 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-git-init-external-hints-1',
+      metadata: {
+        command: 'git init ~/repo-copy',
+        commandHints: {
+          absolutePaths: ['~/repo-copy'],
+          externalAbsolutePaths: ['~/repo-copy'],
+          externalWritePaths: ['~/repo-copy'],
+          writesExternalPath: true,
+        },
+        description: '检查 bash git init 外部写入提示',
+      },
+      operations: ['command.execute'],
+      summary: '检查 bash git init 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: ~/repo-copy、外部绝对路径: ~/repo-copy',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
   it('surfaces scp destination external write hints in bash permission requests', async () => {
     const { conversationId, runtimeToolPermissionService, service } = createFixture();
     const toolSet = await service.buildToolSet({

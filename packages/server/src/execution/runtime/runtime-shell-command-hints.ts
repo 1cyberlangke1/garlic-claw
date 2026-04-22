@@ -451,16 +451,23 @@ function readScpWritePathTokens(tokens: string[]): string[] {
 }
 
 function readGitWritePathTokens(tokens: string[]): string[] {
-  if (normalizeShellCommandToken(tokens[0] ?? '') !== 'clone') {
-    return [];
+  const subcommand = normalizeShellCommandToken(tokens[0] ?? '');
+  if (subcommand === 'clone') {
+    const writePaths = readShellFlaggedPathTokens(tokens.slice(1), GIT_CLONE_WRITE_PATH_FLAGS);
+    const positional = tokens.slice(1).filter((token) => !token.startsWith('-'));
+    if (positional.length < 2) {
+      return writePaths;
+    }
+    const destination = positional[positional.length - 1];
+    return uniquePreview(destination ? [...writePaths, destination] : writePaths);
   }
-  const writePaths = readShellFlaggedPathTokens(tokens.slice(1), GIT_CLONE_WRITE_PATH_FLAGS);
-  const positional = tokens.slice(1).filter((token) => !token.startsWith('-'));
-  if (positional.length < 2) {
-    return writePaths;
+  if (subcommand === 'init') {
+    const writePaths = readShellFlaggedPathTokens(tokens.slice(1), GIT_CLONE_WRITE_PATH_FLAGS);
+    const positional = tokens.slice(1).filter((token) => !token.startsWith('-'));
+    const destination = positional[0];
+    return uniquePreview(destination ? [...writePaths, destination] : writePaths);
   }
-  const destination = positional[positional.length - 1];
-  return uniquePreview(destination ? [...writePaths, destination] : writePaths);
+  return [];
 }
 
 function normalizeShellCommandToken(token: string): string {
