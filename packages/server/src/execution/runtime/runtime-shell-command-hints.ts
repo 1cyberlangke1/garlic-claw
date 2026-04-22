@@ -70,6 +70,7 @@ const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
 const POWERSHELL_DESTINATION_PARAMETER_FLAGS = new Set(['-destination']);
 const POWERSHELL_NAME_PARAMETER_FLAGS = new Set(['-name']);
 const POWERSHELL_NEW_NAME_PARAMETER_FLAGS = new Set(['-newname']);
+const POWERSHELL_CONTENT_VALUE_FLAGS = new Set(['-value', '-encoding', '-delimiter', '-stream']);
 const POWERSHELL_NEW_ITEM_VALUE_FLAGS = new Set(['-path', '-literalpath', '-name', '-itemtype', '-value']);
 const POWERSHELL_RENAME_ITEM_VALUE_FLAGS = new Set(['-path', '-literalpath', '-newname']);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
@@ -390,6 +391,9 @@ function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): s
   if (segment.command === 'mkdir') {
     return readMkdirWritePathTokens(segment.tokens.slice(1));
   }
+  if (segment.command === 'set-content' || segment.command === 'add-content') {
+    return readPowerShellContentWritePathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'new-item') {
     return readPowerShellNewItemWritePathTokens(segment.tokens.slice(1));
   }
@@ -443,6 +447,15 @@ function readMkdirWritePathTokens(tokens: string[]): string[] {
     return readPowerShellNewItemWritePathTokens(tokens);
   }
   return readShellCommandPathTokens(['mkdir', ...tokens]);
+}
+
+function readPowerShellContentWritePathTokens(tokens: string[]): string[] {
+  const flaggedPath = readPowerShellFlaggedPathTokens(tokens)[0];
+  if (flaggedPath) {
+    return [flaggedPath];
+  }
+  const positional = readPowerShellPositionalTokens(tokens, POWERSHELL_CONTENT_VALUE_FLAGS);
+  return positional[0] ? [positional[0]] : [];
 }
 
 function readPowerShellNewItemWritePathTokens(tokens: string[]): string[] {

@@ -2278,6 +2278,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats only the first positional token as set-content write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Set-Content C:\\temp\\note.txt D:\\payload.txt',
+      description: '检查 set-content positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Set-Content C:\\temp\\note.txt D:\\payload.txt',
+        commandHints: {
+          absolutePaths: ['C:\\temp\\note.txt', 'D:\\payload.txt'],
+          externalAbsolutePaths: ['C:\\temp\\note.txt', 'D:\\payload.txt'],
+          externalWritePaths: ['C:\\temp\\note.txt'],
+          fileCommands: ['set-content'],
+          writesExternalPath: true,
+        },
+        description: '检查 set-content positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 set-content positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\note.txt、文件命令: set-content、外部绝对路径: C:\\temp\\note.txt, D:\\payload.txt',
+    });
+  });
+
+  it('treats only the first positional token as add-content alias write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'ac C:\\temp\\append.txt D:\\payload.txt',
+      description: '检查 add-content positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'ac C:\\temp\\append.txt D:\\payload.txt',
+        commandHints: {
+          absolutePaths: ['C:\\temp\\append.txt', 'D:\\payload.txt'],
+          externalAbsolutePaths: ['C:\\temp\\append.txt', 'D:\\payload.txt'],
+          externalWritePaths: ['C:\\temp\\append.txt'],
+          fileCommands: ['add-content'],
+          writesExternalPath: true,
+        },
+        description: '检查 add-content positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 add-content positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\append.txt、文件命令: add-content、外部绝对路径: C:\\temp\\append.txt, D:\\payload.txt',
+    });
+  });
+
   it('recognizes invoke-webrequest outfile writes as combined network and external write hints', () => {
     const service = new BashToolService(
       {} as never,

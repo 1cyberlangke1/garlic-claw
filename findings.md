@@ -1456,3 +1456,11 @@
   - 命中时直接复用现有 `path + leaf-name` 目标路径拼接
   - 未命中时继续回退 Unix `mkdir` 路径提取
 - 这样既补到了 `md` 别名下的真实创建目标，也避免把 Unix 与 PowerShell 的 `mkdir` 混成一套更重的 parser。
+- `Set-Content / Add-Content` 当前暴露的是另一类误报：第二个 positional token 可能只是内容，但如果它长得像绝对路径，就会被通用扫描误抬成外部写入。
+  - `Set-Content C:\\temp\\note.txt D:\\payload.txt`
+  - `ac C:\\temp\\append.txt D:\\payload.txt`
+- 这类命令更适合收成“显式路径参数 + 第一 positional token”规则：
+  - 先认 `-Path / -LiteralPath / -FilePath`
+  - 未显式给出时，再只取第一个 positional token
+  - 继续跳过 `-Value / -Encoding / -Delimiter / -Stream` 这类内容型取值参数
+- 这样既能压掉“内容看起来像路径”的误报，也不需要把 `set-content / add-content` 拉成更重的 PowerShell parser。

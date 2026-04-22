@@ -182,6 +182,9 @@
       - `mkdir -Path C:\\temp -Name created-dir` 当前把 `C:\\temp\\created-dir` 记为 `externalWritePaths`
       - `md -Path C:\\temp -Name created-alias-dir` 当前也会回显真正创建目标，而不再只回显父目录
       - 未使用这类 PowerShell 参数时，仍回退现有 Unix `mkdir` 路径提取，不把两套语义混成更重的 parser
+    - 已把 `Set-Content / Add-Content` 从通用 positional 扫描收成“优先认显式路径参数，否则只认第一个 positional token”为写入目标：
+      - `Set-Content C:\\temp\\note.txt D:\\payload.txt` 当前只把 `C:\\temp\\note.txt` 记为 `externalWritePaths`
+      - `ac C:\\temp\\append.txt D:\\payload.txt` 当前也不会再把第二个绝对路径样式内容误报成外部写入
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

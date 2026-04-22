@@ -2544,3 +2544,40 @@
 
 - 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能继续收成显式目标参数、value-flag 跳过或共享路径拼接规则的命令。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第三十二批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 `Set-Content / Add-Content` 的 PowerShell positional 写入识别，但保持单点 owner。
+- 把这两类命令从“所有 positional token 都可能是写路径”收成“优先认显式路径参数，否则只认第一个 positional token”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 PowerShell parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已给 `set-content / add-content` 增加最小目标路径提取：
+  - 若显式给出 `-Path / -LiteralPath / -FilePath`，当前只把该参数值视为写入目标
+  - 未显式给出时，当前会跳过 `-Value / -Encoding / -Delimiter / -Stream` 这类内容型取值参数，再只取第一个 positional token
+- 因此：
+  - `Set-Content C:\\temp\\note.txt D:\\payload.txt` 当前只会把 `C:\\temp\\note.txt` 记为 `externalWritePaths`
+  - `ac C:\\temp\\append.txt D:\\payload.txt` 当前只会把 `C:\\temp\\append.txt` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把 `set-content / add-content` 从通用 positional 扫描收成一条更真实的目标路径规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能继续收成显式目标参数、value-flag 跳过或共享路径拼接规则的命令。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
