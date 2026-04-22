@@ -1256,6 +1256,17 @@
   - 把 `out-file` 并入 `FILE_COMMANDS / WRITE_COMMANDS`
   - 把 `-FilePath` 并进 PowerShell 路径参数位集合
   - 这样 `externalWritePaths`、`writesExternalPath` 和摘要文案可以继续复用现有管线，不需要新增分支 owner
+- 和 `other/opencode` 对照后，联网命令还有一类高频“写文件”口径不能漏：
+  - `curl -o / --output`
+  - `Invoke-WebRequest -OutFile / -OutputFile`
+- 这类命令如果只提示“联网命令碰外部绝对路径”，风险层级仍然偏弱：
+  - 模型知道它联网了，也知道它碰了外部路径
+  - 但还不知道“它正在把下载结果直接写到外部路径”
+  - 因此仍然应该进入 `externalWritePaths / writesExternalPath`
+- 当前最省膨胀的补法仍然是继续复用同一个 owner：
+  - `curl` 直接并入 `WRITE_COMMANDS`
+  - PowerShell 继续只补 `-OutFile / -OutputFile` 这类参数位
+  - 不新增单独的 network-write parser，不把判断重新散回 `BashToolService`
 - `glob / grep` 当前和 `other/opencode` 还有一类差距不在 backend，而在结果摘要重复：
   - 两个 tool service 之前都各自维护截断提示
   - 一旦继续补隐藏结果数、续查提示或空结果提示，重复文案会越堆越多

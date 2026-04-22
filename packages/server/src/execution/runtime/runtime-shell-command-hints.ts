@@ -30,6 +30,7 @@ const FILE_COMMANDS = new Set([
 const CD_COMMANDS = new Set(['cd', 'pushd', 'popd', 'set-location', 'push-location']);
 const WRITE_COMMANDS = new Set([
   'cp',
+  'curl',
   'mv',
   'rm',
   'mkdir',
@@ -41,6 +42,7 @@ const WRITE_COMMANDS = new Set([
   'set-content',
   'add-content',
   'copy-item',
+  'invoke-webrequest',
   'move-item',
   'remove-item',
   'new-item',
@@ -58,7 +60,14 @@ const COMMAND_ALIASES = new Map<string, string>([
   ['rd', 'remove-item'],
   ['ren', 'rename-item'],
 ]);
-const POWERSHELL_PATH_PARAMETER_FLAGS = new Set(['-path', '-filepath', '-literalpath', '-destination']);
+const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
+  '-path',
+  '-filepath',
+  '-literalpath',
+  '-destination',
+  '-outfile',
+  '-outputfile',
+]);
 const MAX_PREVIEW_ITEMS = 3;
 
 export interface RuntimeShellCommandHintMetadata {

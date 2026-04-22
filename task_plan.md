@@ -1665,3 +1665,40 @@
 
 - 如果继续补 `G20-3`，优先继续收口空结果提示、totals 和 continuation hint 这类结果摘要，而不是回到工具层复制格式化分支。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第八批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里和 `other/opencode` 仍有差距的“联网命令写文件”场景，但保持单点 owner。
+- 让联网命令带输出文件参数时，也进入 `externalWritePaths / writesExternalPath`，而不是只提示“联网命令碰外部路径”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不把这层判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把两类高频联网写文件口径并入静态预扫：
+  - `curl -o / --output`
+  - `Invoke-WebRequest -OutFile / -OutputFile`
+- 因此这几类命令现在都会稳定回显：
+  - `externalWritePaths`
+  - `writesExternalPath`
+  - 审批摘要里的 `写入命令涉及外部绝对路径`
+- 这条增强继续保持低膨胀：
+  - 只补 `WRITE_COMMANDS` 词汇和 PowerShell 路径参数位
+  - 没有新增 parser、没有新增第二套审批前解析逻辑
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续围绕联网命令的结构化参数位识别补高价值场景，而不是引入重 parser。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

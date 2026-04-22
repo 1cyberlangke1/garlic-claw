@@ -2568,3 +2568,17 @@
     - `lint`：通过
     - `smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续推进 `G20-4` 的联网写文件静态预扫，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已把 `curl` 并入 `WRITE_COMMANDS`，`curl -o / --output` 现在会进入 `externalWritePaths / writesExternalPath`。
+  - PowerShell 路径参数位当前已补 `-OutFile / -OutputFile`，`Invoke-WebRequest ... -OutFile ...` 这类联网下载写文件也会进入同一风险提示。
+  - 这轮继续只改单点 owner，没有把解析逻辑散回 `BashToolService` 或审批链。
+- 已补这轮受影响测试：
+  - `packages/server`: `tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向 jest：`2 suites / 58 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过

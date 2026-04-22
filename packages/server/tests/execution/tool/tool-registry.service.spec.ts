@@ -880,14 +880,64 @@ describe('ToolRegistryService', () => {
         commandHints: {
           absolutePaths: ['~/install.sh'],
           externalAbsolutePaths: ['~/install.sh'],
+          externalWritePaths: ['~/install.sh'],
           networkCommands: ['curl'],
           networkTouchesExternalPath: true,
           usesNetworkCommand: true,
+          writesExternalPath: true,
         },
         description: '检查 bash 联网外部路径提示',
       },
       operations: ['command.execute', 'network.access'],
-      summary: '检查 bash 联网外部路径提示 (/)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: ~/install.sh、外部绝对路径: ~/install.sh',
+      summary: '检查 bash 联网外部路径提示 (/)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: ~/install.sh、写入命令涉及外部绝对路径: ~/install.sh、外部绝对路径: ~/install.sh',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces curl output external write hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-curl-output-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'curl -fsSL https://example.com/install.sh --output ~/install.sh',
+      description: '检查 bash curl output 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-curl-output-external-hints-1',
+      metadata: {
+        command: 'curl -fsSL https://example.com/install.sh --output ~/install.sh',
+        commandHints: {
+          absolutePaths: ['~/install.sh'],
+          externalAbsolutePaths: ['~/install.sh'],
+          externalWritePaths: ['~/install.sh'],
+          networkCommands: ['curl'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 bash curl output 外部写入提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash curl output 外部写入提示 (/)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: ~/install.sh、写入命令涉及外部绝对路径: ~/install.sh、外部绝对路径: ~/install.sh',
       toolName: 'bash',
     });
     runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
@@ -1022,6 +1072,54 @@ describe('ToolRegistryService', () => {
         description: '检查 bash out-file 外部写入提示',
       },
       summary: '检查 bash out-file 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\copied.txt、文件命令: get-content, out-file、外部绝对路径: filesystem::C:\\temp\\copied.txt',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
+    await expect(execution).resolves.toEqual(expect.objectContaining({
+      error: '用户拒绝了本次 runtime 权限请求',
+      phase: 'execute',
+      recovered: true,
+      tool: 'bash',
+      type: 'invalid-tool-result',
+    }));
+  });
+
+  it('surfaces invoke-webrequest outfile write hints in bash permission requests', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+    const toolSet = await service.buildToolSet({
+      allowedToolNames: ['bash'],
+      assistantMessageId: 'assistant-message-bash-iwr-outfile-external-hints-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'Invoke-WebRequest https://example.com/install.ps1 -OutFile filesystem::C:\\temp\\install.ps1',
+      description: '检查 bash iwr 外部写入提示',
+    });
+    const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(pendingRequest).toMatchObject({
+      messageId: 'assistant-message-bash-iwr-outfile-external-hints-1',
+      metadata: {
+        command: 'Invoke-WebRequest https://example.com/install.ps1 -OutFile filesystem::C:\\temp\\install.ps1',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\install.ps1'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\install.ps1'],
+          externalWritePaths: ['filesystem::C:\\temp\\install.ps1'],
+          networkCommands: ['invoke-webrequest'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 bash iwr 外部写入提示',
+      },
+      operations: ['command.execute', 'network.access'],
+      summary: '检查 bash iwr 外部写入提示 (/)；静态提示: 联网命令: invoke-webrequest、联网命令涉及外部绝对路径: filesystem::C:\\temp\\install.ps1、写入命令涉及外部绝对路径: filesystem::C:\\temp\\install.ps1、外部绝对路径: filesystem::C:\\temp\\install.ps1',
       toolName: 'bash',
     });
     runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');

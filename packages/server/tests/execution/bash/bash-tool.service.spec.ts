@@ -267,15 +267,73 @@ describe('BashToolService', () => {
         commandHints: {
           absolutePaths: ['/tmp/install.sh'],
           externalAbsolutePaths: ['/tmp/install.sh'],
+          externalWritePaths: ['/tmp/install.sh'],
           networkCommands: ['curl'],
           networkTouchesExternalPath: true,
           usesNetworkCommand: true,
+          writesExternalPath: true,
         },
         description: '检查联网外部路径组合提示',
       },
       requiredOperations: ['command.execute', 'network.access'],
       role: 'shell',
-      summary: '检查联网外部路径组合提示 (/workspace)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: /tmp/install.sh、外部绝对路径: /tmp/install.sh',
+      summary: '检查联网外部路径组合提示 (/workspace)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: /tmp/install.sh、写入命令涉及外部绝对路径: /tmp/install.sh、外部绝对路径: /tmp/install.sh',
+    });
+  });
+
+  it('treats curl --output external paths as external writes', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'curl -fsSL https://example.com/install.sh --output ~/install.sh',
+      description: '检查 curl output 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'curl -fsSL https://example.com/install.sh --output ~/install.sh',
+        commandHints: {
+          absolutePaths: ['~/install.sh'],
+          externalAbsolutePaths: ['~/install.sh'],
+          externalWritePaths: ['~/install.sh'],
+          networkCommands: ['curl'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 curl output 外部写入提示',
+      },
+      requiredOperations: ['command.execute', 'network.access'],
+      role: 'shell',
+      summary: '检查 curl output 外部写入提示 (/workspace)；静态提示: 联网命令: curl、联网命令涉及外部绝对路径: ~/install.sh、写入命令涉及外部绝对路径: ~/install.sh、外部绝对路径: ~/install.sh',
     });
   });
 
@@ -488,6 +546,62 @@ describe('BashToolService', () => {
       requiredOperations: ['command.execute', 'network.access'],
       role: 'shell',
       summary: '检查 powershell 联网提示 (/workspace)；静态提示: 联网命令: invoke-webrequest, invoke-restmethod',
+    });
+  });
+
+  it('recognizes invoke-webrequest outfile writes as combined network and external write hints', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Invoke-WebRequest https://example.com/install.ps1 -OutFile filesystem::C:\\temp\\install.ps1',
+      description: '检查 powershell 联网写入外部路径提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Invoke-WebRequest https://example.com/install.ps1 -OutFile filesystem::C:\\temp\\install.ps1',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\install.ps1'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\install.ps1'],
+          externalWritePaths: ['filesystem::C:\\temp\\install.ps1'],
+          networkCommands: ['invoke-webrequest'],
+          networkTouchesExternalPath: true,
+          usesNetworkCommand: true,
+          writesExternalPath: true,
+        },
+        description: '检查 powershell 联网写入外部路径提示',
+      },
+      requiredOperations: ['command.execute', 'network.access'],
+      role: 'shell',
+      summary: '检查 powershell 联网写入外部路径提示 (/workspace)；静态提示: 联网命令: invoke-webrequest、联网命令涉及外部绝对路径: filesystem::C:\\temp\\install.ps1、写入命令涉及外部绝对路径: filesystem::C:\\temp\\install.ps1、外部绝对路径: filesystem::C:\\temp\\install.ps1',
     });
   });
 
