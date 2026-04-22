@@ -178,6 +178,10 @@
       - positional 写法当前也已并入这条规则，不再只依赖 `-Path`
       - 裸 Windows 盘符路径当前也会保留反斜杠，不再混出 `/`
       - 后续同类 PowerShell 命令可继续复用这条低膨胀路径拼接能力
+    - 已把 `mkdir / md` 的 PowerShell `-Path <dir> -Name <leaf>` 并入同一条共享目标路径拼接规则：
+      - `mkdir -Path C:\\temp -Name created-dir` 当前把 `C:\\temp\\created-dir` 记为 `externalWritePaths`
+      - `md -Path C:\\temp -Name created-alias-dir` 当前也会回显真正创建目标，而不再只回显父目录
+      - 未使用这类 PowerShell 参数时，仍回退现有 Unix `mkdir` 路径提取，不把两套语义混成更重的 parser
 - 下一步重点：
   - 继续看是否要把更多 structured metadata 下沉为稳定 contract
   - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层

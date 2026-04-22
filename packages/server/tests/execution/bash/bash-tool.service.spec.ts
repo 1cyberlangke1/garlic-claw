@@ -2170,6 +2170,114 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats mkdir path plus name as the external write target in powershell style syntax', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'mkdir -Path C:\\temp -Name created-dir',
+      description: '检查 mkdir 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'mkdir -Path C:\\temp -Name created-dir',
+        commandHints: {
+          absolutePaths: ['C:\\temp'],
+          externalAbsolutePaths: ['C:\\temp'],
+          externalWritePaths: ['C:\\temp\\created-dir'],
+          fileCommands: ['mkdir'],
+          writesExternalPath: true,
+        },
+        description: '检查 mkdir 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 mkdir 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\created-dir、文件命令: mkdir、外部绝对路径: C:\\temp',
+    });
+  });
+
+  it('treats md alias path plus name as the external write target in powershell style syntax', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'md -Path C:\\temp -Name created-alias-dir',
+      description: '检查 md 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'md -Path C:\\temp -Name created-alias-dir',
+        commandHints: {
+          absolutePaths: ['C:\\temp'],
+          externalAbsolutePaths: ['C:\\temp'],
+          externalWritePaths: ['C:\\temp\\created-alias-dir'],
+          fileCommands: ['mkdir'],
+          writesExternalPath: true,
+        },
+        description: '检查 md 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 md 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\created-alias-dir、文件命令: mkdir、外部绝对路径: C:\\temp',
+    });
+  });
+
   it('recognizes invoke-webrequest outfile writes as combined network and external write hints', () => {
     const service = new BashToolService(
       {} as never,

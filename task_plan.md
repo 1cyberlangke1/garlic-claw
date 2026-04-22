@@ -2507,3 +2507,40 @@
 
 - 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能继续收成显式目标参数、value-flag 跳过或共享路径拼接规则的命令。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 G20-4 第三十一批推进
+
+### 本轮目标
+
+- 继续补 `bash` 静态预扫里 `mkdir / md` 的 PowerShell 目标路径识别，但保持单点 owner。
+- 把 `mkdir -Path <dir> -Name <leaf>` 从“只认目录参数”收成“直接回显真正创建目标路径”。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 PowerShell parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已给 `mkdir` 增加最小分流：
+  - 若命令段使用 `-Path / -LiteralPath / -Name` 这类 PowerShell 风格参数，则复用 `New-Item` 已有的 `path + leaf-name` 目标路径拼接规则
+  - 否则继续回退现有 Unix `mkdir` 路径提取，不改变原有 bash 语义
+- 因此：
+  - `mkdir -Path C:\\temp -Name created-dir` 当前会把 `C:\\temp\\created-dir` 记为 `externalWritePaths`
+  - `md -Path C:\\temp -Name created-alias-dir` 当前会把 `C:\\temp\\created-alias-dir` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改审批 service
+  - 只是把 `mkdir / md` 接到现有共享路径拼接规则，并保留 Unix 回退分支
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- `packages/shared`: `npm run build`
+- `packages/plugin-sdk`: `npm run build`
+- `packages/server`: `npm run build`
+- root: `npm run lint`
+- root: `npm run smoke:server`
+- root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- root: `npm run smoke:web-ui`
+
+### 下一步
+
+- 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能继续收成显式目标参数、value-flag 跳过或共享路径拼接规则的命令。
+- `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。

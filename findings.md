@@ -1447,3 +1447,12 @@
   - `New-Item -Path C:\\temp -Name created-drive.txt -ItemType File`
   - `Rename-Item -Path C:\\temp\\old-drive.txt -NewName renamed-drive.txt`
 - 若这条边界不补齐，虽然 still absolute，但结果会出现 `C:\\temp/created-drive.txt` 这类混合分隔符，提示质量会明显下降。
+- `mkdir / md` 当前补出的高价值边界，不在于再加一条新命令特判，而在于让 PowerShell 风格目录创建接到现有共享规则：
+  - `mkdir -Path C:\\temp -Name created-dir`
+  - `md -Path C:\\temp -Name created-alias-dir`
+- 这类命令在 Windows `native-shell` 下本质上更接近 `New-Item` 的 `path + leaf-name` 语义，而不是 Unix `mkdir path` 语义。
+- 因此当前最省膨胀的做法是：
+  - 先检测是否出现 `-Path / -LiteralPath / -Name` 这类 PowerShell 风格参数
+  - 命中时直接复用现有 `path + leaf-name` 目标路径拼接
+  - 未命中时继续回退 Unix `mkdir` 路径提取
+- 这样既补到了 `md` 别名下的真实创建目标，也避免把 Unix 与 PowerShell 的 `mkdir` 混成一套更重的 parser。

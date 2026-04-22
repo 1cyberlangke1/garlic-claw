@@ -2806,6 +2806,10 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 提交前重跑冒烟时，首次 `npm run smoke:web-ui` 在工具侧 `304s` 超时：
+  - `other/logs/web-vite*.log` 与 `server-app*.log` 未见新的服务错误，更像是浏览器 smoke 收尾卡住而不是代码回归
+  - 按仓库约束先执行 `python tools\\一键启停脚本.py --stop` 清理受管前后端
+  - 随后重新执行 `npm run smoke:web-ui`，fresh 通过
 - 已继续补 `G20-4` 的 `Copy-Item / Move-Item` 写路径识别，但保持小改：
   - `runtime-shell-command-hints.ts` 当前已把这两类 PowerShell 命令从通用路径参数扫描收成目标路径提取。
   - 当前优先认 `-Destination`，未显式给出时再回退到最后一个 positional token，不再把源路径一起抬成 `externalWritePaths`。
@@ -2943,6 +2947,26 @@
   - root: `npm run smoke:web-ui`
   - 结果：
     - 定向 jest：`2 suites / 118 tests` 全部通过
+    - `shared / plugin-sdk / server build`：通过
+    - `lint`：通过
+    - 默认 `smoke:server`：`182 checks`
+    - Windows `native-shell smoke:server`：`182 checks`
+    - `smoke:web-ui`：通过
+- 已继续补 `G20-4` 的 `mkdir / md -Path + -Name` 目标路径识别，但保持小改：
+  - `runtime-shell-command-hints.ts` 当前已给 `mkdir` 增加最小分流：遇到 PowerShell 风格 `-Path / -LiteralPath / -Name` 时，直接复用 `New-Item` 的 `path + leaf-name` 共享目标路径拼接。
+  - 未使用这类参数时，当前仍回退现有 Unix `mkdir` 路径提取，不把两套语义混成更重的 parser。
+  - 因此 `mkdir -Path C:\\temp -Name created-dir` 会回显 `C:\\temp\\created-dir`，`md -Path C:\\temp -Name created-alias-dir` 会回显 `C:\\temp\\created-alias-dir`。
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 定向 jest：`2 suites / 120 tests` 全部通过
     - `shared / plugin-sdk / server build`：通过
     - `lint`：通过
     - 默认 `smoke:server`：`182 checks`

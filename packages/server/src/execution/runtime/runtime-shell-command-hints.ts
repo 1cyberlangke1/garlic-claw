@@ -387,6 +387,9 @@ function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): s
   if (segment.command === 'copy-item' || segment.command === 'move-item') {
     return readPowerShellDestinationPathTokens(segment.tokens.slice(1));
   }
+  if (segment.command === 'mkdir') {
+    return readMkdirWritePathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'new-item') {
     return readPowerShellNewItemWritePathTokens(segment.tokens.slice(1));
   }
@@ -432,6 +435,14 @@ function readPowerShellDestinationPathTokens(tokens: string[]): string[] {
     return flaggedDestinations;
   }
   return readShellDestinationPathTokens(tokens, 2);
+}
+
+function readMkdirWritePathTokens(tokens: string[]): string[] {
+  const usesPowerShellStyleFlags = tokens.some((token) => POWERSHELL_NEW_ITEM_VALUE_FLAGS.has(token.toLowerCase()));
+  if (usesPowerShellStyleFlags) {
+    return readPowerShellNewItemWritePathTokens(tokens);
+  }
+  return readShellCommandPathTokens(['mkdir', ...tokens]);
 }
 
 function readPowerShellNewItemWritePathTokens(tokens: string[]): string[] {
