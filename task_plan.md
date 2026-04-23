@@ -2581,3 +2581,361 @@
 
 - 如果继续补 `G20-4`，优先继续找仍偏粗粒度、但也能继续收成显式目标参数、value-flag 跳过或共享路径拼接规则的命令。
 - `G20-4 / G20-6` 仍未独立 judge，当前不能标阶段完成。
+
+## 2026-04-22 P21 计划重排
+
+### 本轮目标
+
+- 按用户最新要求，把 `TODO.md` 从“现状 + 局部推进”改成“完整计划 + 交付硬门槛”。
+- 明确两条硬约束：
+  - 最终功能成熟度要对齐 `other/opencode`
+  - `packages/server/src <= 15000`
+- 保持代码膨胀继续受控，不把计划写成更长的流水账。
+
+### 当前结果
+
+- `TODO.md` 当前已重写为项目级真相版本：
+  - 保留已完成摘要
+  - 重新整理当前短板
+  - 新增“本轮交付硬门槛”
+  - 新增“代码膨胀控制规则”
+  - 把未完成路线改写为完整 `P21-1 ~ P21-7` 计划
+- 当前交付完成定义已经明确收口为 4 条同时满足：
+  - 对齐 `other/opencode` 的功能成熟度达到可交付水平
+  - `packages/server/src <= 15000`
+  - fresh 验收全通过
+  - 独立 judge PASS
+
+### 下一步
+
+- 后续执行统一按 `P21-1 ~ P21-7` 推进，不再继续沿旧的零散 TODO 记录方式膨胀。
+- 优先继续推进 `P21-1 / P21-3 / P21-4 / P21-5`，同时在每轮执行里持续核对 `packages/server/src` 行数。
+
+## 2026-04-22 P21 计划二次收紧
+
+### 本轮目标
+
+- 把 `TODO.md` 从“方向正确但步子偏大”的计划，再收紧成真正可执行的串行阶段。
+- 明确“每一步都要独立 judge 验收”，不能只在大阶段末尾 judge。
+
+### 当前结果
+
+- `TODO.md` 当前已把未完成路线改成 `P21-1 ~ P21-8` 串行阶段。
+- 每一步当前都明确了：
+  - 范围
+  - 产出
+  - fresh 验收
+  - 独立 judge
+- 当前执行规则也已写明：
+  - 未通过 fresh 验收，不进入下一步
+  - judge 未 `PASS`，不进入下一步
+  - 规划文件未同步，不进入下一步
+
+### 下一步
+
+- 后续实际执行时，统一按 `P21-1 -> P21-2 -> ... -> P21-8` 顺序推进。
+- 每完成一步，先补 fresh 验收，再做独立 judge，再同步规划文件，然后才允许进入下一步。
+
+## 2026-04-22 P21-1 第一刀继续收口
+
+### 本轮目标
+
+- 继续收口 `P21-1` 里的 PowerShell 写入 / 删除命令误报，但只做最小可复用规则。
+- 解决 `Remove-Item / rd` 把 `-Include` 值误抬成 `externalWritePaths` 的问题。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已给 `remove-item` 增加最小目标路径提取：
+  - 优先认显式 `-Path / -LiteralPath`
+  - 未显式给出时，跳过 `-Include / -Exclude / -Filter / -Stream` 这类取值参数
+  - 跳过后只取第一个 positional token 作为删除目标
+- 因此：
+  - `Remove-Item C:\\temp -Include D:\\archived.log` 当前只会把 `C:\\temp` 记为 `externalWritePaths`
+  - `rd C:\\temp -Include D:\\archived.log` 当前也只会把 `C:\\temp` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改 `BashToolService / tool-registry / 审批 service`
+  - 只是把 `remove-item` 收成一条 `value-flag 跳过 + 首个 positional target` 规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否真留在单点 owner，且没有把 `-Include` 参数值继续误报成删除目标。
+- judge `PASS` 后，再继续 `P21-1` 里下一类 PowerShell 误报点。
+
+## 2026-04-22 P21-1 第二刀继续收口
+
+### 本轮目标
+
+- 继续收口 `P21-1` 里的 PowerShell 写入命令误报，但仍只做最小可复用规则。
+- 解决 `Out-File` positional 写法把第二个看起来像路径的内容误抬成 `externalWritePaths` 的问题。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已给 `out-file` 增加最小目标路径提取：
+  - 优先认显式 `-FilePath / -LiteralPath`
+  - 未显式给出时，跳过 `-InputObject / -Encoding / -Width` 这类取值参数
+  - 跳过后只取第一个 positional token 作为输出目标
+- 因此：
+  - `Out-File C:\\temp\\copied.txt D:\\payload.txt` 当前只会把 `C:\\temp\\copied.txt` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改 `BashToolService / tool-registry / 审批 service`
+  - 只是把 `out-file` 接到现有 `flagged path + value-flag 跳过 + 首个 positional target` 规则
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否真留在单点 owner，且没有把 `D:\\payload.txt` 继续误报成输出目标。
+- judge `PASS` 后，再继续 `P21-1` 里下一类 PowerShell 误报点。
+
+### Judge
+
+- 结果：`PASS`
+- 结论摘要：
+  - 判断仍集中在 `runtime-shell-command-hints.ts`
+  - 没有散回 `BashToolService / tool-registry / 审批 service`
+  - 仍复用既有 `flagged path / value-flag 跳过 / positional` 机制
+  - 当前残余只剩更深 PowerShell 参数语法，后续继续按最小规则推进
+
+## 2026-04-22 P21-1 第三刀继续收口
+
+### 本轮目标
+
+- 继续收口 `P21-1` 里的共享 PowerShell 参数语法缺口，而不是继续堆命令名单。
+- 解决 `-Path:C:\\... / -FilePath:C:\\...` 这类附着写法当前无法被 hints owner 识别的问题。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已给 PowerShell 路径参数识别补上 `-Flag:Value` 附着写法：
+  - `readPowerShellFlaggedPathTokensWithFlags()` 现在既支持 `-Path C:\\...`，也支持 `-Path:C:\\...`
+  - 因此现有依赖这条共享能力的命令会一起受益，不需要分别加第二套解析
+- 因此：
+  - `Out-File -FilePath:C:\\temp\\copied-attached.txt D:\\payload.txt` 当前会把 `C:\\temp\\copied-attached.txt` 记为 `externalWritePaths`
+  - `Set-Content -Path:C:\\temp\\note-attached.txt D:\\payload.txt` 当前会把 `C:\\temp\\note-attached.txt` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改 `BashToolService / tool-registry / 审批 service`
+  - 只是把既有共享 `flagged path` owner 补齐到 PowerShell 常见附着参数语法
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否真停留在共享 owner，而不是把 `-Flag:Value` 逻辑散到各命令分支。
+- judge `PASS` 后，再继续 `P21-1` 里下一类 PowerShell 误报点。
+
+### Judge
+
+- 结果：`PASS`
+- 结论摘要：
+  - `-Flag:Value` 识别已补在共享 `flagged path` owner
+  - 没有散回 `BashToolService / tool-registry / 审批 service`
+  - 当前不是按命令复制附着参数语法，而是现有分支复用共享入口
+  - 当前残余是附着参数目标还未进入 `absolutePaths / externalAbsolutePaths`
+
+## 2026-04-22 P21-1 第四刀继续收口
+
+### 本轮目标
+
+- 继续修正 `P21-1` 里附着参数语法的提示失真，但不引新 owner。
+- 把 `-Path:C:\\... / -FilePath:C:\\...` 里的目标路径同步纳入 `absolutePaths / externalAbsolutePaths`，避免摘要只看到内容路径。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把附着参数路径并入统一绝对路径提取：
+  - `readRuntimeShellCommandHints()` 现在会在逐 token 汇总 `absolutePaths` 时，同时识别 PowerShell `-Flag:Value` 里的附着路径
+  - 因此附着路径现在不只进入 `externalWritePaths`，也会进入 `absolutePaths / externalAbsolutePaths`
+- 因此：
+  - `Out-File -FilePath:C:\\temp\\copied-attached.txt D:\\payload.txt` 当前会把 `C:\\temp\\copied-attached.txt` 与 `D:\\payload.txt` 一起记入 `absolutePaths`
+  - `Set-Content -Path:C:\\temp\\note-attached.txt D:\\payload.txt` 当前也会把 `C:\\temp\\note-attached.txt` 与 `D:\\payload.txt` 一起记入 `absolutePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有改 `BashToolService / tool-registry / 审批 service`
+  - 只是把既有共享附着参数能力继续接入统一 `absolutePaths` owner
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否真留在共享汇总 owner，而不是把附着参数路径额外复制进各命令分支。
+- judge `PASS` 后，再继续 `P21-1` 里下一类 PowerShell 误报点。
+
+### Judge
+
+- 结果：`PASS`
+- 结论摘要：
+  - 附着参数路径已补进共享 `absolutePaths` 汇总 owner
+  - 没有散回 `BashToolService / tool-registry / 审批 service`
+  - 当前不是把附着路径再复制进 `set-content / out-file` 等命令分支
+  - 当前残余是后续若出现新附着 path flag，仍需继续扩共享 flag 集合
+
+## 2026-04-22 P21-1 第五刀继续收口
+
+### 本轮目标
+
+- 继续补 `P21-1` 里的 PowerShell 常用别名缺口，但只做不与 Unix 语义冲突的小口子。
+- 让 `ri` 别名直接走现有 `remove-item` 规则，不再退化成普通 token。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `ri` 并入 `remove-item` 别名映射。
+- 因此：
+  - `ri C:\\temp -Include D:\\archived.log` 当前会复用现有 `remove-item` 规则，只把 `C:\\temp` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有新增命令分支
+  - 只是把 `ri` 接到已有 `remove-item` owner
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否只是 alias 映射收口，而没有把 `ri` 专属判断散到别处。
+- judge `PASS` 后，再继续 `P21-1` 里下一类高价值误报点。
+
+### Judge
+
+- 结果：`PASS`
+- 结论摘要：
+  - `ri` 已作为 alias 接到既有 `remove-item` owner
+  - 没有新增 `ri` 专属命令分支
+  - 没有散回 `BashToolService / tool-registry / 审批 service`
+  - 当前残余只是 `absolutePaths` 摘要仍会保留 `-Include` 的路径值，不构成本刀阻塞
+
+## 2026-04-22 P21-1 第六刀继续收口
+
+### 本轮目标
+
+- 继续补 `P21-1` 里的 PowerShell 常用别名缺口，仍只做不和 Unix 语义冲突的小口子。
+- 让 `cpi / mi` 直接走现有 `copy-item / move-item` 规则，不再退化成普通 token。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `cpi` 并入 `copy-item`，`mi` 并入 `move-item` 别名映射。
+- 因此：
+  - `cpi -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied-alias.txt` 当前会复用 `copy-item` 规则，只把目标路径记为 `externalWritePaths`
+  - `mi -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved-alias.txt` 当前会复用 `move-item` 规则，只把目标路径记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有新增 `cpi / mi` 专属命令分支
+  - 只是把两个 alias 接到既有 owner
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否只是 alias 映射收口，而没有把 `cpi / mi` 专属判断散到别处。
+- judge `PASS` 后，再继续 `P21-1` 里下一类高价值误报点。
+
+### Judge
+
+- 结果：`PASS`
+- 结论摘要：
+  - `cpi / mi` 已作为 alias 接到既有 `copy-item / move-item` owner
+  - 没有新增 `cpi / mi` 专属命令分支
+  - 没有散回 `BashToolService / tool-registry / 审批 service`
+  - 当前残余只是 `tool-registry` 链路还没单独钉 `cpi / mi` 用例，不构成本刀阻塞
+
+## 2026-04-22 P21-1 第七刀继续收口
+
+### 本轮目标
+
+- 收掉上一刀 judge 提到的覆盖残余，但不改实现 owner。
+- 给 `tool-registry` 权限提示链补 `cpi / mi` 用例，证明 alias 在审批链里同样归一到 canonical owner。
+- 保持实现只落在测试层，不新增生产分支。
+
+### 当前结果
+
+- 当前已在 `tool-registry.service.spec.ts` 补上：
+  - `cpi -Path ... -Destination ...`
+  - `mi -Path ... -Destination ...`
+- 这两条用例当前都证明：
+  - alias 进入权限提示链后，`fileCommands` 仍归一为 `copy-item / move-item`
+  - `externalWritePaths` 仍只保留目标路径
+- 这条增强继续保持低膨胀：
+  - 没有改生产代码
+  - 没有新增 owner
+  - 只是把上一刀 residual risk 变成新鲜覆盖证据
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否只是补 coverage，而没有让 alias 在权限链里出现第二套语义。
+- judge `PASS` 后，再继续 `P21-1` 里下一类高价值误报点。
+
+### Judge
+
+- 结果：`PASS`
+- 结论摘要：
+  - `tool-registry` 侧 alias 用例已证明 `cpi / mi` 在权限链里仍归一到 `copy-item / move-item`
+  - `externalWritePaths` 仍只保留目标路径，没有分叉出第二套语义
+  - 本轮只是补 coverage，没有新增生产 owner
+  - 当前残余是更多 alias 形态尚未覆盖，不构成本刀阻塞
+
+## 2026-04-22 P21-1 第八刀继续收口
+
+### 本轮目标
+
+- 继续补 `P21-1` 里的 PowerShell 删除别名缺口，仍只做不和 Unix 语义冲突的小口子。
+- 让 `del / erase` 直接走现有 `remove-item` 规则，不再退化成普通 token。
+- 保持实现继续集中在 `runtime-shell-command-hints.ts`，不引 parser，不把判断散回工具层或审批层。
+
+### 当前结果
+
+- 当前已把 `del / erase` 并入 `remove-item` 别名映射。
+- 因此：
+  - `del C:\\temp -Include D:\\archived.log` 当前会复用 `remove-item` 规则，只把 `C:\\temp` 记为 `externalWritePaths`
+  - `erase C:\\temp -Include D:\\archived.log` 当前也会复用 `remove-item` 规则，只把 `C:\\temp` 记为 `externalWritePaths`
+- 这条增强继续保持低膨胀：
+  - 没有引 parser
+  - 没有新增 `del / erase` 专属命令分支
+  - 只是把两个 alias 接到既有 owner
+
+### 已验证
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+
+### 下一步
+
+- 做独立 judge，先检查这刀是否只是 alias 映射收口，而没有把 `del / erase` 专属判断散到别处。
+- judge `PASS` 后，再继续 `P21-1` 里下一类高价值误报点。
+
+### Judge
+
+- 结果：`PASS`
+- 结论摘要：
+  - `del / erase` 已作为 alias 接到既有 `remove-item` owner
+  - 没有新增 `del / erase` 专属命令分支
+  - 没有散回 `BashToolService / tool-registry / 审批 service`
+  - 当前残余只是 `tool-registry` 链路还没单独钉 `del / erase` 用例，不构成本刀阻塞

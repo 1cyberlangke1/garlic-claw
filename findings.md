@@ -1464,3 +1464,56 @@
   - 未显式给出时，再只取第一个 positional token
   - 继续跳过 `-Value / -Encoding / -Delimiter / -Stream` 这类内容型取值参数
 - 这样既能压掉“内容看起来像路径”的误报，也不需要把 `set-content / add-content` 拉成更重的 PowerShell parser。
+- `Remove-Item / rd` 当前暴露的是同一类误报，只是 value flag 换成了删除过滤参数：
+  - `Remove-Item C:\\temp -Include D:\\archived.log`
+  - `rd C:\\temp -Include D:\\archived.log`
+- 这类命令继续适合收成“显式路径参数 + 第一 positional target”规则：
+  - 先认 `-Path / -LiteralPath`
+  - 未显式给出时，再跳过 `-Include / -Exclude / -Filter / -Stream` 这类取值参数
+  - 跳过后只取第一个 positional token 作为删除目标
+- 这样既能压掉 `-Include` 看起来像绝对路径时的误报，也继续把复杂度留在同一个 hints owner，不需要把 `remove-item` 拉成更重的 PowerShell parser。
+- `Out-File` 当前暴露的是和 `set-content` 同型的误报：第二个 positional token 可能只是输入内容，但如果它长得像绝对路径，就会被通用扫描误抬成外部写入。
+  - `Out-File C:\\temp\\copied.txt D:\\payload.txt`
+- 这类命令继续适合收成“显式路径参数 + 第一 positional target”规则：
+  - 先认 `-FilePath / -LiteralPath`
+  - 未显式给出时，再跳过 `-InputObject / -Encoding / -Width` 这类取值参数
+  - 跳过后只取第一个 positional token 作为输出目标
+- 这样既能压掉“内容看起来像路径”的误报，也继续把复杂度留在同一个 hints owner，不需要把 `out-file` 拉成更重的 PowerShell parser。
+- PowerShell 还有一条共享语法缺口：常见路径参数不只会写成 `-Path C:\\...`，也会写成 `-Path:C:\\...`。
+  - `Out-File -FilePath:C:\\temp\\copied-attached.txt D:\\payload.txt`
+  - `Set-Content -Path:C:\\temp\\note-attached.txt D:\\payload.txt`
+- 这类边界最适合补在共享 `flagged path` owner，而不是分别回补到每个命令分支：
+  - `readPowerShellFlaggedPathTokensWithFlags()` 直接支持 `-Flag:Value`
+  - 依赖这条路径参数识别的命令会一起受益
+- 这样既能继续压掉附着参数语法下的误报，也能避免把相同语法再复制到 `set-content / out-file / new-item / remove-item` 等多个分支。
+- 附着参数语法补齐后，还有一条提示质量问题：目标路径虽然能进入 `externalWritePaths`，但若不进 `absolutePaths / externalAbsolutePaths`，摘要会继续只回显内容路径。
+- 这类问题也更适合补在共享汇总 owner：
+  - 逐 token 汇总 `absolutePaths` 时，同时识别 PowerShell `-Flag:Value` 里的附着路径
+  - 这样不会把“附着参数路径也算绝对路径”这层判断再复制进每个命令分支
+- 这样能让 `externalWritePaths`、`absolutePaths` 与摘要文案保持一致，不再出现“目标路径明明会写入，但外部绝对路径列表里看不到”的提示失真。
+- PowerShell 常用别名里还有一类低膨胀补法，适合优先选“不和 Unix 语义冲突”的短别名：
+  - `ri` 直接映射到 `remove-item`
+- 这类补法的收益在于：
+  - 不需要新命令分支
+  - 只要 alias 指回已有 owner，就能直接复用现有 `remove-item` 的最小目标路径规则
+- 这比去特判 `rm` 这类跨 shell 同名命令更稳，也更符合当前 `P21-1` 先收口高价值小缺口的策略。
+- 同一类低膨胀补法也适用于：
+  - `cpi` -> `copy-item`
+  - `mi` -> `move-item`
+- 这类 alias 的价值和 `ri` 一样：
+  - 不需要新命令分支
+  - 只要 alias 指回已有 owner，就能直接复用现有 destination 规则
+- 这比继续给 `cpi / mi` 单独写路径提取更省代码，也更符合当前 `P21-1` 的收口方向。
+- alias 入口补齐后，还需要在权限提示链补一层新鲜证据：
+  - 否则 judge 很容易只看到 `BashToolService` 单测通过，而看不到 `tool-registry` 里的审批请求是否也归一到 canonical owner
+- 这类补法最省代码的方式不是再改生产逻辑，而是补 `tool-registry` 定向用例：
+  - `cpi` 进入权限链后，`fileCommands` 仍应是 `copy-item`
+  - `mi` 进入权限链后，`fileCommands` 仍应是 `move-item`
+- 这样能把“alias 只在一层测试里成立”的覆盖残余收掉，而不引入新的生产代码膨胀。
+- `remove-item` 这条线上还可以继续沿“低冲突 alias”推进：
+  - `del`
+  - `erase`
+- 这类 alias 的收益和 `ri / rd` 一样：
+  - 不需要新命令分支
+  - 只要 alias 指回已有 `remove-item` owner，就能直接复用现有 `value-flag 跳过 + 首个 positional target` 规则
+- 这比继续给 `del / erase` 单独写删除路径提取更省代码，也保持了当前 `P21-1` 的低膨胀方向。

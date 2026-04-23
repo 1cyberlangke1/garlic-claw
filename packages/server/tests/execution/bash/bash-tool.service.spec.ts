@@ -1634,6 +1634,60 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats cpi destination as external write but keeps external source out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'cpi -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied-alias.txt',
+      description: '检查 cpi 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'cpi -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied-alias.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\copied-alias.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\copied-alias.txt'],
+          externalWritePaths: ['filesystem::D:\\temp\\copied-alias.txt'],
+          fileCommands: ['copy-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 cpi 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 cpi 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::D:\\temp\\copied-alias.txt、文件命令: copy-item、外部绝对路径: filesystem::C:\\temp\\input.txt, filesystem::D:\\temp\\copied-alias.txt',
+    });
+  });
+
   it('treats Move-Item destination as external write but keeps external source out of external write paths', () => {
     const service = new BashToolService(
       {} as never,
@@ -1685,6 +1739,60 @@ describe('BashToolService', () => {
       requiredOperations: ['command.execute'],
       role: 'shell',
       summary: '检查 Move-Item 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::D:\\temp\\moved.txt、文件命令: move-item、外部绝对路径: filesystem::C:\\temp\\input.txt, filesystem::D:\\temp\\moved.txt',
+    });
+  });
+
+  it('treats mi destination as external write but keeps external source out of external write paths', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'mi -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved-alias.txt',
+      description: '检查 mi 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'mi -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved-alias.txt',
+        commandHints: {
+          absolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\moved-alias.txt'],
+          externalAbsolutePaths: ['filesystem::C:\\temp\\input.txt', 'filesystem::D:\\temp\\moved-alias.txt'],
+          externalWritePaths: ['filesystem::D:\\temp\\moved-alias.txt'],
+          fileCommands: ['move-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 mi 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 mi 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::D:\\temp\\moved-alias.txt、文件命令: move-item、外部绝对路径: filesystem::C:\\temp\\input.txt, filesystem::D:\\temp\\moved-alias.txt',
     });
   });
 
@@ -1792,6 +1900,114 @@ describe('BashToolService', () => {
       requiredOperations: ['command.execute'],
       role: 'shell',
       summary: '检查 out-file 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: filesystem::C:\\temp\\copied.txt、文件命令: get-content, out-file、外部绝对路径: filesystem::C:\\temp\\copied.txt',
+    });
+  });
+
+  it('treats only the first positional token as out-file write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Out-File C:\\temp\\copied.txt D:\\payload.txt',
+      description: '检查 out-file positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Out-File C:\\temp\\copied.txt D:\\payload.txt',
+        commandHints: {
+          absolutePaths: ['C:\\temp\\copied.txt', 'D:\\payload.txt'],
+          externalAbsolutePaths: ['C:\\temp\\copied.txt', 'D:\\payload.txt'],
+          externalWritePaths: ['C:\\temp\\copied.txt'],
+          fileCommands: ['out-file'],
+          writesExternalPath: true,
+        },
+        description: '检查 out-file positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 out-file positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\copied.txt、文件命令: out-file、外部绝对路径: C:\\temp\\copied.txt, D:\\payload.txt',
+    });
+  });
+
+  it('recognizes attached powershell filepath syntax as out-file write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Out-File -FilePath:C:\\temp\\copied-attached.txt D:\\payload.txt',
+      description: '检查 out-file attached filepath 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Out-File -FilePath:C:\\temp\\copied-attached.txt D:\\payload.txt',
+        commandHints: {
+          absolutePaths: ['C:\\temp\\copied-attached.txt', 'D:\\payload.txt'],
+          externalAbsolutePaths: ['C:\\temp\\copied-attached.txt', 'D:\\payload.txt'],
+          externalWritePaths: ['C:\\temp\\copied-attached.txt'],
+          fileCommands: ['out-file'],
+          writesExternalPath: true,
+        },
+        description: '检查 out-file attached filepath 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 out-file attached filepath 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\copied-attached.txt、文件命令: out-file、外部绝对路径: C:\\temp\\copied-attached.txt, D:\\payload.txt',
     });
   });
 
@@ -2332,6 +2548,60 @@ describe('BashToolService', () => {
     });
   });
 
+  it('recognizes attached powershell path syntax as set-content write target', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Set-Content -Path:C:\\temp\\note-attached.txt D:\\payload.txt',
+      description: '检查 set-content attached path 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Set-Content -Path:C:\\temp\\note-attached.txt D:\\payload.txt',
+        commandHints: {
+          absolutePaths: ['C:\\temp\\note-attached.txt', 'D:\\payload.txt'],
+          externalAbsolutePaths: ['C:\\temp\\note-attached.txt', 'D:\\payload.txt'],
+          externalWritePaths: ['C:\\temp\\note-attached.txt'],
+          fileCommands: ['set-content'],
+          writesExternalPath: true,
+        },
+        description: '检查 set-content attached path 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 set-content attached path 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\note-attached.txt、文件命令: set-content、外部绝对路径: C:\\temp\\note-attached.txt, D:\\payload.txt',
+    });
+  });
+
   it('treats only the first positional token as add-content alias write target', () => {
     const service = new BashToolService(
       {} as never,
@@ -2383,6 +2653,276 @@ describe('BashToolService', () => {
       requiredOperations: ['command.execute'],
       role: 'shell',
       summary: '检查 add-content positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\append.txt、文件命令: add-content、外部绝对路径: C:\\temp\\append.txt, D:\\payload.txt',
+    });
+  });
+
+  it('treats only the first positional token as remove-item write target when include is present', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'Remove-Item C:\\temp -Include D:\\archived.log',
+      description: '检查 remove-item positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'Remove-Item C:\\temp -Include D:\\archived.log',
+        commandHints: {
+          absolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalAbsolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalWritePaths: ['C:\\temp'],
+          fileCommands: ['remove-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 remove-item positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 remove-item positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp、文件命令: remove-item、外部绝对路径: C:\\temp, D:\\archived.log',
+    });
+  });
+
+  it('treats only the first positional token as rd alias write target when include is present', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'rd C:\\temp -Include D:\\archived.log',
+      description: '检查 rd positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'rd C:\\temp -Include D:\\archived.log',
+        commandHints: {
+          absolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalAbsolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalWritePaths: ['C:\\temp'],
+          fileCommands: ['remove-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 rd positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 rd positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp、文件命令: remove-item、外部绝对路径: C:\\temp, D:\\archived.log',
+    });
+  });
+
+  it('treats only the first positional token as ri alias write target when include is present', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'ri C:\\temp -Include D:\\archived.log',
+      description: '检查 ri positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'ri C:\\temp -Include D:\\archived.log',
+        commandHints: {
+          absolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalAbsolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalWritePaths: ['C:\\temp'],
+          fileCommands: ['remove-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 ri positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 ri positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp、文件命令: remove-item、外部绝对路径: C:\\temp, D:\\archived.log',
+    });
+  });
+
+  it('treats only the first positional token as del alias write target when include is present', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'del C:\\temp -Include D:\\archived.log',
+      description: '检查 del positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'del C:\\temp -Include D:\\archived.log',
+        commandHints: {
+          absolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalAbsolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalWritePaths: ['C:\\temp'],
+          fileCommands: ['remove-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 del positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 del positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp、文件命令: remove-item、外部绝对路径: C:\\temp, D:\\archived.log',
+    });
+  });
+
+  it('treats only the first positional token as erase alias write target when include is present', () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/workspace' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.readRuntimeAccess({
+      backendKind: 'native-shell',
+      command: 'erase C:\\temp -Include D:\\archived.log',
+      description: '检查 erase positional 外部写入提示',
+      sessionId: 'session-1',
+    })).toEqual({
+      backendKind: 'native-shell',
+      metadata: {
+        command: 'erase C:\\temp -Include D:\\archived.log',
+        commandHints: {
+          absolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalAbsolutePaths: ['C:\\temp', 'D:\\archived.log'],
+          externalWritePaths: ['C:\\temp'],
+          fileCommands: ['remove-item'],
+          writesExternalPath: true,
+        },
+        description: '检查 erase positional 外部写入提示',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查 erase positional 外部写入提示 (/workspace)；静态提示: 写入命令涉及外部绝对路径: C:\\temp、文件命令: remove-item、外部绝对路径: C:\\temp, D:\\archived.log',
     });
   });
 

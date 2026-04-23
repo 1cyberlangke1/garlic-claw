@@ -12,6 +12,12 @@
 - 不保留兼容壳，不接受“旧 owner 换目录继续活着”。
 - `bash / read / glob / grep / write / edit` 的公开语义继续以“当前 backend 可见路径”为主，不反向绑死到单个 project/worktree；但能力成熟度要对齐 OpenCode 水平。
 
+## 当前基线
+
+- `packages/server/src` 当前生产代码：约 `19042` 行。
+- 本轮交付硬门槛：`packages/server/src <= 15000`。
+- 长期规范化目标不变：继续向 `<= 10000` 收敛，但当前验收先以 `<= 15000` 为硬门槛。
+
 ## 已完成摘要
 
 - `packages/shared` 已收口为 type-only，共享契约已完成一轮整理。
@@ -38,237 +44,228 @@
 
 当前主要短板：
 
-- `bash`：仍缺 OpenCode 那种 parser/AST 级静态分析；当前还是启发式 hints，复杂 quoting / 变量展开 / 命令替换 / 更深 PowerShell 语法还不够强。
-- `read`：当前已具备缺失路径建议、分流和截断保护，但还缺 OpenCode 那层更成熟的 loaded-files / system-reminder 生态 owner。
-- `glob / grep`：当前已有 base path、partial 与 skipped diagnostics，但搜索后处理、排序与 project-aware overlay 仍弱于 OpenCode。
-- `write / edit`：当前已有 diff / freshness / post-write 第一轮增强，但写后诊断、格式化和更复杂 rewrite 纠偏仍未到 OpenCode 水平。
-- runtime 抽象：第二 backend 已成立，但还缺“第三个生产级 backend 几乎不用回改工具层”的 judge 级证据。
+- `bash`
+  - 仍缺 OpenCode 那种 parser/AST 级静态分析。
+  - 当前仍以启发式 hints 为主，复杂 quoting / 变量展开 / 命令替换 / 更深 PowerShell 语法仍弱。
+- `read`
+  - 当前已具备缺失路径建议、分流和截断保护。
+  - 仍缺更成熟的 loaded-files / system-reminder owner。
+- `glob / grep`
+  - 当前已有 base path、partial、skipped diagnostics、截断摘要共享 owner。
+  - 仍缺更强的排序、搜索后处理和 project-aware overlay。
+- `write / edit`
+  - 当前已有 diff / freshness / post-write 第一轮增强。
+  - 仍缺更强的 rewrite 纠偏、格式化、写后诊断与更细工程反馈。
+- runtime 抽象
+  - 第二 backend 已成立。
+  - 仍缺“第三个生产级 backend 几乎不用回改工具层”的 judge 级证据。
+- 代码体积
+  - `execution + runtime` 仍是主膨胀来源。
+  - 当前大文件、宿主编排 owner 和静态预扫 owner 还没压到交付线。
 
-## 当前主路线：文件工具与执行抽象对齐 OpenCode 到 100%
+## 本轮交付硬门槛
 
-### 当前执行计划
+以下条件必须同时成立，才算本轮完成：
 
-- `P20-1 [已完成]` 压缩已完成阶段记录，只保留摘要与活跃路线。
-- `P20-2 [已完成]` 前端 `builtin.runtime-tools` 已支持实时切换 shell backend，且未设置时回退全局 runtime route。
-- `P20-3 [已完成]` `read` 已补最小 session loaded-files reminder：
-  - 当前会基于 `RuntimeFileFreshnessService` 回显“本 session 近期还读取过这些文件”
-  - 先补最小提醒，不引入新的 loaded-files 大系统
-- `P20-4 [进行中]` 把 `bash` 从启发式静态预扫继续推进到更结构化分析，但不把 parser 复杂度抬回工具层。
-- `P20-5 [进行中]` 继续补 `glob / grep / write / edit` 的成熟度差距，优先做低膨胀 owner 收口：
-  - `write / edit` 当前已补共享 patch 预览渲染，不再只回数字 diff 摘要
-  - freshness 写入阻塞当前会附带本 session 最近已读文件，减少“先 read 哪些文件”这类上下文丢失
-  - `glob / grep` 当前已把截断提示收成共享 owner，并补隐藏结果数，继续压缩重复文案
-  - `grep` 截断提示当前会按是否传入 `include` 生成 guidance，不再在未传 `include` 时回显误导提示
-- `P20-6 [待开始]` 对 `G20-4 / G20-6` 做 fresh 验收后的独立 judge；judge 未 PASS 前，不把阶段标成已完成。
+- 功能成熟度对齐 `other/opencode`
+  - `bash / read / glob / grep / write / edit` 的公开语义、错误反馈、继续操作提示达到“模型可直接继续下一步”的水平。
+  - 不再存在明显落后于 `other/opencode` 的主链缺口。
+- 抽象质量达标
+  - 至少补出第三个生产风格 backend 试点或等价证据。
+  - `bash / read / glob / grep / write / edit` 工具服务不因新增 backend 而回改 owner。
+- 代码体积达标
+  - `packages/server/src <= 15000`。
+  - 不能靠删功能、降验收标准或把同等复杂度换目录伪压缩。
+- 验收达标
+  - 受影响定向测试 fresh 通过。
+  - `packages/shared` build。
+  - `packages/plugin-sdk` build。
+  - `packages/server` build。
+  - root `npm run lint`。
+  - root `npm run smoke:server`。
+  - root `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`。
+  - root `npm run smoke:web-ui`。
+- judge 达标
+  - `G20-4 / G20-5 / G20-6` 必须有独立 judge。
+  - judge 需要显式确认“不是只换壳或只挪位置”。
 
-### 已完成阶段归档
+## 代码膨胀控制规则
 
-- `G20-0` 差异基线冻结：已完成，详细矩阵与判断过程转入 `task_plan.md / findings.md`。
-- `G20-1` Read 第一轮对齐：已完成，缺失路径建议、目录窗口、字节级截断与二进制/图片/PDF 分流已不再在本文件逐段展开。
+- 新增能力优先收成共享规则、稳定 contract、overlay 或 adapter，不直接继续堆进工具服务。
+- 不新增新的通用 `helper / helpers` 抽象；需要复用时必须挂到真实 owner 下。
+- 每补一类命令或一类成熟度能力，都要同时判断：
+  - 能否复用现有共享规则
+  - 能否顺手压掉旧重复控制流
+  - 是否会把复杂度重新抬回工具层
+- 禁止为了追进度把同类逻辑复制到：
+  - `BashToolService`
+  - 审批 service
+  - tool registry
+  - 前端展示层
+- 本轮所有重构以“功能完成后仍能压回 `<= 15000`”为前提，不接受先无限膨胀、最后再指望集中清理。
 
-### G20-2 Write / Edit 对齐到 OpenCode 水平
+## 可落地执行计划
 
-- 状态：进行中
-- 目标：
-  - 把 `write / edit` 从“基础文件改写”提升到“工程化修改工具”。
-  - 重点补齐：
-    - 统一 diff owner，不再只回 created/occurrences
-    - 更强的 edit 匹配与替换修正策略
-    - line ending / formatting / rewrite 后一致性
-    - 文件 freshness / time lock / rewrite race 保护
-    - 写入后诊断反馈入口
-- 验收：
-  - `write / edit` 输出至少能稳定返回修改摘要与 diff 元数据
-  - 多位置匹配、空文件创建、覆盖写、行尾差异、重复替换都有定向测试
-- 当前进展：
-  - `write / edit` 已稳定回带 `diff / lineCount / size / strategy` 等工程化摘要，diff owner 已下沉到 filesystem 层。
-  - `edit` 已补 `context-aware / block-anchor` 等多行定位策略；匹配失败或多命中时会明确回显策略名、命中行号和下一步建议。
-  - session 级 freshness、path lock 与 stale-read smoke 已落地；当前仍待继续补更强的写后增强与更细诊断。
-  - `write / edit` 当前都会通过共享 owner 回显最小 `<patch>` 预览，不再只剩数字 diff 摘要。
-  - 未先 `read` 就尝试覆盖已有文件时，freshness 拒绝信息当前会附带同 session 最近已读文件列表，便于模型直接回到正确上下文继续修改。
+### 执行规则
 
-### G20-3 Glob / Grep 对齐到 OpenCode 水平
+- 下面阶段必须串行推进，不能跳步宣布完成。
+- 每一步都必须满足 4 件事后，才允许进入下一步：
+  - 范围内代码与测试已落地
+  - 范围内 fresh 验收已通过
+  - 独立 judge 明确 `PASS`
+  - `TODO.md / task_plan.md / progress.md / findings.md` 已同步
+- 任一步 judge 未通过，只允许继续修当前步，不进入后续阶段。
 
-- 状态：进行中
-- 目标：
-  - 把 `glob / grep` 从基础枚举提升到更接近 OpenCode 的搜索体验。
-  - 重点补齐：
-    - 更成熟的排序和截断策略
-    - 更稳定的 `path / include / pattern` 语义
-    - 更细的结果统计与结果上限说明
-    - 文件不可达、部分失败、二进制跳过等诊断
-    - 后端层尽量复用高性能搜索能力，不把搜索 owner 重新抬回工具层
-- 验收：
-  - `glob / grep` 都有“结果为空 / 有结果 / 截断 / 局部失败”定向测试
-  - 输出结构与 OpenCode 接近到“模型可直接据此继续 read/edit/write”的水平
-- 当前进展：
-  - 已补 mtime 倒序、空结果 / 截断 totals、`partial + skippedEntries` 细分类。
-  - `glob / grep` 当前都会把“搜索可能不完整”和“非文本文件被跳过”分开提示；`grep` 已补 `Base` 搜索基路径上下文。
-  - `glob / grep` 的 skipped diagnostics 现已收成共享格式化 owner，工具层重复文案已压缩。
-  - `glob / grep` 当前已把截断提示收成共享 owner；截断时会明确回显隐藏结果数，和 `other/opencode` 的结果摘要更接近。
-  - `grep` 当前会按 `include` 是否存在生成更准确的 continuation hint，未传 `include` 时不再提示“Refine include”。
-  - 仍待补更强的搜索后处理与 project-aware overlay。
-
-### G20-4 Bash 结果质量与后处理补齐
-
-- 状态：进行中
-- 目标：
-  - 把 `bash` 的结果渲染、输出治理、错误反馈、环境提示继续收口成正式 runtime owner。
-  - 主聊天链路与 `builtin.runtime-tools` 必须复用同一渲染链。
-  - 避免超长 `stdout/stderr` 与不稳定元信息无界进入模型上下文。
-- 当前进展：
-  - `runtime-command-output.ts`、`RuntimeCommandCaptureService` 与 `bashOutput.*` 配置已接通；截断时会稳定回显 `stdout_summary / stderr_summary / full_output_path`。
-  - 主聊天链路与 `builtin.runtime-tools` 当前已共用同一条 bash 渲染与完整输出捕获 contract。
-  - `bash` 公开说明已补 `workdir` 优先、网络策略三态和“不要用 bash 代替文件工具”的约束文案。
-  - `bash` 当前已补 shell-specific chaining 提示：
-    - bash 场景明确建议依赖顺序的命令使用 `&&`
-    - Windows `native-shell` 明确提示不要用 `&&`，改用 PowerShell 条件写法
-  - `just-bash / native-shell` 当前都已补更可执行的超时错误文案：超时后会明确提示“如非交互等待，请调大 timeout 重试”。
-  - `bash` 已新增轻量静态预扫 owner：
-    - 审批前会识别明显 `cd`
-    - 会识别明显文件型命令
-    - 会识别明显外部绝对路径并写入审批 metadata / summary
-    - 已补 PowerShell 常见别名与 `filesystem::` provider 路径识别，Windows `native-shell` 下不再只认 bash 风格 token
-    - 已补两类高价值误用提示：`workdir` 已提供却仍写 `cd`，以及 Windows `native-shell` 中误用 `&&`
-    - 联网命令识别已并回同一静态预扫 owner，当前审批摘要也会直接提示“含联网命令”
-    - 已补 PowerShell 原生联网命令识别：`iwr / irm / Invoke-WebRequest / Invoke-RestMethod`
-    - 当同一条命令既联网又触碰外部绝对路径时，审批摘要会单独抬出这层组合风险
-    - 已把“写入命令触碰外部绝对路径”从普通外部路径提示中单独抬出，并补 `-Path / -LiteralPath / -Destination` 这类 PowerShell 轻量参数位识别
-    - 已补 `../`、`..\\`、`cd ..` 这类上级目录穿越倾向提示，审批摘要会单独回显相对上级路径预览
-    - 已补 shell 重定向目标识别：`>` / `>>` / `1>` 这类写入外部绝对路径时，也会进入 `externalWritePaths` 与审批摘要
-    - 已补 PowerShell `Out-File -FilePath` 写文件识别，这类常用外部写入现在也会进入 `externalWritePaths`
-    - 已补联网命令输出文件参数识别：`curl -o / --output` 与 `Invoke-WebRequest -OutFile / -OutputFile` 当前也会进入 `externalWritePaths`，联网下载直写外部路径时不再只提示“联网 + 外部路径”
-    - 已补常见下载/拷贝命令写入识别：`wget -O` 与 `scp ... <dest>` 当前也会进入 `externalWritePaths`，Unix 侧联网落盘提示更完整
-    - 已把 `curl / wget / scp` 从粗粒度写命令名单收回到“命令名 + 关键参数位”识别，`curl --upload-file` 与 `scp <local> <remote>` 这类本地输入路径不再误报成外部写入
-    - 已补 short flag 大小写边界：`wget -P` 继续视为目录输出路径，`wget -p` 不再被误判成写入外部路径
-    - 已补 Unix long flag 大小写边界：`curl --output`、`wget --directory-prefix` 继续识别；`--Output`、`--Directory-Prefix` 这类大小写错误参数不再误报成写入外部路径
-    - 已补 `git clone` 两类显式落盘目标识别：
-      - `<repo> <dest>` 目标目录落到外部绝对路径时，会进入 `externalWritePaths / writesExternalPath`
-      - `--separate-git-dir <path>` 落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
-    - 已补 `git init <path>` 显式目标目录识别：当初始化目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
-    - 已补 `git worktree add <path>` 显式目标目录识别：当 worktree 目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
-    - 已补 `git submodule add <repo> <path>` 显式目标目录识别：当 submodule 目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
-    - 已补 `git archive --output/-o <path>` 显式输出文件识别：当输出文件落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
-    - 已补 `git bundle create <file>` 显式输出文件识别：当 bundle 文件落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
-    - 已补 `git format-patch -o/--output-directory <dir>` 显式输出目录识别：当输出目录落到外部绝对路径时，也会进入 `externalWritePaths / writesExternalPath`
-    - 已把 `tar` 从粗粒度写命令收成模式化识别：
-      - 创建归档时只把 `-f/--file` 识别为输出文件
-      - 解包时只把 `-C/--directory` 识别为输出目录
-      - 不再把归档输入文件或源文件路径误报成 `externalWritePaths`
-    - 已把 `cp / mv` 从粗粒度写命令收成“最后一个 positional token 为目标路径”：
-      - `cp ~/source.txt /tmp/copied.txt` 当前只把 `/tmp/copied.txt` 记为 `externalWritePaths`
-      - `mv ~/source.txt /tmp/moved.txt` 当前只把 `/tmp/moved.txt` 记为 `externalWritePaths`
-    - 已把 `Copy-Item / Move-Item` 从通用 PowerShell 路径参数收成“优先认 `-Destination`，否则回退到最后一个 positional token”为目标路径：
-      - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\copied.txt` 当前只把目标路径记为 `externalWritePaths`
-      - `Move-Item -Path filesystem::C:\\temp\\input.txt -Destination filesystem::D:\\temp\\moved.txt` 当前只把目标路径记为 `externalWritePaths`
-    - 已把 `git init` 从“第一个 positional token 直接当目标目录”收成“跳过已知取值参数后，再取初始化目标目录”：
-      - `git init --template /tmp/template-dir /tmp/repo-copy` 当前只把 `/tmp/repo-copy` 记为 `externalWritePaths`
-      - `--template` 这类参数值不再误报成初始化目标目录
-    - 已把 `cp / mv` 的 `-t / --target-directory` 收成显式目标目录识别：
-      - `cp -t /tmp/copied-dir ~/source-a.txt ~/source-b.txt` 当前只把 `/tmp/copied-dir` 记为 `externalWritePaths`
-      - `mv --target-directory /tmp/moved-dir ~/source-a.txt ~/source-b.txt` 当前只把 `/tmp/moved-dir` 记为 `externalWritePaths`
-    - 已把 `New-Item -Path <dir> -Name <leaf>` 收成真正创建目标路径识别：
-      - `New-Item -Path filesystem::C:\\temp -Name created.txt -ItemType File` 当前把 `filesystem::C:\\temp\\created.txt` 记为 `externalWritePaths`
-      - 不再只把父目录 `filesystem::C:\\temp` 当成写入目标
-    - 已把 `Rename-Item -Path <old> -NewName <leaf>` 收成真正重命名目标路径识别：
-      - `Rename-Item -Path filesystem::C:\\temp\\old.txt -NewName renamed.txt` 当前把 `filesystem::C:\\temp\\renamed.txt` 记为 `externalWritePaths`
-      - 不再只把旧路径 `filesystem::C:\\temp\\old.txt` 当成写入目标
-    - 已把 `New-Item / Rename-Item` 的 PowerShell 目标路径拼接 owner 收口成共享最小规则：
-      - `path + leaf-name` 这类命令当前可直接回显真正写入目标
-      - positional 写法当前也已并入这条规则，不再只依赖 `-Path`
-      - 裸 Windows 盘符路径当前也会保留反斜杠，不再混出 `/`
-      - 后续同类 PowerShell 命令可继续复用这条低膨胀路径拼接能力
-    - 已把 `mkdir / md` 的 PowerShell `-Path <dir> -Name <leaf>` 并入同一条共享目标路径拼接规则：
-      - `mkdir -Path C:\\temp -Name created-dir` 当前把 `C:\\temp\\created-dir` 记为 `externalWritePaths`
-      - `md -Path C:\\temp -Name created-alias-dir` 当前也会回显真正创建目标，而不再只回显父目录
-      - 未使用这类 PowerShell 参数时，仍回退现有 Unix `mkdir` 路径提取，不把两套语义混成更重的 parser
-    - 已把 `Set-Content / Add-Content` 从通用 positional 扫描收成“优先认显式路径参数，否则只认第一个 positional token”为写入目标：
-      - `Set-Content C:\\temp\\note.txt D:\\payload.txt` 当前只把 `C:\\temp\\note.txt` 记为 `externalWritePaths`
-      - `ac C:\\temp\\append.txt D:\\payload.txt` 当前也不会再把第二个绝对路径样式内容误报成外部写入
-- 下一步重点：
-  - 继续看是否要把更多 structured metadata 下沉为稳定 contract
-  - 把当前轻量静态预扫继续推进到更结构化的 shell 语法分析，但不把 parser 复杂度重新抬回工具层
-- 验收：
-  - `bash` 至少一组渲染/截断/错误分支定向测试
-  - 主聊天与 `builtin.runtime-tools` 的结果文本完全共用
-
-### G20-5 诊断与项目增强 owner 收口
+### P21-1 Bash 静态预扫收口第一段
 
 - 状态：进行中
-- 目标：
-  - 把 OpenCode 文件工具里“有工程上下文时的额外价值”拆成独立 owner，而不是写死进 runtime 主链。
-  - 第一轮重点：
-    - diff metadata owner
-    - diagnostics owner
-    - formatting owner
-    - file freshness / watch / touch owner
-  - 明确哪些能力属于可选 overlay，哪些属于 runtime 主链。
-- 验收：
-  - 没有 project/worktree overlay 时，runtime 文件工具仍可工作
-  - 有 overlay 时，工具结果能额外带上 diagnostics / formatting / metadata
-- 当前进展：
-  - `ProjectWorktreePostWriteService + RuntimeFilesystemPostWriteService` 已形成正式 overlay 链；overlay 缺席时会回退为空结果，不需要兼容壳。
-  - `write / edit` 当前已正式带上 `postWrite.formatting / postWrite.diagnostics`，第一轮增强覆盖 `.json` pretty format + JS/TS 语法诊断。
-  - 工具输出会显式回显 `Formatting` 与 `Diagnostics` 摘要，后续增强继续沿 post-write owner 追加。
+- 范围：
+  - 继续收口仍偏粗粒度的 PowerShell 写入 / 删除命令
+  - 只允许复用现有共享规则：
+    - `destination`
+    - `path + leaf-name`
+    - `value-flag 跳过`
+    - `首个 positional target`
+- 产出：
+  - 新增一批命令级定向测试
+  - `runtime-shell-command-hints.ts` 不新增第二套散乱判定 owner
+- fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+- judge：
+  - 独立 judge 检查是否只是继续堆特判
+  - 独立 judge 检查是否把判断散回 `BashToolService / tool-registry / 审批 service`
 
-### G20-6 执行后端抽象继续压实
-
-- 状态：进行中
-- 目标：
-  - 把当前 runtime 中层从“已能注册第二 backend”推进到“便于挂更多生产级后端”。
-  - 重点补齐：
-    - command/filesystem/session 三层契约的稳定输入输出
-    - 后处理 owner 与 backend 原始结果解耦
-    - 权限 ask/yolo 与 backend capability 决议彻底解耦
-    - 工具层不再持有任何 backend 私有假设
-- 验收：
-  - 新增一个生产风格的第二 backend 试点时，不需要回改 `read / glob / grep / write / edit / bash` 工具服务
-  - 独立 judge 明确确认“不是只靠 mock backend 的假迁移性”
-- 当前进展：
-  - `RuntimeBackendRoutingService` 与 `runtime-visible-path.ts` 已把 backend 路由和可见路径真相收口成单点 owner。
-  - `RuntimeFilesystemBackendService`、`RuntimeToolBackendService` 与 `RuntimeHostRuntimeToolService` 当前都已改成“单次调用只固定一次 backend kind，再贯穿 input / access / review / execute”。
-  - 当前剩余重点不是继续改工具层，而是继续验证中层 prepared contract 是否已经足够稳定。
-  - `bash / read / glob / grep / write / edit` 当前已不再在工具 `execute()` 里重复决议 backend kind。
-  - `native-shell` 已作为真实第二 shell backend 落地：
-    - Windows 宿主进程走 PowerShell
-    - Linux / WSL 宿主进程走 bash
-  - `packages/server/scripts/http-smoke.mjs` 已补 shell-aware 命令模板，Windows `native-shell` 不再被 bash-only smoke 误伤。
-  - 前端实时切换 shell backend 已并回 `builtin.runtime-tools` 现有配置链：
-    - `shellBackend` 当前只在用户显式选择时覆盖 runtime shell route
-    - 未设置时继续跟随后端全局默认路由，不会被 schema 默认值误压回 `just-bash`
-  - 2026-04-22 已重新拿到 fresh 证据：
-    - Windows：默认 `smoke:server`、`GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell smoke:server`、`smoke:web-ui`
-    - WSL 内部目录：`runtime-native-shell` 定向 jest、real native-shell route 定向 jest、`GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell smoke:server`
-
-### G20-7 端到端验收与独立 judge
+### P21-2 Bash 静态预扫收口第二段
 
 - 状态：待开始
-- 目标：
-  - 对每一段都执行 fresh 验收，不接受“局部单测通过但 smoke 漏洞仍在”。
-  - 当前固定验收链：
-    - 受影响定向 jest / vitest
-    - `packages/shared` build
-    - `packages/plugin-sdk` build
-    - `packages/server` build
-    - root `npm run lint`
-    - root `npm run smoke:server`
-    - root `npm run smoke:web-ui`
-  - 每个大阶段结束前都必须做独立 judge。
-- 验收：
-  - judge 明确 PASS
-  - fresh 验收命令全部新鲜通过
-  - `TODO.md / task_plan.md / progress.md / findings.md` 全部同步
+- 范围：
+  - 只处理复杂 quoting / variable expansion / command substitution 的高价值误判点
+  - 不引完整 parser
+- 产出：
+  - 新增最小必要规则或更薄的 rule owner
+  - 明确哪些语法仍故意不支持
+- fresh 验收：
+  - `packages/server`: 同 `P21-1` 定向 jest
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- judge：
+  - 独立 judge 检查是否出现“半成品 parser”
+  - 独立 judge 检查新增规则是否真的压掉误判，而不是只换位置
 
-## 其他未完成路线摘要
+### P21-3 Read 成熟度补齐
 
-这些路线仍有效，但不抢当前主路线优先级：
+- 状态：待开始
+- 范围：
+  - 把最小 loaded-files reminder 收成稳定 owner
+  - 补缺失 / 文件 / 目录 / 截断 / 分流场景的统一继续操作提示
+- 产出：
+  - `read` 结果文本更接近 OpenCode 的可继续操作提示
+  - `ReadToolService` 进一步变薄
+- fresh 验收：
+  - 受影响定向测试
+  - root: `npm run smoke:server`
+- judge：
+  - 独立 judge 检查 loaded-files 语义是否仍只是 freshness 壳
+  - 独立 judge 检查 `ReadToolService` 是否真实变薄
 
-- `R14` 远程插件静态 key 与元数据缓存：
-  - 目标不变：远程接入主语义改成静态 key，静态元数据缓存与运行态状态分层
-  - 当前状态：待开始
-- 其他历史已完成路线与中间判断：
-  - 不再保留在本文件逐段展开
-  - 需要追溯时看 `task_plan.md / progress.md / findings.md`
+### P21-4 Glob / Grep 成熟度补齐
+
+- 状态：进行中
+- 范围：
+  - 排序、continuation hint、搜索后处理、project-aware overlay
+  - 压缩搜索结果摘要与 skipped diagnostics 的重复 owner
+- 产出：
+  - `glob / grep` 输出可直接接 `read / edit / write`
+  - 继续减少重复文案和重复控制流
+- fresh 验收：
+  - 受影响定向测试
+  - root: `npm run smoke:server`
+- judge：
+  - 独立 judge 检查是否只是增加文案，没有补真实搜索成熟度
+  - 独立 judge 检查搜索 owner 是否继续停留在工具层
+
+### P21-5 Write / Edit 成熟度补齐
+
+- 状态：进行中
+- 范围：
+  - rewrite / edit 匹配修正
+  - post-write formatting / diagnostics
+  - diff / patch / freshness 的重复控制流压缩
+- 产出：
+  - `write / edit` 结果接近 OpenCode 的工程反馈
+  - 核心 owner 继续向 filesystem / overlay 下沉
+- fresh 验收：
+  - 受影响定向测试
+  - root: `npm run smoke:server`
+- judge：
+  - 独立 judge 检查是否真实增强修改质量，而不是只增输出字段
+  - 独立 judge 检查 post-write 能力是否仍然挂在错误 owner 下
+
+### P21-6 第三 backend 试点
+
+- 状态：待开始
+- 范围：
+  - 补出第三个生产风格 backend 试点或等价强证据
+  - 工具服务不得因 backend 增加而回改 owner
+- 产出：
+  - 第三 backend 真路由证据
+  - 对应 fresh 验收与迁移性判断
+- fresh 验收：
+  - 受影响定向测试
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- judge：
+  - 独立 judge 检查不是 mock 迁移性
+  - 独立 judge 检查 6 个工具服务未因 backend 增加而回改
+
+### P21-7 代码体积压缩到 `<= 15000`
+
+- 状态：待开始
+- 范围：
+  - 主战场只看：
+    - `execution`
+    - `runtime`
+    - 少量 `plugin / conversation / ai` 大 owner
+  - 不允许删功能伪达标
+- 产出：
+  - `packages/server/src <= 15000`
+  - 大文件、宿主编排 owner、静态预扫 owner 明显变薄
+- fresh 验收：
+  - 每次压缩后重新统计 `packages/server/src`
+  - 最终跑完整 fresh 链
+- judge：
+  - 独立 judge 检查是否存在“把同等复杂度换目录继续活着”
+  - 独立 judge 检查压缩是否损伤前面已补的成熟度
+
+### P21-8 最终总验收
+
+- 状态：待开始
+- 范围：
+  - 汇总 `P21-1 ~ P21-7`
+  - 做最终成熟度比对、fresh 验收、独立 judge
+- fresh 验收：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+- judge：
+  - `G20-4 / G20-5 / G20-6` 各自独立 judge
+  - 最终总 judge 检查：
+    - 成熟度已对齐 `other/opencode`
+    - `packages/server/src <= 15000`
+    - 不存在假完成
+
+## 完成定义
+
+以下四条同时满足，才允许说“本轮做完”：
+
+- 对齐 `other/opencode` 的功能成熟度达到可交付水平。
+- `packages/server/src <= 15000`。
+- fresh 验收全通过。
+- 独立 judge PASS。
 
 ## 固定约束
 

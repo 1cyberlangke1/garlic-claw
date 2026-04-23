@@ -54,9 +54,14 @@ const COMMAND_ALIASES = new Map<string, string>([
   ['sc', 'set-content'],
   ['ac', 'add-content'],
   ['sl', 'set-location'],
+  ['cpi', 'copy-item'],
+  ['mi', 'move-item'],
   ['ni', 'new-item'],
   ['md', 'mkdir'],
   ['rd', 'remove-item'],
+  ['ri', 'remove-item'],
+  ['del', 'remove-item'],
+  ['erase', 'remove-item'],
   ['ren', 'rename-item'],
 ]);
 const POWERSHELL_PATH_PARAMETER_FLAGS = new Set([
@@ -71,8 +76,18 @@ const POWERSHELL_DESTINATION_PARAMETER_FLAGS = new Set(['-destination']);
 const POWERSHELL_NAME_PARAMETER_FLAGS = new Set(['-name']);
 const POWERSHELL_NEW_NAME_PARAMETER_FLAGS = new Set(['-newname']);
 const POWERSHELL_CONTENT_VALUE_FLAGS = new Set(['-value', '-encoding', '-delimiter', '-stream']);
+const POWERSHELL_OUT_FILE_VALUE_FLAGS = new Set(['-filepath', '-literalpath', '-inputobject', '-encoding', '-width']);
 const POWERSHELL_NEW_ITEM_VALUE_FLAGS = new Set(['-path', '-literalpath', '-name', '-itemtype', '-value']);
 const POWERSHELL_RENAME_ITEM_VALUE_FLAGS = new Set(['-path', '-literalpath', '-newname']);
+const POWERSHELL_REMOVE_ITEM_PATH_PARAMETER_FLAGS = new Set(['-path', '-literalpath']);
+const POWERSHELL_REMOVE_ITEM_VALUE_FLAGS = new Set([
+  '-path',
+  '-literalpath',
+  '-include',
+  '-exclude',
+  '-filter',
+  '-stream',
+]);
 const CURL_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
 const CP_MV_DESTINATION_FLAGS = new Set(['-t', '--target-directory']);
 const GIT_ARCHIVE_WRITE_PATH_FLAGS = new Set(['-o', '--output']);
@@ -149,7 +164,7 @@ export function readRuntimeShellCommandHints(
     && process.platform === 'win32'
     && input.command.includes('&&');
   const absolutePaths = uniquePreview(
-    tokens.filter((token) => isShellAbsolutePathToken(token, input.backendKind)),
+    tokens.flatMap((token) => readShellAbsolutePathCandidates(token, input.backendKind)),
   );
   const parentTraversalPaths = uniquePreview(
     tokens.filter((token) => isShellParentTraversalToken(token)),
@@ -298,6 +313,17 @@ function isShellAbsolutePathToken(token: string, backendKind: RuntimeBackendKind
   return false;
 }
 
+function readShellAbsolutePathCandidates(token: string, backendKind: RuntimeBackendKind): string[] {
+  if (isShellAbsolutePathToken(token, backendKind)) {
+    return [token];
+  }
+  const attachedPath = readPowerShellAttachedFlagValue(token, POWERSHELL_PATH_PARAMETER_FLAGS);
+  if (attachedPath && isShellAbsolutePathToken(attachedPath, backendKind)) {
+    return [attachedPath];
+  }
+  return [];
+}
+
 function isExternalAbsolutePathToken(token: string, visibleRoot: string): boolean {
   const normalizedToken = unwrapFilesystemProviderToken(token);
   if (normalizedToken !== token) {
@@ -394,11 +420,17 @@ function readShellCommandWritePathTokens(segment: RuntimeShellCommandSegment): s
   if (segment.command === 'set-content' || segment.command === 'add-content') {
     return readPowerShellContentWritePathTokens(segment.tokens.slice(1));
   }
+  if (segment.command === 'out-file') {
+    return readPowerShellOutFileWritePathTokens(segment.tokens.slice(1));
+  }
   if (segment.command === 'new-item') {
     return readPowerShellNewItemWritePathTokens(segment.tokens.slice(1));
   }
   if (segment.command === 'rename-item') {
     return readPowerShellRenameItemWritePathTokens(segment.tokens.slice(1));
+  }
+  if (segment.command === 'remove-item') {
+    return readPowerShellRemoveItemWritePathTokens(segment.tokens.slice(1));
   }
   if (segment.command === 'curl') {
     return readShellFlaggedPathTokens(segment.tokens.slice(1), CURL_WRITE_PATH_FLAGS);
@@ -458,6 +490,15 @@ function readPowerShellContentWritePathTokens(tokens: string[]): string[] {
   return positional[0] ? [positional[0]] : [];
 }
 
+function readPowerShellOutFileWritePathTokens(tokens: string[]): string[] {
+  const flaggedPath = readPowerShellFlaggedPathTokens(tokens)[0];
+  if (flaggedPath) {
+    return [flaggedPath];
+  }
+  const positional = readPowerShellPositionalTokens(tokens, POWERSHELL_OUT_FILE_VALUE_FLAGS);
+  return positional[0] ? [positional[0]] : [];
+}
+
 function readPowerShellNewItemWritePathTokens(tokens: string[]): string[] {
   const positional = readPowerShellPositionalTokens(tokens, POWERSHELL_NEW_ITEM_VALUE_FLAGS);
   const basePath = readPowerShellFlaggedPathTokensWithFlags(tokens, new Set(['-path', '-literalpath']))[0] ?? positional[0];
@@ -478,6 +519,15 @@ function readPowerShellRenameItemWritePathTokens(tokens: string[]): string[] {
   return basePath ? [basePath] : [];
 }
 
+function readPowerShellRemoveItemWritePathTokens(tokens: string[]): string[] {
+  const flaggedPath = readPowerShellFlaggedPathTokensWithFlags(tokens, POWERSHELL_REMOVE_ITEM_PATH_PARAMETER_FLAGS)[0];
+  if (flaggedPath) {
+    return [flaggedPath];
+  }
+  const positional = readPowerShellPositionalTokens(tokens, POWERSHELL_REMOVE_ITEM_VALUE_FLAGS);
+  return positional[0] ? [positional[0]] : [];
+}
+
 function readPowerShellFlaggedPathTokensWithFlags(tokens: string[], flags: Set<string>): string[] {
   const paths: string[] = [];
   let wantsPath = false;
@@ -492,9 +542,24 @@ function readPowerShellFlaggedPathTokensWithFlags(tokens: string[], flags: Set<s
     if (!token.startsWith('-')) {
       continue;
     }
+    const attachedValue = readPowerShellAttachedFlagValue(token, flags);
+    if (attachedValue) {
+      paths.push(attachedValue);
+      continue;
+    }
     wantsPath = flags.has(token.toLowerCase());
   }
   return paths;
+}
+
+function readPowerShellAttachedFlagValue(token: string, flags: Set<string>): string | undefined {
+  const normalizedToken = token.toLowerCase();
+  const attachedFlag = Array.from(flags).find((flag) => normalizedToken.startsWith(`${flag}:`));
+  if (!attachedFlag) {
+    return undefined;
+  }
+  const attachedValue = token.slice(attachedFlag.length + 1);
+  return attachedValue.length > 0 ? attachedValue : undefined;
 }
 
 function readPowerShellPositionalTokens(tokens: string[], valueFlags: Set<string>): string[] {

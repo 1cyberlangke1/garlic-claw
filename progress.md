@@ -2830,6 +2830,129 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已按用户要求继续压缩 `TODO.md`：
+  - `G20-4` 当前已从命令级流水账收成阶段摘要
+  - `TODO.md` 只保留“当前能力边界 + 下一步计划”，具体每一刀继续留在 `task_plan.md / progress.md / findings.md`
+- 已按用户最新要求重写 `TODO.md` 的未完成部分：
+  - 当前已改成“完整计划 + 交付硬门槛 + 代码膨胀控制规则”
+  - 明确本轮最终交付必须同时满足：
+    - 功能成熟度对齐 `other/opencode`
+    - `packages/server/src <= 15000`
+    - fresh 验收全通过
+    - 独立 judge PASS
+  - 未完成路线当前已统一重排为 `P21-1 ~ P21-7`
+- 已按用户最新要求再次收紧 `TODO.md`：
+  - 当前已把 `P21-1 ~ P21-7` 改成带明确执行门的 `P21-1 ~ P21-8`
+  - 每一步当前都写明了范围、产出、fresh 验收与独立 judge
+  - 当前不再允许“做完几大块后统一 judge”，而是改成“每一步都先 judge 再进入下一步”
+- 已继续推进 `P21-1` 的 PowerShell 删除命令误报收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `remove-item` 从通用 positional 扫描收成最小目标路径提取。
+  - 当前优先认 `-Path / -LiteralPath`；未显式给出时，会跳过 `-Include / -Exclude / -Filter / -Stream` 这类取值参数，再只取第一个 positional token。
+  - 因此 `Remove-Item C:\\temp -Include D:\\archived.log` 与 `rd C:\\temp -Include D:\\archived.log` 现在都只会把 `C:\\temp` 视为外部写入。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 53 tests` 全部通过
+    - 定向组合：`2 suites / 124 tests` 全部通过
+- 已继续推进 `P21-1` 的 `Out-File` positional 误报收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `out-file` 从通用 positional 扫描收成最小目标路径提取。
+  - 当前优先认 `-FilePath / -LiteralPath`；未显式给出时，会跳过 `-InputObject / -Encoding / -Width` 这类取值参数，再只取第一个 positional token。
+  - 因此 `Out-File C:\\temp\\copied.txt D:\\payload.txt` 现在只会把 `C:\\temp\\copied.txt` 视为外部写入。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 54 tests` 全部通过
+    - 定向组合：`2 suites / 125 tests` 全部通过
+- 已完成这轮 `Out-File` 独立 judge，结论为 `PASS`：
+  - judge 确认判断仍集中在 `runtime-shell-command-hints.ts`
+  - judge 确认没有散回 `BashToolService / tool-registry / 审批 service`
+  - judge 确认当前仍复用既有 `flagged path / value-flag 跳过 / positional` 机制，没有长出第二套判定链
+- 已继续推进 `P21-1` 的共享 PowerShell 附着参数语法收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `readPowerShellFlaggedPathTokensWithFlags()` 补到支持 `-Flag:Value`。
+  - 因此依赖这条共享能力的命令现在都能识别附着写法，例如 `Out-File -FilePath:C:\\temp\\copied-attached.txt ...` 与 `Set-Content -Path:C:\\temp\\note-attached.txt ...`。
+  - 这轮没有继续堆命令名单，只补了共享 `flagged path` owner。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 56 tests` 全部通过
+    - 定向组合：`2 suites / 127 tests` 全部通过
+- 已完成这轮附着参数路径汇总独立 judge，结论为 `PASS`：
+  - judge 确认附着参数路径已补进共享 `absolutePaths` 汇总 owner
+  - judge 确认没有散回 `BashToolService / tool-registry / 审批 service`
+  - judge 确认当前残余只剩后续可能新增的附着 path flag 集合扩展
+- 已继续推进 `P21-1` 的 PowerShell 别名收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `ri` 并入 `remove-item` 别名映射。
+  - 因此 `ri C:\\temp -Include D:\\archived.log` 现在会复用现有 `remove-item` 规则，只把 `C:\\temp` 视为外部写入。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 57 tests` 全部通过
+    - 定向组合：`2 suites / 128 tests` 全部通过
+- 已完成这轮 `ri` alias 独立 judge，结论为 `PASS`：
+  - judge 确认 `ri` 已直接接到既有 `remove-item` owner
+  - judge 确认没有新增 `ri` 专属命令分支，也没有散回工具层
+- 已继续推进 `P21-1` 的 PowerShell alias 收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `cpi` 并入 `copy-item`，`mi` 并入 `move-item`。
+  - 因此 `cpi` 与 `mi` 现在都会复用现有目标路径提取规则，不再退化成普通 token。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 59 tests` 全部通过
+    - 定向组合：`2 suites / 130 tests` 全部通过
+- 已完成这轮 `cpi / mi` alias 独立 judge，结论为 `PASS`：
+  - judge 确认 `cpi / mi` 已直接接到既有 `copy-item / move-item` owner
+  - judge 确认没有新增 `cpi / mi` 专属命令分支，也没有散回工具层
+- 已继续推进 `P21-1` 的 alias 权限链覆盖补强：
+  - `tool-registry.service.spec.ts` 当前已补 `cpi / mi` 两条权限提示用例。
+  - 这两条用例当前都证明 alias 进入权限链后，`fileCommands` 仍归一为 `copy-item / move-item`，`externalWritePaths` 仍只保留目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 132 tests` 全部通过
+- 已完成这轮 alias 权限链 coverage 独立 judge，结论为 `PASS`：
+  - judge 确认 `cpi / mi` 在权限链里仍归一到 `copy-item / move-item`
+  - judge 确认 `externalWritePaths` 仍只保留目标路径，没有分叉出第二套语义
+- 已继续推进 `P21-1` 的 PowerShell 删除 alias 收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `del / erase` 并入 `remove-item`。
+  - 因此 `del / erase` 现在都会复用现有 `remove-item` 目标路径规则，不再退化成普通 token。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 61 tests` 全部通过
+    - 定向组合：`2 suites / 134 tests` 全部通过
+- 已完成这轮 `del / erase` alias 独立 judge，结论为 `PASS`：
+  - judge 确认 `del / erase` 已直接接到既有 `remove-item` owner
+  - judge 确认没有新增 `del / erase` 专属命令分支，也没有散回工具层
+- 已补这轮提交流程验证：
+  - `packages/shared`: `npm run build`
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/server`: `npm run build`
+  - root: `npm run lint`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - root: `npm run smoke:web-ui`
+  - 结果：
+    - 全部通过
+- 已完成这轮共享 `-Flag:Value` 语法独立 judge，结论为 `PASS`：
+  - judge 确认附着参数语法识别已补在共享 `flagged path` owner
+  - judge 确认没有散回 `BashToolService / tool-registry / 审批 service`
+  - judge 确认当前残余只剩附着参数目标尚未进入 `absolutePaths / externalAbsolutePaths`
+- 已继续推进 `P21-1` 的附着参数路径汇总收口：
+  - `runtime-shell-command-hints.ts` 当前已把附着参数路径并入统一 `absolutePaths` 提取。
+  - 因此 `Out-File -FilePath:C:\\temp\\copied-attached.txt ...` 与 `Set-Content -Path:C:\\temp\\note-attached.txt ...` 现在都会把附着目标路径同步写入 `absolutePaths / externalAbsolutePaths`。
+  - 这轮没有往命令分支继续复制逻辑，只补了共享 token 汇总 owner。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 56 tests` 全部通过
+    - 定向组合：`2 suites / 127 tests` 全部通过
 - 已继续补 `G20-4` 的 `Copy-Item / Move-Item` 写路径识别，但保持小改：
   - `runtime-shell-command-hints.ts` 当前已把这两类 PowerShell 命令从通用路径参数扫描收成目标路径提取。
   - 当前优先认 `-Destination`，未显式给出时再回退到最后一个 positional token，不再把源路径一起抬成 `externalWritePaths`。
