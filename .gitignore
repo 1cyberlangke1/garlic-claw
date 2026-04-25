@@ -32,6 +32,30 @@ config/model-capabilities.json
 config/tool-governance.json
 config/skill-governance.json
 
+# config/ 下的本机真实配置默认不提交；仓库内置样例/默认配置显式放行
+config/ai/providers/*.json
+config/ai/host-model-routing.json
+config/ai/vision-fallback.json
+
+config/mcp/servers/*.json
+!config/mcp/servers/tavily-mcp.json
+
+config/personas/*
+!config/personas/builtin.default-assistant/
+config/personas/builtin.default-assistant/*
+!config/personas/builtin.default-assistant/avatar.png
+!config/personas/builtin.default-assistant/persona.json
+!config/personas/builtin.default-assistant/prompt.md
+
+config/subagent/*
+!config/subagent/general/
+!config/subagent/explore/
+config/subagent/general/*
+config/subagent/explore/*
+!config/subagent/general/subagent.json
+!config/subagent/explore/subagent.json
+!config/subagent/explore/prompt.md
+
 # Python 相关
 *.pyc
 __pycache__/
