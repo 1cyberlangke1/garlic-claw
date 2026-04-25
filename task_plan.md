@@ -1,5 +1,35 @@
 # 2026-04-19 Skill 对齐 OpenCode
 
+## 2026-04-25 记忆上下文避免打断 cache 并持久化
+
+### 目标
+
+- 修正 `builtin.memory-context` 直接改 `systemPrompt` 的注入方式，避免每次命中记忆都打断 provider prompt cache。
+- 为 `RuntimeHostUserContextService` 增加本地 json 持久化，保证记忆可跨服务重启恢复。
+- 不改 `shared` 契约，不新增兼容层，不把记忆逻辑外推到别的 owner。
+
+### 范围
+
+- `packages/server/src/plugin/builtin/hooks/builtin-memory-context.plugin.ts`
+- `packages/server/src/runtime/host/runtime-host-user-context.service.ts`
+- `packages/server/tests/plugin/builtin/hooks/builtin-memory-context.plugin.spec.ts`
+- `packages/server/tests/runtime/host/runtime-host-user-context.service.spec.ts`
+
+### 实现约束
+
+- 记忆注入只允许改 `messages`，不再改 `systemPrompt`。
+- 注入位置固定为“最新 user 消息之前”的合成上下文消息，尽量保持静态前缀稳定。
+- 持久化默认使用 `process.cwd()/tmp/memories.server.json`。
+- 可通过 `GARLIC_CLAW_MEMORIES_PATH` 覆盖持久化路径。
+- Jest 默认不落盘，除非显式设置 `GARLIC_CLAW_MEMORIES_PATH`。
+
+### 验收
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-memory-context.plugin.spec.ts tests/runtime/host/runtime-host-user-context.service.spec.ts`
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-lifecycle.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
+- `packages/server`: `npm run build`
+- root: `npm run smoke:server`
+
 ## 2026-04-25 配置目录统一到 config
 
 ### 目标

@@ -19,7 +19,7 @@ import { RuntimeHostService } from '../../../../src/runtime/host/runtime-host.se
 import { RuntimeHostUserContextService } from '../../../../src/runtime/host/runtime-host-user-context.service';
 
 describe('BuiltinMemoryContextPlugin', () => {
-  it('injects matched memories into the current system prompt before model execution', async () => {
+  it('injects matched memories as a synthetic context message before the latest user message', async () => {
     const fixture = createRuntimeFixture();
     fixture.pluginBootstrapService.bootstrapBuiltins();
 
@@ -69,10 +69,16 @@ describe('BuiltinMemoryContextPlugin', () => {
       }),
     ).resolves.toEqual({
       action: 'mutate',
-      systemPrompt: [
-        '你是默认助手。',
-        '与此用户相关的记忆：\n- [preference] 用户偏好手冲咖啡和浅烘豆。',
-      ].join('\n\n'),
+      messages: [
+        {
+          content: '与此用户相关的记忆：\n- [preference] 用户偏好手冲咖啡和浅烘豆。',
+          role: 'assistant',
+        },
+        {
+          content: '手冲咖啡',
+          role: 'user',
+        },
+      ],
     });
   });
 

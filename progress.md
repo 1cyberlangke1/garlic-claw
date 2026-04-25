@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-25 记忆上下文避免打断 cache 并持久化
+
+- 已把 `builtin.memory-context` 的送模注入从 `systemPrompt` 改为 `messages` 级注入。
+- 已把记忆摘要改成“最新 user 消息之前”的合成 `assistant` 上下文消息，避免静态 persona/system 前缀频繁变化。
+- 已在 `RuntimeHostUserContextService` 增加 json 持久化：
+  - 默认路径：`tmp/memories.server.json`
+  - 覆盖变量：`GARLIC_CLAW_MEMORIES_PATH`
+  - Jest 默认禁用落盘，避免测试互相污染
+- 已补测试：
+  - `builtin-memory-context.plugin.spec.ts` 改成断言 `messages` 注入
+  - 新增 `runtime-host-user-context.service.spec.ts`，验证重建 service 后可读回持久化记忆
+- 已通过 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-memory-context.plugin.spec.ts tests/runtime/host/runtime-host-user-context.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-lifecycle.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run smoke:server`
+
 ## 2026-04-25 配置目录统一到 config
 
 - 已确认本阶段只迁“用户维护配置”，不碰 runtime 状态文件。

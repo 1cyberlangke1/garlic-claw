@@ -49,15 +49,41 @@ export const BUILTIN_MEMORY_CONTEXT_PLUGIN: BuiltinPluginDefinition = {
       }
 
       const promptBlock = `${runtimeConfig.promptPrefix}：\n${lines.join('\n')}`;
+      const messages = insertMemoryContextMessage(
+        hookPayload.request.messages,
+        promptBlock,
+      );
+      if (!messages) {
+        return createPassHookResult();
+      }
       return {
         action: 'mutate',
-        systemPrompt: hookPayload.request.systemPrompt
-          ? `${hookPayload.request.systemPrompt}\n\n${promptBlock}`
-          : promptBlock,
+        messages,
       };
     },
   },
 };
+
+function insertMemoryContextMessage(
+  messages: Array<{
+    role: 'assistant' | 'system' | 'tool' | 'user';
+    content: string | Array<{ type: string; text?: string }>;
+  }>,
+  promptBlock: string,
+) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role !== 'user') {
+      continue;
+    }
+    return [
+      ...messages.slice(0, index),
+      { content: promptBlock, role: 'assistant' as const },
+      messages[index],
+      ...messages.slice(index + 1),
+    ];
+  }
+  return null;
+}
 
 function formatMemoryLine(memory: {
   content?: string;

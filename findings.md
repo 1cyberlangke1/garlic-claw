@@ -1,5 +1,20 @@
 # Findings
 
+## 2026-04-25 记忆上下文避免打断 cache 并持久化
+
+- 旧版 `builtin.memory-context` 把记忆摘要直接拼进 `systemPrompt`，会改变最前缀上下文；对带 prompt cache 的 provider，这类前缀抖动最容易打断 cache 命中。
+- 这类记忆更适合在 `chat:before-model` 阶段改 `messages`，而不是改 `systemPrompt`：
+  - persona / system 前缀保持稳定
+  - 记忆只作为尾部附近的上下文提示参与本轮推理
+  - 不需要改 `ConversationMessagePlanningService` 对外契约
+- 注入位置不能放到消息末尾；放在“最新 user 消息之前”更接近“给模型看的上下文前置说明”，同时不会把用户最新提问挤到更前面。
+- 当前宿主记忆服务原先只有内存态 `memories[]`，服务重启后会全部丢失；这会让 `memory-context` 在真实运行里表现得像“偶尔生效、重启后失忆”。
+- 这轮持久化最短 owner 仍是 `RuntimeHostUserContextService` 自身：
+  - 生产默认写 `tmp/memories.server.json`
+  - 测试默认不写盘
+  - 显式 `GARLIC_CLAW_MEMORIES_PATH` 可同时满足测试隔离和部署覆盖
+- 这轮不需要把记忆系统升级成向量库；当前 `searchMemoriesByUser()` 仍是关键词/包含匹配，先把“注入位置”和“持久化丢失”修正即可。
+
 ## 2026-04-25 配置目录统一到 config
 
 - 当前“配置”和“状态”边界可直接切开：
