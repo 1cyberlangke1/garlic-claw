@@ -16,7 +16,7 @@ describe('SkillRegistryService', () => {
   });
 
   it('scans skills only from the configured skills directory', async () => {
-    const skillsRoot = path.join(tempRoot, 'skills');
+    const skillsRoot = path.join(tempRoot, 'config', 'skills', 'definitions');
     const externalRoot = path.join(tempRoot, 'external-skills');
     await fs.mkdir(path.join(skillsRoot, 'weather-query', 'scripts'), { recursive: true });
     await fs.mkdir(path.join(externalRoot, 'ignored'), { recursive: true });
@@ -54,7 +54,7 @@ describe('SkillRegistryService', () => {
   });
 
   it('sorts discovered skills by name before exposing them', async () => {
-    const skillsRoot = path.join(tempRoot, 'skills');
+    const skillsRoot = path.join(tempRoot, 'config', 'skills', 'definitions');
     await fs.mkdir(path.join(skillsRoot, 'zeta'), { recursive: true });
     await fs.mkdir(path.join(skillsRoot, 'alpha'), { recursive: true });
     await fs.writeFile(path.join(skillsRoot, 'zeta', 'SKILL.md'), [
@@ -91,7 +91,7 @@ describe('SkillRegistryService', () => {
   });
 
   it('resolves skill directories relative to the configured skills root', () => {
-    const skillsRoot = path.join(tempRoot, 'skills');
+    const skillsRoot = path.join(tempRoot, 'config', 'skills', 'definitions');
     const service = new SkillRegistryService({
       skillsRoot,
     }, new ProjectWorktreeRootService());
@@ -103,7 +103,7 @@ describe('SkillRegistryService', () => {
   });
 
   it('marks shell scripts as executable skill assets', async () => {
-    const skillsRoot = path.join(tempRoot, 'skills');
+    const skillsRoot = path.join(tempRoot, 'config', 'skills', 'definitions');
     await fs.mkdir(path.join(skillsRoot, 'weather-query', 'scripts'), { recursive: true });
     await fs.writeFile(path.join(skillsRoot, 'weather-query', 'SKILL.md'), [
       '---',

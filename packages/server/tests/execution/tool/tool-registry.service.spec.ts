@@ -7528,7 +7528,7 @@ function createFixture(options: {
         tags: [],
       },
     ]),
-    resolveSkillDirectory: jest.fn().mockReturnValue('D:/repo/skills/weather-query'),
+    resolveSkillDirectory: jest.fn().mockReturnValue(path.resolve('config', 'skills', 'definitions', 'weather-query')),
   };
   const skillToolService = new SkillToolService(skillRegistryService as unknown as SkillRegistryService);
   const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();

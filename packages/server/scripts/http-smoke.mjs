@@ -124,7 +124,7 @@ async function main() {
   const databaseUrl = databasePath ? buildRelativeSqliteUrl(databasePath) : null;
   const port = cli.proxyOrigin ? null : await getFreePort();
   const wsPort = cli.proxyOrigin ? null : await getFreePort();
-  const skillRoot = path.join(PROJECT_ROOT, 'skills', SKILL_DIR_NAME);
+  const skillRoot = path.join(PROJECT_ROOT, 'config', 'skills', 'definitions', SKILL_DIR_NAME);
   const fakeOpenAi = await startFakeOpenAiServer();
   smokeWebFetchUrl = `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-webfetch/article`;
   smokeBashTimeoutUrl = `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-bash-timeout`;
@@ -132,15 +132,15 @@ async function main() {
   const mcpScriptPath = path.join(tempDir, 'working-mcp.cjs');
   const remotePluginScriptPath = path.join(tempDir, 'remote-route-plugin.cjs');
   const serverFiles = {
-    aiSettingsPath: path.join(tempDir, 'ai-settings.server.json'),
+    aiSettingsPath: path.join(tempDir, 'config', 'ai'),
     automationsPath: path.join(tempDir, 'automations.server.json'),
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
-    mcpConfigPath: path.join(tempDir, 'mcp', 'servers'),
-    personasPath: path.join(tempDir, 'persona'),
+    mcpConfigPath: path.join(tempDir, 'config', 'mcp', 'servers'),
+    personasPath: path.join(tempDir, 'config', 'personas'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
     runtimeWorkspacesPath: path.join(tempDir, 'runtime-workspaces'),
-    skillGovernancePath: path.join(tempDir, 'skill-governance.server.json'),
-    subagentPath: path.join(tempDir, 'subagent'),
+    skillGovernancePath: path.join(tempDir, 'config', 'skills', 'governance.json'),
+    subagentPath: path.join(tempDir, 'config', 'agents', 'subagent-types'),
     subagentsPath: path.join(tempDir, 'subagents.server.json'),
     userHomePath: path.join(tempDir, 'user-home'),
   };
@@ -2438,19 +2438,15 @@ async function prepareProjectSkill(skillRoot) {
 
 async function prepareCustomSubagentType(subagentTypesRoot) {
   await fsPromises.mkdir(subagentTypesRoot, { recursive: true });
-  await fsPromises.writeFile(path.join(subagentTypesRoot, 'review.yaml'), [
-    'id: review',
-    'name: 审阅',
-    'description: 聚焦审阅与风险检查的烟测子代理类型。',
-    'providerId: null',
-    'modelId: null',
-    'toolNames:',
-    '  - webfetch',
-    'system: |-',
-    '  你是一个审阅子代理。',
-    '  优先指出风险、缺口与可疑点。',
-    '',
-  ].join('\n'), 'utf8');
+  await fsPromises.writeFile(path.join(subagentTypesRoot, 'review.json'), JSON.stringify({
+    id: 'review',
+    name: '审阅',
+    description: '聚焦审阅与风险检查的烟测子代理类型。',
+    providerId: null,
+    modelId: null,
+    toolNames: ['webfetch'],
+    system: '你是一个审阅子代理。\n优先指出风险、缺口与可疑点。',
+  }, null, 2), 'utf8');
 }
 
 async function prepareWorkingMcpScript(filePath) {

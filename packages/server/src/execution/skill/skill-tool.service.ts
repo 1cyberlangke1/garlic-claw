@@ -42,7 +42,7 @@ export class SkillToolService {
           'Tool output includes a `<skill_content name="...">` block with the loaded content.',
           '',
           '<available_skills>',
-          ...skills.map((skill) => ['  <skill>', `    <name>${escapeXml(skill.name)}</name>`, `    <description>${escapeXml(skill.description)}</description>`, `    <location>${escapeXml(`skills/${skill.entryPath}`)}</location>`, '  </skill>'].join('\n')),
+          ...skills.map((skill) => ['  <skill>', `    <name>${escapeXml(skill.name)}</name>`, `    <description>${escapeXml(skill.description)}</description>`, `    <location>${escapeXml(`config/skills/definitions/${skill.entryPath}`)}</location>`, '  </skill>'].join('\n')),
           '</available_skills>',
         ].join('\n');
   }

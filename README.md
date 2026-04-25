@@ -66,7 +66,15 @@ packages/
   plugin-sdk/   插件 SDK
   plugins/      示例插件
 config/
-  ai-settings.example.json   AI provider / model / vision fallback 示例配置
+  ai/
+    providers/*.example.json            AI provider 示例配置
+    host-model-routing.example.json     宿主模型路由示例
+    vision-fallback.example.json        视觉回退示例
+  mcp/servers/*.json                    MCP 配置
+  personas/<id>/persona.json            Persona 配置
+  agents/subagent-types/*.json          子代理类型配置
+  skills/definitions/<name>/SKILL.md    项目内置 skill 定义
+  skills/governance.json                Skill 治理配置
 tools/
   start_launcher.py          ASCII 启动 shim，统一转到中文主脚本
   一键启停脚本.py            开发/生产/脚本测试统一主入口
@@ -109,12 +117,12 @@ cp .env.example .env
 - `JWT_SECRET`
   - 后端签发登录态与远程插件 token 的签名密钥
 
-### 2. AI 配置：示例模板在 `config/`，运行时路径由环境变量决定
+### 2. AI 配置：示例模板在 `config/ai/`，运行时路径由环境变量决定
 
 默认情况下，server 会读取：
 
 ```text
-packages/server/tmp/ai-settings.server.json
+config/ai/
 ```
 
 如果设置了 `GARLIC_CLAW_AI_SETTINGS_PATH`，则会改读该路径。
@@ -122,29 +130,32 @@ packages/server/tmp/ai-settings.server.json
 项目里保留的模板文件在：
 
 ```text
-config/ai-settings.example.json
+config/ai/providers/*.example.json
+config/ai/host-model-routing.example.json
+config/ai/vision-fallback.example.json
 ```
 
-如果你想把 provider 配置固定到仓库根目录，可以先复制模板：
+如果你想把 provider 配置固定到仓库根目录，可以直接在 `config/ai/` 下维护这些 json：
 
 ```bash
-cp config/ai-settings.example.json config/ai-settings.json
+cp config/ai/providers/openai.example.json config/ai/providers/openai.json
 ```
 
 然后在环境中显式设置：
 
 ```bash
-GARLIC_CLAW_AI_SETTINGS_PATH=config/ai-settings.json
+GARLIC_CLAW_AI_SETTINGS_PATH=config/ai
 ```
 
 AI 配置文件负责：
 
-- provider 列表
+- provider 独立文件
 - provider 接入模式：`catalog`（目录模板）/ `protocol`（协议接入）
 - catalog 项或协议接入协议族
 - provider 的 `apiKey` / `baseUrl`
 - 默认模型
 - provider 模型列表
+- provider 级持久化模型元数据
 - `visionFallback` 配置
 - `hostModelRouting` 配置
 

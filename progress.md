@@ -1,6 +1,617 @@
 # Progress
 
+## 2026-04-25 配置目录统一到 config
+
+- 已确认本阶段只迁“用户维护配置”，不碰 runtime 状态文件。
+- 已确认新布局：
+  - `config/ai/providers/<providerId>.json`
+  - `config/ai/host-model-routing.json`
+  - `config/ai/vision-fallback.json`
+  - `config/mcp/servers/<name>.json`
+  - `config/personas/<personaId>/persona.json`
+  - `config/agents/subagent-types/<id>.json`
+  - `config/skills/governance.json`
+- 已确认这轮不做旧布局兼容层；所有默认路径、测试夹具、文档引用直接切到新布局。
+- 已完成代码迁移：
+  - `AI settings` 改为 `config/ai/` 目录布局，provider 改成每个 provider 一个 json，并把模型元数据并回各 provider 文件的 `persistedModels`
+  - `persona` 改为 `config/personas/<id>/persona.json`
+  - `subagent type` 改为 `config/agents/subagent-types/*.json`
+  - `mcp` 默认目录改为 `config/mcp/servers`
+  - `skill definitions` 默认目录改为 `config/skills/definitions/<name>/SKILL.md`
+  - `skill governance` 默认目录改为 `config/skills/governance.json`
+- 已同步仓库内置配置样例：
+  - `config/personas/builtin.default-assistant/persona.json`
+  - `config/agents/subagent-types/{general,explore}.json`
+  - `config/mcp/servers/tavily-mcp.json`
+  - `config/skills/definitions/weather-query/*`
+  - `config/ai/*.example.json`
+- 已通过 fresh 验证：
+  - `packages/server`: `npm run build`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts tests/persona/persona.service.spec.ts tests/execution/project/project-subagent-type-registry.service.spec.ts tests/execution/mcp/mcp-config.service.spec.ts tests/execution/mcp/mcp.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/adapters/http/mcp/mcp.controller.spec.ts tests/adapters/http/persona/persona.controller.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/ai-management/ai-management.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/skill/skill-registry.service.spec.ts tests/execution/skill/skill-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run smoke:server`
+- 已完成独立 judge：
+  - 结果：`PASS`
+  - 核验点：
+    - 默认发现链已统一到仓库根 `config/`
+    - 样例、文档、smoke 夹具与 tool 输出位置已同步
+    - 运行态状态文件未被误并入 `config/`
+
 ## 2026-04-25
+
+- 已继续推进 `S15` 第二十一刀：
+  - `runtime-host-subagent-runner.service.ts` 已继续整文件收口，删除只被单点调用的异步包装 `completeSubagentAsync()`，`scheduleSubagentExecution()` 直接承接 `restoreStoredSubagentExecution() -> executeStoredSubagent()` 调度链
+  - `readSubagentRequest()` 直接承接 `toolNames` 非空字符串过滤，已删除单点 `isNonEmptyString()`
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`523 -> 515`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`3 suites / 27 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14691`
+- 当前状态：
+  - 相对上一稳定值 `14699`，本轮净减 `8`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+    - 结论：单点异步包装与字符串过滤包装已真实删除，owner 语义没有外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀留在 `runtime-host-subagent-runner.service.ts`
+
+- 已继续推进 `S15` 第二十刀：
+  - `runtime-host-subagent-runner.service.ts` 已继续整文件收口，删除只在当前 owner 单点调用的包装：`readWriteBackConversationRevision / readSubagentRequestPreview / writeSubagentSessionRequest`
+  - `startSubagent()` 直接读取 write-back revision，`resolveSubagentInvocation()` 直接承接 request preview 生成，`persistSubagentSession()` update 分支直接承接 session request 写回
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`530 -> 523`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`3 suites / 27 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14699`
+- 当前状态：
+  - 相对上一稳定值 `14706`，本轮净减 `7`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+    - 结论：单点包装已真实删除，owner 语义没有外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀留在 `runtime-host-subagent-runner.service.ts`
+
+- 已继续推进 `S15` 第十九刀：
+  - `runtime-host-subagent-runner.service.ts` 已继续整文件收口，把 `restoreStoredSubagentExecution()` 与 `resolveSubagentSession()` 的双段主链继续压成单一 restore 主链
+  - restore 侧直接承接 session 读取、旧 session 缺失时的 fallback 重建、history/request 重建与 snapshot 同步判定
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`542 -> 530`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`3 suites / 27 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14706`
+- 当前状态：
+  - 相对上一稳定值 `14718`，本轮净减 `12`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+    - 结论：`restore + resolve session` 双段主链已真实删除，owner 语义没有外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀留在 `runtime-host-subagent-runner.service.ts`
+
+- 已继续推进 `S15` 第十八刀：
+  - `runtime-host-subagent-runner.service.ts` 已继续整文件收口，把 restore session 所需的 history/request 拼装、session create payload 与 execution request 组装继续压回同一 owner 主链
+  - 已删除 `readStoredSubagentHistoryMessages / readStoredSubagentSessionRequest / createSubagentSessionPayload / readSubagentExecutionRequestFromSession / hasStoredSubagentSessionSnapshotChanged`
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`553 -> 542`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`3 suites / 27 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14718`
+- 当前状态：
+  - 相对上一稳定值 `14729`，本轮净减 `11`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+    - 结论：restore session 拼装、session create payload 与 execution request 组装继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀留在 `runtime-host-subagent-runner.service.ts`
+
+- 已继续推进 `S15` 第十七刀：
+  - `builtin-context-compaction.plugin.ts` 已继续整文件收口，把命令短路回复、auto-stop 状态读取与 summary 插入点判定继续压回同一 owner 主链
+  - `message:received` 直接复用 `createContextCompactionCommandShortCircuit(...)`，不再经过额外 reply formatter
+  - `/compact`、`/compress`、route `context-compaction/run`、`conversation:history-rewrite`、`chat:before-model`、summary/covered annotation、auto-stop、revision 写回语义仍留在同一 owner
+  - 文件物理行数：`395 -> 388`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14729`
+- 当前状态：
+  - 相对上一稳定值 `14736`，本轮净减 `7`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`/compact`、`/compress`、route `context-compaction/run`、`conversation:history-rewrite`、`chat:before-model`、summary / covered annotation、auto-stop、revision 写回语义保持
+    - 结论：命令短路回复、auto-stop 状态读取与 summary 插入点判定继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-host-subagent-runner.service.ts`
+
+- 已继续推进 `S15` 第十六刀：
+  - `conversation-task.service.ts` 已继续整文件收口，把 `finishTask()` 里只服务一次的 terminal event / completed result / snapshot 组装壳继续压回主链
+  - `persistTaskSnapshot()` 直接构造终态 snapshot，不再经过额外 `buildConversationTaskSnapshot(...)`
+  - `streaming / stopped / error / completed`、snapshot 持久化、completed result、patched writeMessage、permission event、tool-call / tool-result normalize、customBlocks finalize、onComplete / onSent 语义仍留在同一 owner
+  - 文件物理行数：`395 -> 380`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+    - 结果：`3 suites / 34 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14736`
+- 当前状态：
+  - 相对上一稳定值 `14751`，本轮净减 `15`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`streaming / stopped / error / completed`、snapshot 持久化、completed result、patched writeMessage、permission event、tool-call / tool-result normalize、customBlocks finalize、onComplete / onSent 语义保持
+    - 结论：terminal event、completed result 与 snapshot 组装继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `builtin-context-compaction.plugin.ts`
+
+- 已继续推进 `S15` 第十五刀：
+  - `runtime-host-conversation-record.service.ts` 已继续整文件收口，把 conversation 读模型继续压回 `readConversationRecordValue(...)`
+  - `overview / detail / summary / history` 继续共用同一 owner 内投影主链
+  - `keepConversationSession()` 与 `startConversationSession()` 继续共用 `saveConversationSession(...)`
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`hostServices`、`runtimePermissionApprovals`、`activePersona`、revision 保护语义仍留在同一 owner
+  - 文件物理行数：`405 -> 391`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`3 suites / 31 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14751`
+- 当前状态：
+  - 相对上一稳定值 `14765`，本轮净减 `14`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`hostServices`、`runtimePermissionApprovals`、`activePersona`、revision 保护语义保持
+    - 结论：conversation 读模型与 session 写回继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `conversation-task.service.ts`
+
+- 已继续推进 `S15` 第十四刀：
+  - `builtin-context-compaction.plugin.ts` 已继续整文件收口，把旧的 `ContextCompactionHistoryState` 类壳压回纯函数主链
+  - `readContextCompactionHistoryState(...)` 与 `readContextCompactionSummaryInsertIndex(...)` 直接承接历史状态读取和 summary 插入点判定
+  - `message:received` 与 route `context-compaction/run` 继续共用 `runManualContextCompaction(...)`
+  - `/compact`、`/compress`、`conversation:history-rewrite`、`chat:before-model`、summary/covered annotation、auto-stop、revision 写回语义仍留在同一 owner
+  - 文件物理行数：`401 -> 395`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14765`
+- 当前状态：
+  - 相对上一稳定值 `14771`，本轮净减 `6`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`/compact`、`/compress`、route `context-compaction/run`、`conversation:history-rewrite`、`chat:before-model`、summary / covered annotation、auto-stop、revision 写回语义保持
+    - 结论：历史状态读取与 summary 插入点判定继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-host-conversation-record.service.ts`
+
+- 已继续推进 `S15` 第十三刀：
+  - `conversation-task.service.ts` 已继续整文件收口，把 outcome 判定、snapshot / completed result / writeMessage payload 继续压回同一终态主链
+  - `buildCompletedConversationTaskResult(...)` 已直接复用 snapshot，不再重复组装字段
+  - `streaming / stopped / error / completed`、patched result / onSent、permission event、tool-call / tool-result normalize、customBlocks finalize 语义仍留在同一 owner
+  - 文件物理行数：`417 -> 397`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+    - 结果：`3 suites / 34 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14771`
+- 当前状态：
+  - 相对上一稳定值 `14793`，本轮净减 `22`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`streaming / stopped / error / completed`、snapshot 持久化、completed result、patched writeMessage、permission event、tool-call / tool-result normalize、customBlocks finalize、onComplete / onSent 语义保持
+    - 结论：outcome 判定与终态写回数据结构继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-host-conversation-record.service.ts`
+
+- 已继续推进 `S15` 第十二刀：
+  - `runtime-host-subagent-runner.service.ts` 已继续整文件收口，把 `startStoredSubagent()` 与 `restoreStoredSubagentExecution()` 的 execution input 装配继续压回 `readStoredSubagentExecutionInput(...)`
+  - session snapshot 变更判定已收成 `hasStoredSubagentSessionSnapshotChanged(...)`
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack、before/after hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`559 -> 553`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`3 suites / 27 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14793`
+- 当前状态：
+  - 相对上一稳定值 `14799`，本轮净减 `6`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack、before/after hook、subagentType default 语义保持
+    - 结论：execution input 装配与 snapshot 变更判定继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `conversation-task.service.ts`
+
+- 已继续推进 `S15` 第十一刀：
+  - `builtin-context-compaction.plugin.ts` 已继续整文件收口，把 `/compact`、`/compress` 与 route `context-compaction/run` 的手动执行入口继续压回同一主链 `runManualContextCompaction(...)`
+  - `ContextCompactionHistoryState` 不再需要的状态统计壳已删除，compaction 结果收尾不再经额外 covered-count 状态读回
+  - `conversation:history-rewrite`、`chat:before-model`、summary/covered annotation、auto-stop、revision 写回语义仍留在同一 owner
+  - 文件物理行数：`410 -> 401`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14799`
+- 当前状态：
+  - 相对上一稳定值 `14808`，本轮净减 `9`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`/compact`、`/compress`、route、history rewrite、before-model、summary/covered annotation、auto-stop 与 revision 写回语义保持
+    - 结论：手动入口与 compaction 收尾继续压回当前 owner 主链，没有语义外溢
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切回 `runtime-host-subagent-runner.service.ts`
+
+- 已继续推进 `S15` 第十刀：
+  - `runtime-host-conversation-record.service.ts` 已继续整文件收口，把 `keepConversationSession / startConversationSession / previewConversationHistory / writeConversationHostServices / rememberRuntimePermissionApproval` 的重复收尾链继续压回同一 owner
+  - `replaceConversationHistory()` 已去掉 owner 内部重复 revision assert，revision 保护仍保留在同一主链
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`runtimePermissionApprovals`、`activePersona` 语义仍留在同一 owner
+  - 文件物理行数：`434 -> 405`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`3 suites / 31 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14808`
+- 当前状态：
+  - 相对上一稳定值 `14837`，本轮净减 `29`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`hostServices`、`runtimePermissionApprovals`、`activePersona` 与 revision 保护语义保持
+    - 结论：旧的并行写回链继续被压回 `updateConversationRecord()` 主链，owner 语义没有散出
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `builtin-context-compaction.plugin.ts`
+
+- 已继续推进 `S15` 第九刀：
+  - `conversation-task.service.ts` 已继续整文件收口，把 completed 终态里的重复 snapshot/result 组装压回同一 owner
+  - `finishTask()` 与 `persistTaskSnapshot()` 已共享同一份 snapshot
+  - completed result 已改为基于现成 snapshot 构造，不再重复组装 `content / metadata / parts / toolCalls / toolResults`
+  - `streaming / stopped / error / completed`、patched result / onSent、permission event、tool-call / tool-result / tool-error normalize、customBlocks finalize 语义仍留在同一 owner
+  - 文件物理行数：`435 -> 417`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+    - 结果：`3 suites / 34 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14837`
+- 当前状态：
+  - 相对上一稳定值 `14855`，本轮净减 `18`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`streaming / stopped / error / completed` 终态链、patched result / onSent、permission event、tool-call / tool-result 持久化与 customBlocks finalize 语义保持
+    - 结论：completed 终态里的重复 snapshot/result 组装确实已删除
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-host-conversation-record.service.ts`
+
+- 已继续推进 `S15` 第八刀：
+  - `runtime-host-subagent-runner.service.ts` 已继续整文件收口，把真正执行时使用的 request 统一收回 session owner
+  - start/restore execution 都已改为从 session 读取 execution request
+  - subagent store 继续保留 raw request，resumable 语义不变
+  - `executeStoredSubagent()` 的 `running/completed/error` 三段 `updateSubagent` 写回链已收成统一 `writeStoredSubagentExecutionState`
+  - `background / inline`、pending resume、session 重建 / snapshot 同步、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 与 tool/provider/model/system 覆盖语义仍留在同一 owner
+  - 文件物理行数：`566 -> 559`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`3 suites / 27 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14855`
+- 当前状态：
+  - 相对上一稳定值 `14862`，本轮净减 `7`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：subagent record 仍保留 raw request，session 才承接已解析 execution request，resumable 语义保持
+    - 结论：pending resume、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 与 tool/provider/model/system 覆盖语义保持
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `conversation-task.service.ts`
+
+- 已继续推进 `S15` 第七刀：
+  - `runtime-shell-command-hints.ts` 已继续整文件收口，把 PowerShell 写路径选择与 flag 值扫描继续压回同一 owner
+  - `readRuntimePowerShellDestinationTargets / readRuntimePowerShellWriteTargets / readRuntimePowerShellComposedTargets / readRuntimePowerShellCommandPath` 已收成 `readRuntimePowerShellWriteSelection`
+  - shell 与 PowerShell 的 `wantsValue` 平行扫描已收成统一 `readRuntimeOptionValues`
+  - `copy-item / move-item / new-item / rename-item / remove-item / set-content / add-content / out-file / mkdir`
+  - `scp / tar / git` 写目标判定、quoted attached、single-quoted literal、Join-Path、provider prefix、env/local variable、remove-item include/exclude 保护语义仍留在同一 owner
+  - 文件物理行数：`388 -> 386`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14862`
+- 当前状态：
+  - 相对上一稳定值 `14864`，本轮净减 `2`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：PowerShell 写路径选择、flag 值扫描、quoted attached、Join-Path、provider prefix、env/local variable、`scp / tar / git` 写目标判定仍留在当前 owner
+    - 结论：`remove-item` 仍只把 `-path / -literalpath` 认作删除目标，`include / exclude / filter / stream` 没被误提成 write target
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-host-subagent-runner.service.ts`
+
+- 已继续推进 `S15` 第六刀：
+  - `runtime-host-filesystem-backend.service.ts` 已继续整文件收口，把 `edit/write/list` 的重复状态流继续压回同一 owner
+  - `editTextFile()` 已把“空旧文本写入”和“普通 replace”统一到同一写回主链
+  - `writeResolvedTextFile()` 已把 diff base 读取收成 `readRuntimeHostFilesystemDiffBase()`
+  - `listFiles()` 已把 `partial / skippedEntries / skippedPaths` 收尾链收短
+  - `resolvePath / statPath / readDirectoryEntries / readPathRange / readTextFile`
+  - `writeTextFile / editTextFile / copyPath / movePath / deletePath / ensureDirectory / symlink`
+  - `globPaths / grepText`、`diff / postWrite / CRLF`、missing path suggestion 与 trimmed-boundary 保护语义仍留在同一 owner
+  - 文件物理行数：`392 -> 385`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 176 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14864`
+- 当前状态：
+  - 相对上一稳定值 `14871`，本轮净减 `7`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`edit/write/list` 重复状态流已继续压回当前 owner；`diff / postWrite / CRLF`、binary/offset/byteLimited/maxLineLength、missing path suggestion、trimmed-boundary 保护语义保持
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-shell-command-hints.ts`
+
+- 已继续推进 `S15` 第五刀：
+  - `ai-model-execution.service.ts` 已继续整文件收口，把 `generateText / transportMode=stream-collect` 的重复执行主链收成单一 `readTextExecutionResult`
+  - 重复的结果归约壳已删除；invalid tool repair 的 `inputText` 读取已收成单次计算
+  - `generateText`、`streamText`、fallback target、usage 估算、response-body/raw custom blocks、tool repair、openai-compatible SSE normalize` 的解释权仍留在同一 owner
+  - 文件物理行数：`398 -> 385`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
+    - 结果：`3 suites / 24 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14871`
+- 当前状态：
+  - 相对上一稳定值 `14884`，本轮净减 `13`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`generateText`、`streamText`、`transportMode=stream-collect`、fallback target、usage 估算、response-body/raw custom blocks、tool repair、openai-compatible SSE normalize` 语义保持
+    - 结论：`runAcrossTargets / runAcrossTargetsSync` 继续负责 fallback；`streamText` 继续保留直接返回流的主链
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-host-filesystem-backend.service.ts`
+
+- 已继续推进 `S15` 第四刀：
+  - `builtin-context-compaction.plugin.ts` 已继续整文件收口，把 `resolve config/target -> preview -> summary -> predicted history -> annotation -> replace` 收成更短主链
+  - 旧的双层执行入口与几段只服务该主链的中间函数已删除
+  - `/compact`、`/compress`、`conversation:history-rewrite`、`chat:before-model`、route `context-compaction/run`、summary/covered annotation、auto-stop` 的解释权仍留在同一 owner
+  - 文件物理行数：`431 -> 410`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14884`
+- 当前状态：
+  - 相对上一稳定值 `14905`，本轮净减 `21`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`/compact`、`/compress`、`conversation:history-rewrite`、`chat:before-model`、route `context-compaction/run`、summary/covered annotation、auto-stop、history preview/replace` 语义保持
+    - 结论：`enabled`、`mode !== auto`、`threshold-not-reached`、`not-enough-history`、`empty-summary`、`invalid-history`、`allowAutoContinue` 与 revision 保护仍在主链
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `ai-model-execution.service.ts`
+
+- 已继续推进 `S15` 第三刀：
+  - `runtime-host-conversation-record.service.ts` 已整文件继续收口，把 `replace/history/hostServices/approval/activePersona` 的重复写回链收成统一主线 `updateConversationRecord<T>`
+  - 旧的 `createConversationRecord / writeConversation / mutateConversation / bumpRevision` 已删除
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`runtimePermissionApprovals` 的解释权仍留在同一 owner
+  - 文件物理行数：`448 -> 434`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`3 suites / 31 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14905`
+- 当前状态：
+  - 相对上一稳定值 `14919`，本轮净减 `14`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`create/delete/read/list`、`hostServices`、`runtimePermissionApprovals`、`replaceMessages/activePersona/todo`、`persist/load/migration`、`history preview/replace` 与 revision conflict 语义保持
+    - 结论：`session keep/start/finish`、`captureHistory/timeout/resetTimeout/过期清理` 语义保持
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `builtin-context-compaction.plugin.ts`
+
+- 已继续推进 `S15` 第二刀：
+  - `conversation-task.service.ts` 已整文件重写，把 `streaming / stop / error / completed` 的 message snapshot 与 terminal 收尾链收成 `ConversationTaskRuntime / persistTaskSnapshot / finishTask`
+  - `patched completion / permission event / tool-call-result` 的解释权仍留在同一 owner
+  - 文件物理行数：`460 -> 435`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+    - 结果：`3 suites / 34 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14919`
+- 当前状态：
+  - 相对上一稳定值 `14944`，本轮净减 `25`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`streaming/stop/error/completed`、patched completion、permission event、tool-call-result 持久化语义保持
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `runtime-host-conversation-record.service.ts`
+
+- 已进入 `S15` 第一刀：
+  - `runtime-host-subagent-runner.service.ts` 已整文件重写，把 `run/start/restart` 共享的 invocation/session/subagent 创建链收成 `startStoredSubagent / restoreStoredSubagentExecution / persistSubagentSession`
+  - `session / request / write-back / snapshot / before-after hook` 的解释权仍留在同一 owner
+  - 文件物理行数：`605 -> 566`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`3 suites / 27 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14944`
+- 当前状态：
+  - 相对上一稳定值 `14983`，本轮净减 `39`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收口，不是换壳压格式
+    - 结论：`run/start/resume/restart`、session 绑定、write-back revision、subagent type 默认值、before/after hook 语义保持
+    - 结论：这刀可计入 `S15` 进度
+  - 下一刀切到 `conversation-task.service.ts`
 
 - 已继续做最终收尾：
   - 已清理剩余 lint warning，当前 `npm run lint` 为 `0 errors / 0 warnings`

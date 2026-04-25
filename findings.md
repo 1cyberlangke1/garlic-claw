@@ -1,6 +1,396 @@
 # Findings
 
+## 2026-04-25 配置目录统一到 config
+
+- 当前“配置”和“状态”边界可直接切开：
+  - 应迁：AI provider / host routing / vision fallback / persona / subagent type / MCP / skill governance
+  - 不迁：conversation record / subagent store / subagent session / automation / plugin runtime state
+- AI 配置最自然的新真相源不是单一 `ai-settings.server.json`，而是：
+  - `providers/*.json` 作为 provider 真相源
+  - `host-model-routing.json`
+  - `vision-fallback.json`
+- model 元数据如果继续独立拆目录，会把当前 owner 复杂度再次抬高；放回各 provider 文件里的 `persistedModels` 更短，也更符合“每个 provider 一个配置文件”的约束。
+- persona 当前 `meta.yaml + SYSTEM.md` 本质上是两份配置；统一 json 后，最短路径是每个目录只保留一个 `persona.json`，avatar 继续做旁路静态资源。
+- subagent type 当前 `.yaml` 目录扫描没有额外收益；直接切 `config/agents/subagent-types/*.json` 即可。
+- MCP 已经是“每个 server 一个 json”，只需要把默认根目录和对外 `configPath` 改成 `config/mcp/servers`。
+- skill governance 虽然目前默认落在 `tmp`，但它本质是用户配置，不是运行态日志；应并入 `config/skills/governance.json`。
+- `skills` 不只是 governance；项目内置 skill 定义本身也是用户维护目录，默认根目录也应从仓库根 `skills/` 收到 `config/skills/definitions/`。
+- 由于 skill 定义包含 `SKILL.md`、脚本和资产文件，它不属于“统一 json 配置文件”那部分约束；更准确的边界是：
+  - `skill 治理配置` 用 json
+  - `skill 定义目录` 放到 `config/skills/definitions/`
+- `SkillToolService` 输出里的 `<location>` 也必须同步到 `config/skills/definitions/...`，否则模型看到的路径会和真实仓库目录脱节。
+- 这次把 AI provider 文件设计成：
+  - `provider 主配置`
+  - `models 列表`
+  - `persistedModels`
+  合并到同一 provider json 后，既满足“每个 provider 一个独立文件”，也避免再起 `models/<provider>/<model>.json` 带来的目录膨胀。
+- persona 迁到 `persona.json` 后，默认 avatar 仍应保留为旁路静态文件；配置 json 不需要再维护 avatar 字段。
+- 绝对仓库路径只能出现在本机临时上下文里，不能提交到仓库；这轮已把 controller 测试里的绝对路径夹具改回 `path.resolve(...)` 生成。
+
 ## 2026-04-25
+
+- `runtime-host-subagent-runner.service.ts` 这一步再次证明，subagent 域里还能继续删的是“单点异步转发壳”和“单点谓词壳”：
+  - `completeSubagentAsync()`
+  - `isNonEmptyString()`
+  - 这两者都没有独立 owner 语义，只是把调度链和 `toolNames` 过滤再包一层
+  - 把它们直接压回 `scheduleSubagentExecution()` 与 `readSubagentRequest()` 后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `run/start/resume/restart`
+  - session 绑定 / 恢复 / snapshot 同步
+  - raw request / execution request 边界
+  - writeBack sent / failed / skipped 与 revision changed
+  - before-run / after-run hook
+  - subagentType default
+  - 上述语义仍必须留在 `runtime-host-subagent-runner` owner，不能散到 store、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-subagent-runner` 这次已经把单点异步壳和单点谓词壳继续收掉
+  - 下一切口仍留在这个 owner，更值的是继续删 `start/run/restore` 共用的 result/session/write-back 收尾重复链
+
+- `runtime-host-subagent-runner.service.ts` 这一步再次证明，subagent 域里还有一类稳定可删对象：只在当前 owner 单点调用、但仍把主链拆成“先包装再调用”的薄壳：
+  - `readWriteBackConversationRevision`
+  - `readSubagentRequestPreview`
+  - `writeSubagentSessionRequest`
+  - 这些函数本身没有独立 owner 语义，只是把 write-back revision、preview 生成和 session request 写回再包一层
+  - 把它们直接压回 `startSubagent()`、`resolveSubagentInvocation()`、`persistSubagentSession()` 后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `run/start/resume/restart`
+  - session 绑定 / 恢复 / snapshot 同步
+  - raw request / execution request 边界
+  - writeBack sent / failed / skipped 与 revision changed
+  - before-run / after-run hook
+  - subagentType default
+  - 上述语义仍必须留在 `runtime-host-subagent-runner` owner，不能散到 store、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-subagent-runner` 这次已经把单点包装继续收掉
+  - 下一切口仍留在这个 owner，更值的是继续删 `start/run/restore` 之间 result/session/write-back 的收尾重复链，而不是再抽新包装
+
+- `runtime-host-subagent-runner.service.ts` 这一步再次证明，subagent 域里继续能压的不是新增小函数数量，而是 restore 侧残留的双段主链：
+  - `restoreStoredSubagentExecution()`
+  - `resolveSubagentSession()`
+  - 这两段原先一前一后承接 session 读取、旧 session 缺失 fallback、history/request 重建与 snapshot 同步判定
+  - 把它们压成单一 restore 主链后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `run/start/resume/restart`
+  - session 绑定 / 恢复 / snapshot 同步
+  - raw request / execution request 边界
+  - writeBack sent / failed / skipped 与 revision changed
+  - before-run / after-run hook
+  - subagentType default
+  - 上述语义仍必须留在 `runtime-host-subagent-runner` owner，不能散到 store、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-subagent-runner` 这次已经把 restore 侧双段主链收掉
+  - 下一切口仍留在这个 owner，更值的是继续删 `start/run/restore` 共用的 result/session/write-back 收尾重复链，而不是再起 session 壳
+
+- `runtime-host-subagent-runner.service.ts` 这一步再次证明，subagent 域里继续能压的不是 hook 或 store 数量，而是 restore 侧那条只服务本 owner 的 session/execution 拼装壳：
+  - history messages 拼装
+  - session request 拼装
+  - create session payload 拼装
+  - execution request from session
+  - session snapshot changed 判定
+  - 把这些链直接压回 `resolveSubagentSession()`、`persistSubagentSession()` 与 `readStoredSubagentExecutionInput()` 后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `run/start/resume/restart`
+  - session 绑定 / 恢复 / snapshot 同步
+  - raw request / execution request 边界
+  - writeBack sent / failed / skipped 与 revision changed
+  - before-run / after-run hook
+  - subagentType default
+  - 上述语义仍必须留在 `runtime-host-subagent-runner` owner，不能散到 store、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-subagent-runner` 这次已经把 restore 侧只服务本 owner 的拼装壳继续收掉
+  - 下一切口仍留在这个 owner，更值的是继续删 `start/run/restore` 的 result/session/write-back 收尾重复链，而不是再起新的 request/session 壳
+
+- `builtin-context-compaction.plugin.ts` 这一步再次证明，context-compaction 域里继续能压的不是功能点数量，而是“命令短路、auto-stop 状态读取、summary 插入点判定”这几条单次包装链：
+  - 命令短路原先是 `run result -> reply formatter -> short-circuit object`
+  - auto-stop 原先是 `state read -> boolean helper -> before-model`
+  - summary 插入点原先是 `messageStates -> reducer helper -> runContextCompactionForCall`
+  - 把这些链继续压回主链后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `/compact`
+  - `/compress`
+  - route `context-compaction/run`
+  - `conversation:history-rewrite`
+  - `chat:before-model`
+  - summary / covered annotation
+  - auto-stop
+  - revision 写回
+  - 上述语义仍必须留在 `builtin-context-compaction` owner，不能散到 route 层、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `context-compaction` 这次已经把单次包装链继续压掉，继续在这里挤收益会明显下降
+  - 下一切口切到 `runtime-host-subagent-runner.service.ts` 更值，因为它现在重新回到第一大未继续收口 owner
+
+- `conversation-task.service.ts` 这一步再次证明，task 域里继续能压的不是事件种类，而是 `finishTask()` 终态里只服务一次的薄壳：
+  - terminal event 组装
+  - completed result 组装
+  - snapshot 构造后再转写消息体
+  - 把这些链继续压回 `finishTask()` 与 `persistTaskSnapshot()` 之后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `streaming / stopped / error / completed`
+  - snapshot 持久化
+  - completed result
+  - patched writeMessage
+  - permission event
+  - tool-call / tool-result normalize
+  - customBlocks finalize
+  - onComplete / onSent
+  - 上述语义仍必须留在 `conversation-task` owner，不能散到 lifecycle、controller 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `conversation-task` 这次已经把终态里只服务一次的薄壳继续收掉，继续在这里挤收益会明显下降
+  - 下一切口切到 `builtin-context-compaction.plugin.ts` 更值，因为它现在已经回到新的第一大未继续收口 owner
+
+- `runtime-host-conversation-record.service.ts` 这一步再次证明，conversation-record 域里继续能压的不是 public API 数量，而是“读模型投影”和“session 写回”这两条平行壳：
+  - `overview / detail / summary / history` 原先各自保留一段 conversation 投影
+  - `keepConversationSession()` 与 `startConversationSession()` 原先各自保留一段 session 存储后再序列化的收尾链
+  - 把它们继续压成 `readConversationRecordValue(...)` 与 `saveConversationSession(...)` 之后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `create/delete/read/list`
+  - `persist/load/migration`
+  - `session keep/start/finish`
+  - `history preview/replace`
+  - `hostServices`
+  - `runtimePermissionApprovals`
+  - `activePersona`
+  - revision 保护
+  - 上述语义仍必须留在 `runtime-host-conversation-record` owner，不能散到 conversation service、plugin dispatch 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `conversation-record` 这次已经把读模型和 session 写回壳继续收掉，继续在这里挤收益会明显下降
+  - 下一切口切到 `conversation-task.service.ts` 更值，因为它现在已经回到新的第一大未继续收口 owner
+
+- `builtin-context-compaction.plugin.ts` 这一步再次证明，context-compaction 域里继续能压的不是入口数量，而是“历史状态壳”本身：
+  - 旧的 `ContextCompactionHistoryState` 类同时承接 `messageStates / visibleMessages / modelMessages / summaryInsertIndex`
+  - 其中真正稳定的 owner 是“历史状态读取”和“summary 插入点判定”，不是再保留一个只服务当前文件的类壳
+  - 把它压成 `readContextCompactionHistoryState(...)` 与 `readContextCompactionSummaryInsertIndex(...)` 之后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `/compact`
+  - `/compress`
+  - route `context-compaction/run`
+  - `conversation:history-rewrite`
+  - `chat:before-model`
+  - summary / covered annotation
+  - auto-stop
+  - revision 写回
+  - 上述语义仍必须留在 `builtin-context-compaction` owner，不能散到 route 层、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `context-compaction` 这次已经把类壳继续压掉，继续在这里挤收益会明显下降
+  - 下一切口切到 `runtime-host-conversation-record.service.ts` 更值，因为它现在又回到第一大未继续收口 owner
+
+- `conversation-task.service.ts` 这一步再次证明，task 域里继续能压的不是事件种类，而是“outcome 判定”和“snapshot/result/message write payload”这几段终态数据流仍各自保留一层重复壳：
+  - outcome 判定
+  - snapshot 持久化
+  - completed result
+  - patched writeMessage
+  - 如果这些链继续分开，owner 会继续被终态收尾壳撑大
+  - 继续压回同一主链后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `streaming / stopped / error / completed`
+  - permission event
+  - tool-call / tool-result normalize
+  - customBlocks finalize
+  - onComplete / onSent / patched result
+  - 上述语义仍必须留在 `conversation-task` owner，不能散到 lifecycle、controller 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `conversation-task` 这次已经把最明显的终态数据流壳继续收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `runtime-host-conversation-record.service.ts` 更值，因为它已回到新的前排 owner
+
+- `runtime-host-subagent-runner.service.ts` 这一步再次证明，subagent 域里继续能压的不是 hook 数量，而是“start path”和“restore path”仍各自保留一段 execution input 装配与 snapshot 变更判定：
+  - `startStoredSubagent`
+  - `restoreStoredSubagentExecution`
+  - execution input 装配
+  - session snapshot changed 判定
+  - 如果这些链继续并排存在，owner 会继续被 session/execution 装配壳撑大
+  - 继续压回同一主链后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `run/start/resume/restart`
+  - session 绑定 / 恢复 / snapshot 同步
+  - raw request / execution request 边界
+  - writeBack sent / failed / skipped 与 revision changed
+  - before-run / after-run hook
+  - subagentType default
+  - 上述语义仍必须留在 `runtime-host-subagent-runner` owner，不能散到 store、hook 层或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-subagent-runner` 这次已经把最明显的 execution input 装配继续收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `conversation-task.service.ts` 更值，因为它现在已经升到新的第一大未继续收口 owner
+
+- `builtin-context-compaction.plugin.ts` 这一步再次证明，context-compaction 域里继续能压的不是命令入口数量，而是“手动入口”和“compaction 结果收尾”仍各自保留一层重复壳：
+  - `/compact`
+  - `/compress`
+  - route `context-compaction/run`
+  - covered-count 回读
+  - 如果这些链继续分开，owner 会继续被手动入口拼装壳和结果收尾壳撑大
+  - 继续压回同一主链后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `conversation:history-rewrite`
+  - `chat:before-model`
+  - summary / covered annotation
+  - auto-stop
+  - revision 写回
+  - 上述语义仍必须留在 `builtin-context-compaction` owner，不能散到 route 层、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `builtin-context-compaction` 这次已经把最明显的手动入口与结果收尾壳继续收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切回 `runtime-host-subagent-runner.service.ts` 更值，因为它仍是当前第一大 owner
+
+- `runtime-host-conversation-record.service.ts` 这一步再次证明，host conversation 域里继续能压的不是 public API 数量，而是“session 收尾、history preview、hostServices patch、approval 记忆”这几段尾链仍并排存在：
+  - `keepConversationSession`
+  - `startConversationSession`
+  - `previewConversationHistory`
+  - `writeConversationHostServices`
+  - `rememberRuntimePermissionApproval`
+  - 如果这些链继续各自保留一段局部收尾壳，owner 会继续被重复尾链撑大
+  - 继续压回同一 owner 后，judge 认可这仍是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `create/delete/read/list`
+  - `persist/load/migration`
+  - `session keep/start/finish`
+  - `history preview/replace`
+  - `hostServices`
+  - `runtimePermissionApprovals`
+  - `activePersona`
+  - revision 保护
+  - 上述语义仍必须留在 `runtime-host-conversation-record` owner，不能散到别的 service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-conversation-record` 这次已经把最明显的 session/history/approval 尾链继续收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `builtin-context-compaction.plugin.ts` 更值，因为 compaction 主链里 `resolve target / preview / summary / replace` 仍有并排状态流
+
+- `conversation-task.service.ts` 这一步再次证明，task runtime 域里继续能压的不是事件类型数量，而是 completed 终态里“snapshot 持久化”和“completed result 组装”仍各自维护一条重复主链：
+  - content / metadata / parts
+  - toolCalls / toolResults
+  - patched result / onSent 之前的 completed result
+  - 如果这些链继续分开，owner 会一直被终态收尾壳撑大
+  - 收成“`finishTask()` 与 `persistTaskSnapshot()` 共用同一份 snapshot”后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `streaming / stopped / error / completed`
+  - patched result / onSent
+  - permission-request / permission-resolved
+  - tool-call / tool-result / tool-error normalize
+  - customBlocks finalize
+  - 上述语义仍必须留在 `conversation-task` owner，不能散到 lifecycle、controller 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `conversation-task` 这次已经把最明显的 completed 重复组装链收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `runtime-host-conversation-record.service.ts` 更值，因为 history/approval/hostServices/session keep 仍有重复写回链
+
+- `runtime-host-subagent-runner.service.ts` 这一步再次证明，subagent 域里继续能压的不是 public API 数量，而是“实际执行 request 来源”和“running/completed/error 写回”仍各自维护平行主链：
+  - start execution request
+  - restore execution request
+  - running/completed/error 的 store 写回
+  - 如果这些链继续分开，owner 会一直被恢复装配壳和状态写回壳撑大
+  - 收成“执行 request 统一来自 session”与 `writeStoredSubagentExecutionState()` 后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - subagent store 继续保留 raw request，session 才承接已解析 execution request
+  - `background / inline`、pending resume、session 重建 / snapshot 同步、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 与 tool/provider/model/system 覆盖
+  - 上述语义仍必须留在 `runtime-host-subagent-runner` owner，不能散到 store、conversation service 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-subagent-runner` 这次已经把最明显的 execution request 来源和状态写回重复主链收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `conversation-task.service.ts` 更值，因为 task runtime 里仍有 `streaming / stop / error / completed` 的 snapshot/result/event 重复收尾链
+
+- `runtime-shell-command-hints.ts` 这一步再次证明，shell hints 域里继续能压的不是命令种类数量，而是“PowerShell 写路径选择”和“两套 flag 值扫描”仍各自维护平行主链：
+  - destination/path/composed path 选择
+  - shell flag attached/next-value 读取
+  - PowerShell flag attached/next-value 读取
+  - 如果这些链继续分开，owner 会一直被命令分支壳和参数扫描壳撑大
+  - 收成 `readRuntimePowerShellWriteSelection` 与统一 `readRuntimeOptionValues` 后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `copy-item / move-item / new-item / rename-item / remove-item / set-content / add-content / out-file / mkdir`
+  - `scp / tar / git` 写目标判定
+  - quoted attached、single-quoted literal、Join-Path、provider prefix、env/local variable、remove-item include/exclude 保护
+  - 上述语义仍必须留在 `runtime-shell-command-hints` owner，不能散到 `BashToolService`、`tool-registry` 或 `shared`
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-shell-command-hints` 这次已经把最明显的 PowerShell 写路径选择和参数扫描重复主链收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切回 `runtime-host-subagent-runner.service.ts` 更值，因为前排大 owner 里仍有 `run/start/resume/restart` 与 session/write-back/snapshot 装配重复状态流
+
+- `runtime-host-filesystem-backend.service.ts` 这一步再次证明，filesystem 域里继续能压的不是功能点数量，而是“edit/write/list 仍各自维护一段重复状态流”：
+  - create-style edit
+  - 普通 replace
+  - diff base 读取
+  - partial / skippedEntries / skippedPaths 收尾
+  - 如果这些链继续分开，owner 会一直被写回壳和遍历收尾壳撑大
+  - 收成同一 `edit -> writeResolvedTextFile` 主链，并把 diff base 读取收成 `readRuntimeHostFilesystemDiffBase()` 后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `resolvePath / statPath / readDirectoryEntries / readPathRange / readTextFile`
+  - `writeTextFile / editTextFile / copyPath / movePath / deletePath / ensureDirectory / symlink`
+  - `globPaths / grepText`
+  - `diff / postWrite / CRLF`、missing path suggestion、binary/offset/byteLimited/maxLineLength、trimmed-boundary 保护
+  - 上述语义仍必须留在 `runtime-host-filesystem-backend` owner，不能散到 `shared` 或工具层
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-filesystem-backend` 这次已经把最明显的 write/list 收尾壳继续收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `runtime-shell-command-hints.ts` 更值，因为 shell hints 里仍有命令分派、flag/path token 提取与提示汇总重复主链
+
+- `ai-model-execution.service.ts` 这一步再次证明，AI 执行域里继续能压的不是 provider driver 数量，而是“非流式生成”和 `stream-collect` 仍各自维护一套结果归约壳：
+  - fallback target 执行
+  - usage 估算
+  - response-body/raw custom blocks
+  - tool repair
+  - 如果这些路径继续分成两套结果组装，owner 会一直被重复归约壳撑大
+  - 收成单一 `readTextExecutionResult` 后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `generateText`、`streamText`、`transportMode=stream-collect`、fallback target、usage 估算、response-body/raw custom blocks、tool repair、openai-compatible SSE normalize` 仍必须留在 `ai-model-execution` owner
+  - 不能把结果归约、usage 估算或 custom block 解释权散到 `runtime-host-values`、conversation service 或 `shared`
+  - `shared` 继续只保留类型，这条边界本轮没有被打散
+- 当前 S15 的下一刀也更清楚了：
+  - `ai-model-execution` 这次已经把最明显的双结果归约链收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `runtime-host-filesystem-backend.service.ts` 更值，因为 `resolve/list/read/write/edit` 仍有重复 path 校验、文本源读取与 post-write 收尾
+
+- `builtin-context-compaction.plugin.ts` 这一步再次证明，context-compaction 域里继续能压的不是命令入口数量，而是“resolve config/target、预测历史、summary/covered annotation 写回”仍存在一层执行壳：
+  - preview before history
+  - generate summary
+  - predicted history
+  - finalize summary / covered annotation
+  - replace history
+  - 如果这条链分成双入口和多段只服务它的中间函数，owner 会一直被执行壳撑大
+  - 收成单一 `runContextCompactionForCall` 主链后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `/compact`、`/compress`、`conversation:history-rewrite`、`chat:before-model`、route `context-compaction/run`、summary/covered annotation、auto-stop、history preview/replace` 仍必须留在 `builtin-context-compaction` owner
+  - 不能把 annotation、route 返回或 auto-stop 判定散到 `shared`、conversation lifecycle 或别的 plugin owner
+  - `shared` 继续只保留类型，这条边界本轮没有被打散
+- 当前 S15 的下一刀也更清楚了：
+  - `builtin-context-compaction` 这次已经把最明显的执行壳收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `ai-model-execution.service.ts` 更值，因为 `generate / stream / stream-collect` 仍有重复 target fallback、结果归约与 tool option 装配
+
+- `runtime-host-conversation-record.service.ts` 这一步再次证明，host conversation 域里继续能压的不是 public API 数量，而是“同一份 record 被多条写回链分别维护”：
+  - history replace
+  - hostServices patch
+  - title / activePersona
+  - runtimePermission approval
+  - replaceMessages
+  - 如果这些入口继续各自维护 mutate + persist + revision bump，owner 会一直被重复写回壳撑大
+  - 收成 `updateConversationRecord<T>` 后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `create/delete/read/list`、`persist/load/migration`、`history preview/replace`、`runtimePermissionApprovals`、`session keep/start/finish` 仍必须留在 `runtime-host-conversation-record` owner
+  - 不能把 revision/persist 语义散到 lifecycle、controller 或 `shared`
+  - `shared` 继续只保留类型，这条边界本轮没有被打散
+- 当前 S15 的下一刀也更清楚了：
+  - `runtime-host-conversation-record` 这次已经把最明显的重复写回链收掉，继续在这里挤小删改收益会明显下降
+  - 下一切口切到 `builtin-context-compaction.plugin.ts` 更值，因为 `history state / model view / summary apply` 仍有并排状态流
+
+- `conversation-task.service.ts` 这一刀说明，conversation task 域里真正撑大 owner 的不是事件种类，而是“双快照并行链”：
+  - streaming 持久化
+  - completed result 组装
+  - stop/error terminal 事件
+  - patched completion 写回
+  - 如果这些链各自维护 `state -> message/result/event` 的组装，task owner 会一直被重复收尾壳撑大
+  - 收成 `ConversationTaskRuntime / persistTaskSnapshot / finishTask / buildConversationTaskSnapshot` 后，judge 认可这是 owner 级真实收口
+- 这轮也把边界继续钉实：
+  - `streaming / stop / error / completed` 的消息快照、patched completion、permission event forward、tool-call-result 持久化，仍必须留在 `conversation-task` owner
+  - `conversation-message-lifecycle` 与 `conversation.controller` 继续只消费这条任务主线，不接管 snapshot 或 terminal 语义
+  - `shared` 继续只保留类型，这条边界本轮没有被打散
+- 当前 S15 的下一刀也更清楚了：
+  - `conversation-task` 这次已经把最明显的双快照链收掉，继续留在这里做碎片式删行收益会明显下降
+  - 更高价值的下一切口是 `runtime-host-conversation-record.service.ts`，因为 conversation persist / session keep / history rewrite snapshot 仍有重复状态流
+
+- `runtime-host-subagent-runner.service.ts` 这一步再次证明，subagent 域里真正值钱的切口不在 stream 收集，而在 `run/start/restart` 共享的创建链：
+  - invocation 解析
+  - session 绑定 / 恢复 / 快照同步
+  - subagent record 创建
+  - write-back revision 读取
+  - 如果这些链继续分散，后台启动、重启恢复和 inline 执行会一直带着重复装配壳
+  - 收成 `startStoredSubagent / restoreStoredSubagentExecution / persistSubagentSession` 后，judge 认可这是 owner 级真实收口
+- 这一刀也把边界继续钉实：
+  - `session / request / write-back / snapshot / before-after hook` 解释权仍必须留在 `runtime-host-subagent-runner` owner
+  - `subagent store` 与 `session store` 继续只做存取，不接管请求合并、revision 判定或写回决策
+  - `shared` 继续只保留类型，这条边界本轮没有被打散
+- 当前阶段的下一个高收益切口也更明确了：
+  - `runtime-host-subagent-runner` 仍是第一大 owner，但这一刀已经把最明显的重复创建链收掉
+  - 后续继续追安全余量时，更值的是切到 `conversation-task.service.ts` 或 `runtime-host-conversation-record.service.ts` 的终态写回重复流
+  - 继续在 `subagent-runner` 里做碎片式删行，收益会明显低于切换 owner
 
 - 最终收尾这一步确认了一条更稳的边界：
   - `<=15000` 不必靠保留 warning 才能成立

@@ -1,0 +1,17 @@
+{
+  "fallbackChatModels": [],
+  "compressionModel": {
+    "providerId": "openai",
+    "modelId": "gpt-4o-mini"
+  },
+  "utilityModelRoles": {
+    "conversationTitle": {
+      "providerId": "openai",
+      "modelId": "gpt-4o-mini"
+    },
+    "pluginGenerateText": {
+      "providerId": "gemini",
+      "modelId": "gemini-1.5-pro"
+    }
+  }
+}

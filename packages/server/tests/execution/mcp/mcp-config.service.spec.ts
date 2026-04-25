@@ -32,10 +32,10 @@ describe('McpConfigStoreService', () => {
     });
   });
 
-  it('defaults to the repository mcp/servers path when no environment variable is set', () => {
+  it('defaults to the repository config/mcp/servers path when no environment variable is set', () => {
     const workspaceRoot = path.join(os.tmpdir(), `mcp-config.service.workspace-${Date.now()}-${Math.random()}`);
     const nestedServerRoot = path.join(workspaceRoot, 'packages', 'server');
-    const defaultConfigRoot = path.join(workspaceRoot, 'mcp', 'servers');
+    const defaultConfigRoot = path.join(workspaceRoot, 'config', 'mcp', 'servers');
     fs.mkdirSync(nestedServerRoot, { recursive: true });
     fs.mkdirSync(defaultConfigRoot, { recursive: true });
     fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'mcp-config-test' }), 'utf-8');
@@ -54,7 +54,7 @@ describe('McpConfigStoreService', () => {
       const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
       expect(service.getSnapshot()).toEqual({
-        configPath: 'mcp/servers',
+        configPath: 'config/mcp/servers',
         servers: [
           {
             name: 'tavily-mcp',

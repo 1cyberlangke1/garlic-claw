@@ -2,32 +2,17 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import type { PluginPersonaDetail, PluginPersonaDialogEntry } from '@garlic-claw/shared'
 import { Injectable } from '@nestjs/common'
-import YAML from 'yaml'
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service'
 import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 
 export interface StoredPersonaRecord extends PluginPersonaDetail {}
-interface StoredPersonaMeta extends Omit<StoredPersonaRecord, 'avatar' | 'prompt'> {}
-type PersonaMetaField = keyof StoredPersonaMeta
+type StoredPersonaConfigFile = Omit<StoredPersonaRecord, 'avatar'>
 
 const DEFAULT_PERSONA_TIMESTAMP = '2026-04-10T00:00:00.000Z'
-const PERSONA_META_FILE_NAME = 'meta.yaml'
-const PERSONA_PROMPT_FILE_NAME = 'SYSTEM.md'
-const LEGACY_PERSONA_META_FILE_NAME = 'meta.json'
+const PERSONA_CONFIG_FILE_NAME = 'persona.json'
 const AVATAR_BASENAME = 'avatar'
 const AVATAR_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.ico', '.tif', '.tiff'])
-const PERSONA_META_LAYOUT: Array<{ comment: string[]; field: PersonaMetaField }> = [
-  { comment: ['# Persona 元数据', '# 同目录的 SYSTEM.md 存放系统提示词正文。', '# avatar 不在这里手动配置；如果当前目录存在名为 avatar 的图片文件，例如 avatar.png / avatar.webp / avatar.jpg，服务端会自动识别。', '', '# 人设唯一 ID。建议与目录名保持一致，方便人工检查。'], field: 'id' },
-  { comment: ['', '# 人设显示名称。'], field: 'name' },
-  { comment: ['', '# 人设简介。没有可写 null。'], field: 'description' },
-  { comment: ['', '# 预置对话，按数组顺序注入到主对话模型上下文。', '# 每项格式：', '# - role: user | assistant', '#   content: 对话内容', '# 没有预置对话时写 []。'], field: 'beginDialogs' },
-  { comment: ['', '# Persona 允许使用的 tools。', '# null 表示不限制；[] 表示全部禁用；非空数组表示只允许这些 tool 名称。'], field: 'toolNames' },
-  { comment: ['', '# 仅在“主对话主回复”失败时，直接回复给用户的固定错误文案。', '# subagent、标题生成、摘要总结等链路不会使用这个字段。', '# 留空或写 null 表示使用系统默认错误文案。'], field: 'customErrorMessage' },
-  { comment: ['', '# 是否为默认人设。同一时刻只会有一个默认人设生效。'], field: 'isDefault' },
-  { comment: ['', '# 创建时间与更新时间通常由系统维护；手动编辑时建议保持 ISO 时间格式。'], field: 'createdAt' },
-  { comment: [], field: 'updatedAt' },
-]
 
 @Injectable()
 export class PersonaStoreService {
@@ -53,8 +38,8 @@ export class PersonaStoreService {
 
 function resolvePersonaStorageRoot(projectWorktreeRootService: ProjectWorktreeRootService): string {
   if (process.env.GARLIC_CLAW_PERSONAS_PATH) {return path.resolve(process.env.GARLIC_CLAW_PERSONAS_PATH)}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `personas.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`)}
-  return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'persona')
+  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `config-personas.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`)}
+  return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'personas')
 }
 
 function loadPersonaStore(storageRoot: string): StoredPersonaRecord[] {
@@ -84,23 +69,22 @@ function readStoredPersonas(storageRoot: string): StoredPersonaRecord[] {
 }
 
 function readStoredPersona(personaRoot: string): StoredPersonaRecord | null {
-  const metaPath = resolvePersonaMetaPath(personaRoot)
-  if (!fs.existsSync(metaPath)) {return null}
+  const configPath = path.join(personaRoot, PERSONA_CONFIG_FILE_NAME)
+  if (!fs.existsSync(configPath)) {return null}
   try {
-    const meta = readStoredPersonaMeta(metaPath)
-    const promptPath = path.join(personaRoot, PERSONA_PROMPT_FILE_NAME)
+    const config = readStoredPersonaConfig(configPath)
     return {
       avatar: readPersonaAvatarFilePath(personaRoot),
-      beginDialogs: meta.beginDialogs,
-      createdAt: meta.createdAt,
-      customErrorMessage: meta.customErrorMessage,
-      description: meta.description,
-      id: meta.id ?? path.basename(personaRoot),
-      isDefault: meta.isDefault,
-      name: meta.name,
-      prompt: fs.existsSync(promptPath) ? fs.readFileSync(promptPath, 'utf-8').replace(/\r\n/g, '\n') : undefined,
-      toolNames: meta.toolNames,
-      updatedAt: meta.updatedAt,
+      beginDialogs: config.beginDialogs,
+      createdAt: config.createdAt,
+      customErrorMessage: config.customErrorMessage,
+      description: config.description,
+      id: config.id ?? path.basename(personaRoot),
+      isDefault: config.isDefault,
+      name: config.name,
+      prompt: config.prompt,
+      toolNames: config.toolNames,
+      updatedAt: config.updatedAt,
     } as StoredPersonaRecord
   } catch {
     return null
@@ -119,7 +103,7 @@ function persistPersonaStore(storageRoot: string, previousPersonas: readonly Sto
 function writeStoredPersona(storageRoot: string, persona: StoredPersonaRecord): void {
   const personaRoot = path.join(storageRoot, readPersonaFolderName(persona.id))
   fs.mkdirSync(personaRoot, { recursive: true })
-  fs.writeFileSync(path.join(personaRoot, PERSONA_META_FILE_NAME), readPersonaMetaYaml({
+  const config: StoredPersonaConfigFile = {
     beginDialogs: persona.beginDialogs,
     createdAt: persona.createdAt,
     customErrorMessage: persona.customErrorMessage,
@@ -127,38 +111,19 @@ function writeStoredPersona(storageRoot: string, persona: StoredPersonaRecord): 
     id: persona.id,
     isDefault: persona.isDefault,
     name: persona.name,
+    prompt: persona.prompt.trimEnd(),
     toolNames: persona.toolNames,
     updatedAt: persona.updatedAt,
-  }), 'utf-8')
-  if (fs.existsSync(path.join(personaRoot, LEGACY_PERSONA_META_FILE_NAME))) {fs.rmSync(path.join(personaRoot, LEGACY_PERSONA_META_FILE_NAME), { force: true })}
-  fs.writeFileSync(path.join(personaRoot, PERSONA_PROMPT_FILE_NAME), `${persona.prompt.trimEnd()}\n`, 'utf-8')
+  }
+  fs.writeFileSync(path.join(personaRoot, PERSONA_CONFIG_FILE_NAME), JSON.stringify(config, null, 2), 'utf-8')
 }
 
 function readPersonaFolderName(personaId: string): string {
   return encodeURIComponent(personaId.trim())
 }
 
-function resolvePersonaMetaPath(personaRoot: string): string {
-  const yamlPath = path.join(personaRoot, PERSONA_META_FILE_NAME)
-  return fs.existsSync(yamlPath) ? yamlPath : path.join(personaRoot, LEGACY_PERSONA_META_FILE_NAME)
-}
-
-function readStoredPersonaMeta(metaPath: string): Partial<StoredPersonaMeta> {
-  const raw = fs.readFileSync(metaPath, 'utf-8')
-  if (path.basename(metaPath) === LEGACY_PERSONA_META_FILE_NAME) {return JSON.parse(raw) as Partial<StoredPersonaMeta>}
-  const parsed = YAML.parse(raw)
-  return typeof parsed === 'object' && parsed !== null ? parsed as Partial<StoredPersonaMeta> : {}
-}
-
-function readPersonaMetaYaml(meta: StoredPersonaMeta): string {
-  return [...PERSONA_META_LAYOUT.flatMap(({ comment, field }) => [...comment, ...formatPersonaMetaField(field, meta[field])]), ''].join('\n')
-}
-
-function formatPersonaMetaField(fieldName: string, value: unknown): string[] {
-  const serialized = YAML.stringify(value).trimEnd()
-  if (!serialized) {return [`${fieldName}: null`]}
-  if (!serialized.includes('\n')) {return [`${fieldName}: ${serialized}`]}
-  return [`${fieldName}:`, ...serialized.split('\n').map((line) => `  ${line}`)]
+function readStoredPersonaConfig(configPath: string): Partial<StoredPersonaConfigFile> {
+  return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Partial<StoredPersonaConfigFile>
 }
 
 function readPersonaAvatarFilePath(personaRoot: string): string | null {

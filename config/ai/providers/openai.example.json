@@ -1,0 +1,13 @@
+{
+  "id": "openai",
+  "name": "OpenAI",
+  "mode": "catalog",
+  "driver": "openai",
+  "apiKey": "YOUR_OPENAI_API_KEY",
+  "baseUrl": "https://api.openai.com/v1",
+  "defaultModel": "gpt-4o-mini",
+  "models": [
+    "gpt-4o-mini"
+  ],
+  "persistedModels": []
+}

@@ -12,8 +12,8 @@ describe('SkillToolService', () => {
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'garlic-claw-skill-tool-'));
-    await fs.mkdir(path.join(tempRoot, 'skills', 'weather-query', 'scripts'), { recursive: true });
-    await fs.writeFile(path.join(tempRoot, 'skills', 'weather-query', 'SKILL.md'), [
+    await fs.mkdir(path.join(tempRoot, 'config', 'skills', 'definitions', 'weather-query', 'scripts'), { recursive: true });
+    await fs.writeFile(path.join(tempRoot, 'config', 'skills', 'definitions', 'weather-query', 'SKILL.md'), [
       '---',
       'name: weather-query',
       'description: 查询指定地点天气。',
@@ -23,9 +23,9 @@ describe('SkillToolService', () => {
       '',
       '请先确认地点，再查询天气。',
     ].join('\n'), 'utf8');
-    await fs.writeFile(path.join(tempRoot, 'skills', 'weather-query', 'scripts', 'weather.js'), 'console.log("weather")\n', 'utf8');
+    await fs.writeFile(path.join(tempRoot, 'config', 'skills', 'definitions', 'weather-query', 'scripts', 'weather.js'), 'console.log("weather")\n', 'utf8');
     registry = new SkillRegistryService({
-      skillsRoot: path.join(tempRoot, 'skills'),
+      skillsRoot: path.join(tempRoot, 'config', 'skills', 'definitions'),
     }, new ProjectWorktreeRootService());
     service = new SkillToolService(registry);
   });
@@ -61,7 +61,7 @@ describe('SkillToolService', () => {
     const description = service.buildToolDescription(await service.listAvailableSkills());
     expect(description).toContain('<available_skills>');
     expect(description).toContain('<name>weather-query</name>');
-    expect(description).toContain('<location>skills/weather-query/SKILL.md</location>');
+    expect(description).toContain('<location>config/skills/definitions/weather-query/SKILL.md</location>');
   });
 
   it('filters denied skills from the native skill catalog and blocks direct loading', async () => {

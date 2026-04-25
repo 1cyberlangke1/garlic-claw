@@ -16,14 +16,17 @@ const DEFAULT_SKILL_GOVERNANCE: SkillGovernanceInfo = { eventLog: { maxFileSizeM
 @Injectable()
 export class SkillRegistryService {
   private cachedSkills: SkillDetail[] | null = null;
-  private readonly governancePath = resolveSkillGovernancePath();
-  private governance = readSkillGovernanceFile(this.governancePath);
+  private readonly governancePath: string;
+  private governance: SkillGovernanceFile;
 
-  constructor(@Optional() @Inject(SKILL_DISCOVERY_OPTIONS) private readonly discoveryOptions: SkillDiscoveryOptions = {}, private readonly projectWorktreeRootService: ProjectWorktreeRootService, @Optional() private readonly runtimeEventLogService?: RuntimeEventLogService) {}
+  constructor(@Optional() @Inject(SKILL_DISCOVERY_OPTIONS) private readonly discoveryOptions: SkillDiscoveryOptions = {}, private readonly projectWorktreeRootService: ProjectWorktreeRootService, @Optional() private readonly runtimeEventLogService?: RuntimeEventLogService) {
+    this.governancePath = resolveSkillGovernancePath(this.projectWorktreeRootService);
+    this.governance = readSkillGovernanceFile(this.governancePath);
+  }
 
   async listSkills(options?: { refresh?: boolean }): Promise<SkillDetail[]> {
     if (!options?.refresh && this.cachedSkills) {return this.cachedSkills;}
-    const root = this.discoveryOptions.skillsRoot ?? path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'skills');
+    const root = this.discoveryOptions.skillsRoot ?? resolveProjectSkillDefinitionsRoot(this.projectWorktreeRootService);
     const files = await walkSkillFiles(root);
     this.cachedSkills = (await Promise.all(files.filter((filePath) => path.basename(filePath) === 'SKILL.md').map((filePath) => buildSkillDetail(root, filePath, files))))
       .map((skill) => ({ ...skill, governance: this.governance.skills[skill.id] ?? DEFAULT_SKILL_GOVERNANCE }))
@@ -33,7 +36,7 @@ export class SkillRegistryService {
 
   async getSkillByName(skillName: string): Promise<SkillDetail | null> { const normalized = skillName.trim(); return normalized ? (await this.listSkills()).find((entry) => entry.name === normalized) ?? null : null; }
   async listSkillSummaries(options?: { refresh?: boolean }): Promise<SkillSummary[]> { return (await this.listSkills(options)).map(({ assets: _assets, content: _content, ...summary }) => summary); }
-  resolveSkillDirectory(skill: Pick<SkillDetail, 'entryPath' | 'sourceKind'>): string { return path.join(this.discoveryOptions.skillsRoot ?? path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'skills'), path.dirname(skill.entryPath)); }
+  resolveSkillDirectory(skill: Pick<SkillDetail, 'entryPath' | 'sourceKind'>): string { return path.join(this.discoveryOptions.skillsRoot ?? resolveProjectSkillDefinitionsRoot(this.projectWorktreeRootService), path.dirname(skill.entryPath)); }
 
   async listSkillEvents(skillId: string, query: EventLogQuery = {}): Promise<EventLogListResult> {
     if (!(await this.listSkills()).some((entry) => entry.id === skillId)) {throw new NotFoundException(`Unknown skill: ${skillId}`);}
@@ -55,10 +58,14 @@ export class SkillRegistryService {
   private getRuntimeEventLogService(): RuntimeEventLogService { return this.runtimeEventLogService ?? new RuntimeEventLogService(); }
 }
 
-function resolveSkillGovernancePath(): string {
+function resolveSkillGovernancePath(projectWorktreeRootService: ProjectWorktreeRootService): string {
   if (process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH) {return path.resolve(process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH);}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `skill-governance.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);}
-  return path.join(process.cwd(), 'tmp', 'skill-governance.server.json');
+  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `config-skills-governance.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);}
+  return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'skills', 'governance.json');
+}
+
+function resolveProjectSkillDefinitionsRoot(projectWorktreeRootService: ProjectWorktreeRootService): string {
+  return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'skills', 'definitions');
 }
 
 function readSkillGovernanceFile(filePath: string): SkillGovernanceFile {

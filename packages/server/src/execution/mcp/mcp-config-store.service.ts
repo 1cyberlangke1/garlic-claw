@@ -87,7 +87,7 @@ export class McpConfigStoreService {
       return path.resolve(process.env.GARLIC_CLAW_MCP_CONFIG_PATH);
     }
 
-    return path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'mcp', 'servers');
+    return path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'mcp', 'servers');
   }
 }
 
@@ -141,7 +141,7 @@ function readReportedMcpConfigPath(configRootPath: string): string {
     return configRootPath;
   }
 
-  return 'mcp/servers';
+  return 'config/mcp/servers';
 }
 
 function resolveServerFilePath(configRootPath: string, serverName: string): string {

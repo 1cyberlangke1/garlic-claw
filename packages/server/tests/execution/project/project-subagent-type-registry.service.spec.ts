@@ -18,7 +18,7 @@ describe('ProjectSubagentTypeRegistryService', () => {
     fs.rmSync(storageRoot, { force: true, recursive: true });
   });
 
-  it('loads builtin defaults from independent yaml files and picks up user-defined types', () => {
+  it('loads builtin defaults from independent json files and picks up user-defined types', () => {
     const service = new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService());
 
     expect(service.listTypes()).toEqual([
@@ -33,22 +33,18 @@ describe('ProjectSubagentTypeRegistryService', () => {
         description: '默认子代理类型。沿用当前请求显式指定的模型与系统提示词，不额外裁剪工具。',
       },
     ]);
-    expect(fs.existsSync(path.join(storageRoot, 'general.yaml'))).toBe(true);
-    expect(fs.existsSync(path.join(storageRoot, 'explore.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(storageRoot, 'general.json'))).toBe(true);
+    expect(fs.existsSync(path.join(storageRoot, 'explore.json'))).toBe(true);
 
-    fs.writeFileSync(path.join(storageRoot, 'review.yaml'), [
-      'id: review',
-      'name: 审阅',
-      'description: 聚焦审阅与风险检查。',
-      'providerId: openai',
-      'modelId: gpt-5.4',
-      'toolNames:',
-      '  - webfetch',
-      'system: |-',
-      '  你是一个审阅子代理。',
-      '  优先指出风险与缺口。',
-      '',
-    ].join('\n'), 'utf-8');
+    fs.writeFileSync(path.join(storageRoot, 'review.json'), JSON.stringify({
+      id: 'review',
+      name: '审阅',
+      description: '聚焦审阅与风险检查。',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      toolNames: ['webfetch'],
+      system: '你是一个审阅子代理。\n优先指出风险与缺口。',
+    }, null, 2), 'utf-8');
 
     expect(service.listTypes()).toEqual([
       {

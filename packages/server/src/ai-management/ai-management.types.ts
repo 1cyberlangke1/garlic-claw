@@ -25,6 +25,10 @@ export interface StoredAiModelConfig {
   status?: 'alpha' | 'beta' | 'active' | 'deprecated';
 }
 
+export interface AiProviderStorageFile extends StoredAiProviderConfig {
+  persistedModels: StoredAiModelConfig[];
+}
+
 export interface AiSettingsFile {
   providers: StoredAiProviderConfig[];
   models: StoredAiModelConfig[];

@@ -1,5 +1,865 @@
 # 2026-04-19 Skill 对齐 OpenCode
 
+## 2026-04-25 配置目录统一到 config
+
+### 目标
+
+- 把用户维护配置统一迁到仓库根 `config/`。
+- provider 配置改成“每个 provider 一个独立 json 文件”。
+- `persona / subagent / mcp / skill governance` 统一 json。
+- 不做旧布局兼容层，直接切新布局。
+
+### 范围
+
+- `packages/server/src/ai-management/*`
+- `packages/server/src/persona/persona-store.service.ts`
+- `packages/server/src/execution/project/project-subagent-type-registry.service.ts`
+- `packages/server/src/execution/mcp/mcp-config-store.service.ts`
+- `packages/server/src/execution/skill/skill-registry.service.ts`
+- `packages/server/scripts/http-smoke.mjs`
+- 对应 Jest 与文档引用
+
+### 新布局
+
+- `config/ai/providers/<providerId>.json`
+- `config/ai/host-model-routing.json`
+- `config/ai/vision-fallback.json`
+- `config/mcp/servers/<name>.json`
+- `config/personas/<personaId>/persona.json`
+- `config/personas/<personaId>/avatar.*`
+- `config/agents/subagent-types/<id>.json`
+- `config/skills/governance.json`
+- `config/skills/definitions/<name>/SKILL.md`
+
+### 验收
+
+- `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts tests/persona/persona.service.spec.ts tests/execution/project/project-subagent-type-registry.service.spec.ts tests/execution/mcp/mcp-config.service.spec.ts tests/execution/mcp/mcp.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/adapters/http/mcp/mcp.controller.spec.ts tests/adapters/http/persona/persona.controller.spec.ts`
+- `packages/server`: `npm run build`
+- root: `npm run smoke:server`
+
+## 2026-04-25 S15 subagent-runner owner 继续收口（七次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14691`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-subagent-runner.service.ts`
+  - 已删除只被单点调用的异步包装 `completeSubagentAsync()`，`scheduleSubagentExecution()` 直接承接 `restoreStoredSubagentExecution() -> executeStoredSubagent()` 调度链
+  - `readSubagentRequest()` 直接承接 `toolNames` 非空字符串过滤，已删除单点 `isNonEmptyString()`
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`523 -> 515`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14691`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+  - 单点异步包装与字符串过滤包装已真实删除，owner 语义没有外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 留在 `runtime-host-subagent-runner.service.ts`
+- 继续删 `start/run/restore` 的 result/session/write-back 收尾重复链，但不外推 raw request / execution request 边界、before/after hook、revision changed 或 subagentType 语义
+
+## 2026-04-25 S15 subagent-runner owner 继续收口（六次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14699`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-subagent-runner.service.ts`
+  - 已删除只在当前 owner 单点调用的包装：`readWriteBackConversationRevision / readSubagentRequestPreview / writeSubagentSessionRequest`
+  - `startSubagent()` 直接读取 write-back revision，`resolveSubagentInvocation()` 直接承接 request preview 生成，`persistSubagentSession()` update 分支直接承接 session request 写回
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`530 -> 523`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14699`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+  - 单点包装已真实删除，owner 语义没有外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 留在 `runtime-host-subagent-runner.service.ts`
+- 继续删 `start/run/restore` 的 result/session/write-back 收尾重复链，但不外推 raw request / execution request 边界、before/after hook、revision changed 或 subagentType 语义
+
+## 2026-04-25 S15 subagent-runner owner 继续收口（五次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14706`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-subagent-runner.service.ts`
+  - 已把 `restoreStoredSubagentExecution()` 与 `resolveSubagentSession()` 的双段主链继续收成单一 restore 主链
+  - restore 侧直接承接 session 读取、旧 session 缺失时的 fallback 重建、history/request 重建与 snapshot 同步判定
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`542 -> 530`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14706`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+  - `restore + resolve session` 双段主链已真实删除，owner 语义没有外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 留在 `runtime-host-subagent-runner.service.ts`
+- 继续删 `start/run/restore` 的 result/session/write-back 收尾重复链，但不外推 raw request / execution request 边界、before/after hook、revision changed 或 subagentType 语义
+
+## 2026-04-25 S15 subagent-runner owner 继续收口（四次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14718`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-subagent-runner.service.ts`
+  - 已把 restore session 所需的 history/request 拼装、session create payload 与 execution request 组装继续压回同一 owner 主链
+  - 已删除 `readStoredSubagentHistoryMessages / readStoredSubagentSessionRequest / createSubagentSessionPayload / readSubagentExecutionRequestFromSession / hasStoredSubagentSessionSnapshotChanged`
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`553 -> 542`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14718`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义保持
+  - restore session 拼装、session create payload 与 execution request 组装继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 留在 `runtime-host-subagent-runner.service.ts`
+- 继续删 `start/run/restore` 的 result/session/write-back 收尾重复链，但不外推 raw request / execution request 边界、before/after hook、revision changed 或 subagentType 语义
+
+## 2026-04-25 S15 context-compaction owner 继续收口（四次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14729`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `builtin-context-compaction.plugin.ts`
+  - 已把命令短路回复、auto-stop 状态读取与 summary 插入点判定继续压回同一 owner 主链
+  - `message:received` 直接复用 `createContextCompactionCommandShortCircuit(...)`，不再经过额外 reply formatter
+  - `/compact`、`/compress`、route `context-compaction/run`、`conversation:history-rewrite`、`chat:before-model`、summary/covered annotation、auto-stop、revision 写回语义仍留在同一 owner
+  - 文件物理行数：`395 -> 388`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14729`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `/compact`、`/compress`、route `context-compaction/run`、`conversation:history-rewrite`、`chat:before-model`、summary / covered annotation、auto-stop、revision 写回语义保持
+  - 命令短路回复、auto-stop 状态读取与 summary 插入点判定继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `runtime-host-subagent-runner.service.ts`
+- 继续删 subagent runner owner 里 run/start/resume/restart 与 session/write-back/snapshot 装配的重复状态链，但不外推 raw request / execution request 边界、before/after hook、revision changed 或 subagentType 语义
+
+## 2026-04-25 S15 conversation-task owner 继续收口（四次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14736`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `conversation-task.service.ts`
+  - 已把 `finishTask()` 里只服务一次的 terminal event / completed result / snapshot 组装壳继续压回主链
+  - `persistTaskSnapshot()` 直接构造终态 snapshot，不再经过额外 `buildConversationTaskSnapshot(...)`
+  - `streaming / stopped / error / completed`、snapshot 持久化、completed result、patched writeMessage、permission event、tool-call / tool-result normalize、customBlocks finalize、onComplete / onSent 语义仍留在同一 owner
+  - 文件物理行数：`395 -> 380`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14736`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `streaming / stopped / error / completed`、snapshot 持久化、completed result、patched writeMessage、permission event、tool-call / tool-result normalize、customBlocks finalize、onComplete / onSent 语义保持
+  - terminal event、completed result 与 snapshot 组装继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `builtin-context-compaction.plugin.ts`
+- 继续删 context-compaction owner 里 history state / summary apply / annotation finalize 的重复状态链，但不外推 `/compact`、`/compress`、history rewrite、before-model、route、summary/covered annotation、auto-stop 或 revision 语义
+
+## 2026-04-25 S15 conversation-record owner 继续收口（三次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14751`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-conversation-record.service.ts`
+  - 已把 conversation 读模型继续收成 `readConversationRecordValue(...)`
+  - `overview / detail / summary / history` 继续共用同一 owner 内投影主链
+  - `keepConversationSession()` 与 `startConversationSession()` 继续共用 `saveConversationSession(...)`
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`hostServices`、`runtimePermissionApprovals`、`activePersona`、revision 保护语义仍留在同一 owner
+  - 文件物理行数：`405 -> 391`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14751`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`hostServices`、`runtimePermissionApprovals`、`activePersona`、revision 保护语义保持
+  - conversation 读模型与 session 写回继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `conversation-task.service.ts`
+- 继续删 task owner 里 `streaming / stopped / error / completed` 的 snapshot/result/writeMessage 终态重复链，但不外推 permission event、tool-call-result normalize、customBlocks finalize 或 patched result 语义
+
+## 2026-04-25 S15 context-compaction owner 继续收口（三次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14765`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `builtin-context-compaction.plugin.ts`
+  - 已把旧的 `ContextCompactionHistoryState` 类壳压回纯函数主链
+  - `readContextCompactionHistoryState(...)` 负责历史视图与送模视图
+  - `readContextCompactionSummaryInsertIndex(...)` 负责 summary 插入点判定
+  - `message:received` 与 route `context-compaction/run` 继续共用 `runManualContextCompaction(...)`
+  - `/compact`、`/compress`、`conversation:history-rewrite`、`chat:before-model`、summary/covered annotation、auto-stop、revision 写回语义仍留在同一 owner
+  - 文件物理行数：`401 -> 395`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14765`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `/compact`、`/compress`、route `context-compaction/run`、`conversation:history-rewrite`、`chat:before-model`、summary / covered annotation、auto-stop、revision 写回语义保持
+  - 历史状态读取与 summary 插入点判定继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `runtime-host-conversation-record.service.ts`
+- 继续删 conversation record owner 里 session/history/hostServices/todo/summary 的重复读写链，但不外推 persist/load/migration、revision 保护或 activePersona 语义
+
+## 2026-04-25 S15 conversation-task owner 继续收口（三次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14771`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `conversation-task.service.ts`
+  - 已把 outcome 判定、snapshot / completed result / writeMessage payload 继续压回同一终态主链
+  - `buildCompletedConversationTaskResult(...)` 改为直接复用 snapshot，不再重复组装字段
+  - `streaming / stopped / error / completed`、patched result / onSent、permission event、tool-call / tool-result normalize、customBlocks finalize 语义仍留在同一 owner
+  - 文件物理行数：`417 -> 397`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14771`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `streaming / stopped / error / completed`、snapshot 持久化、completed result、patched writeMessage、permission event、tool-call / tool-result normalize、customBlocks finalize、onComplete / onSent 语义保持
+  - outcome 判定与终态写回数据结构继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `runtime-host-conversation-record.service.ts`
+- 继续删 conversation record owner 里 session/history/hostServices/todo/summary 的重复读写链，但不外推 persist/load/migration、revision 保护或 activePersona 语义
+
+## 2026-04-25 S15 subagent-runner owner 继续收口（三次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14793`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-subagent-runner.service.ts`
+  - 已把 `startStoredSubagent()` 与 `restoreStoredSubagentExecution()` 的 execution input 装配继续收成 `readStoredSubagentExecutionInput(...)`
+  - session snapshot 变更判定已收成 `hasStoredSubagentSessionSnapshotChanged(...)`
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 语义仍留在同一 owner
+  - 文件物理行数：`559 -> 553`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14793`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `run/start/resume/restart`、session 绑定 / 恢复 / snapshot 同步、raw request / execution request 边界、writeBack、before/after hook、subagentType default 语义保持
+  - execution input 装配与 snapshot 变更判定继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `conversation-task.service.ts`
+- 继续删 `streaming / stopped / error / completed` 的 snapshot/result/event 收尾链，但不外推 task contract、permission event、tool-call-result normalize 或 customBlocks finalize 语义
+
+## 2026-04-25 S15 context-compaction owner 继续收口（二次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14799`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `builtin-context-compaction.plugin.ts`
+  - 已把 `/compact`、`/compress` 与 route `context-compaction/run` 的手动执行入口继续收成同一主链 `runManualContextCompaction(...)`
+  - 已删除 `ContextCompactionHistoryState` 不再需要的状态统计壳，compaction 结果收尾不再经额外 covered-count 状态读回
+  - `conversation:history-rewrite`、`chat:before-model`、summary/covered annotation、auto-stop、revision 写回语义仍留在同一 owner
+  - 文件物理行数：`410 -> 401`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14799`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `/compact`、`/compress`、route、history rewrite、before-model、summary/covered annotation、auto-stop 与 revision 写回语义保持
+  - 手动入口与 compaction 收尾继续压回当前 owner 主链，没有语义外溢
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切回 `runtime-host-subagent-runner.service.ts`
+- 继续删 `run/start/resume/restart` 与 session/write-back/snapshot 装配里的重复状态流，但不外推 subagent contract、revision 判定、before/after hook 或 raw request 语义
+
+## 2026-04-25 S15 conversation-record owner 继续收口（二次）
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14808`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-conversation-record.service.ts`
+  - 已把 `keepConversationSession / startConversationSession / previewConversationHistory / writeConversationHostServices / rememberRuntimePermissionApproval` 的重复收尾链继续压回同一 owner
+  - `replaceConversationHistory()` 已去掉 owner 内部重复 revision assert，revision 保护仍留在同一主链
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`runtimePermissionApprovals`、`activePersona` 语义仍留在同一 owner
+  - 文件物理行数：`434 -> 405`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14808`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`hostServices`、`runtimePermissionApprovals`、`activePersona` 与 revision 保护语义保持
+  - 旧的并行写回链继续被压回 `updateConversationRecord()` 主链，owner 语义没有散出
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `builtin-context-compaction.plugin.ts`
+- 继续删 `resolve config/target -> preview -> summary -> predicted history -> annotation -> replace` 主链里的重复状态流，但不外推 `/compact`、`/compress`、history rewrite、before-model、route、summary/covered annotation 或 revision 语义
+
+## 2026-04-25 S15 conversation-task owner 继续收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14837`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `conversation-task.service.ts`
+  - 已把 completed 终态里的重复 snapshot/result 组装收成单一主链
+  - `finishTask()` 与 `persistTaskSnapshot()` 已共享同一份 snapshot
+  - completed result 改为基于现成 snapshot 构造，不再重复组装 `content / metadata / parts / toolCalls / toolResults`
+  - `streaming / stopped / error / completed`、patched result / onSent、permission event、tool-call / tool-result / tool-error normalize、customBlocks finalize 语义仍留在同一 owner
+  - 文件物理行数：`435 -> 417`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14837`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `streaming / stopped / error / completed` 终态链、patched result / onSent、permission event、tool-call / tool-result 持久化与 customBlocks finalize 语义保持
+  - completed 终态里的重复 snapshot/result 组装确实已删除
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `runtime-host-conversation-record.service.ts`
+- 继续删 conversation record owner 里 history/approval/hostServices/session keep 的重复写回链，但不外推 persist/load/migration、history preview/replace 或 revision 语义
+
+## 2026-04-25 S15 subagent-runner owner 继续收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14855`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-subagent-runner.service.ts`
+  - 已把真正执行时使用的 request 统一收回 session owner
+  - start/restore execution 都改为从 session 读取 execution request
+  - subagent store 继续保留 raw request，resumable 语义不变
+  - `executeStoredSubagent()` 的 `running/completed/error` 三段 `updateSubagent` 写回链收成统一 `writeStoredSubagentExecutionState`
+  - `background / inline`、pending resume、session 重建 / snapshot 同步、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 与 tool/provider/model/system 覆盖语义仍留在同一 owner
+  - 文件物理行数：`566 -> 559`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14855`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - subagent record 仍保留 raw request，session 才承接已解析 execution request，resumable 语义保持
+  - pending resume、writeBack sent/failed/skipped、revision changed、before-run / after-run hook、subagentType default 与 tool/provider/model/system 覆盖语义保持
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `conversation-task.service.ts`
+- 继续删 task runtime 里 `streaming / stop / error / completed` 的 snapshot/result/event 重复收尾链，但不外推 task contract、permission event 或 tool-call-result 语义
+
+## 2026-04-25 S15 shell hints owner 继续收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14862`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-shell-command-hints.ts`
+  - 已把 PowerShell 写路径选择与 flag 值扫描收成更短主链
+  - `readRuntimePowerShellDestinationTargets / readRuntimePowerShellWriteTargets / readRuntimePowerShellComposedTargets / readRuntimePowerShellCommandPath` 已收成 `readRuntimePowerShellWriteSelection`
+  - shell 与 PowerShell 的 `wantsValue` 平行扫描已收成统一 `readRuntimeOptionValues`
+  - `copy-item / move-item / new-item / rename-item / remove-item / set-content / add-content / out-file / mkdir`
+  - `scp / tar / git` 写目标判定、quoted attached、single-quoted literal、Join-Path、provider prefix、env/local variable、remove-item include/exclude 保护语义仍留在同一 owner
+  - 文件物理行数：`388 -> 386`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14862`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - PowerShell 写路径选择、flag 值扫描、quoted attached、Join-Path、provider prefix、env/local variable、`scp / tar / git` 写目标判定都仍留在当前 owner
+  - `remove-item` 仍只把 `-path / -literalpath` 认作删除目标，`include / exclude / filter / stream` 没被误提成 write target
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切回 `runtime-host-subagent-runner.service.ts`
+- 继续删 `run/start/resume/restart` 与 session/write-back/snapshot 装配里的重复状态流，但不外推 subagent contract、revision 判定或 hook 语义
+
+## 2026-04-25 S15 filesystem backend owner 继续收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14864`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-filesystem-backend.service.ts`
+  - 已把 `edit/write/list` 这组重复状态流继续收短
+  - `editTextFile()` 把“空旧文本写入”和“普通 replace”收成同一写回主链
+  - `writeResolvedTextFile()` 的 diff base 读取收成 `readRuntimeHostFilesystemDiffBase()`
+  - `listFiles()` 的 `partial / skippedEntries / skippedPaths` 收尾链收短
+  - `resolvePath / statPath / readDirectoryEntries / readPathRange / readTextFile`
+  - `writeTextFile / editTextFile / copyPath / movePath / deletePath / ensureDirectory / symlink`
+  - `globPaths / grepText`、`diff / postWrite / CRLF`、missing path suggestion 与 trimmed-boundary 保护语义仍留在同一 owner
+  - 文件物理行数：`392 -> 385`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14864`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `editTextFile` 的 create-style edit 与普通 replace 已统一到同一写回主链
+  - `diff / postWrite / CRLF`、binary/offset/byteLimited/maxLineLength、missing path suggestion、trimmed-boundary 保护语义保持
+  - 这刀可计入 `S15` 进度
+
+### 下一步
+
+- 切到 `runtime-shell-command-hints.ts`
+- 继续删 shell hints owner 内的命令分派、flag/path token 提取与提示汇总重复主链，但不外推 AST、permission hint 或 path summary 语义
+
+## 2026-04-25 S15 ai-model-execution owner 继续收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14871`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `ai-model-execution.service.ts`
+  - 已把 `generateText / transportMode=stream-collect` 的重复执行主链收成单一 `readTextExecutionResult`
+  - 重复的结果归约壳已删除；invalid tool repair 的 `inputText` 读取也已收成单次计算
+  - fallback target、usage 估算、response-body/raw custom blocks、tool repair、openai-compatible SSE normalize 语义仍留在同一 owner
+  - 文件物理行数：`398 -> 385`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14871`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `generateText`、`streamText`、`transportMode=stream-collect`、fallback target、usage 估算、response-body/raw custom blocks、tool repair、openai-compatible SSE normalize` 语义保持
+  - `runAcrossTargets / runAcrossTargetsSync` 继续负责 fallback；`streamText` 继续保留直接返回流的主链
+  - 这刀可计入 `S15` 进度
+
+## 2026-04-25 S15 context-compaction owner 继续收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14884`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `builtin-context-compaction.plugin.ts`
+  - 已把 `resolve config/target -> preview -> summary -> predicted history -> annotation -> replace` 收成更短主链
+  - 旧的双层执行入口与几段只服务该主链的中间函数已删除
+  - `/compact`、`/compress`、`conversation:history-rewrite`、`chat:before-model`、route `context-compaction/run`、summary/covered annotation、auto-stop 语义仍留在同一 owner
+  - 文件物理行数：`431 -> 410`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14884`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `/compact`、`/compress`、`conversation:history-rewrite`、`chat:before-model`、route `context-compaction/run`、summary/covered annotation、auto-stop、history preview/replace` 语义保持
+  - `enabled`、`mode !== auto`、`threshold-not-reached`、`not-enough-history`、`empty-summary`、`invalid-history`、`allowAutoContinue` 与 revision 保护仍在主链
+  - 这刀可计入 `S15` 进度
+
+## 2026-04-25 S15 conversation-record owner 继续收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14905`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-conversation-record.service.ts`
+  - 已把 `replace/history/hostServices/approval/activePersona` 的重复写回链收成统一主线 `updateConversationRecord<T>`
+  - 旧的 `createConversationRecord / writeConversation / mutateConversation / bumpRevision` 已删除
+  - `create/delete/read/list`、`persist/load/migration`、`session keep/start/finish`、`history preview/replace`、`runtimePermissionApprovals` 语义仍留在同一 owner
+  - 文件物理行数：`448 -> 434`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14905`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `create/delete/read/list`、`hostServices`、`runtimePermissionApprovals`、`replaceMessages/activePersona/todo`、`persist/load/migration`、`history preview/replace` 与 revision conflict 语义保持
+  - `session keep/start/finish`、`captureHistory/timeout/resetTimeout/过期清理` 仍留在当前 owner
+  - 这刀可计入 `S15` 进度
+
+## 2026-04-25 S15 subagent-runner owner 收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14944`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `runtime-host-subagent-runner.service.ts`
+  - 已把 `run/start/restart` 共享的 invocation/session/subagent 创建链收成 `startStoredSubagent / restoreStoredSubagentExecution / persistSubagentSession`
+  - `session / request / write-back / snapshot / before-after hook` 语义仍留在同一 owner
+  - 文件物理行数：`605 -> 566`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14944`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是压格式
+  - `run/start/resume/restart`、session 绑定、write-back revision、subagent type 默认值、before/after hook 语义保持
+  - 这刀可计入 `S15` 进度
+
+## 2026-04-25 S15 conversation-task owner 收口
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14919`
+- `S15` 当前仍是进行中；这一刀 fresh 与独立 judge 已完成
+
+### 本轮新增
+
+- `conversation-task.service.ts`
+  - 已把 `streaming / stop / error / completed` 的 message snapshot 与 terminal 收尾链收成 `ConversationTaskRuntime / persistTaskSnapshot / finishTask`
+  - `patched completion / permission event / tool-call-result` 语义仍留在同一 owner
+  - 文件物理行数：`460 -> 435`
+
+### 本轮 fresh
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - `npm run count:server-src` -> `14919`
+
+### 本轮 judge
+
+- 结果：`PASS`
+- 结论：
+  - 这轮属于 owner 级真实收口，不是换壳压格式
+  - `streaming/stop/error/completed`、patched completion、permission event、tool-call-result 持久化语义保持
+  - 这刀可计入 `S15` 进度
+
 ## 2026-04-25 S14 后续收尾：warning 清零
 
 ### 当前稳定值

@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { PluginSubagentTypeSummary } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
-import YAML from 'yaml';
 import { ProjectWorktreeRootService } from './project-worktree-root.service';
 
 export interface ProjectSubagentTypeDefinition {
@@ -39,7 +38,7 @@ export class ProjectSubagentTypeRegistryService {
   constructor(projectWorktreeRootService: ProjectWorktreeRootService) {
     this.storageRoot = process.env.GARLIC_CLAW_SUBAGENT_PATH
       ? path.resolve(process.env.GARLIC_CLAW_SUBAGENT_PATH)
-      : path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'subagent');
+      : path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'agents', 'subagent-types');
   }
 
   listTypes(): PluginSubagentTypeSummary[] {
@@ -54,13 +53,13 @@ export class ProjectSubagentTypeRegistryService {
 function loadProjectSubagentTypes(storageRoot: string): ProjectSubagentTypeDefinition[] {
   fs.mkdirSync(storageRoot, { recursive: true });
   for (const entry of DEFAULT_SUBAGENT_TYPES) {
-    const filePath = path.join(storageRoot, `${encodeURIComponent(entry.id)}.yaml`);
+    const filePath = path.join(storageRoot, `${encodeURIComponent(entry.id)}.json`);
     if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, YAML.stringify(entry), 'utf-8');
+      fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf-8');
     }
   }
   return fs.readdirSync(storageRoot, { withFileTypes: true })
-    .flatMap((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.yaml'
+    .flatMap((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.json'
       ? [readStoredProjectSubagentType(path.join(storageRoot, entry.name))]
       : [])
     .filter((entry): entry is ProjectSubagentTypeDefinition => Boolean(entry))
@@ -69,8 +68,8 @@ function loadProjectSubagentTypes(storageRoot: string): ProjectSubagentTypeDefin
 
 function readStoredProjectSubagentType(filePath: string): ProjectSubagentTypeDefinition | null {
   try {
-    const fallbackId = decodeURIComponent(path.basename(filePath, '.yaml'));
-    const parsed = YAML.parse(fs.readFileSync(filePath, 'utf-8')) as StoredSubagentTypeRecord;
+    const fallbackId = decodeURIComponent(path.basename(filePath, '.json'));
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as StoredSubagentTypeRecord;
     return normalizeStoredProjectSubagentType(parsed, fallbackId);
   } catch {
     return null;

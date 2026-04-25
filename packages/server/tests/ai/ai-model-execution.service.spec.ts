@@ -37,7 +37,7 @@ describe('AiModelExecutionService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    settingsPath = path.join(os.tmpdir(), `gc-server-ai-${Date.now()}-${Math.random()}.json`);
+    settingsPath = path.join(os.tmpdir(), `gc-server-ai-${Date.now()}-${Math.random()}`);
     process.env.GARLIC_CLAW_AI_SETTINGS_PATH = settingsPath;
     mockGenerateText.mockResolvedValue({
       finishReason: 'stop',
@@ -68,9 +68,7 @@ describe('AiModelExecutionService', () => {
 
   afterEach(() => {
     delete process.env.GARLIC_CLAW_AI_SETTINGS_PATH;
-    if (fs.existsSync(settingsPath)) {
-      fs.unlinkSync(settingsPath);
-    }
+    fs.rmSync(settingsPath, { force: true, recursive: true });
   });
 
   it('passes request options through to the ai sdk and preserves image parts', async () => {
