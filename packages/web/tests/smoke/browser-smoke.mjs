@@ -45,6 +45,14 @@ async function main() {
     baseURL: WEB_ORIGIN,
   });
   const page = await context.newPage();
+  page.on('pageerror', (error) => {
+    console.error('[browser-smoke:pageerror]', error);
+  });
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      console.error('[browser-smoke:console]', message.text());
+    }
+  });
   let accessToken = '';
   let createdConversationId = null;
   let initialProviderIds = new Set();
@@ -325,15 +333,27 @@ async function runChatFlow(page, accessToken) {
     const latestText = (await assistantMessages.last().textContent())?.trim() ?? '';
     return latestText.includes(`${PREFIX} chat message`) ? latestText : null;
   }, '等待前端展示 AI 回复');
+  await waitFor(async () => {
+    const detail = await getConversationDetail(accessToken, conversation.id);
+    const latestAssistantMessage = [...detail.messages]
+      .reverse()
+      .find((message) => message.role === 'assistant');
+    if (
+      !latestAssistantMessage ||
+      latestAssistantMessage.status === 'pending' ||
+      latestAssistantMessage.status === 'streaming'
+    ) {
+      return null;
+    }
+    return await page.locator('.send-button').count() > 0 ? true : null;
+  }, '等待聊天恢复空闲');
 
-  const compactRequest = page.waitForResponse((response) =>
-    response.request().method() === 'POST'
-    && response.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
+  const compactRequest = page.waitForRequest((request) =>
+    request.method() === 'POST'
+    && request.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
   );
-  await composer.fill('/compact');
-  await page.locator('.send-button').click();
-  const compactResponse = await compactRequest;
-  assert.equal(compactResponse.ok(), true, '手动上下文压缩请求失败');
+  await page.getByRole('button', { name: '压缩上下文' }).click();
+  await compactRequest;
   await waitFor(async () => {
     const detail = await getConversationDetail(accessToken, conversation.id);
     const commandMessage = detail.messages.find((message) => message.content === '/compact');

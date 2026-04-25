@@ -32,6 +32,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     pendingImages: ref([]),
     compacting: ref(false),
     displayedMessages: ref([]),
+    contextWindowPreview: ref(null),
     commandSuggestions: ref([
       {
         commandId: 'builtin.context-compaction:/compact:command',

@@ -1,5 +1,319 @@
 # Progress
 
+## 2026-04-25 task.txt 会话上下文治理与前端窗口化
+
+- 已补最终提交前的定向回归：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-planning.service.spec.ts tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+    - 结果：`5 suites / 44 tests` 全部通过
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/store/chat-store.dispatch.spec.ts tests/features/chat/composables/use-chat-view.spec.ts tests/features/subagents/composables/use-plugin-subagents.spec.ts tests/features/subagents/views/SubagentView.spec.ts`
+    - 结果：`5 files / 43 tests` 全部通过
+
+- 已完成 `N6` 总验收：
+  - `packages/shared`: `npm run build`
+    - 结果：通过
+  - `packages/plugin-sdk`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`185 checks` 通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+    - 备注：dev server 退出尾声仍有少量 `Failed to fetch` 控制台残响，不影响 smoke 判定
+  - root: `npm run count:server-src`
+    - 结果：`14998`
+- 已完成 `N6` 独立 judge：
+  - 结果：`PASS`
+  - 结论：
+    - `task.txt` 三条主线都已映射到真实 owner 与可见行为
+    - `N5/N6` 未见“前端只是显示、后端没有真语义”的假完成
+    - `packages/server/src` 已满足 `<= 15000`
+
+- 已完成 `N5` 最后一轮 fresh 与独立 judge：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/store/chat-store.dispatch.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+    - 结果：`3 files / 41 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation.controller.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`2 suites / 18 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`185 checks` 通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+    - 备注：dev server 退出尾声仍有少量 `Failed to fetch` 控制台残响，不影响 smoke 判定
+- 已回收 `N5` 独立 judge：
+  - 结果：`PASS`
+  - 结论：
+    - 刷新职责已真实拆成 `summary / message-derived / stream / tail`
+    - 前端重复 `detail / runtime-permissions / context-window` 请求链已真实减少
+    - SSE `close` 后只取消 listener，后端 task 仍继续执行并持久化 assistant
+
+- 已继续推进 `N5` 第六刀：
+  - `stopStreaming()` 里那次不会生效的 `scheduleChatRecoveryWithState(...)` 调度已删除
+  - stop 后现在直接走：
+    - 本地 assistant 标记 `stopped`
+    - `context-window / runtime permissions / todo` 尾部刷新
+    - 队列 drain
+  - 不再在 stop 后额外尝试挂一条必然不会启动的 recovery 轮询
+- 已补回归：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts`
+    - stop 后不再调用 `scheduleChatRecoveryWithState`
+- 已通过本轮 fresh：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/store/chat-store.dispatch.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+    - 结果：`3 files / 41 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+    - 备注：dev server 退出尾声仍会出现少量 `Failed to fetch` 控制台残响，不影响 smoke 判定
+
+- 已继续推进 `N5` 第五刀：
+  - `sendMessage()` / `retryMessage()` 发送前那次 `context-window` 预取已删除
+  - 当前页面对单次 `send / retry` 只保留发送结束后的窗口刷新，不再“发送前拉一次、结束后再拉一次”
+  - `chat-stream.module.ts` 未使用的 `scheduleChatRecovery()` 壳已删除
+  - `chat-store.module.ts` 里只转发到 `tryLoadConversationContextWindow()` 的 `refreshConversationWindowState()` 壳已删除
+- 已补回归：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts`
+    - 普通 `send / retry` 结束后只刷新一次 `context-window`
+    - 权限事件链也只刷新一次 `context-window`
+- 已通过本轮 fresh：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/store/chat-store.dispatch.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+    - 结果：`3 files / 41 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+    - 备注：进程关闭尾声有两条 `Failed to fetch` 控制台残响，发生在 dev server 退出阶段，不影响 smoke 判定
+
+- 已继续推进 `N5` 第四刀：
+  - 已删除未被页面使用的旧手动压缩入口：
+    - `chat-store.compactContext()`
+    - `chat-conversation.data.ts` 对应 wrapper
+    - `chat/api/chat.ts` 对应 compaction request 包装
+  - 页面上的手动压缩仍走 `chat-view -> send('/compact')` 真实链路，行为不变
+  - `send / retry` 完成后的 `runtime-permissions` 刷新，已改成只在流里真实出现过 `permission-request / permission-resolved` 时才触发
+- 已补回归：
+  - `packages/web/tests/features/chat/store/chat-store.dispatch.spec.ts`
+    - `refreshConversationState` 会带 `permissionStateChanged`
+    - 流里出现权限事件时，状态参数会标记为 `true`
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts`
+    - 普通 `send / retry` 完成后不再刷新 runtime permissions
+    - 只有权限事件发生时才刷新 runtime permissions
+  - 删除了 store 侧旧 compaction 死链测试，保留 `use-chat-view` 的 `/compact` 真链路测试
+- 已通过本轮 fresh：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/store/chat-store.dispatch.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+    - 结果：`3 files / 41 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+
+- 已继续推进 `N5` 第三刀：
+  - `updateMessage()`、`deleteMessage()` 已从“消息派生刷新”里移除无关的 pending runtime permissions 拉取
+  - `compactContext()` 已从“整套 related state 刷新”收成只刷新 `list / detail / context-window / todo`
+  - 上述三条链都不再额外打 `/runtime-permissions/pending`
+- 已补回归：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts`
+    - `update / delete` 后不再刷新 runtime permissions
+    - `compact` 后不再刷新 runtime permissions
+- 已通过本轮 fresh：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+    - 结果：`2 files / 33 tests` 全部通过
+  - root: `npm run smoke:server`
+    - 结果：`185 checks` 通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+
+- 已继续推进 `N5` 第二刀：
+  - `stopStreaming()` 已从“stop 后整页重拉 detail”收成“本地把当前 assistant 标成 `stopped`，再只刷新 `context-window / runtime permissions / todo`”
+  - 不再因为 stop 把刚刚已在前端持有的消息主链再拉一次
+  - `packages/server/tests/conversation/conversation.controller.spec.ts` 已补 controller 级证据：
+    - SSE `close` 后只会取消 listener
+    - `waitForTask()` 仍继续等待任务完成，不会因为前端断开而中止
+- 已补回归：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts`
+    - stop 后不再额外拉 `loadConversationMessages`
+    - 当前 assistant 会本地转成 `stopped`
+  - `packages/server/tests/conversation/conversation.controller.spec.ts`
+    - `keeps waiting for task completion after SSE closes`
+
+- 已开始 `N5` 第一刀：
+  - 流式 `send / retry` 完成后的刷新，已从“整页重拉 detail”收成“只刷会话列表 + context window + todo/runtime permissions”
+  - `setModelSelection()` 与 `builtin.context-compaction` 配置变更时，也已只刷新上下文窗口预览，不再顺带重拉消息 detail
+  - `selectConversation()` 初始化链已删除第二次重复 detail 拉取，改为“先拉 detail，再补 context window”
+- 已补回归：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts`
+    - `send / retry` 完成后不再额外拉 `loadConversationMessages`
+    - provider/model 切换时只刷新 `context-window`
+    - `context-compaction` 配置变化时只刷新 `context-window`
+    - `selectConversation()` 只拉一次消息 detail
+- 已通过本轮 fresh：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+    - 结果：`2 files / 32 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+
+- 已完成 `N4`：
+  - `chat-store` 已改成 FIFO 发送队列：
+    - 用户在 AI 生成中继续发送时，消息先入队
+    - 当前回复完成后自动发送
+    - stop 后也会继续 drain 已排队消息
+  - 编辑最后一条非 `display` 的 `user` 消息时，若它已成为尾部消息，会先删原消息，再按正常发送链重发
+  - `ChatComposer` 不再因 `streaming` 禁止输入，前端允许实时继续发送进入队列
+  - `RuntimeHostSubagentRunnerService` 已在 subagent 报错时把 `子代理执行失败：...` 回写到主会话
+- 已补 `N4` 回归：
+  - `packages/web/tests/features/chat/store/chat-store.module.spec.ts`
+    - 流式中第二条消息进入队列并在当前回复完成后自动发送
+    - stop 后会继续发送已排队消息
+    - 编辑最后 user 会退化成“删除 + 正常发送”
+  - `packages/web/tests/features/chat/composables/use-chat-view.spec.ts`
+    - 流式中仍允许继续发送，让后续消息进入队列
+  - `packages/server/tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - subagent 抛出 `OpenAI 429` 时，主会话会收到错误 assistant 消息
+- 已通过本轮 fresh：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+    - 结果：`2 files / 31 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`1 suite / 17 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`185 checks` 通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+- 已完成独立 judge：
+  - 结果：`PASS`
+  - 结论：
+    - 排队消息不会丢，也不会并发抢跑
+    - 编辑最后 user 的回退语义正确
+    - subagent API error 已回写 main，而不是只留在后台页
+
+- 已继续推进 `N3`：
+  - `plugin-sdk` 为 `builtin.subagent-delegate` 新增 `session.maxConversationSubagents`
+  - `RuntimeHostSubagentRunnerService` 已在新建 session 前按 `conversationId` 做会话级上限拦截
+  - 继续已有 `sessionId` 时不会触发上限拒绝
+  - `SubagentView` 已新增：
+    - 主会话工作区
+    - `main / agent*` 横向窗口条
+    - 当前激活 agent 的上下文消息与执行结果详情
+  - `usePluginSubagents` 已改成：
+    - 只轮询 overview
+    - 当前窗口切换时只拉 active detail
+    - `selectWindow()` 不重刷 overview
+- 已补 `N3` 回归：
+  - `packages/server/tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 新建 session 达上限时报错
+    - 继续已有 session 不受上限影响
+  - `packages/server/tests/adapters/http/plugin/plugin.controller.spec.ts`
+  - `packages/server/tests/adapters/http/plugin/plugin-subagent.controller.spec.ts`
+    - 明确断言 detail 返回 `request.messages`
+  - `packages/web/tests/features/subagents/composables/use-plugin-subagents.spec.ts`
+    - 明确断言 `selectWindow()` 只触发 detail 读取，不重刷 overview
+  - `packages/web/tests/features/subagents/views/SubagentView.spec.ts`
+    - 明确断言 `main / agent*` 结构与 `.window-strip` 的横向滚动样式约束
+- 已通过本轮 fresh：
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/plugin-sdk`: `node --test tests/index.test.js`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/adapters/http/plugin/plugin.controller.spec.ts tests/adapters/http/plugin/plugin-subagent.controller.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`4 suites / 30 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - `packages/web`: `npx vitest run tests/features/subagents/composables/use-plugin-subagents.spec.ts tests/features/subagents/views/SubagentView.spec.ts`
+    - 结果：`2 files / 2 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`185 checks` 通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+- 当前状态：
+  - `N3` 代码与 fresh 已齐
+  - 第一轮独立 judge 只指出“阶段文档未同步”
+  - 文档同步后，最终独立 judge 已给出 `PASS`
+  - `N3` 现已可标记完成
+
+- 已读取 `task.txt`，并把要求归并为三条主线：
+  - 会话上下文治理
+  - subagent 会话窗口
+  - 消息编排与网络收口
+- 已重写 `TODO.md`：
+  - 旧 `S1-S16` 长历史已压缩为摘要
+  - 新任务已改成 `N1-N6`
+  - 每阶段都补了 owner / fresh / judge
+- 已开始 `N1` 第一刀：
+  - `plugin-sdk` 的上下文治理配置新增 `strategy: summary | sliding`
+  - 新增 `slidingWindowUsagePercent`
+  - `builtin-context-compaction` 在 `chat:before-model` 已支持滑动窗口裁剪
+  - `conversation:history-rewrite` 已限制为 `summary + auto`
+- 已补验证：
+  - `packages/plugin-sdk`: `npm run build`
+  - `packages/plugin-sdk`: `node --test tests/index.test.js`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run smoke:server`
+- 已继续推进 `N1` 第二刀：
+  - `ConversationMessagePlanningService` 已新增动态上下文窗口预览主链
+  - `ConversationController` 已新增 `GET /chat/conversations/:id/context-window`
+  - 预览会按当前 provider/model + compaction 配置返回：
+    - `enabled`
+    - `strategy`
+    - `includedMessageIds / excludedMessageIds`
+    - `estimatedTokens / maxWindowTokens`
+    - `keepRecentMessages / slidingWindowUsagePercent`
+  - `summary` 会按当前历史注解计算可见上下文
+  - `sliding` 会按实时窗口预算裁掉最旧历史，但不改写持久化消息
+  - `web chat api` 已预埋 `getConversationContextWindow(...)`
+- 已通过本刀 fresh：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-planning.service.spec.ts tests/conversation/conversation.controller.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/api-contract-freeze.spec.ts`
+  - `packages/server`: `npm run build`
+  - root: `npm run smoke:server`
+  - `packages/web`: `npm run build`
+- 已修正 `N1` 浏览器链路里的 `context-window` 400：
+  - `ConversationMessagePlanningService` 在调用 `previewConversationHistory()` 前，已先把历史消息规整成合法 JSON 形状
+  - 会过滤预览里不合法的 `parts`，并把 `toolCalls / toolResults` 收成 JSON 安全数组
+  - 新增 server 回归：脏 `parts` + 脏 `toolCalls` 也能正常拿到窗口预览
+- 已通过本轮 fresh：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-planning.service.spec.ts tests/conversation/conversation.controller.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`3 suites / 36 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过，控制台不再出现 `GET /api/chat/conversations/:id/context-window ... 400 messages[0] must be an object`
+  - root: `npm run smoke:server`
+    - 结果：`185 checks` 通过
+- 当前状态：
+  - `N1` 的后端 400 主链已修
+  - 独立 judge：`PASS`
+    - 结论：这是后端预览主链修复，不是前端降级绕过
+    - 结论：前端窗口裁剪与灰化链未回退
+  - 已把 `N1` 改为完成，`N2` 继续保持进行中
+- 已继续推进 `N2` 的“配置切换即时生效”：
+  - 新增前端事件：插件配置页保存 `builtin.context-compaction` 的配置或作用域后，会广播配置变更
+  - `chat-store` 收到该事件后，会刷新当前会话的 `contextWindowPreview` 与消息窗口
+  - 已补前端回归：当前会话打开时，收到 `builtin.context-compaction` 配置变更事件，会重新拉取窗口预览
+- 已通过本轮 fresh：
+  - `packages/web`: `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/components/ChatMessageList.spec.ts tests/features/chat/views/ChatView.spec.ts`
+    - 结果：`3 files / 27 tests` 全部通过
+  - `packages/web`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:web-ui`
+    - 结果：通过
+  - 独立 judge：`PASS`
+    - 结论：前端不再无上限缓存全部消息
+    - 结论：灰化仅影响展示，不误删历史
+    - 结论：配置变更已即时刷新当前聊天链路
+  - 当前状态：已把 `N2` 改为完成
+
 ## 2026-04-25 记忆上下文避免打断 cache 并持久化
 
 - 已把 `builtin.memory-context` 的送模注入从 `systemPrompt` 改为 `messages` 级注入。

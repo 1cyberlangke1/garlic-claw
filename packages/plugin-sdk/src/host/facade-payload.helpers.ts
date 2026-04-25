@@ -64,6 +64,7 @@ export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): Js
   return {
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.description ? { description: input.description } : {}),
+    ...(typeof input.maxConversationSubagents === "number" ? { maxConversationSubagents: input.maxConversationSubagents } : {}),
     ...(input.subagentType ? { subagentType: input.subagentType } : {}),
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
@@ -81,6 +82,7 @@ export function buildPluginStartSubagentParams(input: PluginSubagentStartParams)
   return {
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.description ? { description: input.description } : {}),
+    ...(typeof input.maxConversationSubagents === "number" ? { maxConversationSubagents: input.maxConversationSubagents } : {}),
     ...(input.subagentType ? { subagentType: input.subagentType } : {}),
     messages: toHostJsonValue(input.messages),
     ...(input.providerId ? { providerId: input.providerId } : {}),

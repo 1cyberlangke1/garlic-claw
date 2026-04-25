@@ -364,3 +364,27 @@ export interface RetryMessagePayload {
  */
 export type UpdateConversationHostServicesPayload =
   Partial<ConversationHostServices>;
+
+/**
+ * 会话当前送模窗口预览。
+ */
+export interface ConversationContextWindowPreview {
+  /** 上下文治理当前是否生效。 */
+  enabled: boolean;
+  /** 当前治理策略。 */
+  strategy: 'sliding' | 'summary';
+  /** 当前仍会进入模型上下文的消息 ID。 */
+  includedMessageIds: string[];
+  /** 当前不会进入模型上下文的消息 ID。 */
+  excludedMessageIds: string[];
+  /** 当前窗口的估算 token 数。 */
+  estimatedTokens: number;
+  /** 当前窗口预算上限。 */
+  maxWindowTokens: number;
+  /** 无论何种策略都至少保留的最近消息数。 */
+  keepRecentMessages: number;
+  /** 前端本地最多缓存的最近消息数。 */
+  frontendMessageWindowSize: number;
+  /** sliding 策略下使用的窗口百分比。 */
+  slidingWindowUsagePercent: number;
+}

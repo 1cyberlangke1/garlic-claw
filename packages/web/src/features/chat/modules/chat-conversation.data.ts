@@ -1,5 +1,6 @@
 import type {
   Conversation,
+  ConversationContextWindowPreview,
   ConversationTodoItem,
   RuntimePermissionDecision,
   RuntimePermissionReplyResult,
@@ -8,11 +9,11 @@ import type {
   UpdateMessagePayload,
 } from '@garlic-claw/shared'
 import {
-  compactConversationContext,
   createConversation,
   deleteConversation,
   deleteConversationMessage,
   getConversation,
+  getConversationContextWindow,
   getConversationTodo,
   listConversations,
   listPendingRuntimePermissions,
@@ -22,7 +23,6 @@ import {
   stopConversationMessage,
   updateConversationMessage,
 } from '@/features/chat/api/chat'
-import type { ConversationContextCompactionResult } from '@/features/chat/api/chat'
 import { dbMessageToChat } from '@/features/chat/store/chat-store.helpers'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
 
@@ -47,6 +47,19 @@ export function loadConversationTodoRecord(
   conversationId: string,
 ): Promise<ConversationTodoItem[]> {
   return getConversationTodo(conversationId)
+}
+
+export function loadConversationContextWindowRecord(
+  conversationId: string,
+  payload: {
+    providerId?: string | null
+    modelId?: string | null
+  },
+): Promise<ConversationContextWindowPreview> {
+  return getConversationContextWindow(conversationId, {
+    ...(payload.providerId ? { providerId: payload.providerId } : {}),
+    ...(payload.modelId ? { modelId: payload.modelId } : {}),
+  })
 }
 
 export function loadPendingRuntimePermissionsRecord(
@@ -104,14 +117,4 @@ export async function stopConversationMessageRecord(
   messageId: string,
 ): Promise<{ message: string }> {
   return stopConversationMessage(conversationId, messageId)
-}
-
-export function compactConversationContextRecord(
-  conversationId: string,
-  payload: {
-    providerId?: string | null
-    modelId?: string | null
-  },
-): Promise<ConversationContextCompactionResult> {
-  return compactConversationContext(conversationId, payload)
 }

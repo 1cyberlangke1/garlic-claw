@@ -1,5 +1,11 @@
-import type { PluginSubagentSummary } from '@garlic-claw/shared'
-import { listPluginSubagentOverview } from '@/features/subagents/api/plugin-subagents'
+import type {
+  PluginSubagentDetail,
+  PluginSubagentSummary,
+} from '@garlic-claw/shared'
+import {
+  getPluginSubagent,
+  listPluginSubagentOverview,
+} from '@/features/subagents/api/plugin-subagents'
 import { getErrorMessage } from '@/utils/error'
 
 export interface PluginSubagentOverviewData {
@@ -12,6 +18,15 @@ export interface PluginSubagentOverviewData {
  */
 export function loadPluginSubagentOverview(): Promise<PluginSubagentOverviewData> {
   return listPluginSubagentOverview()
+}
+
+/**
+ * 读取单个后台子代理详情。
+ * @param sessionId 子代理 session ID
+ * @returns 子代理详情
+ */
+export function loadPluginSubagentDetail(sessionId: string): Promise<PluginSubagentDetail> {
+  return getPluginSubagent(sessionId)
 }
 
 /**

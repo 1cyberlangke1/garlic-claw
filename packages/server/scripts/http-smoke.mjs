@@ -565,6 +565,18 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(conversation.id === state.conversationId, 'Expected conversation detail to match');
   });
 
+  await runStep('chat.context-window.get', async () => {
+    const preview = await getJson(
+      apiBase,
+      `/chat/conversations/${state.conversationId}/context-window?providerId=${encodeURIComponent(state.providerId)}&modelId=${encodeURIComponent(state.modelId)}`,
+      { headers: userHeaders() },
+    );
+    ensure(Array.isArray(preview.includedMessageIds), 'Expected context window preview to include includedMessageIds');
+    ensure(Array.isArray(preview.excludedMessageIds), 'Expected context window preview to include excludedMessageIds');
+    ensure(typeof preview.frontendMessageWindowSize === 'number', 'Expected context window preview to include frontendMessageWindowSize');
+    ensure(typeof preview.maxWindowTokens === 'number', 'Expected context window preview to include maxWindowTokens');
+  });
+
   await runStep('chat.services.get', async () => {
     const services = await getJson(apiBase, `/chat/conversations/${state.conversationId}/services`, { headers: userHeaders() });
     ensure(typeof services.llmEnabled === 'boolean', 'Expected conversation services payload');

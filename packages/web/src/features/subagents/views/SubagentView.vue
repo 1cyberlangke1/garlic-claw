@@ -5,7 +5,7 @@
         <div>
           <span class="hero-kicker">Background Subagents</span>
           <h1>后台 Subagent</h1>
-          <p>统一查看插件发起的后台子代理、完成态结果和消息回写状态。</p>
+          <p>统一查看插件发起的后台子代理、完成态结果、回写状态与当前上下文。</p>
         </div>
         <div class="subagent-hero-side">
           <button
@@ -19,7 +19,7 @@
           <div class="hero-note">
             <span class="hero-note-label">当前子代理面</span>
             <strong>{{ heroHeadline }}</strong>
-            <p>同步调用继续保留给工具即时返回，后台子代理则在这里被持久化观察和追踪。</p>
+            <p>每个主会话会聚合成一个工作区，支持在 `main / agent*` 之间切换查看。</p>
           </div>
         </div>
       </header>
@@ -39,6 +39,158 @@
     </section>
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
+
+    <section class="subagent-workspace-panel">
+      <div class="panel-header">
+        <div>
+          <span class="panel-kicker">Workspace Windows</span>
+          <h2>会话窗口</h2>
+          <p>按主会话聚合后台子代理，并在 `main / agent*` 之间查看上下文。</p>
+        </div>
+      </div>
+
+      <div v-if="conversationWorkspaces.length === 0" class="sidebar-state">
+        当前还没有可查看的后台子代理会话。
+      </div>
+      <template v-else>
+        <div class="conversation-rail" data-test="conversation-rail">
+          <button
+            v-for="workspace in conversationWorkspaces"
+            :key="workspace.id"
+            type="button"
+            class="conversation-chip"
+            :class="{ active: workspace.id === activeConversationId }"
+            @click="selectConversation(workspace.id)"
+          >
+            <span>{{ workspace.label }}</span>
+            <strong>{{ workspace.subagents.length }}</strong>
+          </button>
+        </div>
+
+        <div class="window-strip" data-test="window-strip">
+          <button
+            v-for="windowItem in activeWorkspaceWindows"
+            :key="windowItem.id"
+            type="button"
+            class="window-tab"
+            :class="[
+              { active: windowItem.id === activeWindowId },
+              windowItem.kind === 'subagent' ? windowItem.status : '',
+            ]"
+            @click="selectWindow(windowItem.id)"
+          >
+            <span>{{ windowItem.label }}</span>
+            <strong v-if="windowItem.kind === 'subagent'">{{ statusLabel(windowItem.status) }}</strong>
+          </button>
+        </div>
+
+        <div class="workspace-stage">
+          <template v-if="activeWindowKind === 'main'">
+            <div class="workspace-summary-grid">
+              <article class="workspace-summary-card">
+                <span class="overview-label">当前主会话</span>
+                <strong>{{ activeConversationLabel }}</strong>
+                <p>当前窗口下共有 {{ activeConversationSubagents.length }} 个后台子代理会话。</p>
+              </article>
+              <article class="workspace-summary-card">
+                <span class="overview-label">运行态</span>
+                <strong>{{ activeRunningCount }}</strong>
+                <p>仍处于排队或执行中的子代理数量。</p>
+              </article>
+              <article class="workspace-summary-card">
+                <span class="overview-label">异常态</span>
+                <strong>{{ activeErrorCount }}</strong>
+                <p>失败或回写失败的子代理数量。</p>
+              </article>
+            </div>
+
+            <div class="workspace-agent-list">
+              <button
+                v-for="(subagent, index) in activeConversationSubagents"
+                :key="subagent.sessionId"
+                type="button"
+                class="workspace-agent-card"
+                :class="subagent.status"
+                @click="selectWindow(subagent.sessionId)"
+              >
+                <div class="workspace-agent-header">
+                  <strong>agent{{ index + 1 }}</strong>
+                  <span class="status-pill" :class="subagent.status">{{ statusLabel(subagent.status) }}</span>
+                </div>
+                <p>{{ subagent.description || subagent.requestPreview }}</p>
+                <div class="meta-row">
+                  <span class="meta-chip">会话 {{ subagent.sessionMessageCount }} 条</span>
+                  <span v-if="subagent.providerId" class="meta-chip">{{ subagent.providerId }}</span>
+                  <span v-if="subagent.modelId" class="meta-chip">{{ subagent.modelId }}</span>
+                </div>
+              </button>
+            </div>
+          </template>
+
+          <template v-else>
+            <div v-if="detailLoading" class="sidebar-state">正在读取子代理上下文...</div>
+            <p v-else-if="detailError" class="page-banner error">{{ detailError }}</p>
+            <template v-else-if="activeSubagentDetail && activeSubagentSummary">
+              <div class="detail-grid">
+                <article class="detail-card">
+                  <span class="overview-label">当前窗口</span>
+                  <strong>{{ activeWindow?.label }}</strong>
+                  <p>{{ activeSubagentSummary.description || activeSubagentSummary.requestPreview }}</p>
+                </article>
+                <article class="detail-card">
+                  <span class="overview-label">插件 / 模型</span>
+                  <strong>{{ activeSubagentSummary.pluginDisplayName || activeSubagentSummary.pluginId }}</strong>
+                  <p>{{ activeSubagentSummary.providerId || '未指定 provider' }} / {{ activeSubagentSummary.modelId || '未指定 model' }}</p>
+                </article>
+                <article class="detail-card">
+                  <span class="overview-label">回写状态</span>
+                  <strong>{{ writeBackLabel(activeSubagentSummary.writeBackStatus) }}</strong>
+                  <p>{{ activeSubagentSummary.writeBackError || '当前没有回写异常' }}</p>
+                </article>
+              </div>
+
+              <article v-if="activeSubagentDetail.request.system" class="detail-section">
+                <header class="detail-section-header">
+                  <h3>系统提示词</h3>
+                </header>
+                <pre class="detail-pre">{{ activeSubagentDetail.request.system }}</pre>
+              </article>
+
+              <article class="detail-section" data-test="subagent-context-panel">
+                <header class="detail-section-header">
+                  <h3>上下文消息</h3>
+                  <span>{{ activeSubagentDetail.request.messages.length }} 条</span>
+                </header>
+                <div class="message-stack">
+                  <section
+                    v-for="(message, index) in activeSubagentDetail.request.messages"
+                    :key="`${message.role}-${index}`"
+                    class="message-card"
+                  >
+                    <div class="message-card-header">
+                      <strong>{{ message.role }}</strong>
+                      <span>#{{ index + 1 }}</span>
+                    </div>
+                    <pre class="detail-pre">{{ formatMessageContent(message.content) }}</pre>
+                  </section>
+                </div>
+              </article>
+
+              <article class="detail-section">
+                <header class="detail-section-header">
+                  <h3>执行结果</h3>
+                </header>
+                <p v-if="activeSubagentDetail.error" class="warning-text">
+                  {{ activeSubagentDetail.error }}
+                </p>
+                <pre v-else-if="activeSubagentDetail.result" class="detail-pre">{{ activeSubagentDetail.result.text }}</pre>
+                <p v-else class="muted-text">当前还没有结果输出。</p>
+              </article>
+            </template>
+          </template>
+        </div>
+      </template>
+    </section>
 
     <section class="subagent-list-panel">
       <div class="panel-header">
@@ -98,12 +250,21 @@
               </p>
               <p>{{ subagent.requestPreview }}</p>
             </div>
-            <RouterLink
-              class="ghost-button link-button"
-              :to="{ name: 'plugins', query: { plugin: subagent.pluginId } }"
-            >
-              打开插件治理
-            </RouterLink>
+            <div class="subagent-card-actions">
+              <button
+                type="button"
+                class="ghost-button"
+                @click="openSubagentWindow(subagent)"
+              >
+                查看上下文
+              </button>
+              <RouterLink
+                class="ghost-button link-button"
+                :to="{ name: 'plugins', query: { plugin: subagent.pluginId } }"
+              >
+                打开插件治理
+              </RouterLink>
+            </div>
           </div>
 
           <div class="meta-row">
@@ -165,12 +326,23 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import type { ChatMessagePart, PluginSubagentSummary } from '@garlic-claw/shared'
 import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import { usePluginSubagents } from '../composables/use-plugin-subagents'
 
 const {
   loading,
   error,
+  detailLoading,
+  detailError,
+  conversationWorkspaces,
+  activeConversationId,
+  activeConversationSubagents,
+  activeWindowId,
+  activeWindow,
+  activeWindowKind,
+  activeWorkspaceWindows,
+  activeSubagentDetail,
   searchKeyword,
   filter,
   pagedSubagents,
@@ -187,8 +359,23 @@ const {
   errorSubagentCount,
   writeBackAttentionCount,
   refreshAll,
+  selectConversation,
+  selectWindow,
   subagentCount,
 } = usePluginSubagents()
+
+const activeConversationLabel = computed(() =>
+  conversationWorkspaces.value.find((workspace) => workspace.id === activeConversationId.value)?.label ?? '暂无主会话',
+)
+const activeSubagentSummary = computed(() =>
+  activeWindow.value?.kind === 'subagent' ? activeWindow.value.summary : null,
+)
+const activeRunningCount = computed(() =>
+  activeConversationSubagents.value.filter((subagent) => subagent.status === 'queued' || subagent.status === 'running').length,
+)
+const activeErrorCount = computed(() =>
+  activeConversationSubagents.value.filter((subagent) => subagent.status === 'error' || subagent.writeBackStatus === 'failed').length,
+)
 
 const heroHeadline = computed(() => {
   if (subagentCount.value === 0) {
@@ -239,6 +426,12 @@ const filterOptions = [
   { value: 'writeback-failed', label: '回写失败' },
 ]
 
+function openSubagentWindow(subagent: PluginSubagentSummary) {
+  const conversationId = subagent.conversationId?.trim() || '__global__'
+  selectConversation(conversationId)
+  selectWindow(subagent.sessionId)
+}
+
 function statusLabel(status: 'queued' | 'running' | 'completed' | 'error') {
   switch (status) {
     case 'queued':
@@ -269,6 +462,24 @@ function formatTime(iso: string) {
   const date = new Date(iso)
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`
 }
+
+function formatMessageContent(content: string | ChatMessagePart[]) {
+  if (typeof content === 'string') {
+    return content
+  }
+  return content.map((part) => formatMessagePart(part)).join('\n\n')
+}
+
+function formatMessagePart(part: ChatMessagePart) {
+  switch (part.type) {
+    case 'text':
+      return part.text
+    case 'image':
+      return `[image] ${part.image}`
+    default:
+      return '[unknown-part]'
+  }
+}
 </script>
 
 <style scoped>
@@ -280,6 +491,7 @@ function formatTime(iso: string) {
 }
 
 .subagent-hero,
+.subagent-workspace-panel,
 .subagent-list-panel {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) * 1.2);
@@ -291,20 +503,27 @@ function formatTime(iso: string) {
 .panel-header,
 .subagent-card-top,
 .panel-controls,
-.meta-row {
+.meta-row,
+.workspace-agent-header,
+.message-card-header {
   display: flex;
   gap: 0.75rem;
 }
 
 .subagent-hero-header,
 .panel-header,
-.subagent-card-top {
+.subagent-card-top,
+.workspace-agent-header,
+.message-card-header {
   justify-content: space-between;
 }
 
 .subagent-hero-side,
 .hero-note,
-.subagent-list {
+.subagent-list,
+.workspace-stage,
+.workspace-agent-list,
+.message-stack {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -319,17 +538,30 @@ function formatTime(iso: string) {
   color: var(--text-muted);
 }
 
-.overview-grid {
+.overview-grid,
+.workspace-summary-grid,
+.detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.75rem;
   margin-top: 1rem;
 }
 
-.overview-card {
+.overview-card,
+.workspace-summary-card,
+.detail-card,
+.workspace-agent-card,
+.detail-section,
+.message-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.85rem;
+  background: transparent;
+}
+
+.overview-card,
+.workspace-summary-card,
+.detail-card {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -337,6 +569,64 @@ function formatTime(iso: string) {
 
 .overview-card.warning {
   border-color: rgba(214, 162, 36, 0.4);
+}
+
+.conversation-rail,
+.window-strip {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.conversation-chip,
+.window-tab {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.55rem 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.conversation-chip.active,
+.window-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.window-tab.running,
+.window-tab.queued {
+  border-color: rgba(214, 162, 36, 0.4);
+}
+
+.window-tab.error {
+  border-color: rgba(184, 74, 74, 0.4);
+}
+
+.window-tab.completed {
+  border-color: rgba(44, 125, 88, 0.4);
+}
+
+.workspace-agent-card {
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-agent-card.running,
+.workspace-agent-card.queued {
+  border-color: rgba(214, 162, 36, 0.4);
+}
+
+.workspace-agent-card.error {
+  border-color: rgba(184, 74, 74, 0.4);
+}
+
+.workspace-agent-card.completed {
+  border-color: rgba(44, 125, 88, 0.4);
 }
 
 .panel-controls {
@@ -349,16 +639,15 @@ function formatTime(iso: string) {
   flex: 1 1 240px;
 }
 
-.filter-chips,
 .meta-row,
-.subagent-title-row {
+.subagent-title-row,
+.subagent-card-actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
   align-items: center;
 }
 
-.filter-chip,
 .meta-chip {
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -366,12 +655,6 @@ function formatTime(iso: string) {
   font-size: 0.78rem;
   color: var(--text-muted);
   background: transparent;
-}
-
-.filter-chip.active,
-.link-button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .subagent-card {
@@ -405,6 +688,38 @@ function formatTime(iso: string) {
 .writeback-chip.failed {
   border-color: rgba(184, 74, 74, 0.4);
   color: #b84a4a;
+}
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.detail-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.detail-section-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.detail-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+}
+
+.message-card-header {
+  align-items: center;
+  color: var(--text-muted);
 }
 
 .detail-line,

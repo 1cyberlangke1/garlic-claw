@@ -14,8 +14,15 @@ let activeConversationId = '';
 
 describe('ConversationMessageLifecycleService', () => {
   const envKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
+  const aiManagementService = {
+    getDefaultProviderSelection: jest.fn(),
+    getProvider: jest.fn(),
+    getProviderModel: jest.fn(),
+    listProviders: jest.fn(),
+  };
   const aiModelExecutionService = { streamText: jest.fn() };
   const aiVisionService = { resolveImageText: jest.fn(), resolveMessageParts: jest.fn() };
+  const pluginPersistenceService = { findPlugin: jest.fn() };
   const toolRegistryService = {
     buildToolSet: jest.fn().mockResolvedValue(undefined),
     listAvailableTools: jest.fn().mockResolvedValue([]),
@@ -43,15 +50,25 @@ describe('ConversationMessageLifecycleService', () => {
     );
     process.env[envKey] = storagePath;
     jest.clearAllMocks();
+    aiManagementService.getDefaultProviderSelection.mockReset();
+    aiManagementService.getProvider.mockReset();
+    aiManagementService.getProviderModel.mockReset();
+    aiManagementService.listProviders.mockReset();
     aiModelExecutionService.streamText.mockReset();
     aiVisionService.resolveImageText.mockReset();
     aiVisionService.resolveMessageParts.mockReset();
+    pluginPersistenceService.findPlugin.mockReset();
     toolRegistryService.buildToolSet.mockReset();
     toolRegistryService.listAvailableTools.mockReset();
     runtimeHostPluginDispatchService.invokeHook.mockReset();
     runtimeHostPluginDispatchService.listPlugins.mockReset();
     personaService.readCurrentPersona.mockReset();
     aiVisionService.resolveMessageParts.mockImplementation(async (_conversationId, parts) => parts);
+    aiManagementService.getDefaultProviderSelection.mockReturnValue({ modelId: 'gpt-5.4', providerId: 'openai', source: 'default' });
+    aiManagementService.getProvider.mockReturnValue({ defaultModel: 'gpt-5.4', id: 'openai', models: ['gpt-5.4'] });
+    aiManagementService.getProviderModel.mockReturnValue({ contextLength: 128 * 1024, id: 'gpt-5.4', providerId: 'openai' });
+    aiManagementService.listProviders.mockReturnValue([{ id: 'openai' }]);
+    pluginPersistenceService.findPlugin.mockReturnValue(null);
     toolRegistryService.buildToolSet.mockResolvedValue(undefined);
     toolRegistryService.listAvailableTools.mockResolvedValue([]);
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([]);
@@ -65,7 +82,9 @@ describe('ConversationMessageLifecycleService', () => {
     );
     conversationMessagePlanningService = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
+      aiManagementService as never,
       aiVisionService as never,
+      pluginPersistenceService as never,
       runtimeHostConversationRecordService,
       personaService as never,
       toolRegistryService as never,
@@ -138,6 +157,44 @@ describe('ConversationMessageLifecycleService', () => {
       { content: '真正的模型回复', model: 'gpt-5.4', provider: 'openai', role: 'assistant', status: 'completed' },
     ]);
     expect(events).toEqual([]);
+  });
+
+  it('can read context window preview after a real message lifecycle round', async () => {
+    pluginPersistenceService.findPlugin.mockReturnValue({
+      configValues: {
+        enabled: true,
+        strategy: 'summary',
+      },
+      connected: true,
+      conversationScopes: {},
+      defaultEnabled: true,
+      pluginId: 'builtin.context-compaction',
+    });
+    aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '真正的模型回复'));
+
+    await startAndWait(service, conversationTaskService, {
+      content: '你好',
+      model: 'gpt-5.4',
+      provider: 'openai',
+    });
+
+    await expect(
+      conversationMessagePlanningService.getContextWindowPreview({
+        conversationId,
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        userId: 'user-1',
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        enabled: true,
+        frontendMessageWindowSize: 200,
+        includedMessageIds: expect.arrayContaining([
+          expect.any(String),
+        ]),
+        strategy: 'summary',
+      }),
+    );
   });
 
   it('appends vision fallback descriptions before sending image prompts to the model', async () => {

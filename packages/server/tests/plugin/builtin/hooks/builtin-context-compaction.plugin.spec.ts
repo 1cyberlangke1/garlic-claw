@@ -359,6 +359,85 @@ describe('BuiltinContextCompactionPlugin', () => {
       ],
     });
   });
+
+  it('uses a sliding window when strategy is sliding and trims oldest history messages before model execution', async () => {
+    const beforeModelHook = BUILTIN_CONTEXT_COMPACTION_PLUGIN.hooks?.['chat:before-model'];
+    expect(beforeModelHook).toBeDefined();
+    const host = createCompactionHost({
+      config: {
+        keepRecentMessages: 1,
+        mode: 'auto',
+        reservedTokens: 256,
+        slidingWindowUsagePercent: 50,
+        strategy: 'sliding',
+      },
+      history: createHistorySnapshot([
+        createHistoryMessage('history-1', 'user', 'a'.repeat(220)),
+        createHistoryMessage('history-2', 'assistant', 'b'.repeat(220)),
+        createHistoryMessage('history-3', 'user', 'c'.repeat(220)),
+      ]),
+      modelContextLength: 512,
+    });
+
+    await expect(
+      beforeModelHook!(
+        {
+          context: {
+            activeModelId: 'gpt-5.4',
+            activeProviderId: 'openai',
+            conversationId: 'conversation-1',
+            source: 'chat-hook',
+            userId: 'user-1',
+          },
+          request: {
+            availableTools: [],
+            messages: host.history.messages.map((message: PluginConversationHistoryMessage) => ({
+              content: message.parts?.length ? message.parts : (message.content ?? ''),
+              role: message.role === 'assistant' ? 'assistant' : 'user',
+            })),
+            modelId: 'gpt-5.4',
+            providerId: 'openai',
+            systemPrompt: '你是默认助手。',
+          },
+        } as never,
+        {
+          callContext: {
+            activeModelId: 'gpt-5.4',
+            activeProviderId: 'openai',
+            conversationId: 'conversation-1',
+            source: 'chat-hook',
+            userId: 'user-1',
+          },
+          host: host.facade,
+        } as never,
+      ),
+    ).resolves.toEqual({
+      action: 'mutate',
+      messages: [
+        {
+          content: [
+            {
+              text: 'b'.repeat(220),
+              type: 'text',
+            },
+          ],
+          role: 'assistant',
+        },
+        {
+          content: [
+            {
+              text: 'c'.repeat(220),
+              type: 'text',
+            },
+          ],
+          role: 'user',
+        },
+      ],
+    });
+
+    expect(host.facade.replaceConversationHistory).not.toHaveBeenCalled();
+    expect(host.facade.generateText).not.toHaveBeenCalled();
+  });
 });
 
 function createCompactionHost(input: {

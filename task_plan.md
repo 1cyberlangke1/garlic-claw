@@ -1,5 +1,231 @@
 # 2026-04-19 Skill 对齐 OpenCode
 
+## 2026-04-25 task.txt 会话上下文治理与前端窗口化
+
+### N5 网络收口与前后端职责重分
+
+#### 当前结果
+
+- `web`
+  - `send / retry / selectConversation / provider-model 切换 / context-compaction 配置变更` 已删掉多余 detail 刷新
+  - `send / retry` 发送前那次 `context-window` 预取已删除
+  - `stopStreaming()` 已改为本地把当前 assistant 标成 `stopped`，再只刷新 `context-window / runtime permissions / todo`
+  - `update / delete` 已只刷新 `list / context-window / todo`
+  - `compact` 已只刷新 `list / detail / context-window / todo`
+  - `send / retry` 已只在流里真实出现过权限事件时，才刷新 `runtime-permissions/pending`
+  - 未使用的 `chat-store.compactContext()` 旧主链已删除
+  - `chat-stream` 未使用的 `scheduleChatRecovery()` 壳已删除
+  - `chat-store` 未使用的 `refreshConversationWindowState()` 薄壳已删除
+  - `stopStreaming()` 里的无效 recovery 调度已删除
+- `server`
+  - `ConversationTaskService` 已证明 listener unsubscribe 后任务仍继续运行并持久化
+  - `ConversationController` 已证明 SSE `close` 只取消 listener，不中断 `waitForTask()`
+
+#### 当前验收
+
+- `packages/web`
+  - `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/store/chat-store.dispatch.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation.controller.spec.ts tests/conversation/conversation-task.service.spec.ts`
+- `packages/web`
+  - `npm run build`
+- `packages/server`
+  - `npm run build`
+- root
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+#### judge
+
+- 结果：`PASS`
+- 结论：
+  - 刷新职责已真实拆成 `summary / message-derived / stream / tail`，不是旧全量刷新换名
+  - 前端重复 `detail / runtime-permissions / context-window` 请求链已真实减少，行为没有被削坏
+  - SSE `close` 后只取消 listener，后端 task 仍继续执行并持久化 assistant
+
+#### 当前状态
+
+- `N5` 代码、fresh、独立 judge 已齐，可改为完成。
+- 下一步转入 `N6 总验收`。
+
+### N6 总验收
+
+#### 当前验收
+
+- `packages/shared`
+  - `npm run build`
+- `packages/plugin-sdk`
+  - `npm run build`
+- `packages/server`
+  - `npm run build`
+- `packages/web`
+  - `npm run build`
+- root
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+  - `npm run count:server-src` -> `14998`
+
+#### judge
+
+- 结果：`PASS`
+- 结论：
+  - `task.txt` 三条主线都已映射到真实 owner 与可见行为，不是前端展示壳
+  - `N5/N6` 未见“前端只是显示、后端没有真语义”的假完成
+  - `packages/server/src` 已压到 `14998`，满足 `<= 15000`
+
+#### 当前状态
+
+- `N6` 代码、fresh、独立 judge 已齐，可改为完成。
+- 当前 `N1-N6` 已全部完成。
+
+### N4 消息编辑、排队与失败回写
+
+#### 当前结果
+
+- `web`
+  - `chat-store` 已改成 FIFO 发送队列，当前流式回复结束后会自动 drain，手动 stop 后也会继续发送排队消息
+  - 编辑最后一条非 `display` 的 `user` 消息时，若它已成为会话尾部消息，会先删原消息，再走正常发送链
+  - `chat-view` 已允许流式过程中继续发送，让草稿进入队列；`ChatComposer` 不再因 `streaming` 禁止输入
+- `server`
+  - `RuntimeHostSubagentRunnerService` 在 subagent 执行报错且存在 `writeBack.target` 时，会把错误直接写回主会话
+
+#### 验收
+
+- `packages/web`
+  - `npx vitest run tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+  - `npm run build`
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- root
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+#### judge
+
+- 结果：`PASS`
+- 结论：
+  - 排队消息已真实进入队列并串行 drain，没有并发抢跑
+  - “删掉最后 assistant 后再编辑最后 user” 已退化为正常发送，不再走错误 patch 路径
+  - subagent API error 已直接回写 main conversation，不再只停留在后台页
+
+#### 当前状态
+
+- `N4` 代码、fresh、独立 judge 已齐，可改为完成
+- 下一步转入 `N5 网络收口与前后端职责重分`
+
+### N3 Subagent 会话窗口与上限
+
+#### 目标
+
+- 给 `builtin.subagent-delegate` 增加“单个主会话最多允许多少个 subagent session”的配置。
+- 前端把后台 subagent 从纯列表升级为“按主会话聚合的 main / agent* 窗口”。
+- 当前激活 agent 要能读到真实 `request.messages` 和执行结果，不只显示摘要。
+
+#### 当前结果
+
+- `plugin-sdk`
+  - `subagentDelegateConfigSchema` 新增 `session.maxConversationSubagents`
+  - 配置解析与 host payload 透传已补齐
+- `server`
+  - `RuntimeHostSubagentSessionStoreService` 新增 `countConversationSessions(conversationId)`
+  - `RuntimeHostSubagentRunnerService` 在新建 session 前按 `conversationId` 做上限拦截
+  - 继续已有 `sessionId` 不受上限影响
+  - controller 回归已明确断言 detail 返回 `request.messages`
+- `web`
+  - `usePluginSubagents` 已收成 overview + active workspace + active detail 三段状态
+  - `SubagentView` 已有：
+    - 会话条
+    - `main / agent*` 横向窗口条
+    - 当前 agent 的上下文消息 / 结果详情
+  - `selectWindow()` 只触发 detail 读取，不重刷 overview
+
+#### 验收
+
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/adapters/http/plugin/plugin.controller.spec.ts tests/adapters/http/plugin/plugin-subagent.controller.spec.ts tests/plugin/builtin/tools/builtin-subagent-delegate.plugin.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run build`
+- `packages/web`
+  - `npx vitest run tests/features/subagents/composables/use-plugin-subagents.spec.ts tests/features/subagents/views/SubagentView.spec.ts`
+  - `npm run build`
+- root
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+#### 当前状态
+
+- 功能与 fresh 已齐。
+- 独立 judge 最终 `PASS`。
+- `N3` 现在可改为完成，下一步转入 `N4 消息编辑、排队与失败回写`。
+
+### 目标
+
+- 以 `task.txt` 为准，推进三条主线：
+  - 会话上下文治理：`summary / sliding`
+  - subagent 会话窗口、上限与上下文查看
+  - 前后端消息编排、队列与网络收口
+- 先把 `TODO.md` 压成当前有效计划，再按阶段推进，不保留历史流水账。
+
+### 阶段
+
+- `N1` 上下文治理内核化
+- `N2` 前端上下文窗口与灰化
+- `N3` subagent 会话窗口与上限
+- `N4` 消息编辑、排队与失败回写
+- `N5` 网络收口与前后端职责重分
+- `N6` 总验收
+
+### 当前 owner
+
+- 后端上下文治理：
+  - `packages/server/src/plugin/builtin/hooks/builtin-context-compaction.plugin.ts`
+  - `packages/server/src/conversation/conversation-message-planning.service.ts`
+  - `packages/server/src/runtime/host/runtime-host-conversation-record.service.ts`
+- 配置模型：
+  - `packages/plugin-sdk/src/authoring/context-compaction.ts`
+  - `packages/plugin-sdk/src/authoring/builtin-manifest-data.json`
+- 前端聊天：
+  - `packages/web/src/features/chat/modules/chat-store.module.ts`
+  - `packages/web/src/features/chat/modules/chat-stream.module.ts`
+  - `packages/web/src/features/chat/components/ChatMessageList.vue`
+- subagent：
+  - `packages/server/src/runtime/host/runtime-host-subagent-store.service.ts`
+  - `packages/server/src/runtime/host/runtime-host-subagent-session-store.service.ts`
+  - `packages/server/src/runtime/host/runtime-host-subagent-runner.service.ts`
+  - `packages/web/src/features/subagents/views/SubagentView.vue`
+
+### 当前动作
+
+- 已重写 `TODO.md`：
+  - 已完成阶段压缩为摘要
+  - `task.txt` 要求已映射到 `N1-N6`
+  - 每阶段已写 owner / fresh / judge
+- 已开始 `N1` 第一刀：
+  - 新增上下文治理策略字段：`summary / sliding`
+  - 新增滑动窗口预算字段：`slidingWindowUsagePercent`
+  - `chat:before-model` 已支持滑动窗口裁剪主链
+  - `conversation:history-rewrite` 只在 `summary + auto` 下触发摘要压缩
+- 已完成 `N1` 第二刀：
+  - 新增后端动态窗口预览接口：`GET /chat/conversations/:id/context-window`
+  - `ConversationMessagePlanningService` 已可按当前 provider/model 计算 `summary / sliding / disabled` 三类上下文视图
+  - 前端 API 已预埋 `getConversationContextWindow(...)`
+  - `http-smoke` 已补新路由覆盖
+ - 已继续修正 `N1` 第三刀：
+   - `context-window` 预览前会把历史消息规整成合法 JSON 形状
+   - 脏 `parts / toolCalls / toolResults` 不再把后端预览路由打成 `400`
+   - 浏览器 smoke 已不再出现 `messages[0] must be an object`
+ - 当前状态：
+   - `N1` 代码、fresh、独立 judge 已补齐
+   - `N1` 可改为完成，后续切到 `N2` 与 `N3/N4`
+ - 已继续推进 `N2`：
+   - 插件配置页保存 `builtin.context-compaction` 的配置或作用域后，会广播前端事件
+   - 聊天 store 收到后会刷新当前会话的窗口预览与消息窗口
+   - 这条链只针对 `builtin.context-compaction`，不扩散到无关插件
+ - 当前状态：
+   - `N2` 的消息窗口裁剪、灰化与配置即时刷新已通过独立 judge
+   - 下一阶段转到 `N3` 的 subagent 会话窗口与上限
+
 ## 2026-04-25 记忆上下文避免打断 cache 并持久化
 
 ### 目标

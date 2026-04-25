@@ -8,9 +8,12 @@
     "conversationTitleMaxMessages": 4,
     "providerRouterDefaultShortCircuitReply": "本轮请求已由 provider-router 直接处理。",
     "contextCompactionMode": "auto",
+    "contextCompactionStrategy": "summary",
     "contextCompactionCompressionThreshold": 72,
     "contextCompactionKeepRecentMessages": 6,
+    "contextCompactionFrontendMessageWindowSize": 200,
     "contextCompactionReservedTokens": 12000,
+    "contextCompactionSlidingWindowUsagePercent": 50,
     "contextCompactionSummaryPrompt": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
     "contextCompactionShowCoveredMarker": true,
     "contextCompactionAllowAutoContinue": true
@@ -69,6 +72,17 @@
           }
         }
       },
+      "session": {
+        "type": "object",
+        "description": "会话窗口限制",
+        "items": {
+          "maxConversationSubagents": {
+            "type": "int",
+            "description": "单个主会话最多允许创建多少个 subagent 会话。达到上限后，新建会话会直接报错；继续已有 session 不受影响。",
+            "defaultValue": 6
+          }
+        }
+      },
       "tools": {
         "type": "object",
         "description": "工具限制",
@@ -112,7 +126,7 @@
       },
       "mode": {
         "type": "string",
-        "description": "压缩模式。manual 只允许手动触发，auto 会在进入模型前按预算自动触发。",
+        "description": "摘要模式的触发方式。manual 只允许手动触发，auto 会在进入模型前按预算自动触发。",
         "defaultValue": "auto",
         "options": [
           {
@@ -125,24 +139,49 @@
           }
         ]
       },
+      "strategy": {
+        "type": "string",
+        "description": "上下文治理策略。summary 会生成摘要并写回历史，sliding 只在送模时保留最近窗口。",
+        "defaultValue": "summary",
+        "options": [
+          {
+            "value": "summary",
+            "label": "摘要压缩"
+          },
+          {
+            "value": "sliding",
+            "label": "滑动窗口"
+          }
+        ]
+      },
       "compressionThreshold": {
         "type": "int",
-        "description": "自动压缩阈值，表示预计输入 token 达到可用上下文窗口百分之多少时开始压缩。",
+        "description": "摘要压缩的自动触发阈值，表示预计输入 token 达到可用上下文窗口百分之多少时开始压缩。",
         "defaultValue": 72
       },
       "keepRecentMessages": {
         "type": "int",
-        "description": "压缩后仍保留最近多少条消息不纳入摘要",
+        "description": "无论摘要压缩还是滑动窗口，都至少保留最近多少条消息",
         "defaultValue": 6
+      },
+      "frontendMessageWindowSize": {
+        "type": "int",
+        "description": "前端本地最多缓存多少条最近消息；更早的历史仍保留在服务端，必要时可重新拉取。",
+        "defaultValue": 200
       },
       "reservedTokens": {
         "type": "int",
         "description": "为当前回复与工具链预留的 token 数",
         "defaultValue": 12000
       },
+      "slidingWindowUsagePercent": {
+        "type": "int",
+        "description": "滑动窗口模式下，最多允许历史消息占用可用上下文窗口的百分比。",
+        "defaultValue": 50
+      },
       "summaryPrompt": {
         "type": "text",
-        "description": "生成压缩摘要时附加给压缩模型的提示词",
+        "description": "摘要压缩模式生成历史摘要时附加给压缩模型的提示词",
         "defaultValue": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
         "editorMode": true
       },
@@ -576,6 +615,11 @@
           "description": "压缩后仍保留最近多少条消息不纳入摘要",
           "defaultValue": 6
         },
+        "frontendMessageWindowSize": {
+          "type": "int",
+          "description": "前端本地最多缓存多少条最近消息；更早的历史仍保留在服务端，必要时可重新拉取。",
+          "defaultValue": 200
+        },
         "reservedTokens": {
           "type": "int",
           "description": "为当前回复与工具链预留的 token 数",
@@ -910,27 +954,38 @@
     "config": {
       "type": "object",
       "items": {
-      "llm": {
-        "type": "object",
-        "description": "模型设置",
-        "items": {
-          "targetSubagentType": {
-            "type": "string",
-            "description": "子代理默认使用的类型 ID",
-            "specialType": "selectSubagentType",
-            "defaultValue": "general"
-          },
-          "targetProviderId": {
-            "type": "string",
-            "description": "可选。覆盖子代理类型默认 provider ID",
-            "specialType": "selectProvider"
-          },
-          "targetModelId": {
-            "type": "string",
-            "description": "可选。覆盖子代理类型默认 model ID"
+        "llm": {
+          "type": "object",
+          "description": "模型设置",
+          "items": {
+            "targetSubagentType": {
+              "type": "string",
+              "description": "子代理默认使用的类型 ID",
+              "specialType": "selectSubagentType",
+              "defaultValue": "general"
+            },
+            "targetProviderId": {
+              "type": "string",
+              "description": "可选。覆盖子代理类型默认 provider ID",
+              "specialType": "selectProvider"
+            },
+            "targetModelId": {
+              "type": "string",
+              "description": "可选。覆盖子代理类型默认 model ID"
+            }
           }
-        }
-      },
+        },
+        "session": {
+          "type": "object",
+          "description": "会话窗口限制",
+          "items": {
+            "maxConversationSubagents": {
+              "type": "int",
+              "description": "单个主会话最多允许创建多少个 subagent 会话。达到上限后，新建会话会直接报错；继续已有 session 不受影响。",
+              "defaultValue": 6
+            }
+          }
+        },
         "tools": {
           "type": "object",
           "description": "工具限制",

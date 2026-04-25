@@ -1,5 +1,176 @@
 # Findings
 
+## 2026-04-25 task.txt 会话上下文治理与前端窗口化
+
+- `N6` 总 judge 通过后，可以把当前阶段结论固定下来：
+  - `summary / sliding / disabled` 上下文治理、subagent 会话化、消息编排与网络收口三条主线都已落在真实 owner
+  - 现在的前端主要承担窗口缓存、灰化和派生刷新，不承担任务真相
+  - 因此后续如果继续改 UI 或网络层，不能把这些真语义再抬回前端
+- 体积门槛已经越过：
+  - `npm run count:server-src` 当前为 `14998`
+  - 这次过线依赖的是同 owner 控制流收口与排版压缩，不是 shared 下沉或兼容壳
+  - 后续继续压行时也应保持这条边界
+
+- `N5` 总 judge 通过后，当前网络收口边界已稳定：
+  - 刷新职责真实拆成 `summary / message-derived / stream / tail`
+  - 这说明本轮不是“把旧全量刷新改名”，而是把 detail、window、permissions、todo 各自收回到更短的触发条件
+  - 后续如果继续优化网络，应优先沿这四类职责删重复，不要再回到“大一统 related-state 刷新”
+- `N5` 的后端证据链已够硬：
+  - task 层证明 listener unsubscribe 后仍继续执行并持久化
+  - controller 层证明 SSE `close` 只取消 listener，不中断 `waitForTask()`
+  - 这意味着后续前端再删派生请求时，可以把“前端断开不影响后端运行”当作既有基线，而不是每次都重疑这一点
+
+- `send / retry` 发送前那次 `context-window` 预取已经没有独立价值：
+  - 当前聊天页本来就持有窗口预览
+  - provider/model 切换与 `context-compaction` 配置变更也都会主动刷新窗口
+  - 若保留“发送前预取 + 发送后刷新”，同一次发送会稳定制造两次窗口请求
+  - 更短的边界是删掉发送前预取，只保留发送结束后的真实派生刷新
+- `chat-stream.scheduleChatRecovery()` 只是给 `scheduleChatRecoveryWithState(..., async () => undefined)` 再包一层：
+  - 当前仓库没有调用点
+  - 继续保留只会留下一个误导性的公共接口
+  - 这类壳在 `N5` 阶段应直接删除，不需要再围绕它补测试
+- `chat-store.refreshConversationWindowState()` 也是同类薄壳：
+  - 当前只剩两处调用点
+  - 内部也只是再包一层 `tryLoadConversationContextWindow()`
+  - 既然动态窗口失败本来就由 `tryLoadConversationContextWindow()` 自己吞掉，就没有再包一层的价值
+- `stopStreaming()` 里的 recovery 调度也是一条空转控制流：
+  - stop 后当前 assistant 会立即被本地修成非流式
+  - `syncChatStreamingState()` 之后 `streaming` 已经是 `false`
+  - 再调用 `scheduleChatRecoveryWithState()` 只会立刻被 `isStreaming()` 短路，不可能真正挂起轮询
+  - 这类“明知条件不成立仍调度一次”的链路在 `N5` 应直接删掉
+
+- `send / retry` 收尾里的 pending runtime permissions 刷新，不该和普通消息派生刷新绑死：
+  - 普通问答流里根本不会出现权限事件
+  - 若每次完成后都去打 `/runtime-permissions/pending`，本质上是在为“不曾发生的状态变化”付网络成本
+  - 更短的边界是：由 stream owner 自己标记“本轮是否出现过 `permission-request / permission-resolved`”，再决定最终是否补拉 permissions
+- 这条边界和 `todo / context-window` 不一样：
+  - `todo` 可能因为命令、副作用或 server 侧自动更新而变化
+  - `context-window` 也会因为消息主链推进而变化
+  - 但 pending runtime permissions 只有在权限事件真实发生时才有刷新价值
+- `chat-store.compactContext()` 已经变成一条仓库内死链：
+  - 真正页面入口早已是 `chat-view` 里的 `send('/compact')`
+  - store 里那条旧入口既不被页面使用，又维护一套独立的 compaction request/refresh 流程
+  - 继续保留只会把“手动压缩”伪装成两条主链
+  - 因而这里应直接删旧主链，而不是继续补测试或兼容壳
+
+- `update / delete / compact` 原先共用的 related-state 刷新过宽了：
+  - `update / delete` 会影响消息展示、窗口灰化和会话列表时间戳
+  - 但不会产生新的 pending runtime permissions
+  - `compact` 虽然需要回拉 detail，因为摘要改写会真实改消息主链；但它同样不会新增 pending runtime permissions
+  - 因而把这几条链继续绑在同一个“全量 related 刷新”上，只会制造网络噪音，不会带来新的真相
+- 对 `compact` 的边界要和 recovery 分开：
+  - recovery 需要 detail，是为了在前端掉线后重新接住后端已继续推进的真实消息
+  - `compact` 需要 detail，是因为它确实改写了历史主链
+  - 两者虽然都要拉 detail，但不该共享“顺带再拉 runtime permissions”这种无关副作用
+
+- `stopStreaming()` 原先仍带着一条旧式“整页 detail 回读”：
+  - 但 stop 前端本来已经持有当前 assistant 的最新文本增量
+  - 真正缺的只是把尾部状态从 `streaming/pending` 修成 `stopped`
+  - 因而更短的 owner 是在 `chat-store` 本地把当前 assistant 标记为 `stopped`，再只刷新 `context-window / runtime permissions / todo`
+  - 这样能保持“前端承担派生状态”的边界，同时不影响 recovery 继续沿用 detail loader
+- “前端断开不影响后端继续执行”如果只在 `ConversationTaskService` 自测，还差最后一层 HTTP 证据：
+  - controller 的 SSE `close` 处理现在只做 `unsubscribe()`
+  - 但需要显式证明它不会提早结束 `waitForTask()`
+  - 因此 controller 层最关键的回归，不是“close 后有没有 unsubscribe”，而是“close 后请求 promise 仍挂起，直到 task 真完成”
+
+- `N5` 当前最短的第一刀不是改后端返回结构，而是先删前端自己造成的冗余 detail 刷新：
+  - `send / retry` 的 SSE 已经把当前消息主链推进到位
+  - 流结束后再整页重拉一次 detail，属于重复请求
+  - 更合适的是只刷新会话列表、context window、todo 和 runtime permission 这些派生状态
+- `selectConversation()` 里原本也有一处同类冗余：
+  - 先 `loadConversationDetail(id)` 一次
+  - 后面再 `loadConversationWindowSnapshot(id)`，导致第二次重复 detail 拉取
+  - 把它改成“先 detail、再 context window”后，恢复轮询仍走原来的 guarded detail loader，不影响 recovery 语义
+- provider/model 切换和 `context-compaction` 配置变化本质也只是“窗口预览变化”，不是“消息内容变化”：
+  - 这两条链只刷新 `context-window` 更短
+  - 继续顺带拉 detail 只会放大网络噪音，不会带来新的真相
+  - detail 仍保留在 `selectConversation()` 与 recovery 路径，前端关闭也不会影响后端继续执行
+
+- 这轮 `N4` 说明，发送排队的最短 owner 仍是前端 `chat-store`，不需要先扩后端协议：
+  - 前端本来就掌握 `streaming`、当前会话和本地草稿
+  - 把新消息先入 `queuedSendRequests`，再由单一 drain 主链串行消费，就能避免并发抢跑
+  - stop 后继续发送也应留在这个 owner，和恢复轮询、当前流式状态共用一套真相源
+- “删掉最后 assistant 后再编辑最后 user” 不该硬补一个新的后端编辑接口：
+  - 更短且更接近“正常发送”的语义，是前端在尾部 user 分支直接退化成“删除旧消息 + 重新发送”
+  - 这样能复用现有 SSE、optimistic assistant 和发送队列主链
+  - 也避免在 `conversation-message-lifecycle` 里再起一条只服务这个 UI 手势的编辑生成分支
+- subagent error 回写 main 不能只改后台页展示：
+  - 真正的 owner 仍是 `RuntimeHostSubagentRunnerService`
+  - 只有在 `executeStoredSubagent()` 的错误分支直接写回主会话，才算满足“main 能立刻看到错误”
+  - 如果只把错误留在 subagent store/detail 页，主会话语义仍是不完整的
+
+- `subagent 最大个数` 不能只在前端或 builtin plugin 层统计 overview 条数：
+  - 那样会漏掉 inline session，也会把“展示列表”误当成“真实会话数”
+  - 最短且更稳的 owner 是 `RuntimeHostSubagentRunnerService`
+  - 真正的计数真相源应落在 `RuntimeHostSubagentSessionStoreService`
+- “继续已有 session” 和 “新建 session” 必须分开：
+  - 达上限时应拒绝新的 session
+  - 但继续已有 `sessionId` 不该被误拦
+  - 因此上限判断应只在“无 `sessionId` 的新建链”触发
+- 前端 `main / agent*` 不需要为了这一步侵入聊天主页面：
+  - 当前仓库已有独立 `SubagentView`
+  - 把后台 subagent 先按主会话聚合成工作区，再在这个页面做窗口化，切口更短
+  - 只要工作区里真的能读 `request.messages`，就不是摘要壳
+- 这一步的网络边界也更清楚了：
+  - overview 继续轮询
+  - 详情只拉当前激活 agent
+  - `selectWindow()` 只改本地状态并触发只读 detail 请求，不重刷 overview
+  - 这样更符合后续 `N5` 的“后端只发必要信息”
+- judge 第一轮没有否定 `N3` 功能本身，卡点只剩“阶段材料未同步”和“证据链还要更硬”：
+  - detail controller 需要明确断言 `request.messages`
+  - 前端需要把 `window-strip` 与只读 detail 读取做成显式证据
+  - 这类缺口补齐后，`N3` 更像是验收材料问题，不是实现缺失
+
+- 当前 `builtin-context-compaction` 虽然已有“摘要压缩 + history rewrite + before-model mutate”，但它仍偏向“摘要插件”，还不是完整的上下文治理 owner。
+- 当前最短切口不是先碰前端，而是先把配置模型扩成两种策略：
+  - `summary`：保留当前摘要写回历史主链
+  - `sliding`：只在送模前按预算裁掉最旧历史
+- `conversation:history-rewrite` 与 `chat:before-model` 的职责边界可以继续复用：
+  - `history-rewrite` 只负责 `summary` 的正式历史改写
+  - `before-model` 负责构造本轮实际送模上下文
+  - 因此 `sliding` 最自然的落点就是 `chat:before-model`
+- `previewConversationHistory()` 读的是 `PluginConversationHistoryMessage[]`，不是裸 `{ role, content }`；如果要按整条请求预算裁剪，必须在当前 owner 内补“送模消息 -> 预览消息”的内部映射。
+- `keepRecentMessages` 不该只服务摘要模式；在 `sliding` 下同样要作为“至少保留的最近消息数”。
+- 前端“灰化已脱离 LLM 上下文的消息”不能先做假 UI；必须等后端把上下文治理策略稳定下来后，再决定是通过注解、派生视图还是窗口状态输出。
+- “哪些消息当前不再进入 LLM 上下文”不适合直接持久化到消息记录：
+  - `sliding` 取决于当前 provider/model/contextLength
+  - 同一会话切换模型后，窗口边界会变化
+  - 持久化后会把动态视图误写成历史真相
+- 对前端灰化来说，更合适的是后端单独提供动态预览接口：
+  - 输入：`conversationId + providerId + modelId`
+  - 输出：`includedMessageIds / excludedMessageIds + estimatedTokens + maxWindowTokens`
+  - 前端只消费结果，不猜历史裁剪边界
+- `summary` 与 `sliding` 的预览语义不同：
+  - `summary` 读取已写回的 summary/covered annotation，输出当前真实可见上下文
+  - `sliding` 只在预览时按预算裁切可见历史，不触碰持久化消息
+- 如果 `context-compaction` 插件或当前会话 scope 被禁用，预览接口应退化为“普通历史送模视图”：
+  - 仍返回当前可送模消息
+  - 但 `enabled = false`
+  - `excludedMessageIds = []`
+- 浏览器 smoke 里那次 `messages[0] must be an object`，并不一定是“消息本身不是对象”：
+  - `RuntimeHostConversationRecordService` 的预览入口会先做递归 JSON 形状校验
+  - 只要消息对象里嵌了 `undefined` 一类非 JSON 值，顶层也会被判成“不是合法对象”
+  - 所以不能把预览直接建立在“历史消息一定已经完全 JSON 安全”的假设上
+- 这条链最短修法不在前端，也不该继续吞错：
+  - 前端降级只能保证聊天不中断，不能证明后端预览主链正确
+  - 真正需要补的是后端预览前的消息规整
+  - 预览只依赖消息文本、parts、toolCalls、toolResults 的 JSON 安全子集，不需要把脏字段原样透传进去
+- 这次修正后，`context-window` 的 owner 边界更清楚了：
+  - compaction 语义仍在 `ConversationMessagePlanningService`
+  - 只新增预览侧合法化，不改持久化历史真相
+  - 因而这不是“改写历史”或“再加一层前端兜底”，而是预览入口自身的 contract 修补
+- `N2` 的“配置切换即时生效”不适合靠聊天页自己轮询插件配置：
+  - 轮询会把聊天 store 和插件页耦成持续后台请求
+  - 也不能准确表达“是哪一个插件、哪一类变更”触发了刷新
+- 更短的前端实现是显式事件同步：
+  - 插件配置页在保存 `config / scope` 后只发一次 `plugin-config-changed`
+  - 聊天 store 只监听 `builtin.context-compaction`
+  - 收到后仅刷新当前会话的窗口预览与消息窗口，不重刷整个会话列表
+- 这样做能保持边界清楚：
+  - 插件页 owner 只负责宣布“配置已变”
+  - 聊天页 owner 只负责按当前会话重算派生视图
+  - 不会把 `context-compaction` 的配置细节散落到通用插件页或无关 store
+
 ## 2026-04-25 记忆上下文避免打断 cache 并持久化
 
 - 旧版 `builtin.memory-context` 把记忆摘要直接拼进 `systemPrompt`，会改变最前缀上下文；对带 prompt cache 的 provider，这类前缀抖动最容易打断 cache 命中。

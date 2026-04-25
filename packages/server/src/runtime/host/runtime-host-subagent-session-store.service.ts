@@ -92,6 +92,16 @@ export class RuntimeHostSubagentSessionStoreService {
     return cloneJsonValue(this.requireSession(sessionId));
   }
 
+  countConversationSessions(conversationId: string): number {
+    let count = 0;
+    for (const session of this.sessions.values()) {
+      if (session.conversationId === conversationId) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   updateSession(
     pluginId: string,
     sessionId: string,

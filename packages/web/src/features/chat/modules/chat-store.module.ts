@@ -1,7 +1,8 @@
-import { computed, markRaw, ref, shallowRef } from "vue";
+import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef } from "vue";
 import type {
   ChatMessagePart,
   Conversation,
+  ConversationContextWindowPreview,
   ConversationTodoItem,
   RuntimePermissionRequest,
   RuntimePermissionDecision,
@@ -17,11 +18,11 @@ import {
   type ChatStreamState,
 } from "@/features/chat/modules/chat-stream.module";
 import {
-  compactConversationContextRecord,
   createConversationRecord,
   deleteConversationMessageRecord,
   deleteConversationRecord,
   loadPendingRuntimePermissionsRecord,
+  loadConversationContextWindowRecord,
   loadConversationList,
   loadConversationMessages,
   loadConversationTodoRecord,
@@ -33,17 +34,28 @@ import { ensureChatModelSelection } from "@/features/chat/modules/chat-model-sel
 import {
   getRetryableMessageId,
   removeMessage,
+  replaceMessage,
   replaceOrAppendMessage,
 } from "@/features/chat/store/chat-store.runtime";
+import {
+  PLUGIN_CONFIG_CHANGED_EVENT,
+  type PluginConfigChangedDetail,
+} from "@/features/plugins/plugin-config-change";
 import type {
   ChatMessage,
   ChatPendingRuntimePermission,
   ChatSendInput,
 } from "@/features/chat/store/chat-store.types";
 
+interface QueuedChatSendRequest {
+  conversationId: string;
+  input: ChatSendInput;
+}
+
 export function createChatStoreModule() {
   const conversations = ref<Conversation[]>([]);
   const currentConversationId = ref<string | null>(null);
+  const contextWindowPreview = ref<ConversationContextWindowPreview | null>(null);
   const messages = shallowRef<ChatMessage[]>([]);
   const pendingRuntimePermissions = shallowRef<ChatPendingRuntimePermission[]>([]);
   const todoItems = ref<ConversationTodoItem[]>([]);
@@ -54,8 +66,10 @@ export function createChatStoreModule() {
   const recoveryTimer = ref<number | null>(null);
   const selectedProvider = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
+  const queuedSendRequests = shallowRef<QueuedChatSendRequest[]>([]);
   const streamState = {
     currentConversationId,
+    contextWindowPreview,
     messages,
     pendingRuntimePermissions,
     selectedProvider,
@@ -67,12 +81,18 @@ export function createChatStoreModule() {
   } as ChatStreamState;
   let conversationListRequestId = 0;
   let conversationDetailRequestId = 0;
+  let conversationContextWindowRequestId = 0;
   let conversationRuntimePermissionRequestId = 0;
   let conversationTodoRequestId = 0;
+
+  const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
+  const CONTEXT_COMPACTION_PLUGIN_NAME = "builtin.context-compaction";
 
   const retryableMessageId = computed(() =>
     getRetryableMessageId(messages.value),
   );
+  const queuedSendCount = computed(() => queuedSendRequests.value.length);
+  let drainingQueuedSendRequests = false;
 
   function createPendingRuntimePermissionEntry(
     entry: RuntimePermissionRequest,
@@ -93,33 +113,52 @@ export function createChatStoreModule() {
   }
 
   function replaceMessages(nextMessages: ChatMessage[]) {
-    messages.value = markRaw(nextMessages);
+    messages.value = markRaw(sliceConversationMessages(nextMessages));
+  }
+
+  function sliceConversationMessages(nextMessages: ChatMessage[]) {
+    const windowSize = Math.max(
+      1,
+      contextWindowPreview.value?.frontendMessageWindowSize ??
+        DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE,
+    );
+    return nextMessages.length > windowSize
+      ? nextMessages.slice(-windowSize)
+      : nextMessages;
+  }
+
+  function handlePluginConfigChanged(rawEvent: Event) {
+    if (!(rawEvent instanceof CustomEvent)) {
+      return;
+    }
+    const event = rawEvent as CustomEvent<PluginConfigChangedDetail>;
+    if (event.detail.pluginName !== CONTEXT_COMPACTION_PLUGIN_NAME) {
+      return;
+    }
+    if (!currentConversationId.value || streaming.value) {
+      return;
+    }
+    void tryLoadConversationContextWindow(currentConversationId.value);
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener(PLUGIN_CONFIG_CHANGED_EVENT, handlePluginConfigChanged);
+    if (getCurrentScope()) {
+      onScopeDispose(() => {
+        window.removeEventListener(
+          PLUGIN_CONFIG_CHANGED_EVENT,
+          handlePluginConfigChanged,
+        );
+      });
+    }
   }
 
   function invalidateConversationRequests() {
     conversationListRequestId += 1;
     conversationDetailRequestId += 1;
+    conversationContextWindowRequestId += 1;
     conversationRuntimePermissionRequestId += 1;
     conversationTodoRequestId += 1;
-  }
-
-  async function refreshConversationRelatedState(
-    conversationId: string | null = currentConversationId.value,
-  ) {
-    if (!conversationId) {
-      return;
-    }
-
-    await loadConversations();
-    if (currentConversationId.value !== conversationId) {
-      return;
-    }
-
-    await Promise.all([
-      loadConversationDetail(conversationId),
-      loadConversationRuntimePermissions(conversationId),
-      loadConversationTodo(conversationId),
-    ]);
   }
 
   async function refreshConversationSummary(
@@ -132,14 +171,81 @@ export function createChatStoreModule() {
     await loadConversations();
   }
 
-  async function tryRefreshConversationRelatedState(
+  async function refreshConversationMessageDerivedState(
     conversationId: string | null = currentConversationId.value,
   ) {
-    try {
-      await refreshConversationRelatedState(conversationId);
-    } catch {
-      // 刷新失败不应把已经成功的聊天操作误判成失败。
+    if (!conversationId) {
+      return;
     }
+
+    await loadConversations();
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
+
+    await tryLoadConversationContextWindow(conversationId);
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
+
+    await loadConversationTodo(conversationId);
+  }
+
+  async function refreshConversationStreamState(
+    conversationId: string | null = currentConversationId.value,
+    input: {
+      summaryRefreshed: boolean;
+      permissionStateChanged: boolean;
+    },
+  ) {
+    if (!conversationId) {
+      return;
+    }
+
+    if (!input.summaryRefreshed) {
+      await loadConversations();
+      if (currentConversationId.value !== conversationId) {
+        return;
+      }
+    }
+
+    await tryLoadConversationContextWindow(conversationId);
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
+
+    await Promise.all([
+      ...(input.permissionStateChanged
+        ? [loadConversationRuntimePermissions(conversationId)]
+        : []),
+      loadConversationTodo(conversationId),
+    ]);
+  }
+
+  async function refreshConversationTailState(
+    conversationId: string | null = currentConversationId.value,
+  ) {
+    if (!conversationId) {
+      return;
+    }
+
+    await tryLoadConversationContextWindow(conversationId);
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
+
+    await Promise.all([
+      loadConversationRuntimePermissions(conversationId),
+      loadConversationTodo(conversationId),
+    ]);
+  }
+
+  async function loadConversationWindowSnapshot(conversationId: string) {
+    await tryLoadConversationContextWindow(conversationId);
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
+    await loadConversationDetail(conversationId);
   }
 
   async function loadConversations() {
@@ -160,6 +266,7 @@ export function createChatStoreModule() {
       discardPendingMessageUpdates(streamState);
       stopChatRecovery(streamState);
       currentConversationId.value = null;
+      contextWindowPreview.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
       pendingRuntimePermissions.value = [];
@@ -167,6 +274,9 @@ export function createChatStoreModule() {
       replaceMessages([]);
       syncChatStreamingState(streamState);
     }
+    queuedSendRequests.value = queuedSendRequests.value.filter((entry) =>
+      nextConversations.some((conversation) => conversation.id === entry.conversationId),
+    );
   }
 
   async function createConversation(title?: string) {
@@ -181,6 +291,7 @@ export function createChatStoreModule() {
     stopChatRecovery(streamState);
     invalidateConversationRequests();
     currentConversationId.value = id;
+    contextWindowPreview.value = null;
     selectedProvider.value = null;
     selectedModel.value = null;
     pendingRuntimePermissions.value = [];
@@ -193,7 +304,9 @@ export function createChatStoreModule() {
         loadConversationTodo(id),
       ]);
       await ensureModelSelection(messages.value);
-      scheduleChatRecoveryWithState(streamState, loadConversationDetail);
+      await tryLoadConversationContextWindow(id);
+      scheduleChatRecoveryWithState(streamState, loadConversationWindowSnapshot);
+      await drainQueuedSendRequests();
     } finally {
       loading.value = false;
     }
@@ -213,6 +326,7 @@ export function createChatStoreModule() {
     );
     if (currentConversationId.value === id) {
       currentConversationId.value = null;
+      contextWindowPreview.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
       pendingRuntimePermissions.value = [];
@@ -220,6 +334,9 @@ export function createChatStoreModule() {
       replaceMessages([]);
       syncChatStreamingState(streamState);
     }
+    queuedSendRequests.value = queuedSendRequests.value.filter(
+      (entry) => entry.conversationId !== id,
+    );
   }
 
   function setModelSelection(selection: {
@@ -228,6 +345,9 @@ export function createChatStoreModule() {
   }) {
     selectedProvider.value = selection.provider;
     selectedModel.value = selection.model;
+    if (currentConversationId.value && !streaming.value) {
+      void tryLoadConversationContextWindow(currentConversationId.value);
+    }
   }
 
   async function ensureModelSelection(existingMessages: ChatMessage[] = []) {
@@ -245,13 +365,18 @@ export function createChatStoreModule() {
       return;
     }
 
-    await dispatchSendMessage(streamState, input, {
-      loadConversationDetail,
-      refreshConversationSummary: () =>
-        refreshConversationSummary(conversationId),
-      refreshConversationState: () =>
-        tryRefreshConversationRelatedState(conversationId),
-    });
+    queuedSendRequests.value = [
+      ...queuedSendRequests.value,
+      {
+        conversationId,
+        input: {
+          ...input,
+          model: input.model ?? selectedModel.value,
+          provider: input.provider ?? selectedProvider.value,
+        },
+      },
+    ];
+    await drainQueuedSendRequests();
   }
 
   async function retryMessage(messageId: string) {
@@ -261,11 +386,11 @@ export function createChatStoreModule() {
     }
 
     await dispatchRetryMessage(streamState, messageId, {
-      loadConversationDetail,
+      loadConversationDetail: loadConversationWindowSnapshot,
       refreshConversationSummary: () =>
         refreshConversationSummary(conversationId),
-      refreshConversationState: () =>
-        tryRefreshConversationRelatedState(conversationId),
+      refreshConversationState: (input) =>
+        refreshConversationStreamState(conversationId, input),
     });
   }
 
@@ -278,6 +403,23 @@ export function createChatStoreModule() {
       return;
     }
 
+    const message = messages.value.find((entry) => entry.id === messageId);
+    if (message && shouldResendEditedTerminalUserMessage(messages.value, message)) {
+      const resendInput = buildEditedUserResendInput(message, payload);
+      if (resendInput.content || resendInput.parts?.length) {
+        await deleteConversationMessageRecord(
+          conversationId,
+          messageId,
+        );
+        if (currentConversationId.value === conversationId) {
+          replaceMessages(removeMessage(messages.value, messageId));
+          syncChatStreamingState(streamState);
+        }
+        await sendMessage(resendInput);
+        return;
+      }
+    }
+
     const updated = await updateConversationMessageRecord(
       conversationId,
       messageId,
@@ -287,7 +429,7 @@ export function createChatStoreModule() {
       replaceMessages(replaceOrAppendMessage(messages.value, updated, messageId));
       syncChatStreamingState(streamState);
     }
-    await tryRefreshConversationRelatedState(conversationId);
+    await refreshConversationMessageDerivedState(conversationId);
   }
 
   async function deleteMessage(messageId: string) {
@@ -304,7 +446,7 @@ export function createChatStoreModule() {
       replaceMessages(removeMessage(messages.value, messageId));
       syncChatStreamingState(streamState);
     }
-    await tryRefreshConversationRelatedState(conversationId);
+    await refreshConversationMessageDerivedState(conversationId);
   }
 
   async function stopStreaming() {
@@ -321,25 +463,12 @@ export function createChatStoreModule() {
       conversationId,
       messageId,
     );
-    await tryRefreshConversationRelatedState(conversationId);
     if (currentConversationId.value === conversationId) {
+      applyStoppedStreamingMessage(messageId);
+      await refreshConversationTailState(conversationId);
       syncChatStreamingState(streamState);
-      scheduleChatRecoveryWithState(streamState, loadConversationDetail);
+      await drainQueuedSendRequests();
     }
-  }
-
-  async function compactContext() {
-    const conversationId = currentConversationId.value;
-    if (!conversationId) {
-      return null;
-    }
-
-    const result = await compactConversationContextRecord(conversationId, {
-      modelId: selectedModel.value,
-      providerId: selectedProvider.value,
-    });
-    await tryRefreshConversationRelatedState(conversationId);
-    return result;
   }
 
   async function loadConversationDetail(conversationId: string) {
@@ -354,6 +483,31 @@ export function createChatStoreModule() {
 
     replaceMessages(nextMessages);
     syncChatStreamingState(streamState);
+  }
+
+  async function loadConversationContextWindow(conversationId: string) {
+    const requestId = ++conversationContextWindowRequestId;
+    const nextPreview = await loadConversationContextWindowRecord(conversationId, {
+      modelId: selectedModel.value,
+      providerId: selectedProvider.value,
+    });
+    if (
+      requestId !== conversationContextWindowRequestId ||
+      currentConversationId.value !== conversationId
+    ) {
+      return;
+    }
+
+    contextWindowPreview.value = nextPreview;
+    replaceMessages(messages.value);
+  }
+
+  async function tryLoadConversationContextWindow(conversationId: string) {
+    try {
+      await loadConversationContextWindow(conversationId);
+    } catch {
+      // 动态窗口预览仅影响前端派生视图，失败时不能阻断真实会话链路。
+    }
   }
 
   async function loadConversationTodo(conversationId: string) {
@@ -408,15 +562,45 @@ export function createChatStoreModule() {
     }
   }
 
+  async function drainQueuedSendRequests() {
+    if (drainingQueuedSendRequests) {
+      return;
+    }
+    drainingQueuedSendRequests = true;
+    try {
+      while (!streaming.value) {
+        const nextRequest = queuedSendRequests.value[0];
+        if (!nextRequest) {
+          return;
+        }
+        if (nextRequest.conversationId !== currentConversationId.value) {
+          return;
+        }
+        queuedSendRequests.value = queuedSendRequests.value.slice(1);
+        await dispatchSendMessage(streamState, nextRequest.input, {
+          loadConversationDetail: loadConversationWindowSnapshot,
+          refreshConversationSummary: () =>
+            refreshConversationSummary(nextRequest.conversationId),
+          refreshConversationState: (input) =>
+            refreshConversationStreamState(nextRequest.conversationId, input),
+        });
+      }
+    } finally {
+      drainingQueuedSendRequests = false;
+    }
+  }
+
   return {
     conversations,
     currentConversationId,
+    contextWindowPreview,
     messages,
     pendingRuntimePermissions,
     todoItems,
     loading,
     streaming,
     currentStreamingMessageId,
+    queuedSendCount,
     retryableMessageId,
     selectedProvider,
     selectedModel,
@@ -431,7 +615,50 @@ export function createChatStoreModule() {
     updateMessage,
     deleteMessage,
     stopStreaming,
-    compactContext,
     replyRuntimePermission,
+  };
+
+  function applyStoppedStreamingMessage(messageId: string) {
+    const message = messages.value.find((entry) => entry.id === messageId);
+    if (!message) {
+      return;
+    }
+
+    replaceMessages(replaceMessage(messages.value, messageId, {
+      ...message,
+      error: null,
+      status: "stopped",
+    }));
+  }
+}
+
+function shouldResendEditedTerminalUserMessage(
+  allMessages: ChatMessage[],
+  message: ChatMessage | undefined,
+): boolean {
+  if (!message?.id || message.role !== "user") {
+    return false;
+  }
+
+  for (let index = allMessages.length - 1; index >= 0; index -= 1) {
+    const currentMessage = allMessages[index];
+    if (currentMessage.role === "display") {
+      continue;
+    }
+    return currentMessage.id === message.id;
+  }
+
+  return false;
+}
+
+function buildEditedUserResendInput(
+  message: ChatMessage,
+  payload: { content?: string; parts?: ChatMessagePart[] },
+): ChatSendInput {
+  return {
+    content: payload.content ?? message.content,
+    ...(payload.parts ?? message.parts
+      ? { parts: payload.parts ?? message.parts }
+      : {}),
   };
 }

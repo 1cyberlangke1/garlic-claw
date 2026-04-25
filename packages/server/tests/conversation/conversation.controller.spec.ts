@@ -6,6 +6,7 @@ import { ConversationController } from '../../src/adapters/http/conversation/con
 describe('ConversationController', () => {
   const conversationId = '11111111-1111-4111-8111-111111111111';
   const assistantMessageId = '22222222-2222-4222-8222-222222222222';
+  const conversationMessagePlanningService = { getContextWindowPreview: jest.fn() };
   const conversationMessageLifecycleService = { retryMessageGeneration: jest.fn(), startMessageGeneration: jest.fn(), stopMessageGeneration: jest.fn() };
   const conversationTaskService = { stopTask: jest.fn(), subscribe: jest.fn(), waitForTask: jest.fn() };
   const runtimeToolPermissionService = { listPendingRequests: jest.fn(), reply: jest.fn() };
@@ -26,6 +27,7 @@ describe('ConversationController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     controller = new ConversationController(
+      conversationMessagePlanningService as never,
       conversationMessageLifecycleService as never,
       conversationTaskService as never,
       runtimeToolPermissionService as never,
@@ -66,6 +68,30 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.deleteConversation('user-1', conversationId)).toEqual({ message: 'Conversation deleted' });
     expect(runtimeHostConversationRecordService.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+  });
+
+  it('reads conversation context window through owned conversation APIs', async () => {
+    const preview = {
+      enabled: true,
+      estimatedTokens: 120,
+      excludedMessageIds: ['message-1'],
+      frontendMessageWindowSize: 200,
+      includedMessageIds: ['message-2', 'message-3'],
+      keepRecentMessages: 2,
+      maxWindowTokens: 256,
+      slidingWindowUsagePercent: 50,
+      strategy: 'sliding' as const,
+    };
+    conversationMessagePlanningService.getContextWindowPreview.mockResolvedValue(preview);
+
+    await expect(controller.getConversationContextWindow('user-1', conversationId, 'openai', 'gpt-5.4')).resolves.toEqual(preview);
+    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(conversationMessagePlanningService.getContextWindowPreview).toHaveBeenCalledWith({
+      conversationId,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
   });
 
   it('reads and updates conversation services through owned conversation APIs', () => {
@@ -158,6 +184,46 @@ describe('ConversationController', () => {
     closeHandler?.();
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps waiting for task completion after SSE closes', async () => {
+    const response = createResponseStub();
+    let closeHandler: (() => void) | undefined;
+    let resolveWaitForTask: (() => void) | undefined;
+    let settled = false;
+    const unsubscribe = jest.fn();
+    response.on.mockImplementation((event: string, handler: () => void) => {
+      if (event === 'close') {
+        closeHandler = handler;
+      }
+    });
+    conversationMessageLifecycleService.startMessageGeneration.mockResolvedValue({
+      assistantMessage: { id: assistantMessageId, role: 'assistant', content: '' },
+      userMessage: { id: '33333333-3333-4333-8333-333333333333', role: 'user', content: '你好' },
+    });
+    conversationTaskService.subscribe.mockReturnValue(unsubscribe);
+    conversationTaskService.waitForTask.mockImplementation(() => new Promise<void>((resolve) => {
+      resolveWaitForTask = resolve;
+    }));
+
+    const request = controller.sendMessage('user-1', conversationId, { content: '你好' } as never, response as never);
+    request.then(() => {
+      settled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(conversationTaskService.subscribe).toHaveBeenCalledTimes(1);
+    closeHandler?.();
+    await Promise.resolve();
+
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+
+    resolveWaitForTask?.();
+    await request;
+
+    expect(settled).toBe(true);
+    expect(conversationMessageLifecycleService.stopMessageGeneration).not.toHaveBeenCalled();
   });
 
   it('streams retry events and forwards stop requests through owned conversation guard', async () => {

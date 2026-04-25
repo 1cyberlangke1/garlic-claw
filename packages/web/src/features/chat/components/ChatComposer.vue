@@ -26,7 +26,6 @@
           ref="textareaRef"
           class="composer-input"
           :value="modelValue"
-          :disabled="streaming"
           placeholder="输入消息，支持附带图片；输入 / 查看命令提示"
           rows="1"
           @blur="handleBlur"
@@ -61,22 +60,22 @@
         <Icon :icon="galleryAddBold" class="button-icon" aria-hidden="true" />
       </label>
       <button
-        v-if="streaming"
         type="button"
-        class="composer-button stop-button"
-        title="停止"
-        @click="$emit('stop')"
-      >
-        <Icon :icon="stopBold" class="button-icon" aria-hidden="true" />
-      </button>
-      <button
-        v-else
         class="composer-button send-button"
         title="发送"
         :disabled="!canSend"
         @click="$emit('send')"
       >
         <Icon :icon="plainBold" class="button-icon" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="composer-button stop-button"
+        title="停止"
+        :disabled="!streaming"
+        @click="$emit('stop')"
+      >
+        <Icon :icon="stopBold" class="button-icon" aria-hidden="true" />
       </button>
     </div>
   </div>
@@ -291,7 +290,7 @@ function selectCommandSuggestion(trigger: string) {
 
 .composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 58px 58px;
+  grid-template-columns: minmax(0, 1fr) 58px 58px 58px;
   gap: 10px;
   align-items: stretch;
 }

@@ -5,6 +5,7 @@ import { usePluginSubagents } from '@/features/subagents/composables/use-plugin-
 import * as subagentData from '@/features/subagents/composables/plugin-subagents.data'
 
 vi.mock('@/features/subagents/composables/plugin-subagents.data', () => ({
+  loadPluginSubagentDetail: vi.fn(),
   loadPluginSubagentOverview: vi.fn(),
   toErrorMessage: vi.fn((error: Error | undefined, fallback: string) => error?.message ?? fallback),
 }))
@@ -58,6 +59,43 @@ describe('usePluginSubagents', () => {
     vi.useFakeTimers()
     vi.clearAllMocks()
     vi.mocked(subagentData.loadPluginSubagentOverview).mockResolvedValue(createOverview())
+    vi.mocked(subagentData.loadPluginSubagentDetail).mockResolvedValue({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+      },
+      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: '子代理委派',
+      request: {
+        messages: [
+          {
+            content: '请帮我总结当前对话',
+            role: 'user',
+          },
+        ],
+      },
+      requestPreview: '请帮我总结当前对话',
+      result: {
+        message: {
+          content: '这是后台子代理总结',
+          role: 'assistant',
+        },
+        modelId: 'gpt-5.2',
+        providerId: 'openai',
+        text: '这是后台子代理总结',
+        toolCalls: [],
+        toolResults: [],
+      },
+      runtimeKind: 'local',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 3,
+      sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+      startedAt: '2026-03-30T12:00:01.000Z',
+      status: 'running',
+      requestedAt: '2026-03-30T12:00:00.000Z',
+      writeBackStatus: 'pending',
+      finishedAt: null,
+    })
   })
 
   afterEach(() => {
@@ -78,10 +116,23 @@ describe('usePluginSubagents', () => {
 
     expect(state.subagentCount.value).toBe(2)
     expect(state.runningSubagentCount.value).toBe(1)
+    expect(state.conversationWorkspaces.value).toHaveLength(2)
+    expect(state.activeConversationId.value).toBe('conversation-1')
+    expect(state.activeWorkspaceWindows.value.map((window) => window.label)).toEqual([
+      'main',
+      'agent1',
+    ])
     expect(state.pagedSubagents.value.map((subagent) => subagent.sessionId)).toEqual([
       'subagent-session-1',
       'subagent-session-2',
     ])
+
+    state.selectWindow('subagent-session-1')
+    await flushPromises()
+
+    expect(subagentData.loadPluginSubagentOverview).toHaveBeenCalledTimes(1)
+    expect(subagentData.loadPluginSubagentDetail).toHaveBeenCalledWith('subagent-session-1')
+    expect(state.activeSubagentDetail.value?.sessionId).toBe('subagent-session-1')
 
     state.filter.value = 'running'
     await flushPromises()

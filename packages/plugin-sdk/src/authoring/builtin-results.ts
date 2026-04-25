@@ -17,10 +17,14 @@ export function readMemorySaveResultId(value: JsonValue): string | null {
 export function readSubagentDelegateConfig(value: unknown): PluginSubagentDelegateConfig {
   const object = readJsonObjectValue(value);
   const llm = readJsonObjectValue(object?.llm);
+  const session = readJsonObjectValue(object?.session);
   const tools = readJsonObjectValue(object?.tools);
   const allowedToolNames = readOptionalToolNames(tools?.allowedToolNames);
   return {
     ...pickOptionalStringFields(llm, ["targetSubagentType", "targetProviderId", "targetModelId"] as const),
+    ...(typeof session?.maxConversationSubagents === 'number' && Number.isInteger(session.maxConversationSubagents) && session.maxConversationSubagents > 0
+      ? { maxConversationSubagents: session.maxConversationSubagents }
+      : {}),
     ...(allowedToolNames ? { allowedToolNames } : {}),
   };
 }
@@ -127,6 +131,7 @@ function buildSubagentDelegateBaseParams(input: { config: PluginSubagentDelegate
   return {
     ...(sanitizeOptionalText(input.sessionId ?? undefined) ? { sessionId: sanitizeOptionalText(input.sessionId ?? undefined) } : {}),
     ...(sanitizeOptionalText(input.description ?? undefined) ? { description: sanitizeOptionalText(input.description ?? undefined) } : {}),
+    ...(typeof input.config.maxConversationSubagents === 'number' ? { maxConversationSubagents: input.config.maxConversationSubagents } : {}),
     ...(sanitizeOptionalText(input.subagentType ?? undefined) ? { subagentType: sanitizeOptionalText(input.subagentType ?? undefined) } : sanitizeOptionalText(input.config.targetSubagentType) ? { subagentType: sanitizeOptionalText(input.config.targetSubagentType) } : {}),
     ...(sanitizeOptionalText(input.config.targetProviderId) ? { providerId: sanitizeOptionalText(input.config.targetProviderId) } : {}),
     ...(sanitizeOptionalText(input.config.targetModelId) ? { modelId: sanitizeOptionalText(input.config.targetModelId) } : {}),

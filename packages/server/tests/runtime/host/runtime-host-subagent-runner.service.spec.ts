@@ -395,6 +395,104 @@ describe('RuntimeHostSubagentRunnerService', () => {
     expect(mockStreamText.mock.calls.at(-1)?.[0]?.tools).not.toHaveProperty('webfetch');
   });
 
+  it('rejects creating a new subagent session when the conversation has reached the configured limit', async () => {
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    sessionStore.createSession({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      messages: [{ content: 'session-1', role: 'user' }],
+      pluginId: 'builtin.memory-context',
+    });
+    sessionStore.createSession({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      messages: [{ content: 'session-2', role: 'user' }],
+      pluginId: 'builtin.memory-context',
+    });
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    );
+
+    await expect(runner.startSubagent('builtin.memory-context', 'Memory Context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      maxConversationSubagents: 2,
+      messages: [
+        {
+          content: 'new task',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).rejects.toThrow('当前会话最多允许 2 个 subagent 会话，已达到上限');
+  });
+
+  it('allows continuing an existing subagent session after the conversation reaches the configured limit', async () => {
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    sessionStore.createSession({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      messages: [{ content: 'original prompt', role: 'user' }],
+      modelId: 'gpt-5.4',
+      pluginId: 'builtin.memory-context',
+      providerId: 'openai',
+    });
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    );
+
+    await expect(runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      maxConversationSubagents: 1,
+      messages: [
+        {
+          content: 'continue task',
+          role: 'user',
+        },
+      ],
+      sessionId: 'subagent-session-1',
+    })).resolves.toEqual(expect.objectContaining({
+      sessionId: 'subagent-session-1',
+    }));
+  });
+
   it('reuses previous session request context when sessionId is provided', async () => {
     const subagentStore = new RuntimeHostSubagentStoreService();
     const sessionStore = new RuntimeHostSubagentSessionStoreService();
@@ -1075,6 +1173,68 @@ describe('RuntimeHostSubagentRunnerService', () => {
       },
       status: 'completed',
     });
+  });
+
+  it('writes subagent execution errors back to the main conversation when writeBack is enabled', async () => {
+    const conversationRecordService = new RuntimeHostConversationRecordService();
+    const conversationId = (conversationRecordService.createConversation({
+      title: 'Main conversation',
+      userId: 'user-1',
+    }) as { id: string }).id;
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(conversationRecordService),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    );
+    Reflect.set(runner as object, 'executeSubagent', async () => {
+      throw new Error('OpenAI 429');
+    });
+
+    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
+      conversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [
+        {
+          content: '后台继续执行',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      writeBack: {
+        target: {
+          id: conversationId,
+          type: 'conversation',
+        },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(runner.getSubagent('builtin.memory-context', (summary as { sessionId: string }).sessionId)).toMatchObject({
+      error: 'OpenAI 429',
+      status: 'error',
+      writeBackStatus: 'sent',
+    });
+    expect(conversationRecordService.requireConversation(conversationId, 'user-1').messages).toEqual([
+      expect.objectContaining({
+        content: '子代理执行失败：OpenAI 429',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]);
   });
 
   it('does not fabricate write-back success when the target conversation no longer exists after restart', async () => {

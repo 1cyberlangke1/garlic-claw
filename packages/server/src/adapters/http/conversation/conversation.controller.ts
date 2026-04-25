@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser, JwtAuthGuard } from '../../../auth/http-auth';
+import { ConversationMessagePlanningService } from '../../../conversation/conversation-message-planning.service';
 import { ConversationMessageLifecycleService } from '../../../conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../../conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../../execution/runtime/runtime-tool-permission.service';
@@ -22,6 +23,7 @@ import {
 @UseGuards(JwtAuthGuard)
 export class ConversationController {
   constructor(
+    private readonly conversationMessagePlanningService: ConversationMessagePlanningService,
     private readonly conversationMessageLifecycleService: ConversationMessageLifecycleService,
     private readonly conversationTaskService: ConversationTaskService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
@@ -43,6 +45,17 @@ export class ConversationController {
 
   @Get('conversations/:id')
   getConversation(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.getConversation(id, userId); }
+
+  @Get('conversations/:id/context-window')
+  getConversationContextWindow(
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('providerId') providerId?: string,
+    @Query('modelId') modelId?: string,
+  ) {
+    this.requireOwnedConversation(userId, id);
+    return this.conversationMessagePlanningService.getContextWindowPreview({ conversationId: id, ...(typeof modelId === 'string' && modelId.trim() ? { modelId: modelId.trim() } : {}), ...(typeof providerId === 'string' && providerId.trim() ? { providerId: providerId.trim() } : {}), userId });
+  }
 
   @Get('sessions/:id/todo')
   getSessionTodo(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.readSessionTodo(id, userId); }

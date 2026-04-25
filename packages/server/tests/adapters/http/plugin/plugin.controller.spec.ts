@@ -637,6 +637,14 @@ describe('PluginController', () => {
     ]);
     expect(controller.getSubagent('subagent-session-1')).toEqual(
       expect.objectContaining({
+        request: expect.objectContaining({
+          messages: [
+            {
+              role: 'user',
+              content: '请帮我总结当前对话',
+            },
+          ],
+        }),
         sessionId: 'subagent-session-1',
         result: expect.objectContaining({
           text: '这是后台子代理总结',

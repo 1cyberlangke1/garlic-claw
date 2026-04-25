@@ -268,4 +268,55 @@ describe('ChatMessageList', () => {
     expect(resultMessage.classes()).toContain('display-result')
     expect(resultMessage.text()).toContain('已压缩上下文，覆盖 2 条历史消息。')
   })
+
+  it('grays out messages excluded from the current LLM context window without deleting them', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        contextWindowPreview: {
+          enabled: true,
+          estimatedTokens: 120,
+          excludedMessageIds: ['assistant-1'],
+          frontendMessageWindowSize: 200,
+          includedMessageIds: ['assistant-2'],
+          keepRecentMessages: 2,
+          maxWindowTokens: 256,
+          slidingWindowUsagePercent: 50,
+          strategy: 'sliding',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '这条消息已经脱离上下文窗口。',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+          },
+          {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '这条消息仍在当前上下文窗口内。',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+          },
+        ],
+      },
+    })
+
+    const excludedMessage = wrapper.find('[data-message-id="assistant-1"]')
+    const includedMessage = wrapper.find('[data-message-id="assistant-2"]')
+
+    expect(excludedMessage.classes()).toContain('excluded-from-context')
+    expect(excludedMessage.text()).toContain('已脱离当前 LLM 上下文')
+    expect(excludedMessage.text()).toContain('这条消息已经脱离上下文窗口。')
+    expect(includedMessage.classes()).not.toContain('excluded-from-context')
+  })
 })

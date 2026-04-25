@@ -22,6 +22,9 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
             targetModelId: 'gpt-5.4',
             targetProviderId: 'openai',
           },
+          session: {
+            maxConversationSubagents: 6,
+          },
           tools: {
             allowedToolNames: ['memory.search', 'web.search'],
           },
@@ -38,6 +41,7 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
         },
       ],
       modelId: 'gpt-5.4',
+      maxConversationSubagents: 6,
       providerId: 'openai',
       toolNames: ['memory.search', 'web.search'],
     });
@@ -70,6 +74,9 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
             targetModelId: 'gpt-5.4',
             targetProviderId: 'openai',
           },
+          session: {
+            maxConversationSubagents: 6,
+          },
         }),
         startSubagent,
       },
@@ -83,6 +90,7 @@ describe('BUILTIN_SUBAGENT_DELEGATE_PLUGIN', () => {
         },
       ],
       modelId: 'gpt-5.4',
+      maxConversationSubagents: 6,
       providerId: 'openai',
       writeBack: {
         target: {

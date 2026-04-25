@@ -19,7 +19,11 @@
         <div
           :data-message-id="row.message.id ?? undefined"
           class="message"
-          :class="[row.message.role, displayVariantClass(row.message)]"
+          :class="[
+            row.message.role,
+            displayVariantClass(row.message),
+            contextVisibilityClass(row.message),
+          ]"
         >
           <div class="message-role" :title="readRoleTitle(row.message)">
             <img
@@ -34,11 +38,11 @@
             <div class="message-body">
               <div class="message-meta">
                 <span
-                  v-if="isNonContextMessage(row.message)"
+                  v-if="readContextVisibilityLabel(row.message)"
                   class="message-context-visibility excluded"
-                  title="这条消息仅用于前端展示，不会进入默认 LLM 上下文"
+                  :title="readContextVisibilityTitle(row.message)"
                 >
-                  仅展示，不进入 LLM 上下文
+                  {{ readContextVisibilityLabel(row.message) }}
                 </span>
                 <span class="message-status" :class="row.message.status">
                   {{ statusLabelMap[row.message.status] }}
@@ -294,6 +298,7 @@ import type {
   ChatMessageAnnotation,
   ChatMessageCustomBlock,
   ChatMessagePart,
+  ConversationContextWindowPreview,
 } from "@garlic-claw/shared";
 import type { ChatMessage } from "@/features/chat/store/chat";
 
@@ -314,6 +319,7 @@ const props = defineProps<{
     avatar: string | null;
     name: string;
   } | null;
+  contextWindowPreview?: ConversationContextWindowPreview | null;
   loading: boolean;
   messages: ChatMessage[];
 }>();
@@ -625,6 +631,32 @@ function shouldRenderAssistantAvatar(message: ChatMessage): boolean {
 
 function isNonContextMessage(message: ChatMessage): boolean {
   return message.role === "display";
+}
+
+function isExcludedFromCurrentContext(message: ChatMessage): boolean {
+  return Boolean(
+    message.id &&
+      props.contextWindowPreview?.excludedMessageIds.includes(message.id),
+  );
+}
+
+function contextVisibilityClass(message: ChatMessage): string | null {
+  return isExcludedFromCurrentContext(message) ? "excluded-from-context" : null;
+}
+
+function readContextVisibilityLabel(message: ChatMessage): string | null {
+  if (isNonContextMessage(message)) {
+    return "仅展示，不进入 LLM 上下文";
+  }
+  return isExcludedFromCurrentContext(message)
+    ? "已脱离当前 LLM 上下文"
+    : null;
+}
+
+function readContextVisibilityTitle(message: ChatMessage): string {
+  return isNonContextMessage(message)
+    ? "这条消息仅用于前端展示，不会进入默认 LLM 上下文"
+    : "这条消息仍保留在聊天记录中，但当前不会进入模型上下文";
 }
 
 function displayVariantClass(message: ChatMessage): string | null {

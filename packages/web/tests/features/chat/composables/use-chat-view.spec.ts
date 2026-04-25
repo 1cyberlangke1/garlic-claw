@@ -210,6 +210,27 @@ describe('useChatView', () => {
     )
   })
 
+  it('keeps send enabled while streaming so later messages can enter the queue', async () => {
+    const chat = createChatStub({
+      streaming: true,
+    })
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    state.inputText.value = '排队消息'
+    await nextTick()
+
+    expect(state.canSend.value).toBe(true)
+  })
+
   it('disables sending when the current conversation has llm auto reply turned off', async () => {
     vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
       sessionEnabled: true,

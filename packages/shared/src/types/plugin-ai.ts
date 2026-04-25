@@ -59,6 +59,7 @@ export interface PluginLlmGenerateTextResult {
 export interface PluginSubagentRunParams {
   sessionId?: string;
   description?: string;
+  maxConversationSubagents?: number;
   subagentType?: string;
   providerId?: string;
   modelId?: string;

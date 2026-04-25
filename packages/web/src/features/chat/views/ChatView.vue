@@ -86,6 +86,7 @@
 
       <ChatMessageList
         :assistant-persona="currentConversationPersona ? { avatar: currentConversationPersona.avatar, name: currentConversationPersona.name } : null"
+        :context-window-preview="contextWindowPreview"
         :loading="chat.loading"
         :messages="displayedMessages"
         @delete-message="deleteMessage"
@@ -139,6 +140,7 @@ const {
   compacting,
   commandSuggestions,
   displayedMessages,
+  contextWindowPreview,
   pendingRuntimePermissions,
   selectedCapabilities,
   conversationHostServices,

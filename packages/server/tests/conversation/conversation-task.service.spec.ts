@@ -316,6 +316,45 @@ describe('ConversationTaskService', () => {
       },
     ]));
   });
+
+  it('keeps running and persists the assistant message after the listener unsubscribes', async () => {
+    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const continueStreamRef: { current: null | (() => void) } = { current: null };
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream: async () => ({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield delta('前端断开后');
+            await new Promise<void>((resolve) => {
+              continueStreamRef.current = resolve;
+            });
+            yield delta('继续完成');
+          })(),
+        },
+      }),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    const unsubscribe = service.subscribe(String(assistantMessage.id), () => undefined);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    unsubscribe();
+    if (continueStreamRef.current) {
+      continueStreamRef.current();
+    }
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+      content: '前端断开后继续完成',
+      role: 'assistant',
+      status: 'completed',
+    });
+  });
 });
 
 function createAssistantMessage(runtimeHostConversationMessageService: RuntimeHostConversationMessageService) {

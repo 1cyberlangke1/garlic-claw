@@ -86,6 +86,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     ...uploadProcessingNotices.value,
   ])
   const displayedMessages = computed(() => chat.messages)
+  const contextWindowPreview = computed(() => chat.contextWindowPreview)
   const pendingRuntimePermissions = computed(() => chat.pendingRuntimePermissions)
   const lastMessageRole = computed(() => {
     for (let index = displayedMessages.value.length - 1; index >= 0; index -= 1) {
@@ -118,7 +119,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   )
   const canSend = computed(() =>
     Boolean(inputText.value.trim() || pendingImages.value.length > 0) &&
-    !chat.streaming &&
     (
       !conversationSendDisabledReason.value
       || canBypassLlmDisabledReason.value
@@ -518,6 +518,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     pendingImages,
     commandSuggestions,
     displayedMessages,
+    contextWindowPreview,
     pendingRuntimePermissions,
     selectedCapabilities,
     conversationHostServices,
