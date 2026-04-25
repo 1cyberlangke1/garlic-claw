@@ -7,10 +7,11 @@ import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 
 export interface StoredPersonaRecord extends PluginPersonaDetail {}
-type StoredPersonaConfigFile = Omit<StoredPersonaRecord, 'avatar'>
+type StoredPersonaConfigFile = Omit<StoredPersonaRecord, 'avatar' | 'prompt'>
 
 const DEFAULT_PERSONA_TIMESTAMP = '2026-04-10T00:00:00.000Z'
 const PERSONA_CONFIG_FILE_NAME = 'persona.json'
+const PERSONA_PROMPT_FILE_NAME = 'prompt.md'
 const AVATAR_BASENAME = 'avatar'
 const AVATAR_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.ico', '.tif', '.tiff'])
 
@@ -82,7 +83,7 @@ function readStoredPersona(personaRoot: string): StoredPersonaRecord | null {
       id: config.id ?? path.basename(personaRoot),
       isDefault: config.isDefault,
       name: config.name,
-      prompt: config.prompt,
+      prompt: readStoredPersonaPrompt(personaRoot),
       toolNames: config.toolNames,
       updatedAt: config.updatedAt,
     } as StoredPersonaRecord
@@ -111,11 +112,11 @@ function writeStoredPersona(storageRoot: string, persona: StoredPersonaRecord): 
     id: persona.id,
     isDefault: persona.isDefault,
     name: persona.name,
-    prompt: persona.prompt.trimEnd(),
     toolNames: persona.toolNames,
     updatedAt: persona.updatedAt,
   }
   fs.writeFileSync(path.join(personaRoot, PERSONA_CONFIG_FILE_NAME), JSON.stringify(config, null, 2), 'utf-8')
+  fs.writeFileSync(path.join(personaRoot, PERSONA_PROMPT_FILE_NAME), persona.prompt.trimEnd(), 'utf-8')
 }
 
 function readPersonaFolderName(personaId: string): string {
@@ -124,6 +125,12 @@ function readPersonaFolderName(personaId: string): string {
 
 function readStoredPersonaConfig(configPath: string): Partial<StoredPersonaConfigFile> {
   return JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Partial<StoredPersonaConfigFile>
+}
+
+function readStoredPersonaPrompt(personaRoot: string): string | undefined {
+  const promptPath = path.join(personaRoot, PERSONA_PROMPT_FILE_NAME)
+  if (!fs.existsSync(promptPath)) {return undefined}
+  return fs.readFileSync(promptPath, 'utf-8')
 }
 
 function readPersonaAvatarFilePath(personaRoot: string): string | null {

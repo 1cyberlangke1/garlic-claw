@@ -379,8 +379,10 @@
   - `config/ai/vision-fallback.json`
   - `config/mcp/servers/<name>.json`
   - `config/personas/<personaId>/persona.json`
+  - `config/personas/<personaId>/prompt.md`
   - `config/personas/<personaId>/avatar.*`
-  - `config/subagent/<id>.json`
+  - `config/subagent/<id>/subagent.json`
+  - `config/subagent/<id>/prompt.md`
   - `config/skills/governance.json`
   - `config/skills/definitions/<name>/SKILL.md`
 - 不在本阶段内：

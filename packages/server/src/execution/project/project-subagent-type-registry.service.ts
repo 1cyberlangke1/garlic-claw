@@ -14,7 +14,9 @@ export interface ProjectSubagentTypeDefinition {
   toolNames?: string[];
 }
 
-type StoredSubagentTypeRecord = Partial<ProjectSubagentTypeDefinition>;
+type StoredSubagentTypeConfigFile = Partial<Omit<ProjectSubagentTypeDefinition, 'system'>>;
+const SUBAGENT_CONFIG_FILE_NAME = 'subagent.json';
+const SUBAGENT_PROMPT_FILE_NAME = 'prompt.md';
 
 const DEFAULT_SUBAGENT_TYPES: ProjectSubagentTypeDefinition[] = [
   {
@@ -53,32 +55,37 @@ export class ProjectSubagentTypeRegistryService {
 function loadProjectSubagentTypes(storageRoot: string): ProjectSubagentTypeDefinition[] {
   fs.mkdirSync(storageRoot, { recursive: true });
   for (const entry of DEFAULT_SUBAGENT_TYPES) {
-    const filePath = path.join(storageRoot, `${encodeURIComponent(entry.id)}.json`);
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf-8');
+    const subagentRoot = path.join(storageRoot, encodeURIComponent(entry.id));
+    if (!fs.existsSync(path.join(subagentRoot, SUBAGENT_CONFIG_FILE_NAME))) {
+      writeStoredProjectSubagentType(subagentRoot, entry);
     }
   }
   return fs.readdirSync(storageRoot, { withFileTypes: true })
-    .flatMap((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.json'
+    .flatMap((entry) => entry.isDirectory()
       ? [readStoredProjectSubagentType(path.join(storageRoot, entry.name))]
       : [])
     .filter((entry): entry is ProjectSubagentTypeDefinition => Boolean(entry))
     .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function readStoredProjectSubagentType(filePath: string): ProjectSubagentTypeDefinition | null {
+function readStoredProjectSubagentType(subagentRoot: string): ProjectSubagentTypeDefinition | null {
+  const configPath = path.join(subagentRoot, SUBAGENT_CONFIG_FILE_NAME);
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
   try {
-    const fallbackId = decodeURIComponent(path.basename(filePath, '.json'));
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as StoredSubagentTypeRecord;
-    return normalizeStoredProjectSubagentType(parsed, fallbackId);
+    const fallbackId = decodeURIComponent(path.basename(subagentRoot));
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as StoredSubagentTypeConfigFile;
+    return normalizeStoredProjectSubagentType(parsed, fallbackId, readStoredProjectSubagentPrompt(subagentRoot));
   } catch {
     return null;
   }
 }
 
 function normalizeStoredProjectSubagentType(
-  record: StoredSubagentTypeRecord,
+  record: StoredSubagentTypeConfigFile,
   fallbackId: string,
+  systemPrompt?: string,
 ): ProjectSubagentTypeDefinition | null {
   const id = normalizeOptionalText(record.id) ?? fallbackId;
   if (!id) {
@@ -96,9 +103,39 @@ function normalizeStoredProjectSubagentType(
     ...(normalizeOptionalText(record.modelId) ? { modelId: normalizeOptionalText(record.modelId) } : {}),
     name: normalizeOptionalText(record.name) ?? id,
     ...(normalizeOptionalText(record.providerId) ? { providerId: normalizeOptionalText(record.providerId) } : {}),
-    ...(normalizeOptionalText(record.system) ? { system: normalizeOptionalText(record.system) } : {}),
+    ...(normalizeOptionalText(systemPrompt) ? { system: normalizeOptionalText(systemPrompt) } : {}),
     ...(toolNames && toolNames.length > 0 ? { toolNames } : {}),
   };
+}
+
+function readStoredProjectSubagentPrompt(subagentRoot: string): string | undefined {
+  const promptPath = path.join(subagentRoot, SUBAGENT_PROMPT_FILE_NAME);
+  if (!fs.existsSync(promptPath)) {
+    return undefined;
+  }
+  return fs.readFileSync(promptPath, 'utf-8');
+}
+
+function writeStoredProjectSubagentType(subagentRoot: string, entry: ProjectSubagentTypeDefinition): void {
+  fs.mkdirSync(subagentRoot, { recursive: true });
+  const config: StoredSubagentTypeConfigFile = {
+    ...(normalizeOptionalText(entry.description) ? { description: entry.description } : {}),
+    id: entry.id,
+    ...(normalizeOptionalText(entry.modelId) ? { modelId: entry.modelId } : {}),
+    name: entry.name,
+    ...(normalizeOptionalText(entry.providerId) ? { providerId: entry.providerId } : {}),
+    ...(entry.toolNames && entry.toolNames.length > 0 ? { toolNames: entry.toolNames } : {}),
+  };
+  fs.writeFileSync(path.join(subagentRoot, SUBAGENT_CONFIG_FILE_NAME), JSON.stringify(config, null, 2), 'utf-8');
+  const promptPath = path.join(subagentRoot, SUBAGENT_PROMPT_FILE_NAME);
+  const systemPrompt = normalizeOptionalText(entry.system);
+  if (systemPrompt) {
+    fs.writeFileSync(promptPath, systemPrompt, 'utf-8');
+    return;
+  }
+  if (fs.existsSync(promptPath)) {
+    fs.rmSync(promptPath, { force: true });
+  }
 }
 
 function normalizeOptionalText(value: unknown): string | undefined {

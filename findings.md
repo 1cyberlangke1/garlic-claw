@@ -10,8 +10,8 @@
   - `host-model-routing.json`
   - `vision-fallback.json`
 - model 元数据如果继续独立拆目录，会把当前 owner 复杂度再次抬高；放回各 provider 文件里的 `persistedModels` 更短，也更符合“每个 provider 一个配置文件”的约束。
-- persona 当前 `meta.yaml + SYSTEM.md` 本质上是两份配置；统一 json 后，最短路径是每个目录只保留一个 `persona.json`，avatar 继续做旁路静态资源。
-- subagent type 当前 `.yaml` 目录扫描没有额外收益；直接切 `config/subagent/*.json` 即可。
+- persona 当前 `meta.yaml + SYSTEM.md` 本质上是两份配置；更稳的落地是目录内拆成 `persona.json + prompt.md`，avatar 继续做旁路静态资源。
+- subagent type 当前 `.yaml` 目录扫描没有额外收益；直接切 `config/subagent/<id>/{subagent.json,prompt.md}` 即可。
 - MCP 已经是“每个 server 一个 json”，只需要把默认根目录和对外 `configPath` 改成 `config/mcp/servers`。
 - skill governance 虽然目前默认落在 `tmp`，但它本质是用户配置，不是运行态日志；应并入 `config/skills/governance.json`。
 - `skills` 不只是 governance；项目内置 skill 定义本身也是用户维护目录，默认根目录也应从仓库根 `skills/` 收到 `config/skills/definitions/`。
@@ -24,7 +24,7 @@
   - `models 列表`
   - `persistedModels`
   合并到同一 provider json 后，既满足“每个 provider 一个独立文件”，也避免再起 `models/<provider>/<model>.json` 带来的目录膨胀。
-- persona 迁到 `persona.json` 后，默认 avatar 仍应保留为旁路静态文件；配置 json 不需要再维护 avatar 字段。
+- persona 迁到 `persona.json + prompt.md` 后，默认 avatar 仍应保留为旁路静态文件；元数据 json 不需要再维护 avatar 或 prompt 字段。
 - 绝对仓库路径只能出现在本机临时上下文里，不能提交到仓库；这轮已把 controller 测试里的绝对路径夹具改回 `path.resolve(...)` 生成。
 
 ## 2026-04-25

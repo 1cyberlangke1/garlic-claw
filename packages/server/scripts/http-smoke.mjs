@@ -2438,15 +2438,17 @@ async function prepareProjectSkill(skillRoot) {
 
 async function prepareCustomSubagentType(subagentTypesRoot) {
   await fsPromises.mkdir(subagentTypesRoot, { recursive: true });
-  await fsPromises.writeFile(path.join(subagentTypesRoot, 'review.json'), JSON.stringify({
+  const reviewRoot = path.join(subagentTypesRoot, 'review');
+  await fsPromises.mkdir(reviewRoot, { recursive: true });
+  await fsPromises.writeFile(path.join(reviewRoot, 'subagent.json'), JSON.stringify({
     id: 'review',
     name: '审阅',
     description: '聚焦审阅与风险检查的烟测子代理类型。',
     providerId: null,
     modelId: null,
     toolNames: ['webfetch'],
-    system: '你是一个审阅子代理。\n优先指出风险、缺口与可疑点。',
   }, null, 2), 'utf8');
+  await fsPromises.writeFile(path.join(reviewRoot, 'prompt.md'), '你是一个审阅子代理。\n优先指出风险、缺口与可疑点。', 'utf8');
 }
 
 async function prepareWorkingMcpScript(filePath) {

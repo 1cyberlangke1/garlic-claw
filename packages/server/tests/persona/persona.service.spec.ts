@@ -83,8 +83,13 @@ describe('PersonaService', () => {
       id: 'builtin.default-assistant',
       isDefault: true,
       name: 'Default Assistant',
-      prompt: DEFAULT_PERSONA_PROMPT,
     }))
+    expect(
+      fs.readFileSync(
+        path.join(storageRoot, 'builtin.default-assistant', 'prompt.md'),
+        'utf-8',
+      ),
+    ).toBe(DEFAULT_PERSONA_PROMPT)
     expect(
       JSON.parse(
         fs.readFileSync(
@@ -143,8 +148,13 @@ describe('PersonaService', () => {
       id: 'persona.analyst',
       isDefault: true,
       name: 'Reviewer',
-      prompt: '你是一个审稿式分析助手。',
     }))
+    expect(
+      fs.readFileSync(
+        path.join(storageRoot, 'persona.analyst', 'prompt.md'),
+        'utf-8',
+      ),
+    ).toBe('你是一个审稿式分析助手。')
     expect(
       JSON.parse(
         fs.readFileSync(
@@ -251,6 +261,7 @@ describe('PersonaService', () => {
         }),
       )
       expect(fs.existsSync(path.join(expectedRoot, 'builtin.default-assistant', 'persona.json'))).toBe(true)
+      expect(fs.existsSync(path.join(expectedRoot, 'builtin.default-assistant', 'prompt.md'))).toBe(true)
     } finally {
       if (originalPersonaPath) {
         process.env.GARLIC_CLAW_PERSONAS_PATH = originalPersonaPath

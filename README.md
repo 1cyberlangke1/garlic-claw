@@ -71,8 +71,10 @@ config/
     host-model-routing.example.json     宿主模型路由示例
     vision-fallback.example.json        视觉回退示例
   mcp/servers/*.json                    MCP 配置
-  personas/<id>/persona.json            Persona 配置
-  subagent/*.json                       子代理类型配置
+  personas/<id>/persona.json            Persona 元数据
+  personas/<id>/prompt.md               Persona 提示词
+  subagent/<id>/subagent.json           子代理类型元数据
+  subagent/<id>/prompt.md               子代理提示词
   skills/definitions/<name>/SKILL.md    项目内置 skill 定义
   skills/governance.json                Skill 治理配置
 tools/
