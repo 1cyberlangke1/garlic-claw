@@ -82,6 +82,85 @@ describe('BuiltinMemoryContextPlugin', () => {
     });
   });
 
+  it('inserts the synthetic context message immediately before the latest user message in a multi-turn conversation', async () => {
+    const fixture = createRuntimeFixture();
+    fixture.pluginBootstrapService.bootstrapBuiltins();
+
+    fixture.runtimeHostUserContextService.saveMemory(
+      {
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      {
+        category: 'preference',
+        content: '用户偏好手冲咖啡和浅烘豆。',
+      },
+    );
+
+    await expect(
+      fixture.runtimeHostPluginDispatchService.invokeHook({
+        context: {
+          activeModelId: 'gpt-5.4',
+          activeProviderId: 'openai',
+          conversationId: 'conversation-1',
+          source: 'chat-hook',
+          userId: 'user-1',
+        },
+        hookName: 'chat:before-model',
+        payload: {
+          context: {
+            activeModelId: 'gpt-5.4',
+            activeProviderId: 'openai',
+            conversationId: 'conversation-1',
+            source: 'chat-hook',
+            userId: 'user-1',
+          },
+          request: {
+            availableTools: [],
+            messages: [
+              {
+                content: '你有什么偏好吗？',
+                role: 'user',
+              },
+              {
+                content: '我会结合你的偏好回答。',
+                role: 'assistant',
+              },
+              {
+                content: '手冲咖啡',
+                role: 'user',
+              },
+            ],
+            modelId: 'gpt-5.4',
+            providerId: 'openai',
+            systemPrompt: '你是默认助手。',
+          },
+        },
+        pluginId: 'builtin.memory-context',
+      }),
+    ).resolves.toEqual({
+      action: 'mutate',
+      messages: [
+        {
+          content: '你有什么偏好吗？',
+          role: 'user',
+        },
+        {
+          content: '我会结合你的偏好回答。',
+          role: 'assistant',
+        },
+        {
+          content: '与此用户相关的记忆：\n- [preference] 用户偏好手冲咖啡和浅烘豆。',
+          role: 'assistant',
+        },
+        {
+          content: '手冲咖啡',
+          role: 'user',
+        },
+      ],
+    });
+  });
+
   it('passes through when there is no matched memory for the latest user message', async () => {
     const fixture = createRuntimeFixture();
     fixture.pluginBootstrapService.bootstrapBuiltins();
