@@ -38,7 +38,7 @@ export class ProjectSubagentTypeRegistryService {
   constructor(projectWorktreeRootService: ProjectWorktreeRootService) {
     this.storageRoot = process.env.GARLIC_CLAW_SUBAGENT_PATH
       ? path.resolve(process.env.GARLIC_CLAW_SUBAGENT_PATH)
-      : path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'agents', 'subagent-types');
+      : path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'subagent');
   }
 
   listTypes(): PluginSubagentTypeSummary[] {

@@ -11,7 +11,7 @@
   - `vision-fallback.json`
 - model 元数据如果继续独立拆目录，会把当前 owner 复杂度再次抬高；放回各 provider 文件里的 `persistedModels` 更短，也更符合“每个 provider 一个配置文件”的约束。
 - persona 当前 `meta.yaml + SYSTEM.md` 本质上是两份配置；统一 json 后，最短路径是每个目录只保留一个 `persona.json`，avatar 继续做旁路静态资源。
-- subagent type 当前 `.yaml` 目录扫描没有额外收益；直接切 `config/agents/subagent-types/*.json` 即可。
+- subagent type 当前 `.yaml` 目录扫描没有额外收益；直接切 `config/subagent/*.json` 即可。
 - MCP 已经是“每个 server 一个 json”，只需要把默认根目录和对外 `configPath` 改成 `config/mcp/servers`。
 - skill governance 虽然目前默认落在 `tmp`，但它本质是用户配置，不是运行态日志；应并入 `config/skills/governance.json`。
 - `skills` 不只是 governance；项目内置 skill 定义本身也是用户维护目录，默认根目录也应从仓库根 `skills/` 收到 `config/skills/definitions/`。

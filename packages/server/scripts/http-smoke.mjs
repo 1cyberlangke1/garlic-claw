@@ -140,7 +140,7 @@ async function main() {
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
     runtimeWorkspacesPath: path.join(tempDir, 'runtime-workspaces'),
     skillGovernancePath: path.join(tempDir, 'config', 'skills', 'governance.json'),
-    subagentPath: path.join(tempDir, 'config', 'agents', 'subagent-types'),
+    subagentPath: path.join(tempDir, 'config', 'subagent'),
     subagentsPath: path.join(tempDir, 'subagents.server.json'),
     userHomePath: path.join(tempDir, 'user-home'),
   };

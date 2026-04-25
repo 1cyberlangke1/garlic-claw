@@ -9,19 +9,19 @@
   - `config/ai/vision-fallback.json`
   - `config/mcp/servers/<name>.json`
   - `config/personas/<personaId>/persona.json`
-  - `config/agents/subagent-types/<id>.json`
+  - `config/subagent/<id>.json`
   - `config/skills/governance.json`
 - 已确认这轮不做旧布局兼容层；所有默认路径、测试夹具、文档引用直接切到新布局。
 - 已完成代码迁移：
   - `AI settings` 改为 `config/ai/` 目录布局，provider 改成每个 provider 一个 json，并把模型元数据并回各 provider 文件的 `persistedModels`
   - `persona` 改为 `config/personas/<id>/persona.json`
-  - `subagent type` 改为 `config/agents/subagent-types/*.json`
+  - `subagent type` 改为 `config/subagent/*.json`
   - `mcp` 默认目录改为 `config/mcp/servers`
   - `skill definitions` 默认目录改为 `config/skills/definitions/<name>/SKILL.md`
   - `skill governance` 默认目录改为 `config/skills/governance.json`
 - 已同步仓库内置配置样例：
   - `config/personas/builtin.default-assistant/persona.json`
-  - `config/agents/subagent-types/{general,explore}.json`
+  - `config/subagent/{general,explore}.json`
   - `config/mcp/servers/tavily-mcp.json`
   - `config/skills/definitions/weather-query/*`
   - `config/ai/*.example.json`

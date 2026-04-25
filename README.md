@@ -72,7 +72,7 @@ config/
     vision-fallback.example.json        视觉回退示例
   mcp/servers/*.json                    MCP 配置
   personas/<id>/persona.json            Persona 配置
-  agents/subagent-types/*.json          子代理类型配置
+  subagent/*.json                       子代理类型配置
   skills/definitions/<name>/SKILL.md    项目内置 skill 定义
   skills/governance.json                Skill 治理配置
 tools/

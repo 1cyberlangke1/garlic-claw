@@ -380,7 +380,7 @@
   - `config/mcp/servers/<name>.json`
   - `config/personas/<personaId>/persona.json`
   - `config/personas/<personaId>/avatar.*`
-  - `config/agents/subagent-types/<id>.json`
+  - `config/subagent/<id>.json`
   - `config/skills/governance.json`
   - `config/skills/definitions/<name>/SKILL.md`
 - 不在本阶段内：
