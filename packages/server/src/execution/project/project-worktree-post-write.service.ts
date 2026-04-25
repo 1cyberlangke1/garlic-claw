@@ -13,44 +13,35 @@ import type {
   RuntimeFilesystemPostWriteProvider,
 } from '../runtime/runtime-filesystem-post-write.service';
 
+const SCRIPT_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs']);
+
 @Injectable()
 export class ProjectWorktreePostWriteService implements RuntimeFilesystemPostWriteProvider {
   processTextFile(input: RuntimeFilesystemPostWriteInput): RuntimeFilesystemPostWriteOutput {
-    const formatted = formatProjectWorktreeText(input.path, input.content);
-    const nextContent = formatted?.content ?? input.content;
+    const formatted = formatProjectWorktreeJson(input.path, input.content);
+    const content = formatted?.content ?? input.content;
     return {
-      content: nextContent,
+      content,
       postWrite: {
-        diagnostics: readProjectWorktreeDiagnostics(input, nextContent),
+        diagnostics: readProjectWorktreeDiagnostics(input, content),
         formatting: formatted?.result ?? null,
       },
     };
   }
 }
 
-function formatProjectWorktreeText(
+function formatProjectWorktreeJson(
   filePath: string,
   content: string,
-): {
-  content: string;
-  result: RuntimeFilesystemFormattingResult;
-} | null {
+): { content: string; result: RuntimeFilesystemFormattingResult } | null {
   if (path.extname(filePath).toLowerCase() !== '.json') {
     return null;
   }
   try {
-    const parsed = JSON.parse(content);
-    const trailingNewline = content.endsWith('\n');
-    const formatted = `${JSON.stringify(parsed, null, 2)}${trailingNewline ? '\n' : ''}`;
-    if (formatted === content) {
-      return null;
-    }
-    return {
+    const formatted = `${JSON.stringify(JSON.parse(content), null, 2)}${content.endsWith('\n') ? '\n' : ''}`;
+    return formatted === content ? null : {
       content: formatted,
-      result: {
-        kind: 'json-pretty',
-        label: 'json-pretty',
-      },
+      result: { kind: 'json-pretty', label: 'json-pretty' },
     };
   } catch {
     return null;
@@ -63,169 +54,125 @@ function readProjectWorktreeDiagnostics(
 ): RuntimeFilesystemDiagnosticEntry[] {
   const extension = path.extname(input.path).toLowerCase();
   if (extension === '.json') {
-    return readJsonDiagnostics(input.path, content);
+    return readRuntimeDiagnostics([ts.parseConfigFileTextToJson(input.path, content).error].filter((item): item is ts.Diagnostic => Boolean(item)), input);
   }
-  if (['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'].includes(extension)) {
-    const projectDiagnostics = readTypeScriptProjectDiagnostics(input, content);
-    if (projectDiagnostics.length > 0) {
-      return projectDiagnostics;
-    }
-    return readTypeScriptDiagnostics(input.path, content);
+  if (!SCRIPT_EXTENSIONS.has(extension)) {
+    return [];
   }
-  return [];
+  return readTypeScriptProjectDiagnostics(input, content) ?? readTypeScriptSyntaxDiagnostics(input.path, content, extension);
 }
 
-function readJsonDiagnostics(filePath: string, content: string): RuntimeFilesystemDiagnosticEntry[] {
-  const result = ts.parseConfigFileTextToJson(filePath, content);
-  return result.error ? [toRuntimeDiagnosticEntry(result.error, result.error.file)] : [];
-}
-
-function readTypeScriptDiagnostics(filePath: string, content: string): RuntimeFilesystemDiagnosticEntry[] {
-  const extension = path.extname(filePath).toLowerCase();
-  const result = ts.transpileModule(content, {
+function readTypeScriptSyntaxDiagnostics(
+  filePath: string,
+  content: string,
+  extension: string,
+): RuntimeFilesystemDiagnosticEntry[] {
+  return readRuntimeDiagnostics(ts.transpileModule(content, {
     compilerOptions: {
       allowJs: true,
-      jsx: extension === '.tsx' || extension === '.jsx'
-        ? ts.JsxEmit.ReactJSX
-        : ts.JsxEmit.Preserve,
+      jsx: extension === '.tsx' || extension === '.jsx' ? ts.JsxEmit.ReactJSX : ts.JsxEmit.Preserve,
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ESNext,
     },
     fileName: filePath,
     reportDiagnostics: true,
-  });
-  return (result.diagnostics ?? []).map((diagnostic) =>
-    toRuntimeDiagnosticEntry(diagnostic, diagnostic.file),
-  );
+  }).diagnostics ?? []);
 }
 
 function readTypeScriptProjectDiagnostics(
   input: RuntimeFilesystemPostWriteInput,
   content: string,
-): RuntimeFilesystemDiagnosticEntry[] {
-  const configPath = findNearestTypeScriptProjectConfig(input.hostPath);
+): RuntimeFilesystemDiagnosticEntry[] | null {
+  const configPath = findNearestProjectConfig(input.hostPath);
   if (!configPath) {
-    return [];
+    return null;
   }
   const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
   if (configFile.error) {
-    return [toRuntimeDiagnosticEntry(configFile.error, configFile.error.file, input)];
+    return readRuntimeDiagnostics([configFile.error], input);
   }
-  const parsedConfig = ts.parseJsonConfigFileContent(
-    configFile.config,
-    ts.sys,
-    path.dirname(configPath),
-    undefined,
-    configPath,
-  );
-  if (parsedConfig.errors.length > 0) {
-    return parsedConfig.errors.map((diagnostic) =>
-      toRuntimeDiagnosticEntry(diagnostic, diagnostic.file, input),
-    );
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, path.dirname(configPath), undefined, configPath);
+  if (parsed.errors.length > 0) {
+    return readRuntimeDiagnostics(parsed.errors, input);
   }
-  const normalizedHostPath = normalizeProjectFilesystemPath(input.hostPath);
-  const rootNames = parsedConfig.fileNames.some((filePath) =>
-    normalizeProjectFilesystemPath(filePath) === normalizedHostPath,
-  )
-    ? parsedConfig.fileNames
-    : [...parsedConfig.fileNames, input.hostPath];
-  const compilerHost = ts.createCompilerHost(parsedConfig.options, true);
-  const readSourceFile = compilerHost.getSourceFile.bind(compilerHost);
+  const normalizedHostPath = normalizeProjectWorktreePath(input.hostPath);
+  const rootNames = parsed.fileNames.some((fileName) => normalizeProjectWorktreePath(fileName) === normalizedHostPath)
+    ? parsed.fileNames
+    : [...parsed.fileNames, input.hostPath];
+  const compilerHost = ts.createCompilerHost(parsed.options, true);
+  const getSourceFile = compilerHost.getSourceFile.bind(compilerHost);
   const readFile = compilerHost.readFile.bind(compilerHost);
   const fileExists = compilerHost.fileExists.bind(compilerHost);
-  compilerHost.readFile = (fileName) =>
-    normalizeProjectFilesystemPath(fileName) === normalizedHostPath
-      ? content
-      : readFile(fileName);
-  compilerHost.fileExists = (fileName) =>
-    normalizeProjectFilesystemPath(fileName) === normalizedHostPath
-      ? true
-      : fileExists(fileName);
+  compilerHost.readFile = (fileName) => normalizeProjectWorktreePath(fileName) === normalizedHostPath ? content : readFile(fileName);
+  compilerHost.fileExists = (fileName) => normalizeProjectWorktreePath(fileName) === normalizedHostPath || fileExists(fileName);
   compilerHost.getSourceFile = (fileName, languageVersion, onError, shouldCreateNewSourceFile) =>
-    normalizeProjectFilesystemPath(fileName) === normalizedHostPath
+    normalizeProjectWorktreePath(fileName) === normalizedHostPath
       ? ts.createSourceFile(fileName, content, languageVersion, true)
-      : readSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
-  const program = ts.createProgram({
-    host: compilerHost,
-    options: parsedConfig.options,
-    projectReferences: parsedConfig.projectReferences,
-    rootNames,
-  });
-  return selectProjectDiagnostics(
-    ts.getPreEmitDiagnostics(program).map((diagnostic) =>
-      toRuntimeDiagnosticEntry(diagnostic, diagnostic.file, input),
-    ),
-    input.path,
-  );
+      : getSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
+  return selectProjectDiagnostics(readRuntimeDiagnostics(
+    ts.getPreEmitDiagnostics(ts.createProgram({
+      host: compilerHost,
+      options: parsed.options,
+      projectReferences: parsed.projectReferences,
+      rootNames,
+    })),
+    input,
+  ), input.path);
 }
 
-function findNearestTypeScriptProjectConfig(hostPath: string): string | null {
-  let currentPath = path.dirname(hostPath);
-  while (true) {
-    const tsconfigPath = path.join(currentPath, 'tsconfig.json');
-    if (fs.existsSync(tsconfigPath)) {
-      return tsconfigPath;
+function findNearestProjectConfig(hostPath: string): string | null {
+  for (let current = path.dirname(hostPath); ; current = path.dirname(current)) {
+    for (const fileName of ['tsconfig.json', 'jsconfig.json']) {
+      const candidate = path.join(current, fileName);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
     }
-    const jsconfigPath = path.join(currentPath, 'jsconfig.json');
-    if (fs.existsSync(jsconfigPath)) {
-      return jsconfigPath;
-    }
-    const parentPath = path.dirname(currentPath);
-    if (parentPath === currentPath) {
+    const parent = path.dirname(current);
+    if (parent === current) {
       return null;
     }
-    currentPath = parentPath;
   }
-}
-
-function normalizeProjectFilesystemPath(filePath: string): string {
-  const resolvedPath = path.resolve(filePath);
-  return process.platform === 'win32'
-    ? resolvedPath.toLowerCase()
-    : resolvedPath;
 }
 
 function selectProjectDiagnostics(
   diagnostics: RuntimeFilesystemDiagnosticEntry[],
   currentPath: string,
 ): RuntimeFilesystemDiagnosticEntry[] {
-  const currentDiagnostics = diagnostics.filter((diagnostic) => diagnostic.path === currentPath);
-  const relatedByFile = new Map<string, RuntimeFilesystemDiagnosticEntry[]>();
+  const current = diagnostics.filter((item) => item.path === currentPath);
+  const related = new Map<string, RuntimeFilesystemDiagnosticEntry[]>();
   for (const diagnostic of diagnostics) {
     if (diagnostic.path === currentPath) {
       continue;
     }
-    const current = relatedByFile.get(diagnostic.path) ?? [];
-    current.push(diagnostic);
-    relatedByFile.set(diagnostic.path, current);
+    related.set(diagnostic.path, [...(related.get(diagnostic.path) ?? []), diagnostic]);
   }
-  const relatedDiagnostics = Array.from(relatedByFile.entries())
-    .sort((left, right) => left[0].localeCompare(right[0]))
-    .slice(0, 5)
-    .flatMap((entry) => entry[1]);
-  return [...currentDiagnostics, ...relatedDiagnostics];
+  return [
+    ...current,
+    ...[...related.entries()]
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .slice(0, 5)
+      .flatMap(([, entries]) => entries),
+  ];
 }
 
-function toRuntimeDiagnosticEntry(
-  diagnostic: ts.Diagnostic,
-  sourceFile?: ts.SourceFile,
+function readRuntimeDiagnostics(
+  diagnostics: readonly ts.Diagnostic[],
   input?: RuntimeFilesystemPostWriteInput,
-): RuntimeFilesystemDiagnosticEntry {
-  const normalizedFile = sourceFile?.fileName ?? diagnostic.file?.fileName ?? 'unknown';
-  const start = diagnostic.start ?? 0;
-  const locationSource = sourceFile ?? diagnostic.file;
-  const lineAndCharacter = locationSource
-    ? locationSource.getLineAndCharacterOfPosition(start)
-    : { character: 0, line: 0 };
-  return {
-    ...(diagnostic.code ? { code: String(diagnostic.code) } : {}),
-    column: lineAndCharacter.character + 1,
-    line: lineAndCharacter.line + 1,
-    message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
-    path: normalizeRuntimeDiagnosticPath(normalizedFile, input),
-    severity: readRuntimeDiagnosticSeverity(diagnostic.category),
-    source: diagnostic.source ?? 'typescript',
-  };
+): RuntimeFilesystemDiagnosticEntry[] {
+  return diagnostics.map((diagnostic) => {
+    const file = diagnostic.file;
+    const position = file?.getLineAndCharacterOfPosition(diagnostic.start ?? 0) ?? { character: 0, line: 0 };
+    return {
+      ...(diagnostic.code ? { code: String(diagnostic.code) } : {}),
+      column: position.character + 1,
+      line: position.line + 1,
+      message: ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
+      path: normalizeRuntimeDiagnosticPath(file?.fileName ?? 'unknown', input),
+      severity: readRuntimeDiagnosticSeverity(diagnostic.category),
+      source: diagnostic.source ?? 'typescript',
+    };
+  });
 }
 
 function normalizeRuntimeDiagnosticPath(
@@ -235,22 +182,20 @@ function normalizeRuntimeDiagnosticPath(
   if (!input || diagnosticPath === 'unknown') {
     return diagnosticPath;
   }
-  const resolvedSessionRoot = path.resolve(input.sessionRoot);
-  const resolvedDiagnosticPath = path.resolve(diagnosticPath);
-  const relativePath = path.relative(resolvedSessionRoot, resolvedDiagnosticPath);
-  if (
-    relativePath.length === 0
-    || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
-  ) {
-    const normalizedRelativePath = relativePath.replace(/\\/g, '/');
-    if (!normalizedRelativePath) {
-      return input.visibleRoot;
-    }
-    return input.visibleRoot === '/'
-      ? `/${normalizedRelativePath}`
-      : `${input.visibleRoot}/${normalizedRelativePath}`;
+  const relativePath = path.relative(path.resolve(input.sessionRoot), path.resolve(diagnosticPath));
+  if (relativePath.length === 0) {
+    return input.visibleRoot;
   }
-  return diagnosticPath;
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return diagnosticPath;
+  }
+  const normalized = relativePath.replace(/\\/g, '/');
+  return input.visibleRoot === '/' ? `/${normalized}` : `${input.visibleRoot}/${normalized}`;
+}
+
+function normalizeProjectWorktreePath(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
 function readRuntimeDiagnosticSeverity(category: ts.DiagnosticCategory): RuntimeFilesystemDiagnosticSeverity {
@@ -261,7 +206,6 @@ function readRuntimeDiagnosticSeverity(category: ts.DiagnosticCategory): Runtime
       return 'hint';
     case ts.DiagnosticCategory.Message:
       return 'info';
-    case ts.DiagnosticCategory.Error:
     default:
       return 'error';
   }

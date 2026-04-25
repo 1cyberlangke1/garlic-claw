@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
-import type { PluginParamSchema, RuntimeBackendKind } from '@garlic-claw/shared';
+import type { PluginParamSchema, PluginRuntimePostWriteSummary, RuntimeBackendKind } from '@garlic-claw/shared';
 import type { RuntimeFilesystemDiffSummary } from '../file/runtime-file-diff';
 import { renderRuntimeFilesystemDiffLines } from '../file/runtime-file-diff-report';
-import { renderRuntimeFilesystemPostWriteLines } from '../file/runtime-file-post-write-report';
+import { readRuntimeFilesystemPostWriteSummary, renderRuntimeFilesystemPostWriteLines } from '../file/runtime-file-post-write-report';
 import { RuntimeFileFreshnessService } from '../runtime/runtime-file-freshness.service';
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
@@ -24,20 +24,13 @@ export interface WriteToolResult {
   output: string;
   path: string;
   postWrite: RuntimeFilesystemPostWriteResult;
+  postWriteSummary: PluginRuntimePostWriteSummary;
   size: number;
 }
 
 export const WRITE_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
-  filePath: {
-    description: '要写入的文件路径。相对路径会基于当前 backend 的可见根解析。',
-    required: true,
-    type: 'string',
-  },
-  content: {
-    description: '要写入文件的完整内容。',
-    required: true,
-    type: 'string',
-  },
+  filePath: { description: '要写入的文件路径。相对路径会基于当前 backend 的可见根解析。', required: true, type: 'string' },
+  content: { description: '要写入文件的完整内容。', required: true, type: 'string' },
 };
 
 @Injectable()
@@ -53,12 +46,10 @@ export class WriteToolService {
   }
 
   buildToolDescription(): string {
-    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
+    const { visibleRoot } = this.runtimeSessionEnvironmentService.getDescriptor();
     return [
       '在当前 backend 可见路径内整文件写入内容。',
-      visibleRoot === '/'
-        ? 'filePath 可传相对路径或 backend 可见的绝对路径。'
-        : `filePath 必须位于 ${visibleRoot} 内。`,
+      visibleRoot === '/' ? 'filePath 可传相对路径或 backend 可见的绝对路径。' : `filePath 必须位于 ${visibleRoot} 内。`,
       '如果文件不存在，会自动创建父目录。',
       '如果文件已存在，写入前必须先拿到该文件的当前内容；可先用 read 工具读取，或沿用同一 session 中最新一次成功 write/edit 后记录的当前版本。',
       '如果文件自上次读取或修改后又发生变化，需要重新 read 再写入。',
@@ -70,11 +61,7 @@ export class WriteToolService {
     return WRITE_TOOL_PARAMETERS;
   }
 
-  readInput(
-    args: Record<string, unknown>,
-    sessionId?: string,
-    backendKind?: RuntimeBackendKind,
-  ): WriteToolInput {
+  readInput(args: Record<string, unknown>, sessionId?: string, backendKind?: RuntimeBackendKind): WriteToolInput {
     if (!sessionId) {
       throw new BadRequestException('write 工具只能在 session 上下文中使用');
     }
@@ -94,14 +81,13 @@ export class WriteToolService {
   }
 
   async execute(input: WriteToolInput): Promise<WriteToolResult> {
-    await this.runtimeFileFreshnessService.assertCanWrite(input.sessionId, input.filePath, input.backendKind);
-    const result = await this.runtimeFilesystemBackendService.writeTextFile(
+    const result = await this.runtimeFileFreshnessService.withWriteFreshnessGuard(
       input.sessionId,
       input.filePath,
-      input.content,
+      () => this.runtimeFilesystemBackendService.writeTextFile(input.sessionId, input.filePath, input.content, input.backendKind),
       input.backendKind,
     );
-    await this.runtimeFileFreshnessService.rememberRead(input.sessionId, result.path, input.backendKind);
+    const postWriteSummary = readRuntimeFilesystemPostWriteSummary(result.postWrite, { targetPath: result.path });
     return {
       created: result.created,
       diff: result.diff,
@@ -112,18 +98,14 @@ export class WriteToolService {
         `Status: ${result.created ? 'created' : 'overwritten'}`,
         `Lines: ${result.lineCount}`,
         `Size: ${formatWriteSize(result.size)}`,
-        ...(result.diff
-          ? [
-            `Diff: +${result.diff.additions} / -${result.diff.deletions}`,
-            `Line delta: ${result.diff.beforeLineCount} -> ${result.diff.afterLineCount}`,
-          ]
-          : []),
+        ...(result.diff ? [`Diff: +${result.diff.additions} / -${result.diff.deletions}`, `Line delta: ${result.diff.beforeLineCount} -> ${result.diff.afterLineCount}`] : []),
         ...renderRuntimeFilesystemDiffLines(result.diff),
-        ...renderRuntimeFilesystemPostWriteLines(result.postWrite),
+        ...renderRuntimeFilesystemPostWriteLines(result.postWrite, { targetPath: result.path }),
         '</write_result>',
       ].join('\n'),
       path: result.path,
       postWrite: result.postWrite,
+      postWriteSummary,
       size: result.size,
     };
   }
@@ -131,27 +113,20 @@ export class WriteToolService {
   readRuntimeAccess(input: WriteToolInput): RuntimeToolAccessRequest {
     return {
       backendKind: input.backendKind,
-      metadata: {
-        filePath: input.filePath,
-      },
+      metadata: { filePath: input.filePath },
       requiredOperations: ['file.write'],
       role: 'filesystem',
       summary: `写入路径 ${input.filePath}`,
     };
   }
 
-  toModelOutput: NonNullable<Tool['toModelOutput']> = ({ output }) => ({
-    type: 'text',
-    value: (output as WriteToolResult).output,
-  });
+  toModelOutput: NonNullable<Tool['toModelOutput']> = ({ output }) => ({ type: 'text', value: (output as WriteToolResult).output });
 }
 
 function formatWriteSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return bytes < 1024
+    ? `${bytes} B`
+    : bytes < 1024 * 1024
+      ? `${(bytes / 1024).toFixed(1)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

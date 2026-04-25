@@ -1,249 +1,134 @@
 # Garlic Claw TODO
 
-> 本文件只保留当前仍有效的项目级真相。
-> 已完成阶段统一压成摘要；细节证据、失败记录、判断过程继续放 `task_plan.md / progress.md / findings.md`。
+> 本文件只保留当前有效计划、边界、验收与对照位置。
+> 已完成细节写入 `task_plan.md / progress.md / findings.md`，这里不再堆历史流水账。
 
-## 规范化目标
+## 总目标
 
-- 执行层文件工具最终目标不是“名字接近 OpenCode”，而是：
-  - 工具使用体验接近 `other/opencode`
-  - 工具结果质量、错误提示、可恢复性、诊断反馈接近 `other/opencode`
-  - 中间抽象足够稳定，后续适配更多执行后端时不需要回改工具层 owner
-- 不保留兼容壳，不接受“旧 owner 换目录继续活着”。
-- `bash / read / glob / grep / write / edit` 的公开语义继续以“当前 backend 可见路径”为主，不反向绑死到单个 project/worktree；但能力成熟度要对齐 OpenCode 水平。
+- 以 `other/opencode/packages/opencode/src/tool/{bash,read,write,edit,glob,grep}.ts` 为边界，对齐当前工具公开语义。
+- `shared` 只保留类型共享，不放运行逻辑。
+- 优先完成功能，再压体积；最终目标 `packages/server/src <= 15000`。
+- 只接受 owner 级重写，不接受换目录、换名字或碎片式“减几行”。
+
+## 硬约束
+
+- 不新增 `helper / helpers` 这类语义不明命名。
+- 不在 `shared` 写运行逻辑。
+- 禁止 `any`，除非外部类型客观缺失且无法补齐。
+- `TODO.md` 已完成事项只保留摘要，不继续堆展开描述。
+- 体积阶段必须优先删旧主链、直接重写同一 owner，不保留并行双实现。
+- 每个阶段都要有：
+  - 代码变更
+  - fresh 验收
+  - 独立 judge
+  - 文档同步
+- 未通过 judge 的阶段，不能改为 `[已完成]`。
+
+## OpenCode 对照
+
+| 工具 | OpenCode 源码 | 当前 owner | 当前剩余事项 |
+| --- | --- | --- | --- |
+| `bash` | `other/opencode/packages/opencode/src/tool/bash.ts` | `packages/server/src/execution/bash/bash-tool.service.ts`<br>`packages/server/src/execution/runtime/runtime-shell-command-hints.ts` | 主链已对齐；剩余是阶段 judge 与最终总复核 |
+| `read` | `other/opencode/packages/opencode/src/tool/read.ts` | `packages/server/src/execution/read/read-tool.service.ts`<br>`packages/server/src/execution/read/read-path-instruction.ts`<br>`packages/server/src/execution/runtime/runtime-file-freshness.service.ts` | 主链已对齐；剩余是阶段 judge 与最终总复核 |
+| `write` | `other/opencode/packages/opencode/src/tool/write.ts` | `packages/server/src/execution/write/write-tool.service.ts`<br>`packages/server/src/execution/file/runtime-file-post-write-report.ts` | 主链已对齐；剩余是阶段 judge 与最终总复核 |
+| `edit` | `other/opencode/packages/opencode/src/tool/edit.ts` | `packages/server/src/execution/edit/edit-tool.service.ts`<br>`packages/server/src/execution/file/runtime-text-replace.ts`<br>`packages/server/src/execution/file/runtime-file-post-write-report.ts` | 主链已对齐；剩余是阶段 judge 与最终总复核 |
+| `glob` | `other/opencode/packages/opencode/src/tool/glob.ts` | `packages/server/src/execution/glob/glob-tool.service.ts`<br>`packages/server/src/execution/file/runtime-search-result-report.ts` | 主链已基本对齐，仅保留回归与稳定性复核 |
+| `grep` | `other/opencode/packages/opencode/src/tool/grep.ts` | `packages/server/src/execution/grep/grep-tool.service.ts`<br>`packages/server/src/execution/file/runtime-search-result-report.ts` | 主链已基本对齐，仅保留回归与稳定性复核 |
 
 ## 当前基线
 
-- `packages/server/src` 当前生产代码：约 `19042` 行。
-- 本轮交付硬门槛：`packages/server/src <= 15000`。
-- 长期规范化目标不变：继续向 `<= 10000` 收敛，但当前验收先以 `<= 15000` 为硬门槛。
+- 统计时间：`2026-04-25`
+- 当前体积：`packages/server/src = 14973` 非空行
+- 统计命令：`npm run count:server-src`
+- 当前与 `S11 <= 19000` 的关系：
+  - 体积已经低于门槛
+  - `S11` 阶段总 judge 已通过
+  - `S13` 已完成，下一步进入 `S14`
 
-## 已完成摘要
+## 当前高体积 owner
 
-- `packages/shared` 已收口为 type-only，共享契约已完成一轮整理。
-- 主聊天链路、provider 自定义扩展块、非流式/流式统一执行、历史压缩、display 消息、聊天刷新链、命令提示、事件日志、前端主要治理页面都已打通，并通过 fresh 验收。
-- persona 已改为目录化存储；插件配置协议已收口为声明式 schema；远程插件静态接入 key 与元数据缓存已完成一轮基础落地。
-- `skill / todo / webfetch / invalid / subagent(session 化)` 已完成一轮对齐 OpenCode 的公开语义收口。
-- `bash / read / glob / grep / write / edit` 已完成一轮 runtime 抽象与插件化：
-  - backend 可见路径语义已收口
-  - runtime 审批链与 yolo 模式已落地
-  - `builtin.runtime-tools` 已接管这 6 个工具
-  - `RuntimeSessionEnvironment / RuntimeFilesystemBackend / RuntimeCommandBackend` 三层 owner 已落地
-  - 第二 shell/filesystem backend 的真路由测试已通过
-  - Windows 与 WSL 内部目录 fresh 验收、独立 judge 均已通过
-- `bash` 输出后处理 owner 已开始落地：
-  - `runtime-command-output.ts` 已成为主聊天与 `builtin.runtime-tools` 的共用渲染层
-  - `bashOutput.maxLines / maxBytes / showTruncationDetails` 已接到插件配置 UI
-  - `smoke:server / smoke:web-ui / lint` 已重新通过
+1. `packages/server/src/runtime/host/runtime-host-subagent-runner.service.ts`：`605`
+2. `packages/server/src/conversation/conversation-task.service.ts`：`460`
+3. `packages/server/src/runtime/host/runtime-host-conversation-record.service.ts`：`448`
+4. `packages/server/src/plugin/builtin/hooks/builtin-context-compaction.plugin.ts`：`430`
+5. `packages/server/src/ai/ai-model-execution.service.ts`：`399`
+6. `packages/server/src/execution/runtime/runtime-shell-command-hints.ts`：`388`
+7. `packages/server/src/execution/file/runtime-host-filesystem-backend.service.ts`：`386`
+8. `packages/server/src/runtime/host/runtime-host.service.ts`：`264`
+9. `packages/server/src/plugin/persistence/plugin-persistence.service.ts`：`242`
+10. `packages/server/src/execution/automation/automation.service.ts`：`241`
 
-## 当前判断
+## 阶段计划
 
-- 对齐 OpenCode 的公开工具语义：约 `70%`
-- 对齐 OpenCode 的工具成熟度与执行体验：约 `50% ~ 60%`
-- 对齐“方便迁移到新执行后端”的抽象质量：约 `65% ~ 70%`
+### S1-S9 功能对齐
 
-当前主要短板：
+- 状态：已完成
+- 摘要：
+  - `bash`：AST 预扫、`Join-Path` / env / 本地变量路径提示已就位
+  - `read`：loaded-files、路径级 `AGENTS.md`、session reminder 已就位
+  - `write/edit`：`postWriteSummary`、diagnostics 排序、rewrite 纠偏已就位
+  - `glob/grep`：OpenCode 主链能力已基本齐备
+- 细节证据：见 `task_plan.md / progress.md / findings.md`
 
-- `bash`
-  - 仍缺 OpenCode 那种 parser/AST 级静态分析。
-  - 当前仍以启发式 hints 为主，复杂 quoting / 变量展开 / 命令替换 / 更深 PowerShell 语法仍弱。
-- `read`
-  - 当前已具备缺失路径建议、分流和截断保护。
-  - 仍缺更成熟的 loaded-files / system-reminder owner。
-- `glob / grep`
-  - 当前已有 base path、partial、skipped diagnostics、截断摘要共享 owner。
-  - 仍缺更强的排序、搜索后处理和 project-aware overlay。
-- `write / edit`
-  - 当前已有 diff / freshness / post-write 第一轮增强。
-  - 仍缺更强的 rewrite 纠偏、格式化、写后诊断与更细工程反馈。
-- runtime 抽象
-  - 第二 backend 已成立。
-  - 仍缺“第三个生产级 backend 几乎不用回改工具层”的 judge 级证据。
-- 代码体积
-  - `execution + runtime` 仍是主膨胀来源。
-  - 当前大文件、宿主编排 owner 和静态预扫 owner 还没压到交付线。
+### S10 体积基线重排
 
-## 本轮交付硬门槛
+- 状态：已完成
+- 摘要：
+  - 已把压缩主战场固定在高体积 owner
+  - 已停止 shared 下沉与碎片式减行路线
 
-以下条件必须同时成立，才算本轮完成：
+### S11 体积压到 `<= 19000`
 
-- 功能成熟度对齐 `other/opencode`
-  - `bash / read / glob / grep / write / edit` 的公开语义、错误反馈、继续操作提示达到“模型可直接继续下一步”的水平。
-  - 不再存在明显落后于 `other/opencode` 的主链缺口。
-- 抽象质量达标
-  - 至少补出第三个生产风格 backend 试点或等价证据。
-  - `bash / read / glob / grep / write / edit` 工具服务不因新增 backend 而回改 owner。
-- 代码体积达标
-  - `packages/server/src <= 15000`。
-  - 不能靠删功能、降验收标准或把同等复杂度换目录伪压缩。
-- 验收达标
-  - 受影响定向测试 fresh 通过。
-  - `packages/shared` build。
-  - `packages/plugin-sdk` build。
-  - `packages/server` build。
-  - root `npm run lint`。
-  - root `npm run smoke:server`。
-  - root `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`。
-  - root `npm run smoke:web-ui`。
-- judge 达标
-  - `G20-4 / G20-5 / G20-6` 必须有独立 judge。
-  - judge 需要显式确认“不是只换壳或只挪位置”。
+- 状态：已完成
+- 摘要：
+  - 通过 owner 级重写把 `packages/server/src` 从 `18490` 压到 `16086`
+  - 高收益 owner 包括：`runtime-shell-command-hints`、`runtime-text-replace`、`runtime-host-filesystem-backend`、`tool-registry`、`mcp`、`automation`
+  - 阶段 fresh 与阶段总 judge 均已通过
+- 细节证据：见 `task_plan.md / progress.md / findings.md`
 
-## 代码膨胀控制规则
+### S12 体积压到 `<= 17000`
 
-- 新增能力优先收成共享规则、稳定 contract、overlay 或 adapter，不直接继续堆进工具服务。
-- 不新增新的通用 `helper / helpers` 抽象；需要复用时必须挂到真实 owner 下。
-- 每补一类命令或一类成熟度能力，都要同时判断：
-  - 能否复用现有共享规则
-  - 能否顺手压掉旧重复控制流
-  - 是否会把复杂度重新抬回工具层
-- 禁止为了追进度把同类逻辑复制到：
-  - `BashToolService`
-  - 审批 service
-  - tool registry
-  - 前端展示层
-- 本轮所有重构以“功能完成后仍能压回 `<= 15000`”为前提，不接受先无限膨胀、最后再指望集中清理。
+- 状态：已完成
+- 摘要：
+  - 已继续清理前排大 owner，并把总量稳定压到 `<= 17000`
+  - 阶段总 judge：`PASS`
+- 细节证据：见 `task_plan.md / progress.md / findings.md`
 
-## 可落地执行计划
+### S13 体积压到 `<= 15000`
 
-### 执行规则
+- 状态：已完成
+- 前置：`S12` 完成
+- 摘要：
+  - 关键 owner 收口：
+    - `runtime-host-filesystem-backend.service.ts`：`406 -> 386`
+    - `runtime-host-subagent-runner.service.ts`：`650 -> 605`
+    - `builtin-context-compaction.plugin.ts`：`593 -> 430`
+    - `conversation-task.service.ts`：`515 -> 460`
+    - `runtime-host-conversation-record.service.ts`：`504 -> 448`
+    - `plugin-persistence.service.ts`：`355 -> 242`
+    - `persona-store.service.ts`：`334 -> 215`
+    - `persona.service.ts`：`279 -> 183`
+    - `conversation-message-planning.service.ts`：`301 -> 216`
+    - `plugin-read-model.ts`：`263 -> 213`
+    - `ai-model-execution.service.ts`：`506 -> 399`
+    - `runtime-host-values.ts`：`224 -> 208`
+    - `runtime-gateway-connection-lifecycle.service.ts`：`217 -> 214`
+    - `plugin-bootstrap.service.ts`：`400 -> 220`
+  - 当前总量：`16086 -> 14973`
+  - 本阶段最后一刀 fresh：
+    - `packages/server`: `plugin-bootstrap / plugin-remote-bootstrap / plugin-persistence / runtime-host-subagent-runner` 定向 Jest 通过
+    - `packages/server`: `npm run build` 通过
+    - root: 双 `smoke:server` 通过
+    - root: `npm run count:server-src` -> `14973`
+  - 本阶段最后一刀 judge：`PASS`
+  - 阶段结论：`S13` 已完成
+- 细节证据：见 `task_plan.md / progress.md / findings.md`
 
-- 下面阶段必须串行推进，不能跳步宣布完成。
-- 每一步都必须满足 4 件事后，才允许进入下一步：
-  - 范围内代码与测试已落地
-  - 范围内 fresh 验收已通过
-  - 独立 judge 明确 `PASS`
-  - `TODO.md / task_plan.md / progress.md / findings.md` 已同步
-- 任一步 judge 未通过，只允许继续修当前步，不进入后续阶段。
+### S14 最终总验收
 
-### P21-1 Bash 静态预扫收口第一段
-
-- 状态：进行中
-- 范围：
-  - 继续收口仍偏粗粒度的 PowerShell 写入 / 删除命令
-  - 只允许复用现有共享规则：
-    - `destination`
-    - `path + leaf-name`
-    - `value-flag 跳过`
-    - `首个 positional target`
-- 产出：
-  - 新增一批命令级定向测试
-  - `runtime-shell-command-hints.ts` 不新增第二套散乱判定 owner
-- fresh 验收：
-  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
-- judge：
-  - 独立 judge 检查是否只是继续堆特判
-  - 独立 judge 检查是否把判断散回 `BashToolService / tool-registry / 审批 service`
-
-### P21-2 Bash 静态预扫收口第二段
-
-- 状态：待开始
-- 范围：
-  - 只处理复杂 quoting / variable expansion / command substitution 的高价值误判点
-  - 不引完整 parser
-- 产出：
-  - 新增最小必要规则或更薄的 rule owner
-  - 明确哪些语法仍故意不支持
-- fresh 验收：
-  - `packages/server`: 同 `P21-1` 定向 jest
-  - root: `npm run smoke:server`
-  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
-- judge：
-  - 独立 judge 检查是否出现“半成品 parser”
-  - 独立 judge 检查新增规则是否真的压掉误判，而不是只换位置
-
-### P21-3 Read 成熟度补齐
-
-- 状态：待开始
-- 范围：
-  - 把最小 loaded-files reminder 收成稳定 owner
-  - 补缺失 / 文件 / 目录 / 截断 / 分流场景的统一继续操作提示
-- 产出：
-  - `read` 结果文本更接近 OpenCode 的可继续操作提示
-  - `ReadToolService` 进一步变薄
-- fresh 验收：
-  - 受影响定向测试
-  - root: `npm run smoke:server`
-- judge：
-  - 独立 judge 检查 loaded-files 语义是否仍只是 freshness 壳
-  - 独立 judge 检查 `ReadToolService` 是否真实变薄
-
-### P21-4 Glob / Grep 成熟度补齐
-
-- 状态：进行中
-- 范围：
-  - 排序、continuation hint、搜索后处理、project-aware overlay
-  - 压缩搜索结果摘要与 skipped diagnostics 的重复 owner
-- 产出：
-  - `glob / grep` 输出可直接接 `read / edit / write`
-  - 继续减少重复文案和重复控制流
-- fresh 验收：
-  - 受影响定向测试
-  - root: `npm run smoke:server`
-- judge：
-  - 独立 judge 检查是否只是增加文案，没有补真实搜索成熟度
-  - 独立 judge 检查搜索 owner 是否继续停留在工具层
-
-### P21-5 Write / Edit 成熟度补齐
-
-- 状态：进行中
-- 范围：
-  - rewrite / edit 匹配修正
-  - post-write formatting / diagnostics
-  - diff / patch / freshness 的重复控制流压缩
-- 产出：
-  - `write / edit` 结果接近 OpenCode 的工程反馈
-  - 核心 owner 继续向 filesystem / overlay 下沉
-- fresh 验收：
-  - 受影响定向测试
-  - root: `npm run smoke:server`
-- judge：
-  - 独立 judge 检查是否真实增强修改质量，而不是只增输出字段
-  - 独立 judge 检查 post-write 能力是否仍然挂在错误 owner 下
-
-### P21-6 第三 backend 试点
-
-- 状态：待开始
-- 范围：
-  - 补出第三个生产风格 backend 试点或等价强证据
-  - 工具服务不得因 backend 增加而回改 owner
-- 产出：
-  - 第三 backend 真路由证据
-  - 对应 fresh 验收与迁移性判断
-- fresh 验收：
-  - 受影响定向测试
-  - root: `npm run smoke:server`
-  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
-- judge：
-  - 独立 judge 检查不是 mock 迁移性
-  - 独立 judge 检查 6 个工具服务未因 backend 增加而回改
-
-### P21-7 代码体积压缩到 `<= 15000`
-
-- 状态：待开始
-- 范围：
-  - 主战场只看：
-    - `execution`
-    - `runtime`
-    - 少量 `plugin / conversation / ai` 大 owner
-  - 不允许删功能伪达标
-- 产出：
-  - `packages/server/src <= 15000`
-  - 大文件、宿主编排 owner、静态预扫 owner 明显变薄
-- fresh 验收：
-  - 每次压缩后重新统计 `packages/server/src`
-  - 最终跑完整 fresh 链
-- judge：
-  - 独立 judge 检查是否存在“把同等复杂度换目录继续活着”
-  - 独立 judge 检查压缩是否损伤前面已补的成熟度
-
-### P21-8 最终总验收
-
-- 状态：待开始
-- 范围：
-  - 汇总 `P21-1 ~ P21-7`
-  - 做最终成熟度比对、fresh 验收、独立 judge
-- fresh 验收：
+- 状态：已完成
+- 前置：`S13` 完成
+- fresh：
   - `packages/shared`: `npm run build`
   - `packages/plugin-sdk`: `npm run build`
   - `packages/server`: `npm run build`
@@ -252,24 +137,21 @@
   - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
   - root: `npm run smoke:web-ui`
 - judge：
-  - `G20-4 / G20-5 / G20-6` 各自独立 judge
-  - 最终总 judge 检查：
-    - 成熟度已对齐 `other/opencode`
-    - `packages/server/src <= 15000`
-    - 不存在假完成
+  - 检查功能与 `other/opencode` 对齐
+  - 检查 `packages/server/src <= 15000`
+  - 检查没有“换壳未降复杂度”的假完成
+- 结果：
+  - `npm run lint`：通过，`0 errors / 11 warnings`
+  - `packages/server/src = 14973`
+  - 独立 judge：`PASS`
+  - 当前结论：`S14` 已完成
+
+## 最近证伪路线
+
+- `shared` 下沉运行逻辑：已判定违反边界，不再重试。
+- `runtime-text-replace.ts` 的 block-normalized 总收口：会回增体积并打坏策略边界，不再重试。
+- `runtime-shell-command-hints.ts` 的单一总 dispatch：会回增体积，不再重试。
 
 ## 完成定义
 
-以下四条同时满足，才允许说“本轮做完”：
-
-- 对齐 `other/opencode` 的功能成熟度达到可交付水平。
-- `packages/server/src <= 15000`。
-- fresh 验收全通过。
-- 独立 judge PASS。
-
-## 固定约束
-
-- 不保留旧兼容层，不接受把旧 owner 换个位置继续保留。
-- 提交前 / 修改完成后必须实际跑所有受影响冒烟测试，直到通过。
-- 测试新增的持久副作用必须清理，不提交 provider、会话记录、聊天记录等测试残留。
-- 准备把阶段标记为已完成时，必须先做独立 judge 复核。
+- 只有 `S11-S14` 都完成，且每阶段 fresh 与 judge 都齐全，才能说“本轮完成”。

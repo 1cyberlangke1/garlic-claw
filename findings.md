@@ -1,5 +1,1043 @@
 # Findings
 
+## 2026-04-25
+
+- `S14` 最终通过后，一个边界已经固定：
+  - `<=15000` 必须在原 lint 约束下成立
+  - 这次最终可过线，是因为 `curly: all` 已恢复且 lint 真通过，不再存在“靠放松规则过线”的争议
+- 这也确认了当前收尾判断：
+  - `bash / read / write / edit / glob / grep` 公开语义在现有 fresh 范围内可接受
+  - `S11-S14` 的 fresh 与独立 judge 已补齐
+  - 当前可以按“本轮完成”采信
+
+- `S14` 总 judge 这次给出的否决点很明确：
+  - judge 不否认当前工具语义和 owner 收口
+  - judge 否认的是“通过放宽 `curly` 规则维持 `<=15000`”这种过线方式
+  - 也就是说，接下来的减量必须在 `curly: all` 仍成立的条件下完成，不能再用 lint 收敛放松换行数
+- 这也把后续边界钉得更死：
+  - `S13` 的 owner 级收口已成立，不需要回滚
+  - `S14` 的剩余工作不再是功能对齐，而是“在原 lint 约束下继续删旧主链，给真实行数留下余量”
+
+- `plugin-bootstrap.service.ts` 这一步说明，plugin bootstrap 域里最后一段明显重复，不在 public API 数量，而在“远端注册和 manifest/config reader 各自维护一段重复拼装”：
+  - `upsertRemotePlugin` 原先自己带一段 remote registration 组装
+  - `normalizePluginManifest` 原先手动逐段塞 description/commands/crons/hooks/routes/config/remote
+  - `readConfigNode` 又平铺一套 shared/condition/options/list/object 分支
+  - 把这些链收成 `normalizeRemotePluginInput -> createRemotePluginRegistration -> registerPlugin` 与统一字段赋值后，judge 认可这是 owner 级真实收口
+- 这轮也再次钉住边界：
+  - `registerPlugin / upsertRemotePlugin / bootstrapBuiltins / normalizePluginManifest / readConfigNode / readRemoteDescriptor / normalizeRemoteRecord` 仍必须留在 `plugin-bootstrap` owner
+  - 不能把 manifest/config/remote 解释权散到 `plugin-persistence`、controller 或 `shared`
+  - `shared` 继续只保留类型；plugin bootstrap 的运行时解释权仍属于 server owner
+- 这轮 judge 也把 `S13` 结题条件钉实了：
+  - 不是只看数字过线
+  - 要同时确认最后一刀不是“物理压行假完成”
+  - 当最后一刀 owner 级收口成立，且 `npm run build`、双 `smoke:server`、`count:server-src -> 14973` 全部 fresh 通过后，`S13` 才能改成已完成
+
+- `builtin-context-compaction.plugin.ts` 这一步说明，context-compaction 域里最值的膨胀不在命令入口数量，而在“历史视图、annotation 扫描、summary 插入、marker 同步分散成平行链”：
+  - history visible/model view
+  - summary insert index
+  - covered annotation / marker sync
+  - history rewrite / before-model / route run
+  - 如果这些链并排存在，插件 owner 会一直被状态转换和 annotation 壳撑大
+  - 收成 `ContextCompactionHistoryState / runContextCompactionForCall / applyContextCompaction / finalizeContextCompactionMessages` 后，judge 认可这是 owner 级真实收口
+- 这轮也再次钉住边界：
+  - `/compact` 与 `/compress`、auto-stop、before-model mutate、summary/covered annotation、route `context-compaction/run`，仍必须留在 `builtin-context-compaction` owner
+  - 不能把 summary/covered annotation 解释权散到 shared、conversation lifecycle 或别的 plugin owner
+
+- `ai-model-execution.service.ts` 这一步说明，AI 执行域里还有一类稳定膨胀，不在 provider driver 数量，而在“三条入口各自维护 fallback + tool 选项 + 结果归约”：
+  - `generate`
+  - `stream`
+  - `stream-collect`
+  - 如果三条链继续平铺，各自维护 target fallback、tool repair、usage/custom block 组装，owner 会一直被重复执行壳撑大
+  - 收成 `runAcrossTargets / runAcrossTargetsSync / buildToolExecutionOptions / readGeneratedTextResult / readCollectedStreamResult` 后，judge 认可这是 owner 级真实收口
+- 这轮也再次钉住边界：
+  - `generate/stream/stream-collect` fallback、tool repair、custom blocks、usage 估算、openai-compatible SSE normalize，仍必须留在 `ai-model-execution` owner
+  - 不能把结果归约散到 `runtime-host` 或 conversation service，也不该把 SSE normalize 推去 adapter 层
+
+- `runtime-host-values.ts` 这一步说明，host values 域里还有一类低风险重复，不在公开方法数量，而在“assistant raw/message 两条链并排解析同一结构”：
+  - raw stream delta
+  - response body message
+  - 如果两条 reader 继续并排维护已知字段过滤、text/json 分流，文件会被重复解析壳撑大
+  - 收成 `readAssistantCustomBlocks` 后，judge 认可这是 owner 级真实收口，不是只把条件判断换位置
+- 这轮也继续钉住边界：
+  - assistant custom block 解析、tool-error 转 invalid result、plugin llm messages 校验，仍必须留在 `runtime-host-values` owner
+  - 不能把这些 reader 散到 `ai-model-execution` 或 task service
+
+- `runtime-gateway-connection-lifecycle.service.ts` 这一步说明，gateway 连接域的膨胀点，不在 API 数量，而在“连接状态与 plugin offline 标记多处重复拼装”：
+  - authenticate
+  - register before auth check
+  - disconnect/offline
+  - heartbeat
+  - 如果这些链各自维护一套 connection/pluginId/offline 处理，文件会被连接状态壳撑大
+  - 收成 `disconnectPreviousPluginConnection / requireAuthenticatedPluginConnection / markPluginOffline` 后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `authenticate/register/disconnect/heartbeat` 与 remote auth mode 的 `none / optional / required` 解释权，仍必须留在 `runtime-gateway-connection-lifecycle` owner
+  - 不能把 offline 标记散到 bootstrap/persistence，也不该把连接鉴权拆到 controller
+
+- `runtime-host-subagent-runner.service.ts` 这一步说明，subagent 域里继续能压的不是 stream 执行本身，而是“session 与 subagent 两边各写一套请求快照”：
+  - session restore
+  - request envelope merge
+  - session request 回写
+  - session snapshot 写回 subagent
+  - 这些链如果并排存在，恢复后台子代理与 resume session 会一直被重复装配撑大
+  - 收成 `mergeSubagentRequests / writeSubagentSessionRequest / writeSubagentSessionSnapshot` 后，judge 认可这是 owner 级收口，不是换壳
+- 这轮也再次钉住边界：
+  - `run/start/resume`、background 执行、write-back revision 校验、subagent type 默认值补齐、hook before/after-run，仍必须留在 `runtime-host-subagent-runner` owner
+  - 不能把 session/request 装配散到 store service，也不该推给 `shared`
+
+- `plugin-bootstrap.service.ts` 这一步说明，plugin bootstrap 域里还有一类膨胀，不在 public API 数量，而在“manifest/config/remote 各自带一组 reader 小壳”：
+  - remote input normalize
+  - config node base fields
+  - renderType/defaultValue/文本字段/布尔字段 reader
+  - 如果这些 reader 平行堆开，bootstrap owner 会被解析壳撑大
+  - 收成更短的 config node base reader 后，judge 认可这是 owner 级真实收口
+- 这轮也继续钉住边界：
+  - `registerPlugin / upsertRemotePlugin / normalizePluginManifest / readConfigNode / normalizeRemoteRecord` 仍必须留在 `plugin-bootstrap` owner
+  - 不能把 manifest/config/remote 解释权散到 controller、persistence 或 `shared`
+
+- `runtime-host.service.ts` 这一步说明，host facade 域里一类稳定膨胀，不在 host API 数量，而在“同形 dispatch 一组组并排写开”：
+  - `state/storage`
+  - `runtime tool`
+  - `llm`
+  - 如果这些入口都各自保留一份 `read input -> call service -> asJsonValue` 壳，facade 会被重复映射撑大
+  - 收成表驱动和统一 reader 后，judge 认可这是 owner 级收口，不是只把 lambda 换位置
+- 这轮也再次钉住边界：
+  - `call -> permission -> activePersona remember -> handler`、`llm.generate / llm.generate-text` 返回结构、`metadata.customBlocks` 组装，仍必须留在 `runtime-host` owner
+  - 不能把 host method dispatch 下沉到 `shared`，也不该把 llm 返回拼装散去 `ai-model-execution` 或 controller
+  - `runtime-host` 负责 host API 门面与返回口径，这条边界这轮没有被打散
+
+- `plugin-read-model.ts` 这一步说明，plugin 读模型域另一类膨胀，不在公开函数数量，而在“同一份 record 被多次手拼投影”：
+  - remote snapshot
+  - plugin self capability
+  - command conflict entry
+  - config snapshot resolve
+  - 如果这些投影都各自保留一段 clone/sort/map 壳，读模型 owner 会被重复投影撑大
+- 这轮也继续钉住边界：
+  - `plugin self summary`、`command overview/version`、`config snapshot`、`remote snapshot` 的解释权仍必须留在 `plugin-read-model` owner
+  - 不能把这些读模型解释散到 controller、governance 或 `shared`
+  - `shared` 继续只保留类型；plugin 读模型语义仍属于 server owner
+
+- `conversation-message-planning.service.ts` 这一步说明，conversation planning 域里一类重复，不在 hook 名字多少，而在“每条链都重复拼 context / payload / short-circuit 分支”：
+  - `message:received`
+  - `conversation:history-rewrite`
+  - `chat:before-model`
+  - `chat:after-model`
+  - `response:before-send`
+  - `response:after-send`
+  - 如果这些链都各自带一套 context/payload 拼装和 mutation 读取，文件会被重复编排撑大
+- 这轮也继续钉住边界：
+  - persona beginDialogs/prompt/toolNames 注入、before-model short-circuit、slash command short-circuit、display result metadata，仍必须留在 `conversation-message-planning` owner
+  - 不能把 hook 语义散到 lifecycle 或 `shared`，也不该把 `response:after-send` 推回 task service
+  - lifecycle 负责编排任务与消息落库，planning 负责 hook 级模型前后规划，这条边界这轮没有被打散
+- judge 对这类 owner 的验收点也更清楚了：
+  - 不只看 `runConversationHistoryRewrite / applyBeforeModel / applyAssistantMutation` 是否把名字压短
+  - 要看 history rewrite 顺序、persona 注入、before-model short-circuit、after-model/before-send 链和 display result 标记是否还成立
+  - 这类 owner 适合整文件重写并带上 lifecycle/task/record/smoke 一起复核
+
+- `persona.service.ts` 这一步说明，persona 域里另一类重复，不在文件 I/O，而在“当前人格解析 + create/update/delete 的默认人格归一化”：
+  - `readCurrentPersona`
+  - `createPersona`
+  - `updatePersona`
+  - `deletePersona`
+  - 如果这些入口都各自维护一套 persona 组装、default fallback、回读校验，service 会被重复状态流撑大
+- 这轮也继续钉住边界：
+  - `context / conversation / default` 的 source 判定、delete 后 conversation activePersona 回退、avatar path 的存在性校验，仍必须留在 `persona-service` owner
+  - 不能把当前人格解析散到 `runtime-host`，也不该把 delete 回退逻辑推给 store
+  - store 负责文件结构，service 负责 persona 语义决策，这条边界这轮没有被打散
+- judge 对这类 owner 的验收点也更清楚了：
+  - 不只看 `createStoredPersona / updateStoredPersona / toCurrentPersona` 是否把名字换短
+  - 要看 default persona 归一化、source 判定、BadRequest/NotFound、delete 后 conversation 回退是否还成立
+  - 这类 owner 适合整文件重写并带上 `runtime-host / tool-registry / smoke` 一起复核
+
+- `persona-store.service.ts` 这一步说明，persona 域里一个典型膨胀源，不在 API 数量，而在“模板文本 + load/persist + normalize”三组链被平铺展开：
+  - 默认人格 seed
+  - legacy `meta.json` / 新 `meta.yaml` 兼容
+  - avatar 自动识别
+  - `meta.yaml` 注释模板生成
+  - 这些链如果拆成很多小函数和平铺模板，文件会被样板和兼容壳撑大
+- 这轮也再次钉住边界：
+  - persona storage root、meta 读写、default persona 补回、avatar 文件识别、legacy meta 清理，都仍必须留在 `persona-store` owner
+  - 不能把 meta 生成推给 `persona.service`，也不该把默认人格补回散到 `runtime-host` 或 `tool-registry`
+  - `shared` 继续只保留类型；persona 文件结构解释权仍属于 server owner
+- judge 对这类 owner 的验收点也更清楚了：
+  - 不只看 `PERSONA_META_LAYOUT` 是否把模板压短
+  - 要看 `meta.yaml` 仍不含 avatar、legacy `meta.json` 仍可读且会被清、default root 解析仍稳定
+  - 这类 owner 适合整文件重写并带上 `runtime-host / tool-registry / smoke` 一起复核
+
+- `plugin-persistence.service.ts` 这一步说明，plugin 域里一类很值的膨胀，不在 remote/local 分支本身，而在“每个更新入口都自带一套时间戳和写回链”：
+  - `setConnectionState / touchHeartbeat / updatePluginConfig / updatePluginScope / updatePluginLlmPreference / updatePluginEventLog`
+  - 如果这些入口都各自维护 `read record -> mutate -> updatedAt -> persist`，文件会被重复 owner 撑大
+  - 收成同一条 update/write 主链后，judge 才会认定这是 owner 级收紧，不是只把语句内联
+- 这轮也再次钉住一个边界：
+  - config schema 校验、remote descriptor/access/metadata normalize、disabled event fallback 仍必须留在 `plugin-persistence` owner
+  - 不能把 remote normalize 推给 `plugin-bootstrap`，也不该把 config validate 散到 controller 或 `shared`
+  - `shared` 继续只保留类型；plugin record 的持久化解释权仍属于 server owner
+- judge 对这类 owner 的验收重点也更清楚了：
+  - 不只看 `updatePlugin` 是否存在
+  - 要看 object/list/nested config 校验、remote bootstrap 依赖链、subagent runner 读 record 链是否都还成立
+  - 这一类 owner 适合整文件重写后配 bootstrap/runner/smoke 一起验
+
+- `runtime-host-conversation-record.service.ts` 这一步说明，host conversation 域里真正撑大文件的不是 public API 数量，而是四组平行 owner：
+  - storage load/save
+  - conversation mutate/revision bump
+  - plugin conversation session get/start/keep
+  - history normalize / metadata parse
+  - 这些链如果分散存在，新增一个字段就会同步改多处；收成同一组读写入口后，judge 才会认可这是 owner 级收紧
+- 这轮也把边界钉得更清楚：
+  - conversation 的持久化、revision、todo、runtimePermission、history rewrite、session timeout 仍必须留在 `runtime-host-conversation-record` owner
+  - 不能把 history metadata 解析拆去 `shared`，也不该回推到 controller / lifecycle service
+  - `shared` 继续只保留类型；状态解释与持久化顺序仍属于 server owner
+- 这轮 judge 的关注点也很明确：
+  - 不只看 `readStoredConversations / persistConversations / writeConversation / readConversationSession` 这些名字是否变短
+  - 要看 legacy 清理、workspace 删除、display preview、revision conflict、session keep timeout 是否都还成立
+  - 这一类 owner 更适合整文件重写并用真实 smoke 兜住，而不是继续在旧函数间挤小改
+
+- `conversation-task.service.ts` 这一步说明，conversation 域还有一类高收益冗余，不在功能分支数量，而在“终态收尾链”：
+  - `complete / finish / persist` 如果并排存在，停止、错误、完成三条链会重复写消息、重复发事件、重复带状态
+  - 收成 `finalizeTask + writeTaskMessage + terminal events` 后，judge 认可这是主链收口，不是换名
+  - 这类 owner 更适合整文件重写，而不是继续删单个小函数
+- 这轮也进一步钉住边界：
+  - permission request/resolution 前转、stream consume、custom block 更新、patched completion 写回，都仍应留在 `conversation-task` owner
+  - 不该把这些状态流拆去 `shared`、controller 或 runtime host message service
+  - `shared` 继续只保留类型；事件解释和写回顺序仍属于 server owner
+
+- `plugin-bootstrap.service.ts` 这一步说明，plugin 域还有一类很值的体积，不在“业务动作”，而在 manifest reader 的重复字面量判定：
+  - `registerPlugin / upsertRemotePlugin / builtin bootstrap` 真正依赖的只是同一套 manifest/remote/config reader
+  - 当 remote 注册分支自己再展开一套 fallback/manifest/metadata cache，文件会被壳逻辑撑大
+  - 收成 `createRemotePluginRegistration + readLiteral + 字段 reader` 后，judge 认可这是 owner 收短，不是换写法
+- 这轮也再次钉住一个边界：
+  - plugin manifest 的 normalize、remote descriptor 解析、config schema 读取仍必须留在 `plugin-bootstrap` owner
+  - 它们不能下沉到 `shared`，也不该散到 controller / runtime gateway / persistence
+  - `shared` 只保留类型，运行时解释权仍在 server owner
+
+- `builtin-context-compaction.plugin.ts` 这一步再次证明，真正值得压的不是命令入口数量，而是“同一段历史被扫几次”：
+  - `history view / model preview / annotation scan / covered-count / insert-index` 如果分别留在多组函数里，文件会一直被相同状态转换撑大
+  - 把它们收进单一 `HistoryState` owner 后，manual command、route、auto rewrite、before-model 都能共用同一套视图结果
+  - 这种重写虽然本轮只减 `6` 行，但 judge 已确认属于真实主链收敛，不是换壳
+- 这轮也把一个边界钉得更清楚：
+  - `context-compaction` 的 annotation 逻辑可以在插件 owner 内集中，但不能下沉到 `shared`
+  - `shared` 只适合放类型；summary/covered 的创建、识别、marker 同步、auto-stop 仍必须跟 compaction 流程保持同域
+  - 否则会把“历史状态解释权”拆散成类型共享之外的运行逻辑残留
+- judge 对这一类 owner 的验收重点已经很明确：
+  - 不看是否只是把函数名换短
+  - 只看旧平行链是否真删、公开边界是否仍由同一 owner 驱动、fresh 与定向 spec 是否同时成立
+
+## 2026-04-24
+
+- `runtime-host-filesystem-backend.service.ts` 这一轮说明，当前还能继续压的不是功能点数量，而是 owner 里的返回壳和中转壳：
+  - symlink 这条链不需要再保留单独 mounted filesystem 包装层
+  - `glob/grep/read/write/edit` 也仍可在同一 backend owner 内压紧，而不用把控制流回推到工具层
+  - 这类压缩虽然不大，但属于同一 owner 内的真实收口，不是换目录
+- 这轮 judge 也把一个边界钉住了：
+  - 只要 `resolve/list/read/grep/write/edit/symlink` 仍留在同一 owner，且旧并行链是真删除，这类收紧就可以计入 `S13`
+  - 不需要为了“单轮减得不够多”就把真实 owner 收口判成无效
+- `runtime-host-subagent-runner.service.ts` 这一轮也说明，`run/start/complete` 的重复不在模型执行本身，而在 store/session 装配链：
+  - 前台执行和后台续跑共用同一条 `executeStoredSubagent` 更符合真实 owner
+  - session snapshot 同步也不需要在 `completeSubagentAsync` 里保留展开写回
+  - 这类收口仍停在 `runtime/host` 域内，没有把状态写回逻辑回推到 store service 之外
+- 这轮 judge 进一步确认：
+  - `executeStoredSubagent` 不是新壳包旧链，而是真正接管了 running/completed/failed/session append/write-back 收尾
+  - `resolveSubagentInvocation` 与 session payload 这条链仍停在同一 owner，没有把 resume 复杂度重新分散出去
+
+- `S12` 阶段总 judge 通过后，当前体积阶段边界更明确了：
+  - 数字达标后仍要依赖 fresh 与独立 judge 才能改阶段状态
+  - 但阶段 judge 一旦确认基线仍有效，就不需要为了“再等等看”继续卡住状态
+  - 因此当前真实状态应是 `S12 已完成 / S13 进行中`
+
+- `S11` 阶段总 judge 通过后，一个边界也更清楚了：
+  - 数字先过线不等于阶段完成
+  - 只有在 round judge 累积足够、阶段总 judge 明确 `PASS` 后，才能把阶段从 `进行中` 改到 `已完成`
+  - 当前这一步只让 `S11` 完成，不会自动让 `S12 / S13` 完成
+- automation owner 在 judge 通过后继续压缩时，也要重新做 judge：
+  - 即使 fresh 全过，也不能默认沿用上一版 judge 结论
+  - 当前补充 judge 已确认：`automation.service.ts 299 -> 241` 与 `automation-execution.service.ts 172 -> 160` 只是安全压缩，不影响 `S11 已完成`
+
+- `automation.service.ts` 这轮说明，judge 真正在意的不是“有没有少很多行”，而是 owner 是否真的换成新主链：
+  - 只把 `serialize/find/destroy` 之类薄函数内联，judge 仍会判成旧主链原样存在
+  - 只有把状态 owner 明确收成 `readAutomationState / createAutomationRecord / createAutomationLog / readEventAutomations` 这类新主链，才算过关
+- automation 的一个真实公开语义边界是事件触发顺序：
+  - `emitEvent()` 不能复用会按 `localeCompare` 排序的列表读取
+  - 否则双位数 id 出现后，会把 `automation-10` 排到 `automation-2` 前面
+  - 这类问题如果只靠当前 smoke，不一定能被拦下，必须补专门断言
+- `automation-execution.service.ts` 这轮也确认了一个更稳的 owner 边界：
+  - service 真正的语义不是私有方法个数，而是 `plan -> prepare -> execute -> settle`
+  - 把 `before-run / action execution / after-run` 组织成明确 pipeline 后，hook short-circuit、after-run mutate、`device_command / ai_message` 两条动作链更容易稳定约束
+- `runtime-just-bash.service.ts` 的 timeout 修复说明：
+  - 对 `just-bash` 这类执行器，稳的边界仍是独立 `executionPromise + timeoutPromise + AbortController`
+  - 当前那种“abort 时顺手清掉另一只计时器”的写法会留下 resolved 成功穿透的空间
+- `builtin-runtime-tools.plugin.ts` 这轮保持了正确 owner：
+  - 结构化数据仍由 runtime tool owner 产生
+  - plugin 只做透传，不再拼第二套 `read/write/edit` 语义
+  - 这条边界对后续继续压 execution/tool 域体积仍然重要
+
+- 这轮再次证明，execution 域里还有一组很值的 support owner，可以整批删除旧包装链后重写：
+  - `runtime-command-output.ts`
+  - `runtime-native-shell.service.ts`
+  - `project-worktree-post-write.service.ts`
+  - `webfetch-service.ts`
+  - `project-subagent-type-registry.service.ts`
+  - `skill-tool.service.ts`
+  - `skill-registry.service.ts`
+  - `mcp-stdio-launcher.ts`
+  - `mcp.service.ts`
+- 这些文件的共同点是：
+  - 很多逻辑只是 config / normalize / render / event log / launcher / runtime record 的重复包装
+  - 真正的领域能力没有那么多，长的是壳，不是核心语义
+  - 直接整文件重写，比继续挤 execution tool 本体里的小 reader 更容易形成一轮 `500+` 净减
+- 这轮量化结果：
+  - `runtime-command-output.ts`：`205 -> 159`
+  - `runtime-native-shell.service.ts`：`156 -> 127`
+  - `project-worktree-post-write.service.ts`：`256 -> 200`
+  - `webfetch-service.ts`：`200 -> 167`
+  - `project-subagent-type-registry.service.ts`：`180 -> 93`
+  - `skill-tool.service.ts`：`135 -> 125`
+  - `skill-registry.service.ts`：`228 -> 97`
+  - `mcp-stdio-launcher.ts`：`156 -> 109`
+  - `mcp.service.ts`：`244 -> 160`
+  - `packages/server/src` 非空行：`16828 -> 16305`
+  - 单轮净减：`523`
+- 这轮也说明两个稳定边界：
+  - `mcp` 的核心不是 controller 层或 tool-registry 层，而是 config store、runtime record、stdio launcher 三点；只要这三点还在同一 owner，压掉中间包装不会回退语义
+  - `skill` 的核心不是多段 discovery 包装，而是 `walk skill files + parse frontmatter + governance overlay + tool output render`；这条主链可以非常短
+- 当前新的阶段结论：
+  - 降体积不必总盯 `bash/read/write/edit` 本体
+  - execution 周边 support owner 一样能做出一轮 `500+`
+  - 下一轮仍应优先找 execution 域里“壳多于核心”的 owner
+- 这轮独立 judge 已给出 `PASS`：
+  - 认可 `runtime-command-output / native-shell / post-write / webfetch / subagent-type / skill / mcp` 这一组是真删旧主链
+  - 没发现必须立即拦下的明显语义回退
+  - 说明 support owner 这条切口已经不只是 fresh 通过，而是可持续计入 `S11`
+
+- 这轮进一步证明，execution 域里最值的切口之一是“后端分发层与工具注册层”，因为它们常常是纯包装主链：
+  - `runtime-filesystem-backend.service.ts` 原来是整页 delegate 壳
+  - `tool-registry.service.ts` 原来是整页 native tool / plugin tool / model output 包装链
+  - `glob/grep` 也保留了大量重复输入整理与输出拼装壳
+- 直接删掉这些旧主链重写后，收益明显高于继续挤工具内部小函数：
+  - `tool-registry.service.ts`：`352 -> 168`
+  - `runtime-filesystem-backend.service.ts`：`215 -> 44`
+  - `runtime-mounted-workspace-file-system.ts`：`255 -> 98`
+  - `runtime-tool-permission.service.ts`：`241 -> 112`
+  - `runtime-filesystem-backend.types.ts`：`189 -> 46`
+  - `glob-tool.service.ts`：`167 -> 49`
+  - `grep-tool.service.ts`：`167 -> 70`
+- 这轮累计效果：
+  - `packages/server/src` 非空行 `17798 -> 16828`
+  - 单轮净减 `970`
+  - 说明“先删 execution 分发壳，再保留真实 owner”这条路仍然有效
+- 这一轮 fresh 也把风险边界进一步压实了：
+  - `tool-registry / runtime-tool-permission / runtime-tool-backend / glob / grep / bash / conversation lifecycle` 的定向 Jest 全过
+  - `packages/server` build、双 `smoke:server` 全过
+  - 说明当前重写没有把真实工具链、审批链和 HTTP 主链打坏
+
+- 这轮证明 `read/write/edit/freshness` 这组 owner 的更优切口，不是继续堆小包装，而是直接回到工具主链重写：
+  - `read-tool.service.ts` 只保留 `backend read -> freshness -> AGENTS.md -> reminder render`
+  - `write-tool.service.ts` / `edit-tool.service.ts` 只保留 `freshness guard -> backend -> diff/post-write render`
+  - `runtime-file-freshness.service.ts` 只保留 `stamp / recent context / lock / instruction claim` 四条真实主链
+- 这类整文件重写的收益明显高于继续挤小函数：
+  - `runtime-file-freshness.service.ts`：`277 -> 213`
+  - `read-tool.service.ts`：`201 -> 150`
+  - `write-tool.service.ts`：`157 -> 120`
+  - `edit-tool.service.ts`：`166 -> 135`
+- `runtime-host-filesystem-backend.service.ts` 这一轮进一步说明，真正拉长体积的不是功能点数量，而是同一 owner 里的重复 path/read/write/search 控制流：
+  - 把 `resolve/list/read/grep/write/edit/transfer` 主链重新收成更短结构后，行为还能保持稳定
+  - 文件物理行数 `773 -> 406`
+  - 对应 host backend、tool-registry、glob/grep、project worktree 的定向 Jest 全过
+- `project-worktree-file.service.ts` 也验证了同一条规律：
+  - project worktree 没必要再保留第二套冗长的 path/read/write/edit 主链
+  - 直接重写为更短的 owner 后，仍能稳定复用 `runtime-file-tree` 与 `runtime-text-replace`
+  - 文件物理行数 `150 -> 88`
+- 当前新的稳定结论：
+  - 真正有效的降体积路线，是继续针对高体积 owner 做“整文件删除旧主链后重写”
+  - 不再是单个 helper、单个 reader、单个文案函数这种碎片推进
+- 这轮累计效果：
+  - `packages/server/src` 非空行 `18490 -> 17798`
+  - 单轮净减 `692`
+  - 说明当前路线已经满足“单轮至少减 500 行”的要求
+
+- `runtime-shell-command-hints.ts` 这一轮验证了真正有效的减膨胀边界，不是继续挤单个 reader，而是直接把整份 hints owner 改成声明式主链：
+  - 命令扫描、变量展开、绝对路径归一、写路径提取、summary 拼装都留在同一个 owner
+  - `copy-item / move-item / mkdir / new-item / rename-item / git / tar / curl / wget / scp` 这些命令只保留规则表，不再保留一层层旧包装
+  - 在保持 bash 定向 `278` 个用例通过的前提下，文件物理行数 `841 -> 440`
+- `bash-tool.service.ts` 这轮也说明，围绕同一 owner 的描述拼装和 access 拼装旧壳没必要继续留：
+  - 工具名、参数、描述、runtime access、模型输出都可以落回单一 service 主链
+  - 文件物理行数 `180 -> 68`
+- 这轮累计结果：
+  - `packages/server/src` 非空行 `19558 -> 19058`
+  - 单轮净减 `500`
+  - 说明“删除旧实现后直接重写 bash 工具域 owner”已经比前面的零碎压行有效得多
+
+- `runtime-shell-command-hints.ts` 这轮收尾证明，PowerShell `-Destination (Join-Path ...)` 的剩余缺口不在权限链，也不在 AST，而在 hints tokenizer 是否把整个子表达式当成一个真实路径候选：
+  - 如果 tokenizer 先把 parenthesized `Join-Path` 拆碎，`absolutePaths` 只会捞到基路径
+  - 但 `externalWritePaths` 需要的是完整 destination 表达式
+  - 最稳的修法不是继续给 `tool-registry` 或 `BashToolService` 补特判，而是在 `runtime-shell-command-hints.ts` 内直接保护 `Join-Path` 子表达式 token
+- 这条边界同时说明，`absolutePaths` 不能简单并入所有已解析写路径：
+  - 对 `mkdir / new-item / rename-item`，命令文本里直接出现的仍只是 base path
+  - 只有像 `Join-Path` 这类命令内表达式，才应该在静态路径统计里显示为完整解析结果
+  - 因而最终修法必须是“保留真实表达式 token”，而不是“把全部 externalWritePaths 再灌回 absolutePaths”
+- 这轮完成后，本次 bash 域大重写的稳定体积已落到：
+  - `packages/server/src` 非空行 `19558`
+  - 相对上一稳定值 `20059` 净减 `501`
+  - 说明“删旧辅助文件 + 在同一 owner 重写 hints 主链”这条路已经真正过线，不是短暂低点
+
+- `conversation-task.service.ts` 这轮验证了一个更值的切口：收尾主链和 custom-block 构造链都不该平行存在。
+  - `complete / finish / persist` 三段旧链共享的是同一份 message write 与 finish event 语义
+  - 直接改成 `finalizeTask + writeTaskMessage` 后，completed / stopped / error 仍停在同一 owner
+  - `json custom block / text custom block` 也只是同一个 `blockId + source + title` 主体下的两种分支，收成 `readConversationTaskCustomBlock()` 更短
+  - 文件物理行数 `532 -> 515`
+  - `npm run count:server-src` 总量 `20076 -> 20059`
+
+- `builtin-context-compaction.plugin.ts` 这轮继续说明，annotation 相关的真假 owner 要按“状态主链”收，而不是按“标记种类”分散留壳：
+  - covered marker 和 annotation 更新本质上共用同一份 state 迁移
+  - 把旧平行包壳链改成单一 annotation state 主链后，行为保持但 owner 更短
+  - 文件物理行数 `594 -> 593`
+  - `npm run count:server-src` 总量 `20084 -> 20076`
+
+- `runtime-shell-command-ast.ts` 这一轮说明，AST owner 里更值的切口不是再抽新 parser 壳，而是直接删并行变量展开主链：
+  - `resolveRuntimeShellAstTokenText()` 与 `readRuntimeShellExpandedValueText()` 原先各自维护一段相近的变量展开 / `Join-Path` 归约控制流
+  - 把这组链直接压回 AST owner 后，bash / PowerShell 的赋值读取仍留在同一领域边界
+  - 文件物理行数 `513 -> 496`
+  - `npm run count:server-src` 总量 `20101 -> 20084`
+
+- `runtime-text-replace.ts` 的 block-normalized reader 总收口已经证伪：
+  - 文件体积会从 `547` 回增到 `574`
+  - 同时会打坏 `indentation-flexible / line-trimmed / trailing-whitespace-trimmed` 的策略边界
+  - 这类“统一 block-normalized reader”后续不应再重试
+
+- `runtime-shell-command-hints.ts` 的写路径 reader map 改单一 `switch` 主链也已证伪：
+  - 文件体积会从 `687` 回增到 `705`
+  - 说明这个 owner 更适合删旧 reader 和并行控制流，不适合先叠一层总 dispatch
+  - 后续不再沿 `map -> switch` 这条切口重试
+
+- `runtime-shell-command-ast.ts` 的独立 judge 进一步确认了当前稳定边界：
+  - AST 主链已经成为 `variables -> expanded value -> assigned Join-Path value` 的单一路径
+  - `BashToolService` 没有重新接回 AST 细节，fallback 仍停在 `runtime-shell-command-hints.ts`
+  - 当前剩余风险不是本轮回退，而是以后若继续扩 PowerShell 语法，要同步维护 AST 主链和 fallback 的 `Join-Path` 支持面
+
+- `builtin-context-compaction.plugin.ts` 这一轮说明，一个大 owner 如果已经出现“manual command / route / auto rewrite / before-model”四套平行编排，最值的做法不是继续删单个 helper，而是直接整段重写成一套主链：
+  - 统一 runtime config 解析
+  - 统一有效历史视图
+  - 统一 summary / covered annotation 写回
+  - 统一命令短路回复
+- 这类重写的收益明显高于继续挤零碎包壳：
+  - 文件物理行数 `700 -> 594`
+  - `packages/server/src` 非空行 `20253 -> 20150`
+  - 定向 Jest、`packages/server` build、双 `smoke:server` 都通过
+
+- `context-compaction` 里一个稳定的真冗余，是“执行链死参数”：
+  - `conversationId` 在 `runContextCompactionForCall()` 和 `runContextCompaction()` 中已经不参与任何决策
+  - 删除这条透传链不会动 manual / auto / route 语义
+  - 这类死参数比继续改文案或排版更值，属于真实 owner 减膨胀
+
+- `runtime-host-subagent-runner.service.ts` 这轮再次验证了一个边界：
+  - 把 `run/start/resume` 强行并成 `createTrackedSubagent / runTrackedSubagent` 这种新总装配层，物理行数会回增
+  - 当前 `runner` 更适合保留“调用点主链 + session envelope 小 owner”，不适合再长一层总调度壳
+  - 因此本轮只保留恢复编译所需、且原来已经证实有收益的 session envelope owner，不保留失败重写
+
+- `runtime-host-filesystem-backend.service.ts` 当前更值的一类删法，不是继续拆 metadata 小函数，而是把 `write / edit` 共享的“旧文本基线 + 落盘”链收成单入口：
+  - `editTextFile()` 之前会先读旧文本做 replace
+  - 随后又回到 `writeTextFile()` 里把同一文件再读一遍生成 diff
+  - 把这段改成 `writeResolvedTextFile()` 后，重复 I/O 和重复 diff 基线判断一起消失
+
+- 这条写入主链的约束也更清楚了：
+  - `writeTextFile()` 仍保留对外公开入口
+  - `editTextFile()` 只负责生成 `nextContent`
+  - 真正的“读旧文本基线 / post-write 处理 / 落盘 / diff 产出”停在同一 host filesystem owner
+  - 这样没有把控制流回推到 `write/edit` tool service
+
+- 这刀一开始物理行数短暂回增，说明只抽公共入口还不够：
+  - 还要把新入口周围的重复返回壳和默认 post-write 对象一起收紧
+  - 收紧后 `runtime-host-filesystem-backend.service.ts` 从 `828` 降到 `822`
+  - 总量从 `20259` 继续降到 `20253`
+
+- `runtime-text-replace.ts` 当前还能稳定净减的一类切口，不是再继续拆单个策略函数，而是把“同一组候选扫描骨架”直接收成一条：
+  - `escape-normalized / trimmed-boundary / whitespace-normalized` 都同时需要“可选 exact + block 扫描”
+  - 把这组重复控制流收成 `readRuntimeTextLooseMatches()` 后，既不需要回到策略对象表，也没有再起模糊 owner
+  - 这刀 fresh 通过后，`packages/server/src` 从 `20276` 继续降到 `20259`
+
+- `context-aware / block-anchor` 的更稳边界，也不是保留两套平行评分函数：
+  - 两者共享同一条 anchor 选优主链，差别只在中间行评分口径与 fixed-length 约束
+  - 把评分收成 `readRuntimeTextAnchoredSimilarity()` 后，能删掉重复循环，同时不改 tie-case 歧义保护
+  - 这比继续在外层叠 reader 工厂更短，也更接近真实 owner
+
+- `runtime-text-replace.ts` 这次重写再次说明一个规律：
+  - 真正有收益的是“删掉整组平行扫描骨架”
+  - 不是继续给每个策略补一层更抽象的 reader 名字
+  - 后续若再动这个 owner，应继续找成组重复扫描或成组重复回写，不要再回到零碎小修
+
+- 当前 `S11` 已确认一个阶段性结论：
+  - “单点薄包装内联”这条路线虽然安全，但推进速度不足
+  - 即使 fresh 全通过，也无法在合理轮次内把 `20317` 压到 `19000 / 17000 / 15000`
+  - 后续必须改成 owner 级整块重写，先删旧主链，再直接写新主链
+
+- `S11-S13` 更合适的执行边界已经固定：
+  - 不再追求“每刀净减几行”
+  - 一次重写至少替换一个大 owner 的完整主链
+  - 行为约束仍不变：不进 `shared`、不新增模糊抽象、不保留双实现
+
+- `runtime-shell-command-hints.ts` 这轮试过把写路径读取区改成单入口分派函数，但物理行数从 `20317` 回增到 `20353`：
+  - 说明这个 owner 的“命令表 + reader 函数”结构并不适合硬收成单入口 dispatch
+  - 后续若继续重写这个文件，应优先删整段旧 reader，而不是先叠一层新分派函数
+
+- `runtime-text-replace.ts` 这轮验证了一条更有效的重写路径：
+  - 把“策略对象 + reader 工厂”整段旧结构删除
+  - 改成 `RuntimeTextReplaceStrategy -> switch` 的单一调度主链
+  - 这类 owner 级重写比继续挤单点 helper 更容易形成净减
+  - 当前稳定收益：`20317 -> 20289`
+
+- `builtin-context-compaction.plugin.ts` 这轮又验证了一条规律：单次 helper 若只在 `chat:before-model` 用一次，直接压回调用点通常比保留小函数更省行：
+  - `readAutoStopState()` 只服务一次 conversation state 判定
+  - `toPluginLlmMessage()` 只服务一次 display/user/system 投影
+  - 两者都压回后，owner 边界仍然停在 `chat:before-model`
+
+- `runtime-host-filesystem-backend.service.ts` 里还有一类可持续回收的壳，不是再抽新 owner，而是清掉“未使用函数 + 两处共用但过薄的异常/mtime 包装”：
+  - `countFilesystemTextLines()` 已经无调用
+  - `readFilesystemMtime()` 只服务 `glob/grep`
+  - `createReadOffsetOutOfRangeException()` 只服务两个 read offset 抛错点
+  - 这类函数压回后风险小，且不会把 read/glob/grep 逻辑推回工具层
+
+- `runtime-host-subagent-runner.service.ts` 当前 resume 分支最值的一刀，不是继续抽新 helper，而是把只服务这一处分支的 session->request 组装直接放回调用点：
+  - `buildSubagentRequestFromSession()` 与 `mergeSubagentRequest()` 都只有一个真实调用点
+  - 一起压回后，resume 消息拼接与 envelope merge 语义仍留在 runner owner
+  - 这比再引一个更泛的 request merge 抽象更稳，也更省行
+
+- `runtime-host-subagent-runner.service.ts` 里还有一类稳定收益，不在“再起一个 request helper”，而在删掉 create/resume 分支对 `providerId / modelId / system / toolNames / variant / providerOptions / headers / maxOutputTokens` 的手工重抄：
+  - `resolved.request` 本来就已经是同一 owner 内的最终结果
+  - `buildSubagentSessionPayload()` 与 `assignSubagentSessionRequest()` 接收 envelope source，直接吃 `resolved.request` 不会扩大边界
+  - 这类刀比再抽一层“请求标准化 helper”更短，也更不容易回增
+
+- `runtime-host-subagent-runner.service.ts` 当前更值的压缩点，不是继续抽 request/session helper，而是先收回 create/resume 两条分支末端重复的 return 结构：
+  - `request`
+  - `requestPreview`
+  - `session`
+  - 这三项在同一 owner 内重复出现，回收成单一出口后收益稳定
+  - 但像 `readSubagentBeforeRunResponse()` 这种“先提公共 clone”看起来更抽象，物理行数反而会回增；这类刀应该直接回退
+
+- `runtime-shell-command-hints.ts` 里，`readRuntimeShellCommandStructure()` 与 `readRuntimeShellNetworkCommands()` 这类单次 reader 直接压回主链后，收益仍明显好于继续做零碎常量排版：
+  - AST / fallback 命令结构读取仍停在同一 hints owner
+  - redirection fallback、filesystem provider prefix 拆装、network command 判定都没有散回工具层
+  - 对应 `bash-tool / tool-registry / smoke` fresh 通过，说明这类内联没有伤到外部语义
+
+- `builtin-context-compaction.plugin.ts` 当前更适合继续删“包一层再拆一层”的 annotation / result 壳，而不是再扩 compaction 流程：
+  - `coveredCount` 只服务 summary annotation
+  - `resultLabel` 只服务手动命令回复
+  - `ownedAnnotations` 只服务 summary / covered 两条读取链
+  - 这类壳压回 owner 后虽然单刀收益不大，但比新起抽象层更稳，也更不容易反向增膨胀
+
+- `runtime-shell-command-hints.ts` 里 tokenizer 和 summary 这两段的单点壳，收益明显高于继续挤 `host filesystem` 的 binary sample：
+  - braced-token 保护/恢复只服务 `tokenizeShellCommand()`
+  - separator 判定只服务同一 reducer
+  - quoted token 去壳只服务 `normalizeQuotedShellToken()`
+  - summary 组装只服务 `readRuntimeShellCommandHints()`
+- 这类壳压回调用点后：
+  - `single-quoted literal`、`Join-Path`、provider prefix、summary 文案口径都不变
+  - 但能一次回收几十行，明显高于 `host filesystem` 末端那类 1-2 行收益切口
+
+- `runtime-host-filesystem-backend.service.ts` 的 binary sample 检测虽然也能压回 metadata owner，但这类切口已经进入收益递减区：
+  - 能继续减
+  - 但单刀净减很小
+  - 后续更该把注意力切回 `runtime-shell-command-hints.ts`、`builtin-context-compaction.plugin.ts` 或其他更高收益 owner
+
+- `runtime-shell-command-hints.ts` 里也有一组适合直接压回调用点的薄包装：
+  - `readShellCommandWritePathTokens()` 只服务 `externalWritePaths` 聚合
+  - `unwrapRuntimePowerShellJoinPathExpression()` 只服务 `readRuntimeShellJoinPathExpression()`
+  - `readProcessEnvValue()` 只服务 `expandShellEnvPathToken()`
+- 这类壳回收到调用点后：
+  - `Join-Path`、provider prefix、env path 展开仍停在同一 owner
+  - 不会把 hints 语义散回工具层
+  - 也比继续堆一层 reader 包装更容易看清真实控制流
+
+- `runtime-host-filesystem-backend.service.ts` 里的 read-metadata 链也适合继续内聚：
+  - `detectFilesystemMimeType()`
+  - `isFilesystemImageMimeType()`
+  - `isBinaryFilesystemPath()`
+- 这三段都只服务 `readRuntimeHostFilesystemReadMetadata()`：
+  - 独立留着并不会形成更清楚的领域边界
+  - 回收到 metadata owner 后，`image/pdf/binary` 分类语义仍停在同一个地方
+  - 对 `readPathRange / readTextFile / writeTextFile / editTextFile / grepText` 反而更容易确认“都是同一份判定”
+
+- `runtime-host-filesystem-backend.service.ts` 里还有一组很适合继续压回主链的薄包装：
+  - missing-path 的异常拼装只服务 `resolveValidatedPath()`
+  - `readRuntimeDiffBaseContent()` 只服务 `writeTextFile()`
+  - nearby-path comparator 只服务 `readNearbyVisiblePaths()`
+  - traversal skipped 标记也只服务 `listFiles()` 的单个回调
+- 这类函数的共同点是：
+  - 都没有独立领域语义
+  - 留在文件底部只会把主链切碎
+  - 回收到调用点后，边界仍停在 host filesystem owner，不会回流到工具层
+
+- `runtime-host-filesystem-backend.service.ts` 里还有一类值得继续清的薄包装：
+  - 二进制 read error 判定只服务 `grepText()` 的一条 catch 分支
+  - 非文本 read result 构造只服务 `readPathRange()`
+  - 静态 non-text 判定与行数统计也都只有单一调用点
+- 这类函数单独留着并不会形成独立领域 owner：
+  - 直接回收到 `read/write/edit/grep` 现有链路后，语义边界仍在 host filesystem
+  - 不会把 binary / image / pdf / line-ending 判定回推到工具层
+  - 还能继续稳定回收一段文件体积
+
+- `runtime-shell-command-ast.ts` 继续压的时候，有一类很适合直接回收的薄包装：
+  - parser language 选择只服务 `readRuntimeShellAstRootNode()`
+  - redirection operator 正则只服务 `readRuntimeShellFileRedirectTarget()`
+  - `Join-Path` 的 unwrap / tokenize 也只服务 `readRuntimePowerShellAssignedJoinPathValue()`
+- 这类函数保留出来并不会形成独立语义 owner，反而会让 AST 文件继续长出“局部 helper 墙”：
+  - 直接回收到调用点后，语义边界仍停在 AST owner
+  - 不会碰 shell hints、工具层或 `shared`
+  - 也比再抽新的 assignment parser 壳更稳定
+
+- `runtime-shell-command-ast.ts` 里更稳的一类压缩，不是继续抽新的 assignment owner，而是把只服务单一调用点的判定和转发直接压回调用点：
+  - `hasRuntimeIgnoredCommandAncestors()` 里的 `assignment_expression + Join-Path command` 判定，本身就只服务这一处
+  - `readRuntimeShellVariableAssignment()` 与 `resolveRuntimePowerShellAssignedPathToken()` 都只是把参数转回 `readRuntimeShellExpandedValueText()`
+  - `resolveRuntimeShellAssignedValue()` 甚至已经没有调用方
+- 这类壳删掉以后：
+  - AST owner 仍然只做 parser/赋值展开/有限 `Join-Path` 归约
+  - 不会把控制流反推回 `BashToolService`、`tool-registry` 或 `shared`
+  - 同时能直接回收一段真实物理行数，而不是再长一层“看似更抽象”的中间层
+
+- `runtime-host-filesystem-backend.service.ts` 里更值的一类压缩，不是继续压 MIME 常量，而是把“目录树递归 + 目录项递归”两层薄包装并回 `collectRuntimeVisibleFiles()` 主链：
+  - 真正变化点在于统一 `lstat / realpath / stat / readdir` 失败分支
+  - 这样目录场景和符号链接目录场景共用同一条遍历控制流
+  - 不会把错误处理回散到上层工具入口
+
+- `builtin-context-compaction.plugin.ts` 里还有一层容易忽略的假 owner：
+  - `readContextCompactionSummaryAnnotation()` 先包 `{ compactionId }`
+  - `readContextCompactionCoveredAnnotations()` 先包 `{ data }`
+  - 调用方随后再拆开取内部字段
+- 这类包壳去掉以后：
+  - `buildEffectiveConversationHistory()` 和 `readContextCompactionCoveredCount()` 直接消费领域数据
+  - 既能减行，也更不容易再长出“annotation wrapper owner”
+
+- `runtime-shell-command-ast.ts` 里 `Join-Path` 的参数读取之前又长了一套本地版 flag/path 解析：
+  - `readRuntimePowerShellJoinPathFlaggedTokens()`
+  - `readRuntimePowerShellJoinPathPositionalTokens()`
+- 这类逻辑虽然还在 AST owner 内，但已经和 `shell hints` 形成平行重复。
+- 更稳的压缩方式是在 AST 文件里先收口成通用 `readRuntimePowerShellFlaggedTokens / readRuntimePowerShellPositionalTokens`：
+  - 仍然只服务 AST owner
+  - 不会把解析逻辑迁到 `shared`
+  - 也不会把 AST 细节反向泄漏到工具层
+
+- `shell hints` 和 `AST` 之间真正适合共用的边界，不是整份命令解析，而是更窄的 `PowerShell path token`：
+  - flagged token 读取
+  - positional token 读取
+  - rooted path 判定
+  - path join
+- 这个边界放在 `packages/server/src/execution/runtime/runtime-powershell-path-token.ts` 是可接受的：
+  - 仍在同一 runtime owner
+  - 不把运行逻辑塞进 `shared`
+  - 能同时回收两边平行长出来的重复控制流
+
+- `project-worktree-file.service.ts` 之前一直保留着第二套简化版 edit 重写器：
+  - `countOccurrences`
+  - `replaceFirst`
+  - `normalizeLineEnding`
+  - 自己的一套“没找到 / 多匹配”诊断
+- 这类逻辑已经被 `runtime-text-replace.ts` 覆盖得更完整，而且当前 project worktree 读文本入口本来就把内容归一成 `\n`：
+  - 直接复用 `replaceRuntimeText()` 不会额外扩大 owner 面
+  - 还能删掉 project 域内平行维护的第二套替换算法
+
+- `runtime-host-filesystem-backend.service.ts` 与 `project-worktree-file.service.ts` 里还有一类更值的大重复：
+  - 递归文件树遍历
+  - 目录条目排序
+  - 符号链接目录去重
+- 这类逻辑适合落在 `execution/file` 域内的单一 owner，而不是继续在 host / project 各自复制一份：
+  - host 需要的是“错误时标记 skipped path”
+  - project 需要的是“错误直接抛出”
+  - 这只是同一遍历内核的错误策略差异，不需要两套完整遍历实现
+
+- `runtime-shell-command-hints.ts` 里更值的一类压缩，不是继续压常量排版，而是把“命令名 if/else 分派”改成映射表：
+  - `git` 写路径解析就是典型例子
+  - `clone / init / archive / bundle create / format-patch / worktree add / submodule add` 都还在同一 owner
+  - 但分派控制流已经从长串条件判断收口到数据映射，不会回流到工具层
+
+- `runtime-text-replace.ts` 里，`line-ending-normalized / trailing-whitespace-trimmed / line-trimmed` 与 `context-aware / block-anchor` 两组策略已经足够稳定，适合收口成“策略 reader 工厂”：
+  - 这样保留了策略名和行为边界
+  - 同时删掉“同构 reader 只换一个 normalize / similarity 参数”的重复壳
+
+- `runtime-host-filesystem-backend.service.ts` 里，`grepText()` 拿到 `listFiles()` 的 file entry 后再回走 `readTextFile(sessionId, path)`，本质上是在同一 owner 里重复走一次“路径解析 -> 文件校验 -> 文本读取”链：
+  - 更稳的边界是直接消费已解析 entry 的 `hostPath / virtualPath`
+  - `readTextFile()` 继续只服务外部按 path 读取的入口
+
+- Windows 下并行跑两条 `smoke:server` 会在 `prisma generate` 的 `query_engine-windows.dll.node` 重命名阶段撞锁：
+  - 现象是 `EPERM ... rename ... query_engine-windows.dll.node.tmp -> query_engine-windows.dll.node`
+  - 这属于本地并发产物冲突，不是当前代码回归
+  - 这类双冒烟应顺序执行，不应并行采信
+
+- `builtin-context-compaction.plugin.ts` 里有两类真实重复适合先收口：
+  - `context-compaction` annotation 的 owner/type 判定
+  - `/compact / /compress` 命令短路时的固定响应对象
+- 这两类逻辑都已经稳定，收口后不改外部行为，只是把相同 owner 下的重复壳删掉。
+
+- `context-compaction` summary 写回历史时的真实角色是 `display`，不是 `assistant`：
+  - 历史存储保持 `display`
+  - 只有 `buildEffectiveModelConversationHistory()` 才会把 summary 投影成送模型用的 `assistant`
+  - 因而历史断言应钉 `display`，模型视图断言才钉 `assistant`
+
+- PowerShell `Join-Path` 赋值场景里的重复静态路径，不是 summary 拼接问题，而是 AST 预扫把“赋值求值用的内层 `Join-Path command`”也当成了独立 command segment：
+  - 一条来自赋值链里的 `Join-Path $env:ROOT 'nested'`
+  - 一条来自后续真正写入目标 `"$root\\file.txt"`
+  - 更稳的修法不是在 hints 层硬去重字符串，而是在 AST owner 内直接跳过 `assignment_expression` 里仅用于 `Join-Path` 赋值求值的内层 command
+  - 这样 `absolutePaths / externalAbsolutePaths / summary` 会一起回到单一真实目标路径，而且不会放宽成通用命令求值
+
+- `bash` 的 AST 失败回退最稳的边界，不是去 `BashToolService` 或 `tool-registry` 里补兜底判断，而是继续把 fallback 固定在 `runtime-shell-command-hints.ts`：
+  - 先尝试 AST 预扫
+  - 失败就回原有 `tokenizeShellCommand / readShellCommandSegments / readShellRedirectionPathTokens`
+  - 工具层只消费 `commandHints`
+- 这条边界需要同时有两类证据才算成立：
+  - 静态层：损坏 bash / PowerShell 命令仍能给出同口径 hints
+  - 权限链：`pendingRequest.metadata.commandHints` 也保持同口径
+  - 只补单测而不补权限链，仍然可能出现工具链丢 hint 的假完成
+
+- `read` 的两个去重边界最好拆开看：
+  - `S3`：文本 reminder 在同一 `assistantMessageId` 作用域内不重复展示已 claim 的 instruction
+  - `S4`：插件输出层即使 `loaded=[]` 也必须稳定透传空数组，不能把字段整段吞掉
+- 如果空数组被吞掉，系统侧会分不清两种情况：
+  - “这次没有新 instruction”
+  - “插件没返回 loaded 结构”
+  - 所以 `builtin.runtime-tools` 这层更稳的 contract 是始终返回 `{ loaded: string[] }`
+
+- `S5` 的 owner 边界更稳的写法，是把“祖先解析 + claim + filter”都停在 `read-path-instruction` 域里：
+  - `read-path-instruction.ts` 负责祖先 `AGENTS.md` 解析和 claimed entries 裁剪
+  - `ReadToolService` 只拿已裁剪结果去渲染文本和返回 `loaded`
+  - 这样工具层不会重新长出路径级 instruction 的控制流
+- 可见根自身 `AGENTS.md` 的边界必须显式钉住：
+  - 不是靠“当前没命中”这种间接现象
+  - 而是直接断言不会去 `stat/read` 可见根自身的 `AGENTS.md`
+
+- `S9` 之后当前阶段判断已经切换：
+  - `bash / read / write / edit` 功能闭环已完成
+  - 后续主要风险不再是 OpenCode 主链能力缺口，而是体积压缩时把现有 owner 边界压坏
+  - 所以 `S10` 开始应优先盯高体积 owner 的真实排序和净减收益，不再回头扩功能面
+
+- `line-trimmed` 如果排在 `context-aware / block-anchor` 后面，会有一个稳定副作用：
+  - “每行只差外层空白”的场景会先被更宽的锚点策略吃掉
+  - 内容虽然能改对，但策略语义会变宽，native `edit` 对模型暴露的 `Strategy:` 也会偏粗
+- 更稳的顺序是：
+  - 先跑 `escape-normalized / line-ending-normalized / trailing-whitespace-trimmed / line-trimmed`
+  - 再跑 `context-aware / block-anchor / whitespace-normalized`
+  - 这样能让“更窄、更直接”的 rewrite 先命中，锚点类策略只处理真正需要上下文选优的场景
+
+- 如果 `postWriteSummary` 只给数量，不给“实际展示了哪些 related files”，系统侧仍然得回头解析文本：
+  - `relatedFocusPaths` 只覆盖 `nextHint` 需要的前 3 个路径
+  - `visibleRelatedFiles` 只给数量
+  - 真正和 diagnostics block 一一对应的，还需要 `visibleRelatedPaths`
+- 这类结构化契约最稳的边界是：
+  - 类型新增只放在 `shared`
+  - 排序、截断、路径提取继续留在 server owner
+  - 文本与结构化结果都复用同一套 `prioritize + limit` 逻辑
+- `helper / helpers` 这类名字在当前阶段风险很高：
+  - 很容易把真实 owner 再次抹平
+  - 后续压行时也容易变成“换个模糊壳继续保留复杂度”
+  - 所以约束应直接写进 `TODO.md`
+
+- `TODO.md` 如果同时承担“边界、约束、历史流水、当前任务”，很容易重新变宽：
+  - 当前更适合的结构是：
+    - 顶部保留边界与硬约束
+    - 中间只放当前串行小阶段
+    - 已完成事项只保留摘要
+- 拆细阶段时不能顺手删旧约束：
+  - 否则会出现“计划更细了，但边界更松了”的问题
+  - 所以旧约束应单独保留在 `TODO.md` 的固定段落中继续生效
+
+- OpenCode 的 instruction claim 更接近 message-level，而不是整个 session-level：
+  - 当前仓库先前用 session 级 claim，已经能消掉主要重复注入噪音
+  - 但这会把“新 assistant turn 重新需要看到同一 instruction”的空间一起吞掉
+- 更稳的落点是：
+  - runtime host 透传 `assistantMessageId`
+  - `read` 优先按 assistant message 级 claim
+  - 只有拿不到 message id 时，才回退到 session 级 claim
+  - 这样既更接近 OpenCode，又不需要引入新的全局状态机
+
+- `write.ts` 里的“其他文件最多 5 个 project diagnostics”不只是 summary 口径，也是文本输出口径：
+  - 如果文本块把所有 related files 全铺出来，模型上下文噪音会明显高于 OpenCode
+  - 更稳的做法是：
+    - summary 继续保留全量问题数与文件数
+    - diagnostics block 只展开优先级最高的 5 个 related files
+    - 对超出部分显式提示 omitted 数量
+
+- `write/edit` 的 post-write 反馈不只要 `next hint` 排序对，诊断块本身也要同口径排序：
+  - 如果 `next hint` 先让模型读 `/src/d.ts`
+  - 但输出块先展示 `/src/b.ts`
+  - 模型拿到的上下文顺序仍会错位
+- 因而更稳的边界是：
+  - `relatedFocusPaths` 与 diagnostics block 复用同一套优先级
+  - 当前文件仍固定置顶
+  - 相关文件再按严重度与问题数排序
+
+- PowerShell parenthesized `Join-Path` 的剩余噪音，不需要继续扩 AST 解释器：
+  - 外层参数节点本身已经能归约出完整目标路径
+  - 多出来的基路径，其实来自 `parenthesized_expression` 里的内层嵌套 `command`
+  - 只要在“已处于外层 command 的 parenthesized expression”里跳过内层 command 扫描，就能删掉重复基路径，而不会损伤完整目标路径提示
+
+- `other/opencode` 的 `Instruction.resolve()` 有两个关键边界，当前仓库之前只对齐了一半：
+  - 只把路径级 instruction 作为 `read.metadata.loaded` 返回
+  - 同一条 instruction 对同一消息链不重复附带
+- 当前仓库这轮补齐后，至少已经收口到同方向的 session 级去重：
+  - `read.loaded` 只回传本次新加载的 `AGENTS.md` 路径
+  - 同一 session 后续再次命中同一 instruction 时，不再重复灌入 `<system-reminder>`
+  - 虽然还不是 OpenCode 的 message-level claim，但已经避免最主要的重复注入噪音，且不需要引入额外全局状态机
+
+- 把 `TODO.md` 的工具清单继续收成“能力 / 当前缺口 / 验收锚点”三段式之后，主计划边界更稳了：
+  - `bash / read / write / edit` 仍是当前主闭环
+  - `glob / grep` 可明确视为“已基本对齐 OpenCode 主链”，后续只允许补结果摘要与 next-read 稳定性，不再单独扩目标面
+  - 这样能避免 TODO 再次回到“所有工具都同时进行中”的失焦状态
+
+- `other/opencode` 当前给出的边界比仓库现有 TODO 更窄，也更适合作为收敛线：
+  - `bash.ts` 是 AST + 静态 path/pattern 扫描，不是通用 shell 解释器
+  - `read.ts` 的 loaded 重点是路径级 instructions 与 read metadata，不是额外的全局 reminder 编排系统
+  - `write.ts / edit.ts` 的重点是 diff、formatting、LSP diagnostics、freshness 与 create-style edit，不是多轮自动修复工作流
+- 因而后续计划要继续遵守一条硬边界：
+  - 能在 `other/opencode` 对应文件里找到同类行为，就推进
+  - 找不到对应实现，就不再把它写成当前轮目标
+
+- `tool-registry` 里的 PowerShell 权限链证据不能偷用默认 shell backend：
+  - 当前夹具默认 backend 仍是 `just-bash`
+  - 因而像 `$(Join-Path ...)` 这种 PowerShell 语义，如果 permission request 用例不显式切到 `native-shell`，拿不到外部路径提示并不代表生产逻辑回退
+  - 这类真链路验证应显式给出 `native-shell` 或 `native-shell-alias` 前置条件，而不是依赖测试进程里的偶然全局环境
+- `-Destination (Join-Path ...)` 这类 parenthesized 形态，当前 AST/hints 组合会同时看到：
+  - 外层参数里已经归约好的完整目标路径
+  - 内层 `Join-Path` segment 自身暴露出的基路径 `C:\\env-root`
+  - 这会让 `absolutePaths / externalAbsolutePaths` 多一条基路径；目前属于“更强提示”，不影响外部写入判断，可先接受，不必为了这一刀再扩 AST 过滤面
+
+- `P21-7C` 当前更值的一条 OpenCode 语义缺口，不是继续补一条模糊 rewrite，而是补 `edit` 的 create-style 入口：
+  - `other/opencode` 允许 `oldString=""` 直接创建新文件或整文件写入
+  - 当前仓库之前在 `readInput()` 就把空 `oldString` 拦掉了，属于明确主链缺口
+- 这条能力最稳的 owner，不是给 `EditToolService` 单独再写一套“空串覆盖”逻辑：
+  - `edit` 只需要放开参数与入口语义
+  - 真正的整文件落盘、diff、formatting、diagnostics 继续复用 `writeTextFile`
+  - 这样不会把 `write/edit` 的 post-write owner 再次分叉
+- freshness 边界也不需要为了这条功能回退：
+  - 目标文件缺失时，`withWriteFreshnessGuard()` 本来就允许创建
+  - 目标文件已存在时，仍然要求 fresh 上下文，避免把 create-style 入口变成绕过 read 的覆盖后门
+- create-style `edit` 如果直接把 `newString` 原样交给 `writeTextFile`，还会留下一个小但真实的工程噪音：
+  - 对已存在的 CRLF 文本文件做整文件覆盖时，模型常给 LF `newString`
+  - 如果这里不保留原文件换行风格，就会把“整文件替换”变成额外的行尾风格漂移
+  - 因而这条分支也应该在 backend owner 内先按原文件 line ending 归一，再落给统一 write owner
+
+- `bash` 这轮更值的功能缺口，不是继续泛化 `$(...)`，而是补 PowerShell “纯变量读取”子表达式：
+  - `"$($root)\\note.txt"`、`"$($env:TEMP)\\note.txt"` 在真实 PowerShell 工作流里很常见
+  - 这类形态语义仍然稳定，本质上只是变量展开，不等于放开通用命令替换
+  - 因此最稳的落点仍是 AST 变量展开 owner，而不是 hints 层再写一套正则特判
+- 这也给当前阶段一个更明确的边界：
+  - 可以继续补“简单变量 / env 变量读取”的子表达式
+  - 但不能把 `$(...)` 直接泛化成任意命令执行，否则会越过当前保守边界
+- `runtime-text-replace.ts` 里，strategy table 已经逐步变成更合适的 owner：
+  - 当单次 reader 只是把规则转发给统一底层匹配器时，内联回策略表更直观
+  - `trimmed-boundary / indentation-flexible` 和前面的逐行归一化策略都符合这个条件
+  - 这样保留了稳定底层 owner，同时持续删掉“策略名 -> 单次 reader -> 统一 owner”这层壳
+- `runtime-text-replace.ts` 里，单次 strategy reader 如果只是把参数原样转给统一 owner，直接内联回策略表通常更划算：
+  - `line-trimmed / trailing-whitespace-trimmed / line-ending-normalized` 就是这一类
+  - 内联后可直接看出“哪个 strategy 用哪种 normalize 规则”，同时少掉几层声明
+  - 这类压缩前提仍然是：底层统一 owner 已经稳定，否则内联只会把重复逻辑重新散开
+- `runtime-shell-command-hints.ts` 里，绝对路径归一化链上的单次 reader 也适合直接回收到调用点：
+  - `readRuntimeShellCommandSubstitutionBody()` 与 `readFilesystemProviderPrefix()` 都只服务单一链路
+  - 直接回收后，`Join-Path` 与 provider-aware 语义仍停在同一 owner，没有散回工具层
+  - 这类删除比再拆新的 parser/AST owner 更稳，尤其适合当前 `P21-7D`
+- `runtime-text-replace.ts` 里，`whitespace-normalized / escape-normalized` 的“单行命中 + 多行窗口命中”虽然语义相近，但中间组合 helper 不一定值得保留：
+  - 当前只有这两个 strategy 消费
+  - 直接回收到各自 owner 后，行为仍清楚，且能删掉一层中间控制流
+  - 这类策略内联比继续泛化 helper 更符合当前减膨胀目标
+- `indentation-flexible` 的本地 normalize 函数，与写回阶段的缩进调整共用同一个“公共缩进”概念：
+  - 把它收成共用 owner 后，可以删掉一处局部算法和一处单点 whitespace reader
+  - 这也说明 `runtime-text-replace.ts` 里更值的切口仍是“同一语义的重复控制流”，不是继续堆 strategy 名字
+- `runtime-shell-command-hints.ts` 里，`readShellParentPathToken()` 这种只被单处消费的路径 reader，适合直接回收到真实 owner：
+  - 当前只有 `resolveRenameShellPathToken()` 需要这段父级推导
+  - 直接内联后仍能保留 `filesystem::`、Windows drive root 与 POSIX root 的边界
+  - 这类切口单刀收益不大，但回归半径很小，适合穿插在大刀之间稳定回收行数
+- `runtime-text-replace.ts` 里，anchored candidate 的“先收集 scored matches，再做二次筛最高分”可以直接回收进一次扫描：
+  - 这段 owner 只服务 `readRuntimeTextAnchoredCandidates()`
+  - 把最高分与并列候选在扫描时直接维护，能删掉中间 scored type 与 helper
+  - 同时不会打坏现有语义：低于阈值仍过滤、并列最高分仍保留歧义
+- 这类切口比“继续改 rewrite 策略”更适合当前 `P21-7D`：
+  - 不扩功能面
+  - 回归半径只落在 `runtime-text-replace` 自身
+  - 对 `write/edit/tool-registry` 真链路已有稳定定向回归可兜住
+
+- `runtime-host-filesystem-backend.service.ts` 里，`image/pdf/binary` 的分界当前可以稳定拆成两层：
+  - 静态非文本类型：`image / pdf`
+  - 动态二进制检测：路径扩展名或内容采样
+- 先把静态非文本类型收成单点 owner，比直接把所有 binary 检测硬揉成一个大 helper 更稳：
+  - `readPathRange()` 需要保留 `image / pdf / binary` 三种返回类型
+  - `readRuntimeDiffBaseContent()` 和文本预读只需要知道“是不是文本”
+  - 因而当前以静态分类 owner 先收口，收益和风险更平衡
+- `runtime-text-replace.ts` 当前更值的低膨胀切口，不是再加新策略，而是把相邻策略的扫描 owner 收口：
+  - `block-anchor / context-aware` 本质上都是“首尾锚点 + 中间评分”
+  - `line-trimmed / trailing-whitespace-trimmed / line-ending-normalized` 本质上都是“逐行归一化后做窗口匹配”
+  - 先把这两组控制流合并，通常比继续改策略列表或文案更稳
+- `runtime-host-subagent-runner.service.ts` 这轮证明了同一 owner 里也要继续分层判断：
+  - `request/session` 这一层适合抽成单点 owner：
+    - `cloneSubagentRequestEnvelope()`
+    - `buildSubagentSessionPayload()`
+    - `applySubagentSessionSnapshot()`
+  - 但 `createSubagent` 总装配不适合继续抽公共构造：
+    - 两个调用点虽然像重复
+    - 真抽出去以后，参数形状和转发壳反而比原始重复更重
+- 这也再次确认本阶段判断标准：
+  - 不是“看起来更抽象”就算减膨胀
+  - 必须同时满足 owner 更清晰、行为不变、非空行数真实下降
+
+- `builtin-context-compaction.plugin.ts` 这轮也验证了同一条原则：
+  - 单纯补一个 `runContextCompactionForCall()` 入口，并不会自动带来净减
+  - 只有把它和短路回复、命令输入分支、结果标签这类重复固定壳一起收口，才会从“共享调用入口”变成真实减膨胀
+- 这类插件编排 owner 更稳的判断方式是：
+  - 入口共享的是“读取 runtime config + 绑定当前 callContext + 执行领域动作”
+  - 文案、短路响应、annotation 结构仍留在同一插件 owner
+  - 不为了复用再长出第二层薄包装
+
+- `runtime-shell-command-hints.ts` 当前还有一类适合继续收口的重复，不在路径推断本身，而在“flag 命中后回退 positional destination”的同构控制流：
+  - `copy-item / move-item`
+  - `cp / mv`
+  - `tar create / extract`
+- 这类分支的更稳写法是：
+  - 保留各命令自己的 flag 集
+  - 把“先读 flagged，再回退 destination / mode”收回单点 owner
+  - 不改 `externalWritePaths` 与 `writesExternalPath` 的边界，只删同构分派
+
+- `P21-7D` 这轮证明了一条更稳的减膨胀路径：
+  - 先把真正重复的控制流 owner 合并
+  - 再把同一 refactor 里多余的竖排展开收回
+  - 否则很容易出现“语义更干净了，但非空行数反而上涨”
+- `runtime-host-filesystem-backend.service.ts` 里，`copy/move` 与文本文件预读是当前最值的首批切口：
+  - `transferPath()` 可以稳定吸收 `copyPath / movePath` 的重复传输编排
+  - `readRuntimeTextFileContent()` 可以同时服务 `readTextFile()` 与 `edit` 预读，不需要让两条链各自维护二进制拒绝逻辑
+- `runtime-shell-command-hints.ts` 里，删薄包装之后最容易漏的是“还有别的 owner 在引用旧函数”：
+  - 这次 `mkdir` 的 PowerShell 分支就是直接例子
+  - 因而删 reader 时要同时搜消费点，不能只看映射表本身
+- 当前减膨胀仍不能靠 shared 下沉：
+  - shared 只保留类型的边界没有变
+  - 因此后续仍应优先做 server 内部的 owner 合并、reader 去重与薄包装删除
+
+- `other/opencode` 的 `read` 不只是“读文件内容”，还会把路径祖先上的 `AGENTS.md` 当成 loaded instructions 注入结果：
+  - 这类提醒和“最近读过哪些文件”是两条不同语义
+  - 前者是路径级指令约束，后者是会话级已加载上下文
+- 在当前仓库里，最稳的实现边界不是把它塞进 freshness owner，而是停在 `read` 域：
+  - `RuntimeFileFreshnessService` 继续只管 loaded-files truth source
+  - 路径祖先 `AGENTS.md` reminder 由 `read` 主链按目标路径即时解析
+  - 这样不会把“路径指令加载”误做成“所有工具都自动扫描整棵树”的全局副作用
+- 但也不能把可见根的 `AGENTS.md` 每次都重新灌进 `read` 结果：
+  - 当前会话本来已经吃到根级 agent 约束
+  - 如果每次 read 再把根级长文重复塞回结果，会显著抬高 token 和输出噪音
+  - 因此当前只加载可见根以下、但不等于可见根本身的路径级 `AGENTS.md`
+
+- post-write 里只有 `info/hint` diagnostics 时，也不能没有 next hint：
+  - 虽然不需要像 error/warning 一样阻塞
+  - 但模型仍需要知道先 `read` 哪个文件来核对这些低严重度诊断
+  - 否则“有 diagnostics，但没下一步动作”会把结果重新变成半成品
+- 这类提示仍应停在 renderer owner：
+  - severity 分层、targetPath 和 related paths 都已经在 `runtime-file-post-write-report.ts`
+  - 不需要让 `write-tool` 或 `edit-tool` 再补一套低严重度诊断文案
+
+- `RuntimeFileFreshnessService` 里“freshness stamp”和“loaded-files 上下文”不是同一回事：
+  - `write/edit` 成功后记 freshness stamp，是为了避免下一次写被误判成 unread
+  - 但这并不等于模型已经读过该文件内容
+  - 如果 reminder 直接复用全部 stamp，就会把写后文件误提示成“当前窗口已加载，可直接复用”
+- 因此更稳的边界是：
+  - freshness owner 仍共享一套 stamp truth source
+  - 但 reminder / overwrite-before-read 提示只消费“确实带 loadedWindow 的读上下文”
+  - `listRecentReads()` 这类底层顺序视图仍可保留全部 stamp，避免打坏 freshness 主语义
+- 空文件也是 loaded-files owner 的一个漏点：
+  - 真实 read 空文件时，`lineCount = 0`
+  - 如果按“没有行窗口就没有上下文”处理，会把真正读过的空文件从 reminder 里吞掉
+  - 更稳的是显式记录 `已加载空文件（0 lines of 0）`
+- stale write 阻塞只说“请重新读取后再修改”还不够：
+  - 模型缺少“上一次读到哪一段”和“下一步具体怎么做”的动作信息
+  - 在 freshness owner 里直接补“已过期上下文 + read <targetPath>`，可执行性更高，也不需要工具层重复拼文案
+
+- PowerShell command substitution 不能继续维持“全不支持”：
+  - `Copy-Item -Destination "$(Join-Path $env:ROOT 'file.txt')"` 这类写法在真实 PowerShell 工作流里很常见
+  - 如果一律忽略，AST 已进入主链后，静态提示仍会在高频路径拼接上落后于 `other/opencode`
+- 但 command substitution 也不能一把放开：
+  - generic `$(...)` 里可以是任意命令执行
+  - 本地变量、函数调用、管道和更深子表达式都没有稳定静态真相
+  - 最稳的边界是只识别 `Join-Path` 这种纯路径拼接命令
+- 这次有限支持的合理 owner 仍然是 `runtime-shell-command-hints.ts`：
+  - AST 层继续只负责抽 token，不负责解释 `Join-Path` 语义
+  - 路径语义仍停在现有 hints owner，避免把命令解释散回 `BashToolService / tool-registry / 审批 service`
+- `Join-Path` 这类有限支持还有一个容易漏掉的细节：
+  - 子路径常是单引号 literal
+  - 如果直接拿保护过的 token 去拼接，结果会把单引号 literal 前缀一并写进路径
+  - 因此在 `Join-Path` 的 child segments 上要先解开单引号 literal 标记，再做路径拼接
+- provider-aware 组合也必须一并验证：
+  - 只支持 `$(Join-Path ...)` 而不支持 `filesystem::$(Join-Path ...)`，会把前面已经建立的 provider path 语义重新打回半成品
+  - 这轮正例已经证明外层 provider prefix 和内层 Join-Path 归约可以稳定组合
+
+## 2026-04-23
+
+- post-write 反馈里，“Formatting: xxx” 本身不是可执行动作：
+  - 模型知道发生了格式化
+  - 但不知道下一步该先读文件确认最终文本，还是可以直接继续 edit/write
+  - 对 formatting-only 场景，最稳的是直接补 `read <targetPath>` 的 next hint
+- 这类 formatting-only 提示同样应留在 post-write renderer owner：
+  - renderer 已经同时拿到 `formatting + diagnostics + targetPath`
+  - 不需要把“纯格式化时怎么提示”散回 `write-tool` 或 `edit-tool`
+- bash env 路径和 PowerShell env 路径的正确边界，不该绑死到 backend kind：
+  - 仓库现有很多静态 hints 测试会在 `mock-shell` 上覆盖 PowerShell 风格 token
+  - 如果把 env 展开改成“只有 native-shell 才走 PowerShell 分支”，会直接打坏既有主链
+  - 更稳的 owner 是按 token 语义识别：
+    - 先尝试 PowerShell env token
+    - 再尝试 bash env token
+    - 单引号 literal 统一跳过展开
+- `indentation-flexible` 如果只负责“命中候选”，不负责“回写 replacement”，真实 `edit` 结果仍会损伤代码结构：
+  - 模型常给相对缩进块
+  - 当前文件里命中的却是嵌套块
+  - 如果不在 replace owner 内按 candidate 缩进重写 replacement，落盘后就会把块体左移
+- 这也说明 rewrite 策略的成熟度不能只看“是否匹配到”：
+  - 还要看命中后是否保留工程可读性
+  - 行尾风格和块缩进都属于 replacement normalization 的一部分，不该丢给工具层或后写格式化兜补
+- loaded-files reminder 真正有用的分界点，不是“多列几个路径”，而是把下一步动作直接绑定到已加载窗口：
+  - 仅显示路径列表时，模型仍要自己推断“是继续 read 还是直接 edit/write”
+  - 当 owner 已经知道 `loadedWindow + continuationOffset` 时，最稳的是直接输出：
+    - `read <path> offset=<n>`
+    - 或“当前窗口已加载，可直接复用”
+- 对 `read` 提醒来说，“最近读入时间/顺序”不一定要暴露绝对时间戳：
+  - 显式按最近读取排序
+  - 再给每条上下文一个稳定的顺序标签
+  - 就足够让模型判断“先复用哪一份上下文”
+- `line-ending-normalized` 这类 rewrite 策略如果只加在 `runtime-text-replace.ts`，但 host filesystem backend 仍然先把文件内容和输入统一成 LF，那么 native `edit` 真链路永远只会看到 `exact`：
+  - 这不是测试缺口，而是 owner 没接到主链
+  - 正确边界是 backend 直接把原始文本交给 replace owner
+  - replace owner 负责行尾差异匹配
+  - backend 只在最终回写时维持原文件 line ending 风格
+- 换行归一化不能只做“命中旧文本”，还要做“回写新文本”：
+  - 如果只允许 LF `oldString` 命中 CRLF 文件，但不重写 `newString`
+  - 替换后仍可能把原文件改成混合换行
+  - 因此 replace owner 需要同时根据命中的 candidate，把 `newString` 的换行序列重写成候选片段风格
+- `web-tree-sitter` 在普通 Node 运行态可直接 `Language.load(path)`，但在 Jest/ts-jest 下会触发：
+  - `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG`
+  - 原因不是 AST 逻辑本身失败，而是 `Language.load(path)` 内部走了 dynamic import
+  - 更稳的做法是直接读取 `.wasm` 字节再 `Language.load(buffer)`
+- AST 进入主链后，不能假设 parser 产出的 token 形态天然兼容现有 heuristic：
+  - PowerShell `-Destination:"path"` 在 AST 里会拆成 `command_parameter + ':' + string literal`
+  - 如果不在 AST 层先合并，旧的 flagged-path reader 就会失效
+  - 因此“AST 预扫”不只是换 parser，还需要一层薄 token 归一化
+- Bash `file_redirect` 也有一个很容易踩的节点陷阱：
+  - `file_redirect` 的第一个子节点是操作符 `>`
+  - 如果直接取第一个非空子文本，会把重定向目标错误抽成 `>`
+  - 需要显式跳过 redirection operator，再拿最后一个真实路径 token
+- 当前这条 AST 路线已经证明可落地的 owner 边界是：
+  - `runtime-shell-command-ast.ts` 只负责 parser/AST 抽取与最薄 token 对齐
+  - `runtime-shell-command-hints.ts` 继续负责现有路径/网络/写入语义归纳
+  - AST 失败时安全回退到既有 heuristic，不把 parser 风险扩散到工具主链
+- `native-shell` 族判定如果继续写成单一字面量，也会把第三 backend 证据做成半成品：
+  - `native-shell-alias` 这类 backend 虽然执行链已通
+  - 但静态提示、AST 预扫和 Windows `&&` 规则会退回 bash 语义
+  - 把这层收口到独立的 runtime shell syntax owner 后，同族 backend 才真正复用同一语义
+- 之前 `read` 的 loaded-files owner 只有“读过哪些路径”，这不够支撑 OpenCode 风格 reminder：
+  - 模型拿到的只是路径列表
+  - 不知道已经加载了哪一段窗口
+  - 也不知道是否还能直接 `offset` 续读
+- 这轮把 read window 上下文记到 `RuntimeFileFreshnessService` 后，loaded-files owner 的边界更合理：
+  - `ReadToolService` 只负责把 file window 元数据传进去
+  - freshness owner 统一负责“最近加载了什么”“还能怎么继续”
+  - 写前 freshness 阻塞和 `read` 输出 reminder 现在共享同一 truth source
+- `post-write` 的 next hint 之前最大的问题不是字段少，而是动作不可执行：
+  - “review related-file error diagnostics” 这类提示没有告诉模型该先读哪个文件
+  - 结果是拿到 hint 后还得自己再猜下一步
+- 这轮把路径级 next hint 加进去后，`write/edit` 反馈更接近真正工程反馈：
+  - 当前文件错误：直接 `read targetPath`
+  - related files 错误：直接 `read` 排序后的目标路径
+  - 多文件时按严重度和问题数排序，比简单按出现顺序更稳
+- 这也说明后续 `P21-7C` 最值得继续补的是：
+  - rewrite 策略本身
+  - post-write diagnostics 的更细分类
+  - 而不是继续堆泛文案
+
 ## 2026-04-19
 
 ## 2026-04-20
@@ -1517,3 +2555,605 @@
   - 不需要新命令分支
   - 只要 alias 指回已有 `remove-item` owner，就能直接复用现有 `value-flag 跳过 + 首个 positional target` 规则
 - 这比继续给 `del / erase` 单独写删除路径提取更省代码，也保持了当前 `P21-1` 的低膨胀方向。
+- `del / erase` 入口补齐后，也需要在权限提示链补一层新鲜证据：
+  - 否则 judge 仍会只看到 `BashToolService` 单测通过，而看不到审批请求里是否仍归一成 `remove-item`
+- 这类补法继续最省代码的方式不是再改生产逻辑，而是补 `tool-registry` 定向用例：
+  - `del` 进入权限链后，`fileCommands` 仍应是 `remove-item`
+  - `erase` 进入权限链后，`fileCommands` 仍应是 `remove-item`
+- 这样能把“删除 alias 只在一层测试里成立”的覆盖残余收掉，而不引入新的生产代码膨胀。
+- 另一类低冲突入口是 PowerShell 常用词形：
+  - `copy`
+  - `move`
+- 这类词形入口和 `cpi / mi` 的价值接近：
+  - 不需要新命令分支
+  - 只要词形入口指回已有 `copy-item / move-item` owner，就能直接复用现有 destination 规则
+- 这比继续给 `copy / move` 单独写目标路径提取更省代码，也继续符合当前 `P21-1` 的低膨胀方向。
+- `copy / move` 入口补齐后，也需要在权限提示链补一层新鲜证据：
+  - 否则 judge 仍会只看到 `BashToolService` 单测通过，而看不到审批请求里是否仍归一成 `copy-item / move-item`
+- 这类补法继续最省代码的方式不是再改生产逻辑，而是补 `tool-registry` 定向用例：
+  - `copy` 进入权限链后，`fileCommands` 仍应是 `copy-item`
+  - `move` 进入权限链后，`fileCommands` 仍应是 `move-item`
+- 这样能把“词形入口只在一层测试里成立”的覆盖残余收掉，而不引入新的生产代码膨胀。
+- 附着参数语法这条线上还有一个共享缺口：值本身可能带引号。
+  - `-Path:"C:\\temp\\note.txt"`
+  - `-FilePath:"C:\\temp\\copied.txt"`
+- 这类问题最适合继续补在共享 `readPowerShellAttachedFlagValue()`：
+  - 先剥掉附着值外层引号
+  - 再复用既有绝对路径与写路径识别
+- 这样能让 quoted 附着参数直接跟随现有 owner 受益，而不是再给 `set-content / out-file` 复制一套 quoted 逻辑。
+- quoted attached 路径这条线补完共享 owner 后，还需要把审批链证据补齐：
+  - 否则 judge 仍只会看到 `BashToolService` 层静态 hints 通过，看不到 `tool-registry` pending request 是否仍归一到同一套 metadata / summary
+- 这类补法继续最省代码的方式不是再改生产逻辑，而是补 `tool-registry` 定向用例：
+  - `Out-File -FilePath:"..." ...`
+  - `Set-Content -Path:"..." ...`
+- 这样能把 quoted attached 语法从“owner 已支持”推进到“权限链也有新鲜证据”，同时不引入新的生产代码膨胀。
+- `set-content / add-content` 这条线上，短别名也值得单独补证据：
+  - `sc` 应归一到 `set-content`
+  - `ac` 应归一到 `add-content`
+- 这类 alias 的价值不在新增生产分支，而在防止后续重构把 alias 入口退化成普通 token。
+- 最省代码的做法仍是双层补证据：
+  - `bash-tool.service.spec.ts` 钉静态 hints
+  - `tool-registry.service.spec.ts` 钉审批链 metadata / summary
+- 这样能证明 alias 不只在一层测试里成立，也不需要把 alias 逻辑从共享 owner 搬回工具层。
+- 如果静态 hints 层已经有别名证据，例如 `ac -> add-content`，下一刀最值的补法就不是再改生产逻辑，而是直接补 `tool-registry` 权限链用例。
+- 这样能把“alias 只在 hints 层成立”的覆盖残余收掉，同时继续避免生产代码膨胀。
+- `add-content` 这条线也验证了共享 quoted attached owner 的复用价值：
+  - `Set-Content -Path:"..." ...`
+  - `Add-Content -Path:"..." ...`
+- 两类命令都能直接复用同一条 `readPowerShellContentWritePathTokens() + readPowerShellAttachedFlagValue()` 组合，而不需要各自再加 quoted 专属分支。
+- `mkdir / md` 这条线也说明当前方向和 OpenCode 的 parser owner 一致：
+  - 同类 PowerShell 文件命令先归一到共享 `path + leaf-name` 规则
+  - 再补审批链证据
+  - 不把 PowerShell style `mkdir` 逻辑复制到工具层或审批层
+- 对当前 Garlic Claw 的低膨胀路线来说，这比继续扩命令特判更值：
+  - 共享 owner 只保留一条 `readMkdirWritePathTokens()`
+  - `md` 只通过 alias 归一
+  - 权限链差异只靠测试补证据
+- `new-item` 这条线进一步说明共享 owner 的组合复用已经成立：
+  - `path + leaf-name`
+  - `-Flag:Value`
+  - `quoted attached`
+- 这三层组合在 `New-Item -Path:"..." -Name ...` 上能直接复用，不需要再写 `new-item quoted` 专属分支。
+- 这和 OpenCode 里 parser 统一收口参数语法的思路是一致的；在当前 Garlic Claw 阶段，用共享 hints owner + 新鲜覆盖证据是更省膨胀的等价路线。
+- `rename-item` 同样验证了这条组合复用不是偶然：
+  - `path + new-name`
+  - `-Flag:Value`
+  - `quoted attached`
+- 这三层组合在 `Rename-Item -Path:"..." -NewName ...` 上也能直接复用，不需要再写 `rename-item quoted` 专属分支。
+- 到这里，`path + leaf/new-name` 这一组共享 owner 已经在 `new-item / rename-item / mkdir` 三类入口上拿到新鲜证据，继续扩这组语法时应优先补代表性测试，而不是复制生产逻辑。
+- `ni / ren` 这条线则补齐了 alias normalization 的另一块证据：
+  - `ni` 不需要 `new-item` 专属分支
+  - `ren` 不需要 `rename-item` 专属分支
+- 这和 OpenCode 在 bash tool 里强调“alias normalization 应只在一个地方发生”是一致的。
+- 对当前 Garlic Claw 来说，最省膨胀的做法仍是：
+  - alias 继续只放在共享映射表
+  - 静态 hints 与权限链各补一层新鲜证据
+  - 不把 alias 逻辑复制到工具层或审批层
+- `ni / ren` 再叠上 quoted attached 后，组合复用也成立：
+  - alias normalization
+  - `-Flag:Value`
+  - quoted attached
+  - `path + leaf/new-name`
+- 这说明当前共享 owner 不是只在单一语法维度成立，而是多层组合后仍能保持单点 owner。
+- 这正是当前 Garlic Claw 在不引 parser 的前提下，最接近 OpenCode parser 收口效果的可落地路线。
+- `mkdir / md` 再叠上 quoted attached 后，也验证了同样的组合复用：
+  - `path + leaf-name`
+  - `-Flag:Value`
+  - quoted attached
+  - alias normalization（`md`）
+- 这让当前共享 owner 的覆盖不再只停在“文件创建/重命名命令各补一条”，而是对同类目录创建入口也有成套证据。
+- 删除线也补到了同类组合复用：
+  - `显式路径参数`
+  - `value-flag 跳过`
+  - quoted attached
+  - alias normalization（`rd`）
+- `Remove-Item -Path:"..." -Include ...` 与 `rd -Path:"..." -Include ...` 都说明当前共享 owner 不会把 `-Include` 的路径值误抬成写目标。
+- 这样当前 PowerShell 静态预扫的低膨胀路线，已经不仅能识别“写到哪里”，也能继续守住“哪些只是过滤参数，不该被当成写目标”。
+- `ri / del / erase` 再叠上 quoted attached 后，这条删除线的 alias 组合也闭合了：
+  - alias normalization
+  - `显式路径参数`
+  - `value-flag 跳过`
+  - quoted attached
+- 到这里，删除线的共享 owner 已经不再只覆盖 canonical 命令，也覆盖了低冲突 alias 与参数组合。
+- `copy-item / move-item` 这条 destination 线再叠上 quoted attached 后，也验证了同样的组合复用：
+  - `destination`
+  - `-Flag:Value`
+  - quoted attached
+  - alias normalization（`cpi / mi / copy / move`）
+- `Copy-Item / cpi / copy` 与 `Move-Item / mi / move` 在 `-Destination:"..."` 形态下，都仍只把真正目标路径记为 `externalWritePaths`，源路径不会被误抬成写目标。
+- 这说明当前 PowerShell 静态预扫在 `copy/move` 线上的共享 owner 已经不只覆盖普通 `-Destination value`，也覆盖了附着引号值和 alias 组合。
+- 对当前 Garlic Claw 的低膨胀路线来说，这比继续给 `Copy-Item / Move-Item` 长 quoted 专属分支更值：
+  - `readPowerShellDestinationPathTokens()` 继续是单点 owner
+  - alias 继续只停留在共享映射表
+  - 权限链差异继续只靠测试补新鲜证据
+- `-LiteralPath` 这条线也拿到了代表性双层证据：
+  - `Copy-Item`
+  - `Set-Content`
+  - `Rename-Item`
+  - `Remove-Item`
+- 这 4 类命令说明当前共享 path flag owner 不是只支持 `-Path` 文本形态，而是真正覆盖了 `-LiteralPath`：
+  - destination 规则还能继续和 `-LiteralPath + -Destination` 组合
+  - content write 规则还能继续和 `-LiteralPath:"..."` 组合
+  - `path + new-name` 规则还能继续和 `-LiteralPath + -NewName` 组合
+  - `remove-item` 规则还能继续和 `-LiteralPath + -Include` 组合，并保持 value-flag 跳过
+- 这进一步说明当前 P21-1 的最值方向仍然成立：
+  - 用少量共享 path flag 规则覆盖多类 PowerShell 文件命令
+  - 用测试补新鲜证据，而不是把 `-LiteralPath` 逻辑复制到各命令分支
+- 到当前阶段级 judge 为止，`P21-1` 的剩余明显缺口已经发生了边界切换：
+  - 不再主要是高价值 PowerShell 写入 / 删除命令的共享规则遗漏
+  - 主要转入更深语法层：
+    - 复杂 quoting
+    - variable expansion
+    - command substitution
+- 这意味着继续留在 `P21-1` 再补更多命令名单或浅层组合，收益已经明显下降；下一步应转入 `P21-2`，但仍坚持“不引完整 parser”的低膨胀路线。
+- `P21-2` 第一刀当前证明，一条低膨胀路线是成立的：
+  - 先只支持明确可静态判定的 PowerShell env 前缀
+  - 不去碰完整表达式求值
+  - 让 env 展开只服务于共享绝对路径候选归一
+- 这条路线的边界目前很清楚：
+  - 支持：`$env:NAME...`、`${env:NAME}...`
+  - 暂不支持：局部变量、命令替换、任意表达式拼接
+- 对当前 Garlic Claw 来说，这比直接追求“所有变量都能展开”更值：
+  - 提示精度先补到最常见、最确定的 env 路径
+  - 仍避免把 hints owner 推成半成品 parser
+- `P21-2` 第二刀把“不支持什么”也钉住了：
+  - 本地变量路径仍故意不支持
+  - command substitution 仍故意不支持
+- 这两条负向证据很关键，因为它们把当前边界写实了：
+  - 当前不是“变量都支持，但偶尔失败”
+  - 当前是“只支持 env 前缀这类确定语法，其他深语法暂不支持”
+- 这让后续 P21-2 的推进标准更清晰：
+  - 只补高价值、可静态判定、能继续停留在共享 owner 的语法
+  - 不为了追覆盖把 `runtime-shell-command-hints.ts` 推成新的 parser
+- `${env:...}` 在 PowerShell `-Path:"..."` 这类 quoted attached 形态里还有一个共享分词缺口：
+  - 正则分词会把 `-Path:"${env:ROOT}\\file.txt"` 拆成 `-Path:"$`、`env:ROOT`、`\\file.txt"`
+  - 因此问题不在 `set-content` 命令 owner，而在 tokenizer 入口对 `${...}` 的保护不足
+- 当前最省膨胀的修法不是给 `set-content` 再写专属拼接，而是：
+  - 分词前先保护 `${...}` 片段
+  - 分词后再还原
+  - 后续继续复用既有 attached flag 读取与 env 展开
+- 这条修法的收益是共享的：
+  - 能补齐 `${env:...}` 的 quoted attached 形态
+  - 但后续路径归一仍只接受 `$env:` / `${env:}`，没有把 `${localVar}` 或更深表达式一起升级成“支持”
+- 因此当前 `P21-2` 第三刀仍符合低膨胀方向：
+  - 修的是共享分词入口
+  - 不是把 tokenizer 推成完整 parser
+  - 也没有把逻辑散回 `BashToolService / tool-registry / 审批 service`
+- PowerShell 单引号语义也是当前 `P21-2` 的高价值边界：
+  - `'$env:ROOT\\file.txt'` 不应展开
+  - `'${env:ROOT}\\file.txt'` 也不应展开
+- 这类问题如果只看“单引号里不要展开”，很容易被修成过粗特判；更稳的共享 owner 语义应是：
+  - 单引号 literal 仍是字面量 token
+  - 绝对路径字面量仍可识别
+  - 但 env 展开必须被禁止
+- 当前最省膨胀的修法不是去命令分支补 `copy-item / set-content` 专属判断，而是：
+  - 给共享 token 增加单引号 literal 标记
+  - 在分词入口和 attached flag value 读取时保留该标记
+  - 在绝对路径归一时允许字面量路径继续成立
+  - 在 env 展开时对该标记直接拒绝
+- 这样既能修掉“单引号 env 被误展开”的误判，也不会把“单引号绝对路径字面量”一并误杀。
+- 但“不会误杀单引号绝对路径字面量”不能只停留在实现推断，还需要双层新鲜证据：
+  - `Copy-Item -Destination:'filesystem::D:\\...txt'`
+  - `Set-Content -Path:'C:\\...txt'`
+- 这两类正向用例有额外价值：
+  - 同时覆盖分词入口保留的单引号 literal token
+  - 也覆盖 attached flag value 读取里的单引号 literal 语义
+- 因而当前单引号这一组边界已经形成完整成对证据：
+  - 负向：单引号 env 不展开
+  - 正向：单引号 absolute path literal 仍可识别
+- `${...}` 保护范围本身也需要单独负向证据，否则很容易被误解为“所有 braced 变量都支持”。
+- `Set-Content -Path "${targetRoot}\\note.txt" D:\\payload.txt` 这类用例的价值在于：
+  - 当前已经会经过共享 `${...}` 保护
+  - 但最终仍不能进入 `${env:...}` 的支持路径
+  - 因此能直接证明“保护范围”和“支持范围”不是一回事
+- 到这里，当前 `P21-2` 至少已经形成三组比较完整的边界证据：
+  - 正向：`$env:...` / `${env:...}`
+  - 负向：本地变量 / command substitution / `${localVar}`
+  - quoting：单引号 env 不展开，但单引号 absolute path literal 仍可识别
+- provider prefix 也是 env 展开的一个真实组合缺口：
+  - `filesystem::$env:ROOT\\file.txt`
+  - `filesystem::${env:ROOT}\\file.txt`
+- 这类组合不适合去 `copy-item / set-content` 各自补特判；更稳的共享 owner 做法是：
+  - 在绝对路径归一时先识别 `filesystem::` 前缀
+  - 对后半段继续沿既有 env 展开规则归一
+  - 再把 provider 前缀拼回去
+- 这条修法的关键是同时守住 earlier boundary：
+  - provider-aware env 组合可以成立
+  - 但单引号 literal 仍不能被展开
+- 到这里，当前 `P21-2` 的正向支持面已经进一步明确：
+  - `$env:...`
+  - `${env:...}`
+  - `filesystem::$env:...`
+  - `filesystem::${env:...}`
+- 但 provider-aware 正向支持面补出来后，也必须把对应的 quoting 负向边界补齐：
+  - `'filesystem::$env:...'` 不应展开
+  - `'filesystem::${env:...}'` 也不应展开
+- 这样当前 provider-aware 这一组才算成对完整：
+  - 正向：provider prefix 后的 env 展开可以成立
+  - 负向：单引号包住后仍回到 literal 语义
+- provider-aware 这一组还需要和 earlier `${localVar}` 边界对齐：
+  - `filesystem::${env:...}` 可以成立
+  - `filesystem::${localVar}` 不应被误当成支持面
+- `Set-Content -Path \"filesystem::${targetRoot}\\note.txt\" D:\\payload.txt` 这类用例的价值在于：
+  - 当前已经会经过共享 `${...}` 保护和 provider-aware 入口
+  - 但最终仍不能进入 `${env:...}` 支持路径
+  - 因而能证明 provider-aware 扩展没有把支持面偷偷放大
+- 到 `P21-2` 阶段级 judge 为止，当前高价值 PowerShell quoting / variable expansion / command substitution 边界已经基本收口：
+  - 支持面和不支持面都已有双层新鲜证据
+  - 继续往下补的明显方向已主要属于更深语法或完整 parser，不再是当前 TODO 里 `P21-2` 的同级阻塞
+- `read` 的 loaded-files reminder 如果继续留在 `ReadToolService` 本地 formatter，就会出现一个典型假薄化问题：
+  - 工具层表面只是在拼字符串
+  - 但“最近读取文件排序、reminder 标题、条目格式、结尾建议”这些 owner 仍然跟着工具层走
+- 当前更稳的第一刀不是直接大改所有 `read` 场景文案，而是先把最小 reminder owner 收回 `RuntimeFileFreshnessService`：
+  - freshness 本来就拥有 read stamp 与 recent reads
+  - `buildReadSystemReminder(sessionId, options)` 可以直接建立在 `listRecentReads()` 之上
+  - 这样 `ReadToolService` 才能真的只剩结果包装
+- 这刀也说明 `P21-3` 的低膨胀推进方式应该是：
+  - 先从真正稳定的共享 owner 下手
+  - 再处理缺失 / 文件 / 目录 / 截断 / 分流等场景文案统一
+  - 避免一上来把所有 continuation hint 全塞进 `ReadToolService`
+- 当前 `RuntimeFileFreshnessService` 暴露“字符串行数组”已经足够支撑这一刀：
+  - 它至少把 owner 从工具层拿走了
+  - 残余风险只是未来若需要第二种展示形态，可能要再进一步结构化
+  - 这不阻塞当前第一刀，因为本轮目标是 owner 下沉，不是一次性设计完整 read result schema
+- `read` 的继续操作提示如果继续散在 `ReadToolService` 各个 `if (result.type === ...)` 分支里，后面每补一个场景都会重新抬高工具层复杂度：
+  - 目录截断一套文案
+  - 文件截断/结尾一套文案
+  - image/pdf/binary 分流又各自一套文案
+- 当前更稳的第二刀是给 `read` 建一个很小的 renderer owner：
+  - `read-result-render.ts` 只负责把 backend 结果渲染成对模型友好的文本
+  - `ReadToolService` 退回到“分派类型 + 调用 owner + 返回结果”
+  - 这样继续补 read UX 时，不需要再回到工具 service 里堆字符串
+- 缺失路径建议这条线的价值不只是补一句“可继续操作”：
+  - 当前如果建议顺序不稳定，同一输入可能每次给出不同第一个候选
+  - 对模型来说，第一个候选往往最容易被直接拿去重试
+  - 因此前缀优先、长度更近优先的排序，比单纯字典序更像“最相关路径优先”
+- 到当前第二刀为止，`P21-3` 已经形成两类稳定 owner：
+  - freshness owner：`system-reminder / loaded-files`
+  - renderer owner：目录 / 文件 / 分流的继续操作提示
+- 当前 residual risk 也更清楚了：
+  - “read 输出继续提示” 与 “backend 缺失路径异常” 仍是两个 owner
+  - 但这两层 owner 分界是合理的：前者负责结果渲染，后者负责路径解析失败诊断
+  - 只要不把两者重新拧回 `ReadToolService`，当前结构就不构成假完成
+- 目录 `read.offset` 越界如果继续返回空列表，会形成一个很差的模型体验：
+  - 看起来像“目录里没有更多内容”
+  - 实际上是“请求窗口已经超出范围”
+  - 这会把后续动作引向错误方向
+- 当前更稳的 owner 仍然是 backend：
+  - backend 最清楚目录总条目数与文件总行数
+  - 由 backend 直接判断越界，工具层就不需要自己猜“空列表是不是越界”
+  - 这也让后续若接第二 filesystem backend，只要复用同一 contract 即可
+- 文件与目录越界文案如果各自就地写，会马上形成两套非常像的错误构造。
+- 用 `createReadOffsetOutOfRangeException()` 这类小共享 owner 就够了：
+  - 不需要新增 service
+  - 也不用把异常格式化拉到工具层
+  - 但能把“文件总行数 / 目录总条目数”这组差异维持在同一处
+- `P21-3` 阶段级复核时，最关键的不是某一条文案是否完全复刻 OpenCode，而是三类 owner 是否已经稳定闭合：
+  - freshness owner：loaded-files / system-reminder
+  - renderer owner：目录 / 文件 / 分流结果文案
+  - backend owner：缺失路径诊断与越界诊断
+- 到当前阶段级 judge 为止，这三层 owner 已经各自成立，而且没有再回流到 `ReadToolService`。
+- 这意味着当前 `read` 主链的剩余差距已发生边界切换：
+  - 不再是 `P21-3` 范围内的 owner 稳定化和继续提示成熟度问题
+  - 更多是更丰富的附件、LSP、或更广覆盖证据的问题
+- `P21-4` 第一刀最值的切口不是先改排序或更复杂搜索后处理，而是先补 `glob` 缺失路径诊断的一致性：
+  - `read` 和 `grep` 已经能复用 backend 缺失路径 suggestions owner
+  - `glob` 如果继续保留裸 `路径不存在`，同一类路径错误在三个工具里会出现两种体验
+- 这类缺口最适合直接在 backend owner 里修：
+  - `globPaths()` 改走 `requireExistingPath()`
+  - 自动复用 suggestions 排序、字符串与下一步动作
+  - 不需要再造 `glob` 专属 missing path formatter
+- 这一刀也证明 `P21-4` 的低膨胀推进方式仍应是：
+  - 先找“已有共享 owner 但某个搜索工具还没复用”的缺口
+  - 优先做 owner 复用与工具链证据
+  - 避免一上来给 `glob / grep` 各自继续堆一套搜索 UX 文案
+- `glob` 第一刀之后暴露的 residual risk 也说明了另一条低膨胀路线：
+  - 继续动作文案可以因工具不同而不同
+  - 但这不意味着要复制整套 suggestions owner
+  - 更合适的是在同一个 owner 上做最小参数化
+- `grep` 的缺失路径建议之所以也会落回 `read` 语气，是因为它经过 `listFiles()` 再落到 `requireExistingPath()`：
+  - 这再次证明缺口不在 `grep` 工具层
+  - 而在 backend owner 没有暴露“调用方下一步动作”这个可变点
+- 当前用 `nextStepHint` 这种字符串参数已经足够支撑这刀：
+  - 没有引入更重的动作枚举或新 service
+  - 但已经让 `glob / grep / read` 在同一 owner 下拿到更贴切语义
+  - 这比先抽一套更大的 search UX schema 更符合当前代码膨胀约束
+- `P21-4` 再往前推一步后，搜索结果 follow-up 的高价值缺口也更清楚了：
+  - 如果结果只提示 `read`，模型的动作链仍停在“查看”
+  - 把共享 follow-up hint 提升为“先 `read`，再按需要 `edit / write`”，能更贴近 TODO 里“搜索结果可直接接修改工具”的目标
+  - 这刀仍适合继续留在 shared report owner，而不是给 `glob / grep` 各自补第二套后处理分支
+- 这也说明当前 `P21-4` 剩余的主链阻塞已经继续收窄：
+  - 不是继续多写几句提示
+  - 而是 project-aware overlay 和更结构化的搜索后处理
+  - 如果后面继续只改措辞，收益会开始明显下降
+- `suggested next read` 这刀还补出了一条 owner 边界经验：
+  - 共享 formatter 不等于共享 owner
+  - 如果“取哪一个 match 作为建议目标”的决策还在工具层，仍然属于共享外壳化
+  - 这次先被 judge 判 `FAIL`，再把 top-match 决策收回 `runtime-search-result-report.ts` 后才算真正成立
+- 这说明 `P21-4` 后续继续补搜索后处理时，判断标准应该更严格：
+  - 不只是把文案函数集中
+  - 还要把“如何从 backend 结果得出下一步动作”的决策也收进同一 owner
+  - 否则后续一旦改建议策略，还是会回到 `glob / grep` 两边同时返工
+- project-aware overlay 这条线也验证了同一条 owner 边界：
+  - 如果 overlay 只是消费工具层先挑好的 `matches[0]`
+  - 那么 `Project Next Read` 仍然只是工具层决策的另一层展示壳
+  - 更稳的做法是让 overlay owner 直接消费 `matches`，再复用 shared search owner 的建议路径决策
+- 这样当前 `P21-4` 至少已经形成两层可复用 owner：
+  - shared search owner：决定 `suggested next read`
+  - overlay owner：决定 project-relative `Project Base / Project Next Read`
+- 这两层 owner 现在的残余缺口也更明确了：
+  - 不是 owner 还在工具层
+  - 而是 top-match 策略本身仍偏弱，当前仍默认第一条结果
+  - 如果后面要继续对齐 OpenCode，更值的方向应是增强 shared search owner 的建议目标策略，而不是再往 `GlobToolService / GrepToolService` 塞提示文案
+- `suggested next read` 从“第一条”升级到薄启发式策略后，当前 owner 边界进一步稳定：
+  - `glob / grep` 只交付 backend 搜索结果
+  - shared search owner 负责候选聚合与建议路径排序
+  - overlay owner 负责 project-relative 映射
+- 这条拆分说明“策略增强”和“展示增强”可以并行而不互相污染：
+  - 策略增强停留在 shared search owner（`hits/depth/length/lexical`）
+  - 展示增强停留在搜索摘要与 overlay 文本层
+  - 两者都不需要回到工具 service 分支
+- 当前这套策略的边界也很清楚：
+  - 优点是稳定、低膨胀、可测
+  - 局限是仍为启发式，不保证语义最优
+  - 后续若要继续对齐 OpenCode，需要补更语义化相关性，但应该继续沿 shared owner 增强，而不是重回工具层堆特判
+- 到 `P21-4` 阶段级 judge 为止，搜索链的主要 owner 已形成稳定分工：
+  - backend owner：缺失路径建议与搜索数据来源
+  - shared search owner：summary/truncation/empty/follow-up/suggested-next-read 策略
+  - overlay owner：project-relative 视图补充
+- 这意味着 `glob / grep` 当前剩余问题已经从“owner 没收口”切换为“策略语义是否更强”。
+- 因而后续继续对齐 OpenCode 时，优先级应转向 `write/edit` 工程反馈与第三 backend 迁移性证据，而不是再回到 `glob/grep` 做同类文案收口。
+- `P21-5` 第一刀验证了写后诊断也适合同样的 owner 路线：
+  - shared post-write owner 负责 current/related 分流、诊断排序与下一步提示
+  - `write/edit` 工具层只透传 `targetPath`，不拼第二套诊断文案
+- 这比在 `write-tool.service.ts` 与 `edit-tool.service.ts` 各自加判断更稳：
+  - 行为一致性更好
+  - 后续诊断策略升级只改一个 owner
+  - 工具层不会重新膨胀成文案控制器
+- 当前残余风险是 tool-chain 对新 post-write 文案的逐字钉桩还偏薄；下一刀宜补真实链路断言，防止后续回退。
+- `P21-5` 第二刀补完后，写后诊断这条线已形成双层证据：
+  - owner 单测：策略与格式化行为
+  - tool-chain 回归：native `write/edit` 包装后的真实输出
+- 这类“先 owner 收口，再补 tool-chain 钉桩”的节奏在当前阶段有效：
+  - 既避免工具层膨胀
+  - 又避免只在单元测试里自证通过
+- `P21-5` 第三刀（`escape-normalized`）再次验证了同一条边界：
+  - 匹配策略应继续集中在 `runtime-text-replace` 策略表
+  - `EditToolService / WriteToolService` 只消费策略结果，不承载匹配规则
+- 这刀首轮 judge 的 `FAIL` 也暴露了当前验收门槛：
+  - 仅有 shared owner 单测不够
+  - 必须补至少一条 `edit` 真实链路证据，证明策略确实穿过 native tool 包装层
+- `write` 并不消费 replace 策略，因此把它算进同刀“匹配策略通过证据”并不成立。
+  - 这类场景应优先补 `edit` 链路，而不是增加与目标能力无直接关系的回归。
+- 当前更稳的推进节奏是：
+  - 先在 shared owner 增强策略
+  - 再在 `edit-tool` 与 `tool-registry` 之间补最小链路钉桩
+  - 保持“能力增强 + 证据增强”同轮收口
+- `P21-5` 第四刀说明“多候选歧义”不该直接丢给工具层处理：
+  - `context-aware / block-anchor` 都应在 replace owner 内先做候选评分
+  - 工具层只接受“唯一候选或歧义错误”的结果，不应参与 tie-break
+- 这刀首轮 judge `FAIL` 的价值在于把验收边界拉实：
+  - 只证明“最佳候选会自动收敛”还不够
+  - 还必须证明“同分仍保留歧义”，避免后续把策略悄悄放宽成“总是选第一条”
+- 统一的 `readRuntimeTextBestScoredMatches()` 能同时控制两条语义：
+  - 最高分唯一时自动收敛，降低无意义歧义失败
+  - 最高分并列时继续抛歧义，保持保守安全边界
+- 这一轮也再次验证当前低膨胀路线：
+  - 不增加新 service
+  - 不在 `EditToolService` 增分支
+  - 只在 shared replace owner 加一层薄选优并补测试证据
+- `P21-5` 第五刀说明“边界空白纠偏”也应做窄策略而不是大一统放宽：
+  - 仅放宽 trailing spaces（`trimEnd`）
+  - 保留前导缩进参与匹配
+  - 这样能修掉高频误报，又不会把缩进语义破坏掉
+- 把 `trailing-whitespace-trimmed` 放在 `trimmed-boundary` 之前有直接收益：
+  - 先命中更窄、更可控的场景
+  - 减少被宽松策略提前吞掉后触发多候选歧义
+- 这刀再次验证“策略增强 + 真链路断言”必须同轮出现：
+  - 单元层用例证明策略边界
+  - native `edit` 回归证明工具链确实能观察到该策略并正确落盘
+- `P21-5` 第六刀补出了一条 post-write 反馈边界：
+  - “有 error”不等于“当前文件有 error”
+  - 若只在 related files 报错，next hint 必须引导先看关联文件，而不是继续改当前文件
+- 这条语义最适合继续放在 shared post-write renderer：
+  - 它需要 `targetPath` 与 diagnostics 全量视图
+  - 但不需要工具层知道任何分流细节
+  - 因而应由 renderer owner 一次性输出 summary + hint
+- 当前仍有一条可继续提升的证据边界：
+  - related-only error 的真链路已在 `edit` 覆盖
+  - `write` 因复用同 renderer 理论上等价，但若后续风险上升可再补一条 `write` 对称用例
+- `P21-5` 第七刀验证了“重复控制流压缩”更适合放在 freshness owner 而不是工具层：
+  - `withWriteFreshnessGuard()` 把锁、写前校验、写后 read-stamp 一次收口
+  - `write/edit` 只保留各自业务调用与结果渲染
+- 这一刀同时把 `write` 的并发安全提升到和 `edit` 一致：
+  - 之前 `write` 未统一走 `withFileLock`
+  - 现在两者都经同一 guard owner，降低同路径并发覆盖风险
+- 从回归经验看，控制流下沉时最容易漏的是测试夹具 contract：
+  - 生产代码切到新 owner 后，`tool-registry` 的 mock 也必须同步
+  - 否则会以 `invalid-tool-result` 形式误报回归失败
+- 到 `P21-5` 阶段级复核为止，`write/edit` 的三条主链已形成稳定 owner 分工：
+  - 匹配纠偏：`runtime-text-replace`
+  - 写后反馈：`runtime-file-post-write-report`
+  - 写入 freshness 事务：`runtime-file-freshness`
+- 这意味着 `P21-5` 后续风险已从“owner 未收口”转到“跨 backend 迁移性证据”：
+  - 下一阶段更值的是 `P21-6` 的第三 backend 试点
+  - 而不是继续在 `write/edit` 工具层堆新增分支
+- `P21-6` 第一刀证明“第三 backend 等价证据”可以先从测试路由层落地：
+  - 用 real host backend 的 alias kind 走同一实现
+  - 覆盖 `read/glob/grep/write/edit` 全链路
+  - 先验证“工具 owner 不依赖 backend 名称”
+- 这刀里最易踩坑的是 backend 注入时机：
+  - alias backend 若在 fixture 外提前构造，容易和 runtime 工作根脱节
+  - 把 alias 注入收回 `createFixture` 后，路由证据更稳定可复现
+- `P21-6` 第二刀把同样方法扩到 shell 侧后，迁移性证据更完整：
+  - filesystem 侧：`read/glob/grep/write/edit`
+  - shell 侧：`bash`
+  - 两侧都证明 backend 新 kind 不需要改工具 owner
+- shell alias 用例暴露了另一个常见陷阱：
+  - 测试辅助的“命令语法选择”若只认固定 kind，会把 alias kind 误当成 bash
+  - 这类逻辑应按能力族（native-shell）而不是单值枚举判断
+- 到 `P21-6` 阶段级复核为止，迁移性风险边界已发生切换：
+  - 主要风险不再是“第三 backend 能不能接入”
+  - 而是“在保持成熟度的同时把生产代码压回目标行数”
+- 因而下一阶段应把主战场切到 `P21-7`：
+  - 优先清理 `execution/runtime` 重复 owner 和大文件
+  - 保持现有迁移性与工具成熟度证据不回退
+- `P21-7` 第一刀暴露了一个关键约束：共享去重不能破坏 token literal 语义。
+  - redirection 分支如果直接 `stripOuterQuotes`，会丢失单引号标记
+  - 随后统一归一化链会把 `'$env:...'` 误当成可展开变量，导致外部写入误报
+- 这类语义约束在 `runtime-shell-command-hints` 内部已存在统一机制：
+  - `normalizeQuotedShellToken` 提供单引号 literal 前缀
+  - `normalizeShellAbsolutePathCandidate` 会基于该前缀跳过 env 展开
+  - 因此 redirection 路径提取必须与该机制保持同一路径
+- 这轮 judge 也再次证明“正向用例通过”不足以覆盖共享链路回退。
+  - 之前 redirection 仅覆盖绝对路径正向样例
+  - 必须补 `'$env:...'` 与 `'filesystem::$env:...'` 负向样例，且在静态层和权限链各有一组
+- 在修复回退后，去重收益仍成立：
+  - flagged-or-positional 与 flag-aware positional 的共享流程未回滚
+  - 工具层没有新增分支，owner 仍停在 `runtime-shell-command-hints`
+- 当前阶段判断可继续保持：
+  - `P21-7` 第一刀可计入进度（judge `PASS-1`）
+  - 下一优先项仍是削减 `execution/runtime` 大 owner 行数，并持续复测成熟度链路
+- `P21-7` 第二刀确认了一个高收益去重点：命令分派与扩展名判定可优先数据化。
+  - `if/else` 长分支在语义稳定时更适合收成映射表/集合
+  - 这类改动通常不会触及工具层 owner，回归半径可控
+- 对 `runtime-shell-command-hints` 而言，命令分派数据化后有两个直接收益：
+  - 专属 reader 与 fallback 路径边界更清晰
+  - 新增命令时只需补映射项，不必继续扩长条件链
+- 对 `runtime-host-filesystem-backend` 而言，扩展名判定数据化后有两个直接收益：
+  - MIME/binary 分类入口统一，减少分散维护风险
+  - 与测试中的代表扩展名断言更容易逐项对应
+- 这刀也验证了当前验收节奏仍有效：
+  - 定向测试覆盖 shell hints + host filesystem 双 owner
+  - 冒烟通过后再做独立 judge，能快速识别“是否真压缩且无回退”
+- `P21-7` 第三刀表明，命令映射表里常见的“薄包装函数”是可持续清理对象。
+  - 如果函数只做参数转发且没有独立语义，直接在映射表绑定共享 reader 更清晰
+  - 对应的风险主要是参数错绑，因此必须用既有命令回归做护栏
+- 当前 `runtime-shell-command-hints` 的进一步压缩策略可以继续沿这一方向推进：
+  - 保留有独立语义的 reader（如 `new-item/rename-item/git/tar`）
+  - 优先删除只转发参数的中转层
+- `P21-7` 第四刀说明，声明收口和类型去重在大 owner 里也有稳定收益：
+  - 对重复出现的数据结构先抽单一类型定义，可减少无意义重复且不改控制流
+  - 对超长枚举声明做紧凑收口，可在不改成员的前提下快速回收行数
+- 这类改动的有效前提是“成员集合完全不变”：
+  - 一旦成员发生漂移，风险会从“纯减行”升级为“语义变更”
+  - 因此必须依赖对应 owner 的代表性测试与冒烟一起确认
+- `P21-7` 第五刀再次验证：声明收口可以继续做，但收益呈递减趋势。
+  - 这类改动风险低、通过快，适合作为碎片减行
+  - 但单刀收益较小，难以单独拉近 `<=15000` 距离
+- 因此后续更优策略仍应回到控制流去重与 owner 下沉：
+  - 声明收口可以保留
+  - 主减行应来自重复分支和中转层删除
+- `P21-7` 第七刀验证了“owner 下沉”比纯声明收口的收益更高。
+  - 把 `runtime-search-result-report` 下沉到 `packages/shared` 后，`packages/server/src` 一刀净减百行级
+  - 同时 server 消费点保持薄层，未引入新转发壳
+- 这类迁移有一个固定注意点：声明产物同步。
+  - server Jest 会读取 workspace 包的现有声明
+  - shared 新导出后，需要先 build shared，再跑依赖该导出的 server 测试
+- `P21-7` 第八刀进一步确认：read 输出渲染同样适合下沉 shared。
+  - 该 owner 只依赖数据结构和字符串渲染，不依赖 server runtime
+  - 下沉后 read tool 仍保持薄消费层，server 侧无残留第二份实现
+- 连续两刀 owner 下沉的收益明显高于前几刀纯声明压缩：
+  - `runtime-search-result-report` 下沉：百行级净减
+  - `runtime-read-result-render` 下沉：接近百行级净减
+- 边界已更新为“shared 仅类型共享，不承载逻辑”后，上述两刀已整体回滚。
+  - 回滚后 shared 侧逻辑文件和导出都已移除
+  - server 侧 owner 与导入链已恢复，本地语义通过 fresh + smoke + judge 复核
+- 这次回滚说明后续减行策略要收敛到：
+  - 不再用“迁移到 shared”作为减行手段
+  - 改为在 `server/src` 内做控制流去重、重复 owner 合并、薄包装删除
+- `P21-7` 第九刀说明一个细节：泛化 helper 本身不一定自动减行。
+  - 先把 PowerShell/POSIX flag 读取与组合路径流程抽成共享 reader 后，物理行数一度回升
+  - 只有继续把常量声明、fallback 分支与薄包装一起压缩，净减行才真正落下来
+  - 因此后续做“控制流级重构降行”时，应该把 owner 合并和物理布局压缩当成同一刀处理，而不是分开做
+- 对 `runtime-shell-command-hints.ts` 来说，这刀进一步稳定了两个 owner：
+  - `readFlaggedPathTokens()` 负责 flag + attached-value + next-value 共享读取流程
+  - `readPowerShellComposedWritePathTokens()` 负责 `path + leaf/new-name` 组合路径
+- judge 的结论也再次验证了当前边界：
+  - shell hints 语义仍停在 `runtime-shell-command-hints.ts`
+  - 没有因为去重而回流到 `BashToolService / tool-registry / 审批 service`
+- 总量统计口径已经固定：
+  - 统一命令：`npm run count:server-src`
+  - 定义：统计 `packages/server/src/**/*.ts` 的非空行数
+  - 当前脚本输出 `19531`，并已与 PowerShell 基线 `Get-ChildItem ... | Get-Content | Measure-Object -Line` 对齐
+- 这次偏差也说明一个坑：
+  - `(Get-Content file).Length` 统计的是数组元素数量近似值，容易和“非空行数”目标发生漂移
+  - 之后所有 `P21-7` 总量更新都应只引用统一脚本，不再手写临时 PowerShell 求和
+
+- `tree-sitter-bash` 与 `tree-sitter-powershell` 现在已经足够支撑“简单本地变量路径”这一档 AST 预扫，不必回退到更大的正则：
+  - bash 顶层赋值节点是 `variable_assignment`
+  - PowerShell 顶层赋值节点是 `assignment_expression`
+  - 这两类节点都能在 AST 里稳定拿到“变量名 + 右值文本”
+- 当前可落地的保守边界是：
+  - 只静态归约简单字符串 / env / 已知本地变量链
+  - 不展开 generic command substitution
+  - 不展开更宽的 PowerShell 子表达式
+  - 这样既能补高价值命中，也不会把 AST 失败或不确定语法变成误报
+- bash 命令前缀赋值和顶层赋值的语义不同，不能混成一个全局变量表：
+  - 顶层 `ROOT=/tmp; cp ...` 可以作为后续命令上下文
+  - 命令前缀 `ROOT=/tmp cp ...` 只应该作用在当前命令
+  - 因此 AST 预扫里需要“全局上下文 + command 内 scoped context”两层处理
+- `runtime-text-replace.ts` 这轮回归证明：
+  - `trimmed-boundary` 不能只靠 `trimmed exact` 单一路径
+  - 否则 `replaceAll` 会把不同原文外壳误当成同一段文本
+  - 正确边界应保留：
+    - 整块 trim 命中
+    - exact 歧义候选
+    - 由外层 `replaceAll` 歧义保护统一裁决
+- `escape-normalized` 当前再往前补一档的性价比是 `\\uXXXX / \\xNN`，不是更泛化的脚本转义：
+  - 这两类转义常见于 JSON / JS / TS 字符串
+  - 归约后能直接覆盖“模型拿到转义文本，但文件里是实际字符”的高频 edit 场景
+  - 再继续泛化到任意语言的完整转义语法，收益会明显低于风险
+- PowerShell AST 级证据和 permission chain 证据要严格区分 shell 语法族：
+  - 在 `BashToolService.readRuntimeAccess()` 里，`readRuntimeShellCommandHints()` 是否走 PowerShell AST 预扫，取决于 `backendKind`
+  - 默认 shell backend 如果还是 `just-bash`，即使命令文本长得像 PowerShell，也不会拿到 `native-shell` 那套 AST 归约
+  - 因此像 `$root='C:\\temp'; Copy-Item ... "$(Join-Path $root 'x')"` 这种本地变量 + Join-Path 证据，必须固定到 `native-shell` 同族 backend 才有意义
+- 这也说明 `tool-registry` 的真链路验证不能只抄静态层用例：
+  - 静态层可以直接指定 `backendKind = native-shell`
+  - permission chain 如果不显式切 backend，验证到的可能只是默认 backend 行为，而不是目标语法族行为
+- `runtime-host-filesystem-backend.service.ts` 当前最值得收口的，不是 API 入口数量，而是重复的“文件可读性判定”控制流：
+  - `readPathRange`
+  - `readRuntimeDiffBaseContent`
+  - `readRuntimeTextFileContent`
+  - 这三条链原本各自维护 mime/binary/static-non-text 判断，行为虽然接近，但后续很容易分叉
+- 同文件的目录遍历也有一类稳定可收口重复：
+  - symlink 指向目录
+  - 普通目录
+  - 两条分支最终都要做同一段 `readdir -> entry 递归`
+  - 先把公共递归入口抽出来，再保留 symlink/realpath 的边界判断，减行收益比继续压常量声明更实
+- `runtime-shell-command-hints.ts` 里目前还能持续压缩的一类对象，是“只服务单个调用点的中转函数”：
+  - `readRuntimeShellExpandedEnvPath`
+  - `readFirstPowerShellAttachedFlagValue`
+  - 这类函数一旦底层 owner 已经稳定，继续保留只会增加跳转层，不会增加语义边界
+- `other/opencode` 的 `read` 不只是把 instruction 文本塞进 `<system-reminder>`：
+  - 它还会把本次加载到的 instruction 文件路径写进 read metadata
+  - 后续 `Instruction.resolve()` 正是靠这组 `loaded` 路径避免重复附带同一批 instructions
+- 当前仓库如果只保留文本 reminder，不补结构化 `loaded`：
+  - reminder 文案虽然接近
+  - 但后续无法稳定判断“哪些路径级 AGENTS.md 已在本条消息链里加载过”
+  - 这会让 `P21-7B` 停在“显示像对齐了”，而不是 contract 真对齐
+- 因此这一步最稳的 owner 是：
+  - `read-path-instruction.ts` 继续只负责路径级 instruction 收集
+  - `ReadToolService` 负责把路径收进 `ReadToolResult.loaded`
+  - `builtin.runtime-tools` 只把这份结构化数据透传到插件输出，不新增第二套判断
+- 当前 `write/edit` 如果只输出 `<write_result> / <edit_result>` 文本：
+  - 人看能读
+  - 但后续链路如果要复用 diagnostics、related focus paths、next hint，还得再从文本里反向解析
+  - 这和 `other/opencode` 那种“文本给模型看、结构给系统接”的方向仍差一层稳定 contract
+- 最稳的 owner 不是把 `data` 结构直接在 `builtin.runtime-tools` 里现拼：
+  - `formatting / diagnostics / next hint` 的真 owner 仍是 post-write renderer
+  - 所以应先在 `runtime-file-post-write-report.ts` 抽出结构化 summary，再由 `write/edit` 和插件透传复用
+- 这次收口后：
+  - `WriteToolService / EditToolService` 自身就能返回 `postWriteSummary`
+  - `builtin.runtime-tools` 只做透传，不新增第二套诊断聚合逻辑
+  - 后续若要继续做前端展示、自动续步或 compaction，都能直接吃这组 contract
+
+- `runtime-host-filesystem-backend.service.ts` 这一轮证明，真正有收益的切口不是继续拆 `listFiles()`，而是把路径校验和文本源读取收回单一 owner：
+  - 删除 `requireExistingPath / requireDirectoryPath / requireFilePath / requireMissingPath / resolveWritableFilePath` 这组薄包装后，`read / write / edit / grep / glob / symlink` 全部直接落到 `resolveValidatedPath()`
+  - 再把 `readTextFile / editTextFile / grepText` 统一收回 `readRuntimeHostFilesystemTextSource()`，可以在不改行为的前提下稳定删掉平行文本读取链
+- 这刀的有效边界也更清楚了：
+  - 缺失路径建议文本仍应由 `filesystem backend` owner 统一拼装
+  - `read / glob / grep` 只保留各自 `next step hint`，不要把 missing-path 文案再放回工具层
+- 本轮计数结果说明这是一刀真减量，不是挪目录：
+  - `runtime-host-filesystem-backend.service.ts` 物理行数 `822 -> 773`
+  - `npm run count:server-src` 总量 `20150 -> 20101`

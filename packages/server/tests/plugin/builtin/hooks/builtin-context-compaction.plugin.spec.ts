@@ -247,7 +247,7 @@ describe('BuiltinContextCompactionPlugin', () => {
           }),
         ],
       },
-      role: 'assistant',
+      role: 'display',
     }));
     expect(coveredMessages).toHaveLength(2);
   });

@@ -19,34 +19,33 @@ export interface RuntimeCommandTextOutputOptions {
   showTruncationDetails?: boolean;
 }
 
-interface NormalizedRuntimeCommandTextOutputOptions {
-  maxBytes: number;
-  maxLines: number;
-  showTruncationDetails: boolean;
-}
-
 interface RuntimeCommandRenderedStream {
   output: string;
   truncatedByBytes: boolean;
   truncatedByLines: boolean;
 }
 
+interface RuntimeCommandOutputLimits {
+  maxBytes: number;
+  maxLines: number;
+  showTruncationDetails: boolean;
+}
+
 export function renderRuntimeCommandTextOutput(
   result: RuntimeCommandRenderableResult,
   options?: RuntimeCommandTextOutputOptions,
 ): string {
-  const normalizedOptions = normalizeRuntimeCommandTextOutputOptions(options);
-  const stdout = renderRuntimeCommandStreamOutput(result.stdout, result.stdoutStats, normalizedOptions);
-  const stderr = renderRuntimeCommandStreamOutput(result.stderr, result.stderrStats, normalizedOptions);
+  const stdout = renderRuntimeCommandStream(result.stdout, result.stdoutStats, normalizeRuntimeCommandOutputOptions(options));
+  const stderr = renderRuntimeCommandStream(result.stderr, result.stderrStats, normalizeRuntimeCommandOutputOptions(options));
   return [
     '<bash_result>',
     `cwd: ${result.cwd}`,
     `exit_code: ${result.exitCode}`,
     `status: ${result.exitCode === 0 ? 'success' : 'failed'}`,
     ...readRuntimeCommandDiagnostics(result),
-    readRuntimeCommandStreamSummary('stdout', result.stdout, result.stdoutStats, stdout),
-    readRuntimeCommandStreamSummary('stderr', result.stderr, result.stderrStats, stderr),
-    ...readRuntimeCommandOutputPathLine(result.outputPath, stdout, stderr),
+    summarizeRuntimeCommandStream('stdout', result.stdout, result.stdoutStats, stdout),
+    summarizeRuntimeCommandStream('stderr', result.stderr, result.stderrStats, stderr),
+    ...readRuntimeOutputPath(result.outputPath, stdout, stderr),
     '<stdout>',
     stdout.output,
     '</stdout>',
@@ -57,139 +56,110 @@ export function renderRuntimeCommandTextOutput(
   ].join('\n');
 }
 
-function readRuntimeCommandOutputPathLine(
-  outputPath: string | undefined,
-  stdout: RuntimeCommandRenderedStream,
-  stderr: RuntimeCommandRenderedStream,
-): string[] {
-  if (!outputPath) {
-    return [];
+function normalizeRuntimeCommandOutputOptions(options?: RuntimeCommandTextOutputOptions): RuntimeCommandOutputLimits {
+  return {
+    maxBytes: normalizeRuntimeCommandOutputLimit(options?.maxBytes, DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_BYTES),
+    maxLines: normalizeRuntimeCommandOutputLimit(options?.maxLines, DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_LINES),
+    showTruncationDetails: options?.showTruncationDetails ?? true,
+  };
+}
+
+function renderRuntimeCommandStream(
+  text: string,
+  stats: RuntimeCommandStreamStats | undefined,
+  limits: RuntimeCommandOutputLimits,
+): RuntimeCommandRenderedStream {
+  if (!text) {
+    return { output: '(empty)', truncatedByBytes: false, truncatedByLines: false };
   }
-  if (
-    !stdout.truncatedByBytes
-    && !stdout.truncatedByLines
-    && !stderr.truncatedByBytes
-    && !stderr.truncatedByLines
-  ) {
-    return [];
+  const normalized = text.replace(/\r\n/g, '\n');
+  const lines = normalized.endsWith('\n') ? normalized.slice(0, -1).split('\n') : normalized.split('\n');
+  const tail = limits.maxLines > 0 ? lines.slice(-limits.maxLines) : [...lines];
+  let output = tail.join('\n');
+  const truncatedByLines = limits.maxLines > 0 && tail.length < lines.length;
+  let truncatedByBytes = false;
+  while (limits.maxBytes > 0 && Buffer.byteLength(output, 'utf8') > limits.maxBytes && tail.length > 1) {
+    tail.shift();
+    output = tail.join('\n');
+    truncatedByBytes = true;
   }
-  return [`full_output_path: ${outputPath}`];
+  if (limits.maxBytes > 0 && Buffer.byteLength(output, 'utf8') > limits.maxBytes) {
+    output = trimRuntimeCommandBytes(output, limits.maxBytes);
+    truncatedByBytes = true;
+  }
+  if (!limits.showTruncationDetails || (!truncatedByLines && !truncatedByBytes)) {
+    return {
+      output: output || '(empty)',
+      truncatedByBytes,
+      truncatedByLines,
+    };
+  }
+  return {
+    output: [`... output truncated (${readRuntimeTruncationDetail(text, stats, tail.length, limits.maxBytes, truncatedByLines, truncatedByBytes)}) ...`, output || '(empty)'].join('\n'),
+    truncatedByBytes,
+    truncatedByLines,
+  };
+}
+
+function trimRuntimeCommandBytes(text: string, maxBytes: number): string {
+  const buffer = Buffer.from(text, 'utf8');
+  let start = buffer.length - maxBytes;
+  while (start < buffer.length && (buffer[start] & 0xc0) === 0x80) {
+    start += 1;
+  }
+  return buffer.subarray(start).toString('utf8');
+}
+
+function readRuntimeTruncationDetail(
+  text: string,
+  stats: RuntimeCommandStreamStats | undefined,
+  keptLines: number,
+  maxBytes: number,
+  truncatedByLines: boolean,
+  truncatedByBytes: boolean,
+): string {
+  const normalized = stats ?? readRuntimeCommandStreamStats(text);
+  return [
+    truncatedByLines ? `共 ${normalized.lines} 行，仅保留最后 ${keptLines} 行` : null,
+    truncatedByBytes ? `共 ${normalized.bytes} 字节，仅保留最后 ${maxBytes} 字节内的内容` : null,
+  ].filter((item): item is string => Boolean(item)).join('，');
 }
 
 function readRuntimeCommandDiagnostics(result: RuntimeCommandRenderableResult): string[] {
   const hasStdout = result.stdout.trim().length > 0;
   const hasStderr = result.stderr.trim().length > 0;
   if (result.exitCode !== 0) {
-    return [
-      hasStderr
-        ? `diagnostic: command failed with exit code ${result.exitCode}; inspect stderr first for the primary error.`
-        : `diagnostic: command failed with exit code ${result.exitCode} but produced no stderr; inspect stdout for clues.`,
-    ];
+    return [hasStderr
+      ? `diagnostic: command failed with exit code ${result.exitCode}; inspect stderr first for the primary error.`
+      : `diagnostic: command failed with exit code ${result.exitCode} but produced no stderr; inspect stdout for clues.`];
   }
   if (hasStderr) {
-    return [
-      'diagnostic: command succeeded with stderr output; review stderr for warnings or extra diagnostics.',
-    ];
+    return ['diagnostic: command succeeded with stderr output; review stderr for warnings or extra diagnostics.'];
   }
-  if (!hasStdout) {
-    return [
-      'diagnostic: command completed without stdout or stderr output.',
-    ];
-  }
-  return [];
+  return hasStdout ? [] : ['diagnostic: command completed without stdout or stderr output.'];
 }
 
-function renderRuntimeCommandStreamOutput(
+function summarizeRuntimeCommandStream(
+  label: 'stdout' | 'stderr',
   text: string,
   stats: RuntimeCommandStreamStats | undefined,
-  options: NormalizedRuntimeCommandTextOutputOptions,
-): RuntimeCommandRenderedStream {
+  rendered: RuntimeCommandRenderedStream,
+): string {
   if (!text) {
-    return {
-      output: '(empty)',
-      truncatedByBytes: false,
-      truncatedByLines: false,
-    };
+    return `${label}_summary: empty`;
   }
-  const normalized = text.replace(/\r\n/g, '\n');
-  const lines = normalized.split('\n');
-  const trailingNewline = normalized.endsWith('\n');
-  const trimmedLines = trailingNewline ? lines.slice(0, -1) : lines;
-  const slicedLines = options.maxLines > 0
-    ? trimmedLines.slice(-options.maxLines)
-    : [...trimmedLines];
-  let output = slicedLines.join('\n');
-  const truncatedByLines = options.maxLines > 0 && slicedLines.length < trimmedLines.length;
-  let truncatedByBytes = false;
-
-  while (
-    options.maxBytes > 0
-    && Buffer.byteLength(output, 'utf8') > options.maxBytes
-    && slicedLines.length > 1
-  ) {
-    slicedLines.shift();
-    output = slicedLines.join('\n');
-    truncatedByBytes = true;
-  }
-
-  if (options.maxBytes > 0 && Buffer.byteLength(output, 'utf8') > options.maxBytes) {
-    const buffer = Buffer.from(output, 'utf8');
-    let start = buffer.length - options.maxBytes;
-    while (start < buffer.length && (buffer[start] & 0xc0) === 0x80) {
-      start += 1;
-    }
-    output = buffer.subarray(start).toString('utf8');
-    truncatedByBytes = true;
-  }
-
-  if (!truncatedByLines && !truncatedByBytes) {
-    return {
-      output: output || '(empty)',
-      truncatedByBytes,
-      truncatedByLines,
-    };
-  }
-
-  if (!options.showTruncationDetails) {
-    return {
-      output: output || '(empty)',
-      truncatedByBytes,
-      truncatedByLines,
-    };
-  }
-
-  const normalizedStats = stats ?? readRuntimeCommandStreamStats(text);
-  const reasons: string[] = [];
-  if (truncatedByLines) {
-    reasons.push(`共 ${normalizedStats.lines} 行，仅保留最后 ${slicedLines.length} 行`);
-  }
-  if (truncatedByBytes) {
-    reasons.push(`共 ${normalizedStats.bytes} 字节，仅保留最后 ${options.maxBytes} 字节内的内容`);
-  }
-  return {
-    output: [
-      `... output truncated (${reasons.join('，')}) ...`,
-      output || '(empty)',
-    ].join('\n'),
-    truncatedByBytes,
-    truncatedByLines,
-  };
+  const normalized = stats ?? readRuntimeCommandStreamStats(text);
+  return `${label}_summary: ${normalized.lines} lines, ${normalized.bytes} bytes${rendered.truncatedByBytes || rendered.truncatedByLines ? ' (tail view shown)' : ''}`;
 }
 
-function normalizeRuntimeCommandTextOutputOptions(
-  options?: RuntimeCommandTextOutputOptions,
-): NormalizedRuntimeCommandTextOutputOptions {
-  return {
-    maxBytes: normalizeRuntimeCommandOutputLimit(
-      options?.maxBytes,
-      DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_BYTES,
-    ),
-    maxLines: normalizeRuntimeCommandOutputLimit(
-      options?.maxLines,
-      DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_LINES,
-    ),
-    showTruncationDetails: options?.showTruncationDetails ?? true,
-  };
+function readRuntimeOutputPath(
+  outputPath: string | undefined,
+  stdout: RuntimeCommandRenderedStream,
+  stderr: RuntimeCommandRenderedStream,
+): string[] {
+  return outputPath && (stdout.truncatedByBytes || stdout.truncatedByLines || stderr.truncatedByBytes || stderr.truncatedByLines)
+    ? [`full_output_path: ${outputPath}`]
+    : [];
 }
 
 function readRuntimeCommandStreamStats(text: string): RuntimeCommandStreamStats {
@@ -199,25 +169,6 @@ function readRuntimeCommandStreamStats(text: string): RuntimeCommandStreamStats 
   };
 }
 
-function readRuntimeCommandStreamSummary(
-  label: 'stdout' | 'stderr',
-  text: string,
-  stats: RuntimeCommandStreamStats | undefined,
-  rendered: RuntimeCommandRenderedStream,
-): string {
-  if (!text) {
-    return `${label}_summary: empty`;
-  }
-  const normalizedStats = stats ?? readRuntimeCommandStreamStats(text);
-  const truncation = rendered.truncatedByBytes || rendered.truncatedByLines
-    ? ' (tail view shown)'
-    : '';
-  return `${label}_summary: ${normalizedStats.lines} lines, ${normalizedStats.bytes} bytes${truncation}`;
-}
-
 function normalizeRuntimeCommandOutputLimit(value: number | undefined, fallback: number): number {
-  if (typeof value !== 'number' || Number.isNaN(value) || value < 0) {
-    return fallback;
-  }
-  return Math.floor(value);
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : fallback;
 }

@@ -3,8 +3,7 @@ import { WriteToolService } from '../../../src/execution/write/write-tool.servic
 describe('WriteToolService', () => {
   it('formats write metadata for the model', async () => {
     const freshness = {
-      assertCanWrite: jest.fn().mockResolvedValue(undefined),
-      rememberRead: jest.fn().mockResolvedValue(undefined),
+      withWriteFreshnessGuard: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
     };
     const service = new WriteToolService(
       {
@@ -63,6 +62,7 @@ describe('WriteToolService', () => {
         '</patch>',
         'Formatting: json-pretty',
         'Diagnostics: none',
+        'Next: read /docs/output.txt to confirm the formatted output before continuing edits or writes.',
         '</write_result>',
       ].join('\n'),
       path: '/docs/output.txt',
@@ -73,9 +73,34 @@ describe('WriteToolService', () => {
           label: 'json-pretty',
         },
       },
+      postWriteSummary: {
+        currentFileDiagnostics: 0,
+        formatting: {
+          kind: 'json-pretty',
+          label: 'json-pretty',
+        },
+        nextHint: 'Next: read /docs/output.txt to confirm the formatted output before continuing edits or writes.',
+        omittedRelatedFiles: 0,
+        relatedFileDiagnostics: 0,
+        relatedFiles: 0,
+        relatedFocusPaths: [],
+        severityCounts: {
+          error: 0,
+          hint: 0,
+          info: 0,
+          warning: 0,
+        },
+        totalDiagnostics: 0,
+        visibleRelatedPaths: [],
+        visibleRelatedFiles: 0,
+      },
       size: 2048,
     });
-    expect(freshness.assertCanWrite).toHaveBeenCalledWith('session-1', 'docs/output.txt', 'host-filesystem');
-    expect(freshness.rememberRead).toHaveBeenCalledWith('session-1', '/docs/output.txt', 'host-filesystem');
+    expect(freshness.withWriteFreshnessGuard).toHaveBeenCalledWith(
+      'session-1',
+      'docs/output.txt',
+      expect.any(Function),
+      'host-filesystem',
+    );
   });
 });

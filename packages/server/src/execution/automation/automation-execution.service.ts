@@ -1,173 +1,163 @@
-import type {
-  ActionConfig,
-  AutomationBeforeRunHookResult,
-  AutomationInfo,
-  JsonValue,
-} from '@garlic-claw/shared';
+import type { ActionConfig, AutomationBeforeRunHookResult, AutomationInfo, JsonValue } from '@garlic-claw/shared';
 import { Inject, Injectable } from '@nestjs/common';
+import { asJsonValue, cloneJsonValue } from '../../runtime/host/runtime-host-values';
 import { RuntimeHostConversationMessageService } from '../../runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostPluginDispatchService } from '../../runtime/host/runtime-host-plugin-dispatch.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../../runtime/kernel/runtime-plugin-hook-governance';
-import { asJsonValue, cloneJsonValue } from '../../runtime/host/runtime-host-values';
-import type { RuntimeAutomationRecord, AutomationRunContext } from './automation.service';
+import type { AutomationRunContext, RuntimeAutomationRecord } from './automation.service';
+
+interface AutomationRunPlan {
+  actions: ActionConfig[];
+  automation: AutomationInfo;
+  context: AutomationRunContext;
+}
+interface AutomationExecutionOutcome { results: JsonValue[]; status: string; }
+interface ShortCircuitedAutomationRun extends AutomationExecutionOutcome { action: 'short-circuit'; }
 
 @Injectable()
 export class AutomationExecutionService {
   constructor(
-    @Inject(RuntimeHostPluginDispatchService)
-    private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
-    @Inject(RuntimeHostConversationMessageService)
-    private readonly conversationMessageService: RuntimeHostConversationMessageService,
+    @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
+    @Inject(RuntimeHostConversationMessageService) private readonly conversationMessageService: RuntimeHostConversationMessageService,
   ) {}
 
   async executeAutomation(automation: RuntimeAutomationRecord): Promise<JsonValue> {
-    const context = {
-      source: 'automation' as const,
-      userId: automation.userId,
+    const plan = createAutomationRunPlan(automation);
+    const prepared = await prepareAutomationRun(plan, this.runtimeHostPluginDispatchService);
+    if ('action' in prepared) {
+      return asJsonValue({ results: prepared.results, status: prepared.status });
+    }
+    const execution = await executeAutomationActions(prepared, this.runtimeHostPluginDispatchService, this.conversationMessageService);
+    return asJsonValue(await settleAutomationRun(prepared, execution, this.runtimeHostPluginDispatchService));
+  }
+}
+
+function createAutomationRunPlan(automation: RuntimeAutomationRecord): AutomationRunPlan {
+  return {
+    actions: automation.actions.map((action) => cloneJsonValue(action)),
+    automation: toAutomationInfo(automation),
+    context: {
       automationId: automation.id,
+      source: 'automation',
+      userId: automation.userId,
+    },
+  };
+}
+
+async function prepareAutomationRun(
+  plan: AutomationRunPlan,
+  kernel: RuntimeHostPluginDispatchService,
+): Promise<AutomationRunPlan | ShortCircuitedAutomationRun> {
+  const result = await runDispatchableHookChain<ActionConfig[], AutomationBeforeRunHookResult, ShortCircuitedAutomationRun>({
+    applyResponse: (actions, mutation) => mutation.action === 'short-circuit'
+      ? { shortCircuitResult: { action: 'short-circuit', results: mutation.results, status: mutation.status } }
+      : { state: Array.isArray(mutation.actions) ? mutation.actions : actions },
+    hookName: 'automation:before-run',
+    initialState: plan.actions,
+    kernel,
+    mapPayload: (actions) => asJsonValue({ context: plan.context, automation: plan.automation, actions }),
+    readContext: () => plan.context,
+  });
+  if ('shortCircuitResult' in result) {
+    return result.shortCircuitResult;
+  }
+  return { ...plan, actions: result.state };
+}
+
+async function executeAutomationActions(
+  plan: AutomationRunPlan,
+  kernel: RuntimeHostPluginDispatchService,
+  conversationMessageService: RuntimeHostConversationMessageService,
+): Promise<AutomationExecutionOutcome> {
+  const results: JsonValue[] = [];
+  let status = 'success';
+  for (const action of plan.actions) {
+    try {
+      results.push(await executeAutomationAction(action, plan.context, kernel, conversationMessageService));
+    } catch (error) {
+      status = 'error';
+      results.push({ action: action.type, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { results, status };
+}
+
+async function executeAutomationAction(
+  action: ActionConfig,
+  context: AutomationRunContext,
+  kernel: RuntimeHostPluginDispatchService,
+  conversationMessageService: RuntimeHostConversationMessageService,
+): Promise<JsonValue> {
+  if (action.type === 'device_command' && action.plugin && action.capability) {
+    return {
+      action: action.type,
+      capability: action.capability,
+      plugin: action.plugin,
+      result: await kernel.executeTool({
+        pluginId: action.plugin,
+        toolName: action.capability,
+        params: action.params || {},
+        context,
+      }),
     };
-    const automationInfo = toAutomationInfo(automation);
-    const beforeRun = await this.runBeforeHooks(context, automationInfo);
-    if (beforeRun.action === 'short-circuit') {
-      return { results: beforeRun.results, status: beforeRun.status };
-    }
-    const executed = await this.executeActions(
-      beforeRun.actions ?? automationInfo.actions,
-      context,
-    );
-    return this.runAfterHooks(context, automationInfo, executed);
   }
-
-  private async runBeforeHooks(
-    context: AutomationRunContext,
-    automation: AutomationInfo,
-  ): Promise<
-    | { action: 'continue'; actions: ActionConfig[] }
-    | { action: 'short-circuit'; results: JsonValue[]; status: string }
-  > {
-    const result = await runDispatchableHookChain<
-      ActionConfig[],
-      AutomationBeforeRunHookResult,
-      { action: 'short-circuit'; results: JsonValue[]; status: string }
-    >({
-      applyResponse: (actions, mutation) =>
-        mutation.action === 'short-circuit'
-          ? {
-              shortCircuitResult: {
-                action: 'short-circuit',
-                results: mutation.results,
-                status: mutation.status,
-              },
-            }
-          : {
-              state: Array.isArray(mutation.actions) ? mutation.actions : actions,
-            },
-      hookName: 'automation:before-run',
-      initialState: automation.actions,
-      kernel: this.runtimeHostPluginDispatchService,
-      mapPayload: (actions) => asJsonValue({ context, automation, actions }),
-      readContext: () => context,
-    });
-    return 'shortCircuitResult' in result
-      ? result.shortCircuitResult
-      : { action: 'continue', actions: result.state };
-  }
-
-  private async executeActions(
-    actions: ActionConfig[],
-    context: AutomationRunContext,
-  ): Promise<{ results: JsonValue[]; status: string }> {
-    const results: JsonValue[] = [];
-    let status = 'success';
-    for (const action of actions) {
-      try {
-        results.push(await this.executeAction(action, context));
-      } catch (error) {
-        status = 'error';
-        results.push({
-          action: action.type,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    return { results, status };
-  }
-
-  private async executeAction(
-    action: ActionConfig,
-    context: AutomationRunContext,
-  ): Promise<JsonValue> {
-    if (action.type === 'device_command' && action.plugin && action.capability) {
-      return {
-        action: action.type,
-        plugin: action.plugin,
-        capability: action.capability,
-        result: await this.runtimeHostPluginDispatchService.executeTool({
-          pluginId: action.plugin,
-          toolName: action.capability,
-          params: action.params || {},
-          context,
-        }),
-      };
-    }
-    if (action.type === 'ai_message') {
-      const message = action.message?.trim();
-      if (!message) {
-        throw new Error('ai_message 动作缺少 message');
-      }
-      if (!action.target) {
-        throw new Error('ai_message 动作缺少 target');
-      }
-      const result = await this.conversationMessageService.sendMessage(context, {
-        content: message,
-        target: { id: action.target.id, type: action.target.type },
-      });
-      const target = (result as {
-        target?: { id?: unknown; label?: unknown; type?: unknown };
-      }).target;
-      return {
-        action: action.type,
-        target:
-          target &&
-          typeof target.id === 'string' &&
-          target.type === 'conversation'
-            ? {
-                id: target.id,
-                ...(typeof target.label === 'string'
-                  ? { label: target.label }
-                  : {}),
-                type: 'conversation' as const,
-              }
-            : { id: action.target.id, type: action.target.type },
-        result,
-      };
-    }
+  if (action.type !== 'ai_message') {
     return { action: action.type };
   }
-
-  private async runAfterHooks(
-    context: AutomationRunContext,
-    automation: AutomationInfo,
-    execution: { results: JsonValue[]; status: string },
-  ): Promise<{ results: JsonValue[]; status: string }> {
-    return applyMutatingDispatchableHooks({
-      applyMutation: (next, mutation) => ({
-        status: typeof mutation.status === 'string' ? mutation.status : next.status,
-        results: Array.isArray(mutation.results) ? mutation.results : next.results,
-      }),
-      hookName: 'automation:after-run',
-      kernel: this.runtimeHostPluginDispatchService,
-      payload: execution,
-      mapPayload: (next) =>
-        asJsonValue({
-          context,
-          automation,
-          status: next.status,
-          results: next.results,
-        }),
-      readContext: () => context,
-    });
+  const message = action.message?.trim();
+  if (!message) {
+    throw new Error('ai_message 动作缺少 message');
   }
+  const fallbackTarget = action.target;
+  if (!fallbackTarget) {
+    throw new Error('ai_message 动作缺少 target');
+  }
+  const result = await conversationMessageService.sendMessage(context, {
+    content: message,
+    target: {
+      id: fallbackTarget.id,
+      type: fallbackTarget.type,
+    },
+  });
+  return {
+    action: action.type,
+    target: readAutomationMessageTarget(result, fallbackTarget),
+    result,
+  };
+}
+
+async function settleAutomationRun(
+  plan: AutomationRunPlan,
+  execution: AutomationExecutionOutcome,
+  kernel: RuntimeHostPluginDispatchService,
+): Promise<AutomationExecutionOutcome> {
+  return applyMutatingDispatchableHooks({
+    applyMutation: (next, mutation) => ({
+      status: typeof mutation.status === 'string' ? mutation.status : next.status,
+      results: Array.isArray(mutation.results) ? mutation.results : next.results,
+    }),
+    hookName: 'automation:after-run',
+    kernel,
+    payload: execution,
+    mapPayload: (next) => asJsonValue({
+      context: plan.context,
+      automation: plan.automation,
+      status: next.status,
+      results: next.results,
+    }),
+    readContext: () => plan.context,
+  });
+}
+
+function readAutomationMessageTarget(
+  result: JsonValue,
+  fallbackTarget: { id: string; type: 'conversation' },
+): { id: string; label?: string; type: 'conversation' } {
+  const target = (result as { target?: { id?: unknown; label?: unknown; type?: unknown } }).target;
+  if (target && typeof target.id === 'string' && target.type === 'conversation') {
+    return { id: target.id, ...(typeof target.label === 'string' ? { label: target.label } : {}), type: 'conversation' };
+  }
+  return { id: fallbackTarget.id, type: fallbackTarget.type };
 }
 
 function toAutomationInfo(automation: RuntimeAutomationRecord): AutomationInfo {

@@ -69,6 +69,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       { filePath: 'docs/readme.md' },
       'conversation-1',
       'mock-filesystem',
+      'assistant-message-1',
     );
     expect(readToolService.readRuntimeAccess).toHaveBeenCalledWith({
       backendKind: 'mock-filesystem',
@@ -159,6 +160,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       { command: 'pwd', description: '打印当前目录' },
       'conversation-2',
       'mock-shell',
+      undefined,
     );
     expect(runtimeToolBackendService.getBackendDescriptor).toHaveBeenCalledWith('shell', 'mock-shell');
     expect(runtimeToolPermissionService.review).toHaveBeenCalledWith(expect.objectContaining({
@@ -245,6 +247,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       { backendKind: 'native-shell', command: 'pwd', description: '打印当前目录' },
       'conversation-3',
       'native-shell',
+      undefined,
     );
     expect(runtimeToolBackendService.getBackendDescriptor).toHaveBeenCalledWith('shell', 'native-shell');
     expect(bashToolService.execute).toHaveBeenCalledWith({

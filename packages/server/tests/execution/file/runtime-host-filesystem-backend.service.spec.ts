@@ -247,6 +247,68 @@ describe('RuntimeHostFilesystemBackendService', () => {
     });
   });
 
+  it('reuses nearby path suggestions when glob base path is missing', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-glob-suggest-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-glob-suggest');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'readme.md'), '# title\n', 'utf8');
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'reader-notes.md'), '# notes\n', 'utf8');
+
+    await expect(service.globPaths('session-glob-suggest', {
+      maxResults: 10,
+      path: 'docs/read',
+      pattern: '**/*.md',
+    })).rejects.toThrow(
+      [
+        '路径不存在: /docs/read',
+        '可选路径：',
+        '/docs/readme.md',
+        '/docs/reader-notes.md',
+        '可继续操作：请改用上述路径之一重新 glob，或先 glob 上级目录缩小范围。',
+      ].join('\n'),
+    );
+  });
+
+  it('reuses nearby path suggestions when grep base path is missing', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-grep-suggest-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-grep-suggest');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'readme.md'), '# title\nneedle\n', 'utf8');
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'reader-notes.md'), '# notes\nneedle\n', 'utf8');
+
+    await expect(service.grepText('session-grep-suggest', {
+      include: '**/*.md',
+      maxLineLength: 2000,
+      maxMatches: 10,
+      path: 'docs/read',
+      pattern: 'needle',
+    })).rejects.toThrow(
+      [
+        '路径不存在: /docs/read',
+        '可选路径：',
+        '/docs/readme.md',
+        '/docs/reader-notes.md',
+        '可继续操作：请改用上述路径之一重新 grep，或先 glob 上级目录确认搜索范围。',
+      ].join('\n'),
+    );
+  });
+
   it('preserves CRLF line endings when edit rewrites a text file', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
       path.join(os.tmpdir(), 'gc-runtime-host-crlf-edit-'),
@@ -389,6 +451,40 @@ describe('RuntimeHostFilesystemBackendService', () => {
     });
   });
 
+  it('rejects read offsets that exceed file lines or directory entries', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-read-offset-range-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-3b');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionEnvironment.sessionRoot, 'docs', 'readme.txt'),
+      'first line\nsecond line\nthird line\n',
+      'utf8',
+    );
+    fs.writeFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'second.txt'), 'next\n', 'utf8');
+
+    await expect(service.readPathRange('session-3b', {
+      limit: 1,
+      maxLineLength: 2000,
+      offset: 5,
+      path: 'docs/readme.txt',
+    })).rejects.toThrow('read.offset 超出范围: 5，文件总行数为 3');
+
+    await expect(service.readPathRange('session-3b', {
+      limit: 5,
+      maxLineLength: 2000,
+      offset: 4,
+      path: 'docs',
+    })).rejects.toThrow('read.offset 超出范围: 4，目录总条目数为 2');
+  });
+
   it('reports read asset kinds and byte-limited text windows', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
       path.join(os.tmpdir(), 'gc-runtime-host-read-assets-'),
@@ -477,10 +573,18 @@ describe('RuntimeHostFilesystemBackendService', () => {
       maxLineLength: 2000,
       offset: 1,
       path: 'docs/read',
-    })).rejects.toThrow('/docs/readme.md');
+    })).rejects.toThrow(
+      [
+        '路径不存在: /docs/read',
+        '可选路径：',
+        '/docs/readme.md',
+        '/docs/reader-notes.md',
+        '可继续操作：请改用上述路径之一重新 read，或先 read 上级目录确认路径。',
+      ].join('\n'),
+    );
   });
 
-  it('returns write metadata and tolerant edit strategy details', async () => {
+  it('returns write metadata and keeps the most specific edit strategy visible', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
       path.join(os.tmpdir(), 'gc-runtime-host-write-edit-'),
     );
@@ -535,10 +639,158 @@ describe('RuntimeHostFilesystemBackendService', () => {
         diagnostics: [],
         formatting: null,
       },
-      strategy: 'context-aware',
+      strategy: 'line-trimmed',
     });
     expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'block.ts'), 'utf8')).toBe(
       'if (true) {\n    console.log("beta");\n}\n',
+    );
+  });
+
+  it('supports create-style edit when oldString is empty', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-empty-edit-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-empty-edit');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+
+    await expect(service.editTextFile('session-empty-edit', {
+      filePath: 'docs/created.txt',
+      newString: 'created by edit\n',
+      oldString: '',
+    })).resolves.toEqual({
+      diff: {
+        additions: 1,
+        afterLineCount: 1,
+        beforeLineCount: 0,
+        deletions: 0,
+        patch: expect.stringContaining('@@'),
+      },
+      occurrences: 1,
+      path: '/docs/created.txt',
+      postWrite: {
+        diagnostics: [],
+        formatting: null,
+      },
+      strategy: 'empty-old-string',
+    });
+    expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'created.txt'), 'utf8')).toBe(
+      'created by edit\n',
+    );
+  });
+
+  it('keeps line-trimmed strategy visible in native edit results for outer-whitespace-only blocks', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-line-trimmed-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-line-trimmed');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionEnvironment.sessionRoot, 'docs', 'block.ts'),
+      [
+        'alpha(',
+        '  beta,',
+        '  gamma,',
+        ')',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    await expect(service.editTextFile('session-line-trimmed', {
+      filePath: 'docs/block.ts',
+      newString: [
+        'alpha(',
+        '  betaUpdated,',
+        '  gamma,',
+        ')',
+        '',
+      ].join('\n'),
+      oldString: [
+        ' alpha( ',
+        ' beta,  ',
+        ' gamma, ',
+        ' ) ',
+        '',
+      ].join('\n'),
+    })).resolves.toEqual({
+      diff: {
+        additions: 1,
+        afterLineCount: 4,
+        beforeLineCount: 4,
+        deletions: 1,
+        patch: expect.stringContaining('@@'),
+      },
+      occurrences: 1,
+      path: '/docs/block.ts',
+      postWrite: {
+        diagnostics: [],
+        formatting: null,
+      },
+      strategy: 'line-trimmed',
+    });
+    expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'block.ts'), 'utf8')).toBe(
+      [
+        'alpha(',
+        '  betaUpdated,',
+        '  gamma,',
+        ')',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('preserves existing CRLF line endings for create-style overwrite edit', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-host-empty-edit-crlf-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const service = new RuntimeHostFilesystemBackendService(runtimeSessionEnvironmentService);
+    const sessionEnvironment = await runtimeSessionEnvironmentService.getSessionEnvironment('session-empty-edit-crlf');
+
+    fs.mkdirSync(path.join(sessionEnvironment.sessionRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionEnvironment.sessionRoot, 'docs', 'created.txt'),
+      'alpha\r\nbeta\r\n',
+      'utf8',
+    );
+
+    await expect(service.editTextFile('session-empty-edit-crlf', {
+      filePath: 'docs/created.txt',
+      newString: 'gamma\nomega\n',
+      oldString: '',
+    })).resolves.toEqual({
+      diff: {
+        additions: 2,
+        afterLineCount: 2,
+        beforeLineCount: 2,
+        deletions: 2,
+        patch: expect.stringContaining('@@'),
+      },
+      occurrences: 1,
+      path: '/docs/created.txt',
+      postWrite: {
+        diagnostics: [],
+        formatting: null,
+      },
+      strategy: 'empty-old-string',
+    });
+    expect(fs.readFileSync(path.join(sessionEnvironment.sessionRoot, 'docs', 'created.txt'), 'utf8')).toBe(
+      'gamma\r\nomega\r\n',
     );
   });
 

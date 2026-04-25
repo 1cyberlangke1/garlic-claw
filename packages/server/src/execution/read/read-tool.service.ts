@@ -5,8 +5,15 @@ import { RuntimeFileFreshnessService } from '../runtime/runtime-file-freshness.s
 import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeFilesystemBackendService } from '../runtime/runtime-filesystem-backend.service';
+import { renderAssetReadOutput, renderDirectoryReadOutput, renderFileReadOutput } from './read-result-render';
+import {
+  readRuntimeClaimedPathInstructionReminder,
+  readRuntimePathInstructionReminder,
+  renderRuntimePathInstructionReminder,
+} from './read-path-instruction';
 
 export interface ReadToolInput {
+  assistantMessageId?: string;
   backendKind: RuntimeBackendKind;
   filePath: string;
   limit?: number;
@@ -15,6 +22,7 @@ export interface ReadToolInput {
 }
 
 export interface ReadToolResult {
+  loaded: string[];
   output: string;
   path: string;
   truncated: boolean;
@@ -27,21 +35,9 @@ const MAX_LINE_LENGTH = 2000;
 const MAX_READ_BYTES_LABEL = '50 KB';
 
 export const READ_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
-  filePath: {
-    description: '要读取的文件或目录路径。相对路径会基于当前 backend 的可见根解析。',
-    required: true,
-    type: 'string',
-  },
-  offset: {
-    description: '从第几行或第几个目录项开始读取，1 起始，默认 1。',
-    required: false,
-    type: 'number',
-  },
-  limit: {
-    description: `最多读取多少行或目录项，默认 ${DEFAULT_READ_LIMIT}，最大 ${MAX_READ_LIMIT}。`,
-    required: false,
-    type: 'number',
-  },
+  filePath: { description: '要读取的文件或目录路径。相对路径会基于当前 backend 的可见根解析。', required: true, type: 'string' },
+  offset: { description: '从第几行或第几个目录项开始读取，1 起始，默认 1。', required: false, type: 'number' },
+  limit: { description: `最多读取多少行或目录项，默认 ${DEFAULT_READ_LIMIT}，最大 ${MAX_READ_LIMIT}。`, required: false, type: 'number' },
 };
 
 @Injectable()
@@ -57,12 +53,10 @@ export class ReadToolService {
   }
 
   buildToolDescription(): string {
-    const visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot;
+    const { visibleRoot } = this.runtimeSessionEnvironmentService.getDescriptor();
     return [
       '读取当前 backend 可见路径内的文本文件，或列出目录内容。',
-      visibleRoot === '/'
-        ? '可传相对路径或 backend 可见的绝对路径。'
-        : `路径必须位于 ${visibleRoot} 内。`,
+      visibleRoot === '/' ? '可传相对路径或 backend 可见的绝对路径。' : `路径必须位于 ${visibleRoot} 内。`,
       '该工具不会执行命令，只负责稳定读取文件系统内容。',
     ].join('\n');
   }
@@ -75,6 +69,7 @@ export class ReadToolService {
     args: Record<string, unknown>,
     sessionId?: string,
     backendKind?: RuntimeBackendKind,
+    assistantMessageId?: string,
   ): ReadToolInput {
     if (!sessionId) {
       throw new BadRequestException('read 工具只能在 session 上下文中使用');
@@ -89,6 +84,7 @@ export class ReadToolService {
       throw new BadRequestException(`read.limit 不能超过 ${MAX_READ_LIMIT}`);
     }
     return {
+      ...(assistantMessageId ? { assistantMessageId } : {}),
       backendKind: backendKind ?? this.runtimeFilesystemBackendService.getDefaultBackendKind(),
       filePath,
       ...(limit !== undefined ? { limit } : {}),
@@ -104,79 +100,38 @@ export class ReadToolService {
       offset: input.offset ?? 1,
       path: input.filePath,
     }, input.backendKind);
-    if (result.type !== 'directory') {
-      await this.runtimeFileFreshnessService.rememberRead(input.sessionId, result.path, input.backendKind);
-    }
     if (result.type === 'directory') {
-      const startIndex = result.offset - 1;
-      const endIndex = startIndex + result.entries.length;
-      return {
-        output: [
-          '<read_result>',
-          `Path: ${result.path}`,
-          'Type: directory',
-          '<entries>',
-          ...(result.entries.length > 0 ? result.entries : ['(empty)']),
-          result.truncated
-            ? `(showing entries ${startIndex + 1}-${endIndex} of ${result.totalEntries}. Use offset=${endIndex + 1} to continue.)`
-            : `(total entries: ${result.totalEntries})`,
-          '</entries>',
-          '</read_result>',
-        ].join('\n'),
-        path: result.path,
-        truncated: result.truncated,
-        type: 'directory',
-      };
+      return { loaded: [], output: renderDirectoryReadOutput(result), path: result.path, truncated: result.truncated, type: 'directory' };
     }
     if (result.type === 'image' || result.type === 'pdf' || result.type === 'binary') {
-      return {
-        output: [
-          '<read_result>',
-          `Path: ${result.path}`,
-          `Type: ${result.type}`,
-          `Mime: ${result.mimeType}`,
-          `Size: ${formatReadSize(result.size)}`,
-          result.type === 'image'
-            ? 'Image file detected. Text content was not expanded.'
-            : result.type === 'pdf'
-              ? 'PDF file detected. Text content was not expanded.'
-              : 'Binary file detected. Text content was not expanded.',
-          '</read_result>',
-        ].join('\n'),
-        path: result.path,
-        truncated: false,
-        type: result.type,
-      };
+      return { loaded: [], output: renderAssetReadOutput(result), path: result.path, truncated: false, type: result.type };
     }
     if (result.type !== 'file') {
       throw new BadRequestException(`不支持的 read 结果类型: ${String((result as { type?: unknown }).type)}`);
     }
-    const startIndex = result.offset - 1;
-    const endIndex = startIndex + result.lines.length;
+    await this.runtimeFileFreshnessService.rememberRead(input.sessionId, result.path, input.backendKind, {
+      lineCount: result.lines.length,
+      offset: result.offset,
+      totalLines: result.totalLines,
+      truncated: result.truncated,
+    });
+    const pathInstructions = readRuntimeClaimedPathInstructionReminder({
+      assistantMessageId: input.assistantMessageId,
+      claimPaths: this.runtimeFileFreshnessService.claimReadInstructionPaths?.bind(this.runtimeFileFreshnessService),
+      reminder: await readRuntimePathInstructionReminder({
+        backendKind: input.backendKind,
+        path: result.path,
+        sessionId: input.sessionId,
+        visibleRoot: this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot,
+      }, this.runtimeFilesystemBackendService),
+      sessionId: input.sessionId,
+    });
     return {
-      output: [
-        '<read_result>',
-        `Path: ${result.path}`,
-        'Type: file',
-        `Mime: ${result.mimeType}`,
-        '<content>',
-        ...(result.lines.length > 0
-          ? result.lines.map((line: string, index: number) => `${startIndex + index + 1}: ${line}`)
-          : ['(empty)']),
-        result.byteLimited
-          ? `(output capped at ${MAX_READ_BYTES_LABEL}. Showing lines ${startIndex + 1}-${endIndex}. Use offset=${endIndex + 1} to continue.)`
-          : result.truncated
-            ? `(showing lines ${startIndex + 1}-${endIndex} of ${result.totalLines}. Use offset=${endIndex + 1} to continue.)`
-            : `(end of file, total lines: ${result.totalLines}, total bytes: ${formatReadSize(result.totalBytes)})`,
-        '</content>',
-        ...buildReadSystemReminder(
-          this.runtimeFileFreshnessService.listRecentReads(input.sessionId, {
-            excludePath: result.path,
-            limit: 5,
-          }),
-        ),
-        '</read_result>',
-      ].join('\n'),
+      loaded: pathInstructions.loadedPaths,
+      output: renderFileReadOutput(result, [
+        ...renderRuntimePathInstructionReminder(pathInstructions.entries),
+        ...this.runtimeFileFreshnessService.buildReadSystemReminder(input.sessionId, { excludePath: result.path, limit: 5 }),
+      ], { maxReadBytesLabel: MAX_READ_BYTES_LABEL }),
       path: result.path,
       truncated: result.truncated,
       type: 'file',
@@ -197,10 +152,7 @@ export class ReadToolService {
     };
   }
 
-  toModelOutput: NonNullable<Tool['toModelOutput']> = ({ output }) => ({
-    type: 'text',
-    value: (output as ReadToolResult).output,
-  });
+  toModelOutput: NonNullable<Tool['toModelOutput']> = ({ output }) => ({ type: 'text', value: (output as ReadToolResult).output });
 }
 
 function readPositiveInteger(value: unknown, fieldName: string): number | undefined {
@@ -211,27 +163,4 @@ function readPositiveInteger(value: unknown, fieldName: string): number | undefi
     throw new BadRequestException(`${fieldName} 必须是大于 0 的整数`);
   }
   return value;
-}
-
-function formatReadSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function buildReadSystemReminder(loadedPaths: string[]): string[] {
-  if (loadedPaths.length === 0) {
-    return [];
-  }
-  return [
-    '<system-reminder>',
-    '本 session 近期还读取过这些文件：',
-    ...loadedPaths.map((virtualPath) => `- ${virtualPath}`),
-    '如需跨文件继续修改，优先复用这些已读取内容；若文件可能已变化，请先重新 read。',
-    '</system-reminder>',
-  ];
 }

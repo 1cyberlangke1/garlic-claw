@@ -73,6 +73,32 @@ describe('AutomationService', () => {
     expect(service.getLogs('user-2', 'automation-2')).toHaveLength(0);
   });
 
+  it('keeps event dispatch order aligned with creation order after double-digit ids appear', async () => {
+    for (let index = 1; index <= 10; index += 1) {
+      service.create('user-1', {
+        actions: [],
+        name: `事件自动化-${index}`,
+        trigger: { event: 'coffee.ready', type: 'event' },
+      });
+    }
+
+    await expect(service.emitEvent('user-1', 'coffee.ready')).resolves.toEqual({
+      event: 'coffee.ready',
+      matchedAutomationIds: [
+        'automation-1',
+        'automation-2',
+        'automation-3',
+        'automation-4',
+        'automation-5',
+        'automation-6',
+        'automation-7',
+        'automation-8',
+        'automation-9',
+        'automation-10',
+      ],
+    });
+  });
+
   it('routes device_command actions through runtime kernel execution', async () => {
     const runtimeHostPluginDispatchService = {
       executeTool: jest.fn().mockResolvedValue({ saved: true, id: 'memory-1' }),

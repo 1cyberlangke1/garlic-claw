@@ -18,8 +18,9 @@ interface RuntimeHostToolDefinition<TInput, TResult> {
     args: Record<string, unknown>,
     sessionId?: string,
     backendKind?: string,
+    assistantMessageId?: string,
   ): TInput;
-  readRuntimeAccess(input: TInput): RuntimeToolAccessRequest;
+  readRuntimeAccess(input: TInput): RuntimeToolAccessRequest | Promise<RuntimeToolAccessRequest>;
 }
 
 @Injectable()
@@ -74,8 +75,14 @@ export class RuntimeHostRuntimeToolService {
     tool: RuntimeHostToolDefinition<TInput, TResult>,
     backendKind: string,
   ): Promise<TResult> {
-    const input = tool.readInput(params, context.conversationId, backendKind);
-    await this.reviewAccess(context, tool.getToolName(), tool.readRuntimeAccess(input));
+    const metadata = readJsonObject(context.metadata);
+    const input = tool.readInput(
+      params,
+      context.conversationId,
+      backendKind,
+      metadata ? (readOptionalString(metadata, 'assistantMessageId') ?? undefined) : undefined,
+    );
+    await this.reviewAccess(context, tool.getToolName(), await tool.readRuntimeAccess(input));
     return tool.execute(input);
   }
 

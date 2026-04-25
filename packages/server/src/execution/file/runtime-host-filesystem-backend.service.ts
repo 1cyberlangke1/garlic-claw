@@ -4,20 +4,8 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { RuntimeBackendDescriptor } from '../runtime/runtime-command.types';
-import type { RuntimeFilesystemBackend } from '../runtime/runtime-filesystem-backend.types';
-import { RuntimeFilesystemPostWriteService } from '../runtime/runtime-filesystem-post-write.service';
-import { RuntimeMountedWorkspaceFileSystem } from '../runtime/runtime-mounted-workspace-file-system';
-import type { RuntimeSessionEnvironment } from '../runtime/runtime-session-environment.types';
-import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
-import { toRuntimeHostPath } from '../runtime/runtime-host-path';
-import {
-  joinRuntimeVisiblePath,
-  normalizeRuntimeVisiblePath,
-  resolveRuntimeVisiblePath,
-} from '../runtime/runtime-visible-path';
-import { buildRuntimeFilesystemDiff } from './runtime-file-diff';
-import { replaceRuntimeText } from './runtime-text-replace';
 import type {
+  RuntimeFilesystemBackend,
   RuntimeFilesystemDeleteResult,
   RuntimeFilesystemDirectoryResult,
   RuntimeFilesystemEditResult,
@@ -34,155 +22,92 @@ import type {
   RuntimeFilesystemTransferResult,
   RuntimeFilesystemWriteResult,
 } from '../runtime/runtime-filesystem-backend.types';
+import { RuntimeFilesystemPostWriteService } from '../runtime/runtime-filesystem-post-write.service';
+import { RuntimeMountedWorkspaceFileSystem } from '../runtime/runtime-mounted-workspace-file-system';
+import type { RuntimeSessionEnvironment } from '../runtime/runtime-session-environment.types';
+import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
+import { toRuntimeHostPath } from '../runtime/runtime-host-path';
+import { joinRuntimeVisiblePath, normalizeRuntimeVisiblePath, resolveRuntimeVisiblePath } from '../runtime/runtime-visible-path';
+import { buildRuntimeFilesystemDiff } from './runtime-file-diff';
+import { collectRuntimeFileTreeEntries, containsRuntimeBinarySample, readRuntimeDirectoryEntryNames, readRuntimePathType } from './runtime-file-tree';
+import { renderRuntimeMissingPathNextStep } from './runtime-search-result-report';
+import { replaceRuntimeText } from './runtime-text-replace';
 
 const HOST_FILESYSTEM_BACKEND_KIND = 'host-filesystem';
 const MAX_READ_BYTES = 50 * 1024;
 const MAX_READ_LINE_SUFFIX = '... (line truncated)';
 const HOST_FILESYSTEM_BACKEND_DESCRIPTOR: RuntimeBackendDescriptor = {
-  capabilities: {
-    networkAccess: false,
-    persistentFilesystem: true,
-    persistentShellState: false,
-    shellExecution: false,
-    workspaceRead: true,
-    workspaceWrite: true,
-  },
+  capabilities: { networkAccess: false, persistentFilesystem: true, persistentShellState: false, shellExecution: false, workspaceRead: true, workspaceWrite: true },
   kind: HOST_FILESYSTEM_BACKEND_KIND,
-  permissionPolicy: {
-    networkAccess: 'deny',
-    persistentFilesystem: 'allow',
-    persistentShellState: 'deny',
-    shellExecution: 'deny',
-    workspaceRead: 'allow',
-    workspaceWrite: 'allow',
-  },
+  permissionPolicy: { networkAccess: 'deny', persistentFilesystem: 'allow', persistentShellState: 'deny', shellExecution: 'deny', workspaceRead: 'allow', workspaceWrite: 'allow' },
 };
+const PLAIN_TEXT_MIME_EXTENSIONS = new Set(['.txt', '.log', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.css', '.html', '.xml', '.yml', '.yaml', '.sh', '.py', '.rs', '.go', '.java', '.c', '.cc', '.cpp', '.h', '.hpp']);
+const MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = { '.avif': 'image/avif', '.bmp': 'image/bmp', '.gif': 'image/gif', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.json': 'application/json', '.md': 'text/markdown', '.pdf': 'application/pdf', '.png': 'image/png', '.svg': 'image/svg+xml', '.svgz': 'image/svg+xml', '.webp': 'image/webp' };
+const BINARY_PATH_EXTENSIONS = new Set(['.zip', '.tar', '.gz', '.exe', '.dll', '.so', '.class', '.jar', '.war', '.7z', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.bin', '.dat', '.obj', '.o', '.a', '.lib', '.wasm', '.pyc', '.pyo']);
 
-interface RuntimeHostFilesystemResolvedPath extends RuntimeFilesystemResolvedPath {
-  hostPath: string;
-}
-
-interface RuntimeHostFilesystemFileEntry extends RuntimeFilesystemFileEntry {
-  hostPath: string;
-}
+type RuntimeHostFilesystemResolveMode = 'directory' | 'existing' | 'file' | 'missing' | 'writable-file';
+interface RuntimeHostFilesystemResolvedPath extends RuntimeFilesystemResolvedPath { hostPath: string; }
+interface RuntimeHostFilesystemFileEntry extends RuntimeFilesystemFileEntry { hostPath: string; }
+interface RuntimeHostFilesystemReadMetadata { mimeType: string; nonTextType?: 'image' | 'pdf' | 'binary'; size: number; }
+interface RuntimeHostFilesystemTextSource extends RuntimeHostFilesystemReadMetadata { content: string; normalizedContent: string; }
 
 @Injectable()
 export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBackend {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
-    @Optional()
-    private readonly runtimeFilesystemPostWriteService?: RuntimeFilesystemPostWriteService,
+    @Optional() private readonly runtimeFilesystemPostWriteService?: RuntimeFilesystemPostWriteService,
   ) {}
 
-  getKind(): string {
-    return HOST_FILESYSTEM_BACKEND_KIND;
+  getKind(): string { return HOST_FILESYSTEM_BACKEND_KIND; }
+  getDescriptor(): RuntimeBackendDescriptor { return HOST_FILESYSTEM_BACKEND_DESCRIPTOR; }
+
+  async copyPath(sessionId: string, fromPath: string, toPath: string): Promise<RuntimeFilesystemTransferResult> {
+    return this.transferPath(sessionId, fromPath, toPath, (source, target) => fsPromises.cp(source.hostPath, target.hostPath, { errorOnExist: true, force: false, recursive: source.type === 'directory' }));
   }
 
-  getDescriptor(): RuntimeBackendDescriptor {
-    return HOST_FILESYSTEM_BACKEND_DESCRIPTOR;
+  async movePath(sessionId: string, fromPath: string, toPath: string): Promise<RuntimeFilesystemTransferResult> {
+    return this.transferPath(sessionId, fromPath, toPath, (source, target) => fsPromises.rename(source.hostPath, target.hostPath));
   }
 
-  async copyPath(
-    sessionId: string,
-    fromPath: string,
-    toPath: string,
-  ): Promise<RuntimeFilesystemTransferResult> {
-    const source = await this.requireExistingPath(sessionId, fromPath);
-    const target = await this.resolvePath(sessionId, toPath);
-    if (target.exists) {
-      throw new BadRequestException(`目标路径已存在: ${target.virtualPath}`);
-    }
-    await fsPromises.mkdir(path.dirname(target.hostPath), { recursive: true });
-    await fsPromises.cp(source.hostPath, target.hostPath, {
-      errorOnExist: true,
-      force: false,
-      recursive: source.type === 'directory',
-    });
+  async createSymlink(sessionId: string, input: { linkPath: string; targetPath: string }): Promise<RuntimeFilesystemSymlinkResult> {
+    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
+    const link = await this.resolveValidatedPath(sessionId, input.linkPath, { mode: 'missing' });
+    const mountedFilesystem = new RuntimeMountedWorkspaceFileSystem(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot);
+    await mountedFilesystem.symlink(input.targetPath, link.virtualPath);
+    return { path: link.virtualPath, target: await mountedFilesystem.readlink(link.virtualPath) };
+  }
+
+  async readSymlink(sessionId: string, inputPath: string): Promise<RuntimeFilesystemSymlinkResult> {
+    const target = await this.resolveValidatedPath(sessionId, inputPath, { mode: 'existing' });
+    if (!(await fsPromises.lstat(target.hostPath)).isSymbolicLink()) {throw new BadRequestException(`路径不是符号链接: ${target.virtualPath}`);}
+    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
     return {
-      fromPath: source.virtualPath,
       path: target.virtualPath,
-    };
-  }
-
-  async createSymlink(
-    sessionId: string,
-    input: {
-      linkPath: string;
-      targetPath: string;
-    },
-  ): Promise<RuntimeFilesystemSymlinkResult> {
-    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
-      sessionId,
-    );
-    const link = await this.resolvePath(sessionId, input.linkPath);
-    if (link.exists) {
-      throw new BadRequestException(`目标路径已存在: ${link.virtualPath}`);
-    }
-    await this.createMountedFilesystem(sessionEnvironment).symlink(input.targetPath, link.virtualPath);
-    return {
-      path: link.virtualPath,
-      target: await this.createMountedFilesystem(sessionEnvironment).readlink(link.virtualPath),
+      target: await new RuntimeMountedWorkspaceFileSystem(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot).readlink(target.virtualPath),
     };
   }
 
   async deletePath(sessionId: string, inputPath: string): Promise<RuntimeFilesystemDeleteResult> {
     const target = await this.resolvePath(sessionId, inputPath);
-    if (!target.exists) {
-      return {
-        deleted: false,
-        path: target.virtualPath,
-      };
-    }
-    await fsPromises.rm(target.hostPath, {
-      force: true,
-      recursive: target.type === 'directory',
-    });
-    return {
-      deleted: true,
-      path: target.virtualPath,
-    };
+    if (!target.exists) {return { deleted: false, path: target.virtualPath };}
+    await fsPromises.rm(target.hostPath, { force: true, recursive: target.type === 'directory' });
+    return { deleted: true, path: target.virtualPath };
   }
 
   async ensureDirectory(sessionId: string, inputPath: string): Promise<RuntimeFilesystemDirectoryResult> {
     const target = await this.resolvePath(sessionId, inputPath);
-    if (target.exists && target.type !== 'directory') {
-      throw new BadRequestException(`路径不是目录: ${target.virtualPath}`);
-    }
+    if (target.exists && target.type !== 'directory') {throw new BadRequestException(`路径不是目录: ${target.virtualPath}`);}
     await fsPromises.mkdir(target.hostPath, { recursive: true });
-    return {
-      created: !target.exists,
-      path: target.virtualPath,
-    };
+    return { created: !target.exists, path: target.virtualPath };
   }
 
-  async globPaths(
-    sessionId: string,
-    input: {
-      maxResults: number;
-      pattern: string;
-      path?: string;
-    },
-  ): Promise<RuntimeFilesystemGlobResult> {
-    const target = await this.resolvePath(sessionId, input.path);
-    if (!target.exists) {
-      throw new BadRequestException(`路径不存在: ${target.virtualPath}`);
-    }
-    if (target.type !== 'directory') {
-      throw new BadRequestException(`glob.path 不是目录: ${target.virtualPath}`);
-    }
-    const listed = await this.listFiles(sessionId, input.path);
-    const matches = await Promise.all(
-      listed.files
-        .filter((entry) => matchesFilesystemGlobPattern(
-          input.pattern,
-          toFilesystemRelativePath(listed.basePath, entry.virtualPath),
-        ))
-        .map(async (entry) => ({
-          mtime: await readFilesystemMtime(entry.hostPath),
-          virtualPath: entry.virtualPath,
-        })),
-    );
-    matches.sort((left, right) => right.mtime - left.mtime || left.virtualPath.localeCompare(right.virtualPath));
+  async globPaths(sessionId: string, input: { maxResults: number; pattern: string; path?: string }): Promise<RuntimeFilesystemGlobResult> {
+    const target = await this.resolveValidatedPath(sessionId, input.path, { label: 'glob.path', mode: 'directory', nextStepHint: renderRuntimeMissingPathNextStep('glob') });
+    const listed = await this.listFiles(sessionId, target.virtualPath);
+    const matches = await Promise.all(listed.files
+      .filter((entry) => matchesFilesystemGlobPattern(input.pattern, toFilesystemRelativePath(listed.basePath, entry.virtualPath)))
+      .map(async (entry) => ({ mtime: (await fsPromises.stat(entry.hostPath)).mtime.getTime(), virtualPath: entry.virtualPath })));
+    matches.sort(compareRuntimeSearchEntries);
     return {
       basePath: listed.basePath,
       matches: matches.slice(0, input.maxResults).map((entry) => entry.virtualPath),
@@ -194,719 +119,225 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     };
   }
 
-  async grepText(
-    sessionId: string,
-    input: {
-      include?: string;
-      maxLineLength: number;
-      maxMatches: number;
-      path?: string;
-      pattern: string;
-    },
-  ): Promise<RuntimeFilesystemGrepResult> {
+  async grepText(sessionId: string, input: {
+    include?: string;
+    maxLineLength: number;
+    maxMatches: number;
+    path?: string;
+    pattern: string;
+  }): Promise<RuntimeFilesystemGrepResult> {
     let matcher: RegExp;
     try {
       matcher = new RegExp(input.pattern);
     } catch (error) {
       throw new BadRequestException(`grep.pattern 不是合法正则: ${(error as Error).message}`);
     }
-    const listed = await this.listFiles(sessionId, input.path);
-    const matchRows = new Map<string, Array<{ line: number; text: string }>>();
-    const fileTimes = new Map<string, number>();
+    const listed = await this.listFiles(sessionId, input.path, { nextStepHint: renderRuntimeMissingPathNextStep('grep') });
+    const matches: Array<{ mtime: number; rows: Array<{ line: number; text: string }>; virtualPath: string }> = [];
+    const skippedEntries = [...listed.skippedEntries], skippedPaths = [...listed.skippedPaths];
     let partial = listed.partial;
-    const rows: RuntimeFilesystemGrepMatch[] = [];
-    const skippedEntries = [...listed.skippedEntries];
-    const skippedPaths = [...listed.skippedPaths];
     for (const file of listed.files) {
-      const relativePath = toFilesystemRelativePath(listed.basePath, file.virtualPath);
-      if (input.include && !matchesFilesystemGlobPattern(input.include, relativePath)) {
-        continue;
-      }
-      let textFile: { content: string; path: string };
+      if (input.include && !matchesFilesystemGlobPattern(input.include, toFilesystemRelativePath(listed.basePath, file.virtualPath))) {continue;}
+      let source: RuntimeHostFilesystemTextSource;
       try {
-        textFile = await this.readTextFile(sessionId, file.virtualPath);
+        source = await readRuntimeHostFilesystemTextSource(file);
       } catch (error) {
-        if (isBinaryReadError(error)) {
+        if (error instanceof BadRequestException && error.message.includes('暂不支持读取二进制文件')) {
           pushRuntimeSkippedEntry(skippedEntries, file.virtualPath, 'binary');
-          continue;
+        } else {
+          partial = true;
+          pushRuntimeSkippedPath(skippedPaths, file.virtualPath);
+          pushRuntimeSkippedEntry(skippedEntries, file.virtualPath, 'unreadable');
         }
-        partial = true;
-        pushRuntimeSkippedPath(skippedPaths, file.virtualPath);
-        pushRuntimeSkippedEntry(skippedEntries, file.virtualPath, 'unreadable');
         continue;
       }
-      const lines = splitFilesystemTextLines(textFile.content);
-      const currentRows: Array<{ line: number; text: string }> = [];
-      for (let index = 0; index < lines.length; index += 1) {
+      const rows = splitFilesystemTextLines(source.normalizedContent).flatMap((text, index) => {
         matcher.lastIndex = 0;
-        if (!matcher.test(lines[index])) {
-          continue;
-        }
-        currentRows.push({
-          line: index + 1,
-          text: truncateFilesystemLine(lines[index], input.maxLineLength),
-        });
-      }
-      if (currentRows.length === 0) {
-        continue;
-      }
-      matchRows.set(file.virtualPath, currentRows);
-      fileTimes.set(file.virtualPath, await readFilesystemMtime(file.hostPath));
+        return matcher.test(text) ? [{ line: index + 1, text: truncateFilesystemLine(text, input.maxLineLength) }] : [];
+      });
+      if (rows.length > 0) {matches.push({ mtime: (await fsPromises.stat(file.hostPath)).mtime.getTime(), rows, virtualPath: file.virtualPath });}
     }
-    const orderedPaths = Array.from(matchRows.keys()).sort(
-      (left, right) =>
-        (fileTimes.get(right) ?? 0) - (fileTimes.get(left) ?? 0) || left.localeCompare(right),
-    );
-    for (const virtualPath of orderedPaths) {
-      const fileRows = matchRows.get(virtualPath) ?? [];
-      for (const row of fileRows) {
-        rows.push({
-          line: row.line,
-          text: row.text,
-          virtualPath,
-        });
-      }
-    }
-    const truncated = rows.length > input.maxMatches;
+    matches.sort(compareRuntimeSearchEntries);
+    const rows: RuntimeFilesystemGrepMatch[] = matches.flatMap((file) => file.rows.map((row) => ({ line: row.line, text: row.text, virtualPath: file.virtualPath })));
     return {
       basePath: listed.basePath,
-      matches: truncated ? rows.slice(0, input.maxMatches) : rows,
+      matches: rows.slice(0, input.maxMatches),
       partial,
       skippedEntries,
       skippedPaths,
       totalMatches: rows.length,
-      truncated,
+      truncated: rows.length > input.maxMatches,
     };
   }
 
   async resolvePath(sessionId: string, inputPath?: string): Promise<RuntimeHostFilesystemResolvedPath> {
-    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
-      sessionId,
-    );
+    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
     const virtualPath = resolveRuntimeVisiblePath(sessionEnvironment.visibleRoot, inputPath);
-    const hostPath = toRuntimeHostPath(
-      sessionEnvironment.sessionRoot,
-      sessionEnvironment.visibleRoot,
-      virtualPath,
-    );
-    try {
-      const stat = await fsPromises.stat(hostPath);
-      return {
-        exists: true,
-        hostPath,
-        type: stat.isDirectory() ? 'directory' : 'file',
-        virtualPath,
-      };
-    } catch (error) {
-      if (isNotFound(error)) {
-        return {
-          exists: false,
-          hostPath,
-          type: 'missing',
-          virtualPath,
-        };
-      }
-      throw error;
-    }
-  }
-
-  async readDirectoryEntries(sessionId: string, inputPath?: string): Promise<{ entries: string[]; path: string }> {
-    const target = await this.requireExistingPath(sessionId, inputPath);
-    if (target.type !== 'directory') {
-      throw new BadRequestException(`路径不是目录: ${target.virtualPath}`);
-    }
-    const entries = await fsPromises.readdir(target.hostPath, { withFileTypes: true });
-    return {
-      entries: entries
-        .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
-        .sort((left, right) => left.localeCompare(right)),
-      path: target.virtualPath,
-    };
-  }
-
-  async readPathRange(
-    sessionId: string,
-    input: {
-      limit: number;
-      maxLineLength: number;
-      offset: number;
-      path?: string;
-    },
-  ): Promise<RuntimeFilesystemReadResult> {
-    const target = await this.requireExistingPath(sessionId, input.path);
-    if (target.type === 'directory') {
-      const directory = await this.readDirectoryEntries(sessionId, input.path);
-      const startIndex = input.offset - 1;
-      const entries = directory.entries.slice(startIndex, startIndex + input.limit);
-      return {
-        entries,
-        limit: input.limit,
-        offset: input.offset,
-        path: directory.path,
-        totalEntries: directory.entries.length,
-        truncated: startIndex + entries.length < directory.entries.length,
-        type: 'directory',
-      };
-    }
-    const stat = await fsPromises.stat(target.hostPath);
-    const mimeType = detectFilesystemMimeType(target.virtualPath);
-    if (isFilesystemImageMimeType(mimeType)) {
-      return {
-        mimeType,
-        path: target.virtualPath,
-        size: stat.size,
-        type: 'image',
-      };
-    }
-    if (mimeType === 'application/pdf') {
-      return {
-        mimeType,
-        path: target.virtualPath,
-        size: stat.size,
-        type: 'pdf',
-      };
-    }
-    if (isBinaryFilesystemPath(target.virtualPath) || await containsBinaryContent(target.hostPath, stat.size)) {
-      return {
-        mimeType,
-        path: target.virtualPath,
-        size: stat.size,
-        type: 'binary',
-      };
-    }
-    const file = await readFilesystemTextRange(target.hostPath, {
-      limit: input.limit,
-      maxBytes: MAX_READ_BYTES,
-      maxLineLength: input.maxLineLength,
-      offset: input.offset,
-    });
-    return {
-      byteLimited: file.byteLimited,
-      limit: input.limit,
-      lines: file.lines,
-      mimeType,
-      offset: input.offset,
-      path: target.virtualPath,
-      totalBytes: stat.size,
-      totalLines: file.totalLines,
-      truncated: file.truncated,
-      type: 'file',
-    };
-  }
-
-  async readSymlink(sessionId: string, inputPath: string): Promise<RuntimeFilesystemSymlinkResult> {
-    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
-      sessionId,
-    );
-    const target = await this.requireExistingPath(sessionId, inputPath);
-    const stat = await fsPromises.lstat(target.hostPath);
-    if (!stat.isSymbolicLink()) {
-      throw new BadRequestException(`路径不是符号链接: ${target.virtualPath}`);
-    }
-    return {
-      path: target.virtualPath,
-      target: await this.createMountedFilesystem(sessionEnvironment).readlink(target.virtualPath),
-    };
+    const hostPath = toRuntimeHostPath(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot, virtualPath);
+    const type = await readRuntimePathType(hostPath);
+    return { exists: type !== 'missing', hostPath, type, virtualPath };
   }
 
   async statPath(sessionId: string, inputPath?: string): Promise<RuntimeFilesystemPathStat> {
     const target = await this.resolvePath(sessionId, inputPath);
-    if (!target.exists) {
-      return {
-        ...target,
-        mtime: null,
-        size: null,
-      };
-    }
+    if (!target.exists) {return { ...target, mtime: null, size: null };}
     const stat = await fsPromises.lstat(target.hostPath);
-    return {
-      ...target,
-      mtime: stat.mtime.toISOString(),
-      size: stat.size,
-    };
+    return { ...target, mtime: stat.mtime.toISOString(), size: stat.size };
+  }
+
+  async readDirectoryEntries(sessionId: string, inputPath?: string): Promise<{ entries: string[]; path: string }> {
+    const target = await this.resolveValidatedPath(sessionId, inputPath, { mode: 'directory' });
+    return { entries: await readRuntimeDirectoryEntryNames(target.hostPath), path: target.virtualPath };
+  }
+
+  async readPathRange(sessionId: string, input: { limit: number; maxLineLength: number; offset: number; path?: string }): Promise<RuntimeFilesystemReadResult> {
+    const target = await this.resolveValidatedPath(sessionId, input.path, { mode: 'existing' });
+    if (target.type === 'directory') {
+      const entries = await readRuntimeDirectoryEntryNames(target.hostPath);
+      const startIndex = input.offset - 1;
+      if (startIndex > entries.length && !(startIndex === 0 && entries.length === 0)) {throw new BadRequestException(`read.offset 超出范围: ${input.offset}，目录总条目数为 ${entries.length}`);}
+      const visibleEntries = entries.slice(startIndex, startIndex + input.limit);
+      return { entries: visibleEntries, limit: input.limit, offset: input.offset, path: target.virtualPath, totalEntries: entries.length, truncated: startIndex + visibleEntries.length < entries.length, type: 'directory' };
+    }
+    const metadata = await readRuntimeHostFilesystemReadMetadata(target);
+    if (metadata.nonTextType) {return { mimeType: metadata.mimeType, path: target.virtualPath, size: metadata.size, type: metadata.nonTextType };}
+    const file = await readFilesystemTextRange(target.hostPath, { limit: input.limit, maxBytes: MAX_READ_BYTES, maxLineLength: input.maxLineLength, offset: input.offset });
+    return { byteLimited: file.byteLimited, limit: input.limit, lines: file.lines, mimeType: metadata.mimeType, offset: input.offset, path: target.virtualPath, totalBytes: metadata.size, totalLines: file.totalLines, truncated: file.truncated, type: 'file' };
   }
 
   async readTextFile(sessionId: string, inputPath?: string): Promise<{ content: string; path: string }> {
-    const target = await this.requireExistingPath(sessionId, inputPath);
-    if (target.type !== 'file') {
-      throw new BadRequestException(`路径不是文件: ${target.virtualPath}`);
-    }
-    const buffer = await fsPromises.readFile(target.hostPath);
-    const mimeType = detectFilesystemMimeType(target.virtualPath);
-    if (
-      mimeType === 'application/pdf'
-      || isFilesystemImageMimeType(mimeType)
-      || isBinaryFilesystemPath(target.virtualPath)
-      || containsBinarySample(buffer)
-    ) {
-      throw new BadRequestException(`暂不支持读取二进制文件: ${target.virtualPath} (${mimeType})`);
-    }
-    return {
-      content: buffer.toString('utf8').replace(/\r\n/g, '\n'),
-      path: target.virtualPath,
-    };
+    const target = await this.resolveValidatedPath(sessionId, inputPath, { mode: 'file' });
+    return { content: (await readRuntimeHostFilesystemTextSource(target)).normalizedContent, path: target.virtualPath };
   }
 
-  async listFiles(sessionId: string, inputPath?: string): Promise<{
+  async listFiles(sessionId: string, inputPath?: string, options?: { nextStepHint?: string }): Promise<{
     basePath: string;
     files: RuntimeHostFilesystemFileEntry[];
     partial: boolean;
     skippedEntries: RuntimeFilesystemSkippedEntry[];
     skippedPaths: string[];
   }> {
-    const target = await this.requireExistingPath(sessionId, inputPath);
-    if (target.type === 'file') {
-      return {
-        basePath: target.virtualPath,
-        files: [{ hostPath: target.hostPath, virtualPath: target.virtualPath }],
-        partial: false,
-        skippedEntries: [],
-        skippedPaths: [],
-      };
-    }
+    const target = await this.resolveValidatedPath(sessionId, inputPath, { mode: 'existing', ...options });
+    if (target.type === 'file') {return { basePath: target.virtualPath, files: [{ hostPath: target.hostPath, virtualPath: target.virtualPath }], partial: false, skippedEntries: [], skippedPaths: [] };}
     const files: RuntimeHostFilesystemFileEntry[] = [];
-    const traversal = {
-      partial: false,
-      skippedEntries: [] as RuntimeFilesystemSkippedEntry[],
-      skippedPaths: [] as string[],
-    };
-    await collectRuntimeVisibleFiles(
-      target.hostPath,
-      target.virtualPath,
+    const state = { partial: false, skippedEntries: [] as RuntimeFilesystemSkippedEntry[], skippedPaths: [] as string[] };
+    await collectRuntimeFileTreeEntries({
+      absolutePath: target.hostPath,
+      buildEntry: (hostPath, virtualPath) => ({ hostPath, virtualPath }),
       files,
-      new Set<string>(),
-      traversal,
-    );
+      handleError: async (virtualPath) => {
+        state.partial = true;
+        pushRuntimeSkippedPath(state.skippedPaths, virtualPath);
+        pushRuntimeSkippedEntry(state.skippedEntries, virtualPath, 'inaccessible');
+      },
+      joinLogicalPath: joinRuntimeVisiblePath,
+      logicalPath: target.virtualPath,
+      visitedDirectories: new Set<string>(),
+    });
     files.sort((left, right) => left.virtualPath.localeCompare(right.virtualPath));
-    return {
-      basePath: target.virtualPath,
-      files,
-      partial: traversal.partial,
-      skippedEntries: traversal.skippedEntries,
-      skippedPaths: traversal.skippedPaths,
-    };
-  }
-
-  async movePath(
-    sessionId: string,
-    fromPath: string,
-    toPath: string,
-  ): Promise<RuntimeFilesystemTransferResult> {
-    const source = await this.requireExistingPath(sessionId, fromPath);
-    const target = await this.resolvePath(sessionId, toPath);
-    if (target.exists) {
-      throw new BadRequestException(`目标路径已存在: ${target.virtualPath}`);
-    }
-    await fsPromises.mkdir(path.dirname(target.hostPath), { recursive: true });
-    await fsPromises.rename(source.hostPath, target.hostPath);
-    return {
-      fromPath: source.virtualPath,
-      path: target.virtualPath,
-    };
+    return { basePath: target.virtualPath, files, partial: state.partial, skippedEntries: state.skippedEntries, skippedPaths: state.skippedPaths };
   }
 
   async writeTextFile(sessionId: string, inputPath: string, content: string): Promise<RuntimeFilesystemWriteResult> {
-    const target = await this.resolvePath(sessionId, inputPath);
-    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
-      sessionId,
-    );
-    if (target.exists && target.type !== 'file') {
-      throw new BadRequestException(`路径不是文件: ${target.virtualPath}`);
+    return this.writeResolvedTextFile(sessionId, await this.resolveValidatedPath(sessionId, inputPath, { mode: 'writable-file' }), content);
+  }
+
+  async editTextFile(sessionId: string, input: { filePath: string; newString: string; oldString: string; replaceAll?: boolean }): Promise<RuntimeFilesystemEditResult> {
+    if (input.oldString === input.newString) {throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');}
+    const target = await this.resolveValidatedPath(sessionId, input.filePath, { mode: input.oldString === '' ? 'writable-file' : 'file' });
+    const previousContent = target.exists ? (await readRuntimeHostFilesystemTextSource(target)).content : '';
+    if (input.oldString === '') {
+      const nextContent = previousContent ? normalizeWorkspaceLineEnding(input.newString, detectWorkspaceLineEnding(previousContent)) : input.newString;
+      const writeResult = await this.writeResolvedTextFile(sessionId, target, nextContent, previousContent);
+      return { diff: writeResult.diff!, occurrences: 1, postWrite: writeResult.postWrite, path: writeResult.path, strategy: 'empty-old-string' };
     }
-    const previousContent = await readRuntimeDiffBaseContent(target);
-    const processed = this.runtimeFilesystemPostWriteService?.processTextFile({
-      content,
-      hostPath: target.hostPath,
-      path: target.virtualPath,
-      sessionRoot: sessionEnvironment.sessionRoot,
-      visibleRoot: sessionEnvironment.visibleRoot,
-    }) ?? {
-      content,
-      postWrite: {
-        diagnostics: [],
-        formatting: null,
-      },
-    };
+    const replaced = replaceRuntimeText(previousContent, input.oldString, input.newString, input.replaceAll);
+    const writeResult = await this.writeResolvedTextFile(sessionId, target, normalizeWorkspaceLineEnding(replaced.content, detectWorkspaceLineEnding(previousContent)), previousContent);
+    return { diff: writeResult.diff!, occurrences: replaced.occurrences, postWrite: writeResult.postWrite, path: writeResult.path, strategy: replaced.strategy };
+  }
+
+  private async writeResolvedTextFile(sessionId: string, target: RuntimeHostFilesystemResolvedPath, content: string, previousContent?: string | null): Promise<RuntimeFilesystemWriteResult> {
+    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
+    const diffBase = previousContent ?? (!target.exists || target.type !== 'file' ? '' : (await readRuntimeHostFilesystemReadMetadata(target)).nonTextType ? null : await fsPromises.readFile(target.hostPath, 'utf8'));
+    const processed = this.runtimeFilesystemPostWriteService?.processTextFile({ content, hostPath: target.hostPath, path: target.virtualPath, sessionRoot: sessionEnvironment.sessionRoot, visibleRoot: sessionEnvironment.visibleRoot }) ?? { content, postWrite: { diagnostics: [], formatting: null } };
     await fsPromises.mkdir(path.dirname(target.hostPath), { recursive: true });
     await fsPromises.writeFile(target.hostPath, processed.content, 'utf8');
     return {
       created: !target.exists,
-      diff: previousContent === null
-        ? null
-        : buildRuntimeFilesystemDiff(target.virtualPath, previousContent, processed.content),
-      lineCount: countFilesystemTextLines(processed.content),
-      postWrite: processed.postWrite,
+      diff: diffBase === null ? null : buildRuntimeFilesystemDiff(target.virtualPath, diffBase, processed.content),
+      lineCount: splitFilesystemTextLines(processed.content).length,
       path: target.virtualPath,
+      postWrite: processed.postWrite,
       size: Buffer.byteLength(processed.content, 'utf8'),
     };
   }
 
-  async editTextFile(
+  private async transferPath(
     sessionId: string,
-    input: {
-      filePath: string;
-      newString: string;
-      oldString: string;
-      replaceAll?: boolean;
-    },
-  ): Promise<RuntimeFilesystemEditResult> {
-    if (input.oldString === input.newString) {
-      throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');
-    }
-    const file = await readRuntimeEditableTextFile(this, sessionId, input.filePath);
-    const lineEnding = detectWorkspaceLineEnding(file.rawContent);
-    const oldString = normalizeWorkspaceTextForReplacement(input.oldString);
-    const newString = normalizeWorkspaceTextForReplacement(input.newString);
-    const replaced = replaceRuntimeText(file.normalizedContent, oldString, newString, input.replaceAll);
-    const nextContent = applyWorkspaceLineEnding(replaced.content, lineEnding);
-    const writeResult = await this.writeTextFile(sessionId, file.path, nextContent);
-    return {
-      diff: writeResult.diff ?? buildRuntimeFilesystemDiff(writeResult.path, file.rawContent, nextContent),
-      occurrences: replaced.occurrences,
-      postWrite: writeResult.postWrite,
-      path: writeResult.path,
-      strategy: replaced.strategy,
-    };
+    fromPath: string,
+    toPath: string,
+    transfer: (source: RuntimeHostFilesystemResolvedPath, target: RuntimeHostFilesystemResolvedPath) => Promise<void>,
+  ): Promise<RuntimeFilesystemTransferResult> {
+    const source = await this.resolveValidatedPath(sessionId, fromPath, { mode: 'existing' });
+    const target = await this.resolveValidatedPath(sessionId, toPath, { mode: 'missing' });
+    await fsPromises.mkdir(path.dirname(target.hostPath), { recursive: true });
+    await transfer(source, target);
+    return { fromPath: source.virtualPath, path: target.virtualPath };
   }
 
-  private createMountedFilesystem(
-    sessionEnvironment: RuntimeSessionEnvironment,
-  ): RuntimeMountedWorkspaceFileSystem {
-    return new RuntimeMountedWorkspaceFileSystem(
-      sessionEnvironment.sessionRoot,
-      sessionEnvironment.visibleRoot,
-    );
-  }
-
-  private async requireExistingPath(
+  private async resolveValidatedPath(
     sessionId: string,
-    inputPath?: string,
+    inputPath: string | undefined,
+    options: { label?: string; mode: RuntimeHostFilesystemResolveMode; nextStepHint?: string },
   ): Promise<RuntimeHostFilesystemResolvedPath> {
     const target = await this.resolvePath(sessionId, inputPath);
-    if (!target.exists) {
-      throw await this.createMissingPathException(sessionId, target.virtualPath);
+    if (options.mode === 'missing') {
+      if (target.exists) {throw new BadRequestException(`目标路径已存在: ${target.virtualPath}`);}
+      return target;
     }
+    if (!target.exists) {
+      if (options.mode === 'writable-file') {return target;}
+      throw new NotFoundException(await this.readMissingPathMessage(sessionId, target.virtualPath, options.nextStepHint));
+    }
+    const expectedType = options.mode === 'directory' ? 'directory' : options.mode === 'file' || options.mode === 'writable-file' ? 'file' : undefined;
+    if (expectedType && target.type !== expectedType) {throw new BadRequestException(`${options.label ?? '路径'} 不是${expectedType === 'directory' ? '目录' : '文件'}: ${target.virtualPath}`);}
     return target;
   }
 
-  private async createMissingPathException(
-    sessionId: string,
-    virtualPath: string,
-  ): Promise<NotFoundException> {
-    const suggestions = await readNearbyVisiblePaths(
-      await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId),
-      virtualPath,
-    );
-    if (suggestions.length === 0) {
-      return new NotFoundException(`路径不存在: ${virtualPath}`);
-    }
-    return new NotFoundException(
-      `路径不存在: ${virtualPath}\n可选路径：\n${suggestions.join('\n')}`,
-    );
+  private async readMissingPathMessage(sessionId: string, virtualPath: string, nextStepHint = renderRuntimeMissingPathNextStep('read')): Promise<string> {
+    const suggestions = await readNearbyVisiblePaths(await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId), virtualPath);
+    return suggestions.length > 0 ? [`路径不存在: ${virtualPath}`, '可选路径：', ...suggestions, nextStepHint].join('\n') : `路径不存在: ${virtualPath}`;
   }
+}
+
+function compareRuntimeSearchEntries(left: { mtime: number; virtualPath: string }, right: { mtime: number; virtualPath: string }): number {
+  return right.mtime - left.mtime || left.virtualPath.localeCompare(right.virtualPath);
 }
 
 function toFilesystemRelativePath(basePath: string, virtualPath: string): string {
-  if (basePath === virtualPath) {
-    return path.posix.basename(virtualPath);
-  }
-  const relative = path.posix.relative(basePath, virtualPath);
-  return relative || path.posix.basename(virtualPath);
+  return basePath === virtualPath ? path.posix.basename(virtualPath) : path.posix.relative(basePath, virtualPath) || path.posix.basename(virtualPath);
 }
 
-async function collectRuntimeVisibleFiles(
-  hostPath: string,
-  virtualPath: string,
-  files: RuntimeHostFilesystemFileEntry[],
-  visitedDirectories: Set<string>,
-  traversal: {
-    partial: boolean;
-    skippedEntries: RuntimeFilesystemSkippedEntry[];
-    skippedPaths: string[];
-  },
-): Promise<void> {
-  let stat: fs.Stats;
-  try {
-    stat = await fsPromises.lstat(hostPath);
-  } catch {
-    markRuntimeTraversalSkipped(traversal, virtualPath);
-    return;
-  }
-  if (stat.isSymbolicLink()) {
-    let resolved: string;
-    let targetStat: fs.Stats;
-    try {
-      resolved = await fsPromises.realpath(hostPath);
-      targetStat = await fsPromises.stat(hostPath);
-    } catch {
-      markRuntimeTraversalSkipped(traversal, virtualPath);
-      return;
-    }
-    if (targetStat.isDirectory()) {
-      if (visitedDirectories.has(resolved)) {
-        return;
-      }
-      visitedDirectories.add(resolved);
-      let entries: fs.Dirent[];
-      try {
-        entries = await fsPromises.readdir(hostPath, { withFileTypes: true });
-      } catch {
-        markRuntimeTraversalSkipped(traversal, virtualPath);
-        return;
-      }
-      for (const entry of entries) {
-        await collectRuntimeVisibleFiles(
-          path.join(hostPath, entry.name),
-          joinRuntimeVirtualPath(virtualPath, entry.name),
-          files,
-          visitedDirectories,
-          traversal,
-        );
-      }
-      return;
-    }
-    files.push({ hostPath, virtualPath });
-    return;
-  }
-  if (stat.isDirectory()) {
-    let resolved: string;
-    try {
-      resolved = await fsPromises.realpath(hostPath);
-    } catch {
-      markRuntimeTraversalSkipped(traversal, virtualPath);
-      return;
-    }
-    if (visitedDirectories.has(resolved)) {
-      return;
-    }
-    visitedDirectories.add(resolved);
-    let entries: fs.Dirent[];
-    try {
-      entries = await fsPromises.readdir(hostPath, { withFileTypes: true });
-    } catch {
-      markRuntimeTraversalSkipped(traversal, virtualPath);
-      return;
-    }
-    for (const entry of entries) {
-      await collectRuntimeVisibleFiles(
-        path.join(hostPath, entry.name),
-        joinRuntimeVirtualPath(virtualPath, entry.name),
-        files,
-        visitedDirectories,
-        traversal,
-      );
-    }
-    return;
-  }
-  files.push({ hostPath, virtualPath });
-}
-
-function joinRuntimeVirtualPath(basePath: string, nextPath: string): string {
-  return joinRuntimeVisiblePath(basePath, nextPath);
-}
-
-function containsBinarySample(buffer: Buffer): boolean {
-  const sampleSize = Math.min(buffer.length, 4096);
-  if (sampleSize === 0) {
-    return false;
-  }
-  let nonPrintableCount = 0;
-  for (let index = 0; index < sampleSize; index += 1) {
-    if (buffer[index] === 0) {
-      return true;
-    }
-    if (buffer[index] < 9 || (buffer[index] > 13 && buffer[index] < 32)) {
-      nonPrintableCount += 1;
-    }
-  }
-  return nonPrintableCount / sampleSize > 0.3;
-}
-
-function isNotFound(error: unknown): boolean {
-  return typeof error === 'object'
-    && error !== null
-    && 'code' in error
-    && error.code === 'ENOENT';
-}
-
-function isBinaryReadError(error: unknown): boolean {
-  return error instanceof BadRequestException
-    && error.message.includes('暂不支持读取二进制文件');
-}
-
-async function containsBinaryContent(hostPath: string, size: number): Promise<boolean> {
-  if (size === 0) {
-    return false;
-  }
-  const file = await fsPromises.open(hostPath, 'r');
-  try {
-    const sampleSize = Math.min(size, 4096);
-    const buffer = Buffer.alloc(sampleSize);
-    const result = await file.read(buffer, 0, sampleSize, 0);
-    return containsBinarySample(buffer.subarray(0, result.bytesRead));
-  } finally {
-    await file.close();
-  }
-}
-
-async function readRuntimeDiffBaseContent(
-  target: RuntimeHostFilesystemResolvedPath,
-): Promise<string | null> {
-  if (!target.exists || target.type !== 'file') {
-    return '';
-  }
-  const stat = await fsPromises.stat(target.hostPath);
-  const mimeType = detectFilesystemMimeType(target.virtualPath);
-  if (
-    isFilesystemImageMimeType(mimeType)
-    || mimeType === 'application/pdf'
-    || isBinaryFilesystemPath(target.virtualPath)
-    || await containsBinaryContent(target.hostPath, stat.size)
-  ) {
-    return null;
-  }
-  return fsPromises.readFile(target.hostPath, 'utf8');
-}
-
-function detectFilesystemMimeType(virtualPath: string): string {
-  const extension = path.extname(virtualPath).toLowerCase();
-  switch (extension) {
-    case '.txt':
-    case '.log':
-      return 'text/plain';
-    case '.md':
-      return 'text/markdown';
-    case '.json':
-      return 'application/json';
-    case '.js':
-    case '.jsx':
-    case '.ts':
-    case '.tsx':
-    case '.mjs':
-    case '.cjs':
-    case '.css':
-    case '.html':
-    case '.xml':
-    case '.yml':
-    case '.yaml':
-    case '.sh':
-    case '.py':
-    case '.rs':
-    case '.go':
-    case '.java':
-    case '.c':
-    case '.cc':
-    case '.cpp':
-    case '.h':
-    case '.hpp':
-      return 'text/plain';
-    case '.png':
-      return 'image/png';
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.gif':
-      return 'image/gif';
-    case '.bmp':
-      return 'image/bmp';
-    case '.webp':
-      return 'image/webp';
-    case '.svg':
-    case '.svgz':
-      return 'image/svg+xml';
-    case '.avif':
-      return 'image/avif';
-    case '.pdf':
-      return 'application/pdf';
-    default:
-      return 'application/octet-stream';
-  }
-}
-
-function isFilesystemImageMimeType(mimeType: string): boolean {
-  return mimeType.startsWith('image/')
-    && mimeType !== 'image/svg+xml'
-    && mimeType !== 'image/vnd.fastbidsheet';
-}
-
-function isBinaryFilesystemPath(virtualPath: string): boolean {
-  switch (path.extname(virtualPath).toLowerCase()) {
-    case '.zip':
-    case '.tar':
-    case '.gz':
-    case '.exe':
-    case '.dll':
-    case '.so':
-    case '.class':
-    case '.jar':
-    case '.war':
-    case '.7z':
-    case '.doc':
-    case '.docx':
-    case '.xls':
-    case '.xlsx':
-    case '.ppt':
-    case '.pptx':
-    case '.odt':
-    case '.ods':
-    case '.odp':
-    case '.bin':
-    case '.dat':
-    case '.obj':
-    case '.o':
-    case '.a':
-    case '.lib':
-    case '.wasm':
-    case '.pyc':
-    case '.pyo':
-      return true;
-    default:
-      return false;
-  }
-}
-
-async function readFilesystemTextRange(
-  hostPath: string,
-  input: {
-    limit: number;
-    maxBytes: number;
-    maxLineLength: number;
-    offset: number;
-  },
-): Promise<{
+async function readFilesystemTextRange(hostPath: string, input: { limit: number; maxBytes: number; maxLineLength: number; offset: number }): Promise<{
   byteLimited: boolean;
   lines: string[];
   totalLines: number;
   truncated: boolean;
 }> {
   const stream = fs.createReadStream(hostPath, { encoding: 'utf8' });
-  const lineReader = readline.createInterface({
-    crlfDelay: Infinity,
-    input: stream,
-  });
-  const startIndex = input.offset - 1;
+  const lineReader = readline.createInterface({ crlfDelay: Infinity, input: stream });
+  const { limit, maxBytes, maxLineLength, offset } = input;
   const lines: string[] = [];
-  let bytes = 0;
-  let byteLimited = false;
-  let moreLines = false;
-  let totalLines = 0;
+  const startIndex = offset - 1;
+  let bytes = 0, byteLimited = false, moreLines = false, totalLines = 0;
   try {
     for await (const lineText of lineReader) {
       totalLines += 1;
-      if (totalLines <= startIndex) {
-        continue;
-      }
-      if (lines.length >= input.limit) {
-        moreLines = true;
-        continue;
-      }
-      const renderedLine = truncateFilesystemLine(lineText, input.maxLineLength);
+      if (totalLines <= startIndex) {continue;}
+      if (lines.length >= limit) { moreLines = true; continue; }
+      const renderedLine = truncateFilesystemLine(lineText, maxLineLength);
       const renderedBytes = Buffer.byteLength(renderedLine, 'utf8') + (lines.length > 0 ? 1 : 0);
-      if (bytes + renderedBytes > input.maxBytes) {
-        byteLimited = true;
-        moreLines = true;
-        break;
-      }
+      if (bytes + renderedBytes > maxBytes) { byteLimited = true; moreLines = true; break; }
       lines.push(renderedLine);
       bytes += renderedBytes;
     }
@@ -914,33 +345,13 @@ async function readFilesystemTextRange(
     lineReader.close();
     stream.destroy();
   }
-  if (startIndex > totalLines && !(startIndex === 0 && totalLines === 0)) {
-    throw new BadRequestException(`read.offset 超出范围: ${input.offset}，文件总行数为 ${totalLines}`);
-  }
-  return {
-    byteLimited,
-    lines,
-    totalLines,
-    truncated: moreLines,
-  };
+  if (startIndex > totalLines && !(startIndex === 0 && totalLines === 0)) {throw new BadRequestException(`read.offset 超出范围: ${offset}，文件总行数为 ${totalLines}`);}
+  return { byteLimited, lines, totalLines, truncated: moreLines };
 }
 
-async function readFilesystemMtime(hostPath: string): Promise<number> {
-  const stat = await fsPromises.stat(hostPath);
-  return stat.mtime.getTime();
-}
-
-async function readNearbyVisiblePaths(
-  sessionEnvironment: RuntimeSessionEnvironment,
-  virtualPath: string,
-): Promise<string[]> {
-  const virtualDirectory = path.posix.dirname(virtualPath);
-  const directoryVirtualPath = virtualDirectory === '.' ? sessionEnvironment.visibleRoot : virtualDirectory;
-  const directoryHostPath = toRuntimeHostPath(
-    sessionEnvironment.sessionRoot,
-    sessionEnvironment.visibleRoot,
-    directoryVirtualPath,
-  );
+async function readNearbyVisiblePaths(sessionEnvironment: RuntimeSessionEnvironment, virtualPath: string): Promise<string[]> {
+  const directoryVirtualPath = path.posix.dirname(virtualPath) === '.' ? sessionEnvironment.visibleRoot : path.posix.dirname(virtualPath);
+  const directoryHostPath = toRuntimeHostPath(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot, directoryVirtualPath);
   let entries: fs.Dirent[];
   try {
     entries = await fsPromises.readdir(directoryHostPath, { withFileTypes: true });
@@ -954,113 +365,56 @@ async function readNearbyVisiblePaths(
       const normalized = entryName.toLowerCase();
       return normalized.includes(missingName) || missingName.includes(normalized.replace(/\/$/, ''));
     })
-    .sort((left, right) => left.localeCompare(right))
+    .sort((left, right) => {
+      const normalizedLeft = left.toLowerCase().replace(/\/$/, ''), normalizedRight = right.toLowerCase().replace(/\/$/, '');
+      return (normalizedLeft.startsWith(missingName) ? 0 : 1) - (normalizedRight.startsWith(missingName) ? 0 : 1)
+        || Math.abs(normalizedLeft.length - missingName.length) - Math.abs(normalizedRight.length - missingName.length)
+        || normalizedLeft.localeCompare(normalizedRight);
+    })
     .slice(0, 3)
     .map((entryName) => normalizeRuntimeVisiblePath(`${directoryVirtualPath}/${entryName}`));
 }
 
 function matchesFilesystemGlobPattern(pattern: string, relativePath: string): boolean {
-  return path.posix.matchesGlob(relativePath, pattern)
-    || (!pattern.includes('/') && path.posix.matchesGlob(path.posix.basename(relativePath), pattern));
+  return path.posix.matchesGlob(relativePath, pattern) || (!pattern.includes('/') && path.posix.matchesGlob(path.posix.basename(relativePath), pattern));
 }
 
-function detectWorkspaceLineEnding(content: string): '\n' | '\r\n' {
-  return content.includes('\r\n') ? '\r\n' : '\n';
+function detectWorkspaceLineEnding(content: string): '\n' | '\r\n' { return content.includes('\r\n') ? '\r\n' : '\n'; }
+function splitFilesystemTextLines(content: string): string[] { return !content.length ? [] : content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n'); }
+function truncateFilesystemLine(line: string, maxLineLength: number): string { return line.length > maxLineLength ? `${line.slice(0, maxLineLength)}${MAX_READ_LINE_SUFFIX}` : line; }
+function normalizeWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'): string { return lineEnding === '\n' ? content.replace(/\r\n/g, '\n') : content.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'); }
+
+async function readRuntimeHostFilesystemTextSource(target: Pick<RuntimeHostFilesystemResolvedPath, 'hostPath' | 'virtualPath'>): Promise<RuntimeHostFilesystemTextSource> {
+  const metadata = await readRuntimeHostFilesystemReadMetadata(target);
+  if (metadata.nonTextType) {throw new BadRequestException(`暂不支持读取二进制文件: ${target.virtualPath} (${metadata.mimeType})`);}
+  const content = await fsPromises.readFile(target.hostPath, 'utf8');
+  return { ...metadata, content, normalizedContent: content.replace(/\r\n/g, '\n') };
 }
 
-function splitFilesystemTextLines(content: string): string[] {
-  if (!content.length) {
-    return [];
+async function readRuntimeHostFilesystemReadMetadata(target: Pick<RuntimeHostFilesystemResolvedPath, 'hostPath' | 'virtualPath'>): Promise<RuntimeHostFilesystemReadMetadata> {
+  const stat = await fsPromises.stat(target.hostPath);
+  const extension = path.extname(target.virtualPath).toLowerCase();
+  const mimeType = MIME_TYPE_BY_EXTENSION[extension] ?? (PLAIN_TEXT_MIME_EXTENSIONS.has(extension) ? 'text/plain' : 'application/octet-stream');
+  const nonTextType = mimeType.startsWith('image/') && mimeType !== 'image/svg+xml' && mimeType !== 'image/vnd.fastbidsheet' ? 'image' : mimeType === 'application/pdf' ? 'pdf' : undefined;
+  if (nonTextType) {return { mimeType, nonTextType, size: stat.size };}
+  let containsBinary = false;
+  if (stat.size > 0) {
+    const file = await fsPromises.open(target.hostPath, 'r');
+    try {
+      const sampleSize = Math.min(stat.size, 4096);
+      const buffer = Buffer.alloc(sampleSize);
+      containsBinary = containsRuntimeBinarySample(buffer.subarray(0, (await file.read(buffer, 0, sampleSize, 0)).bytesRead));
+    } finally {
+      await file.close();
+    }
   }
-  return content.endsWith('\n')
-    ? content.slice(0, -1).split('\n')
-    : content.split('\n');
-}
-
-function truncateFilesystemLine(line: string, maxLineLength: number): string {
-  return line.length > maxLineLength
-    ? `${line.slice(0, maxLineLength)}${MAX_READ_LINE_SUFFIX}`
-    : line;
-}
-
-function normalizeWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'): string {
-  const normalized = content.replace(/\r\n/g, '\n');
-  return lineEnding === '\n' ? normalized : normalized.replace(/\n/g, '\r\n');
-}
-
-function countFilesystemTextLines(content: string): number {
-  return splitFilesystemTextLines(content).length;
-}
-
-async function readRuntimeEditableTextFile(
-  backend: RuntimeHostFilesystemBackendService,
-  sessionId: string,
-  inputPath: string,
-): Promise<{
-  normalizedContent: string;
-  path: string;
-  rawContent: string;
-}> {
-  const target = await backend.resolvePath(sessionId, inputPath);
-  if (!target.exists || target.type !== 'file') {
-    throw new BadRequestException(`路径不是文件: ${target.virtualPath}`);
-  }
-  const buffer = await fsPromises.readFile(target.hostPath);
-  const mimeType = detectFilesystemMimeType(target.virtualPath);
-  if (
-    mimeType === 'application/pdf'
-    || isFilesystemImageMimeType(mimeType)
-    || isBinaryFilesystemPath(target.virtualPath)
-    || containsBinarySample(buffer)
-  ) {
-    throw new BadRequestException(`暂不支持读取二进制文件: ${target.virtualPath} (${mimeType})`);
-  }
-  const rawContent = buffer.toString('utf8');
-  return {
-    normalizedContent: normalizeWorkspaceTextForReplacement(rawContent),
-    path: target.virtualPath,
-    rawContent,
-  };
-}
-
-function normalizeWorkspaceTextForReplacement(content: string): string {
-  return content.replace(/\r\n/g, '\n');
-}
-
-function applyWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'): string {
-  return normalizeWorkspaceLineEnding(content, lineEnding);
-}
-
-function markRuntimeTraversalSkipped(
-  traversal: {
-    partial: boolean;
-    skippedEntries: RuntimeFilesystemSkippedEntry[];
-    skippedPaths: string[];
-  },
-  virtualPath: string,
-): void {
-  traversal.partial = true;
-  pushRuntimeSkippedPath(traversal.skippedPaths, virtualPath);
-  pushRuntimeSkippedEntry(traversal.skippedEntries, virtualPath, 'inaccessible');
+  return { mimeType, nonTextType: BINARY_PATH_EXTENSIONS.has(extension) || containsBinary ? 'binary' : undefined, size: stat.size };
 }
 
 function pushRuntimeSkippedPath(skippedPaths: string[], virtualPath: string): void {
-  if (skippedPaths.includes(virtualPath)) {
-    return;
-  }
-  skippedPaths.push(virtualPath);
+  if (!skippedPaths.includes(virtualPath)) {skippedPaths.push(virtualPath);}
 }
 
-function pushRuntimeSkippedEntry(
-  skippedEntries: RuntimeFilesystemSkippedEntry[],
-  virtualPath: string,
-  reason: RuntimeFilesystemSkippedReason,
-): void {
-  if (skippedEntries.some((entry) => entry.path === virtualPath && entry.reason === reason)) {
-    return;
-  }
-  skippedEntries.push({
-    path: virtualPath,
-    reason,
-  });
+function pushRuntimeSkippedEntry(skippedEntries: RuntimeFilesystemSkippedEntry[], virtualPath: string, reason: RuntimeFilesystemSkippedReason): void {
+  if (!skippedEntries.some((entry) => entry.path === virtualPath && entry.reason === reason)) {skippedEntries.push({ path: virtualPath, reason });}
 }

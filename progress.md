@@ -1,5 +1,1690 @@
 # Progress
 
+## 2026-04-25
+
+- 已完成 `S14` 总复核：
+  - `eslint.config.mjs` 已恢复 `curly: ['error', 'all']`
+  - `npm run lint` 通过，结果为 `0 errors / 11 warnings`
+  - `packages/server`: `npm run build` 通过
+  - root: 双 `smoke:server` 与 `smoke:web-ui` 通过
+  - root: `npm run count:server-src` -> `14973`
+  - 独立 judge：`PASS`
+    - 结论：当前 `<=15000` 不是靠放宽规则过线
+    - 结论：`S14` 可改为已完成
+    - 结论：当前可宣告本轮完成
+
+- 已执行 `S14` 总 judge：
+  - 结果：`FAIL`
+  - judge 认可工具语义和 `plugin-bootstrap` 收口没有明显回退
+  - judge 否决 `eslint.config.mjs` 把 `curly` 从 `all` 放宽到 `multi-line` 这一做法
+  - 当前处理：已回退该 lint 规则放宽；`S13` 保持已完成，`S14` 继续进行中
+
+- 已继续推进 `S13` 收尾：
+  - `plugin-bootstrap.service.ts` 已整文件重写，把 remote 注册、manifest 字段赋值、config/remote reader 收成更短主链
+  - `normalizeRemotePluginInput -> createRemotePluginRegistration -> registerPlugin` 已接管远端注册主链
+  - 文件物理行数：`355 -> 220`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/remote/plugin-remote-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`4 suites / 29 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14973`
+- 当前状态：
+  - 相对上一稳定值 `15106`，本轮净减 `133`
+  - 独立 judge：`PASS`
+    - 结论：`plugin-bootstrap.service.ts` 这轮不是压格式，register/upsert/builtin bootstrap 与 manifest/config/remote 解释权仍留在同一 owner
+    - 结论：当前总量 `14973 <= 15000`，`S13` 可以改为已完成
+
+- 已继续推进 `S13`：
+  - `builtin-context-compaction.plugin.ts` 已把 `history view / model view / annotation scan / summary insert / covered marker sync` 收成同一 owner 主链
+  - `/compact`、`/compress`、history rewrite、before-model mutate、route run 仍留在同一 owner
+  - 文件物理行数：`587 -> 430`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15202`
+- 当前状态：
+  - 相对上一稳定值 `15359`，本轮净减 `157`
+  - 独立 judge：`PASS`
+    - 结论：`/compact` 与 `/compress`、history rewrite、auto-stop、before-model mutate、summary/covered annotation、route run 语义保持
+
+- 已继续推进 `S13`：
+  - `ai-model-execution.service.ts` 已把 `generate / stream / stream-collect` 三条 fallback 执行链收成统一主链
+  - `runtime-host-values.ts` 已把 assistant `raw/message` custom block reader 收成同一入口
+  - `runtime-gateway-connection-lifecycle.service.ts` 已把连接认证、注册前鉴权、断连 offline 标记收成同一状态流
+  - 文件物理行数：
+    - `ai-model-execution.service.ts`：`506 -> 495`
+    - `runtime-host-values.ts`：`224 -> 208`
+    - `runtime-gateway-connection-lifecycle.service.ts`：`217 -> 214`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/gateway/runtime-gateway-connection-lifecycle.service.spec.ts tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
+    - 结果：`4 suites / 32 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15359`
+- 当前状态：
+  - 相对上一稳定值 `15389`，本轮净减 `30`
+  - 独立 judge：`PASS`
+    - 结论：`ai-model-execution.service.ts` 的 generate/stream/stream-collect fallback、tool repair、custom blocks、usage、SSE normalize 语义保持
+    - 结论：`runtime-host-values.ts` 的 assistant custom block 读取、tool-error 转 invalid result、plugin llm messages 校验口径保持
+    - 结论：`runtime-gateway-connection-lifecycle.service.ts` 的 authenticate/register/disconnect/heartbeat/offline 与 `none/optional/required` auth mode 语义保持
+
+- 已继续推进 `S13`：
+  - `runtime-host-subagent-runner.service.ts` 已继续收口 session / request / subagent snapshot 装配主链
+  - `mergeSubagentRequests / writeSubagentSessionRequest / writeSubagentSessionSnapshot` 已接管恢复 session 与 snapshot 同步
+  - 文件物理行数：`611 -> 605`
+  - `plugin-bootstrap.service.ts` 已继续收口 config node base reader 与 remote input normalize 主链
+  - manifest/remote/config 解释权继续留在同一 owner
+  - 文件物理行数：`378 -> 355`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/remote/plugin-remote-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`4 suites / 29 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15389`
+- 当前状态：
+  - 相对上一稳定值 `15418`，本轮净减 `29`
+  - 独立 judge：`PASS`
+    - 结论：`runtime-host-subagent-runner.service.ts` 的 `run/start/resume`、background 执行、write-back、subagent type 默认值、hook before/after-run 语义保持
+    - 结论：`plugin-bootstrap.service.ts` 的 register/upsert remote、manifest normalize、config node reader、remote descriptor/metadata/access 语义保持
+
+- 已继续推进 `S13`：
+  - `runtime-host.service.ts` 已整文件重写，把 host method dispatch 的 `store / runtime tool / llm` 重复映射收成表驱动主链
+  - `call -> permission -> activePersona remember -> handler` 仍留在同一 owner
+  - 文件物理行数：`271 -> 264`
+  - `plugin-read-model.ts` 已整文件重写，把 remote snapshot、plugin self capability、command conflict entry、config snapshot resolve 收成更短主链
+  - command overview/version 的排序与 hash 口径继续留在同一 owner
+  - 文件物理行数：`263 -> 213`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host.service.spec.ts tests/persona/persona.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/adapters/http/plugin/plugin-command.controller.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`8 suites / 208 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15418`
+- 当前状态：
+  - 相对上一稳定值 `15475`，本轮净减 `57`
+  - 独立 judge：`PASS`
+    - 结论：`runtime-host.service.ts` 的 host method dispatch、provider/persona/subagent/runtime tool/store/llm 返回结构未回退
+    - 结论：`plugin-read-model.ts` 的 plugin self summary、command overview/version、config snapshot、remote snapshot 语义保持
+
+- 已继续推进 `S13`：
+  - `conversation-message-planning.service.ts` 已整文件重写，把 `message:received / history-rewrite / before-model / after-model / before-send / after-send` 收成更短主链
+  - hook payload/context 拼装、short-circuit 分支、persona 注入继续留在同一 owner
+  - 文件物理行数：`301 -> 216`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
+    - 结果：`3 suites / 31 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15475`
+- 当前状态：
+  - 相对上一稳定值 `15560`，本轮净减 `85`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实重写，不是换名留壳
+    - 结论：`message:received / history-rewrite / before-model / after-model / before-send / after-send`、persona 注入、short-circuit 语义保持
+
+- 已继续推进 `S13`：
+  - `persona.service.ts` 已整文件重写，把 current/create/update/delete/avatar 主链收成更短结构
+  - `context / conversation / default` source 判定、default persona 回退、delete 后 conversation 回退仍留在同一 owner
+  - 文件物理行数：`279 -> 183`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/persona/persona.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15560`
+- 当前状态：
+  - 相对上一稳定值 `15656`，本轮净减 `96`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实重写，不是换名留壳
+    - 结论：current/create/update/delete/avatar、default/context/conversation source 判定语义保持
+
+- 已继续推进 `S13`：
+  - `persona-store.service.ts` 已整文件重写，把 persona storage root、load/normalize/persist、avatar 识别、meta 渲染收成更短主链
+  - `readPersonaMetaYaml` 的长模板和 legacy meta 兼容仍留在同一 owner
+  - 文件物理行数：`334 -> 215`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/persona/persona.service.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15656`
+- 当前状态：
+  - 相对上一稳定值 `15775`，本轮净减 `119`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实重写，不是换名留壳
+    - 结论：default persona、meta.yaml/SYSTEM.md、avatar 自动识别、legacy meta、storage root 解析语义保持
+
+- 已继续推进 `S13`：
+  - `plugin-persistence.service.ts` 已整文件重写，把 plugin record 的 read/update/write/persist 收成更短主链
+  - `setConnectionState / touchHeartbeat / updatePluginConfig / updatePluginScope / updatePluginLlmPreference / updatePluginEventLog` 的旧重复写回链已删除
+  - 文件物理行数：`355 -> 242`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/persistence/plugin-persistence.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/remote/plugin-remote-bootstrap.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`4 suites / 29 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15775`
+- 当前状态：
+  - 相对上一稳定值 `15888`，本轮净减 `113`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实重写，不是换名留壳
+    - 结论：plugin record read/update/write、config validate、remote normalize、event fallback 语义保持
+
+- 已继续推进 `S13`：
+  - `runtime-host-conversation-record.service.ts` 已整文件重写，把 conversation 持久化、session 存取、history normalize 收成更短主链
+  - `load/save/mutate/session/history` 的旧平行链已删短
+  - 文件物理行数：`504 -> 448`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`3 suites / 31 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15888`
+- 当前状态：
+  - 相对上一稳定值 `15944`，本轮净减 `56`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于 owner 级真实收紧，不是换名留壳
+    - 结论：create/list/get/delete、todo/runtimePermission、history read/preview/replace、session get/start/keep/finish/list 语义保持
+
+- 已继续推进 `S13`：
+  - `conversation-task.service.ts` 已整文件重写，把 `startTask / runTask / finalizeTask / writeTaskMessage` 收成更短主链
+  - `complete / finish / persist` 旧收尾链已删除
+  - 文件物理行数：`515 -> 460`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15944`
+- 当前状态：
+  - 相对上一稳定值 `15999`，本轮净减 `55`
+  - 独立 judge：`PASS`
+    - 结论：这轮是主链收口，不是换名留壳
+    - 结论：流式事件、停止、错误、patch completion、tool call/result、custom block metadata、permission request/resolution 语义保持
+
+- 已继续推进 `S13`：
+  - `plugin-bootstrap.service.ts` 已整文件重写，把 `registerPlugin / upsertRemotePlugin / builtin bootstrap / manifest normalize / remote normalize / config schema parse` 收进同一 owner
+  - remote 注册入口已共享 `createRemotePluginRegistration`
+  - 文件物理行数：`400 -> 378`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/remote/plugin-remote-bootstrap.service.spec.ts`
+    - 结果：`2 suites / 7 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`15999`
+- 当前状态：
+  - 相对上一稳定值 `16021`，本轮净减 `22`
+  - 独立 judge：`PASS`
+    - 结论：这轮是实质收短主链，不是换名留壳
+    - 结论：公开 API、builtin bootstrap、remote plugin 注册、manifest/config/remote 解析语义保持
+
+- 已继续推进 `S13`：
+  - `builtin-context-compaction.plugin.ts` 已整文件重写，把 `history view / model preview / annotation scan` 收进同一 `ContextCompactionHistoryState`
+  - `message:received / conversation:history-rewrite / chat:before-model / route` 共享同一 compaction 执行入口
+  - 文件物理行数：`593 -> 587`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`16021`
+- 当前状态：
+  - 相对上一稳定值 `16027`，本轮净减 `6`
+  - 独立 judge：`PASS`
+    - 结论：这轮属于主链收敛，不是换壳
+    - 结论：`history view / model preview / annotation scan` 已集中到单一 owner
+    - 结论：`/compact`、auto-stop、history rewrite、before-model mutate、summary/covered annotation 语义保持
+
+## 2026-04-24
+
+- 已进入 `S13` 的第一轮 owner 重写：
+  - `runtime-host-filesystem-backend.service.ts` 已整文件重写，继续收紧 `resolve/list/read/grep/write/edit/symlink` 主链
+  - 已删掉原先只服务 symlink 的 mounted filesystem 中转壳，并把 search/read 返回链压得更紧
+  - 文件物理行数：`406 -> 386`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`7 suites / 196 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`16066`
+- 当前状态：
+  - 相对上一稳定值 `16086`，本轮净减 `20`
+  - 独立 judge：`PASS`
+    - 结论：这轮不是单纯压行，`filesystem backend` 仍是同一 owner 内的真实收口
+    - 结论：`resolve/list/read/grep/write/edit/symlink` 主链没有回推到工具层或 `shared`
+
+- 已继续推进 `S13`：
+  - `runtime-host-subagent-runner.service.ts` 已把前台执行与后台续跑收回同一 `executeStoredSubagent` 主链
+  - `run/start/complete` 不再并排维护重复的 running/session/store 收尾
+  - 文件物理行数：`650 -> 611`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`1 suite / 14 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`16027`
+- 当前状态：
+  - 相对上一稳定值 `16066`，本轮净减 `39`
+  - 独立 judge：`PASS`
+    - 结论：`run/start/complete` 的重复 running/session/store 收尾链已收回同一 owner
+    - 结论：session 复用、resume、write-back、hook 边界未见公开语义回退
+
+- 已完成 `S12` 阶段总 judge：
+  - 结果：`PASS`
+  - 结论：`packages/server/src = 16086` 可支撑 `S12 <= 17000`
+  - 结论：`S12` 已改为 `已完成`
+  - 结论：`S13` 已改为 `进行中`
+
+- 已完成 `S11` 阶段总 judge：
+  - 结果：`PASS`
+  - 结论：`S11` 可以从 `进行中` 改为 `已完成`
+  - 结论：`S12 / S13` 仍未完成，不能一起跳过
+- 已继续压缩最新一轮的 automation owner：
+  - `automation.service.ts` 已从 `299` 继续压到 `241`
+  - `automation-execution.service.ts` 已从 `172` 继续压到 `160`
+  - `packages/server/src` 已从 `16156` 继续压到 `16086`
+  - automation 补充 judge：`PASS`
+    - 结论：后续压缩未引入事件顺序、cron 或 hook pipeline 回退，`S11 已完成` 状态仍成立
+
+- 已继续推进 `S11`：
+  - `automation.service.ts` 已改成状态 owner 主链，不再保留 service 内并排的状态/持久化/事件分发包装链
+  - `automation-execution.service.ts` 已改成执行 pipeline，不再只是在 service 内压缩 `before-run -> actions -> after-run`
+  - `runtime-just-bash.service.ts` 已修回稳定 timeout 语义
+  - `builtin-runtime-tools.plugin.ts` 已继续保持统一 runtime 输出 owner，并透传结构化 `loaded / diff / postWriteSummary / strategy / occurrences`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/automation/automation.service.spec.ts tests/execution/runtime/runtime-just-bash.service.spec.ts tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/host/runtime-host-runtime-tool.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+    - 结果：`6 suites / 311 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`16156`
+- 当前状态：
+  - 相对上一稳定值 `16305`，本轮净减 `149`
+  - 独立 judge：`PASS`
+    - 结论：`automation` 两个 owner 已是新的状态/执行主链，不再只是薄包装内联
+    - 结论：`just-bash` timeout 与 `builtin-runtime-tools` 输出链未见语义回退
+  - `S11` 阶段总 judge 仍未做，因此阶段状态不变
+
+- 已继续推进 `S11`：
+  - `runtime-command-output.ts`、`runtime-native-shell.service.ts`、`project-worktree-post-write.service.ts`、`webfetch-service.ts`、`project-subagent-type-registry.service.ts`、`skill-tool.service.ts`、`skill-registry.service.ts`、`mcp-stdio-launcher.ts`、`mcp.service.ts` 已整文件重写
+  - 当前这轮只动 execution support / mcp / skill / webfetch / subagent type 这些 execution 域 owner，不回到旧业务大块
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/runtime/runtime-command-output.spec.ts tests/execution/runtime/runtime-native-shell.service.spec.ts tests/execution/project/project-worktree-post-write.service.spec.ts tests/execution/webfetch/webfetch-service.spec.ts tests/execution/project/project-subagent-type-registry.service.spec.ts tests/execution/skill/skill-registry.service.spec.ts tests/execution/skill/skill-tool.service.spec.ts tests/execution/mcp/mcp-stdio-launcher.spec.ts tests/execution/mcp/mcp.service.spec.ts tests/adapters/http/mcp/mcp.controller.spec.ts tests/adapters/http/skill/skill.controller.spec.ts`
+    - 结果：`11 suites / 42 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`16305`
+- 当前状态：
+  - 当前相对上一稳定值 `16828` 已净减 `523`
+  - 已满足“单轮至少减 500 行”
+  - 独立 judge：`PASS`
+    - 结论：这轮是 execution support owner 级真重写，可计入 `S11` 进度
+  - 但 `S11` 阶段总 judge 仍未做，因此仍不能把 `S11` 改为已完成
+
+- 已继续推进 `S11`：
+  - `tool-registry.service.ts`、`runtime-filesystem-backend.service.ts`、`runtime-mounted-workspace-file-system.ts`、`runtime-tool-permission.service.ts`、`runtime-filesystem-backend.types.ts`、`glob-tool.service.ts`、`grep-tool.service.ts` 已整文件重写
+  - 当前这轮只动工具分发 / backend dispatch / glob-grep 工具域，不回到旧业务 owner
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/tool/tool-registry.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/bash/bash-tool.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`8 suites / 319 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`16828`
+- 当前状态：
+  - 当前相对上一稳定值 `17798` 已净减 `970`
+  - 已低于 `17000`
+  - 但当前还没做独立 judge，因此仍不能把阶段改成已完成
+
+- 已继续推进 `S11`：
+  - `runtime-file-freshness.service.ts`、`read-tool.service.ts`、`write-tool.service.ts`、`edit-tool.service.ts` 已整文件重写成更短主链
+  - `runtime-host-filesystem-backend.service.ts` 与 `project-worktree-file.service.ts` 已整文件重写，删除旧的分散 path/read/write/search 主链
+  - 同轮还压缩了 `runtime-file-tree.ts`、`read-result-render.ts`、`read-path-instruction.ts`、`runtime-search-result-report.ts`
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/project/project-worktree-file.service.spec.ts tests/execution/file/runtime-search-result-report.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/runtime/runtime-tool-backend.service.spec.ts`
+    - 结果：`11 suites / 223 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`17798`
+- 当前状态：
+  - 当前相对上一稳定值 `18490` 已净减 `692`
+  - `S11 <= 19000` 已经达成
+  - 但本轮还没做独立 judge，因此阶段不能改为已完成
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-hints.ts` 已整段重写成单一声明式 hints 主链，删除旧的 reader / fallback / 单次包装链。
+  - `bash-tool.service.ts` 已删除旧的描述拼装和 access 包装壳，改成单一主链。
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`19058`
+- 当前状态：
+  - `runtime-shell-command-hints.ts` 文件物理行数 `841 -> 440`
+  - `bash-tool.service.ts` 文件物理行数 `180 -> 68`
+  - 当前相对上一稳定值 `19558` 已净减 `500`
+  - 距 `S11 <= 19000` 还差 `58`
+  - 本轮还没做独立 judge，不能改阶段状态
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-hints.ts` 已把 `copy-item / move-item` 的 destination 读取收回同一 hints owner，不再把 `-Destination (Join-Path ...)` 只截成首 token。
+  - tokenizer 入口已保护 parenthesized `Join-Path` 子表达式；`absolutePaths / externalAbsolutePaths / externalWritePaths` 现在会稳定保留完整目标路径，不再退回只剩基路径。
+  - 本轮没有回扩成通用 PowerShell 求值器，仍只支持 `Join-Path` 这类有限路径拼接语义。
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run count:server-src`
+    - 结果：`19558`
+- 当前状态：
+  - 当前相对 `S10` 基线 `20778` 已净减 `1220`
+  - 当前相对上一轮稳定值 `20059` 已净减 `501`
+  - 距 `S11 <= 19000` 还差 `558`
+  - 本轮还没做独立 judge，不能改阶段状态
+
+- 已继续推进 `S11`：
+  - `builtin-context-compaction.plugin.ts` 已把 annotation / covered-marker 的旧平行包壳链重写成单一 annotation state 主链
+  - `conversation-task.service.ts` 已把 `complete / finish / persist` 三段旧收尾链重写成 `finalizeTask + writeTaskMessage` 单一主链，并把 `json/text custom block` 两套构造链收成 `readConversationTaskCustomBlock()`
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`1 suite / 4 tests` 全部通过
+  - root: `npm run count:server-src`
+    - 结果：`20059`
+- 当前状态：
+  - `builtin-context-compaction.plugin.ts` 文件物理行数 `594 -> 593`
+  - `conversation-task.service.ts` 文件物理行数 `532 -> 515`
+  - 当前相对上一稳定值 `20071` 已净减 `12`
+  - `S11` 当前总量 `20059`
+  - 距 `S11 <= 19000` 还差 `1059`
+  - 以上两刀都还没做独立 judge，当前只能记 fresh 稳定值，不能改阶段状态
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-ast.ts` 已把变量展开、`Join-Path` 赋值读取与变量名归一化链继续收回 AST owner
+  - 已删除并行文本归约控制流，不再保留单独的变量展开转发层
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run count:server-src`
+    - 结果：`20084`
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - `runtime-shell-command-ast.ts` 文件物理行数 `513 -> 496`
+  - 当前相对上一稳定值 `20101` 已净减 `17`
+  - `S11` 当前总量 `20084`
+  - 距 `S11 <= 19000` 还差 `1084`
+
+- `S11` 已记录两条已证伪切口，后续不再重试：
+  - `runtime-text-replace.ts` 的 block-normalized reader 总收口会回增文件体积，并打坏 `indentation-flexible / line-trimmed / trailing-whitespace-trimmed` 的策略边界
+  - `runtime-shell-command-hints.ts` 的写路径 reader map 改单一 `switch` 主链会回增文件体积
+- `runtime-shell-command-ast.ts` 独立 judge：`PASS`
+  - 结论：AST owner 内变量赋值读取已经收口到同一条展开链，不是换壳
+  - bash / PowerShell / alias / redirection / AST 失败回退边界保持
+  - 残余风险只在 AST 不可用时仍要和 hints fallback 同步维护 `Join-Path` 支持面，不属于本轮回退
+
+- 已继续推进 `S11`：
+  - `builtin-context-compaction.plugin.ts` 已删除旧的平行编排，改成单一 owner 主链，统一 manual command / route / auto rewrite 的 compaction 调用、有效历史视图、annotation 写回与命令短路。
+  - 同轮继续删掉了 `conversationId` 死参数传递链，`chat:before-model` / route / run 主链不再透传未使用字段。
+  - `runtime-host-subagent-runner.service.ts` 只保留了 `runner` owner 内真正还在使用的 session envelope 主链；中途试过更大的 `create/run tracked` 合并，净减为负，已回退，不计入成果。
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`2 suites / 18 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run count:server-src`
+    - 结果：`20150`
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对上一稳定值 `20253` 已净减 `103`
+  - 当前相对 `S10` 基线 `20778` 已净减 `628`
+  - 距 `S11 <= 19000` 还差 `1150`
+
+- 已继续推进 `S11`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 `write / edit` 共享的旧文本基线读取与落盘主链收成 `writeResolvedTextFile()`
+  - `editTextFile()` 不再先读旧文本再回到 `writeTextFile()` 里重复读一遍同文件做 diff
+  - 同轮继续压掉了这条新主链周围的重复返回壳，避免本刀回增
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`6 suites / 192 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run count:server-src`
+    - 结果：`20253`
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对最新稳定值 `20259` 已净减 `6`
+  - 当前相对 `S10` 基线 `20778` 已净减 `525`
+  - 距 `S11 <= 19000` 还差 `1253`
+
+- 已继续推进 `S11`：
+  - `runtime-text-replace.ts` 已把 `escape-normalized / trimmed-boundary / whitespace-normalized` 的重复候选扫描收成 `readRuntimeTextLooseMatches()`
+  - `runtime-text-replace.ts` 已把 `context-aware / block-anchor` 的双评分链收成 `readRuntimeTextAnchoredSimilarity()`
+  - 当前这刀保持策略顺序、`replaceAll` 歧义保护、line-ending / indentation 回写与 not-found 文案不变
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 181 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run count:server-src`
+    - 结果：`20259`
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对最新稳定值 `20276` 已净减 `17`
+  - 当前相对 `S10` 基线 `20778` 已净减 `519`
+  - 距 `S11 <= 19000` 还差 `1259`
+
+- 已按用户要求调整 `S11` 策略：
+  - `TODO.md` 已明确写入：`S11-S13` 不再接受“只减几行”的碎片式整理
+  - 后续改为“删除旧实现后，在同一 owner 内直接重写主链”
+  - 不保留并行双实现，不保留过渡壳
+- 当前体积基线已刷新：
+  - root: `npm run count:server-src`
+    - 结果：`20289`
+  - 距 `S11 <= 19000` 还差 `1289`
+- 已试做一版 `runtime-shell-command-hints.ts` 的写路径主链整块重写：
+  - 结果：`npm run count:server-src` 回增到 `20353`
+  - 处理：整版已回退，不保留失败重写
+- 已完成一版 `runtime-text-replace.ts` 的 owner 级主链重写：
+  - 已删除“策略对象 + reader 工厂”旧结构
+  - 改成 `readRuntimeTextStrategyMatches()` 单一策略调度
+  - 定向 Jest、`packages/server` build、双 `smoke:server` 已通过
+  - `npm run count:server-src` 从 `20317` 降到 `20289`
+- 接下来直接执行大 owner 重写：
+  - `runtime-host-filesystem-backend.service.ts`
+  - `runtime-shell-command-hints.ts`
+  - `runtime-text-replace.ts`
+
+- 已继续推进 `S11`：
+  - `builtin-context-compaction.plugin.ts` 已把 `readAutoStopState()` 与 `toPluginLlmMessage()` 压回 `chat:before-model`
+  - `runtime-host-filesystem-backend.service.ts` 已删掉未使用的 `countFilesystemTextLines()`，并把 `readFilesystemMtime()`、offset 越界异常壳压回 `glob/grep/read` 主链
+  - `runtime-host-subagent-runner.service.ts` 已把只服务 resume 分支的 `buildSubagentRequestFromSession()` 与 `mergeSubagentRequest()` 压回调用点
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`5 suites / 189 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`2 suites / 18 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20332`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `446`
+  - 当前相对本轮起点 `20749` 已净减 `417`
+  - 距 `S11 <= 19000` 还差 `1332`
+
+- 已继续推进 `S11`：
+  - `runtime-host-subagent-runner.service.ts` 已把 create/resume 两条链里显式枚举的 resolved request 字段列表删掉，改成直接复用 `resolved.request`
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`2 suites / 18 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20366`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `412`
+  - 当前相对本轮起点 `20749` 已净减 `383`
+  - 距 `S11 <= 19000` 还差 `1366`
+
+- 已继续推进 `S11`：
+  - `runtime-host-subagent-runner.service.ts` 已把 `resolveSubagentInvocation()` 的 create/resume 双分支收回单一出口，删除重复的 request/session/preview 返回壳
+  - 中途试过继续压 `readSubagentBeforeRunResponse()`，`count` 回增 1，已同轮回退，不计入成果
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`2 suites / 18 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20386`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `392`
+  - 当前相对本轮起点 `20749` 已净减 `363`
+  - 距 `S11 <= 19000` 还差 `1386`
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-hints.ts` 已把 command-structure 读取、redirection fallback、filesystem provider prefix 拆装与 network command 单次 reader 压回主链
+  - `builtin-context-compaction.plugin.ts` 已把 covered-count、result-label 与 owned-annotation 这类单次包壳压回 summary / command / marker owner
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20414`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `364`
+  - 当前相对本轮起点 `20749` 已净减 `335`
+  - 距 `S11 <= 19000` 还差 `1414`
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-hints.ts` 已把 tokenizer 的 braced-token 保护/恢复、separator 判定、quoted token 去壳与 summary 组装继续压回 hints owner
+  - 当前不改 tokenizer 边界、single-quoted literal 语义与 summary 文案口径
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20468`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `310`
+  - 当前相对本轮起点 `20749` 已净减 `281`
+  - 距 `S11 <= 19000` 还差 `1468`
+
+- 已继续推进 `S11`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 binary sample 检测压回 `readRuntimeHostFilesystemReadMetadata()`
+  - 这刀净减很小，后续不再优先沿同粒度继续挤这一块
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`6 suites / 192 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20511`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `267`
+  - 当前相对本轮起点 `20749` 已净减 `238`
+  - 距 `S11 <= 19000` 还差 `1511`
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-hints.ts` 已把写路径读取、`Join-Path` unwrap 与 env path 展开链上的单点薄包装继续压回 hints owner
+  - 当前不改 `Join-Path`、filesystem provider prefix、env path 展开与写路径判定语义
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20513`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `265`
+  - 当前相对本轮起点 `20749` 已净减 `236`
+  - 距 `S11 <= 19000` 还差 `1513`
+
+- 已继续推进 `S11`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 read-metadata 链上的 `mime/static non-text/binary path` 三段单点判定压回 `readRuntimeHostFilesystemReadMetadata()`
+  - 当前不改 `image/pdf/binary` 分类语义
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`6 suites / 192 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20522`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `256`
+  - 当前相对本轮起点 `20749` 已净减 `227`
+  - 距 `S11 <= 19000` 还差 `1522`
+
+- 已继续推进 `S11`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 missing-path 异常拼装、diff base 读取、目录遍历 skipped 标记与 nearby-path comparator 继续压回主链调用点
+  - 当前不改缺失路径提示文案、`skippedPaths/skippedEntries` 语义与 diff base 的 non-text 边界
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`6 suites / 192 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20535`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `243`
+  - 当前相对本轮起点 `20749` 已净减 `214`
+  - 距 `S11 <= 19000` 还差 `1535`
+
+- 已继续推进 `S11`：
+  - `runtime-host-filesystem-backend.service.ts` 已把二进制读错误判定、非文本 read result 构造、静态 non-text 判定与行数统计这类单点薄包装继续压回现有 `read/write/edit/grep` owner
+  - 当前不改二进制拒读、`image/pdf` 分类与 line-ending 行为
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`6 suites / 192 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20560`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `218`
+  - 当前相对本轮起点 `20749` 已净减 `189`
+  - 距 `S11 <= 19000` 还差 `1560`
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-ast.ts` 已继续删除 parser language 选择、redirection operator 判定、`Join-Path` unwrap/tokenize 这类只服务单一调用点的薄包装
+  - 当前不改 AST 变量展开和 `Join-Path` 归约边界，只删中间转发层
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20579`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `199`
+  - 当前相对本轮起点 `20749` 已净减 `170`
+  - 距 `S11 <= 19000` 还差 `1579`
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-ast.ts` 已把 `assignment`/`Join-Path` 链上的单次判定与单点转发继续收回真实 owner
+  - 已删除未复用的 `resolveRuntimeShellAssignedValue()`，并把 bash / PowerShell 赋值读取与 `Join-Path` child token 展开直接落回现有调用点
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20597`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `181`
+  - 当前相对本轮起点 `20749` 已净减 `152`
+  - 距 `S11 <= 19000` 还差 `1597`
+
+- 已继续推进 `S11`：
+  - `runtime-shell-command-hints.ts` 已把 `copy/move-item` 两条 destination fallback 和 `tar create/extract` 两条 mode 判定继续收口到单点 owner
+  - 这刀只删除同构控制流，不改 `externalWritePaths / writesExternalPath / tar` 写路径边界
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20617`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `161`
+  - 当前相对本轮起点 `20749` 已净减 `132`
+  - 距 `S11 <= 19000` 还差 `1617`
+
+- 已继续推进 `S11`：
+  - `builtin-context-compaction.plugin.ts` 已把 `message:received / conversation:history-rewrite / route` 三条 compaction 调用链共享的 runtime-config 读取、当前 model/provider 绑定与执行入口收口到同域 owner
+  - 同轮继续把短路回复对象、命令输入短分支、结果标签与若干固定响应压回正收益，避免“多一层调用壳但总体更大”的假整理
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20621`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `157`
+  - 当前相对本轮起点 `20749` 已净减 `128`
+  - 距 `S11 <= 19000` 还差 `1621`
+
+- 已继续推进 `S11`：
+  - `runtime-host-subagent-runner.service.ts` 已把 `mergeSubagentRequest()`、`buildSubagentRequestFromSession()` 与 session update/create 两边并行存在的 request envelope 组装收口到 `cloneSubagentRequestEnvelope()`
+  - `runtime-host-subagent-runner.service.ts` 已把 session create 两条链并行存在的 payload 拼装收口到 `buildSubagentSessionPayload()`
+  - `runtime-host-subagent-runner.service.ts` 已把 subagent 记录上的 `sessionId / sessionMessageCount / sessionUpdatedAt` 回写收口到 `applySubagentSessionSnapshot()`
+  - 同轮验证过把 `createSubagent` 总装配抽成公共构造会反向抬高体积，已当场回收，只保留净减为正的 request/session owner
+- `S11` 这轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/conversation/conversation-task.service.spec.ts`
+    - 结果：`2 suites / 18 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20631`
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `147`
+  - 当前相对本轮起点 `20749` 已净减 `118`
+  - 距 `S11 <= 19000` 还差 `1631`
+
+- 已继续推进 `S11`：
+  - `runtime-host-filesystem-backend.service.ts` 已把目标路径类型校验进一步收口到同一组 owner，并让 `grepText()` 直接消费已解析的 file entry
+  - `runtime-host-filesystem-backend.service.ts` 已把目录遍历三段递归收回到单条主链，不再保留薄包装的目录树 / 目录项函数
+  - `runtime-shell-command-hints.ts` 已把 git 子命令写路径分派改成 `GIT_WRITE_PATH_READERS`，同时把 PowerShell / POSIX env 路径展开共用到同一条解析链
+  - `runtime-shell-command-ast.ts` 已把 `Join-Path` 的 flagged / positional token 解析收口到通用读取器，并删掉空段判断薄包装
+  - `runtime-powershell-path-token.ts` 已把 `AST` 与 `shell hints` 的 PowerShell 路径 token / path join 解析回收到单一 runtime owner
+  - `project-worktree-file.service.ts` 已删掉自带的第二套 edit 替换实现，直接复用 `runtime-text-replace`
+  - `runtime-file-tree.ts` 已把 host 文件后端与 project worktree 的递归文件树遍历、目录条目排序回收到单一 file owner
+  - `runtime-text-replace.ts` 已把 3 条 normalized line 策略和 2 条 anchored 策略的重复 reader 收口
+  - `builtin-context-compaction.plugin.ts` 已把 annotation owner 过滤、annotation 构造、历史过滤与 covered 判定继续收口
+- `S11` 本轮 fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`6 suites / 192 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 278 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`5 suites / 198 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20647`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 结果：`2 suites / 23 tests` 全部通过
+- 当前状态：
+  - `S11` 仍未完成，还没到 judge
+  - 当前相对 `S10` 基线 `20778` 已净减 `131`
+  - 当前相对本轮起点 `20749` 已净减 `102`
+  - 距 `S11 <= 19000` 还差 `1647`
+
+- 已完成 `S3`：
+  - `tool-registry` 真链路现在覆盖了同一 `assistantMessageId` 下双次 `read`
+  - 第二次 `read` 不再重复输出已 claim 的路径级 `AGENTS.md` 文本 reminder
+- `S3` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 178 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S3` 独立 judge：
+  - 结果：`PASS`
+  - 结论：同一 `assistantMessageId` scope 的第二次 `read` 确实不再重复灌 instruction；没有新增全局 reminder 机制；文本与 loaded 去重边界一致
+
+- 已完成 `S4`：
+  - `builtin.runtime-tools` 的 `read` 输出现在稳定透传 `data.loaded`
+  - 即使 `loaded=[]` 也不会再把结构化字段整段吞掉
+- `S4` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 163 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S4` 独立 judge：
+  - 结果：`PASS`
+  - 结论：第一次命中返回 `loaded` 路径、第二次同 scope 返回空数组；文本与结构化 contract 没有分叉；没有新增全局 reminder 系统
+
+- 已完成 `S5`：
+  - 路径级 instruction 的祖先解析、claim、filter 已收回 `read-path-instruction` 域
+  - `ReadToolService` 现在只负责调用结果并透传到 `loaded` 与文本渲染
+  - 可见根自身的 `AGENTS.md` 不会被重复灌入
+- `S5` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 195 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S5` 独立 judge：
+  - 结果：`PASS`
+  - 结论：instruction 解析/claim/filter 已集中回 read-path-instruction 域；可见根自身不会重复灌入；没有扩大到扫描非祖先路径或新增全局状态
+
+- 已完成 `S9`：
+  - 当前 `bash / read / write / edit` 顶部对照项已统一收口为“主链功能已完成”
+  - 功能阶段 fresh 已汇总跑通，当前总阻塞已从功能阶段切到体积阶段
+- `S9` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/file/runtime-text-replace.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`9 suites / 352 tests` 全部通过
+  - `packages/shared`: `npm run build`
+    - 结果：通过
+  - `packages/plugin-sdk`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S9` 独立 judge：
+  - 结果：`PASS`
+  - 结论：当前没有明显落后于 `other/opencode` 主链的 bash/read/write/edit 功能缺口；本轮没有在功能未完成前转去追体积数字
+
+- 已完成 `S10`：
+  - `TODO.md` 已固定当前体积基线 `20778`
+  - 已按真实 Top 12 非空行排序写入体积阶段顺序和 `S11/S12/S13` 数字
+- `S10` fresh 已通过：
+  - root: `npm run count:server-src`
+    - 结果：`20778`
+- `S10` 独立 judge：
+  - 结果：`PASS`
+  - 结论：排序来自真实高体积 owner；已优先点到 `runtime-host-filesystem-backend / runtime-shell-command-hints / runtime-text-replace`；阶段数字与当前基线相符
+
+- 已完成 `S1`：
+  - `runtime-shell-command-ast.ts` 现在会跳过 `assignment_expression` 内部仅用于 `Join-Path` 赋值求值的 PowerShell 内层 `command`
+  - `$root = Join-Path ...; Copy-Item ... "$root\\x"` 不再额外挂出基路径，只保留最终静态目标路径
+- `S1` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 273 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S1` 独立 judge：
+  - 结果：`PASS`
+  - 结论：这次是实质修正，不是只改断言；重复基路径已从 `metadata + summary` 同时消失；没有扩大成通用 shell 求值
+
+- 已完成 `S2`：
+  - `bash` / `tool-registry` 已补 AST 失败回退证据
+  - bash 坏语法和 PowerShell 坏语法现在都明确证明：AST 失败后仍沿用现有 tokenizer hints，不回流到工具层
+- `S2` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 277 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S2` 独立 judge：
+  - 结果：`PASS`
+  - 结论：权限链真实覆盖 bash / PowerShell；fallback owner 仍停在 `runtime-shell-command-hints.ts`；没有把坏命令放宽成可安全执行
+
+- 已完成 `S8`：
+  - `runtime-text-replace.ts` 已调整策略优先级
+  - `line-trimmed` 现在会先于 `context-aware / block-anchor` 处理“每行只差外层空白”的块
+  - 更窄的 rewrite 不再被更宽的锚点策略提前吞掉
+- `S8` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`5 suites / 195 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S8` 独立 judge：
+  - 结果：`PASS`
+  - 结论：这次是实质修正“更窄策略优先”的选优边界，不是只改测试名；歧义保护仍成立；native edit 真链路已经覆盖本次优先级调整
+
+- 已完成 `S6`：
+  - `postWriteSummary` 已补 `visibleRelatedFiles / omittedRelatedFiles`
+  - `packages/server/src/execution/file/runtime-file-post-write-report.ts` 现在会复用文本输出同一套排序/截断逻辑来计算结构化数量
+  - `packages/shared/src/types/plugin-runtime-tools.ts` 只新增类型字段，没有新增运行逻辑
+- `S6` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 167 tests` 全部通过
+  - `packages/shared`: `npm run build`
+    - 结果：通过
+  - `packages/plugin-sdk`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S6` 独立 judge：
+  - 结果：`PASS`
+  - 结论：不是只新增字段名；文本与结构化 summary 更接近一致；没有违反 `shared` 只放类型边界
+
+- 已完成 `S7`：
+  - `postWriteSummary` 已补 `visibleRelatedPaths`
+  - 文本 diagnostics block 实际展示的 related file 顺序现在可由结构化结果直接读取
+- `S7` fresh 已通过：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 167 tests` 全部通过
+  - `packages/shared`: `npm run build`
+    - 结果：通过
+  - `packages/plugin-sdk`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- `S7` 独立 judge：
+  - 结果：`PASS`
+  - 结论：`visibleRelatedPaths` 是实质契约；文本与结构化 summary 复用同一套排序/截断逻辑；没有违反 `shared` 只放类型边界
+
+- 当前已把 [TODO.md](D:/Git_Repository/garlic-claw/TODO.md) 约束补强：
+  - 明确禁止 `helper / helpers` 这类语义不明的命名或抽象
+  - 明确 `shared` 只保留类型共享，不写运行逻辑
+
+- 已重写 [TODO.md](D:/Git_Repository/garlic-claw/TODO.md)：
+  - 从大块阶段改成 `S1` 到 `S14` 的串行小阶段
+  - 每个阶段都明确写出涉及文件、fresh 验收和独立 judge
+  - 已恢复旧约束，包括：
+    - `glob / grep` 不再扩目标面
+    - `shared` 只保留类型共享
+    - `S1` 到 `S9` 前不做独立压行
+    - 禁止用换目录、换名字、降验收标准伪装体积优化
+- 本次仅调整计划文档，未执行代码测试
+- 当前作用：
+  - 后续推进时可直接按小阶段执行
+  - 已完成事项不再占据 `TODO.md` 主体
+  - 旧约束仍保留在计划文件里
+
+- 已继续推进 `P21-7B`：
+  - 路径级 `AGENTS.md` 的 claim 口径已从 session 级进一步收紧到“优先 assistant message 级，缺失时回退 session 级”
+  - `runtime-host` 现在会把 `assistantMessageId` 透传到 `read` 输入，`read.loaded` 因而更接近 OpenCode 的 message-level loaded instructions 语义
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 175 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 这刀继续收紧 `read` 的 loaded instructions claim 边界，不是新增 reminder 机制
+  - `P21-7B` 还没做独立 judge，不能标记完成
+
+- 已继续推进 `P21-7C`：
+  - post-write 文本反馈现在最多展开 5 个相关文件 diagnostics
+  - 超出部分不再把所有 related files 平铺到输出里，而是保留全量 summary 并显式提示省略数量
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 166 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 这刀继续把 `write/edit` 文本反馈收紧到 OpenCode 的 project diagnostics 上限语义
+  - `P21-7C` 还没做独立 judge，不能标记完成
+
+- 已继续推进 `P21-7C`：
+  - post-write diagnostics 的文件块顺序现在与 `next hint` 的 related focus path 优先级一致
+  - 相关文件不再按原始输入顺序平铺，而是按严重度与问题数优先展示
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 165 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 这刀继续收紧 `write/edit` 的工程反馈可执行性，不是新增字段
+  - `P21-7C` 还没做独立 judge，不能标记完成
+
+- 已继续推进 `P21-7A`：
+  - PowerShell parenthesized `Join-Path` 的 AST 预扫已去掉重复基路径噪音
+  - `-Destination (Join-Path ...)` 现在只保留完整目标路径，不再把内层 `Join-Path` 的 base path 额外挂进 `absolutePaths / externalAbsolutePaths`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 273 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 这刀属于 `P21-7A` 的静态提示收紧，不是扩语义面
+  - `P21-7A` 还没做独立 judge，不能标记完成
+
+- 已继续推进 `P21-7B`：
+  - 路径级 `AGENTS.md` instruction 现在会按 session 级 claim 去重
+  - 同一条 instruction 在同一 session 内不会被重复灌入后续 `read` 结果
+  - `read.loaded` 现在只回传“本次新加载的 instruction 路径”，不再重复挂回已暴露过的路径
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 174 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 这刀继续收紧 `read` 的 loaded instructions / metadata 边界，不是新增全局 reminder 机制
+  - `P21-7B` 还没做独立 judge，不能标记完成
+
+- 已继续收口 `TODO.md` 的 OpenCode 对照清单：
+  - 已给 `bash / read / glob / grep / write / edit` 六个工具逐项补齐“当前缺口”
+  - 已给六个工具逐项补齐“当前仓库验收锚点”
+  - 缺口描述只引用 `other/opencode/packages/opencode/src/tool/*.ts` 已存在的能力边界，不再把仓库外扩展写进主计划
+  - `glob / grep` 当前已明确标记为“主链基本对齐，不再单独扩目标面”
+
+- 已继续收口规划基线：
+  - 已对照 `other/opencode/packages/opencode/src/tool/{bash,read,glob,grep,write,edit}.ts`
+  - 已把 OpenCode 的真实能力清单逐项写入 `TODO.md`
+  - 后续主计划只对齐这些已确认能力，不再把源码里不存在的扩展写成目标
+
+- 已按 `other/opencode` 代码重新收口本轮边界，并同步 `TODO.md / task_plan.md`：
+  - `bash` 只对齐 `other/opencode/packages/opencode/src/tool/bash.ts` 的 AST + 静态路径预扫边界
+  - `read` 只对齐 `other/opencode/packages/opencode/src/tool/read.ts` 的 loaded instructions / metadata / truncation / binary 分流
+  - `write / edit` 只对齐 `other/opencode/packages/opencode/src/tool/write.ts` 与 `edit.ts` 的 diff / formatting / diagnostics / create-style edit
+  - 没有 OpenCode 现成实现作锚点的能力，不再继续写进主计划
+
+- 已继续推进 `P21-7A`：
+  - `tool-registry.service.spec.ts` 里的 PowerShell `Join-Path` permission request 用例已显式切到 `native-shell` backend
+  - `bash-tool.service.spec.ts` 与 `tool-registry.service.spec.ts` 已同步补齐 parenthesized `Join-Path` 当前真相断言
+  - 这轮没有再改生产 owner；修的是 fresh 证据与测试前置条件，不把默认 `just-bash` 夹具误当成 PowerShell 主链
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 273 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - `$(Join-Path ...)` 与 `filesystem::$(Join-Path ...)` 的 permission-chain 回归已恢复
+  - `-Destination (Join-Path ...)` 当前会额外暴露基路径 `C:\\env-root`，先按更强提示收口
+  - 还没做独立 judge，因此 `P21-7A` 仍保持 `进行中`
+
+- 已继续推进 `P21-7C`：
+  - `edit` 现在支持 create-style 入口：`oldString=""` 可直接创建新文件
+  - 目标文件已存在时仍保持 freshness 约束，不单开覆盖逻辑，继续复用 `writeTextFile` owner 统一落盘与 post-write 反馈
+  - native `edit` 真链路现在会显式回显 `Strategy: empty-old-string`
+  - `packages/server/scripts/http-smoke.mjs` 已补 `chat.messages.edit-create-loop`，把这条新主链纳入后端 fresh 冒烟
+  - create-style `edit` 覆盖已存在文本文件时，现也会保留原文件换行风格
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/edit/edit-tool.service.spec.ts`
+    - 结果：`1 suite / 6 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts`
+    - 结果：`1 suite / 15 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`1 suite / 149 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20351`
+- 当前状态：
+  - 这刀属于 `P21-7C` 继续补 OpenCode 明确存在的 `edit` 主链语义差距，不是压行
+  - 当前总量 `20351`，与 `<=15000` 仍差 `5351`
+  - `P21-7C` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7A`：
+  - `runtime-shell-command-ast.ts` 已补 PowerShell 简单子表达式变量展开
+  - 当前已覆盖 `"$($root)\\note.txt"` 这类“纯变量读取”子表达式，不再漏掉高频本地变量路径写法
+  - 边界仍保持保守：不放开通用命令型子表达式
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 267 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20330`
+- 当前状态：
+  - 这刀属于 `P21-7A` 功能补齐，不单独追求减行
+  - 当前总量 `20330`，与 `<=15000` 仍差 `5330`
+  - `P21-7A` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-text-replace.ts` 已把 `trimmed-boundary / indentation-flexible` 两个单次 strategy reader 直接内联回策略表
+  - 当前保持 `trimmed-boundary` 歧义保护与 `indentation-flexible` 缩进匹配语义不变
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20312`
+- 当前状态：
+  - 相对上一轮统计 `20322 -> 20312`，本刀净减 `10`
+  - 与 `<=15000` 仍差 `5312`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-text-replace.ts` 已把 `line-trimmed / trailing-whitespace-trimmed / line-ending-normalized` 三个单次 strategy reader 直接内联回策略表
+  - 当前保持逐行归一化窗口匹配语义不变
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20322`
+- 当前状态：
+  - 相对上一轮统计 `20337 -> 20322`，本刀净减 `15`
+  - 与 `<=15000` 仍差 `5322`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-shell-command-hints.ts` 已把 command-substitution body / filesystem provider prefix 单次 reader 直接回收到绝对路径归一化链
+  - 当前保持 `Join-Path`、provider-aware path 与 env 展开边界不变
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 265 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20337`
+- 当前状态：
+  - 相对上一轮统计 `20344 -> 20337`，本刀净减 `7`
+  - 与 `<=15000` 仍差 `5337`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-text-replace.ts` 已把只服务 `whitespace-normalized / escape-normalized` 的组合 helper 直接回收到各自 strategy owner
+  - 当前保持单行命中与多行窗口命中语义不变
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20354`
+- 当前状态：
+  - 相对上一轮统计 `20368 -> 20354`，本刀净减 `14`
+  - 与 `<=15000` 仍差 `5354`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-text-replace.ts` 已把 `indentation-flexible` 的缩进归一化收成共用 owner
+  - 已删除只服务 `readRuntimeTextCommonIndentation()` 的前导空白 reader
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20344`
+- 当前状态：
+  - 相对上一轮统计 `20354 -> 20344`，本刀净减 `10`
+  - 与 `<=15000` 仍差 `5344`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-shell-command-hints.ts` 已把 rename parent-path 的单次 reader 直接收进 `resolveRenameShellPathToken()`
+  - 当前只删除一层薄包装，不改 `rename-item` 的路径父级推导与拼接语义
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 265 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20368`
+- 当前状态：
+  - 相对上一轮统计 `20371 -> 20368`，本刀净减 `3`
+  - 与 `<=15000` 仍差 `5368`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-text-replace.ts` 已把 anchored-scored 的最高分选优直接收进 `readRuntimeTextAnchoredCandidates()`
+  - 已删除只服务这一处的 scored helper 与中间类型，保持并列最高分歧义返回不变
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20371`
+- 当前状态：
+  - 相对本轮上一轮计数 `20407 -> 20371`，本刀净减 `36`
+  - 与 `<=15000` 仍差 `5371`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 `image/pdf/binary` 的静态分类与非文本返回收口到单点 owner
+  - `readPathRange()`、`readRuntimeDiffBaseContent()` 与文本预读现在共用同一套静态非文本判定
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`5 suites / 170 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20198`
+- 当前状态：
+  - 当前有效净减已从 `20231` 压到 `20198`
+  - 与 `<=15000` 仍差 `5198`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-text-replace.ts` 已把 `block-anchor / context-aware` 的 anchored-scored 扫描收口到同一个 owner
+  - 又把 `line-trimmed / trailing-whitespace-trimmed / line-ending-normalized` 三条“按行归一化后做窗口匹配”的链收口到 `readRuntimeTextNormalizedLineWindowMatches()`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 166 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20203`
+- 已尝试过一刀 `runtime-host-subagent-runner.service.ts` 的 session create 映射收口，但总量反弹：
+  - 已在同轮回滚
+  - 回滚后重新通过最小回归、build、双 smoke
+- 当前状态：
+  - 当前有效净减已从 `20231` 压到 `20203`
+  - 与 `<=15000` 仍差 `5203`
+  - `P21-7D` 还没做独立 judge，不能标完成
+
+- 已继续推进 `P21-7D`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 `copyPath / movePath` 的“source + target + exists check + mkdir + transfer”重复链收口到 `transferPath()`
+  - `readTextFile()` 与 `edit` 预读现在共用 `readRuntimeTextFileContent()`，二进制拒绝与文本读取不再各写一套
+  - `runtime-shell-command-hints.ts` 已继续删除薄包装 reader，并把 `new-item / rename-item / mkdir` 复用到同一条 composed-path owner
+  - `git` 的单路径返回分支已统一走 `readSinglePathToken()`，减少重复 `destination ? [destination] : []`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`7 suites / 290 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20212`
+- 当前状态：
+  - 这次 `P21-7D` 已拿到一轮真实净减：相对当前 TODO 基线 `20231 -> 20212`
+  - 还没做独立 judge，不能把 `P21-7D` 标成完成
+  - 与 `<=15000` 仍差 `5212`，下一刀还要继续优先打 `execution/runtime` 大 owner
+
+- 已继续推进 `P21-7B` 第四段：
+  - `read` 现在会沿目标路径祖先目录补路径级 `AGENTS.md` reminder
+  - reminder 会在主文件内容后、loaded-files reminder 前输出
+  - 当前只加载可见根以下、但不等于可见根本身的 `AGENTS.md`，避免把根级全局约束在每次 `read` 里重复灌入
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts`
+    - 结果：`2 suites / 20 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20231`
+- 当前状态：
+  - `P21-7B` 继续接近 `other/opencode` 的 loaded instructions 语义，但还没做独立 judge，不能标记完成
+  - 行数继续上涨，`P21-7D` 压缩压力进一步变大
+
+- 已继续推进 `P21-7C` 第五段：
+  - `runtime-file-post-write-report.ts` 现在会在只有 `info/hint` diagnostics 时继续给出 next hint
+  - 当前文件会直接提示 `read <targetPath>` 后再复核诊断
+  - 不再让模型拿到低严重度 diagnostics 后自己猜下一步动作
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts`
+    - 结果：`3 suites / 11 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20154`
+- 当前状态：
+  - `P21-7C` 又补了一段成熟度，但还没做独立 judge，不能标记完成
+  - 行数仍在上涨，`P21-7D` 压缩压力继续增加
+
+- 已继续推进 `P21-7B` 第三段：
+  - `RuntimeFileFreshnessService` 现在只会把真实 loaded-files 上下文放进 reminder
+  - `write/edit` 为 freshness 记下的写后 stamp 不再被误提示成“当前窗口已加载，可直接复用”
+  - 空文件 read 现在也会保留 loaded-files 上下文，不再因为 `lineCount = 0` 被 reminder 吞掉
+  - stale write 阻塞现在会显式提示：
+    - 已过期上下文
+    - 下一步动作 `read <targetPath>`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/read/read-tool.service.spec.ts`
+    - 结果：`2 suites / 19 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20148`
+- 当前状态：
+  - `P21-7B` 又补了一段成熟度，但还没做独立 judge，不能标记完成
+  - 代码体积继续上涨，后续仍要回到 `P21-7D`
+
+- 已继续推进 `P21-7A` 第三段：
+  - `runtime-shell-command-hints.ts` 已对 PowerShell `$(Join-Path ...)` 补有限静态识别
+  - 当前已覆盖：
+    - `$(Join-Path $env:GARLIC_CLAW_HINTS_TEST_ROOT 'copied.txt')`
+    - `filesystem::$(Join-Path $env:GARLIC_CLAW_HINTS_TEST_ROOT 'copied-provider.txt')`
+  - `bash-tool.service.spec.ts` 与 `tool-registry.service.spec.ts` 已把原有 command substitution 负例改成正例
+  - 当前这段只放开 `Join-Path` 这类高频路径拼接；generic command substitution 与本地变量路径仍保持不展开
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 259 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20128`
+- 当前状态：
+  - `P21-7A` 这段功能已落地，但还没做独立 judge，不能标记完成
+  - 代码体积继续上涨，后续必须尽快转入 `P21-7D` 的实质压缩
+
+## 2026-04-23
+
+- 已继续推进 `P21-7C` 第四段：
+  - `runtime-file-post-write-report.ts` 已为 formatting-only 场景补 next hint
+  - 当前只发生格式化、没有 diagnostics 时，会直接提示先 `read <targetPath>` 确认格式化后的最终内容
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 149 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20078`
+
+- 已继续推进 `P21-7A` 第二段：
+  - `runtime-shell-command-hints.ts` 已新增 bash env 路径展开
+  - `$GARLIC_CLAW_HINTS_TEST_ROOT/path` 与 `${GARLIC_CLAW_HINTS_TEST_ROOT}/path` 现在会参与绝对路径 / 外部写入判定
+  - 单引号 bash env literal 不展开，避免把 `'${VAR}/path'` 误报为外部路径
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 256 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20065`
+
+- 已继续推进 `P21-7C` 第三段：
+  - `indentation-flexible` 现在会按命中的代码块缩进回写 replacement
+  - native `edit` 真链路已确认嵌套块体不再被顶到左边
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 158 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`20049`
+
+- 已继续推进 `P21-7B` 第二段：
+  - `RuntimeFileFreshnessService` 的 loaded-files reminder 已改成显式“按最近读取排序”
+  - 每个已加载文件都会输出下一步动作：
+    - 有 continuation offset 时直接提示 `read <path> offset=<n>`
+    - 当前窗口完整时提示“当前窗口已加载，可直接复用”
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/read/read-tool.service.spec.ts`
+    - 结果：`2 suites / 17 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`19986`
+
+- 已继续推进 `P21-7C` 第二段：
+  - `runtime-text-replace.ts` 已新增 `line-ending-normalized`
+  - 替换命中后会按候选片段的实际换行序列重写 `newString`
+  - `RuntimeHostFilesystemBackendService.editTextFile()` 已改成直接对原始文件文本做 replace，不再提前把整段文本统一成 LF
+  - native `edit` 现在能在 CRLF 文件里接受 LF `oldString/newString`，并保持文件回写后仍是 CRLF
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 161 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`19982`
+
+- 已推进 `P21-7A` 第一段功能：
+  - `runtime-shell-command-ast.ts` 已接入 `web-tree-sitter` wasm AST 预扫
+  - `readRuntimeShellCommandHints()` 现在会优先走 AST，失败后安全回退到既有 heuristic
+  - Bash 控制流写入、PowerShell script block、PowerShell `-Flag:"value"` attached token、bash `file_redirect` 目标提取都已补齐
+  - `Language.load(path)` 已改成加载 wasm 字节，避免 Jest 运行态 `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG`
+  - `runtime-shell-syntax.ts` 已收口 `native-shell` 同族判定，`native-shell-alias` 现在也会走 PowerShell 语法、AST 预扫和 Windows `&&` 提示
+- 已通过本轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 248 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`19930`
+- 已按用户要求先重写 `TODO.md` 口径：
+  - 删除“约 70% / 60%”式模糊百分比
+  - 改成剩余 4 个闭环：`bash AST 预扫`、`read reminder`、`write/edit 工程反馈`、`<=15000`
+- 已落 `P21-7B` 第一段功能：
+  - `RuntimeFileFreshnessService` 新增 read window 上下文记录
+  - `read` 文件结果现在会把 `offset / lines / totalLines / truncated` 记到 loaded-files owner
+  - `buildReadSystemReminder()` 现在输出“已加载文件上下文 + 可继续 offset”
+  - `assertCanWrite()` 的阻塞提示也已复用同一套 loaded-files 视图
+- 已落 `P21-7C` 第一段功能：
+  - `runtime-file-post-write-report.ts` 的 `next hint` 现在会带具体文件路径
+  - 当前文件错误会直接提示先 `read <targetPath>`
+  - related files 错误会直接提示先 `read` 哪些相关路径，并按严重度/数量排序
+- 已通过本轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`6 suites / 163 tests` 全部通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`19629`
+
 ## 2026-04-19
 
 ## 2026-04-20
@@ -2939,6 +4624,271 @@
   - root: `npm run smoke:web-ui`
   - 结果：
     - 全部通过
+- 已继续推进 `P21-1` 的删除 alias 权限链覆盖补强：
+  - `tool-registry.service.spec.ts` 当前已补 `del / erase` 两条权限提示用例。
+  - 这两条用例当前都证明 alias 进入权限链后，`fileCommands` 仍归一为 `remove-item`，`externalWritePaths` 仍只保留真正目标 `C:\\temp`。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 136 tests` 全部通过
+- 已完成这轮 `del / erase` 权限链 coverage 独立 judge，结论为 `PASS`：
+  - judge 确认 `del / erase` 在权限链里仍归一到 `remove-item`
+  - judge 确认 `externalWritePaths` 仍只保留真正目标 `C:\\temp`，没有分叉出第二套语义
+- 已继续推进 `P21-1` 的 PowerShell 词形入口收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `copy / move` 并入 `copy-item / move-item`。
+  - 因此 `copy / move` 现在都会复用现有目标路径提取规则，不再退化成普通 token。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 63 tests` 全部通过
+    - 定向组合：`2 suites / 138 tests` 全部通过
+- 已完成这轮 `copy / move` 词形入口独立 judge，结论为 `PASS`：
+  - judge 确认 `copy / move` 已直接接到既有 `copy-item / move-item` owner
+  - judge 确认没有新增 `copy / move` 专属命令分支，也没有散回工具层
+- 已继续推进 `P21-1` 的词形入口权限链覆盖补强：
+  - `tool-registry.service.spec.ts` 当前已补 `copy / move` 两条权限提示用例。
+  - 这两条用例当前都证明词形入口进入权限链后，`fileCommands` 仍归一为 `copy-item / move-item`，`externalWritePaths` 仍只保留目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 140 tests` 全部通过
+- 已完成这轮 `copy / move` 权限链 coverage 独立 judge，结论为 `PASS`：
+  - judge 确认 `copy / move` 在权限链里仍归一到 `copy-item / move-item`
+  - judge 确认 `externalWritePaths` 仍只保留目标路径，没有分叉出第二套语义
+- 已继续推进 `P21-1` 的共享附着参数 quoted 语法收口：
+  - `runtime-shell-command-hints.ts` 当前已把 `readPowerShellAttachedFlagValue()` 补到会剥离附着值外层引号。
+  - 因此 `-Path:"C:\\temp\\note.txt"`、`-FilePath:"C:\\temp\\copied.txt"` 现在都会进入既有绝对路径与写路径识别。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - `bash-tool.service.spec.ts`：`1 suite / 65 tests` 全部通过
+    - 定向组合：`2 suites / 142 tests` 全部通过
+- 已完成这轮 quoted 附着参数独立 judge，结论为 `PASS`：
+  - judge 确认 quoted 附着值处理已补在共享 `readPowerShellAttachedFlagValue()` owner
+  - judge 确认 quoted 目标已同时进入 `absolutePaths` 与 `externalWritePaths`
+- 已继续推进 `P21-1` 的 quoted attached 权限链 coverage 补强：
+  - `tool-registry.service.spec.ts` 当前已补 `Set-Content -Path:"C:\\temp\\note-attached-quoted.txt" D:\\payload.txt`。
+  - 这条用例当前证明 quoted attached 形态进入权限链后，`fileCommands` 仍归一为 `set-content`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 144 tests` 全部通过
+- 已完成这轮 quoted attached 权限链 coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮只补 `tool-registry` 真实权限链 coverage，没有把 quoted attached 逻辑散回生产层
+  - judge 确认 quoted attached `set-content` 在权限链里仍归一到共享 owner，没有分叉出第二套语义
+- 已继续推进 `P21-1` 的 `sc -> set-content` alias coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补 `sc C:\\temp\\note-short.txt D:\\payload.txt` 静态 hints 用例。
+  - `tool-registry.service.spec.ts` 当前已补同命令的权限链用例。
+  - 这两条用例当前都证明 `sc` 进入 hints 与权限链后，`fileCommands` 仍归一为 `set-content`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 146 tests` 全部通过
+- 已完成这轮 `sc -> set-content` alias coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `sc` 相关生产逻辑，alias 仍停留在共享 owner
+  - judge 确认 `sc` 在静态 hints 与权限链里都仍归一到 `set-content`
+- 已继续推进 `P21-1` 的 `ac -> add-content` 权限链 coverage 补强：
+  - `tool-registry.service.spec.ts` 当前已补 `ac C:\\temp\\append.txt D:\\payload.txt`。
+  - 这条用例当前证明 `ac` 进入权限链后，`fileCommands` 仍归一为 `add-content`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 147 tests` 全部通过
+- 已完成这轮 `ac -> add-content` 权限链 coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `ac` 相关生产逻辑，alias 仍停留在共享 owner
+  - judge 确认 `ac` 在权限链里仍归一到 `add-content`
+- 已继续推进 `P21-1` 的 `add-content` quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补 `Add-Content -Path:"C:\\temp\\append-attached-quoted.txt" D:\\payload.txt` 静态 hints 用例。
+  - `tool-registry.service.spec.ts` 当前已补同命令的权限链用例。
+  - 这两条用例当前都证明 quoted attached 形态进入 hints 与权限链后，`fileCommands` 仍归一为 `add-content`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 149 tests` 全部通过
+- 已完成这轮 `add-content` quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `add-content` quoted attached 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 quoted attached `Add-Content` 在静态 hints 与权限链里都仍归一到 `add-content`
+- 已继续推进 `P21-1` 的 `mkdir / md` 权限链 coverage 补强：
+  - `tool-registry.service.spec.ts` 当前已补：
+    - `mkdir -Path C:\\temp -Name created-dir`
+    - `md -Path C:\\temp -Name created-alias-dir`
+  - 这两条用例当前都证明 PowerShell style 目录创建进入权限链后，`fileCommands` 仍归一为 `mkdir`，`externalWritePaths` 仍只保留真正目标目录。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 151 tests` 全部通过
+- 已完成这轮 `mkdir / md` 权限链 coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `mkdir / md` 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 `mkdir / md` 在权限链里都仍归一到 `mkdir`
+- 已继续推进 `P21-1` 的 `new-item` quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补 `New-Item -Path:"C:\\temp" -Name created-attached-quoted.txt -ItemType File` 静态 hints 用例。
+  - `tool-registry.service.spec.ts` 当前已补同命令的权限链用例。
+  - 这两条用例当前都证明 quoted attached 形态进入 hints 与权限链后，`fileCommands` 仍归一为 `new-item`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 153 tests` 全部通过
+- 已完成这轮 `new-item` quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `new-item` quoted attached 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 quoted attached `New-Item` 在静态 hints 与权限链里都仍归一到 `new-item`
+- 已继续推进 `P21-1` 的 `rename-item` quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补 `Rename-Item -Path:"C:\\temp\\old.txt" -NewName renamed-attached-quoted.txt` 静态 hints 用例。
+  - `tool-registry.service.spec.ts` 当前已补同命令的权限链用例。
+  - 这两条用例当前都证明 quoted attached 形态进入 hints 与权限链后，`fileCommands` 仍归一为 `rename-item`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 155 tests` 全部通过
+- 已完成这轮 `rename-item` quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `rename-item` quoted attached 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 quoted attached `Rename-Item` 在静态 hints 与权限链里都仍归一到 `rename-item`
+- 已继续推进 `P21-1` 的 `ni / ren` alias coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `ni -Path C:\\temp -Name created-alias.txt -ItemType File`
+    - `ren C:\\temp\\old-alias.txt renamed-alias.txt`
+  - `tool-registry.service.spec.ts` 当前已补同两条命令的权限链用例。
+  - 这些用例当前都证明 `ni / ren` 进入 hints 与权限链后，`fileCommands` 仍分别归一为 `new-item / rename-item`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 159 tests` 全部通过
+- 已完成这轮 `ni / ren` alias coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `ni / ren` 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 `ni / ren` 在静态 hints 与权限链里都仍归一到 `new-item / rename-item`
+- 已继续推进 `P21-1` 的 `ni / ren` alias + quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `ni -Path:"C:\\temp" -Name created-alias-quoted.txt -ItemType File`
+    - `ren -Path:"C:\\temp\\old-quoted.txt" -NewName renamed-alias-quoted.txt`
+  - `tool-registry.service.spec.ts` 当前已补同两条命令的权限链用例。
+  - 这些用例当前都证明 alias 与 quoted attached 组合后，`fileCommands` 仍分别归一为 `new-item / rename-item`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 163 tests` 全部通过
+- 已完成这轮 `ni / ren` alias + quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `ni / ren` alias + quoted attached 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 `ni / ren` 在组合语法下的静态 hints 与权限链里都仍归一到 `new-item / rename-item`
+- 已继续推进 `P21-1` 的 `mkdir / md` quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `mkdir -Path:"C:\\temp" -Name created-quoted-dir`
+    - `md -Path:"C:\\temp" -Name created-alias-quoted-dir`
+  - `tool-registry.service.spec.ts` 当前已补同两条命令的权限链用例。
+  - 这些用例当前都证明 quoted attached 形态进入 hints 与权限链后，`fileCommands` 都仍归一为 `mkdir`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 167 tests` 全部通过
+- 已完成这轮 `mkdir / md` quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `mkdir / md` quoted attached 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 `mkdir / md` 在 quoted attached 形态下的静态 hints 与权限链里都仍归一到 `mkdir`
+- 已继续推进 `P21-1` 的 `Remove-Item / rd` quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Remove-Item -Path:"C:\\temp" -Include D:\\archived.log`
+    - `rd -Path:"C:\\temp" -Include D:\\archived.log`
+  - `tool-registry.service.spec.ts` 当前已补同两条命令的权限链用例。
+  - 这些用例当前都证明 quoted attached 形态进入 hints 与权限链后，`fileCommands` 都仍归一为 `remove-item`，`externalWritePaths` 仍只保留真正删除目标，`-Include` 没有被抬成写目标。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 171 tests` 全部通过
+- 已完成这轮 `Remove-Item / rd` quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `Remove-Item / rd` quoted attached 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 quoted attached `Remove-Item / rd` 在静态 hints 与权限链里都仍归一到 `remove-item`
+- 已继续推进 `P21-1` 的 `ri / del / erase` quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `ri -Path:"C:\\temp" -Include D:\\archived.log`
+    - `del -Path:"C:\\temp" -Include D:\\archived.log`
+    - `erase -Path:"C:\\temp" -Include D:\\archived.log`
+  - `tool-registry.service.spec.ts` 当前已补同三条命令的权限链用例。
+  - 这些用例当前都证明 alias 与 quoted attached 组合后，`fileCommands` 都仍归一为 `remove-item`，`externalWritePaths` 仍只保留真正删除目标，`-Include` 没有被抬成写目标。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 177 tests` 全部通过
+- 已完成这轮 `ri / del / erase` quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `ri / del / erase` quoted attached 相关生产逻辑，仍停留在共享 owner
+  - judge 确认 `ri / del / erase` 在组合语法下的静态 hints 与权限链里都仍归一到 `remove-item`
+- 已继续推进 `P21-1` 的 `copy-item / move-item` destination quoted attached coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination:"filesystem::D:\\temp\\copied-quoted.txt"`
+    - `cpi -Path filesystem::C:\\temp\\input.txt -Destination:"filesystem::D:\\temp\\copied-alias-quoted.txt"`
+    - `copy -Path filesystem::C:\\temp\\input.txt -Destination:"filesystem::D:\\temp\\copied-word-quoted.txt"`
+    - `Move-Item -Path filesystem::C:\\temp\\input.txt -Destination:"filesystem::D:\\temp\\moved-quoted.txt"`
+    - `mi -Path filesystem::C:\\temp\\input.txt -Destination:"filesystem::D:\\temp\\moved-alias-quoted.txt"`
+    - `move -Path filesystem::C:\\temp\\input.txt -Destination:"filesystem::D:\\temp\\moved-word-quoted.txt"`
+  - `tool-registry.service.spec.ts` 当前已补同 6 条命令的权限链用例。
+  - 这些用例当前都证明 `destination + quoted attached` 进入静态 hints 与权限链后，`Copy-Item / cpi / copy` 仍统一归一到 `copy-item`，`Move-Item / mi / move` 仍统一归一到 `move-item`，`externalWritePaths` 仍只保留真正目标路径。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 189 tests` 全部通过
+- 已完成这轮 `copy-item / move-item` destination quoted attached coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `copy-item / move-item / cpi / mi / copy / move` 的 quoted attached 专属生产逻辑，仍停留在共享 owner
+  - judge 确认 destination + quoted attached 在静态 hints 与权限链里都仍统一归一到 `copy-item / move-item`
+  - judge 确认 `tool-registry` 用例走了真实 `pending request -> reject -> invalid-tool-result` 链路
+- 已继续推进 `P21-1` 的 `-LiteralPath` 代表性 coverage 补强：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Copy-Item -LiteralPath filesystem::C:\\temp\\input-literal.txt -Destination:"filesystem::D:\\temp\\copied-literal.txt"`
+    - `Set-Content -LiteralPath:"C:\\temp\\note-literal-quoted.txt" D:\\payload.txt`
+    - `Rename-Item -LiteralPath:"C:\\temp\\old-literal.txt" -NewName renamed-literal.txt`
+    - `Remove-Item -LiteralPath:"C:\\temp" -Include D:\\archived.log`
+  - `tool-registry.service.spec.ts` 当前已补同 4 条命令的权限链用例。
+  - 这些用例当前都证明 `-LiteralPath` 仍统一走共享 path flag owner，`copy-item / set-content / rename-item / remove-item` 的 canonical 归一没有被打散。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 197 tests` 全部通过
+- 已完成这轮 `-LiteralPath` 代表性 coverage 独立 judge，结论为 `PASS`：
+  - judge 确认本轮没有新增 `-LiteralPath` 专属生产逻辑，仍停留在共享 owner
+  - judge 确认 `-LiteralPath` 仍统一走共享 path flag owner，没有散回各命令专属逻辑
+  - judge 确认 `tool-registry` 用例走了真实 `pending request -> reject -> invalid-tool-result` 链路
+- 已完成 `P21-1` 阶段级独立 judge，结论为 `PASS-P21-1`：
+  - judge 确认 `P21-1` 范围内高价值 PowerShell 写入 / 删除命令已基本收口到少量共享规则
+  - judge 确认判断仍集中在 `runtime-shell-command-hints.ts`，没有散回 `BashToolService / tool-registry / 审批 service`
+  - judge 确认当前剩余明显缺口已经主要属于 `P21-2` 的复杂 quoting / variable expansion / command substitution
+- 已同步阶段状态：
+  - `TODO.md` 当前已把 `P21-1` 标成 `已完成`
+  - `TODO.md` 当前已把 `P21-2` 标成 `进行中`
+- 已开始推进 `P21-2` 第一刀：
+  - `runtime-shell-command-hints.ts` 当前已新增最小共享 env 展开：
+    - `expandPowerShellEnvPathToken()`
+    - `readProcessEnvValue()`
+    - `normalizeShellAbsolutePathCandidate()`
+  - 当前只支持明确可静态判定的 PowerShell env 前缀：
+    - `$env:NAME...`
+    - `${env:NAME}...`
+  - 当前没有把 env 展开散进 `Copy-Item / Set-Content` 等命令专属分支。
+- 已补 `P21-2` 第一刀代表性覆盖：
+  - `bash-tool.service.spec.ts`：
+    - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination "$env:GARLIC_CLAW_HINTS_TEST_ROOT\\copied-env.txt"`
+    - `Set-Content -Path:"$env:GARLIC_CLAW_HINTS_TEST_ROOT\\note-env.txt" D:\\payload.txt`
+  - `tool-registry.service.spec.ts`：
+    - 同上 2 条命令的权限链用例
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 201 tests` 全部通过
+- 已完成这轮 PowerShell env 路径展开独立 judge，结论为 `PASS`：
+  - judge 确认这轮仍是共享 owner 内的最小 env 展开，不是半成品 parser
+  - judge 确认 env 展开没有散进各命令专属分支
+  - judge 确认 `tool-registry` 用例走了真实 `pending request -> reject -> invalid-tool-result` 链路
+  - judge 确认未定义 env 与非 env 变量不会被误当成绝对路径
+- 已继续推进 `P21-2` 第二刀负向边界证据：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Set-Content -Path "$targetRoot\\note.txt" D:\\payload.txt`
+    - `Copy-Item -Path /workspace/input.txt -Destination "$(Join-Path $env:GARLIC_CLAW_HINTS_TEST_ROOT 'copied.txt')"`
+  - `tool-registry.service.spec.ts` 当前已补同 2 条命令的权限链用例。
+  - 这些用例当前都证明本地变量和 command substitution 仍处于故意不支持边界，不会被误抬成外部写入。
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 定向组合：`2 suites / 205 tests` 全部通过
+- 已完成这轮负向边界独立 judge，结论为 `PASS`：
+  - judge 确认本地变量和 command substitution 仍明确处于故意不支持边界，没有被误判成外部写入
+  - judge 确认没有新增半成品 parser 或命令专属特判
+  - judge 确认 `tool-registry` 用例走了真实 `pending request -> reject -> invalid-tool-result` 链路
 - 已完成这轮共享 `-Flag:Value` 语法独立 judge，结论为 `PASS`：
   - judge 确认附着参数语法识别已补在共享 `flagged path` owner
   - judge 确认没有散回 `BashToolService / tool-registry / 审批 service`
@@ -3115,3 +5065,813 @@
     - 默认 `smoke:server`：`182 checks`
     - Windows `native-shell smoke:server`：`182 checks`
     - `smoke:web-ui`：通过
+- 已继续推进 `P21-2` 第三刀的 `${env:...}` quoted attached 覆盖补齐：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination "${env:GARLIC_CLAW_HINTS_TEST_ROOT}\\copied-braced-env.txt"`
+    - `Set-Content -Path:"${env:GARLIC_CLAW_HINTS_TEST_ROOT}\\note-braced-env.txt" D:\\payload.txt`
+  - `tool-registry.service.spec.ts` 当前已补同 2 条命令的权限链用例。
+- 这轮定向验证先暴露一个真实共享缺口：
+  - `Copy-Item` 的 `${env:...}` 已能成立
+  - `Set-Content -Path:"${env:...}..."` 会在 `runtime-shell-command-hints.ts` 的分词阶段被拆碎，导致目标路径没有进入 `absolutePaths / externalWritePaths`
+- 已按低膨胀路线完成共享修正：
+  - `runtime-shell-command-hints.ts` 当前已在分词入口增加 `${...}` 片段保护/还原
+  - 后续仍复用既有 `readPowerShellAttachedFlagValue()` 与 `expandPowerShellEnvPathToken()`，没有新增 `set-content` 专属分支
+- 已补这轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：
+    - 首次验证：`2 tests` 失败，暴露 quoted attached `${env:...}` 共享分词缺口
+    - 修正后：`2 suites / 209 tests` 全部通过
+- 已完成这轮 `${env:...}` quoted attached 独立 judge，结论为 `PASS`：
+  - judge 确认生产改动只停留在 `runtime-shell-command-hints.ts` 的共享分词入口，没有散回 `BashToolService / tool-registry / 审批 service`
+  - judge 确认 `${...}` 保护/还原后仍沿既有 token 流、attached flag 读取与 env 展开工作，不构成半成品 parser
+  - judge 确认 `bash-tool` 与 `tool-registry` 两层都已拿到 `${env:...}` 的新鲜证据，且权限链仍是 `pending request -> reject -> invalid-tool-result`
+- 已继续推进 `P21-2` 第四刀的单引号 env 负向边界：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination '$env:GARLIC_CLAW_HINTS_TEST_ROOT\\copied-single-quoted-env.txt'`
+    - `Set-Content -Path '${env:GARLIC_CLAW_HINTS_TEST_ROOT}\\note-single-quoted-braced-env.txt' D:\\payload.txt`
+  - `tool-registry.service.spec.ts` 当前已补同 2 条命令的权限链用例。
+  - 两层用例都显式设置 `GARLIC_CLAW_HINTS_TEST_ROOT = 'C:\\env-root'`，防止靠 env 未定义假通过。
+- 这轮定向验证先暴露一个真实共享缺口：
+  - 当前共享 hints 会把单引号 literal 里的 `$env:` / `${env:...}` 也展开
+  - 因而会误抬成 `externalAbsolutePaths / externalWritePaths`
+- 已按低膨胀路线完成共享修正：
+  - `runtime-shell-command-hints.ts` 当前已新增单引号 literal token 标记
+  - 分词入口与 attached flag value 读取都会保留该标记
+  - 绝对路径字面量仍可识别，但 `expandPowerShellEnvPathToken()` 不再对单引号 literal 做 env 展开
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - 结果：
+    - 首次定向验证：`4 tests` 失败，暴露单引号 env 被误展开
+    - 修正后定向验证：`2 suites / 213 tests` 全部通过
+    - 默认 `smoke:server`：`182 checks`
+    - `native-shell smoke:server`：`182 checks`
+- 已完成这轮单引号 env 负向边界独立 judge，结论为 `PASS`：
+  - judge 确认生产改动只停留在 `runtime-shell-command-hints.ts`，没有散回 `BashToolService / tool-registry / 审批 service`
+  - judge 确认这刀只是补单引号 literal 语义，不是把 tokenizer / hints 推成半成品 parser
+  - judge 确认 `bash-tool` 与 `tool-registry` 两层都显式设 env 并拿到真实负向证据，权限链仍是 `pending request -> reject -> invalid-tool-result`
+- 已继续推进 `P21-2` 第五刀的单引号 absolute path literal 正向证据：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination:'filesystem::D:\\temp\\copied-single-quoted-literal.txt'`
+    - `Set-Content -Path:'C:\\temp\\note-single-quoted-literal.txt' D:\\payload.txt`
+  - `tool-registry.service.spec.ts` 当前已补同 2 条命令的权限链用例。
+- 这轮保持低膨胀：
+  - 没有生产代码改动
+  - 只是把“单引号 env 不展开，但单引号 absolute path literal 仍可识别”补成双层证据
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - 结果：
+    - 定向验证：`2 suites / 217 tests` 全部通过
+    - 默认 `smoke:server`：`182 checks`
+    - `native-shell smoke:server`：`182 checks`
+- 已完成这轮单引号 absolute path literal 证据独立 judge，结论为 `PASS`：
+  - judge 确认本轮只有测试改动，没有新增生产判断
+  - judge 确认单引号 absolute path literal 的静态 hints 与权限链证据都齐全，说明上一刀没有把字面量路径误杀
+  - judge 确认权限链仍是 `pending request -> reject -> invalid-tool-result` 真链路
+- 已继续推进 `P21-2` 第六刀的 `${localVar}` 负向边界：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Set-Content -Path "${targetRoot}\\note-braced-local.txt" D:\\payload.txt`
+  - `tool-registry.service.spec.ts` 当前已补同一条命令的权限链用例。
+- 这轮继续保持低膨胀：
+  - 没有生产代码改动
+  - 只是把 `${...}` 保护范围下“`${env:...}` 支持、`${localVar}` 不支持”的边界补成双层证据
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - 结果：
+    - 定向验证：`2 suites / 219 tests` 全部通过
+    - 默认 `smoke:server`：`182 checks`
+    - `native-shell smoke:server`：`182 checks`
+- 已完成这轮 `${localVar}` 负向边界独立 judge，结论为 `PASS`：
+  - judge 确认本轮只有测试改动，没有新增生产判断
+  - judge 确认 `${localVar}` 负向边界已在静态 hints 与权限链两层钉住
+  - judge 确认权限链仍是 `pending request -> reject -> invalid-tool-result` 真链路
+- 已继续推进 `P21-2` 第七刀的 provider-aware env 组合：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination "filesystem::$env:GARLIC_CLAW_HINTS_TEST_ROOT\\copied-provider-env.txt"`
+    - `Set-Content -Path:"filesystem::${env:GARLIC_CLAW_HINTS_TEST_ROOT}\\note-provider-braced-env.txt" D:\\payload.txt`
+  - `tool-registry.service.spec.ts` 当前已补同上 2 条命令的权限链用例。
+- 这轮定向验证先暴露一个真实共享缺口：
+  - 当前共享 hints 不会在 `filesystem::` 前缀后的 token 上继续做 env 展开
+  - 因而 `filesystem::$env:...` / `filesystem::${env:...}` 都不会进入 `externalWritePaths`
+- 已按低膨胀路线完成共享修正：
+  - `runtime-shell-command-hints.ts` 当前已在 `normalizeShellAbsolutePathCandidate()` 里补 filesystem provider aware 归一
+  - 先识别 `filesystem::`，再只对后半段继续走既有 env 展开，最后拼回 provider 前缀
+  - 同时保留单引号 literal 不展开的边界，没有把 earlier negative cases 打坏
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - 结果：
+    - 首次定向验证：`4 tests` 失败，暴露 provider-aware env 组合缺口
+    - 修正后定向验证：`2 suites / 223 tests` 全部通过
+    - 默认 `smoke:server`：`182 checks`
+    - `native-shell smoke:server`：`182 checks`
+- 已完成这轮 provider-aware env 组合独立 judge，结论为 `PASS`：
+  - judge 确认生产改动只停留在 `runtime-shell-command-hints.ts`，没有散回命令层或审批层
+  - judge 确认这刀只是共享绝对路径归一的 provider-aware 小扩展，不是更重 parser
+  - judge 确认 provider-aware 组合与更早的单引号负向边界都在同一批 fresh 验证里通过
+- 已继续推进 `P21-2` 第八刀的 provider-aware 单引号负向边界：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Copy-Item -Path filesystem::C:\\temp\\input.txt -Destination 'filesystem::$env:GARLIC_CLAW_HINTS_TEST_ROOT\\copied-provider-single-quoted-env.txt'`
+    - `Set-Content -Path 'filesystem::${env:GARLIC_CLAW_HINTS_TEST_ROOT}\\note-provider-single-quoted-braced-env.txt' D:\\payload.txt`
+  - `tool-registry.service.spec.ts` 当前已补同上 2 条命令的权限链用例。
+- 这轮继续保持低膨胀：
+  - 没有生产代码改动
+  - 只是把 provider-aware 组合下的单引号负向边界补成双层证据
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - 结果：
+    - 定向验证：`2 suites / 227 tests` 全部通过
+    - 默认 `smoke:server`：`182 checks`
+    - `native-shell smoke:server`：`182 checks`
+- 已完成这轮 provider-aware 单引号负向边界独立 judge，结论为 `PASS`：
+  - judge 确认本轮只有测试改动，没有新增生产逻辑
+  - judge 确认 provider-aware 组合下的单引号负向边界已经在两层钉住
+  - judge 确认权限链仍是 `pending request -> reject -> invalid-tool-result` 真链路
+- 已继续推进 `P21-2` 第九刀的 provider-aware braced 本地变量负向边界：
+  - `bash-tool.service.spec.ts` 当前已补：
+    - `Set-Content -Path "filesystem::${targetRoot}\\note-provider-braced-local.txt" D:\\payload.txt`
+  - `tool-registry.service.spec.ts` 当前已补同一条命令的权限链用例。
+- 这轮继续保持低膨胀：
+  - 没有生产代码改动
+  - 只是把 `filesystem::${localVar}` 负向边界补成双层证据
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+  - 结果：
+    - 定向验证：`2 suites / 229 tests` 全部通过
+    - 默认 `smoke:server`：`182 checks`
+    - `native-shell smoke:server`：`182 checks`
+- 已完成这轮 provider-aware braced 本地变量负向边界独立 judge，结论为 `PASS`：
+  - judge 确认本轮只有测试改动，没有新增生产逻辑
+  - judge 确认 `filesystem::${localVar}` 的负向边界已在两层钉住
+  - judge 确认权限链仍是 `pending request -> reject -> invalid-tool-result` 真链路
+- 已完成 `P21-2` 阶段级独立 judge，结论为 `PASS-P21-2`：
+  - judge 确认 `P21-2` 的能力仍集中在 `runtime-shell-command-hints.ts`，没有散回 `BashToolService / tool-registry / 审批 service`
+  - judge 确认当前共享 owner 仍是最小启发式规则，不是半成品 parser
+  - judge 确认支持面与不支持面都已拿到双层证据，继续往下补已经主要进入更深 PowerShell 语法 / 完整 parser 范畴
+- 已同步阶段状态：
+  - `TODO.md` 当前已把 `P21-2` 标成 `已完成`
+- 已开始推进 `P21-3` 第一刀：
+  - `RuntimeFileFreshnessService` 已新增 `buildReadSystemReminder(sessionId, options)`，把 loaded-files / `system-reminder` owner 收回 freshness runtime
+  - `ReadToolService` 已删除本地 `buildReadSystemReminder()` 自由函数，文件分支只保留 owner 调用
+  - `runtime-file-freshness.service.spec.ts` 已新增 runtime owner 自身输出断言
+  - `read-tool.service.spec.ts` 已改为断言 `ReadToolService` 调用 freshness owner，而不是自己拼 reminder
+- 已按 TDD 跑过这刀的红绿过程：
+  - 首次定向 jest 失败，暴露：
+    - `RuntimeFileFreshnessService` 缺少 `buildReadSystemReminder`
+    - `ReadToolService` 仍在调用旧 `listRecentReads + 本地 formatter`
+  - 修正后定向验证通过：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/runtime/runtime-file-freshness.service.spec.ts`
+    - 结果：`2 suites / 14 tests` 全部通过
+  - fresh 冒烟通过：
+    - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 已完成 `P21-3` 第一刀独立 judge，结论为 `PASS`：
+  - judge 确认 `ReadToolService` 已真实变薄，没有保留本地 reminder 拼装
+  - judge 确认 `RuntimeFileFreshnessService` 已成为稳定的 read reminder owner，不是工具层换壳
+  - judge 确认双层证据成立；当前残余风险只在后续若要多展示形态，可能还需进一步结构化
+- 已继续推进 `P21-3` 第二刀：
+  - 新增 `packages/server/src/execution/read/read-result-render.ts`，统一接管目录 / 文件 / 资产分流的继续操作提示
+  - `ReadToolService` 当前只负责分支分派、调用 renderer 与 freshness owner，不再自己写各场景继续提示文案
+  - `RuntimeHostFilesystemBackendService` 的缺失路径异常已补 `可继续操作：...`，并新增建议顺序稳定排序
+  - `read-tool.service.spec.ts` 已补 binary 分流输出，并更新目录 / 文件 / image / pdf / reminder 场景断言
+  - `runtime-host-filesystem-backend.service.spec.ts` 已把缺失路径异常断言补成完整继续提示
+  - `tool-registry.service.spec.ts` 已同步 freshness mock，确认 read 真消费链不回归
+- 已按 TDD 跑过这刀的红绿过程：
+  - 首次定向 jest 失败，暴露：
+    - `ReadToolService` 仍停留旧文案
+    - 缺失路径异常缺继续提示
+    - `tool-registry` 的 freshness mock 还停在旧接口
+  - 修正后定向验证通过：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 140 tests` 全部通过
+  - fresh 冒烟通过：
+    - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 已完成 `P21-3` 第二刀独立 judge，结论为 `PASS`：
+  - judge 确认目录 / 文件 / 资产的继续提示已集中到 renderer owner，不是零散改字
+  - judge 确认 `ReadToolService` 已继续变薄
+  - judge 确认缺失路径建议顺序也更稳定，当前 residual risk 不阻塞这一刀
+- 已继续推进 `P21-3` 第三刀：
+  - `RuntimeHostFilesystemBackendService.readPathRange()` 已在目录分支补 `offset` 越界判断
+  - 新增 `createReadOffsetOutOfRangeException()`，文件与目录现在共用同一异常构造
+  - 目录 read 不再出现“offset 超过总条目数时返回空列表”的假成功
+  - `runtime-host-filesystem-backend.service.spec.ts` 已新增“文件与目录都越界”的双向断言
+- 已按 TDD 跑过这刀的红绿过程：
+  - 首次 backend 定向 jest 失败，暴露目录越界仍返回空列表
+  - 修正后通过：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts`
+    - 结果：`1 suite / 12 tests` 全部通过
+  - 三层回归通过：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 141 tests` 全部通过
+  - fresh 冒烟通过：
+    - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 已完成 `P21-3` 第三刀独立 judge，结论为 `PASS`：
+  - judge 确认目录 offset 越界已真实收口到 backend owner
+  - judge 确认文件与目录已复用同一异常构造，没有复制两套文案
+  - judge 确认当前 residual risk 只剩 tool-registry 级越界透传断言，暂不阻塞本刀
+- 已补 `P21-3` 第四刀的工具链证据：
+  - `tool-registry.service.spec.ts` 已新增原生 `read` 越界用例
+  - backend 文件越界诊断当前会经真实工具链进入 `invalid-tool-result`
+  - 这轮没有生产代码改动，只补阶段级复核需要的真链路证据
+- 已补这轮验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`3 suites / 142 tests` 全部通过
+- 已完成 `P21-3` 阶段级独立 judge，结论为 `PASS-P21-3`：
+  - judge 确认 `buildReadSystemReminder()`、`read-result-render.ts` 与 backend 缺失路径/越界诊断三类 owner 已构成稳定 read 主链
+  - judge 确认当前与 `other/opencode` 相比已无足以阻塞 `P21-3` 的明显 read 主链缺口
+  - judge 确认 `TODO.md` 中 `P21-3` 可以正式标为 `已完成`
+- 已同步阶段状态：
+  - `TODO.md` 当前已把 `P21-3` 标成 `已完成`
+- 已开始推进 `P21-4` 第一刀：
+  - `RuntimeHostFilesystemBackendService.globPaths()` 已改成复用 `requireExistingPath()`
+  - `glob` 缺失路径当前会和 `read / grep` 一样拿到 `可选路径 + 可继续操作` 诊断
+  - `runtime-host-filesystem-backend.service.spec.ts` 已新增 glob 缺失路径建议断言
+  - `tool-registry.service.spec.ts` 已新增原生 `glob` 工具链透传缺失路径建议断言
+- 已按 TDD 跑过这刀的红绿过程：
+  - 首次定向 jest 失败，暴露：
+    - backend `globPaths()` 仍是裸 `路径不存在`
+    - 工具链结果也只透传裸报错
+  - 修正后通过：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 138 tests` 全部通过
+  - fresh 冒烟通过：
+    - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 已完成 `P21-4` 第一刀独立 judge，结论为 `PASS`：
+  - judge 确认 `glob` 缺失路径已真实复用 backend owner，不是再写一套近似文案
+  - judge 确认 backend 与 tool-chain 两层证据都成立
+  - judge 确认当前 residual risk 只是继续动作文案还偏 `read` 语气，不阻塞这一刀
+- 已继续推进 `P21-4` 第二刀：
+  - `createMissingPathException()` 已支持 `nextStepHint` 参数
+  - `globPaths()` 当前会给出“重新 glob / 先 glob 上级目录缩小范围”
+  - `grepText()` 当前会给出“重新 grep / 先 glob 上级目录确认搜索范围”
+  - `read` 默认文案保持不变，没有被打坏
+  - `runtime-host-filesystem-backend.service.spec.ts` 与 `tool-registry.service.spec.ts` 已新增 `grep` 缺失路径 suggestions 证据，并更新 `glob` 断言
+- 已按 TDD 跑过这刀的红绿过程：
+  - 首次定向 jest 失败，暴露：
+    - backend 与工具链仍都落回 `read` 语气
+    - `grep` 经过 `listFiles()` 仍未拿到搜索语气的下一步动作
+  - 修正后通过：
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 140 tests` 全部通过
+  - fresh 冒烟通过：
+    - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 已完成 `P21-4` 第二刀独立 judge，结论为 `PASS`：
+  - judge 确认仍复用同一个缺失路径 owner，没有复制 glob/grep suggestions 拼装
+  - judge 确认 `glob / grep / read` 现在各自拿到更贴切的下一步动作
+  - judge 确认当前 residual risk 只是 `nextStepHint` 仍是字符串参数，不阻塞这一刀
+- 已继续推进 `P21-4` 第三刀与第四刀：
+  - `runtime-search-result-report.ts` 已新增 / 扩展 `renderRuntimeSearchTotalSummary()`
+  - `glob / grep` 当前在有结果时会明确提示下一步用 `read`
+  - `glob / grep` 当前在 `0 matches` 时也会明确提示 refine/retry
+  - `tool-registry.service.spec.ts` 已补真实工具链断言：
+    - 有结果时保留新的 `read` follow-up hint
+    - `0 matches` 时保留新的 retry hint
+- 已补这轮验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`3 suites / 135 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已继续压 `P21-4` 当前文案重复：
+  - `runtime-search-result-report.ts` 已新增：
+    - `renderRuntimeSearchEmptyHint()`
+    - `renderRuntimeSearchReadFollowUpHint()`
+    - `renderRuntimeMissingPathNextStep()`
+  - `glob / grep / read` 当前的 empty hint、follow-up hint 与缺失路径下一步动作都已进一步收回领域 owner
+  - 这轮不改行为，只去重并压低后续继续补搜索成熟度时的字符串散落
+- 已补这轮回归：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`4 suites / 149 tests` 全部通过
+- 已继续推进 `P21-4` 第六刀：
+  - `runtime-search-result-report.ts` 当前已把 `glob / grep` 的 follow-up hint 从“只提示 `read`”补成“先 `read`，如需修改再 `edit / write`”
+  - `GlobToolService / GrepToolService` 没有新增新分支，仍只消费共享 owner 输出
+  - `glob-tool.service.spec.ts`、`grep-tool.service.spec.ts` 与 `tool-registry.service.spec.ts` 已同步钉住新文案
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`3 suites / 135 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-4` 第六刀独立 judge，结论为 `PASS`：
+  - judge 确认改动仍留在共享 search owner，没有散回 `GlobToolService / GrepToolService`
+  - judge 确认这刀不是纯换词，而是把搜索结果下一步动作补到了 `read -> edit/write`
+  - judge 确认当前 residual risk 只是尚未结构化成可直接生成 `edit/write` 参数，不阻塞这一刀
+- 已继续推进 `P21-4` 第七刀：
+  - `runtime-search-result-report.ts` 当前已新增 `renderRuntimeSearchSuggestedReadHint()`，把排序后的首个结果收成 `suggested next read`
+  - `glob` 走 `string[]`，`grep` 走 `{ virtualPath }[]`，当前都由共享 owner 内部统一决定建议读目标
+  - `GlobToolService / GrepToolService` 已不再各自读取 `matches[0]`
+- 这刀中间收到一次独立 judge `FAIL`，并已按结论修正：
+  - 初版问题：top-match 决策还散在两个 tool service，只是共享 formatter 外壳
+  - 修正后：top-match 决策已收回 `runtime-search-result-report.ts`
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`3 suites / 135 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-4` 第七刀独立 judge，结论为 `PASS`：
+  - judge 确认 `suggested next read` 已成为真实搜索后处理，不只是文案
+  - judge 确认 top-match 决策已回到共享 search owner
+  - judge 确认当前 residual risk 只是“第一条即建议目标”的策略还不够强，不阻塞这一刀
+- 已继续推进 `P21-4` 第八刀：
+  - `runtime-search-result-report.ts` 当前已导出 `readRuntimeSearchSuggestedReadPath()`，把建议 read 候选决策正式暴露给其他 owner 复用
+  - `ProjectWorktreeSearchOverlayService` 当前已改成直接接 `matches`，并在 overlay owner 内决定 `Project Next Read`
+  - `GlobToolService / GrepToolService` 当前不再自己传 `matches[0]` / `matches[0]?.virtualPath` 给 overlay
+- 这轮继续保持低膨胀：
+  - 没有新增新 service
+  - 没有复制第二套 top-match 决策
+  - 只是让 overlay owner 复用既有 shared search owner 的建议路径逻辑
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/project/project-worktree-search-overlay.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`4 suites / 137 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-4` 第八刀独立 judge，结论为 `PASS`：
+  - judge 确认这是 owner 真收紧，不是只挪参数
+  - judge 确认 overlay owner 已直接消费 `matches`，工具层不再自己挑第一条
+  - judge 确认当前 residual risk 只剩“top-match 仍默认第一条”的策略问题，不阻塞这一刀
+- 已继续推进 `P21-4` 第九刀：
+  - `runtime-search-result-report.ts` 当前已把 `readRuntimeSearchSuggestedReadPath()` 升级为候选策略（`hits desc -> depth asc -> length asc -> lexical`）
+  - 新增 `runtime-search-result-report.spec.ts`，直接覆盖建议目标策略与 hint 输出
+  - `glob/grep/overlay` 相关测试已补“不是第一条原始匹配”的建议目标证据
+- 这轮继续保持低膨胀：
+  - 只在 shared search owner 内补薄策略函数
+  - 工具层和 overlay owner 没有新增第二套决策分支
+  - 没有新增新 service
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-search-result-report.spec.ts tests/execution/project/project-worktree-search-overlay.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`5 suites / 142 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-4` 第九刀独立 judge，结论为 `PASS`：
+  - judge 确认 owner 继续收敛在 shared search owner，没有回流工具层
+  - judge 确认这刀是实质搜索后处理增强，不是文案改写
+  - judge 确认当前 residual risk 只剩“相关性仍是启发式”，不阻塞这一刀
+- 已完成 `P21-4` 阶段级独立 judge，结论为 `PASS-P21-4`：
+  - judge 确认缺失路径建议、搜索摘要、skipped diagnostics、project-aware overlay 都已在稳定 owner 下收口
+  - judge 确认 `glob / grep` 工具层不再持有关键搜索后处理决策
+  - judge 确认当前 residual risk 仅剩更语义化相关性策略，不构成 `P21-4` 阶段阻塞
+- 已同步阶段状态：
+  - `TODO.md` 当前已把 `P21-4` 标成 `已完成`
+- 已开始推进 `P21-5` 第一刀：
+  - `runtime-file-post-write-report.ts` 当前已新增当前文件/关联文件诊断分流摘要、当前文件优先排序与 error/warning 下一步提示
+  - `WriteToolService / EditToolService` 当前已把 `targetPath` 透传给 shared post-write owner
+  - 工具层没有新增诊断分流分支
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`4 suites / 133 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-5` 第一刀独立 judge，结论为 `PASS`：
+  - judge 确认分流和提示已在 shared owner 收口，不是工具层文案回流
+  - judge 确认这是实质反馈增强，不是单纯措辞调整
+  - judge 确认当前复杂度可控，没有新增重复控制流
+- 已继续推进 `P21-5` 第二刀：
+  - `tool-registry.service.spec.ts` 当前已补 native `write / edit` 真链路回归
+  - 回归已钉住 post-write 的 `current/related` summary、`Next` hint、diagnostics block 与 warning code
+  - 本刀没有新增生产逻辑，只补真实链路证据
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`4 suites / 135 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-5` 第二刀独立 judge，结论为 `PASS`：
+  - judge 确认本刀补上了真实 tool-chain 证据，不是壳化断言
+  - judge 确认关键反馈内容已被覆盖，不只是结果标签
+  - judge 确认未引入新生产耦合
+- 已继续推进 `P21-5` 第三刀：
+  - `runtime-text-replace.ts` 已新增 `escape-normalized` 匹配策略，收口 escaped 文本输入场景
+  - `runtime-text-replace.spec.ts` 已补 escaped newline 正向用例
+- 本刀首轮独立 judge 结论为 `FAIL`：
+  - judge 指出缺少 `edit` 真链路证据，仅有 shared owner 单测不足以判定通过
+- 已按 judge 最小修复建议补两条回归：
+  - `edit-tool.service.spec.ts` 已新增 `Strategy: escape-normalized` 输出断言
+  - `tool-registry.service.spec.ts` 已新增 native `edit` 真链路断言，并校验改写后文件内容
+- 已补修复后的 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`4 suites / 147 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-5` 第三刀独立 judge，结论为 `PASS`：
+  - judge 确认策略 owner 仍在 shared replace backend，未回流工具层
+  - judge 确认 `edit` 工具层与 native tool-chain 证据已成立
+  - judge 确认未引入新增重复控制流或顺序回退风险
+- 已继续推进 `P21-5` 第四刀：
+  - `runtime-text-replace.ts` 已为 `context-aware / block-anchor` 增加 scored 选优
+  - 新增 `readRuntimeTextBestScoredMatches()` 统一处理“最佳候选收敛 + 同分保留歧义”
+  - `tool-registry.service.spec.ts` 已补 native `edit` 的 `context-aware` 最佳候选真链路断言
+- 本刀首轮独立 judge 结论为 `FAIL`：
+  - judge 指出“同分仍报歧义”缺少回归证据，`block-anchor` 多候选也缺少针对性覆盖
+- 已按 judge 建议补最小回归：
+  - `runtime-text-replace.spec.ts` 新增 `context-aware` 同分歧义用例（含行号断言）
+  - `runtime-text-replace.spec.ts` 新增 `block-anchor` 多候选最佳收敛用例
+- 已补修复后的 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`4 suites / 151 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-5` 第四刀独立 judge，结论为 `PASS`：
+  - judge 确认选优 owner 未回流工具层
+  - judge 确认“最佳候选收敛 + 同分保留歧义”语义证据成立
+  - judge 确认 native `edit` 真链路仍能观察到策略结果
+- 已继续推进 `P21-5` 第五刀：
+  - `runtime-text-replace.ts` 已新增 `trailing-whitespace-trimmed`，专门处理 trailing spaces 差异
+  - 新策略仅使用 `trimEnd()`，前导缩进继续参与匹配
+  - `tool-registry.service.spec.ts` 已补 native `edit` 真链路，覆盖策略标签与最终落盘结果
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`4 suites / 153 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-5` 第五刀独立 judge，结论为 `PASS`：
+  - judge 确认这是匹配能力增强，不是只改输出文案
+  - judge 确认前导缩进语义保持，没有过度放宽
+  - judge 确认 owner 未回流工具层，native 工具链证据成立
+- 已继续推进 `P21-5` 第六刀：
+  - `runtime-file-post-write-report.ts` 已把 next hint 判定细化为 current/related error 分流
+  - 新增 related-only 场景提示：`review related-file error diagnostics`
+  - `tool-registry.service.spec.ts` 已补 native `edit` 真链路 related-only 回归
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`5 suites / 157 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-5` 第六刀独立 judge，结论为 `PASS`：
+  - judge 确认 related-only error 提示已在 shared renderer 收口
+  - judge 确认 `write/edit` 工具层没有新增策略分支
+  - judge 确认既有 current-file error 场景未回退
+- 已继续推进 `P21-5` 第七刀：
+  - `runtime-file-freshness.service.ts` 已新增 `withWriteFreshnessGuard()`，统一锁 + 校验 + read-stamp 流程
+  - `write-tool.service.ts` / `edit-tool.service.ts` 已改为复用同一 freshness guard owner
+  - `write` 现在与 `edit` 一样走文件锁
+- 这刀首轮定向曾失败：
+  - `tool-registry` 测试夹具缺少 `withWriteFreshnessGuard` mock，导致 `invalid-tool-result`
+  - 已补夹具 mock 后重跑通过
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/file/runtime-text-replace.spec.ts`
+  - 结果：`6 suites / 168 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-5` 第七刀独立 judge，结论为 `PASS`：
+  - judge 确认重复 freshness 流程已在 shared owner 收口
+  - judge 确认 `write/edit` 调用面一致并共享文件锁
+  - judge 确认输出语义与工具链行为未回退
+- 已完成 `P21-5` 阶段级独立 judge，结论为 `PASS-P21-5`：
+  - judge 确认 rewrite 匹配纠偏、post-write 反馈、freshness 控制流压缩三块范围都已满足阶段定义
+  - judge 确认关键 owner 未回流工具层，native tool-chain 证据成立
+  - judge 确认当前 residual risk 不构成 `P21-5` 阶段阻塞
+- 已同步阶段状态：
+  - `TODO.md` 当前已把 `P21-5` 标成 `已完成`
+- 已开始推进 `P21-6` 第一刀：
+  - `tool-registry.service.spec.ts` 已新增第三 filesystem backend kind（`host-filesystem-alias`）真路由回归
+  - 新回归覆盖 `read/glob/grep/write/edit` 主链，且链路顺序为 `read -> write -> edit -> glob -> grep`
+  - `createFixture` 已新增 `aliasHostFilesystemKinds`，用于注入 real host alias backend
+- 这刀中途有两次测试修正：
+  - 修正 alias backend 注入时机，确保与 fixture 内同一 runtime 环境
+  - 修正 `glob/grep` 执行顺序，避免在写入前断言新文件
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/file/runtime-text-replace.spec.ts`
+  - 结果：`6 suites / 169 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-6` 第一刀独立 judge，结论为 `PASS`：
+  - judge 确认这是 real host backend 行为证据，不是 mock 路由
+  - judge 确认 `read/glob/grep/write/edit` 主链覆盖成立
+  - judge 确认 6 工具服务 owner 未回改
+- 已同步阶段状态：
+  - `TODO.md` 当前已把 `P21-6` 标成 `进行中`
+- 已继续推进 `P21-6` 第二刀：
+  - `tool-registry.service.spec.ts` 已新增第三 shell backend kind（`native-shell-alias`）真路由回归
+  - `createFixture` 已新增 `aliasNativeShellKinds`，用于注入 real native alias backend
+  - `createKindAliasedRuntimeBackend` 已复用真实 native-shell 执行链，仅改 kind 投影
+- 本刀中途修复：
+  - 修正 shell alias 用例在 Windows 下的命令语法判定，`native-shell-alias` 按 PowerShell 构造
+- 已补这轮 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/runtime/runtime-file-freshness.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/file/runtime-file-post-write-report.spec.ts tests/execution/file/runtime-text-replace.spec.ts`
+  - 结果：`6 suites / 170 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成 `P21-6` 第二刀独立 judge，结论为 `PASS`：
+  - judge 确认 `bash` 真路由已落到第三 shell backend kind
+  - judge 确认证据落在 runtime backend 装配层，未回改 `BashToolService`
+  - judge 确认 fresh 与 smoke 证据成立
+- 已完成 `P21-6` 阶段级独立 judge，结论为 `PASS-P21-6`：
+  - judge 确认 filesystem + shell 两侧第三 backend kind 证据都已成立
+  - judge 确认证据基于真实 host/native 行为，不是 mock 假迁移
+  - judge 确认 6 工具服务 owner 未因 backend 扩展而回改
+- 已同步阶段状态：
+  - `TODO.md` 当前已把 `P21-6` 标成 `已完成`
+  - `TODO.md` 当前已把 `P21-7` 标成 `进行中`
+- 已推进 `P21-7` 第一刀（`runtime-shell-command-hints` 去重）并完成回归修复：
+  - redirection token 读取已改为 `normalizeQuotedShellToken`，单引号 env/provider-env 不再被误展开
+  - `bash-tool` 与 `tool-registry` 分别新增 redirection 单引号 env/provider-env 负向用例
+- 这刀首轮独立 judge 为 `FAIL-1`：
+  - 指出 `'$env:...'` 与 `'filesystem::$env:...'` redirection 被误报外部写入
+  - 要求补静态层与权限链双层负向证据后才能计入进度
+- 已完成修复后的 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`2 suites / 246 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成修复后的独立 judge 复核，结论为 `PASS-1`：
+  - judge 确认 FAIL 点已消除，且负向证据覆盖到静态层 + 权限链
+  - judge 确认去重收益保留，未出现工具层 owner 回流
+  - judge 明确可计入 `P21-7` 进度
+- 已重新统计当前代码规模：
+  - `packages/server/src`（`*.ts`）当前 `19671` 行，距 `<=15000` 目标还差 `4671`
+- 已推进 `P21-7` 第二刀（命令分派与扩展名判定去重）：
+  - `runtime-shell-command-hints.ts` 用 `SHELL_WRITE_PATH_TOKEN_READERS` 收口写路径命令分派
+  - `runtime-host-filesystem-backend.service.ts` 用集合映射收口 MIME/binary 扩展名判定
+- 已完成本刀 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`3 suites / 260 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS-2`：
+  - judge 确认去重是实质压缩，不是仅改写法
+  - judge 确认 shell 写路径与 filesystem mime/binary 语义保持
+  - judge 明确可计入 `P21-7` 进度
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts`）当前 `19648` 行，距 `<=15000` 目标还差 `4648`
+- 已推进 `P21-7` 第三刀（删除薄包装函数）：
+  - `runtime-shell-command-hints.ts` 已删除 `add-content/out-file/remove-item/scp` 四个中转函数
+  - 对应命令已直接映射到共享 reader，避免重复转发层
+- 已完成本刀 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`2 suites / 246 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS-3`：
+  - judge 确认这是实质删薄包装，不是改写法
+  - judge 确认四类命令语义保持，可计入 `P21-7` 进度
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts`）当前 `19636` 行，距 `<=15000` 目标还差 `4636`
+- 已推进 `P21-7` 第四刀（声明收口与类型去重）：
+  - `runtime-host-filesystem-backend.service.ts` 已抽出 `RuntimeTraversalState`
+  - host filesystem 与 shell hints 的扩展名/命令集合声明已压缩
+- 已完成本刀 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`3 suites / 260 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS-4`：
+  - judge 确认重复类型收口有效，集合压缩未改语义
+  - judge 明确可计入 `P21-7` 进度
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts`）当前 `19545` 行，距 `<=15000` 目标还差 `4545`
+- 已推进 `P21-7` 第五刀（shell hints 常量声明继续收口）：
+  - `runtime-shell-command-hints.ts` 的 `COMMAND_ALIASES` 与 `POWERSHELL_PATH_PARAMETER_FLAGS` 声明已压缩
+- 已完成本刀 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`2 suites / 246 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS-5`：
+  - judge 确认 alias/flag 成员集合保持不变
+  - judge 明确可计入 `P21-7` 进度
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts`）当前 `19526` 行，距 `<=15000` 目标还差 `4526`
+- 已推进 `P21-7` 第六刀（网络命令判定常量化）：
+  - `runtime-shell-command-hints.ts` 已把网络命令判定与 tar long flag 声明收口为可复用常量
+- 已完成本刀 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`2 suites / 246 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS-6`：
+  - judge 确认网络命令与 tar flag 常量化后成员集合保持一致
+  - judge 明确可计入 `P21-7` 进度
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts`）当前 `19523` 行，距 `<=15000` 目标还差 `4523`
+- 已推进 `P21-7` 第七刀（search result owner 下沉）：
+  - `runtime-search-result-report` 已从 `packages/server/src` 下沉到 `packages/shared/src`
+  - server 侧 `glob/grep/runtime-host-filesystem-backend/project-worktree-search-overlay` 已切到 shared 导出
+  - server 侧原实现文件已删除
+- 本刀中途问题与处理：
+  - 首轮 Jest 失败，原因是 `@garlic-claw/shared` 新导出尚未构建到声明产物
+  - 先执行 `npm run build -w packages/shared` 后重跑，全部通过
+- 已完成本刀 fresh 验证：
+  - `packages/shared`: `npm run build -w packages/shared`
+  - 结果：通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-search-result-report.spec.ts tests/execution/project/project-worktree-search-overlay.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`6 suites / 166 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS-7`：
+  - judge 确认这是实质 owner 下沉，不是双份实现换目录
+  - judge 明确可计入 `P21-7` 进度
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts`）当前 `19416` 行，距 `<=15000` 目标还差 `4416`
+- 已推进 `P21-7` 第八刀（read result render 下沉）：
+  - 新增 `packages/shared/src/runtime-read-result-render.ts`
+  - `read-tool.service.ts` 已改为直接消费 shared 渲染函数
+  - server 侧 `read-result-render.ts` 已删除
+- 已完成本刀 fresh 验证：
+  - `packages/shared`: `npm run build -w packages/shared`
+  - 结果：通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/read/read-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-search-result-report.spec.ts tests/execution/project/project-worktree-search-overlay.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`7 suites / 172 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS-8`：
+  - judge 确认下沉是实质迁移，不是双份实现
+  - judge 明确可计入 `P21-7` 进度
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts`）当前 `19337` 行，距 `<=15000` 目标还差 `4337`
+- 已执行边界回滚（shared 仅类型，不承载逻辑）：
+  - 已回滚第七刀与第八刀下沉
+  - `runtime-search-result-report`、`read-result-render`、`runtime-text-replace` 均恢复到 server 本地 owner
+  - shared 侧对应逻辑文件与导出已删除
+- 已完成回滚 fresh 验证：
+  - `packages/shared`: `npm run build -w packages/shared`
+  - 结果：通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/file/runtime-text-replace.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/file/runtime-search-result-report.spec.ts tests/execution/project/project-worktree-search-overlay.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`8 suites / 188 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成回滚独立 judge 复核，结论为 `PASS`：
+  - judge 确认 shared 侧已无这三组逻辑残留
+  - judge 确认 server 侧语义已恢复
+- 已更新代码规模统计：
+  - `packages/server/src`（`*.ts` 非空行）当前 `19531` 行，距 `<=15000` 目标还差 `4531`
+- 已推进 `P21-7` 第九刀（shell hints flag reader 合并与净减行回收）：
+  - `runtime-shell-command-hints.ts` 已把 PowerShell/POSIX flag 路径提取合并到 `readFlaggedPathTokens()`
+  - `new-item / rename-item` 已共用 `readPowerShellComposedWritePathTokens()`
+  - `readShellCommandWritePathTokens()`、`mkdir` 分流、destination/path fallback 与常量声明已继续压缩
+  - 文件物理行数已从 `856` 压到 `843`
+- 已完成本刀 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - 结果：`2 suites / 246 tests` 全部通过
+  - root: `npm run smoke:server`
+  - 结果：`182 checks` 通过
+- 已完成本刀独立 judge 复核，结论为 `PASS`：
+  - judge 确认这是实质性控制流去重与删薄包装，不是只换写法
+  - judge 确认 shell hints 主语义保持，且未回流 `BashToolService / tool-registry / 审批 service`
+- 已修正总量统计口径：
+  - 新增统一脚本：`npm run count:server-src`
+  - 统计定义：`packages/server/src/**/*.ts` 非空行数
+  - 当前脚本输出：`19531`
+  - 已与 PowerShell 基线 `Get-ChildItem ... | Get-Content | Measure-Object -Line` 对齐
+
+## 2026-04-24 P21-7A 本地变量路径 AST 预扫
+
+- 先修复了 `runtime-text-replace.ts` 的回归：
+  - `trimmed-boundary` 重新收回到“整块 trim 命中 + exact 歧义并存”的边界
+  - `packages/server/tests/execution/file/runtime-text-replace.spec.ts` 已恢复 fresh 通过
+- 已继续推进 `P21-7A`：
+  - `runtime-shell-command-ast.ts` 现在会在 AST 预扫阶段记录简单变量赋值，并把变量展开应用到 command tokens / redirection targets
+  - 当前已覆盖：
+    - bash `ROOT=/tmp/out; cp /workspace/source.txt "$ROOT/copied.txt"`
+    - PowerShell `$root='C:\\temp'; Set-Content -Path "$root\\note.txt" -Value hi`
+    - PowerShell `$root=$env:TEMP; ...` 的简单链路
+- 本轮新增 fresh 证据：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 166 tests` 通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 261 tests` 通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 当前总量复测：
+  - `npm run count:server-src` -> `20375`
+- 当前状态说明：
+  - 这刀已完成 fresh 验证
+  - 还没做独立 judge，因此 `P21-7A` 仍保持 `进行中`
+
+## 2026-04-24 P21-7C unicode/hex escape rewrite
+
+- `runtime-text-replace.ts` 的 `escape-normalized` 已继续补齐：
+  - `\\uXXXX`
+  - `\\xNN`
+- 新增 rewrite 证据：
+  - `packages/server/tests/execution/file/runtime-text-replace.spec.ts` 已补 `const text = "\\u0041"` -> `const text = "A"` 命中
+- 已完成 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`4 suites / 167 tests` 通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+- 当前状态说明：
+  - 这刀属于 `P21-7C` 继续增强，不单独改阶段状态
+
+## 2026-04-24 P21-7A 权限链真证据补齐
+
+- 已继续推进 `P21-7A`：
+  - `tool-registry.service.spec.ts` 已补 mock-shell 的 bash 本地变量路径 permission request
+  - `tool-registry.service.spec.ts` 已补 native-shell-alias 的 PowerShell 本地变量路径 permission request
+  - `bash-tool.service.spec.ts` 与 `tool-registry.service.spec.ts` 已补 PowerShell `$(Join-Path $root ...)` 本地变量正例
+- 中途确认了 shell 语法族边界：
+  - 同一条 PowerShell `Join-Path + 本地变量` 用例如果不切到 `native-shell` 同族 backend，只会走默认 just-bash 语法族
+  - 因此这类 permission chain 证据必须固定 `native-shell` 或 `native-shell-alias`
+- 已完成 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 265 tests` 通过
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 当前状态说明：
+  - 这步补的是 fresh 证据，不是阶段完成
+  - 还没做独立 judge，因此 `P21-7A` 仍保持 `进行中`
+
+## 2026-04-24 P21-7D host filesystem / shell hints 减膨胀
+
+- 已继续推进 `P21-7D`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 `readPathRange / readRuntimeDiffBaseContent / readRuntimeTextFileContent` 的 mime/binary 判定收口到同一 owner
+  - 同文件的目录递归 `readdir -> collectRuntimeVisibleFiles` 分支已收口
+  - `createSymlink / readSymlink` 已复用同一条 mounted filesystem 读取路径
+  - `readTextFile / editTextFile` 已切到同一条文本读取 owner
+  - `runtime-shell-command-hints.ts` 已继续删除 `readRuntimeShellExpandedEnvPath / readFirstPowerShellAttachedFlagValue` 这类单次使用薄包装
+- 本轮定向验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`7 suites / 182 tests` 通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`2 suites / 265 tests` 通过
+- 本轮 fresh 冒烟：
+  - root: `npm run smoke:server`
+    - 结果：`182 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`182 checks` 通过
+- 当前总量复测：
+  - `npm run count:server-src` -> `20407`
+  - 相比本轮开始前的 `20418`，净减 `11`
+- 当前状态说明：
+  - 这轮是 `P21-7D` fresh 进度，不是阶段完成
+  - 还没做独立 judge，因此不能改 `P21-7D` 状态
+- 已继续推进 `P21-7B` 第五段：
+  - `read` 现在会把本次命中的路径级 `AGENTS.md` 一并写进结构化 `loaded` 元数据
+  - `builtin.runtime-tools` 的 `read` 插件输出已携带 `data.loaded`，不再只有文本 reminder
+  - 这条链更接近 `other/opencode` 的 read metadata，可继续承接后续去重与已加载指令追踪
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/read/read-tool.service.spec.ts`
+    - 结果：`1 suite / 7 tests` 全部通过
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`1 suite / 151 tests` 全部通过
+  - `packages/shared`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 这刀属于 `P21-7B` 继续补 `read` 的结构化上下文能力，不是压行
+  - 还没做独立 judge，因此 `P21-7B` 仍保持 `进行中`
+- 已继续推进 `P21-7C` 第七段：
+  - `write / edit` 的 post-write 结果现在会额外带 `postWriteSummary`
+  - `builtin.runtime-tools` 的 `write/edit` 插件输出也已透传 `data.diff / data.postWriteSummary`
+  - 后续链路不再只能重新解析文本块才能知道 diagnostics、related focus paths 和 next hint
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`3 suites / 158 tests` 全部通过
+  - `packages/shared`: `npm run build`
+    - 结果：通过
+  - `packages/plugin-sdk`: `npm run build`
+    - 结果：通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 这刀属于 `P21-7C` 工程反馈 contract 补齐，不是压行
+  - 还没做独立 judge，因此 `P21-7C` 仍保持 `进行中`
+
+## 2026-04-24 S11 filesystem backend path/read 主链重写
+
+- 已继续推进 `S11`：
+  - `runtime-host-filesystem-backend.service.ts` 已把 `requireExistingPath / requireDirectoryPath / requireFilePath / requireMissingPath / resolveWritableFilePath` 这组路径校验薄包装删除，统一收回 `resolveValidatedPath()`
+  - 同文件的 `readTextFile / editTextFile / grepText` 已统一走 `readRuntimeHostFilesystemTextSource()`，不再各自维护一条文本读取链
+  - `readMissingPathMessage()` 已集中缺失路径建议拼装，`read / glob / grep` 继续复用原有 next-step hint
+  - 文件物理行数：`822 -> 773`
+- 已通过这轮 fresh 验收：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/read/read-tool.service.spec.ts tests/execution/write/write-tool.service.spec.ts tests/execution/edit/edit-tool.service.spec.ts tests/execution/grep/grep-tool.service.spec.ts tests/execution/glob/glob-tool.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+    - 结果：`7 suites / 196 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run count:server-src`
+    - 结果：`20101`
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+    - 结果：`184 checks` 通过
+- 当前状态：
+  - 相比上一稳定值 `20150`，本轮净减 `49`
+  - `S11` 仍未完成，离 `<= 19000` 还差 `1101`
+  - 独立 judge：`PASS`
+    - 结论：这刀是真删旧主链，不是换壳；`path 校验 / 文本读取 / 非文本判定` 已回收到同一 owner，未见当前阶段必须先修的回退风险

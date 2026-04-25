@@ -20,53 +20,36 @@ export interface WebFetchResult {
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MAX_TIMEOUT_SECONDS = 120;
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+const WEBFETCH_USER_AGENT = 'garlic-claw-webfetch';
 
 @Injectable()
 export class WebFetchService {
-  /**
-   * 抓取远端页面并按指定格式返回正文。
-   */
   async fetch(input: WebFetchInput): Promise<WebFetchResult> {
-    const targetUrl = normalizeFetchUrl(input.url);
+    const url = normalizeFetchUrl(input.url);
     const format = input.format ?? 'markdown';
-    const timeoutMs = normalizeTimeoutMs(input.timeout);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
+    const timer = setTimeout(() => controller.abort(), normalizeTimeoutMs(input.timeout));
     try {
-      const response = await fetch(targetUrl, {
+      const response = await fetch(url, {
         headers: buildRequestHeaders(format),
         signal: controller.signal,
       });
       if (!response.ok) {
         throw new Error(`webfetch 请求失败: ${response.status}`);
       }
-
-      const contentLength = Number(response.headers.get('content-length') ?? '0');
-      if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
-        throw new Error('webfetch 响应过大，超过 5MB 限制');
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer());
-      if (buffer.byteLength > MAX_RESPONSE_BYTES) {
-        throw new Error('webfetch 响应过大，超过 5MB 限制');
-      }
-
+      const buffer = await readWebFetchBuffer(response);
       const contentType = normalizeContentType(response.headers.get('content-type'));
       if (!isSupportedContentType(contentType)) {
         throw new Error(`webfetch 暂不支持该内容类型: ${contentType || 'unknown'}`);
       }
-
-      const rawContent = buffer.toString('utf8');
-      const title = readDocumentTitle(rawContent) ?? `${targetUrl} (${contentType || 'text/plain'})`;
-
+      const raw = buffer.toString('utf8');
       return {
         contentType,
         format,
-        output: renderFetchOutput(rawContent, contentType, format),
+        output: renderFetchOutput(raw, contentType, format),
         status: response.status,
-        title,
-        url: targetUrl,
+        title: readDocumentTitle(raw) ?? `${url} (${contentType || 'text/plain'})`,
+        url,
       };
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -80,14 +63,14 @@ export class WebFetchService {
 }
 
 function normalizeFetchUrl(value: string): string {
-  const next = value.trim();
-  if (!next) {
+  const normalized = value.trim();
+  if (!normalized) {
     throw new Error('webfetch url 不能为空');
   }
-  if (!next.startsWith('http://') && !next.startsWith('https://')) {
+  if (!/^https?:\/\//u.test(normalized)) {
     throw new Error('webfetch url 必须以 http:// 或 https:// 开头');
   }
-  return next;
+  return normalized;
 }
 
 function normalizeTimeoutMs(timeout?: number): number {
@@ -100,119 +83,96 @@ function normalizeTimeoutMs(timeout?: number): number {
   return Math.min(Math.floor(timeout), MAX_TIMEOUT_SECONDS) * 1000;
 }
 
+async function readWebFetchBuffer(response: Response): Promise<Buffer> {
+  const contentLength = Number(response.headers.get('content-length') ?? '0');
+  if (Number.isFinite(contentLength) && contentLength > MAX_RESPONSE_BYTES) {
+    throw new Error('webfetch 响应过大，超过 5MB 限制');
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.byteLength > MAX_RESPONSE_BYTES) {
+    throw new Error('webfetch 响应过大，超过 5MB 限制');
+  }
+  return buffer;
+}
+
 function buildRequestHeaders(format: WebFetchFormat): Record<string, string> {
-  if (format === 'html') {
-    return {
-      Accept: 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.1',
-      'User-Agent': 'garlic-claw-webfetch',
-    };
-  }
-  if (format === 'text') {
-    return {
-      Accept: 'text/plain,text/html;q=0.9,text/markdown;q=0.8,*/*;q=0.1',
-      'User-Agent': 'garlic-claw-webfetch',
-    };
-  }
   return {
-    Accept: 'text/markdown,text/plain;q=0.9,text/html;q=0.8,*/*;q=0.1',
-    'User-Agent': 'garlic-claw-webfetch',
+    Accept: format === 'html'
+      ? 'text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.1'
+      : format === 'text'
+        ? 'text/plain,text/html;q=0.9,text/markdown;q=0.8,*/*;q=0.1'
+        : 'text/markdown,text/plain;q=0.9,text/html;q=0.8,*/*;q=0.1',
+    'User-Agent': WEBFETCH_USER_AGENT,
   };
 }
 
 function normalizeContentType(value: string | null): string {
-  return (value ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  return value?.split(';')[0]?.trim().toLowerCase() ?? '';
 }
 
 function isSupportedContentType(contentType: string): boolean {
   return !contentType
     || contentType.startsWith('text/')
-    || contentType === 'application/json'
-    || contentType === 'application/xml'
-    || contentType === 'application/xhtml+xml';
+    || ['application/json', 'application/xml', 'application/xhtml+xml'].includes(contentType);
 }
 
 function renderFetchOutput(content: string, contentType: string, format: WebFetchFormat): string {
-  if (!isHtmlContent(contentType)) {
+  if (!contentType.includes('html') && !contentType.includes('xhtml')) {
     return content.trim();
   }
   if (format === 'html') {
     return content.trim();
   }
-  if (format === 'text') {
-    return htmlToText(content);
-  }
-  return htmlToMarkdown(content);
-}
-
-function isHtmlContent(contentType: string): boolean {
-  return contentType.includes('html') || contentType.includes('xhtml');
+  return (format === 'text' ? htmlToText(content) : htmlToMarkdown(content)).trim();
 }
 
 function readDocumentTitle(content: string): string | null {
-  const match = content.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!match?.[1]) {
-    return null;
-  }
-  const title = decodeHtmlEntities(stripTags(match[1])).trim();
-  return title || null;
+  const title = content.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  return title ? decodeHtmlEntities(stripTags(title)).trim() || null : null;
 }
 
 function htmlToText(content: string): string {
-  const normalized = normalizeHtmlWhitespace(
-    stripTags(
-      content
-        .replace(/<head[\s\S]*?<\/head>/gi, ' ')
-        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/(p|div|section|article|header|footer|main|aside|li|ul|ol|h1|h2|h3|h4|h5|h6|pre|blockquote)>/gi, '\n'),
-    ),
-  );
-  return decodeHtmlEntities(normalized).trim();
+  return decodeHtmlEntities(normalizeWhitespace(stripTags(
+    stripHtmlNoise(content)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|section|article|header|footer|main|aside|li|ul|ol|h1|h2|h3|h4|h5|h6|pre|blockquote)>/gi, '\n'),
+  )));
 }
 
 function htmlToMarkdown(content: string): string {
-  let next = content
+  return normalizeWhitespace(decodeHtmlEntities(stripTags(
+    stripHtmlNoise(content)
+      .replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_m, code: string) => `\n\`\`\`\n${decodeHtmlEntities(code).trim()}\n\`\`\`\n`)
+      .replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_m, code: string) => `\`${decodeHtmlEntities(stripTags(code)).trim()}\``)
+      .replace(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, text: string) => `[${decodeHtmlEntities(stripTags(text)).trim() || href}](${href})`)
+      .replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level: string, text: string) => `\n${'#'.repeat(Number(level))} ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
+      .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_m, text: string) => `\n- ${decodeHtmlEntities(stripTags(text)).trim()}`)
+      .replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_m, text: string) => `\n> ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
+      .replace(/<(p|div|section|article|header|footer|main|aside)[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _tag: string, text: string) => `\n${decodeHtmlEntities(stripTags(text)).trim()}\n`)
+      .replace(/<br\s*\/?>/gi, '\n'),
+  )));
+}
+
+function stripHtmlNoise(content: string): string {
+  return content
     .replace(/<head[\s\S]*?<\/head>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi, (_, code: string) => `\n\`\`\`\n${decodeHtmlEntities(code).trim()}\n\`\`\`\n`)
-    .replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, (_, code: string) => `\`${decodeHtmlEntities(stripTags(code)).trim()}\``)
-    .replace(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href: string, text: string) => `[${decodeHtmlEntities(stripTags(text)).trim() || href}](${href})`)
-    .replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, (_, text: string) => `\n# ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, (_, text: string) => `\n## ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, (_, text: string) => `\n### ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, (_, text: string) => `\n#### ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<h5[^>]*>([\s\S]*?)<\/h5>/gi, (_, text: string) => `\n##### ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<h6[^>]*>([\s\S]*?)<\/h6>/gi, (_, text: string) => `\n###### ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, text: string) => `\n- ${decodeHtmlEntities(stripTags(text)).trim()}`)
-    .replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, text: string) => `\n> ${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<(p|div|section|article|header|footer|main|aside)[^>]*>([\s\S]*?)<\/\1>/gi, (_, _tag: string, text: string) => `\n${decodeHtmlEntities(stripTags(text)).trim()}\n`)
-    .replace(/<br\s*\/?>/gi, '\n');
-
-  next = decodeHtmlEntities(stripTags(next));
-  return normalizeMarkdownWhitespace(next).trim();
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ');
 }
 
 function stripTags(content: string): string {
   return content.replace(/<[^>]+>/g, ' ');
 }
 
-function normalizeHtmlWhitespace(content: string): string {
+function normalizeWhitespace(content: string): string {
   return content
     .replace(/\r/g, '')
     .replace(/\t/g, ' ')
     .replace(/[ \u00a0]+/g, ' ')
     .replace(/ ([.,!?;:])/g, '$1')
-    .replace(/\n{3,}/g, '\n\n');
-}
-
-function normalizeMarkdownWhitespace(content: string): string {
-  return content
-    .replace(/\r/g, '')
     .replace(/[ \t]+\n/g, '\n')
-    .replace(/ ([.,!?;:])/g, '$1')
-    .replace(/\n{3,}/g, '\n\n');
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function decodeHtmlEntities(content: string): string {

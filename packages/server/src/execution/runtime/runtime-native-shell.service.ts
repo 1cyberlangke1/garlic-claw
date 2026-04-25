@@ -6,9 +6,12 @@ import type {
   RuntimeCommandBackendResult,
   RuntimeCommandRequest,
 } from './runtime-command.types';
-import { readRuntimeNativeShellOptions, readRuntimeNativeShellTimeout } from './runtime-native-shell-options';
-import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
+import {
+  readRuntimeNativeShellOptions,
+  readRuntimeNativeShellTimeout,
+} from './runtime-native-shell-options';
 import { toRuntimeHostPath } from './runtime-host-path';
+import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
 import { resolveRuntimeVisiblePath } from './runtime-visible-path';
 
 const RUNTIME_NATIVE_SHELL_TIMEOUT_CODE = 'runtime-native-shell-timeout';
@@ -28,20 +31,17 @@ export class RuntimeNativeShellService implements RuntimeBackend {
   }
 
   async executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandBackendResult> {
-    const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
-      input.sessionId,
-    );
+    const session = await this.runtimeSessionEnvironmentService.getSessionEnvironment(input.sessionId);
     const cwd = resolveRuntimeVisiblePath(
-      sessionEnvironment.visibleRoot,
+      session.visibleRoot,
       input.workdir,
-      `bash.workdir 必须位于 ${sessionEnvironment.visibleRoot} 内`,
+      `bash.workdir 必须位于 ${session.visibleRoot} 内`,
     );
     const timeoutMs = readRuntimeNativeShellTimeout(input.timeout);
-    const hostCwd = toRuntimeHostPath(sessionEnvironment.sessionRoot, sessionEnvironment.visibleRoot, cwd);
     try {
-      const result = await executeRuntimeNativeShellCommand({
+      const result = await executeRuntimeNativeShell({
         command: input.command,
-        cwd: hostCwd,
+        cwd: toRuntimeHostPath(session.sessionRoot, session.visibleRoot, cwd),
         timeoutMs,
       });
       return {
@@ -58,100 +58,71 @@ export class RuntimeNativeShellService implements RuntimeBackend {
   }
 }
 
-function executeRuntimeNativeShellCommand(
-  input: {
-    command: string;
-    cwd: string;
-    timeoutMs: number;
-  },
-): Promise<{
-    exitCode: number;
-    stderr: string;
-    stdout: string;
-  }> {
+function executeRuntimeNativeShell(input: {
+  command: string;
+  cwd: string;
+  timeoutMs: number;
+}): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   return new Promise((resolve, reject) => {
-    const shell = readRuntimeNativeShellProcess();
-    const child = spawn(shell.command, shell.args(input.command), {
+    const shell = readRuntimeNativeShellProcess(input.command);
+    const child = spawn(shell.command, shell.args, {
       cwd: input.cwd,
       env: process.env,
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
-    const stdoutChunks: Buffer[] = [];
-    const stderrChunks: Buffer[] = [];
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
     let settled = false;
     let timedOut = false;
-
-    const timeoutHandle = setTimeout(() => {
+    const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
     }, input.timeoutMs);
+    child.stdout.on('data', (chunk: Buffer | string) => stdout.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    child.stderr.on('data', (chunk: Buffer | string) => stderr.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    child.once('error', (error) => finish(() => reject(error)));
+    child.once('close', (code) => finish(() => timedOut
+      ? reject(new Error(RUNTIME_NATIVE_SHELL_TIMEOUT_CODE))
+      : resolve({
+          exitCode: code ?? 1,
+          stderr: Buffer.concat(stderr).toString('utf8'),
+          stdout: Buffer.concat(stdout).toString('utf8'),
+        })));
 
-    child.stdout.on('data', (chunk: Buffer | string) => {
-      stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    });
-    child.stderr.on('data', (chunk: Buffer | string) => {
-      stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    });
-    child.once('error', (error) => {
+    function finish(callback: () => void): void {
       if (settled) {
         return;
       }
       settled = true;
-      clearTimeout(timeoutHandle);
-      reject(error);
-    });
-    child.once('close', (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timeoutHandle);
-      if (timedOut) {
-        reject(new Error(RUNTIME_NATIVE_SHELL_TIMEOUT_CODE));
-        return;
-      }
-      resolve({
-        exitCode: code ?? 1,
-        stderr: Buffer.concat(stderrChunks).toString('utf8'),
-        stdout: Buffer.concat(stdoutChunks).toString('utf8'),
-      });
-    });
+      clearTimeout(timer);
+      callback();
+    }
   });
 }
 
-function readRuntimeNativeShellProcess(): {
-  args: (command: string) => string[];
-  command: string;
-} {
+function readRuntimeNativeShellProcess(command: string): { args: string[]; command: string } {
   if (process.platform === 'win32') {
     return {
-      args: (command) => [
+      command: 'powershell.exe',
+      args: [
         '-NoLogo',
         '-NoProfile',
         '-NonInteractive',
         '-ExecutionPolicy',
         'Bypass',
         '-Command',
-        readRuntimeNativePowerShellCommand(command),
+        [
+          '[Console]::InputEncoding=[Text.UTF8Encoding]::new($false)',
+          '[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)',
+          'chcp 65001 > $null',
+          command,
+        ].join('; '),
       ],
-      command: 'powershell.exe',
     };
   }
-  return {
-    args: (command) => ['-lc', command],
-    command: 'bash',
-  };
-}
-
-function readRuntimeNativePowerShellCommand(command: string): string {
-  return [
-    '[Console]::InputEncoding=[Text.UTF8Encoding]::new($false)',
-    '[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)',
-    'chcp 65001 > $null',
-    command,
-  ].join('; ');
+  return { command: 'bash', args: ['-lc', command] };
 }
 
 function normalizeRuntimeNativeShellOutput(text: string): string {
@@ -160,9 +131,7 @@ function normalizeRuntimeNativeShellOutput(text: string): string {
 
 function normalizeRuntimeNativeShellError(error: unknown, timeoutMs: number): Error {
   if (error instanceof Error && error.message === RUNTIME_NATIVE_SHELL_TIMEOUT_CODE) {
-    return new Error(
-      `bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`,
-    );
+    return new Error(`bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`);
   }
   return error instanceof Error ? error : new Error('bash 执行失败');
 }

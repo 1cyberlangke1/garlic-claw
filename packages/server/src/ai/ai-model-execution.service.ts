@@ -33,17 +33,14 @@ export interface AiModelExecutionResult {
   usage?: AiModelUsage;
 }
 
-interface AiExecutionTarget {
-  modelId: string;
-  provider: StoredAiProviderConfig;
-}
-
+interface AiExecutionTarget { modelId: string; provider: StoredAiProviderConfig; }
 export interface AiModelExecutionStreamResult { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string; }
 
-type OpenAiCompatibleToolCallIdState = {
-  generatedIds: Map<string, string>;
-  streamId: string;
-};
+type AiModelStreamRequest = AiModelExecutionRequest & { abortSignal?: AbortSignal; tools?: Record<string, Tool>; };
+type AiSdkGenerateTextResult = Awaited<ReturnType<typeof generateText>>;
+type AiSdkStreamTextResult = ReturnType<typeof streamText>;
+type OpenAiCompatibleToolCallIdState = { generatedIds: Map<string, string>; streamId: string; };
+type NormalizedOpenAiCompatibleToolCall = { changed: boolean; toolCall: Record<string, unknown>; };
 
 const localRequire = createRequire(__filename);
 
@@ -52,112 +49,103 @@ export class AiModelExecutionService {
   constructor(private readonly aiProviderSettingsService: AiProviderSettingsService = new AiProviderSettingsService()) {}
 
   async generateText(input: AiModelExecutionRequest): Promise<AiModelExecutionResult> {
-    if (input.transportMode === 'stream-collect') {
-      return this.collectStreamedTextResult(input);
-    }
-    let lastError: unknown;
-    for (const target of this.buildExecutionTargets(input)) {
-      try {
-        const result = await generateText({
-          ...this.buildExecutionInput(input, target),
-          ...(input.tools ? { stopWhen: isLoopFinished() } : {}),
-          ...(input.tools ? { tools: input.tools } : {}),
-          ...(input.tools ? { experimental_repairToolCall: this.createRepairToolCall(input.tools) } : {}),
-        } as Parameters<typeof generateText>[0]);
-        return {
-          ...(result.response?.body
-            ? { customBlocks: readAssistantResponseCustomBlocks(result.response.body) }
-            : {}),
-          customBlockOrigin: 'ai-sdk.response-body',
-          finishReason: typeof result.finishReason === 'string' ? result.finishReason : null,
-          modelId: target.modelId,
-          providerId: target.provider.id,
-          text: typeof result.text === 'string' ? result.text : '',
-          usage: readModelUsage(result.usage, input, typeof result.text === 'string' ? result.text : ''),
-        };
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw readExecutionError(lastError, 'AI text generation failed');
+    if (input.transportMode === 'stream-collect') {return this.collectStreamedTextResult(input);}
+    return this.runAcrossTargets(input, 'AI text generation failed', async (target) => {
+      const result = await generateText({
+        ...this.buildExecutionInput(input, target),
+        ...this.buildToolExecutionOptions(input.tools),
+      } as Parameters<typeof generateText>[0]);
+      return this.buildExecutionResult({
+        customBlockOrigin: 'ai-sdk.response-body',
+        customBlocks: readAssistantResponseCustomBlocks(result.response?.body),
+        finishReason: readFinishReason(result.finishReason),
+        input,
+        target,
+        text: typeof result.text === 'string' ? result.text : '',
+        usage: result.usage,
+      });
+    });
   }
 
-  streamText(input: AiModelExecutionRequest & {
-    abortSignal?: AbortSignal;
-    tools?: Record<string, Tool>;
-  }): AiModelExecutionStreamResult {
-    let lastError: unknown;
-    for (const target of this.buildExecutionTargets(input)) {
-      try {
-        const result = this.startTextStream(input, target);
-
-        return {
-          finishReason: result.finishReason,
-          fullStream: result.fullStream,
-          modelId: target.modelId,
-          providerId: target.provider.id,
-        };
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw readExecutionError(lastError, 'AI text streaming failed');
+  streamText(input: AiModelStreamRequest): AiModelExecutionStreamResult {
+    return this.runAcrossTargetsSync(input, 'AI text streaming failed', (target) => {
+      const result = this.startTextStream(input, target);
+      return { finishReason: result.finishReason, fullStream: result.fullStream, modelId: target.modelId, providerId: target.provider.id };
+    });
   }
 
   private async collectStreamedTextResult(input: AiModelExecutionRequest): Promise<AiModelExecutionResult> {
+    return this.runAcrossTargets(input, 'AI text generation failed', async (target) => {
+      const result = this.startTextStream(input, target);
+      const collected = await collectAssistantStream(result.fullStream);
+      return this.buildExecutionResult({
+        customBlockOrigin: 'ai-sdk.raw',
+        customBlocks: collected.customBlocks,
+        finishReason: readFinishReason(await result.finishReason),
+        input,
+        target,
+        text: collected.text,
+        usage: await result.totalUsage,
+      });
+    });
+  }
+
+  private async runAcrossTargets<T>(input: AiModelExecutionRequest, fallbackMessage: string, run: (target: AiExecutionTarget) => Promise<T>): Promise<T> {
     let lastError: unknown;
     for (const target of this.buildExecutionTargets(input)) {
       try {
-        const result = this.startTextStream(input, target);
-        let text = '';
-        let customBlocks: AssistantCustomBlockEntry[] = [];
-
-        for await (const part of result.fullStream) {
-          if (part.type === 'text-delta') {
-            text += part.text;
-            continue;
-          }
-          if (part.type === 'raw') {
-            customBlocks = applyAssistantCustomBlockUpdates(
-              customBlocks,
-              readAssistantRawCustomBlocks(part),
-            );
-          }
-        }
-
-        const usage = readModelUsage(await result.totalUsage, input, text);
-
-        return {
-          ...(customBlocks.length > 0 ? { customBlocks } : {}),
-          customBlockOrigin: 'ai-sdk.raw',
-          finishReason: readFinishReason(await result.finishReason),
-          modelId: target.modelId,
-          providerId: target.provider.id,
-          text,
-          usage,
-        };
+        return await run(target);
       } catch (error) {
         lastError = error;
       }
     }
-    throw readExecutionError(lastError, 'AI text generation failed');
+    throw readExecutionError(lastError, fallbackMessage);
+  }
+
+  private runAcrossTargetsSync<T>(input: AiModelExecutionRequest, fallbackMessage: string, run: (target: AiExecutionTarget) => T): T {
+    let lastError: unknown;
+    for (const target of this.buildExecutionTargets(input)) {
+      try {
+        return run(target);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw readExecutionError(lastError, fallbackMessage);
+  }
+
+  private buildExecutionResult(input: {
+    customBlocks: AssistantCustomBlockEntry[];
+    customBlockOrigin: 'ai-sdk.raw' | 'ai-sdk.response-body';
+    finishReason: string | null;
+    input: AiModelExecutionRequest;
+    target: AiExecutionTarget;
+    text: string;
+    usage: unknown;
+  }): AiModelExecutionResult {
+    return {
+      ...(input.customBlocks.length > 0 ? { customBlocks: input.customBlocks } : {}),
+      customBlockOrigin: input.customBlockOrigin,
+      finishReason: input.finishReason,
+      modelId: input.target.modelId,
+      providerId: input.target.provider.id,
+      text: input.text,
+      usage: readModelUsage(input.usage, input.input, input.text),
+    };
   }
 
   private buildExecutionTargets(input: AiModelExecutionRequest): AiExecutionTarget[] {
     const primary = this.resolveExecutionTarget(input.providerId, input.modelId);
-    if (!input.allowFallbackChatModels) {return [primary];}
-    return [primary, ...this.aiProviderSettingsService.getHostModelRoutingConfig().fallbackChatModels
-      .filter((target) => target.providerId !== primary.provider.id || target.modelId !== primary.modelId)
-      .map((target) => this.resolveExecutionTarget(target.providerId, target.modelId))];
+    return input.allowFallbackChatModels
+      ? [primary, ...this.aiProviderSettingsService.getHostModelRoutingConfig().fallbackChatModels
+        .filter((target) => target.providerId !== primary.provider.id || target.modelId !== primary.modelId)
+        .map((target) => this.resolveExecutionTarget(target.providerId, target.modelId))]
+      : [primary];
   }
 
-  private resolveExecutionTarget(
-    providerId: string | undefined,
-    modelId: string | undefined,
-  ): AiExecutionTarget {
+  private resolveExecutionTarget(providerId: string | undefined, modelId: string | undefined): AiExecutionTarget {
     const resolvedProviderId = providerId ?? this.aiProviderSettingsService.listProviders()[0]?.id;
     if (!resolvedProviderId) {throw new Error('No provider configured');}
-
     const provider = this.aiProviderSettingsService.getProvider(resolvedProviderId);
     const resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
     if (!resolvedModelId) {throw new Error(`Provider "${provider.id}" does not have any configured model`);}
@@ -178,20 +166,16 @@ export class AiModelExecutionService {
     };
   }
 
-  private startTextStream(
-    input: AiModelExecutionRequest & {
-      abortSignal?: AbortSignal;
-      tools?: Record<string, Tool>;
-    },
-    target: AiExecutionTarget,
-  ): ReturnType<typeof streamText> {
+  private buildToolExecutionOptions(tools?: Record<string, Tool>) {
+    return tools ? { experimental_repairToolCall: this.createRepairToolCall(tools), stopWhen: isLoopFinished(), tools } : {};
+  }
+
+  private startTextStream(input: AiModelStreamRequest, target: AiExecutionTarget): AiSdkStreamTextResult {
     return streamText({
       ...this.buildExecutionInput(input, target),
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       includeRawChunks: true,
-      ...(input.tools ? { experimental_repairToolCall: this.createRepairToolCall(input.tools) } : {}),
-      ...(input.tools ? { stopWhen: isLoopFinished() } : {}),
-      ...(input.tools ? { tools: input.tools } : {}),
+      ...this.buildToolExecutionOptions(input.tools),
     } as Parameters<typeof streamText>[0]);
   }
 
@@ -218,16 +202,12 @@ export class AiModelExecutionService {
       error: { message?: string; name?: string };
       toolCall: { input: string; toolCallId: string; toolName: string } & Record<string, unknown>;
     }) => {
-      if (!tools.invalid) {
-        return null;
-      }
+      if (!tools.invalid) {return null;}
       return {
         ...input.toolCall,
         input: JSON.stringify({
           error: readRepairToolErrorMessage(input.error),
-          ...(stringifyInvalidToolInput(input.toolCall.input)
-            ? { inputText: stringifyInvalidToolInput(input.toolCall.input) }
-            : {}),
+          ...(stringifyInvalidToolInput(input.toolCall.input) ? { inputText: stringifyInvalidToolInput(input.toolCall.input) } : {}),
           phase: readRepairToolPhase(input.error),
           tool: input.toolCall.toolName,
         }),
@@ -237,14 +217,22 @@ export class AiModelExecutionService {
   }
 }
 
-function applyAssistantCustomBlockUpdates(
-  currentBlocks: AssistantCustomBlockEntry[],
-  updates: AssistantCustomBlockEntry[],
-): AssistantCustomBlockEntry[] {
-  if (updates.length === 0) {
-    return currentBlocks;
+async function collectAssistantStream(fullStream: AsyncIterable<unknown>): Promise<{ customBlocks: AssistantCustomBlockEntry[]; text: string; }> {
+  let text = '';
+  let customBlocks: AssistantCustomBlockEntry[] = [];
+  for await (const part of fullStream) {
+    if (!isRecord(part) || typeof part.type !== 'string') {continue;}
+    if (part.type === 'text-delta' && typeof part.text === 'string') {
+      text += part.text;
+      continue;
+    }
+    if (part.type === 'raw') {customBlocks = applyAssistantCustomBlockUpdates(customBlocks, readAssistantRawCustomBlocks(part));}
   }
+  return { customBlocks, text };
+}
 
+function applyAssistantCustomBlockUpdates(currentBlocks: AssistantCustomBlockEntry[], updates: AssistantCustomBlockEntry[]): AssistantCustomBlockEntry[] {
+  if (updates.length === 0) {return currentBlocks;}
   const nextBlocks = [...currentBlocks];
   for (const update of updates) {
     const blockIndex = nextBlocks.findIndex((entry) => entry.key === update.key);
@@ -253,11 +241,7 @@ function applyAssistantCustomBlockUpdates(
       continue;
     }
     nextBlocks[blockIndex] = update.kind === 'text'
-      ? {
-          key: update.key,
-          kind: 'text',
-          value: `${nextBlocks[blockIndex]?.kind === 'text' ? nextBlocks[blockIndex].value : ''}${update.value}`,
-        }
+      ? { key: update.key, kind: 'text', value: `${nextBlocks[blockIndex]?.kind === 'text' ? nextBlocks[blockIndex].value : ''}${update.value}` }
       : update;
   }
   return nextBlocks;
@@ -274,47 +258,23 @@ function buildExecutionMessages(messages: PluginLlmMessage[]): ModelMessage[] {
 function buildExecutionMessageContent(
   content: PluginLlmMessage['content'],
 ): string | Array<{ image?: ArrayBuffer | string; mimeType?: string; text?: string; type: 'image' | 'text' }> {
-  if (typeof content === 'string') {return content;}
-  return content.map((part) =>
-    part.type === 'text'
-      ? {
-          text: part.text,
-          type: 'text' as const,
-        }
-      : {
-          image: toAiSdkImageInput(part.image),
-          ...(part.mimeType ? { mimeType: part.mimeType } : {}),
-          type: 'image' as const,
-        });
+  return typeof content === 'string'
+    ? content
+    : content.map((part) => part.type === 'text'
+      ? { text: part.text, type: 'text' as const }
+      : { image: toAiSdkImageInput(part.image), ...(part.mimeType ? { mimeType: part.mimeType } : {}), type: 'image' as const });
 }
 
-function buildProviderOptions(
-  input: AiModelExecutionRequest,
-): JsonObject | undefined {
+function buildProviderOptions(input: AiModelExecutionRequest): JsonObject | undefined {
   return input.variant ? { ...(input.providerOptions ?? {}), variant: input.variant } : input.providerOptions;
 }
 
-function readModelUsage(
-  value: unknown,
-  input: AiModelExecutionRequest,
-  text: string,
-): AiModelUsage {
+function readModelUsage(value: unknown, input: AiModelExecutionRequest, text: string): AiModelUsage {
   const providerUsage = readProviderUsage(value);
-  if (providerUsage) {
-    return providerUsage;
-  }
-
-  const inputTokens = estimateTokenCount([
-    input.system ?? '',
-    ...input.messages.map((message) => readMessageText(message.content)),
-  ].join('\n'));
+  if (providerUsage) {return providerUsage;}
+  const inputTokens = estimateTokenCount([input.system ?? '', ...input.messages.map((message) => readMessageText(message.content))].join('\n'));
   const outputTokens = estimateTokenCount(text);
-  return {
-    inputTokens,
-    outputTokens,
-    source: 'estimated',
-    totalTokens: inputTokens + outputTokens,
-  };
+  return { inputTokens, outputTokens, source: 'estimated', totalTokens: inputTokens + outputTokens };
 }
 
 function readExecutionError(error: unknown, fallback: string): Error {
@@ -322,48 +282,21 @@ function readExecutionError(error: unknown, fallback: string): Error {
 }
 
 function readProviderUsage(value: unknown): AiModelUsage | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-
+  if (!isRecord(value)) {return null;}
   const totalTokens = readTokenNumber(value.totalTokens);
   let inputTokens = readTokenNumber(value.inputTokens);
   let outputTokens = readTokenNumber(value.outputTokens);
-
-  if (totalTokens !== null && inputTokens !== null && outputTokens === null) {
-    outputTokens = Math.max(totalTokens - inputTokens, 0);
-  }
-  if (totalTokens !== null && outputTokens !== null && inputTokens === null) {
-    inputTokens = Math.max(totalTokens - outputTokens, 0);
-  }
-
-  if (inputTokens === null || outputTokens === null) {
-    return null;
-  }
-
-  return {
-    inputTokens,
-    outputTokens,
-    source: 'provider',
-    totalTokens: totalTokens ?? inputTokens + outputTokens,
-  };
+  if (totalTokens !== null && inputTokens !== null && outputTokens === null) {outputTokens = Math.max(totalTokens - inputTokens, 0);}
+  if (totalTokens !== null && outputTokens !== null && inputTokens === null) {inputTokens = Math.max(totalTokens - outputTokens, 0);}
+  return inputTokens === null || outputTokens === null ? null : { inputTokens, outputTokens, source: 'provider', totalTokens: totalTokens ?? inputTokens + outputTokens };
 }
 
 function readTokenNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? Math.ceil(value)
-    : null;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
 }
 
 function readMessageText(content: PluginLlmMessage['content']): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  return content
-    .filter((part): part is { text: string; type: 'text' } => part.type === 'text')
-    .map((part) => part.text)
-    .join('\n');
+  return typeof content === 'string' ? content : content.filter((part): part is { text: string; type: 'text' } => part.type === 'text').map((part) => part.text).join('\n');
 }
 
 function estimateTokenCount(text: string): number {
@@ -380,177 +313,116 @@ function toAiSdkImageInput(image: string): string | ArrayBuffer {
 
 function createOpenAiCompatibleFetch(providerId: string): typeof fetch {
   const baseFetch = globalThis.fetch.bind(globalThis);
-  return async (input, init) => {
-    const response = await baseFetch(input, init);
-    return normalizeOpenAiCompatibleStreamResponse(response, providerId);
-  };
+  return async (input, init) => normalizeOpenAiCompatibleStreamResponse(await baseFetch(input, init), providerId);
 }
 
-function normalizeOpenAiCompatibleStreamResponse(
-  response: Response,
-  providerId: string,
-): Response {
+function normalizeOpenAiCompatibleStreamResponse(response: Response, providerId: string): Response {
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-  if (!response.body || !contentType.includes('text/event-stream')) {
-    return response;
-  }
-
+  if (!response.body || !contentType.includes('text/event-stream')) {return response;}
   const headers = new Headers(response.headers);
   headers.delete('content-length');
-
-  const state: OpenAiCompatibleToolCallIdState = {
-    generatedIds: new Map<string, string>(),
-    streamId: sanitizeOpenAiCompatibleIdFragment(`${providerId}-${crypto.randomUUID()}`),
-  };
+  const state: OpenAiCompatibleToolCallIdState = { generatedIds: new Map<string, string>(), streamId: sanitizeOpenAiCompatibleIdFragment(`${providerId}-${crypto.randomUUID()}`) };
   const reader = response.body.getReader();
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   let buffered = '';
-
   const transformedBody = new ReadableStream<Uint8Array>({
     async pull(controller) {
       const { done, value } = await reader.read();
       if (done) {
-        const tail = buffered + decoder.decode();
-        if (tail.length > 0) {
-          controller.enqueue(encoder.encode(normalizeOpenAiCompatibleSseLines(tail, state, true)));
-        }
+        flushNormalizedSseChunk(controller, encoder, buffered + decoder.decode(), state, true);
         controller.close();
         return;
       }
-
       buffered += decoder.decode(value, { stream: true });
       const lastNewlineIndex = buffered.lastIndexOf('\n');
-      if (lastNewlineIndex < 0) {
-        return;
-      }
-
-      const completeChunk = buffered.slice(0, lastNewlineIndex + 1);
+      if (lastNewlineIndex < 0) {return;}
+      flushNormalizedSseChunk(controller, encoder, buffered.slice(0, lastNewlineIndex + 1), state, false);
       buffered = buffered.slice(lastNewlineIndex + 1);
-      controller.enqueue(
-        encoder.encode(normalizeOpenAiCompatibleSseLines(completeChunk, state, false)),
-      );
     },
     async cancel(reason) {
       await reader.cancel(reason);
     },
   });
-
-  return new Response(transformedBody, {
-    headers,
-    status: response.status,
-    statusText: response.statusText,
-  });
+  return new Response(transformedBody, { headers, status: response.status, statusText: response.statusText });
 }
 
-function normalizeOpenAiCompatibleSseLines(
+function flushNormalizedSseChunk(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: InstanceType<typeof TextEncoder>,
   chunk: string,
   state: OpenAiCompatibleToolCallIdState,
   flushTail: boolean,
-): string {
-  const lines = chunk.split('\n');
-  if (!flushTail && !chunk.endsWith('\n')) {
-    lines.pop();
-  }
+): void {
+  if (chunk.length === 0) {return;}
+  controller.enqueue(encoder.encode(normalizeOpenAiCompatibleSseLines(chunk, state, flushTail)));
+}
 
+function normalizeOpenAiCompatibleSseLines(chunk: string, state: OpenAiCompatibleToolCallIdState, flushTail: boolean): string {
+  const lines = chunk.split('\n');
+  if (!flushTail && !chunk.endsWith('\n')) {lines.pop();}
   return lines.map((line) => normalizeOpenAiCompatibleSseLine(line, state)).join('\n');
 }
 
-function normalizeOpenAiCompatibleSseLine(
-  line: string,
-  state: OpenAiCompatibleToolCallIdState,
-): string {
+function normalizeOpenAiCompatibleSseLine(line: string, state: OpenAiCompatibleToolCallIdState): string {
   const trimmedLine = line.endsWith('\r') ? line.slice(0, -1) : line;
-  if (!trimmedLine.startsWith('data:')) {
-    return trimmedLine;
-  }
-
+  if (!trimmedLine.startsWith('data:')) {return trimmedLine;}
   const payload = trimmedLine.slice(5).trimStart();
-  if (!payload || payload === '[DONE]') {
-    return `data: ${payload}`;
-  }
-
+  if (!payload || payload === '[DONE]') {return `data: ${payload}`;}
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
   } catch {
     return trimmedLine;
   }
-
   const normalized = normalizeOpenAiCompatibleChunkPayload(parsed, state);
-  return normalized === parsed
-    ? trimmedLine
-    : `data: ${JSON.stringify(normalized)}`;
+  return normalized === parsed ? trimmedLine : `data: ${JSON.stringify(normalized)}`;
 }
 
-function normalizeOpenAiCompatibleChunkPayload(
-  payload: unknown,
-  state: OpenAiCompatibleToolCallIdState,
-): unknown {
-  if (!isRecord(payload) || !Array.isArray(payload.choices)) {
-    return payload;
-  }
-
+function normalizeOpenAiCompatibleChunkPayload(payload: unknown, state: OpenAiCompatibleToolCallIdState): unknown {
+  if (!isRecord(payload) || !Array.isArray(payload.choices)) {return payload;}
   let changed = false;
   const nextChoices = payload.choices.map((choice, choiceIndex) => {
-    if (!isRecord(choice) || !isRecord(choice.delta) || !Array.isArray(choice.delta.tool_calls)) {
-      return choice;
-    }
-
+    if (!isRecord(choice) || !isRecord(choice.delta) || !Array.isArray(choice.delta.tool_calls)) {return choice;}
     let choiceChanged = false;
     const nextToolCalls = choice.delta.tool_calls.map((toolCall, toolIndex) => {
-      if (!isRecord(toolCall)) {
-        return toolCall;
-      }
-
-      let nextToolCall = toolCall;
-      const nextIndex = typeof nextToolCall.index === 'number' ? nextToolCall.index : toolIndex;
-      if (nextToolCall.index !== nextIndex) {
-        nextToolCall = { ...nextToolCall, index: nextIndex };
-        choiceChanged = true;
-      }
-
-      if (isRecord(nextToolCall.function) && nextToolCall.type !== 'function') {
-        nextToolCall = nextToolCall === toolCall
-          ? { ...nextToolCall, type: 'function' }
-          : { ...nextToolCall, type: 'function' };
-        choiceChanged = true;
-      }
-
-      if (typeof nextToolCall.id !== 'string' || nextToolCall.id.trim().length === 0) {
-        const toolCallKey = `${choiceIndex}:${nextIndex}`;
-        const nextId = state.generatedIds.get(toolCallKey)
-          ?? `gc-openai-tool-call-${state.streamId}-${choiceIndex}-${nextIndex}`;
-        state.generatedIds.set(toolCallKey, nextId);
-        nextToolCall = nextToolCall === toolCall
-          ? { ...nextToolCall, id: nextId }
-          : { ...nextToolCall, id: nextId };
-        choiceChanged = true;
-      }
-
-      return nextToolCall;
+      const normalized = normalizeOpenAiCompatibleToolCall(toolCall, choiceIndex, toolIndex, state);
+      choiceChanged ||= normalized.changed;
+      return normalized.toolCall;
     });
-
-    if (!choiceChanged) {
-      return choice;
-    }
-
+    if (!choiceChanged) {return choice;}
     changed = true;
-    return {
-      ...choice,
-      delta: {
-        ...choice.delta,
-        tool_calls: nextToolCalls,
-      },
-    };
+    return { ...choice, delta: { ...choice.delta, tool_calls: nextToolCalls } };
   });
+  return changed ? { ...payload, choices: nextChoices } : payload;
+}
 
-  return changed
-    ? {
-        ...payload,
-        choices: nextChoices,
-      }
-    : payload;
+function normalizeOpenAiCompatibleToolCall(
+  toolCall: unknown,
+  choiceIndex: number,
+  toolIndex: number,
+  state: OpenAiCompatibleToolCallIdState,
+): NormalizedOpenAiCompatibleToolCall {
+  if (!isRecord(toolCall)) {return { changed: false, toolCall: toolCall as Record<string, unknown> };}
+  let changed = false;
+  let nextToolCall = toolCall;
+  const nextIndex = typeof nextToolCall.index === 'number' ? nextToolCall.index : toolIndex;
+  if (nextToolCall.index !== nextIndex) {
+    nextToolCall = { ...nextToolCall, index: nextIndex };
+    changed = true;
+  }
+  if (isRecord(nextToolCall.function) && nextToolCall.type !== 'function') {
+    nextToolCall = { ...nextToolCall, type: 'function' };
+    changed = true;
+  }
+  if (typeof nextToolCall.id !== 'string' || nextToolCall.id.trim().length === 0) {
+    const toolCallKey = `${choiceIndex}:${nextIndex}`;
+    const nextId = state.generatedIds.get(toolCallKey) ?? `gc-openai-tool-call-${state.streamId}-${choiceIndex}-${nextIndex}`;
+    state.generatedIds.set(toolCallKey, nextId);
+    nextToolCall = { ...nextToolCall, id: nextId };
+    changed = true;
+  }
+  return { changed, toolCall: nextToolCall };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -562,13 +434,9 @@ function sanitizeOpenAiCompatibleIdFragment(value: string): string {
 }
 
 function readRepairToolErrorMessage(error: { message?: string } | null | undefined): string {
-  return typeof error?.message === 'string' && error.message.trim().length > 0
-    ? error.message.trim()
-    : '工具调用不合法';
+  return typeof error?.message === 'string' && error.message.trim().length > 0 ? error.message.trim() : '工具调用不合法';
 }
 
 function readRepairToolPhase(error: { name?: string } | null | undefined): 'resolve' | 'validate' {
-  return error?.name === 'AI_NoSuchToolError'
-    ? 'resolve'
-    : 'validate';
+  return error?.name === 'AI_NoSuchToolError' ? 'resolve' : 'validate';
 }

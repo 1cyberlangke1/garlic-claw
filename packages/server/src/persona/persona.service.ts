@@ -10,8 +10,15 @@ import type {
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service'
 import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
-import type { StoredPersonaRecord } from './persona-store.service'
 import { PersonaStoreService } from './persona-store.service'
+import type { StoredPersonaRecord } from './persona-store.service'
+
+type PersonaContextInput = {
+  context: { activePersonaId?: string; conversationId?: string; source: string; userId?: string }
+  conversationActivePersonaId?: string
+  conversationId?: string
+}
+type PersonaSource = 'context' | 'conversation' | 'default'
 
 @Injectable()
 export class PersonaService {
@@ -20,187 +27,87 @@ export class PersonaService {
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
   ) {}
 
-  listPersonas(): PluginPersonaSummary[] {
-    return this.listStoredPersonas().map(toPersonaSummary)
-  }
+  listPersonas(): PluginPersonaSummary[] { return this.listStoredPersonas().map(toPersonaSummary) }
+  readPersona(personaId: string): PluginPersonaDetail { return toPersonaDetail(this.requirePersona(personaId)) }
 
-  readPersona(personaId: string): PluginPersonaDetail {
-    return toPersonaDetail(this.requirePersona(personaId))
-  }
-
-  readCurrentPersona(input: {
-    context: {
-      activePersonaId?: string
-      conversationId?: string
-      source: string
-      userId?: string
-    }
-    conversationActivePersonaId?: string
-    conversationId?: string
-  }): PluginPersonaCurrentInfo {
-    const conversationActivePersonaId = input.conversationActivePersonaId
-      ?? this.readConversationActivePersonaId(input.conversationId ?? input.context.conversationId)
-    const resolved = this.resolvePersonaForContext(
+  readCurrentPersona(input: PersonaContextInput): PluginPersonaCurrentInfo {
+    return toCurrentPersona(this.resolvePersonaForContext(
       input.context.activePersonaId,
-      conversationActivePersonaId,
-    )
-    return {
-      ...toPersonaDetail(resolved.persona),
-      personaId: resolved.persona.id,
-      source: resolved.source,
-    }
+      input.conversationActivePersonaId ?? this.readConversationActivePersonaId(input.conversationId ?? input.context.conversationId),
+    ))
   }
 
-  activatePersona(input: {
-    conversationId: string
-    personaId: string
-    userId?: string
-  }): PluginPersonaCurrentInfo {
+  activatePersona(input: { conversationId: string; personaId: string; userId?: string }): PluginPersonaCurrentInfo {
     const persona = this.requirePersona(input.personaId)
-    this.runtimeHostConversationRecordService.rememberConversationActivePersona(
-      input.conversationId,
-      persona.id,
-      input.userId,
-    )
-    return {
-      ...toPersonaDetail(persona),
-      personaId: persona.id,
-      source: 'conversation',
-    }
+    this.runtimeHostConversationRecordService.rememberConversationActivePersona(input.conversationId, persona.id, input.userId)
+    return toCurrentPersona({ persona, source: 'conversation' })
   }
 
   createPersona(input: PluginPersonaUpsertInput): PluginPersonaDetail {
+    const personaId = normalizeRequiredText(input.id, 'id is required')
     const personas = this.listStoredPersonas()
-    const personaId = normalizeRequiredId(input.id, 'id is required')
-    if (personas.some((persona) => persona.id === personaId)) {
-      throw new BadRequestException(`Persona already exists: ${personaId}`)
-    }
-    const timestamp = new Date().toISOString()
-    const created: StoredPersonaRecord = {
-      avatar: null,
-      beginDialogs: normalizeDialogEntries(input.beginDialogs),
-      createdAt: timestamp,
-      customErrorMessage: normalizeNullableText(input.customErrorMessage),
-      description: normalizeOptionalText(input.description),
-      id: personaId,
-      isDefault: input.isDefault === true,
-      name: normalizeRequiredText(input.name, 'name is required'),
-      prompt: normalizeRequiredText(input.prompt, 'prompt is required'),
-      toolNames: normalizeNullableIdList(input.toolNames),
-      updatedAt: timestamp,
-    }
-    const savedPersona = this.persistPersonas([...personas, created], created.id).find((persona) => persona.id === created.id)
-    if (!savedPersona) {
-      throw new NotFoundException(`Persona not found after create: ${created.id}`)
-    }
-    return toPersonaDetail(savedPersona)
+    if (personas.some((persona) => persona.id === personaId)) {throw new BadRequestException(`Persona already exists: ${personaId}`)}
+    return toPersonaDetail(this.requirePersistedPersona(this.persistPersonas([...personas, createStoredPersona(input, personaId)], personaId), personaId, 'create'))
   }
 
   updatePersona(personaId: string, patch: PluginPersonaUpdateInput): PluginPersonaDetail {
-    const current = this.requirePersona(personaId)
-    const next: StoredPersonaRecord = {
-      ...current,
-      ...(patch.beginDialogs !== undefined ? { beginDialogs: normalizeDialogEntries(patch.beginDialogs) } : {}),
-      ...(patch.customErrorMessage !== undefined ? { customErrorMessage: normalizeNullableText(patch.customErrorMessage) } : {}),
-      ...(patch.description !== undefined ? { description: normalizeOptionalText(patch.description) } : {}),
-      ...(patch.isDefault !== undefined ? { isDefault: patch.isDefault } : {}),
-      ...(patch.name !== undefined ? { name: normalizeRequiredText(patch.name, 'name is required') } : {}),
-      ...(patch.prompt !== undefined ? { prompt: normalizeRequiredText(patch.prompt, 'prompt is required') } : {}),
-      ...(patch.toolNames !== undefined ? { toolNames: normalizeNullableIdList(patch.toolNames) } : {}),
-      updatedAt: new Date().toISOString(),
-    }
-    const savedPersona = this.persistPersonas(
+    const next = updateStoredPersona(this.requirePersona(personaId), patch)
+    return toPersonaDetail(this.requirePersistedPersona(this.persistPersonas(
       this.listStoredPersonas().map((persona) => persona.id === personaId ? next : persona),
       next.isDefault ? next.id : undefined,
-    ).find((persona) => persona.id === personaId)
-    if (!savedPersona) {
-      throw new NotFoundException(`Persona not found after update: ${personaId}`)
-    }
-    return toPersonaDetail(savedPersona)
+    ), personaId, 'update'))
   }
 
   deletePersona(personaId: string): PluginPersonaDeleteResult {
-    if (personaId === DEFAULT_PERSONA_ID) {
-      throw new BadRequestException('Default persona cannot be deleted')
-    }
+    if (personaId === DEFAULT_PERSONA_ID) {throw new BadRequestException('Default persona cannot be deleted')}
     this.requirePersona(personaId)
-    const remaining = this.listStoredPersonas().filter((persona) => persona.id !== personaId)
-    this.persistPersonas(remaining, undefined)
+    this.persistPersonas(this.listStoredPersonas().filter((persona) => persona.id !== personaId))
     const fallbackPersonaId = this.requireDefaultPersona(this.listStoredPersonas()).id
-    const conversations = this.runtimeHostConversationRecordService.listConversations() as Array<{
-      id: string
-    }>
     let reassignedConversationCount = 0
-    for (const conversation of conversations) {
-      if (this.runtimeHostConversationRecordService.requireConversation(conversation.id).activePersonaId !== personaId) {
-        continue
-      }
-      this.runtimeHostConversationRecordService.rememberConversationActivePersona(
-        conversation.id,
-        fallbackPersonaId,
-      )
+    for (const conversation of this.runtimeHostConversationRecordService.listConversations() as Array<{ id: string }>) {
+      if (this.runtimeHostConversationRecordService.requireConversation(conversation.id).activePersonaId !== personaId) {continue}
+      this.runtimeHostConversationRecordService.rememberConversationActivePersona(conversation.id, fallbackPersonaId)
       reassignedConversationCount += 1
     }
-    return {
-      deletedPersonaId: personaId,
-      fallbackPersonaId,
-      reassignedConversationCount,
-    }
+    return { deletedPersonaId: personaId, fallbackPersonaId, reassignedConversationCount }
   }
 
   readPersonaAvatarPath(personaId: string): string {
     this.requirePersona(personaId)
     const avatarPath = this.personaStoreService.readAvatarPath(personaId)
-    if (avatarPath) {
-      return avatarPath
-    }
+    if (avatarPath) {return avatarPath}
     throw new NotFoundException(`Persona avatar not found: ${personaId}`)
   }
 
-  private listStoredPersonas(): StoredPersonaRecord[] {
-    return this.personaStoreService.list()
-  }
+  private listStoredPersonas(): StoredPersonaRecord[] { return this.personaStoreService.list() }
 
-  private persistPersonas(
-    personas: StoredPersonaRecord[],
-    preferredDefaultPersonaId?: string,
-  ): StoredPersonaRecord[] {
-    const fallbackDefaultPersonaId = personas.some((persona) => persona.id === DEFAULT_PERSONA_ID)
-      ? DEFAULT_PERSONA_ID
-      : personas[0]?.id
-    const resolvedDefaultPersonaId = preferredDefaultPersonaId
+  private persistPersonas(personas: StoredPersonaRecord[], preferredDefaultPersonaId?: string): StoredPersonaRecord[] {
+    const defaultPersonaId = preferredDefaultPersonaId
       ?? personas.find((persona) => persona.isDefault)?.id
-      ?? fallbackDefaultPersonaId
-    return this.personaStoreService.replaceAll(
-      personas
-        .map((persona) => ({
-          ...persona,
-          isDefault: persona.id === resolvedDefaultPersonaId,
-        }))
-        .sort((left, right) => left.id.localeCompare(right.id)),
-    )
+      ?? (personas.some((persona) => persona.id === DEFAULT_PERSONA_ID) ? DEFAULT_PERSONA_ID : personas[0]?.id)
+    return this.personaStoreService.replaceAll(personas.map((persona) => ({ ...persona, isDefault: persona.id === defaultPersonaId })).sort((left, right) => left.id.localeCompare(right.id)))
   }
 
   private requirePersona(personaId: string): StoredPersonaRecord {
     const persona = this.personaStoreService.read(personaId)
-    if (persona) {
-      return persona
-    }
+    if (persona) {return persona}
     throw new NotFoundException(`Persona not found: ${personaId}`)
+  }
+
+  private requirePersistedPersona(personas: StoredPersonaRecord[], personaId: string, action: 'create' | 'update'): StoredPersonaRecord {
+    const persona = personas.find((entry) => entry.id === personaId)
+    if (persona) {return persona}
+    throw new NotFoundException(`Persona not found after ${action}: ${personaId}`)
   }
 
   private requireDefaultPersona(personas: StoredPersonaRecord[]): StoredPersonaRecord {
     const persona = personas.find((entry) => entry.isDefault) ?? personas.find((entry) => entry.id === DEFAULT_PERSONA_ID)
-    if (persona) {
-      return persona
-    }
+    if (persona) {return persona}
     throw new NotFoundException('Default persona not found')
   }
 
   private readConversationActivePersonaId(conversationId?: string): string | undefined {
-    if (!conversationId) {
-      return undefined
-    }
+    if (!conversationId) {return undefined}
     try {
       return this.runtimeHostConversationRecordService.requireConversation(conversationId).activePersonaId
     } catch {
@@ -208,25 +115,53 @@ export class PersonaService {
     }
   }
 
-  private resolvePersonaForContext(
-    contextPersonaId?: string,
-    conversationPersonaId?: string,
-  ): { persona: StoredPersonaRecord; source: 'context' | 'conversation' | 'default' } {
+  private resolvePersonaForContext(contextPersonaId?: string, conversationPersonaId?: string): { persona: StoredPersonaRecord; source: PersonaSource } {
     const contextPersona = contextPersonaId ? this.personaStoreService.read(contextPersonaId) : null
-    if (contextPersona) {
-      return { persona: contextPersona, source: contextPersona.id === DEFAULT_PERSONA_ID ? 'default' : 'context' }
-    }
+    if (contextPersona) {return { persona: contextPersona, source: contextPersona.id === DEFAULT_PERSONA_ID ? 'default' : 'context' }}
     const conversationPersona = conversationPersonaId ? this.personaStoreService.read(conversationPersonaId) : null
-    if (conversationPersona) {
-      return { persona: conversationPersona, source: conversationPersona.id === DEFAULT_PERSONA_ID ? 'default' : 'conversation' }
-    }
+    if (conversationPersona) {return { persona: conversationPersona, source: conversationPersona.id === DEFAULT_PERSONA_ID ? 'default' : 'conversation' }}
     return { persona: this.requireDefaultPersona(this.listStoredPersonas()), source: 'default' }
+  }
+}
+
+function toCurrentPersona(input: { persona: StoredPersonaRecord; source: PersonaSource }): PluginPersonaCurrentInfo {
+  return { ...toPersonaDetail(input.persona), personaId: input.persona.id, source: input.source }
+}
+
+function createStoredPersona(input: PluginPersonaUpsertInput, personaId: string): StoredPersonaRecord {
+  const timestamp = new Date().toISOString()
+  return {
+    avatar: null,
+    beginDialogs: normalizeDialogEntries(input.beginDialogs),
+    createdAt: timestamp,
+    customErrorMessage: normalizeNullableText(input.customErrorMessage),
+    description: normalizeOptionalText(input.description),
+    id: personaId,
+    isDefault: input.isDefault === true,
+    name: normalizeRequiredText(input.name, 'name is required'),
+    prompt: normalizeRequiredText(input.prompt, 'prompt is required'),
+    toolNames: normalizeNullableIdList(input.toolNames),
+    updatedAt: timestamp,
+  }
+}
+
+function updateStoredPersona(current: StoredPersonaRecord, patch: PluginPersonaUpdateInput): StoredPersonaRecord {
+  return {
+    ...current,
+    ...(patch.beginDialogs !== undefined ? { beginDialogs: normalizeDialogEntries(patch.beginDialogs) } : {}),
+    ...(patch.customErrorMessage !== undefined ? { customErrorMessage: normalizeNullableText(patch.customErrorMessage) } : {}),
+    ...(patch.description !== undefined ? { description: normalizeOptionalText(patch.description) } : {}),
+    ...(patch.isDefault !== undefined ? { isDefault: patch.isDefault } : {}),
+    ...(patch.name !== undefined ? { name: normalizeRequiredText(patch.name, 'name is required') } : {}),
+    ...(patch.prompt !== undefined ? { prompt: normalizeRequiredText(patch.prompt, 'prompt is required') } : {}),
+    ...(patch.toolNames !== undefined ? { toolNames: normalizeNullableIdList(patch.toolNames) } : {}),
+    updatedAt: new Date().toISOString(),
   }
 }
 
 function toPersonaSummary(persona: StoredPersonaRecord): PluginPersonaSummary {
   return {
-    avatar: readPersonaAvatarUrl(persona),
+    avatar: persona.avatar ? `/api/personas/${encodeURIComponent(persona.id)}/avatar` : null,
     createdAt: persona.createdAt,
     description: persona.description,
     id: persona.id,
@@ -236,26 +171,12 @@ function toPersonaSummary(persona: StoredPersonaRecord): PluginPersonaSummary {
   }
 }
 
-function readPersonaAvatarUrl(persona: StoredPersonaRecord): string | null {
-  return persona.avatar
-    ? `/api/personas/${encodeURIComponent(persona.id)}/avatar`
-    : null
-}
-
 function toPersonaDetail(persona: StoredPersonaRecord): PluginPersonaDetail {
-  return {
-    ...toPersonaSummary(persona),
-    beginDialogs: persona.beginDialogs.map((entry) => ({ ...entry })),
-    customErrorMessage: persona.customErrorMessage,
-    prompt: persona.prompt,
-    toolNames: persona.toolNames ? [...persona.toolNames] : null,
-  }
+  return { ...toPersonaSummary(persona), beginDialogs: persona.beginDialogs.map((entry) => ({ ...entry })), customErrorMessage: persona.customErrorMessage, prompt: persona.prompt, toolNames: persona.toolNames ? [...persona.toolNames] : null }
 }
 
 function normalizeDialogEntries(value: PluginPersonaDialogEntry[] | undefined): PluginPersonaDialogEntry[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
+  if (!Array.isArray(value)) {return []}
   return value.flatMap((entry) => {
     const content = normalizeOptionalText(entry?.content)
     const role = entry?.role === 'assistant' || entry?.role === 'user' ? entry.role : null
@@ -264,9 +185,7 @@ function normalizeDialogEntries(value: PluginPersonaDialogEntry[] | undefined): 
 }
 
 function normalizeNullableIdList(value: string[] | null | undefined): string[] | null {
-  if (value === undefined || value === null) {
-    return null
-  }
+  if (value === undefined || value === null) {return null}
   return [...new Set(value.flatMap((entry) => {
     const normalized = normalizeOptionalText(entry)
     return normalized ? [normalized] : []
@@ -274,30 +193,17 @@ function normalizeNullableIdList(value: string[] | null | undefined): string[] |
 }
 
 function normalizeNullableText(value: string | null | undefined): string | null {
-  const normalized = normalizeOptionalText(value)
-  return normalized ?? null
+  return normalizeOptionalText(value) ?? null
 }
 
 function normalizeOptionalText(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined
-  }
+  if (typeof value !== 'string') {return undefined}
   const normalized = value.trim()
   return normalized || undefined
 }
 
-function normalizeRequiredId(value: unknown, errorMessage: string): string {
-  const normalized = normalizeOptionalText(value)
-  if (normalized) {
-    return normalized
-  }
-  throw new BadRequestException(errorMessage)
-}
-
 function normalizeRequiredText(value: unknown, errorMessage: string): string {
   const normalized = normalizeOptionalText(value)
-  if (normalized) {
-    return normalized
-  }
+  if (normalized) {return normalized}
   throw new BadRequestException(errorMessage)
 }

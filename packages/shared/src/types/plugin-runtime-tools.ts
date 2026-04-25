@@ -32,6 +32,7 @@ export interface PluginRuntimeReadParams {
 }
 
 export interface PluginRuntimeReadResult {
+  loaded: string[];
   output: string;
   path: string;
   truncated: boolean;
@@ -74,12 +75,39 @@ export interface PluginRuntimeFileDiffSummary {
   patch: string;
 }
 
+export interface PluginRuntimeFormattingSummary {
+  kind: string;
+  label: string;
+}
+
+export interface PluginRuntimeDiagnosticSeverityCounts {
+  error: number;
+  hint: number;
+  info: number;
+  warning: number;
+}
+
+export interface PluginRuntimePostWriteSummary {
+  currentFileDiagnostics: number;
+  formatting: PluginRuntimeFormattingSummary | null;
+  nextHint: string | null;
+  omittedRelatedFiles: number;
+  relatedFileDiagnostics: number;
+  relatedFiles: number;
+  relatedFocusPaths: string[];
+  severityCounts: PluginRuntimeDiagnosticSeverityCounts;
+  totalDiagnostics: number;
+  visibleRelatedFiles: number;
+  visibleRelatedPaths: string[];
+}
+
 export interface PluginRuntimeWriteResult {
   created: boolean;
   diff?: PluginRuntimeFileDiffSummary | null;
   lineCount?: number;
   output: string;
   path: string;
+  postWriteSummary: PluginRuntimePostWriteSummary;
   size?: number;
 }
 
@@ -95,5 +123,6 @@ export interface PluginRuntimeEditResult {
   occurrences: number;
   output: string;
   path: string;
+  postWriteSummary: PluginRuntimePostWriteSummary;
   strategy?: string;
 }

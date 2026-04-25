@@ -205,6 +205,8 @@ async function main() {
     grepLoopAssistantText: null,
     editLoopAssistantMessageId: null,
     editLoopAssistantText: null,
+    editCreateLoopAssistantMessageId: null,
+    editCreateLoopAssistantText: null,
     staleEditAssistantMessageId: null,
     staleEditAssistantText: null,
     readLoopAssistantMessageId: null,
@@ -1478,6 +1480,54 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(writeAssistant?.content === state.writeLoopAssistantText, 'Expected write loop assistant message to persist generated content');
     ensure(Array.isArray(writeToolCalls) && writeToolCalls.some((entry) => entry?.toolName === 'write'), 'Expected write loop assistant message to persist native write tool call');
     ensure(Array.isArray(writeToolResults) && writeToolResults.some((entry) => entry?.toolName === 'write'), 'Expected write loop assistant message to persist native write tool result');
+  });
+
+  await runStep('chat.messages.edit-create-loop', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        content: '请使用 edit 工具在 smoke workspace 中直接创建一个 generated/create-via-edit.txt 文件，并确认结果。',
+        model: state.modelId,
+        provider: state.providerId,
+      },
+      headers: userHeaders(),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    state.editCreateLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
+    ensure(typeof state.editCreateLoopAssistantMessageId === 'string', 'Expected create-style edit loop to create assistant message');
+    state.editCreateLoopAssistantText = assertCompletedSse(events, '已通过 edit 工具创建 smoke workspace 文件。');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'edit'), 'Expected create-style edit loop SSE to include native edit tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'edit'), 'Expected create-style edit loop SSE to include native edit tool result');
+    ensure(finishEvent?.status === 'completed', 'Expected create-style edit loop SSE to finish');
+  });
+
+  await runStep('chat.messages.edit-create-loop.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const firstRequest = requests.find((entry) =>
+      requestHasToolList(entry.body)
+      && readLatestUserText(entry.body?.messages).includes('请使用 edit 工具在 smoke workspace 中直接创建一个 generated/create-via-edit.txt 文件'));
+    ensure(firstRequest, 'Expected first create-style edit loop request to reach fake OpenAI');
+    ensure(requestIncludesToolName(firstRequest.body, 'edit'), 'Expected create-style edit loop request to expose native edit tool');
+    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'edit'));
+    ensure(toolResultRequest, 'Expected create-style edit loop to issue a follow-up request with edit tool results');
+    ensure(requestContainsEditResult(toolResultRequest.body, '/generated/create-via-edit.txt'), 'Expected create-style edit loop follow-up request to include rendered edit result');
+    ensure(
+      readToolMessages(toolResultRequest.body).some((content) => content.includes('Strategy: empty-old-string')),
+      'Expected create-style edit loop follow-up request to keep empty-old-string strategy visible',
+    );
+    ensure(
+      fs.readFileSync(path.join(readSessionWorkspaceRoot(), 'generated', 'create-via-edit.txt'), 'utf8') === 'created via edit\n',
+      'Expected create-style edit loop to persist created file content',
+    );
+
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    const editAssistant = conversation.messages.find((entry) => entry.id === state.editCreateLoopAssistantMessageId);
+    const editToolCalls = parseSerializedJsonValue(editAssistant?.toolCalls);
+    const editToolResults = parseSerializedJsonValue(editAssistant?.toolResults);
+    ensure(editAssistant?.content === state.editCreateLoopAssistantText, 'Expected create-style edit loop assistant message to persist generated content');
+    ensure(Array.isArray(editToolCalls) && editToolCalls.some((entry) => entry?.toolName === 'edit'), 'Expected create-style edit loop assistant message to persist native edit tool call');
+    ensure(Array.isArray(editToolResults) && editToolResults.some((entry) => entry?.toolName === 'edit'), 'Expected create-style edit loop assistant message to persist native edit tool result');
   });
 
   await runStep('chat.messages.edit-loop', async () => {
@@ -3695,6 +3745,18 @@ function planSmokeChatResponse(body) {
       toolName: 'edit',
     };
   }
+  if (shouldTriggerCreateStyleEditTool(body)) {
+    return {
+      arguments: {
+        filePath: 'generated/create-via-edit.txt',
+        newString: 'created via edit\n',
+        oldString: '',
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_edit_create_0',
+      toolName: 'edit',
+    };
+  }
   if (shouldTriggerStaleEditTool(body)) {
     return {
       arguments: {
@@ -3776,7 +3838,9 @@ function planSmokeChatResponse(body) {
   if (requestContainsToolResult(body, 'edit')) {
     return {
       kind: 'text',
-      text: '已通过 edit 工具修改 smoke workspace 文件。',
+      text: readLatestUserText(body?.messages).includes('请使用 edit 工具在 smoke workspace 中直接创建一个 generated/create-via-edit.txt 文件')
+        ? '已通过 edit 工具创建 smoke workspace 文件。'
+        : '已通过 edit 工具修改 smoke workspace 文件。',
     };
   }
   if (requestContainsInvalidToolResult(body, 'edit', '文件在上次读取后已被修改')) {
@@ -3887,6 +3951,12 @@ function shouldTriggerEditTool(body) {
     && readLatestUserText(body?.messages).includes('请使用 edit 工具修改刚才生成的 generated 文件');
 }
 
+function shouldTriggerCreateStyleEditTool(body) {
+  return requestIncludesToolName(body, 'edit')
+    && !requestContainsToolResult(body, 'edit')
+    && readLatestUserText(body?.messages).includes('请使用 edit 工具在 smoke workspace 中直接创建一个 generated/create-via-edit.txt 文件');
+}
+
 function shouldTriggerStaleEditTool(body) {
   return requestIncludesToolName(body, 'edit')
     && !requestContainsToolResult(body, 'edit')
@@ -3942,7 +4012,11 @@ function requestContainsToolResult(body, toolName) {
       || (toolName === 'glob' && (toolCallId === 'call_smoke_glob_0' || content.includes('<glob_result>')))
       || (toolName === 'grep' && (toolCallId === 'call_smoke_grep_0' || content.includes('<grep_result>')))
       || (toolName === 'write' && (toolCallId === 'call_smoke_write_0' || content.includes('<write_result>')))
-      || (toolName === 'edit' && (toolCallId === 'call_smoke_edit_0' || content.includes('<edit_result>')));
+      || (toolName === 'edit' && (
+        toolCallId === 'call_smoke_edit_0'
+        || toolCallId === 'call_smoke_edit_create_0'
+        || content.includes('<edit_result>')
+      ));
   });
 }
 
@@ -4025,6 +4099,13 @@ function requestContainsEditResult(body, filePath) {
     message?.role === 'tool'
     && readTextContent(message).includes('<edit_result>')
     && readTextContent(message).includes(`Path: ${filePath}`));
+}
+
+function readToolMessages(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages
+    .filter((message) => message?.role === 'tool')
+    .map((message) => readTextContent(message));
 }
 
 function requestContainsBashResult(body, contentFragment) {

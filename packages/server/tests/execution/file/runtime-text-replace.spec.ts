@@ -39,7 +39,7 @@ describe('replaceRuntimeText', () => {
       'if (true) {\n  return 1;\n}\n',
       'if (true) {\n  return 2;\n}\n',
     )).toEqual({
-      content: 'function demo() {\nif (true) {\n  return 2;\n}\n}\n',
+      content: 'function demo() {\n    if (true) {\n      return 2;\n    }\n}\n',
       occurrences: 1,
       strategy: 'indentation-flexible',
     });
@@ -54,6 +54,66 @@ describe('replaceRuntimeText', () => {
       content: 'const value = 2;\n',
       occurrences: 1,
       strategy: 'trimmed-boundary',
+    });
+  });
+
+  it('supports trailing-whitespace-trimmed strategy without ignoring leading indentation', () => {
+    expect(replaceRuntimeText(
+      '  const value = 1;\nconst value = 1;\n',
+      'const value = 1;   ',
+      'const value = 2;',
+    )).toEqual({
+      content: '  const value = 1;\nconst value = 2;\n',
+      occurrences: 1,
+      strategy: 'trailing-whitespace-trimmed',
+    });
+  });
+
+  it('supports line-ending-normalized strategy and preserves CRLF in replacement output', () => {
+    expect(replaceRuntimeText(
+      'const first = 1;\r\nconst second = 2;\r\n',
+      'const first = 1;\nconst second = 2;\n',
+      'const first = 3;\nconst second = 4;\n',
+    )).toEqual({
+      content: 'const first = 3;\r\nconst second = 4;\r\n',
+      occurrences: 1,
+      strategy: 'line-ending-normalized',
+    });
+  });
+
+  it('prefers line-trimmed over context-aware when each line only differs by outer whitespace', () => {
+    expect(replaceRuntimeText(
+      [
+        'alpha(',
+        '  beta,',
+        '  gamma,',
+        ')',
+        '',
+      ].join('\n'),
+      [
+        ' alpha( ',
+        ' beta,  ',
+        ' gamma, ',
+        ' ) ',
+        '',
+      ].join('\n'),
+      [
+        'alpha(',
+        '  betaUpdated,',
+        '  gamma,',
+        ')',
+        '',
+      ].join('\n'),
+    )).toEqual({
+      content: [
+        'alpha(',
+        '  betaUpdated,',
+        '  gamma,',
+        ')',
+        '',
+      ].join('\n'),
+      occurrences: 1,
+      strategy: 'line-trimmed',
     });
   });
 
@@ -105,7 +165,7 @@ describe('replaceRuntimeText', () => {
     )).toThrow('replaceAll 只允许同一段文本的全量替换');
   });
 
-  it('supports context-aware strategy when middle lines already match exactly', () => {
+  it('prefers line-trimmed strategy when every line already matches after trim', () => {
     expect(replaceRuntimeText(
       [
         'function run() {',
@@ -137,7 +197,177 @@ describe('replaceRuntimeText', () => {
         '',
       ].join('\n'),
       occurrences: 1,
-      strategy: 'context-aware',
+      strategy: 'line-trimmed',
+    });
+  });
+
+  it('prefers line-trimmed over context-aware when a looser anchor match is unnecessary', () => {
+    expect(replaceRuntimeText(
+      [
+        'const start',
+        'x = 1',
+        'y = 2',
+        'const end',
+        '',
+        'const start',
+        'x = 1   ',
+        'y=2   ',
+        'const end',
+        '',
+      ].join('\n'),
+      [
+        'const start',
+        'x = 1',
+        'y=2',
+        'const end',
+        '',
+      ].join('\n'),
+      'done\n',
+    )).toEqual({
+      content: [
+        'const start',
+        'x = 1',
+        'y = 2',
+        'const end',
+        '',
+        'done',
+        '',
+      ].join('\n'),
+      occurrences: 1,
+      strategy: 'line-trimmed',
+    });
+  });
+
+  it('keeps context-aware tie cases ambiguous instead of auto-picking one candidate', () => {
+    expect(() => replaceRuntimeText(
+      [
+        'const start',
+        'a',
+        'x',
+        'const end',
+        '',
+        'const start',
+        'a',
+        'y',
+        'const end',
+        '',
+      ].join('\n'),
+      [
+        'const start',
+        'a',
+        'z',
+        'const end',
+        '',
+      ].join('\n'),
+      'done\n',
+    )).toThrow('context-aware');
+    expect(() => replaceRuntimeText(
+      [
+        'const start',
+        'a',
+        'x',
+        'const end',
+        '',
+        'const start',
+        'a',
+        'y',
+        'const end',
+        '',
+      ].join('\n'),
+      [
+        'const start',
+        'a',
+        'z',
+        'const end',
+        '',
+      ].join('\n'),
+      'done\n',
+    )).toThrow('第 1 行');
+    expect(() => replaceRuntimeText(
+      [
+        'const start',
+        'a',
+        'x',
+        'const end',
+        '',
+        'const start',
+        'a',
+        'y',
+        'const end',
+        '',
+      ].join('\n'),
+      [
+        'const start',
+        'a',
+        'z',
+        'const end',
+        '',
+      ].join('\n'),
+      'done\n',
+    )).toThrow('第 6 行');
+  });
+
+  it('selects the best block-anchor candidate when multiple anchor blocks are available', () => {
+    expect(replaceRuntimeText(
+      [
+        'BEGIN',
+        'a',
+        'x',
+        'b',
+        'END',
+        '',
+        'BEGIN',
+        'a',
+        'b',
+        'c',
+        'END',
+        '',
+      ].join('\n'),
+      [
+        'BEGIN',
+        'a',
+        'b',
+        'END',
+        '',
+      ].join('\n'),
+      'DONE\n',
+    )).toEqual({
+      content: [
+        'BEGIN',
+        'a',
+        'x',
+        'b',
+        'END',
+        '',
+        'DONE',
+        '',
+      ].join('\n'),
+      occurrences: 1,
+      strategy: 'block-anchor',
+    });
+  });
+
+  it('supports escape-normalized strategy for escaped newline patterns', () => {
+    expect(replaceRuntimeText(
+      'alpha\nbeta\n',
+      'alpha\\nbeta\\n',
+      'gamma\n',
+    )).toEqual({
+      content: 'gamma\n',
+      occurrences: 1,
+      strategy: 'escape-normalized',
+    });
+  });
+
+  it('supports escape-normalized strategy for unicode escape patterns', () => {
+    expect(replaceRuntimeText(
+      'const text = "A";\n',
+      'const text = "\\u0041";\n',
+      'const text = "B";\n',
+    )).toEqual({
+      content: 'const text = "B";\n',
+      occurrences: 1,
+      strategy: 'escape-normalized',
     });
   });
 
