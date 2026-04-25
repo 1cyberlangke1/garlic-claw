@@ -1,16 +1,7 @@
 import type {
-  JsonObject,
-  JsonValue,
-  PluginCallContext,
-  PluginLlmMessage,
-  PluginMessageTargetInfo,
-  PluginSubagentDetail,
-  PluginSubagentExecutionResult,
-  PluginSubagentOverview,
-  PluginSubagentRequest,
-  PluginSubagentSummary,
-  SubagentAfterRunHookResult,
-  SubagentBeforeRunHookResult,
+  JsonObject, JsonValue, PluginCallContext, PluginLlmMessage, PluginMessageTargetInfo, PluginSubagentDetail,
+  PluginSubagentExecutionResult, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSummary,
+  SubagentAfterRunHookResult, SubagentBeforeRunHookResult,
 } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
@@ -20,12 +11,7 @@ import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../ker
 import { RuntimeHostConversationMessageService } from './runtime-host-conversation-message.service';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import {
-  asJsonValue,
-  cloneJsonValue,
-  readAssistantStreamPart,
-  readJsonObject,
-  readJsonStringRecord,
-  readOptionalString,
+  asJsonValue, cloneJsonValue, readAssistantStreamPart, readJsonObject, readJsonStringRecord, readOptionalString,
   readPluginLlmMessages,
 } from './runtime-host-values';
 import { RuntimeHostSubagentSessionStoreService, type RuntimeSubagentSessionRecord } from './runtime-host-subagent-session-store.service';
@@ -37,9 +23,33 @@ interface ResolvedSubagentInvocation {
   resolvedSubagentType: ReturnType<ProjectSubagentTypeRegistryService['getType']>;
   session: RuntimeSubagentSessionRecord;
 }
+
 interface StoredSubagentExecution { result: PluginSubagentExecutionResult; session: RuntimeSubagentSessionRecord; }
+interface StoredSubagentExecutionInput {
+  context: PluginCallContext;
+  pluginId: string;
+  request: PluginSubagentRequest;
+  sessionId: string;
+  subagentId: string;
+  writeBackConversationRevision?: string;
+  writeBackTarget: PluginMessageTargetInfo | null;
+}
+interface SubagentSessionWriteInput {
+  context: PluginCallContext;
+  messages: PluginLlmMessage[];
+  pluginDisplayName?: string;
+  pluginId: string;
+  request: RuntimeSubagentRequestEnvelopeSource;
+  resolvedSubagentTypeName?: string;
+  session?: RuntimeSubagentSessionRecord | null;
+  subagentId?: string;
+}
+interface SubagentWriteBackResult { error: string | null; messageId: string | null; status: 'failed' | 'sent' | 'skipped'; }
+
 type RuntimeSubagentRequestEnvelopeSource = Partial<Pick<PluginSubagentRequest,
-  'description' | 'subagentType' | 'providerId' | 'modelId' | 'system' | 'toolNames' | 'variant' | 'providerOptions' | 'headers' | 'maxOutputTokens'>>;
+  'description' | 'subagentType' | 'providerId' | 'modelId' | 'system' | 'toolNames' | 'variant'
+  | 'providerOptions' | 'headers' | 'maxOutputTokens'
+>>;
 
 @Injectable()
 export class RuntimeHostSubagentRunnerService {
@@ -68,28 +78,16 @@ export class RuntimeHostSubagentRunnerService {
   listSubagents(pluginId: string): PluginSubagentSummary[] { return this.runtimeHostSubagentStoreService.listSubagents(pluginId); }
 
   async runSubagent(pluginId: string, context: PluginCallContext, params: JsonObject): Promise<JsonValue> {
-    const invocation = this.resolveSubagentInvocation(pluginId, undefined, context, params);
-    const subagent = this.createSubagentRecord({
+    const started = this.startStoredSubagent({
       context,
-      invocation,
+      params,
       pluginDisplayName: undefined,
       pluginId,
       visibility: 'inline',
       writeBackTarget: null,
     });
-    const completed = await this.executeStoredSubagent({
-      context,
-      pluginId,
-      request: invocation.request,
-      sessionId: invocation.session.id,
-      subagentId: subagent.id,
-      writeBackTarget: null,
-    });
-    return asJsonValue({
-      ...completed.result,
-      sessionId: completed.session.id,
-      sessionMessageCount: completed.session.messages.length,
-    });
+    const completed = await this.executeStoredSubagent(started.execution);
+    return asJsonValue({ ...completed.result, sessionId: completed.session.id, sessionMessageCount: completed.session.messages.length });
   }
 
   async startSubagent(
@@ -99,123 +97,116 @@ export class RuntimeHostSubagentRunnerService {
     params: JsonObject,
   ): Promise<JsonValue> {
     const writeBackTarget = readSubagentWriteBackTarget(params);
-    const invocation = this.resolveSubagentInvocation(pluginId, pluginDisplayName, context, params);
-    const subagent = this.createSubagentRecord({
+    const started = this.startStoredSubagent({
       context,
       conversationRevision: writeBackTarget?.id
         ? this.runtimeHostConversationMessageService.readConversationRevision(writeBackTarget.id) ?? undefined
         : undefined,
-      invocation,
+      params,
       pluginDisplayName,
       pluginId,
       visibility: 'background',
       writeBackTarget,
     });
-    this.scheduleSubagentExecution(subagent.id);
-    return asJsonValue(this.runtimeHostSubagentStoreService.summarizeSubagent(subagent));
+    this.scheduleSubagentExecution(started.subagent.id);
+    return asJsonValue(this.runtimeHostSubagentStoreService.summarizeSubagent(started.subagent));
   }
 
-  private async completeSubagentAsync(subagentId: string): Promise<void> {
-    const snapshot = this.runtimeHostSubagentStoreService.readSubagent(subagentId);
-    const session = this.resolveSubagentSession({ context: snapshot.context, pluginDisplayName: snapshot.pluginDisplayName, pluginId: snapshot.pluginId, subagent: snapshot });
-    try {
-      this.syncSubagentSessionSnapshot(snapshot.pluginId, subagentId, snapshot, session);
-      await this.executeStoredSubagent({ context: snapshot.context, pluginId: snapshot.pluginId, request: snapshot.request, sessionId: session.id, subagentId, writeBackConversationRevision: snapshot.writeBackConversationRevision, writeBackTarget: snapshot.writeBackTarget ?? null });
-    } catch (error) {
-      void error;
-    }
-  }
-
-  private scheduleSubagentExecution(subagentId: string): void {
-    if (this.scheduledSubagentIds.has(subagentId)) {
-      return;
-    }
-    this.scheduledSubagentIds.add(subagentId);
-    setTimeout(() => {
-      this.scheduledSubagentIds.delete(subagentId);
-      void this.completeSubagentAsync(subagentId);
-    }, 0);
-  }
-
-  private createSubagentRecord(input: {
+  private startStoredSubagent(input: {
     context: PluginCallContext;
     conversationRevision?: string;
-    invocation: ResolvedSubagentInvocation;
+    params: JsonObject;
     pluginDisplayName: string | undefined;
     pluginId: string;
     visibility: 'background' | 'inline';
     writeBackTarget: PluginMessageTargetInfo | null;
-  }): RuntimeSubagentRecord {
-    return this.runtimeHostSubagentStoreService.createSubagent({
+  }): { execution: StoredSubagentExecutionInput; subagent: RuntimeSubagentRecord } {
+    const invocation = this.resolveSubagentInvocation(input.pluginId, input.pluginDisplayName, input.context, input.params);
+    const subagent = this.runtimeHostSubagentStoreService.createSubagent({
       ...(input.conversationRevision ? { conversationRevision: input.conversationRevision } : {}),
       context: input.context,
       pluginDisplayName: input.pluginDisplayName,
       pluginId: input.pluginId,
-      ...(input.invocation.resolvedSubagentType?.id ? { subagentType: input.invocation.resolvedSubagentType.id } : {}),
-      ...(input.invocation.resolvedSubagentType?.name ? { subagentTypeName: input.invocation.resolvedSubagentType.name } : {}),
-      request: input.invocation.request,
-      requestPreview: input.invocation.requestPreview,
-      sessionId: input.invocation.session.id,
-      sessionMessageCount: input.invocation.session.messages.length,
-      sessionUpdatedAt: input.invocation.session.updatedAt,
-      visibility: input.visibility, writeBackTarget: input.writeBackTarget,
+      ...(invocation.resolvedSubagentType?.id ? { subagentType: invocation.resolvedSubagentType.id } : {}),
+      ...(invocation.resolvedSubagentType?.name ? { subagentTypeName: invocation.resolvedSubagentType.name } : {}),
+      request: invocation.request,
+      requestPreview: invocation.requestPreview,
+      sessionId: invocation.session.id,
+      sessionMessageCount: invocation.session.messages.length,
+      sessionUpdatedAt: invocation.session.updatedAt,
+      visibility: input.visibility,
+      writeBackTarget: input.writeBackTarget,
     });
+    return {
+      execution: readStoredSubagentExecutionInput(subagent, invocation.session),
+      subagent,
+    };
   }
 
-  private syncSubagentSessionSnapshot(
-    pluginId: string,
-    subagentId: string,
-    snapshot: RuntimeSubagentRecord,
-    session: RuntimeSubagentSessionRecord,
-  ): void {
-    if (snapshot.sessionId === session.id && snapshot.sessionMessageCount === session.messages.length && snapshot.sessionUpdatedAt === session.updatedAt) {return;}
-    this.runtimeHostSubagentStoreService.updateSubagent(pluginId, subagentId, (currentSubagent) => {
-      writeSubagentSessionSnapshot(currentSubagent, session);
+  private restoreStoredSubagentExecution(subagentId: string): StoredSubagentExecutionInput {
+    const subagent = this.runtimeHostSubagentStoreService.readSubagent(subagentId);
+    let session: RuntimeSubagentSessionRecord | null = null;
+    if (subagent.sessionId) {
+      try {
+        session = this.runtimeHostSubagentSessionStoreService.getSession(subagent.pluginId, subagent.sessionId);
+      } catch {
+        // 兼容旧记录：若 session 文件尚不存在，则按历史请求即时重建。
+      }
+    }
+    session ??= this.persistSubagentSession({
+      context: subagent.context,
+      messages: [
+        ...subagent.request.messages,
+        ...(subagent.result?.message?.content ? [{ content: subagent.result.message.content, role: 'assistant' as const }] : []),
+      ],
+      pluginDisplayName: subagent.pluginDisplayName,
+      pluginId: subagent.pluginId,
+      request: {
+        ...subagent.request,
+        description: subagent.description,
+        modelId: subagent.modelId,
+        providerId: subagent.providerId,
+        subagentType: subagent.subagentType,
+      },
+      resolvedSubagentTypeName: subagent.subagentTypeName,
+      subagentId: subagent.id,
     });
+    if (
+      subagent.sessionId !== session.id
+      || subagent.sessionMessageCount !== session.messages.length
+      || subagent.sessionUpdatedAt !== session.updatedAt
+    ) {
+      this.runtimeHostSubagentStoreService.updateSubagent(subagent.pluginId, subagentId, (currentSubagent) => {
+        writeSubagentSessionSnapshot(currentSubagent, session);
+      });
+    }
+    return readStoredSubagentExecutionInput(subagent, session);
   }
 
-  private async executeStoredSubagent(input: {
-    context: PluginCallContext;
-    pluginId: string;
-    request: PluginSubagentRequest;
-    sessionId: string;
-    subagentId: string;
-    writeBackConversationRevision?: string;
-    writeBackTarget: PluginMessageTargetInfo | null;
-  }): Promise<StoredSubagentExecution> {
-    this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => {
-      subagent.startedAt = subagent.startedAt ?? now;
-      subagent.status = 'running';
-    });
+  private scheduleSubagentExecution(subagentId: string): void {
+    if (this.scheduledSubagentIds.has(subagentId)) { return; }
+    this.scheduledSubagentIds.add(subagentId);
+    setTimeout(() => {
+      this.scheduledSubagentIds.delete(subagentId);
+      void this.executeStoredSubagent(this.restoreStoredSubagentExecution(subagentId)).catch(() => undefined);
+    }, 0);
+  }
+
+  private async executeStoredSubagent(input: StoredSubagentExecutionInput): Promise<StoredSubagentExecution> {
+    this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { status: 'running' }));
     try {
       const result = await this.executeSubagent({ context: input.context, pluginId: input.pluginId, request: input.request });
       const session = this.runtimeHostSubagentSessionStoreService.appendAssistantMessage(input.pluginId, input.sessionId, result);
-      const writeBack = await this.writeBackResultIfNeeded(input.context, result, input.writeBackTarget, input.writeBackConversationRevision);
-      this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => {
-        subagent.startedAt = subagent.startedAt ?? now;
-        subagent.status = 'completed';
-        subagent.finishedAt = now;
-        subagent.error = undefined;
-        subagent.result = result;
-        subagent.resultPreview = result.text;
-        subagent.writeBackError = writeBack.error ?? undefined;
-        subagent.writeBackMessageId = writeBack.messageId ?? undefined;
-        subagent.writeBackStatus = writeBack.status;
-        writeSubagentSessionSnapshot(subagent, session);
-      });
+      const writeBack = await this.writeBackResultIfNeeded(
+        input.context,
+        result,
+        input.writeBackTarget,
+        input.writeBackConversationRevision,
+      );
+      this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { result, session, status: 'completed', writeBack }));
       return { result, session };
     } catch (error) {
-      this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => {
-        subagent.startedAt = subagent.startedAt ?? now;
-        subagent.status = 'error';
-        subagent.error = error instanceof Error ? error.message : '后台子代理执行失败';
-        subagent.finishedAt = now;
-        subagent.result = null;
-        subagent.resultPreview = undefined;
-        subagent.writeBackError = undefined;
-        subagent.writeBackMessageId = undefined;
-        subagent.writeBackStatus = 'skipped';
-      });
+      this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { error: error instanceof Error ? error.message : '后台子代理执行失败', status: 'error' }));
       throw error;
     }
   }
@@ -226,63 +217,61 @@ export class RuntimeHostSubagentRunnerService {
     context: PluginCallContext,
     params: JsonObject,
   ): ResolvedSubagentInvocation {
-    const resumeSessionId = readOptionalString(params, 'sessionId') ?? undefined;
-    const nextRequest = readSubagentRequest(params, { allowMissingMessages: Boolean(resumeSessionId) });
-    const currentSession = resumeSessionId
-      ? this.runtimeHostSubagentSessionStoreService.getSession(pluginId, resumeSessionId)
-      : null;
-    const request = currentSession ? mergeSubagentRequests(currentSession, nextRequest) : nextRequest;
+    const sessionId = readOptionalString(params, 'sessionId') ?? undefined;
+    const session = sessionId ? this.runtimeHostSubagentSessionStoreService.getSession(pluginId, sessionId) : null;
+    const nextRequest = readSubagentRequest(params, { allowMissingMessages: Boolean(session) });
+    const request = session ? mergeSubagentRequests(session, nextRequest) : nextRequest;
     const resolved = this.resolveEffectiveSubagentRequest(request);
-    const session = currentSession
-      ? this.runtimeHostSubagentSessionStoreService.updateSession(pluginId, currentSession.id, (mutableSession) => {
-          mutableSession.messages = cloneJsonValue(request.messages);
-          writeSubagentSessionRequest(mutableSession, resolved.request, resolved.subagentType?.name);
-        })
-      : this.runtimeHostSubagentSessionStoreService.createSession(createSubagentSessionPayload({
-          context,
-          messages: nextRequest.messages,
-          pluginDisplayName,
-          pluginId,
-          request: resolved.request,
-          resolvedSubagentTypeName: resolved.subagentType?.name,
-        }));
+    const lastContent = nextRequest.messages.at(-1)?.content;
+    const requestPreview = typeof lastContent === 'string'
+      ? lastContent.trim() || null
+      : Array.isArray(lastContent)
+        ? lastContent
+          .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
+          .map((part) => part.text.trim())
+          .filter(Boolean)
+          .join('\n')
+          .trim() || null
+        : null;
     return {
       request,
-      requestPreview: readSubagentRequestPreview(nextRequest) ?? nextRequest.description ?? 'structured subagent request',
+      requestPreview: requestPreview ?? nextRequest.description ?? 'structured subagent request',
       resolvedSubagentType: resolved.subagentType,
-      session,
+      session: this.persistSubagentSession({
+        context,
+        messages: session ? request.messages : nextRequest.messages,
+        pluginDisplayName,
+        pluginId,
+        request: resolved.request,
+        resolvedSubagentTypeName: resolved.subagentType?.name,
+        session,
+      }),
     };
   }
 
-  private resolveSubagentSession(input: {
-    context: PluginCallContext;
-    pluginDisplayName: string | undefined;
-    pluginId: string;
-    subagent: RuntimeSubagentRecord;
-  }): RuntimeSubagentSessionRecord {
-    if (input.subagent.sessionId) {
-      try {
-        return this.runtimeHostSubagentSessionStoreService.getSession(input.pluginId, input.subagent.sessionId);
-      } catch {
-        // 兼容旧记录：若 session 文件尚不存在，则按历史请求即时重建。
-      }
+  private persistSubagentSession(input: SubagentSessionWriteInput): RuntimeSubagentSessionRecord {
+    if (input.session) {
+      return this.runtimeHostSubagentSessionStoreService.updateSession(input.pluginId, input.session.id, (mutableSession) => {
+        mutableSession.messages = cloneJsonValue(input.messages);
+        delete mutableSession.description;
+        delete mutableSession.subagentType;
+        delete mutableSession.subagentTypeName;
+        Object.assign(
+          mutableSession,
+          copySubagentRequestEnvelope(input.request),
+          input.resolvedSubagentTypeName ? { subagentTypeName: input.resolvedSubagentTypeName } : {},
+        );
+      });
     }
-    const historyMessages = [...input.subagent.request.messages, ...(input.subagent.result?.message?.content ? [{ content: input.subagent.result.message.content, role: 'assistant' as const }] : [])];
-    return this.runtimeHostSubagentSessionStoreService.createSession(createSubagentSessionPayload({
+    return this.runtimeHostSubagentSessionStoreService.createSession({
       context: input.context,
-      messages: historyMessages,
-      pluginDisplayName: input.pluginDisplayName ?? input.subagent.pluginDisplayName,
+      ...copySubagentRequestEnvelope(input.request),
+      messages: input.messages,
+      pluginDisplayName: input.pluginDisplayName,
       pluginId: input.pluginId,
-      request: {
-        ...input.subagent.request,
-        description: input.subagent.description,
-        modelId: input.subagent.modelId,
-        providerId: input.subagent.providerId,
-        subagentType: input.subagent.subagentType,
-      },
-      resolvedSubagentTypeName: input.subagent.subagentTypeName,
-      subagentId: input.subagent.id,
-    }));
+      ...(input.resolvedSubagentTypeName ? { subagentTypeName: input.resolvedSubagentTypeName } : {}),
+      ...(input.subagentId ? { subagentId: input.subagentId } : {}),
+    });
   }
 
   private async writeBackResultIfNeeded(
@@ -290,10 +279,12 @@ export class RuntimeHostSubagentRunnerService {
     result: PluginSubagentExecutionResult,
     target: PluginMessageTargetInfo | null,
     conversationRevision?: string,
-  ) {
-    if (!target) {return { error: null, messageId: null, status: 'skipped' as const };}
+  ): Promise<SubagentWriteBackResult> {
+    if (!target) { return { error: null, messageId: null, status: 'skipped' }; }
     try {
-      if (conversationRevision && this.runtimeHostConversationMessageService.readConversationRevision(target.id) !== conversationRevision) {throw new Error(`Conversation revision changed: ${target.id}`);}
+      if (conversationRevision && this.runtimeHostConversationMessageService.readConversationRevision(target.id) !== conversationRevision) {
+        throw new Error(`Conversation revision changed: ${target.id}`);
+      }
       const sent = await this.runtimeHostConversationMessageService.sendMessage(context, {
         content: result.text,
         model: result.modelId,
@@ -301,9 +292,9 @@ export class RuntimeHostSubagentRunnerService {
         target: { id: target.id, type: target.type },
       });
       const messageId = readJsonObject(sent)?.id;
-      return { error: null, messageId: typeof messageId === 'string' ? messageId : null, status: 'sent' as const };
+      return { error: null, messageId: typeof messageId === 'string' ? messageId : null, status: 'sent' };
     } catch (error) {
-      return { error: error instanceof Error ? error.message : '后台子代理结果回写失败', messageId: null, status: 'failed' as const };
+      return { error: error instanceof Error ? error.message : '后台子代理结果回写失败', messageId: null, status: 'failed' };
     }
   }
 
@@ -312,27 +303,16 @@ export class RuntimeHostSubagentRunnerService {
     pluginId: string;
     request: PluginSubagentRequest;
   }): Promise<PluginSubagentExecutionResult> {
-    const resolvedRequest = this.resolveEffectiveSubagentRequest(input.request);
-    const beforeHooks = await runDispatchableHookChain<
-      PluginSubagentRequest,
-      SubagentBeforeRunHookResult,
-      PluginSubagentExecutionResult
-    >({
+    const beforeHooks = await runDispatchableHookChain<PluginSubagentRequest, SubagentBeforeRunHookResult, PluginSubagentExecutionResult>({
       applyResponse: (request, response) => readSubagentBeforeRunResponse(request, response),
       hookName: 'subagent:before-run',
       kernel: this.runtimeHostPluginDispatchService,
-      mapPayload: (request) => asJsonValue({
-        context: input.context,
-        pluginId: input.pluginId,
-        request,
-      }) as JsonObject,
-      initialState: resolvedRequest.request,
+      mapPayload: (request) => asJsonValue({ context: input.context, pluginId: input.pluginId, request }) as JsonObject,
+      initialState: cloneJsonValue(input.request) as PluginSubagentRequest,
       readContext: () => input.context,
       excludedPluginId: input.pluginId,
     });
-    if ('shortCircuitResult' in beforeHooks) {
-      return beforeHooks.shortCircuitResult;
-    }
+    if ('shortCircuitResult' in beforeHooks) { return beforeHooks.shortCircuitResult; }
     const request = beforeHooks.state;
     const tools = await this.toolRegistryService.buildToolSet({
       allowedToolNames: request.toolNames,
@@ -357,53 +337,38 @@ export class RuntimeHostSubagentRunnerService {
       providerId: stream.providerId,
     });
     return applyMutatingDispatchableHooks({
-      applyMutation: (nextResult, response) =>
-        applySubagentAfterRunMutation(
-          nextResult,
-          response as unknown as Extract<SubagentAfterRunHookResult, { action: 'mutate' }>,
-        ),
+      applyMutation: (nextResult, response) => applySubagentAfterRunMutation(
+        nextResult,
+        response as unknown as Extract<SubagentAfterRunHookResult, { action: 'mutate' }>,
+      ),
       hookName: 'subagent:after-run',
       kernel: this.runtimeHostPluginDispatchService,
       payload: result,
-      mapPayload: (nextResult) => asJsonValue({
-        context: input.context,
-        pluginId: input.pluginId,
-        request,
-        result: nextResult,
-      }) as JsonObject,
+      mapPayload: (nextResult) =>
+        asJsonValue({ context: input.context, pluginId: input.pluginId, request, result: nextResult }) as JsonObject,
       readContext: () => input.context,
       excludedPluginId: input.pluginId,
     });
   }
 
-  listTypes() {
-    return this.projectSubagentTypeRegistryService.listTypes();
-  }
+  listTypes() { return this.projectSubagentTypeRegistryService.listTypes(); }
 
   private resolveEffectiveSubagentRequest(request: PluginSubagentRequest): {
     subagentType: ReturnType<ProjectSubagentTypeRegistryService['getType']>;
     request: PluginSubagentRequest;
   } {
-    if (!request.subagentType) {
-      return {
-        subagentType: null,
-        request: cloneJsonValue(request) as PluginSubagentRequest,
-      };
-    }
+    const nextRequest = cloneJsonValue(request) as PluginSubagentRequest;
+    if (!request.subagentType) { return { subagentType: null, request: nextRequest }; }
     const subagentType = this.projectSubagentTypeRegistryService.getType(request.subagentType);
-    if (!subagentType) {
-      throw new BadRequestException(`Unknown subagent type: ${request.subagentType}`);
-    }
+    if (!subagentType) { throw new BadRequestException(`Unknown subagent type: ${request.subagentType}`); }
     return {
       subagentType,
       request: {
-        ...(cloneJsonValue(request) as PluginSubagentRequest),
+        ...nextRequest,
         ...(subagentType.providerId && !request.providerId ? { providerId: subagentType.providerId } : {}),
         ...(subagentType.modelId && !request.modelId ? { modelId: subagentType.modelId } : {}),
         ...(subagentType.system && !request.system ? { system: subagentType.system } : {}),
-        ...(subagentType.toolNames && !request.toolNames
-          ? { toolNames: cloneJsonValue(subagentType.toolNames) as string[] }
-          : {}),
+        ...(subagentType.toolNames && !request.toolNames ? { toolNames: cloneJsonValue(subagentType.toolNames) as string[] } : {}),
       },
     };
   }
@@ -413,42 +378,31 @@ function readSubagentRequest(params: JsonObject, options?: { allowMissingMessage
   const providerOptions = readJsonObject(params.providerOptions);
   const headers = readJsonStringRecord(params.headers, 'subagent headers must be string record');
   const hasMessages = Object.prototype.hasOwnProperty.call(params, 'messages');
+  const messages = hasMessages || !options?.allowMissingMessages
+    ? readPluginLlmMessages(params.messages, 'subagent request requires non-empty messages')
+    : [];
   return {
     ...(typeof params.description === 'string' && params.description.trim() ? { description: params.description.trim() } : {}),
     ...(typeof params.subagentType === 'string' && params.subagentType.trim() ? { subagentType: params.subagentType.trim() } : {}),
     ...(typeof params.providerId === 'string' ? { providerId: params.providerId } : {}),
     ...(typeof params.modelId === 'string' ? { modelId: params.modelId } : {}),
     ...(typeof params.system === 'string' ? { system: params.system } : {}),
-    ...(Array.isArray(params.toolNames) ? { toolNames: params.toolNames.filter(isNonEmptyString) } : {}),
+    ...(Array.isArray(params.toolNames) ? { toolNames: params.toolNames.filter((value): value is string => typeof value === 'string' && value.trim().length > 0) } : {}),
     ...(typeof params.variant === 'string' ? { variant: params.variant } : {}),
     ...(providerOptions ? { providerOptions } : {}),
     ...(headers ? { headers } : {}),
     ...(typeof params.maxOutputTokens === 'number' ? { maxOutputTokens: params.maxOutputTokens } : {}),
-    messages: hasMessages
-      ? readPluginLlmMessages(params.messages, 'subagent request requires non-empty messages')
-      : options?.allowMissingMessages
-        ? []
-        : readPluginLlmMessages(params.messages, 'subagent request requires non-empty messages'),
+    messages,
   };
 }
 
 function readSubagentWriteBackTarget(params: JsonObject): PluginMessageTargetInfo | null {
   const target = readJsonObject(readJsonObject(params.writeBack)?.target);
-  if (!target) {return null;}
-  if (target.type !== 'conversation' || typeof target.id !== 'string') {throw new BadRequestException('subagent writeBack.target is invalid');}
+  if (!target) { return null; }
+  if (target.type !== 'conversation' || typeof target.id !== 'string') {
+    throw new BadRequestException('subagent writeBack.target is invalid');
+  }
   return { id: target.id, ...(typeof target.label === 'string' ? { label: target.label } : {}), type: 'conversation' };
-}
-
-function readSubagentRequestPreview(request: Pick<PluginSubagentRequest, 'messages' | 'description'>): string | null {
-  const lastContent = request.messages.at(-1)?.content;
-  if (typeof lastContent === 'string') {return lastContent.trim() || null;}
-  if (!Array.isArray(lastContent)) {return null;}
-  return lastContent
-    .filter((part): part is Extract<typeof part, { type: 'text' }> => part.type === 'text')
-    .map((part) => part.text.trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim() || null;
 }
 
 function applySubagentAfterRunMutation(
@@ -457,21 +411,13 @@ function applySubagentAfterRunMutation(
 ): PluginSubagentExecutionResult {
   const text = typeof mutation.text === 'string' ? mutation.text : nextResult.text;
   return {
-    ...cloneJsonValue(nextResult) as PluginSubagentExecutionResult,
+    ...(cloneJsonValue(nextResult) as PluginSubagentExecutionResult),
     ...(typeof mutation.providerId === 'string' ? { providerId: mutation.providerId } : {}),
     ...(typeof mutation.modelId === 'string' ? { modelId: mutation.modelId } : {}),
     ...('finishReason' in mutation ? { finishReason: mutation.finishReason ?? undefined } : {}),
     ...(Array.isArray(mutation.toolCalls) ? { toolCalls: mutation.toolCalls } : {}),
     ...(Array.isArray(mutation.toolResults) ? { toolResults: mutation.toolResults } : {}),
-    ...(typeof mutation.text === 'string'
-      ? {
-          message: {
-            ...nextResult.message,
-            content: text,
-          },
-          text,
-        }
-      : {}),
+    ...(typeof mutation.text === 'string' ? { message: { ...nextResult.message, content: text }, text } : {}),
   };
 }
 
@@ -480,10 +426,7 @@ function readSubagentBeforeRunResponse(request: PluginSubagentRequest, response:
     return {
       shortCircuitResult: {
         ...(response.finishReason !== undefined ? { finishReason: response.finishReason } : {}),
-        message: {
-          content: response.text,
-          role: 'assistant' as const,
-        },
+        message: { content: response.text, role: 'assistant' as const },
         modelId: response.modelId ?? request.modelId ?? 'unknown-model',
         providerId: response.providerId ?? request.providerId ?? 'unknown-provider',
         text: response.text,
@@ -492,9 +435,7 @@ function readSubagentBeforeRunResponse(request: PluginSubagentRequest, response:
       },
     };
   }
-  if (response.action === 'pass') {
-    return { state: cloneJsonValue(request) as PluginSubagentRequest };
-  }
+  if (response.action === 'pass') { return { state: cloneJsonValue(request) as PluginSubagentRequest }; }
   return {
     state: {
       ...(cloneJsonValue(request) as PluginSubagentRequest),
@@ -506,9 +447,7 @@ function readSubagentBeforeRunResponse(request: PluginSubagentRequest, response:
       ...('variant' in response ? { variant: response.variant ?? undefined } : {}),
       ...('providerOptions' in response ? { providerOptions: response.providerOptions ?? undefined } : {}),
       ...('headers' in response ? { headers: response.headers ?? undefined } : {}),
-      ...('maxOutputTokens' in response && typeof response.maxOutputTokens === 'number'
-        ? { maxOutputTokens: response.maxOutputTokens }
-        : {}),
+      ...('maxOutputTokens' in response && typeof response.maxOutputTokens === 'number' ? { maxOutputTokens: response.maxOutputTokens } : {}),
     },
   };
 }
@@ -524,63 +463,26 @@ async function collectSubagentRunResult(input: {
   const toolResults: PluginSubagentExecutionResult['toolResults'] = [];
   for await (const rawPart of input.fullStream) {
     const part = readAssistantStreamPart(rawPart);
-    if (!part) {
-      continue;
-    }
+    if (!part) { continue; }
     if (part.type === 'text-delta') {
       text += part.text;
       continue;
     }
     if (part.type === 'tool-call') {
-      toolCalls.push({
-        input: asJsonValue(part.input),
-        toolCallId: part.toolCallId,
-        toolName: part.toolName,
-      });
+      toolCalls.push({ input: asJsonValue(part.input), toolCallId: part.toolCallId, toolName: part.toolName });
       continue;
     }
-    toolResults.push({
-      output: asJsonValue(part.output),
-      toolCallId: part.toolCallId,
-      toolName: part.toolName,
-    });
+    toolResults.push({ output: asJsonValue(part.output), toolCallId: part.toolCallId, toolName: part.toolName });
   }
   const finishReason = await input.finishReason;
   return {
     ...(finishReason !== undefined ? { finishReason: finishReason === null ? null : String(finishReason) } : {}),
-    message: {
-      content: text,
-      role: 'assistant',
-    },
+    message: { content: text, role: 'assistant' },
     modelId: input.modelId,
     providerId: input.providerId,
     text,
     toolCalls,
     toolResults,
-  };
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function createSubagentSessionPayload(input: {
-  context: PluginCallContext;
-  messages: PluginLlmMessage[];
-  pluginDisplayName?: string;
-  pluginId: string;
-  request: RuntimeSubagentRequestEnvelopeSource;
-  resolvedSubagentTypeName?: string;
-  subagentId?: string;
-}): Parameters<RuntimeHostSubagentSessionStoreService['createSession']>[0] {
-  return {
-    context: input.context,
-    ...copySubagentRequestEnvelope(input.request),
-    messages: input.messages,
-    pluginDisplayName: input.pluginDisplayName,
-    pluginId: input.pluginId,
-    ...(input.resolvedSubagentTypeName ? { subagentTypeName: input.resolvedSubagentTypeName } : {}),
-    ...(input.subagentId ? { subagentId: input.subagentId } : {}),
   };
 }
 
@@ -599,37 +501,44 @@ function copySubagentRequestEnvelope(input: RuntimeSubagentRequestEnvelopeSource
   };
 }
 
-function mergeSubagentRequests(
-  session: RuntimeSubagentSessionRecord,
-  nextRequest: PluginSubagentRequest,
-): PluginSubagentRequest {
-  return {
-    ...copySubagentRequestEnvelope(session),
-    messages: [
-      ...cloneJsonValue(session.messages) as PluginSubagentRequest['messages'],
-      ...cloneJsonValue(nextRequest.messages) as PluginSubagentRequest['messages'],
-    ],
-    ...copySubagentRequestEnvelope(nextRequest),
-  };
+function mergeSubagentRequests(session: RuntimeSubagentSessionRecord, nextRequest: PluginSubagentRequest): PluginSubagentRequest {
+  return { ...copySubagentRequestEnvelope(session), messages: [...(cloneJsonValue(session.messages) as PluginSubagentRequest['messages']), ...(cloneJsonValue(nextRequest.messages) as PluginSubagentRequest['messages'])], ...copySubagentRequestEnvelope(nextRequest) };
 }
 
-function writeSubagentSessionRequest(
-  session: RuntimeSubagentSessionRecord,
-  request: RuntimeSubagentRequestEnvelopeSource,
-  resolvedSubagentTypeName?: string,
-): void {
-  const nextRequest = copySubagentRequestEnvelope(request);
-  delete session.description;
-  delete session.subagentType;
-  delete session.subagentTypeName;
-  Object.assign(session, nextRequest, resolvedSubagentTypeName ? { subagentTypeName: resolvedSubagentTypeName } : {});
-}
-
-function writeSubagentSessionSnapshot(
-  subagent: RuntimeSubagentRecord,
-  session: RuntimeSubagentSessionRecord,
-): void {
+function writeSubagentSessionSnapshot(subagent: RuntimeSubagentRecord, session: RuntimeSubagentSessionRecord): void {
   subagent.sessionId = session.id;
   subagent.sessionMessageCount = session.messages.length;
   subagent.sessionUpdatedAt = session.updatedAt;
+}
+
+function readStoredSubagentExecutionInput(
+  subagent: Pick<RuntimeSubagentRecord, 'context' | 'id' | 'pluginId' | 'writeBackConversationRevision' | 'writeBackTarget'>,
+  session: RuntimeSubagentSessionRecord,
+): StoredSubagentExecutionInput {
+  return {
+    context: subagent.context,
+    pluginId: subagent.pluginId,
+    request: { ...copySubagentRequestEnvelope(session), messages: cloneJsonValue(session.messages) as PluginSubagentRequest['messages'] },
+    sessionId: session.id,
+    subagentId: subagent.id,
+    ...(subagent.writeBackConversationRevision ? { writeBackConversationRevision: subagent.writeBackConversationRevision } : {}),
+    writeBackTarget: subagent.writeBackTarget ?? null,
+  };
+}
+
+function writeStoredSubagentExecutionState(
+  subagent: RuntimeSubagentRecord,
+  now: string,
+  state:
+    | { status: 'running' }
+    | { result: PluginSubagentExecutionResult; session: RuntimeSubagentSessionRecord; status: 'completed'; writeBack: SubagentWriteBackResult }
+    | { error: string; status: 'error' },
+): void {
+  subagent.startedAt = subagent.startedAt ?? now;
+  if (state.status === 'running') { subagent.status = 'running'; return; }
+  subagent.finishedAt = now;
+  if (state.status === 'completed') {
+    subagent.status = 'completed'; subagent.error = undefined; subagent.result = state.result; subagent.resultPreview = state.result.text; subagent.writeBackError = state.writeBack.error ?? undefined; subagent.writeBackMessageId = state.writeBack.messageId ?? undefined; subagent.writeBackStatus = state.writeBack.status; writeSubagentSessionSnapshot(subagent, state.session); return;
+  }
+  subagent.status = 'error'; subagent.error = state.error; subagent.result = null; subagent.resultPreview = undefined; subagent.writeBackError = undefined; subagent.writeBackMessageId = undefined; subagent.writeBackStatus = 'skipped';
 }

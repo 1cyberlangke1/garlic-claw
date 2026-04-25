@@ -52,6 +52,7 @@ type ContextCompactionRunResult = {
   summaryMessageId?: string;
 };
 type ContextCompactionMessageState = { message: PluginConversationHistoryMessage; covered: ContextCompactionCoveredData[]; summaryId: string | null };
+type ContextCompactionHistoryState = { messageStates: ContextCompactionMessageState[]; visibleMessages: PluginConversationHistoryMessage[]; modelMessages: PluginConversationHistoryMessage[] };
 type ContextCompactionCallInput = {
   callContext: PluginCallContext;
   history: ContextCompactionHistorySnapshot;
@@ -62,34 +63,6 @@ type ContextCompactionCallInput = {
   trigger: CompactionTrigger;
 };
 
-class ContextCompactionHistoryState {
-  readonly messages: PluginConversationHistoryMessage[];
-  readonly messageStates: ContextCompactionMessageState[];
-  readonly visibleMessages: PluginConversationHistoryMessage[];
-  readonly modelMessages: PluginConversationHistoryMessage[];
-
-  constructor(messages: PluginConversationHistoryMessage[], omitTrailingPendingAssistant = false) {
-    this.messages = messages;
-    this.messageStates = messages.map((message) => ({ message, ...readContextCompactionAnnotationState(message) }));
-    const activeSummaryIds = new Set(this.messageStates.flatMap(({ summaryId }) => summaryId ? [summaryId] : []));
-    const visibleStates = this.messageStates.filter(({ covered }) => !covered.some(({ compactionId }) => activeSummaryIds.has(compactionId)));
-    const lastVisibleState = visibleStates.at(-1);
-    const settledStates = omitTrailingPendingAssistant && lastVisibleState && isTransientPendingAssistant(lastVisibleState.message)
-      ? visibleStates.slice(0, -1)
-      : visibleStates;
-    this.visibleMessages = settledStates.map(({ message }) => message);
-    this.modelMessages = settledStates.flatMap(({ message, summaryId }) => readContextCompactionModelMessages(message, summaryId));
-  }
-
-  readSummaryInsertIndex(coveredMessageIds: ReadonlySet<string>): number {
-    return this.messageStates.reduce((summaryIndex, { message }, index) => coveredMessageIds.has(message.id) ? index + 1 : summaryIndex, -1);
-  }
-
-  readCoveredCount(compactionId: string): number {
-    return this.messageStates.filter(({ covered }) => covered.some((annotation) => annotation.compactionId === compactionId)).length;
-  }
-}
-
 export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
   governance: { builtinRole: 'system-optional', canDisable: true, defaultEnabled: true },
   manifest: CONTEXT_COMPACTION_MANIFEST,
@@ -97,15 +70,10 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
     'message:received': async (payload, context) => {
       const commandInput = readContextCompactionCommandInput(payload);
       if (!commandInput) {return createPassHookResult();}
-      if (commandInput.hasUnexpectedArgs) {
-        return createContextCompactionCommandShortCircuit(formatContextCompactionCommandReply(null, true));
-      }
-      return createContextCompactionCommandShortCircuit(formatContextCompactionCommandReply(await runContextCompactionForCall({
-        callContext: context.callContext,
-        history: await context.host.getConversationHistory(),
-        host: context.host,
-        trigger: 'manual',
-      }), false));
+      return createContextCompactionCommandShortCircuit(
+        commandInput.hasUnexpectedArgs ? null : await runManualContextCompaction({ callContext: context.callContext, host: context.host }),
+        commandInput.hasUnexpectedArgs,
+      );
     },
     'conversation:history-rewrite': async (payload, context) => {
       const hookPayload = asConversationHistoryRewritePayload(payload);
@@ -125,13 +93,16 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
     },
     'chat:before-model': async (payload, context) => {
       const hookPayload = asChatBeforeModelPayload(payload);
-      if (await readContextCompactionAutoStopState(context.host, context.callContext.conversationId ?? null)) {
+      const conversationId = context.callContext.conversationId ?? null;
+      const state = conversationId ? await context.host.getState(AUTO_STOP_STATE_KEY, { scope: 'conversation' }) : null;
+      if (conversationId && isRecord(state) && state.active === true && state.conversationId === conversationId) {
         await context.host.deleteState(AUTO_STOP_STATE_KEY, { scope: 'conversation' });
         return { action: 'short-circuit', assistantContent: AUTO_STOP_REPLY, modelId: hookPayload.request.modelId, providerId: hookPayload.request.providerId, reason: 'context-compaction:auto-stop' };
       }
-      const historyState = new ContextCompactionHistoryState((await context.host.getConversationHistory()).messages, true);
-      if (historyState.visibleMessages.length === historyState.messages.length) {return createPassHookResult();}
-      const prefixCount = Math.max(hookPayload.request.messages.length - historyState.messages.length, 0);
+      const history = await context.host.getConversationHistory();
+      const historyState = readContextCompactionHistoryState(history.messages, true);
+      if (historyState.visibleMessages.length === history.messages.length) {return createPassHookResult();}
+      const prefixCount = Math.max(hookPayload.request.messages.length - history.messages.length, 0);
       return {
         action: 'mutate',
         messages: [
@@ -153,17 +124,7 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
       if (!conversationId) {
         return { body: toJsonValue({ error: 'conversationId is required' }), status: 400 } satisfies PluginRouteResponse;
       }
-      return {
-        status: 200,
-        body: toJsonValue(await runContextCompactionForCall({
-          callContext: context.callContext,
-          history: await context.host.getConversationHistory(),
-          host: context.host,
-          modelId: readBodyString(request.body, 'modelId') ?? undefined,
-          providerId: readBodyString(request.body, 'providerId') ?? undefined,
-          trigger: 'manual',
-        })),
-      };
+      return { body: toJsonValue(await runManualContextCompaction({ body: request.body, callContext: context.callContext, host: context.host })), status: 200 };
     },
   },
 };
@@ -172,41 +133,46 @@ async function readContextCompactionRuntimeConfigFromHost(configPromise: Promise
   return resolveContextCompactionRuntimeConfig(readContextCompactionConfig(await configPromise));
 }
 
-async function readContextCompactionAutoStopState(host: PluginHostFacadeMethods, conversationId: string | null): Promise<boolean> {
-  if (!conversationId) {return false;}
-  const state = await host.getState(AUTO_STOP_STATE_KEY, { scope: 'conversation' });
-  return isRecord(state) && state.active === true && state.conversationId === conversationId;
+function readContextCompactionHistoryState(messages: PluginConversationHistoryMessage[], omitTrailingPendingAssistant = false): ContextCompactionHistoryState {
+  const messageStates = messages.map((message) => ({ message, ...readContextCompactionAnnotationState(message) }));
+  const activeSummaryIds = new Set(messageStates.flatMap(({ summaryId }) => summaryId ? [summaryId] : []));
+  const visibleStates = messageStates.filter(({ covered }) => !covered.some(({ compactionId }) => activeSummaryIds.has(compactionId)));
+  const lastVisibleState = visibleStates.at(-1);
+  const settledStates = omitTrailingPendingAssistant && lastVisibleState && isTransientPendingAssistant(lastVisibleState.message) ? visibleStates.slice(0, -1) : visibleStates;
+  return {
+    messageStates,
+    modelMessages: settledStates.flatMap(({ message, summaryId }) => message.role === 'display' ? (summaryId ? [{ ...message, role: 'assistant' as const }] : []) : (message.role === 'assistant' || message.role === 'user' || message.role === 'system' ? [message] : [])),
+    visibleMessages: settledStates.map(({ message }) => message),
+  };
+}
+
+async function runManualContextCompaction(input: { body?: JsonValue | null; callContext: PluginCallContext; host: PluginHostFacadeMethods }): Promise<ContextCompactionRunResult> {
+  return runContextCompactionForCall({
+    callContext: input.callContext,
+    history: await input.host.getConversationHistory(),
+    host: input.host,
+    modelId: readBodyString(input.body ?? null, 'modelId') ?? undefined,
+    providerId: readBodyString(input.body ?? null, 'providerId') ?? undefined,
+    trigger: 'manual',
+  });
 }
 
 async function runContextCompactionForCall(input: ContextCompactionCallInput): Promise<ContextCompactionRunResult> {
   const runtimeConfig = input.runtimeConfig ?? await readContextCompactionRuntimeConfigFromHost(input.host.getConfig());
-  return runContextCompaction({
-    history: input.history,
+  if (!runtimeConfig.enabled) {return { compacted: false, reason: 'disabled' };}
+  const omitTrailingPendingAssistant = input.trigger === 'prepare-model';
+  const beforeState = readContextCompactionHistoryState(input.history.messages, omitTrailingPendingAssistant);
+  const beforePreview = await input.host.previewConversationHistory({ messages: beforeState.modelMessages });
+  const { modelId, providerId, thresholdTokens } = await readContextCompactionTarget({
     host: input.host,
     modelId: input.modelId ?? input.callContext.activeModelId ?? undefined,
     providerId: input.providerId ?? input.callContext.activeProviderId ?? undefined,
     runtimeConfig,
-    trigger: input.trigger,
   });
-}
-
-async function runContextCompaction(input: {
-  history: ContextCompactionHistorySnapshot;
-  host: PluginHostFacadeMethods;
-  modelId?: string;
-  providerId?: string;
-  runtimeConfig: ContextCompactionRuntimeConfig;
-  trigger: CompactionTrigger;
-}): Promise<ContextCompactionRunResult> {
-  if (!input.runtimeConfig.enabled) {return { compacted: false, reason: 'disabled' };}
-  const omitTrailingPendingAssistant = input.trigger === 'prepare-model';
-  const beforeState = new ContextCompactionHistoryState(input.history.messages, omitTrailingPendingAssistant);
-  const beforePreview = await input.host.previewConversationHistory({ messages: beforeState.modelMessages });
-  const { modelId, providerId, thresholdTokens } = await readContextCompactionTarget(input);
   if (input.trigger === 'prepare-model' && beforePreview.estimatedTokens < thresholdTokens) {
     return { beforePreview, compacted: false, reason: 'threshold-not-reached', thresholdTokens };
   }
-  const keepRecentMessages = Math.min(input.runtimeConfig.keepRecentMessages, beforeState.visibleMessages.length);
+  const keepRecentMessages = Math.min(runtimeConfig.keepRecentMessages, beforeState.visibleMessages.length);
   const candidateMessages = beforeState.visibleMessages.slice(0, Math.max(0, beforeState.visibleMessages.length - keepRecentMessages));
   const summarySource = buildSummarySource(candidateMessages);
   if (!candidateMessages.length || !summarySource) {return { beforePreview, compacted: false, reason: 'not-enough-history' };}
@@ -214,7 +180,7 @@ async function runContextCompaction(input: {
   const summaryText = (await input.host.generateText({
     modelId,
     providerId,
-    prompt: [input.runtimeConfig.summaryPrompt, '', '历史对话：', summarySource].join('\n'),
+    prompt: [runtimeConfig.summaryPrompt, '', '历史对话：', summarySource].join('\n'),
     transportMode: 'generate',
   })).text.trim();
   if (!summaryText) {return { beforePreview, compacted: false, reason: 'empty-summary' };}
@@ -223,7 +189,7 @@ async function runContextCompaction(input: {
   const summaryMessageId = `context-compaction:${randomUUID()}`;
   const createdAt = new Date().toISOString();
   const coveredMessageIds = new Set(candidateMessages.map((message) => message.id));
-  const summaryIndex = beforeState.readSummaryInsertIndex(coveredMessageIds);
+  const summaryIndex = beforeState.messageStates.reduce((lastCoveredIndex, { message }, index) => coveredMessageIds.has(message.id) ? index + 1 : lastCoveredIndex, -1);
   if (summaryIndex < 0) {return { beforePreview, compacted: false, reason: 'invalid-history' };}
 
   const predictedMessages = applyContextCompaction({
@@ -231,23 +197,23 @@ async function runContextCompaction(input: {
     coveredMessageIds,
     createdAt,
     historyMessages: input.history.messages,
-    markerVisible: input.runtimeConfig.showCoveredMarker,
+    markerVisible: runtimeConfig.showCoveredMarker,
     summaryIndex,
     summaryMessageId,
     summaryText,
   });
-  const afterState = new ContextCompactionHistoryState(predictedMessages, omitTrailingPendingAssistant);
+  const afterState = readContextCompactionHistoryState(predictedMessages, omitTrailingPendingAssistant);
   const afterPreview = await input.host.previewConversationHistory({ messages: afterState.modelMessages });
   const nextMessages = finalizeContextCompactionMessages({
     afterPreview,
     beforePreview,
     compactionId,
-    coveredCount: afterState.readCoveredCount(compactionId),
+    coveredCount: coveredMessageIds.size,
     createdAt,
     messages: predictedMessages,
     modelId,
     providerId,
-    showCoveredMarker: input.runtimeConfig.showCoveredMarker,
+    showCoveredMarker: runtimeConfig.showCoveredMarker,
     summaryMessageId,
     trigger: input.trigger,
   });
@@ -289,7 +255,18 @@ function applyContextCompaction(input: {
           summaryMessageId: input.summaryMessageId,
         })
       : message);
-  nextMessages.splice(input.summaryIndex, 0, createContextCompactionSummaryMessage(input));
+  nextMessages.splice(input.summaryIndex, 0, {
+    content: input.summaryText,
+    createdAt: input.createdAt,
+    id: input.summaryMessageId,
+    metadata: { annotations: [createContextCompactionAnnotation({ compactionId: input.compactionId, role: 'summary' })] },
+    model: null,
+    parts: [{ text: input.summaryText, type: 'text' }],
+    provider: null,
+    role: 'display',
+    status: 'completed',
+    updatedAt: input.createdAt,
+  });
   return nextMessages;
 }
 
@@ -317,29 +294,21 @@ function finalizeContextCompactionMessages(input: {
     role: 'summary',
     trigger: input.trigger,
   } satisfies ContextCompactionSummaryData);
-  return input.messages.map((message) => message.id === input.summaryMessageId
-    ? { ...message, metadata: { ...(message.metadata ?? {}), annotations: [summaryAnnotation] }, model: input.modelId, provider: input.providerId }
-    : syncContextCompactionCoveredMarker(message, input.showCoveredMarker));
-}
-
-function createContextCompactionSummaryMessage(input: {
-  compactionId: string;
-  createdAt: string;
-  summaryMessageId: string;
-  summaryText: string;
-}): PluginConversationHistoryMessage {
-  return {
-    content: input.summaryText,
-    createdAt: input.createdAt,
-    id: input.summaryMessageId,
-    metadata: { annotations: [createContextCompactionAnnotation({ compactionId: input.compactionId, role: 'summary' })] },
-    model: null,
-    parts: [{ text: input.summaryText, type: 'text' }],
-    provider: null,
-    role: 'display',
-    status: 'completed',
-    updatedAt: input.createdAt,
-  };
+  return input.messages.map((message) => {
+    if (message.id === input.summaryMessageId) {
+      return { ...message, metadata: { ...(message.metadata ?? {}), annotations: [summaryAnnotation] }, model: input.modelId, provider: input.providerId };
+    }
+    const annotations = message.metadata?.annotations ?? [];
+    let changed = false;
+    const nextAnnotations = annotations.map((annotation) => {
+      if (!(isContextCompactionOwnedAnnotation(annotation) && isContextCompactionCoveredData(annotation.data))) {return annotation;}
+      changed = true;
+      return annotation.data.markerVisible === input.showCoveredMarker
+        ? annotation
+        : { ...annotation, data: toJsonValue({ ...annotation.data, markerVisible: input.showCoveredMarker }) };
+    });
+    return changed ? { ...message, metadata: { ...(message.metadata ?? {}), annotations: nextAnnotations } } : message;
+  });
 }
 
 function writeContextCompactionCoveredAnnotation(message: PluginConversationHistoryMessage, data: ContextCompactionCoveredData): PluginConversationHistoryMessage {
@@ -353,16 +322,6 @@ function writeContextCompactionCoveredAnnotation(message: PluginConversationHist
       ],
     },
   };
-}
-
-function syncContextCompactionCoveredMarker(message: PluginConversationHistoryMessage, markerVisible: boolean): PluginConversationHistoryMessage {
-  let hasCoveredMarker = false;
-  const nextAnnotations = (message.metadata?.annotations ?? []).map((annotation) => {
-    if (!(isContextCompactionOwnedAnnotation(annotation) && isContextCompactionCoveredData(annotation.data))) {return annotation;}
-    hasCoveredMarker = true;
-    return { ...annotation, data: toJsonValue({ ...annotation.data, markerVisible }) };
-  });
-  return hasCoveredMarker ? { ...message, metadata: { ...(message.metadata ?? {}), annotations: nextAnnotations } } : message;
 }
 
 function readContextCompactionAnnotationState(message: PluginConversationHistoryMessage): { covered: ContextCompactionCoveredData[]; summaryId: string | null } {
@@ -384,14 +343,6 @@ function buildSummarySource(messages: PluginConversationHistoryMessage[]): strin
     const content = readMessageText(message);
     return content ? `${CONTEXT_COMPACTION_ROLE_LABELS[message.role] ?? '用户'}: ${content}` : '';
   }).filter(Boolean).join('\n');
-}
-
-function readContextCompactionModelMessages(
-  message: PluginConversationHistoryMessage,
-  summaryId: string | null,
-): PluginConversationHistoryMessage[] {
-  if (message.role === 'display') {return summaryId ? [{ ...message, role: 'assistant' }] : [];}
-  return message.role === 'assistant' || message.role === 'user' || message.role === 'system' ? [message] : [];
 }
 
 function readMessageText(message: PluginConversationHistoryMessage): string {
@@ -445,16 +396,14 @@ function readContextCompactionCommandInput(payload: JsonValue): ContextCompactio
   return CONTEXT_COMPACTION_COMMANDS.some((command) => messageContent.startsWith(`${command} `)) ? { hasUnexpectedArgs: true } : null;
 }
 
-function formatContextCompactionCommandReply(result: ContextCompactionRunResult | null, hasUnexpectedArgs: boolean): string {
-  if (hasUnexpectedArgs) {
-    return ['上下文压缩命令不接受额外参数。', `可用命令：${CONTEXT_COMPACTION_COMMAND} 或 ${CONTEXT_COMPACTION_COMMAND_ALIAS}`].join('\n');
-  }
-  if (!result) {return '本次未执行上下文压缩。';}
-  if (result.compacted) {return result.coveredMessageCount ? `已压缩上下文，覆盖 ${result.coveredMessageCount} 条历史消息。` : '已完成上下文压缩。';}
-  return CONTEXT_COMPACTION_REASON_LABELS[result.reason ?? ''] ?? '本次未执行上下文压缩。';
-}
-
-function createContextCompactionCommandShortCircuit(assistantContent: string) {
+function createContextCompactionCommandShortCircuit(result: ContextCompactionRunResult | null, hasUnexpectedArgs: boolean) {
+  const assistantContent = hasUnexpectedArgs
+    ? ['上下文压缩命令不接受额外参数。', `可用命令：${CONTEXT_COMPACTION_COMMAND} 或 ${CONTEXT_COMPACTION_COMMAND_ALIAS}`].join('\n')
+    : !result
+      ? '本次未执行上下文压缩。'
+      : result.compacted
+        ? (result.coveredMessageCount ? `已压缩上下文，覆盖 ${result.coveredMessageCount} 条历史消息。` : '已完成上下文压缩。')
+        : (CONTEXT_COMPACTION_REASON_LABELS[result.reason ?? ''] ?? '本次未执行上下文压缩。');
   return {
     action: 'short-circuit' as const,
     assistantContent,

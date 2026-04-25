@@ -40,6 +40,26 @@
 
 ## 2026-04-25
 
+- 已对当前未提交的 7 个大 owner 改动做 fresh 收尾，范围：
+  - `ai-model-execution.service.ts`
+  - `conversation-task.service.ts`
+  - `runtime-host-filesystem-backend.service.ts`
+  - `runtime-shell-command-hints.ts`
+  - `builtin-context-compaction.plugin.ts`
+  - `runtime-host-conversation-record.service.ts`
+  - `runtime-host-subagent-runner.service.ts`
+- 已通过 fresh 验证：
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts tests/execution/file/runtime-host-filesystem-backend.service.spec.ts tests/execution/tool/runtime-tool-backend.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/execution/bash/bash-tool.service.spec.ts tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - 结果：`12 suites / 380 tests` 全部通过
+  - `packages/server`: `npm run build`
+    - 结果：通过
+  - root: `npm run lint`
+    - 结果：通过
+  - root: `npm run smoke:server`
+    - 结果：`184 checks` 通过
+  - root: `npm run count:server-src`
+    - 结果：`14835`
+
 - 已继续推进 `S15` 第二十一刀：
   - `runtime-host-subagent-runner.service.ts` 已继续整文件收口，删除只被单点调用的异步包装 `completeSubagentAsync()`，`scheduleSubagentExecution()` 直接承接 `restoreStoredSubagentExecution() -> executeStoredSubagent()` 调度链
   - `readSubagentRequest()` 直接承接 `toolNames` 非空字符串过滤，已删除单点 `isNonEmptyString()`

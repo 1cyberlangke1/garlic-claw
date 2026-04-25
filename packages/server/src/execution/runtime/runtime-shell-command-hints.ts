@@ -1,6 +1,5 @@
 import type { RuntimeBackendKind } from '@garlic-claw/shared';
 import { normalizeRuntimeVisiblePath } from './runtime-visible-path';
-
 const FILE_COMMANDS = new Set(['cd', 'pushd', 'popd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'touch', 'chmod', 'chown', 'tar', 'get-content', 'out-file', 'set-content', 'add-content', 'copy-item', 'move-item', 'remove-item', 'new-item', 'rename-item', 'set-location', 'push-location']);
 const CD_COMMANDS = new Set(['cd', 'pushd', 'popd', 'set-location', 'push-location']);
 const WRITE_COMMANDS = new Set(['cp', 'mv', 'rm', 'mkdir', 'touch', 'chmod', 'chown', 'tar', 'out-file', 'set-content', 'add-content', 'copy-item', 'invoke-webrequest', 'move-item', 'remove-item', 'new-item', 'rename-item']);
@@ -10,6 +9,7 @@ const GIT_NETWORK_SUBCOMMANDS = new Set(['clone', 'fetch', 'pull']);
 const PACKAGE_MANAGER_COMMANDS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 const PACKAGE_MANAGER_NETWORK_SUBCOMMANDS = new Set(['install', 'add']);
 const POWERSHELL_PATH_FLAGS = new Set(['-path', '-filepath', '-literalpath', '-destination', '-outfile', '-outputfile']);
+const POWERSHELL_BASE_PATH_FLAGS = new Set(['-path', '-literalpath']);
 const POWERSHELL_DESTINATION_FLAGS = new Set(['-destination']);
 const POWERSHELL_JOIN_PATH_FLAGS = new Set(['-path', '-childpath', '-additionalchildpath']);
 const POWERSHELL_JOIN_PATH_PATH_FLAGS = new Set(['-path']);
@@ -21,7 +21,6 @@ const POWERSHELL_OUT_FILE_FLAGS = new Set(['-filepath', '-literalpath', '-inputo
 const POWERSHELL_NEW_ITEM_FLAGS = new Set(['-path', '-literalpath', '-name', '-itemtype', '-value']);
 const POWERSHELL_RENAME_ITEM_FLAGS = new Set(['-path', '-literalpath', '-newname']);
 const POWERSHELL_REMOVE_ITEM_VALUE_FLAGS = new Set(['-path', '-literalpath', '-include', '-exclude', '-filter', '-stream']);
-const POWERSHELL_REMOVE_ITEM_PATH_FLAGS = new Set(['-path', '-literalpath']);
 const CURL_WRITE_FLAGS = new Set(['-o', '--output']);
 const WGET_WRITE_FLAGS = new Set(['-O', '--output-document', '--output-file', '-P', '--directory-prefix']);
 const CP_MV_DESTINATION_FLAGS = new Set(['-t', '--target-directory']);
@@ -44,7 +43,6 @@ const SHORT_TAR_EXTRACT_FLAGS = ['x'] as const;
 const SHELL_SEPARATORS = new Set(['&&', '||', ';', '|', '(', ')', '{', '}']);
 const SINGLE_QUOTED_LITERAL_PREFIX = '__GARLIC_CLAW_SINGLE_QUOTED__';
 const MAX_PREVIEW_ITEMS = 3;
-
 export interface RuntimeShellCommandHintMetadata {
   absolutePaths?: string[]; externalAbsolutePaths?: string[]; externalWritePaths?: string[]; fileCommands?: string[]; networkCommands?: string[]; parentTraversalPaths?: string[];
   networkTouchesExternalPath?: boolean; redundantCdWithWorkdir?: boolean; usesCd?: boolean; usesNetworkCommand?: boolean; usesParentTraversal?: boolean; usesWindowsAndAnd?: boolean; writesExternalPath?: boolean;
@@ -53,7 +51,8 @@ export interface RuntimeShellCommandHints { metadata?: RuntimeShellCommandHintMe
 interface ReadRuntimeShellCommandHintsInput { backendKind: RuntimeBackendKind; command: string; visibleRoot: string; workdir?: string; }
 interface RuntimeShellEntry { kind: 'separator' | 'token'; text: string; } interface RuntimeShellSegment { command: string; args: string[]; tokens: string[]; }
 type RuntimeShellVariableMap = Map<string, string>; type RuntimeShellWriteRule = (args: string[]) => string[];
-
+interface RuntimePowerShellWriteTargetSelection { fallback: 'destination' | 'path'; positionalValueFlags: Set<string>; buildPath?: (basePath: string, leafName: string) => string; leafFlags?: Set<string>; pathFlags?: Set<string>; }
+interface RuntimeOptionValueMatch { attachedValue?: string; takesNextValue: boolean; }
 export async function readRuntimeShellCommandHints(input: ReadRuntimeShellCommandHintsInput): Promise<RuntimeShellCommandHints> {
   const usesPowerShell = usesRuntimePowerShellSyntax(input.backendKind);
   const scan = scanRuntimeShellCommand(input.command, usesPowerShell);
@@ -162,8 +161,8 @@ function readRuntimePowerShellReferenceValue(value: string, variables: RuntimeSh
 }
 
 function readRuntimeShellAbsolutePathCandidates(token: string, backendKind: RuntimeBackendKind): string[] {
-  const normalized = normalizeRuntimeShellAbsolutePath(token, backendKind), matchedFlag = matchRuntimePowerShellFlag(token, POWERSHELL_PATH_FLAGS), attachedValue = matchedFlag ? readRuntimePowerShellAttachedValue(token, matchedFlag, normalizeRuntimeQuotedToken) : undefined;
-  return normalized ? [normalized] : attachedValue ? [normalizeRuntimeShellAbsolutePath(attachedValue, backendKind)].filter((value): value is string => Boolean(value)) : [];
+  const normalized = normalizeRuntimeShellAbsolutePath(token, backendKind), attachedValue = readRuntimePowerShellFlagValueMatch(token, POWERSHELL_PATH_FLAGS)?.attachedValue;
+  return normalized ? [normalized] : attachedValue ? [normalizeRuntimeShellAbsolutePath(normalizeRuntimeQuotedToken(attachedValue), backendKind)].filter((value): value is string => Boolean(value)) : [];
 }
 
 function normalizeRuntimeShellAbsolutePath(token: string, backendKind: RuntimeBackendKind): string | undefined {
@@ -219,20 +218,20 @@ function readRuntimeShellWriteTokens(command: string, args: string[]): string[] 
 }
 
 const RUNTIME_SHELL_WRITE_RULES: Readonly<Record<string, RuntimeShellWriteRule>> = {
-  'add-content': (args) => readRuntimePowerShellWriteTargets(args, POWERSHELL_CONTENT_FLAGS),
+  'add-content': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'path', positionalValueFlags: POWERSHELL_CONTENT_FLAGS }),
   cp: (args) => readRuntimeCopyMoveWriteTargets(args),
-  'copy-item': (args) => readRuntimePowerShellDestinationTargets(args),
+  'copy-item': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'destination', pathFlags: POWERSHELL_DESTINATION_FLAGS, positionalValueFlags: POWERSHELL_DESTINATION_FLAGS }),
   curl: (args) => readRuntimeShellFlagValues(args, CURL_WRITE_FLAGS),
   git: (args) => readRuntimeGitWriteTargets(args),
-  mkdir: (args) => args.some((token) => POWERSHELL_NEW_ITEM_FLAGS.has(token.toLowerCase())) ? readRuntimePowerShellComposedTargets(args, POWERSHELL_NEW_ITEM_FLAGS, POWERSHELL_NAME_FLAGS, joinRuntimeShellPath) : readRuntimeDefaultWriteTokens('mkdir', args),
-  'move-item': (args) => readRuntimePowerShellDestinationTargets(args),
+  mkdir: (args) => args.some((token) => POWERSHELL_NEW_ITEM_FLAGS.has(token.toLowerCase())) ? readRuntimePowerShellWriteSelection(args, { fallback: 'path', positionalValueFlags: POWERSHELL_NEW_ITEM_FLAGS, leafFlags: POWERSHELL_NAME_FLAGS, pathFlags: POWERSHELL_BASE_PATH_FLAGS, buildPath: joinRuntimeShellPath }) : readRuntimeDefaultWriteTokens('mkdir', args),
+  'move-item': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'destination', pathFlags: POWERSHELL_DESTINATION_FLAGS, positionalValueFlags: POWERSHELL_DESTINATION_FLAGS }),
   mv: (args) => readRuntimeCopyMoveWriteTargets(args),
-  'new-item': (args) => readRuntimePowerShellComposedTargets(args, POWERSHELL_NEW_ITEM_FLAGS, POWERSHELL_NAME_FLAGS, joinRuntimeShellPath),
-  'out-file': (args) => readRuntimePowerShellWriteTargets(args, POWERSHELL_OUT_FILE_FLAGS),
-  'remove-item': (args) => readRuntimePowerShellWriteTargets(args, POWERSHELL_REMOVE_ITEM_VALUE_FLAGS, POWERSHELL_REMOVE_ITEM_PATH_FLAGS),
-  'rename-item': (args) => readRuntimePowerShellComposedTargets(args, POWERSHELL_RENAME_ITEM_FLAGS, POWERSHELL_NEW_NAME_FLAGS, resolveRuntimeRenamePath),
+  'new-item': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'path', positionalValueFlags: POWERSHELL_NEW_ITEM_FLAGS, leafFlags: POWERSHELL_NAME_FLAGS, pathFlags: POWERSHELL_BASE_PATH_FLAGS, buildPath: joinRuntimeShellPath }),
+  'out-file': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'path', positionalValueFlags: POWERSHELL_OUT_FILE_FLAGS }),
+  'remove-item': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'path', positionalValueFlags: POWERSHELL_REMOVE_ITEM_VALUE_FLAGS, pathFlags: POWERSHELL_BASE_PATH_FLAGS }),
+  'rename-item': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'path', positionalValueFlags: POWERSHELL_RENAME_ITEM_FLAGS, leafFlags: POWERSHELL_NEW_NAME_FLAGS, pathFlags: POWERSHELL_BASE_PATH_FLAGS, buildPath: resolveRuntimeRenamePath }),
   scp: (args) => readRuntimeShellDestinationTargets(args, 2),
-  'set-content': (args) => readRuntimePowerShellWriteTargets(args, POWERSHELL_CONTENT_FLAGS),
+  'set-content': (args) => readRuntimePowerShellWriteSelection(args, { fallback: 'path', positionalValueFlags: POWERSHELL_CONTENT_FLAGS }),
   tar: (args) => readRuntimeTarWriteTargets(args),
   wget: (args) => readRuntimeShellFlagValues(args, WGET_WRITE_FLAGS),
 };
@@ -247,19 +246,27 @@ function readRuntimeCopyMoveWriteTargets(args: string[]): string[] {
   return destination.length > 0 ? destination : readRuntimeShellDestinationTargets(args, 2);
 }
 
-function readRuntimePowerShellDestinationTargets(args: string[]): string[] {
-  const destination = readRuntimePowerShellCommandPath(args, POWERSHELL_DESTINATION_FLAGS) ?? readRuntimePowerShellOptionValues(args, POWERSHELL_DESTINATION_FLAGS, normalizeRuntimeQuotedToken)[0];
-  return destination ? [destination] : readRuntimeShellDestinationTargets(args, 2);
-}
-
-function readRuntimePowerShellWriteTargets(args: string[], positionalValueFlags: Set<string>, pathFlags = POWERSHELL_PATH_FLAGS): string[] {
-  const flagged = readRuntimePowerShellCommandPath(args, pathFlags) ?? readRuntimePowerShellOptionValues(args, pathFlags, normalizeRuntimeQuotedToken)[0];
-  return flagged ? [flagged] : readRuntimePowerShellPositionalPathTargets(readRuntimePowerShellPositionalValues(args, positionalValueFlags));
-}
-
-function readRuntimePowerShellComposedTargets(args: string[], positionalValueFlags: Set<string>, leafFlags: Set<string>, buildPath: (basePath: string, leafName: string) => string): string[] {
-  const positional = readRuntimePowerShellPositionalValues(args, positionalValueFlags), basePath = readRuntimePowerShellOptionValues(args, POWERSHELL_REMOVE_ITEM_PATH_FLAGS, normalizeRuntimeQuotedToken)[0] ?? positional[0], leafName = readRuntimePowerShellOptionValues(args, leafFlags, normalizeRuntimeQuotedToken)[0] ?? positional[1];
-  return basePath && leafName ? [buildPath(basePath, leafName)] : basePath ? [basePath] : [];
+function readRuntimePowerShellWriteSelection(args: string[], selection: RuntimePowerShellWriteTargetSelection): string[] {
+  const pathFlags = selection.pathFlags ?? POWERSHELL_PATH_FLAGS;
+  const positional = readRuntimePowerShellPositionalValues(args, selection.positionalValueFlags);
+  let flaggedPath = readRuntimePowerShellOptionValues(args, pathFlags, normalizeRuntimeQuotedToken)[0];
+  if (!flaggedPath) {
+    for (let index = 0; index < args.length - 1; index += 1) {
+      const token = args[index] ?? '', matched = matchRuntimePowerShellFlag(token, pathFlags);
+      if (!matched || token.toLowerCase() !== matched) {continue;}
+      const next = args[index + 1] ?? '';
+      if (normalizeRuntimeShellCommand(next) === 'join-path') { flaggedPath = `(${args.slice(index + 1).join(' ')})`; break; }
+      if (/^\$?\(\s*Join-Path\b/iu.test(next)) { flaggedPath = next; break; }
+    }
+  }
+  if (!selection.leafFlags || !selection.buildPath) {
+    if (flaggedPath) {return [flaggedPath];}
+    if (selection.fallback === 'destination') {return readRuntimeShellDestinationTargets(args, 2);}
+    const first = positional[0] ?? '';
+    return normalizeRuntimeShellCommand(first) === 'join-path' ? [`(${positional.join(' ')})`] : first ? [first] : [];
+  }
+  const basePath = flaggedPath ?? positional[0], leafName = readRuntimePowerShellOptionValues(args, selection.leafFlags, normalizeRuntimeQuotedToken)[0] ?? positional[1];
+  return basePath && leafName ? [selection.buildPath(basePath, leafName)] : basePath ? [basePath] : [];
 }
 
 function readRuntimeGitWriteTargets(args: string[]): string[] {
@@ -275,10 +282,7 @@ function readRuntimeGitWriteTargets(args: string[]): string[] {
 }
 
 function readRuntimeTarWriteTargets(args: string[]): string[] {
-  const writeTokens: string[] = [];
-  if (hasRuntimeTarMode(args, TAR_CREATE_FLAGS, SHORT_TAR_CREATE_FLAGS)) {writeTokens.push(...readRuntimeTarFlagValues(args, 'f', TAR_FILE_FLAGS));}
-  if (hasRuntimeTarMode(args, TAR_EXTRACT_FLAGS, SHORT_TAR_EXTRACT_FLAGS)) {writeTokens.push(...readRuntimeTarFlagValues(args, 'C', TAR_DIRECTORY_FLAGS));}
-  return uniquePreview(writeTokens);
+  const writeTokens: string[] = []; if (hasRuntimeTarMode(args, TAR_CREATE_FLAGS, SHORT_TAR_CREATE_FLAGS)) {writeTokens.push(...readRuntimeTarFlagValues(args, 'f', TAR_FILE_FLAGS));} if (hasRuntimeTarMode(args, TAR_EXTRACT_FLAGS, SHORT_TAR_EXTRACT_FLAGS)) {writeTokens.push(...readRuntimeTarFlagValues(args, 'C', TAR_DIRECTORY_FLAGS));} return uniquePreview(writeTokens);
 }
 
 function hasRuntimeTarMode(args: string[], longFlags: Set<string>, shortFlags: readonly string[]): boolean {
@@ -307,37 +311,11 @@ function readRuntimeTarFlagValues(args: string[], shortFlag: string, longFlags: 
 }
 
 function readRuntimeShellFlagValues(args: string[], flags: Set<string>): string[] {
-  const values: string[] = []; let wantsValue = false;
-  for (const token of args) {
-    if (wantsValue) { if (!token.startsWith('-')) {values.push(token);} wantsValue = false; continue; }
-    const matched = Array.from(flags).find((flag) => token === flag || token.startsWith(`${flag}=`) || (flag.startsWith('-') && !flag.startsWith('--') && token.startsWith(flag) && token.length > flag.length));
-    if (!matched) {continue;}
-    if (token.startsWith(`${matched}=`)) { values.push(token.slice(matched.length + 1)); continue; }
-    if (matched.startsWith('-') && !matched.startsWith('--') && token.length > matched.length) { values.push(token.slice(matched.length)); continue; }
-    wantsValue = true;
-  }
-  return values;
+  return readRuntimeOptionValues(args, (token) => readRuntimeShellFlagValueMatch(token, flags));
 }
 
 function readRuntimeShellDestinationTargets(args: string[], minPositionalCount = 1): string[] {
-  const positional = args.filter((token) => !token.startsWith('-'));
-  return positional.length >= minPositionalCount ? [positional[positional.length - 1]] : [];
-}
-
-function readRuntimePowerShellCommandPath(args: string[], flags: Set<string>): string | undefined {
-  for (let index = 0; index < args.length - 1; index += 1) {
-    const matched = matchRuntimePowerShellFlag(args[index] ?? '', flags);
-    if (!matched || args[index]?.toLowerCase() !== matched) {continue;}
-    const next = args[index + 1] ?? '';
-    if (normalizeRuntimeShellCommand(next) === 'join-path') {return `(${args.slice(index + 1).join(' ')})`;}
-    if (/^\$?\(\s*Join-Path\b/iu.test(next)) {return next;}
-  }
-  return undefined;
-}
-
-function readRuntimePowerShellPositionalPathTargets(positional: string[]): string[] {
-  const first = positional[0] ?? '';
-  return normalizeRuntimeShellCommand(first) === 'join-path' ? [`(${positional.join(' ')})`] : first ? [first] : [];
+  const positional = args.filter((token) => !token.startsWith('-')); return positional.length >= minPositionalCount ? [positional[positional.length - 1]] : [];
 }
 
 function resolveRuntimeRenamePath(basePath: string, newName: string): string {
@@ -350,25 +328,41 @@ function resolveRuntimeRenamePath(basePath: string, newName: string): string {
 }
 
 function readRuntimePowerShellOptionValues(args: string[], flags: Iterable<string>, normalizeValue?: (value: string) => string): string[] {
+  return readRuntimeOptionValues(args, (token) => readRuntimePowerShellFlagValueMatch(token, flags), normalizeValue);
+}
+
+function matchRuntimePowerShellFlag(token: string, flags: Iterable<string>): string | undefined {
+  const normalized = token.toLowerCase(); return Array.from(flags).find((flag) => normalized === flag || normalized.startsWith(`${flag}:`));
+}
+
+function readRuntimeOptionValues(args: string[], readMatch: (token: string) => RuntimeOptionValueMatch | undefined, normalizeValue?: (value: string) => string): string[] {
   const values: string[] = []; let wantsValue = false;
   for (const token of args) {
-    if (wantsValue) { if (!token.startsWith('-')) {values.push(normalizeValue ? normalizeValue(token) : token);} wantsValue = false; continue; }
-    const matched = matchRuntimePowerShellFlag(token, flags);
+    if (wantsValue) {
+      if (!token.startsWith('-')) {values.push(normalizeValue ? normalizeValue(token) : token);}
+      wantsValue = false;
+      continue;
+    }
+    const matched = readMatch(token);
     if (!matched) {continue;}
-    const attached = readRuntimePowerShellAttachedValue(token, matched, normalizeValue);
-    if (attached) { values.push(attached); continue; }
-    wantsValue = token.toLowerCase() === matched;
+    if (matched.attachedValue !== undefined) { values.push(normalizeValue ? normalizeValue(matched.attachedValue) : matched.attachedValue); continue; }
+    wantsValue = matched.takesNextValue;
   }
   return values;
 }
 
-function matchRuntimePowerShellFlag(token: string, flags: Iterable<string>): string | undefined {
-  const normalized = token.toLowerCase();
-  return Array.from(flags).find((flag) => normalized === flag || normalized.startsWith(`${flag}:`));
+function readRuntimeShellFlagValueMatch(token: string, flags: Set<string>): RuntimeOptionValueMatch | undefined {
+  const matched = Array.from(flags).find((flag) => token === flag || token.startsWith(`${flag}=`) || (flag.startsWith('-') && !flag.startsWith('--') && token.startsWith(flag) && token.length > flag.length));
+  if (!matched) {return undefined;}
+  if (token.startsWith(`${matched}=`)) {return { attachedValue: token.slice(matched.length + 1), takesNextValue: false };}
+  if (matched.startsWith('-') && !matched.startsWith('--') && token.length > matched.length) {return { attachedValue: token.slice(matched.length), takesNextValue: false };}
+  return { takesNextValue: true };
 }
 
-function readRuntimePowerShellAttachedValue(token: string, matchedFlag: string, normalizeValue: (value: string) => string = (value) => value): string | undefined {
-  return token.toLowerCase().startsWith(`${matchedFlag}:`) ? normalizeValue(token.slice(matchedFlag.length + 1).trim()) || undefined : undefined;
+function readRuntimePowerShellFlagValueMatch(token: string, flags: Iterable<string>): RuntimeOptionValueMatch | undefined {
+  const matched = matchRuntimePowerShellFlag(token, flags);
+  if (!matched) {return undefined;}
+  return token.toLowerCase().startsWith(`${matched}:`) ? { attachedValue: token.slice(matched.length + 1).trim(), takesNextValue: false } : { takesNextValue: token.toLowerCase() === matched };
 }
 
 function readRuntimePowerShellPositionalValues(args: string[], valueFlags: Iterable<string>): string[] {
@@ -431,8 +425,7 @@ function expandRuntimeEnvPath(token: string, patterns: readonly RegExp[]): strin
 
 function readRuntimeProcessEnvValue(key: string): string | undefined {
   if (process.platform !== 'win32') {return process.env[key];}
-  const matchedKey = Object.keys(process.env).find((candidate) => candidate.toLowerCase() === key.toLowerCase());
-  return matchedKey ? process.env[matchedKey] : undefined;
+  const matchedKey = Object.keys(process.env).find((candidate) => candidate.toLowerCase() === key.toLowerCase()); return matchedKey ? process.env[matchedKey] : undefined;
 }
 
 function uniquePreview(values: string[]): string[] {

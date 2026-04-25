@@ -48,44 +48,14 @@ export class AiModelExecutionService {
   constructor(private readonly aiProviderSettingsService: AiProviderSettingsService = new AiProviderSettingsService()) {}
 
   async generateText(input: AiModelExecutionRequest): Promise<AiModelExecutionResult> {
-    if (input.transportMode === 'stream-collect') {return this.collectStreamedTextResult(input);}
-    return this.runAcrossTargets(input, 'AI text generation failed', async (target) => {
-      const result = await generateText({
-        ...this.buildExecutionInput(input, target),
-        ...this.buildToolExecutionOptions(input.tools),
-      } as Parameters<typeof generateText>[0]);
-      return this.buildExecutionResult({
-        customBlockOrigin: 'ai-sdk.response-body',
-        customBlocks: readAssistantResponseCustomBlocks(result.response?.body),
-        finishReason: readFinishReason(result.finishReason),
-        input,
-        target,
-        text: typeof result.text === 'string' ? result.text : '',
-        usage: result.usage,
-      });
-    });
+    return this.runAcrossTargets(input, 'AI text generation failed', (target) =>
+      this.readTextExecutionResult(input, target, input.transportMode === 'stream-collect'));
   }
 
   streamText(input: AiModelStreamRequest): AiModelExecutionStreamResult {
     return this.runAcrossTargetsSync(input, 'AI text streaming failed', (target) => {
       const result = this.startTextStream(input, target);
       return { finishReason: result.finishReason, fullStream: result.fullStream, modelId: target.modelId, providerId: target.provider.id };
-    });
-  }
-
-  private async collectStreamedTextResult(input: AiModelExecutionRequest): Promise<AiModelExecutionResult> {
-    return this.runAcrossTargets(input, 'AI text generation failed', async (target) => {
-      const result = this.startTextStream(input, target);
-      const collected = await collectAssistantStream(result.fullStream);
-      return this.buildExecutionResult({
-        customBlockOrigin: 'ai-sdk.raw',
-        customBlocks: collected.customBlocks,
-        finishReason: readFinishReason(await result.finishReason),
-        input,
-        target,
-        text: collected.text,
-        usage: await result.totalUsage,
-      });
     });
   }
 
@@ -111,26 +81,6 @@ export class AiModelExecutionService {
       }
     }
     throw readExecutionError(lastError, fallbackMessage);
-  }
-
-  private buildExecutionResult(input: {
-    customBlocks: AssistantCustomBlockEntry[];
-    customBlockOrigin: 'ai-sdk.raw' | 'ai-sdk.response-body';
-    finishReason: string | null;
-    input: AiModelExecutionRequest;
-    target: AiExecutionTarget;
-    text: string;
-    usage: unknown;
-  }): AiModelExecutionResult {
-    return {
-      ...(input.customBlocks.length > 0 ? { customBlocks: input.customBlocks } : {}),
-      customBlockOrigin: input.customBlockOrigin,
-      finishReason: input.finishReason,
-      modelId: input.target.modelId,
-      providerId: input.target.provider.id,
-      text: input.text,
-      usage: readModelUsage(input.usage, input.input, input.text),
-    };
   }
 
   private buildExecutionTargets(input: AiModelExecutionRequest): AiExecutionTarget[] {
@@ -169,6 +119,41 @@ export class AiModelExecutionService {
     return tools ? { experimental_repairToolCall: this.createRepairToolCall(tools), stopWhen: isLoopFinished(), tools } : {};
   }
 
+  private async readTextExecutionResult(
+    input: AiModelExecutionRequest,
+    target: AiExecutionTarget,
+    streamCollect: boolean,
+  ): Promise<AiModelExecutionResult> {
+    if (streamCollect) {
+      const result = this.startTextStream(input, target);
+      const collected = await collectAssistantStream(result.fullStream);
+      return {
+        ...(collected.customBlocks.length > 0 ? { customBlocks: collected.customBlocks } : {}),
+        customBlockOrigin: 'ai-sdk.raw',
+        finishReason: readFinishReason(await result.finishReason),
+        modelId: target.modelId,
+        providerId: target.provider.id,
+        text: collected.text,
+        usage: readModelUsage(await result.totalUsage, input, collected.text),
+      };
+    }
+    const result = await generateText({
+      ...this.buildExecutionInput(input, target),
+      ...this.buildToolExecutionOptions(input.tools),
+    } as Parameters<typeof generateText>[0]);
+    const text = typeof result.text === 'string' ? result.text : '';
+    const customBlocks = readAssistantResponseCustomBlocks(result.response?.body);
+    return {
+      ...(customBlocks.length > 0 ? { customBlocks } : {}),
+      customBlockOrigin: 'ai-sdk.response-body',
+      finishReason: readFinishReason(result.finishReason),
+      modelId: target.modelId,
+      providerId: target.provider.id,
+      text,
+      usage: readModelUsage(result.usage, input, text),
+    };
+  }
+
   private startTextStream(input: AiModelStreamRequest, target: AiExecutionTarget): AiSdkStreamTextResult {
     return streamText({
       ...this.buildExecutionInput(input, target),
@@ -202,11 +187,12 @@ export class AiModelExecutionService {
       toolCall: { input: string; toolCallId: string; toolName: string } & Record<string, unknown>;
     }) => {
       if (!tools.invalid) {return null;}
+      const inputText = stringifyInvalidToolInput(input.toolCall.input);
       return {
         ...input.toolCall,
         input: JSON.stringify({
           error: readRepairToolErrorMessage(input.error),
-          ...(stringifyInvalidToolInput(input.toolCall.input) ? { inputText: stringifyInvalidToolInput(input.toolCall.input) } : {}),
+          ...(inputText ? { inputText } : {}),
           phase: readRepairToolPhase(input.error),
           tool: input.toolCall.toolName,
         }),

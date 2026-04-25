@@ -20,6 +20,7 @@ import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readP
 export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; hostServices: ConversationHostServices; id: string; messages: JsonObject[]; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
 interface RuntimeConversationStoragePayload { conversations?: Record<string, RuntimeConversationRecord>; todos?: Record<string, ConversationTodoItem[]>; }
+type RuntimeConversationRecordView = 'detail' | 'history' | 'overview' | 'summary';
 const DEFAULT_HOST_SERVICES: ConversationHostServices = { llmEnabled: true, sessionEnabled: true, ttsEnabled: true };
 
 @Injectable()
@@ -41,13 +42,11 @@ export class RuntimeHostConversationRecordService {
 
   createConversation(input: { title?: string; userId?: string }): JsonValue {
     const timestamp = new Date().toISOString();
-    const conversation = this.createConversationRecord({
-      conversationId: randomUUID(),
-      timestamp,
-      title: input.title?.trim() || 'New Chat',
-      userId: input.userId ?? SINGLE_USER_ID,
-    });
-    const overview = buildConversationOverview(conversation);
+    const conversationId = randomUUID();
+    const conversation: RuntimeConversationRecord = { createdAt: timestamp, hostServices: { ...DEFAULT_HOST_SERVICES }, id: conversationId, messages: [], revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title?.trim() || 'New Chat', updatedAt: timestamp, userId: input.userId ?? SINGLE_USER_ID };
+    this.conversations.set(conversation.id, conversation);
+    this.persistConversations();
+    const overview = readConversationRecordValue(conversation, 'overview') as JsonObject;
     void this.broadcastConversationCreated(overview, conversation.userId);
     return overview;
   }
@@ -62,55 +61,34 @@ export class RuntimeHostConversationRecordService {
   }
 
   getConversationSession(pluginId: string, context: PluginCallContext): JsonValue { return serializeConversationSession(this.readConversationSession(pluginId, readConversationId(context))); }
-  getConversation(conversationId: string, userId?: string): JsonValue { return buildConversationDetail(this.requireConversation(conversationId, userId)); }
-  listConversations(userId?: string): JsonValue { return [...this.conversations.values()].filter((conversation) => !userId || conversation.userId === userId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map(buildConversationOverview); }
+  getConversation(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'detail'); }
+  listConversations(userId?: string): JsonValue { return [...this.conversations.values()].filter((conversation) => !userId || conversation.userId === userId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((conversation) => readConversationRecordValue(conversation, 'overview')); }
   listPluginConversationSessions(pluginId: string): JsonValue { return [...this.conversationSessions.values()].filter((session) => session.pluginId === pluginId).sort((left, right) => left.startedAt.localeCompare(right.startedAt)).map(serializeConversationSession); }
   readConversationHostServices(conversationId: string, userId?: string): JsonValue { return asJsonValue(this.requireConversation(conversationId, userId).hostServices); }
   readConversationRevision(conversationId: string): string | null { return this.conversations.get(conversationId)?.revision ?? null; }
   finishPluginConversationSession(pluginId: string, conversationId: string): boolean { return this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId)); }
-  readConversationSummary(conversationId: string, userId?: string): JsonValue { return buildConversationSummary(this.requireConversation(conversationId, userId)); }
+  readConversationSummary(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'summary'); }
   readRuntimePermissionApprovals(conversationId: string, userId?: string): string[] { return [...(this.requireConversation(conversationId, userId).runtimePermissionApprovals ?? [])]; }
   readSessionTodo(sessionId: string, userId?: string): JsonValue { this.requireConversation(sessionId, userId); return asJsonValue((this.conversationTodos.get(sessionId) ?? []).map((item) => cloneJsonValue(item))); }
-  readConversationHistory(conversationId: string, userId?: string): JsonValue { return buildConversationHistorySnapshot(this.requireConversation(conversationId, userId)); }
+  readConversationHistory(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'history'); }
   readCurrentMessageTarget(conversationId: string, userId?: string): JsonValue { const conversation = this.requireConversation(conversationId, userId); return { id: conversation.id, label: conversation.title, type: 'conversation' }; }
 
   keepConversationSession(pluginId: string, context: PluginCallContext, params: JsonObject): JsonValue {
     const current = this.readConversationSession(pluginId, readConversationId(context));
     if (!current) {return null;}
-    const timeoutMs = this.readSessionTimeoutMs(params);
-    const resetTimeout = readOptionalBoolean(params, 'resetTimeout') ?? true;
-    const baseTime = resetTimeout ? Date.now() : Date.parse(current.expiresAt);
-    return serializeConversationSession(this.writeConversationSession({
-      ...current,
-      expiresAt: new Date(baseTime + timeoutMs).toISOString(),
-      timeoutMs: resetTimeout ? timeoutMs : current.timeoutMs + timeoutMs,
-    }));
+    const timeoutMs = this.readSessionTimeoutMs(params), resetTimeout = readOptionalBoolean(params, 'resetTimeout') ?? true, baseTime = resetTimeout ? Date.now() : Date.parse(current.expiresAt);
+    return this.saveConversationSession({ ...current, expiresAt: new Date(baseTime + timeoutMs).toISOString(), timeoutMs: resetTimeout ? timeoutMs : current.timeoutMs + timeoutMs });
   }
 
   startConversationSession(pluginId: string, context: PluginCallContext, params: JsonObject): JsonValue {
-    const conversation = this.requireConversation(readConversationId(context));
-    const startedAt = new Date().toISOString();
-    const timeoutMs = this.readSessionTimeoutMs(params);
-    const captureHistory = readOptionalBoolean(params, 'captureHistory') ?? false;
-    const metadata = readJsonObject(params.metadata);
-    return serializeConversationSession(this.writeConversationSession({
-      captureHistory,
-      conversationId: conversation.id,
-      expiresAt: new Date(Date.parse(startedAt) + timeoutMs).toISOString(),
-      historyMessages: captureHistory ? conversation.messages.map((message) => cloneJsonValue(message)) : [],
-      lastMatchedAt: null,
-      ...(metadata ? { metadata } : {}),
-      pluginId,
-      startedAt,
-      timeoutMs,
-    }));
+    const conversation = this.requireConversation(readConversationId(context)), startedAt = new Date().toISOString(), timeoutMs = this.readSessionTimeoutMs(params), captureHistory = readOptionalBoolean(params, 'captureHistory') ?? false, metadata = readJsonObject(params.metadata);
+    return this.saveConversationSession({ captureHistory, conversationId: conversation.id, expiresAt: new Date(Date.parse(startedAt) + timeoutMs).toISOString(), historyMessages: captureHistory ? conversation.messages.map((message) => cloneJsonValue(message)) : [], lastMatchedAt: null, ...(metadata ? { metadata } : {}), pluginId, startedAt, timeoutMs });
   }
 
   previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
-    const messages = params.messages === undefined
-      ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message))
-      : readConversationHistoryMessages(params.messages);
-    return buildConversationHistoryPreview(messages);
+    const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages);
+    const textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
+    return asJsonValue({ estimatedTokens: Math.ceil(textBytes / 4), messageCount: messages.length, textBytes });
   }
 
   replaceConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
@@ -119,10 +97,10 @@ export class RuntimeHostConversationRecordService {
     const current = this.requireConversation(conversationId, userId);
     assertConversationRevision(current, expectedRevision);
     if (JSON.stringify(current.messages) === JSON.stringify(nextMessages)) {
-      return asJsonValue({ ...buildConversationHistorySnapshot(current), changed: false });
+      return asJsonValue({ ...(readConversationRecordValue(current, 'history') as JsonObject), changed: false });
     }
-    const updated = this.writeConversation(conversationId, (conversation) => { assertConversationRevision(conversation, expectedRevision); conversation.messages = cloneJsonValue(nextMessages); }, userId);
-    return asJsonValue({ ...buildConversationHistorySnapshot(updated), changed: true });
+    const updated = this.updateConversationRecord(conversationId, userId, (conversation) => { conversation.messages = cloneJsonValue(nextMessages); return conversation; });
+    return asJsonValue({ ...(readConversationRecordValue(updated, 'history') as JsonObject), changed: true });
   }
 
   replaceSessionTodo(sessionId: string, todos: ConversationTodoItem[], userId?: string): JsonValue {
@@ -133,11 +111,17 @@ export class RuntimeHostConversationRecordService {
   }
 
   rememberConversationActivePersona(conversationId: string, activePersonaId: string, userId?: string): void {
-    this.writeConversation(conversationId, (conversation) => { conversation.activePersonaId = activePersonaId; }, userId);
+    this.updateConversationRecord(conversationId, userId, (conversation) => {
+      conversation.activePersonaId = activePersonaId;
+      return null;
+    });
   }
 
   replaceMessages(conversationId: string, messages: JsonObject[], userId?: string): RuntimeConversationRecord {
-    return this.writeConversation(conversationId, (conversation) => { conversation.messages = cloneJsonValue(messages); }, userId);
+    return this.updateConversationRecord(conversationId, userId, (conversation) => {
+      conversation.messages = cloneJsonValue(messages);
+      return conversation;
+    });
   }
 
   requireConversation(conversationId: string, userId?: string): RuntimeConversationRecord {
@@ -148,69 +132,41 @@ export class RuntimeHostConversationRecordService {
   }
 
   writeConversationHostServices(conversationId: string, patch: Partial<ConversationHostServices>, userId?: string): JsonValue {
-    return asJsonValue(this.writeConversation(conversationId, (conversation) => {
-      conversation.hostServices = {
-        ...conversation.hostServices,
-        ...(typeof patch.sessionEnabled === 'boolean' ? { sessionEnabled: patch.sessionEnabled } : {}),
-        ...(typeof patch.llmEnabled === 'boolean' ? { llmEnabled: patch.llmEnabled } : {}),
-        ...(typeof patch.ttsEnabled === 'boolean' ? { ttsEnabled: patch.ttsEnabled } : {}),
-      };
-    }, userId).hostServices);
+    return asJsonValue(this.updateConversationRecord(conversationId, userId, (conversation) => {
+      conversation.hostServices = { ...conversation.hostServices, ...(typeof patch.sessionEnabled === 'boolean' ? { sessionEnabled: patch.sessionEnabled } : {}), ...(typeof patch.llmEnabled === 'boolean' ? { llmEnabled: patch.llmEnabled } : {}), ...(typeof patch.ttsEnabled === 'boolean' ? { ttsEnabled: patch.ttsEnabled } : {}) };
+      return conversation.hostServices;
+    }));
   }
 
   writeConversationTitle(conversationId: string, title: string, userId?: string): JsonValue {
-    return buildConversationSummary(this.writeConversation(conversationId, (conversation) => { conversation.title = title; }, userId));
+    return readConversationRecordValue(this.updateConversationRecord(conversationId, userId, (conversation) => {
+      conversation.title = title;
+      return conversation;
+    }), 'summary');
   }
 
   rememberRuntimePermissionApproval(conversationId: string, approvalKey: string, userId?: string): string[] {
-    return [...(this.writeConversation(conversationId, (conversation) => {
-      const approvals = new Set(conversation.runtimePermissionApprovals ?? []);
-      approvals.add(approvalKey);
-      conversation.runtimePermissionApprovals = [...approvals].sort((left, right) => left.localeCompare(right));
-    }, userId, { bumpRevision: false }).runtimePermissionApprovals ?? [])];
+    return [...(this.updateConversationRecord(conversationId, userId, (conversation) => {
+      const approvals = new Set(conversation.runtimePermissionApprovals ?? []); approvals.add(approvalKey); conversation.runtimePermissionApprovals = [...approvals].sort((left, right) => left.localeCompare(right));
+      return conversation.runtimePermissionApprovals ?? [];
+    }, { bumpRevision: false }) ?? [])];
   }
 
-  private createConversationRecord(input: { conversationId: string; timestamp: string; title: string; userId: string }): RuntimeConversationRecord {
-    const conversation: RuntimeConversationRecord = {
-      createdAt: input.timestamp,
-      hostServices: { ...DEFAULT_HOST_SERVICES },
-      id: input.conversationId,
-      messages: [],
-      revision: `${input.conversationId}:${input.timestamp}:${Math.random().toString(36).slice(2)}:0`,
-      revisionVersion: 0,
-      runtimePermissionApprovals: [],
-      title: input.title,
-      updatedAt: input.timestamp,
-      userId: input.userId,
-    };
-    this.conversations.set(conversation.id, conversation);
-    this.persistConversations();
-    return conversation;
-  }
-
-  private writeConversation(
+  private updateConversationRecord<T>(
     conversationId: string,
-    update: (conversation: RuntimeConversationRecord) => void,
-    userId?: string,
+    userId: string | undefined,
+    mutate: (conversation: RuntimeConversationRecord) => T,
     options?: { bumpRevision?: boolean },
-  ): RuntimeConversationRecord {
-    return this.mutateConversation(conversationId, (conversation, timestamp) => {
-      update(conversation);
-      if (options?.bumpRevision !== false) {this.bumpRevision(conversation, timestamp);}
-    }, userId);
-  }
-
-  private mutateConversation(conversationId: string, mutate: (conversation: RuntimeConversationRecord, timestamp: string) => void, userId?: string): RuntimeConversationRecord {
+  ): T {
     const conversation = this.requireConversation(conversationId, userId);
-    mutate(conversation, new Date().toISOString());
+    const result = mutate(conversation);
+    if (options?.bumpRevision !== false) {
+      conversation.updatedAt = new Date().toISOString();
+      conversation.revisionVersion += 1;
+      conversation.revision = `${readRevisionSeed(conversation.revision)}:${conversation.revisionVersion}`;
+    }
     this.persistConversations();
-    return conversation;
-  }
-
-  private bumpRevision(conversation: RuntimeConversationRecord, timestamp: string): void {
-    conversation.updatedAt = timestamp;
-    conversation.revisionVersion += 1;
-    conversation.revision = `${readRevisionSeed(conversation.revision)}:${conversation.revisionVersion}`;
+    return result;
   }
 
   private readConversationSession(pluginId: string, conversationId: string): RuntimeConversationSessionRecord | null {
@@ -222,9 +178,9 @@ export class RuntimeHostConversationRecordService {
     return null;
   }
 
-  private writeConversationSession(session: RuntimeConversationSessionRecord): RuntimeConversationSessionRecord {
+  private saveConversationSession(session: RuntimeConversationSessionRecord): JsonValue {
     this.conversationSessions.set(readConversationSessionKey(session.pluginId, session.conversationId), session);
-    return session;
+    return serializeConversationSession(session);
   }
 
   private readSessionTimeoutMs(params: JsonObject): number {
@@ -271,32 +227,12 @@ function assertConversationRevision(conversation: RuntimeConversationRecord, exp
   if (conversation.revision !== expectedRevision) {throw new ConflictException(`Conversation revision mismatch: expected ${expectedRevision}, got ${conversation.revision}`);}
 }
 
-function buildConversationDetail(conversation: RuntimeConversationRecord): JsonValue {
-  return asJsonValue({
-    _count: { messages: conversation.messages.length },
-    createdAt: conversation.createdAt,
-    id: conversation.id,
-    messages: conversation.messages.map((message) => serializeConversationMessage(message)),
-    title: conversation.title,
-    updatedAt: conversation.updatedAt,
-  });
-}
-
-function buildConversationOverview(conversation: RuntimeConversationRecord): JsonObject {
-  return { _count: { messages: conversation.messages.length }, createdAt: conversation.createdAt, id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt };
-}
-
-function buildConversationSummary(conversation: RuntimeConversationRecord): JsonValue {
-  return { ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}), createdAt: conversation.createdAt, id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt };
-}
-
-function buildConversationHistorySnapshot(conversation: RuntimeConversationRecord): { conversationId: string; revision: string; messages: JsonObject[]; } {
-  return { conversationId: conversation.id, revision: conversation.revision, messages: conversation.messages.map(serializeConversationHistoryMessage) };
-}
-
-function buildConversationHistoryPreview(messages: JsonObject[]): JsonValue {
-  const textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
-  return asJsonValue({ estimatedTokens: Math.ceil(textBytes / 4), messageCount: messages.length, textBytes });
+function readConversationRecordValue(conversation: RuntimeConversationRecord, view: RuntimeConversationRecordView): JsonValue {
+  const summary = { createdAt: conversation.createdAt, id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt };
+  if (view === 'history') {return { conversationId: conversation.id, revision: conversation.revision, messages: conversation.messages.map(serializeConversationHistoryMessage) };}
+  if (view === 'summary') {return { ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}), ...summary };}
+  const counted = { _count: { messages: conversation.messages.length }, ...summary };
+  return view === 'overview' ? counted : asJsonValue({ ...counted, messages: conversation.messages.map(serializeConversationMessage) });
 }
 
 function resolveConversationStoragePath(): string {

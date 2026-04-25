@@ -220,22 +220,23 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     const target = await this.resolveValidatedPath(sessionId, inputPath, { mode: 'existing', ...options });
     if (target.type === 'file') {return { basePath: target.virtualPath, files: [{ hostPath: target.hostPath, virtualPath: target.virtualPath }], partial: false, skippedEntries: [], skippedPaths: [] };}
     const files: RuntimeHostFilesystemFileEntry[] = [];
-    const state = { partial: false, skippedEntries: [] as RuntimeFilesystemSkippedEntry[], skippedPaths: [] as string[] };
+    let partial = false;
+    const skippedEntries: RuntimeFilesystemSkippedEntry[] = [], skippedPaths: string[] = [];
     await collectRuntimeFileTreeEntries({
       absolutePath: target.hostPath,
       buildEntry: (hostPath, virtualPath) => ({ hostPath, virtualPath }),
       files,
       handleError: async (virtualPath) => {
-        state.partial = true;
-        pushRuntimeSkippedPath(state.skippedPaths, virtualPath);
-        pushRuntimeSkippedEntry(state.skippedEntries, virtualPath, 'inaccessible');
+        partial = true;
+        pushRuntimeSkippedPath(skippedPaths, virtualPath);
+        pushRuntimeSkippedEntry(skippedEntries, virtualPath, 'inaccessible');
       },
       joinLogicalPath: joinRuntimeVisiblePath,
       logicalPath: target.virtualPath,
       visitedDirectories: new Set<string>(),
     });
     files.sort((left, right) => left.virtualPath.localeCompare(right.virtualPath));
-    return { basePath: target.virtualPath, files, partial: state.partial, skippedEntries: state.skippedEntries, skippedPaths: state.skippedPaths };
+    return { basePath: target.virtualPath, files, partial, skippedEntries, skippedPaths };
   }
 
   async writeTextFile(sessionId: string, inputPath: string, content: string): Promise<RuntimeFilesystemWriteResult> {
@@ -246,25 +247,16 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     if (input.oldString === input.newString) {throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');}
     const target = await this.resolveValidatedPath(sessionId, input.filePath, { mode: input.oldString === '' ? 'writable-file' : 'file' });
     const previousContent = target.exists ? (await readRuntimeHostFilesystemTextSource(target)).content : '';
-    if (input.oldString === '') {
-      const nextContent = previousContent ? normalizeWorkspaceLineEnding(input.newString, detectWorkspaceLineEnding(previousContent)) : input.newString;
-      const writeResult = await this.writeResolvedTextFile(sessionId, target, nextContent, previousContent);
-      if (!writeResult.diff) {
-        throw new BadRequestException('空旧文本写入必须产生 diff');
-      }
-      return { diff: writeResult.diff, occurrences: 1, postWrite: writeResult.postWrite, path: writeResult.path, strategy: 'empty-old-string' };
-    }
-    const replaced = replaceRuntimeText(previousContent, input.oldString, input.newString, input.replaceAll);
-    const writeResult = await this.writeResolvedTextFile(sessionId, target, normalizeWorkspaceLineEnding(replaced.content, detectWorkspaceLineEnding(previousContent)), previousContent);
-    if (!writeResult.diff) {
-      throw new BadRequestException('文本替换必须产生 diff');
-    }
+    const replaced = input.oldString === '' ? { content: input.newString, occurrences: 1, strategy: 'empty-old-string' as const } : replaceRuntimeText(previousContent, input.oldString, input.newString, input.replaceAll);
+    const nextContent = input.oldString === '' && !previousContent ? replaced.content : normalizeWorkspaceLineEnding(replaced.content, detectWorkspaceLineEnding(previousContent));
+    const writeResult = await this.writeResolvedTextFile(sessionId, target, nextContent, previousContent);
+    if (!writeResult.diff) {throw new BadRequestException(input.oldString === '' ? '空旧文本写入必须产生 diff' : '文本替换必须产生 diff');}
     return { diff: writeResult.diff, occurrences: replaced.occurrences, postWrite: writeResult.postWrite, path: writeResult.path, strategy: replaced.strategy };
   }
 
   private async writeResolvedTextFile(sessionId: string, target: RuntimeHostFilesystemResolvedPath, content: string, previousContent?: string | null): Promise<RuntimeFilesystemWriteResult> {
     const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(sessionId);
-    const diffBase = previousContent ?? (!target.exists || target.type !== 'file' ? '' : (await readRuntimeHostFilesystemReadMetadata(target)).nonTextType ? null : await fsPromises.readFile(target.hostPath, 'utf8'));
+    const diffBase = previousContent ?? await readRuntimeHostFilesystemDiffBase(target);
     const processed = this.runtimeFilesystemPostWriteService?.processTextFile({ content, hostPath: target.hostPath, path: target.virtualPath, sessionRoot: sessionEnvironment.sessionRoot, visibleRoot: sessionEnvironment.visibleRoot }) ?? { content, postWrite: { diagnostics: [], formatting: null } };
     await fsPromises.mkdir(path.dirname(target.hostPath), { recursive: true });
     await fsPromises.writeFile(target.hostPath, processed.content, 'utf8');
@@ -389,6 +381,8 @@ function detectWorkspaceLineEnding(content: string): '\n' | '\r\n' { return cont
 function splitFilesystemTextLines(content: string): string[] { return !content.length ? [] : content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n'); }
 function truncateFilesystemLine(line: string, maxLineLength: number): string { return line.length > maxLineLength ? `${line.slice(0, maxLineLength)}${MAX_READ_LINE_SUFFIX}` : line; }
 function normalizeWorkspaceLineEnding(content: string, lineEnding: '\n' | '\r\n'): string { return lineEnding === '\n' ? content.replace(/\r\n/g, '\n') : content.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'); }
+
+async function readRuntimeHostFilesystemDiffBase(target: RuntimeHostFilesystemResolvedPath): Promise<string | null> { if (!target.exists || target.type !== 'file') {return '';} const metadata = await readRuntimeHostFilesystemReadMetadata(target); return metadata.nonTextType ? null : fsPromises.readFile(target.hostPath, 'utf8'); }
 
 async function readRuntimeHostFilesystemTextSource(target: Pick<RuntimeHostFilesystemResolvedPath, 'hostPath' | 'virtualPath'>): Promise<RuntimeHostFilesystemTextSource> {
   const metadata = await readRuntimeHostFilesystemReadMetadata(target);
