@@ -38,7 +38,7 @@
 ## 当前基线
 
 - 统计时间：`2026-04-25`
-- 当前体积：`packages/server/src = 14973` 非空行
+- 当前体积：`packages/server/src = 14983` 非空行
 - 统计命令：`npm run count:server-src`
 - 当前与 `S11 <= 19000` 的关系：
   - 体积已经低于门槛
@@ -114,12 +114,12 @@
     - `runtime-host-values.ts`：`224 -> 208`
     - `runtime-gateway-connection-lifecycle.service.ts`：`217 -> 214`
     - `plugin-bootstrap.service.ts`：`400 -> 220`
-  - 当前总量：`16086 -> 14973`
+  - 当前总量：`16086 -> 14983`
   - 本阶段最后一刀 fresh：
     - `packages/server`: `plugin-bootstrap / plugin-remote-bootstrap / plugin-persistence / runtime-host-subagent-runner` 定向 Jest 通过
     - `packages/server`: `npm run build` 通过
     - root: 双 `smoke:server` 通过
-    - root: `npm run count:server-src` -> `14973`
+    - root: `npm run count:server-src` -> `14983`
   - 本阶段最后一刀 judge：`PASS`
   - 阶段结论：`S13` 已完成
 - 细节证据：见 `task_plan.md / progress.md / findings.md`
@@ -141,8 +141,8 @@
   - 检查 `packages/server/src <= 15000`
   - 检查没有“换壳未降复杂度”的假完成
 - 结果：
-  - `npm run lint`：通过，`0 errors / 11 warnings`
-  - `packages/server/src = 14973`
+  - `npm run lint`：通过，`0 errors / 0 warnings`
+  - `packages/server/src = 14983`
   - 独立 judge：`PASS`
   - 当前结论：`S14` 已完成
 

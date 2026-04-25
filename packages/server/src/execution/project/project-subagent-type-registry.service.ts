@@ -86,7 +86,10 @@ function normalizeStoredProjectSubagentType(
     return null;
   }
   const toolNames = Array.isArray(record.toolNames)
-    ? [...new Set(record.toolNames.flatMap((entry) => normalizeOptionalText(entry) ? [normalizeOptionalText(entry)!] : []))]
+    ? [...new Set(record.toolNames.flatMap((entry) => {
+        const toolName = normalizeOptionalText(entry);
+        return toolName ? [toolName] : [];
+      }))]
     : undefined;
   return {
     ...(normalizeOptionalText(record.description) ? { description: normalizeOptionalText(record.description) } : {}),

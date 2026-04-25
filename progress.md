@@ -2,6 +2,11 @@
 
 ## 2026-04-25
 
+- 已继续做最终收尾：
+  - 已清理剩余 lint warning，当前 `npm run lint` 为 `0 errors / 0 warnings`
+  - `packages/server/src` 当前为 `14983`
+  - 已重新通过 `packages/server: npm run build`、root 双 `smoke:server`
+
 - 已完成 `S14` 总复核：
   - `eslint.config.mjs` 已恢复 `curly: ['error', 'all']`
   - `npm run lint` 通过，结果为 `0 errors / 11 warnings`

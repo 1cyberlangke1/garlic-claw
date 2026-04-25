@@ -1,5 +1,30 @@
 # 2026-04-19 Skill 对齐 OpenCode
 
+## 2026-04-25 S14 后续收尾：warning 清零
+
+### 当前稳定值
+
+- `packages/server/src` 非空行：`14983`
+- lint：`0 errors / 0 warnings`
+
+### fresh
+
+- root
+  - `npm run lint`
+  - `npm run count:server-src` -> `14983`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_RUNTIME_SHELL_BACKEND=native-shell npm run smoke:server`
+- `packages/server`
+  - `npm run build`
+
+### 本轮新增
+
+- 已移除剩余 warning：
+  - unused import / type
+  - non-null assertion
+  - 重复 normalize 调用
+- 当前 warning 已清零，行为未变
+
 ## 2026-04-25 S14 总 judge 通过
 
 ### 当前稳定值

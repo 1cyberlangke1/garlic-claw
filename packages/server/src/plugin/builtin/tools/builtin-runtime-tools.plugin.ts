@@ -1,4 +1,4 @@
-import type { JsonValue, PluginConfigSchema, PluginManifest, PluginRuntimeCommandResult, PluginRuntimeEditResult, PluginRuntimeWriteResult, RuntimeBackendKind } from '@garlic-claw/shared';
+import type { JsonValue, PluginConfigSchema, PluginManifest, PluginRuntimeEditResult, PluginRuntimeWriteResult, RuntimeBackendKind } from '@garlic-claw/shared';
 import { BASH_TOOL_PARAMETERS } from '../../../execution/bash/bash-tool.service';
 import { EDIT_TOOL_PARAMETERS } from '../../../execution/edit/edit-tool.service';
 import { GLOB_TOOL_PARAMETERS } from '../../../execution/glob/glob-tool.service';

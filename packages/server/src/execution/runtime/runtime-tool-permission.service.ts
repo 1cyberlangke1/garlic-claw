@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RuntimeOperationName, RuntimePermissionDecision, RuntimePermissionReplyResult, RuntimePermissionRequest, RuntimePermissionResolution } from '@garlic-claw/shared';
+import type { RuntimeOperationName, RuntimePermissionDecision, RuntimePermissionReplyResult, RuntimePermissionRequest } from '@garlic-claw/shared';
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
 import { expandRuntimeOperationsToCapabilities } from './runtime-operation-policy';

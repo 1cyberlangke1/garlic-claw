@@ -73,7 +73,8 @@ class ContextCompactionHistoryState {
     this.messageStates = messages.map((message) => ({ message, ...readContextCompactionAnnotationState(message) }));
     const activeSummaryIds = new Set(this.messageStates.flatMap(({ summaryId }) => summaryId ? [summaryId] : []));
     const visibleStates = this.messageStates.filter(({ covered }) => !covered.some(({ compactionId }) => activeSummaryIds.has(compactionId)));
-    const settledStates = omitTrailingPendingAssistant && visibleStates.at(-1) && isTransientPendingAssistant(visibleStates.at(-1)!.message)
+    const lastVisibleState = visibleStates.at(-1);
+    const settledStates = omitTrailingPendingAssistant && lastVisibleState && isTransientPendingAssistant(lastVisibleState.message)
       ? visibleStates.slice(0, -1)
       : visibleStates;
     this.visibleMessages = settledStates.map(({ message }) => message);

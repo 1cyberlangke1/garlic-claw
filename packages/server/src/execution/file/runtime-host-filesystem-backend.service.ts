@@ -249,11 +249,17 @@ export class RuntimeHostFilesystemBackendService implements RuntimeFilesystemBac
     if (input.oldString === '') {
       const nextContent = previousContent ? normalizeWorkspaceLineEnding(input.newString, detectWorkspaceLineEnding(previousContent)) : input.newString;
       const writeResult = await this.writeResolvedTextFile(sessionId, target, nextContent, previousContent);
-      return { diff: writeResult.diff!, occurrences: 1, postWrite: writeResult.postWrite, path: writeResult.path, strategy: 'empty-old-string' };
+      if (!writeResult.diff) {
+        throw new BadRequestException('空旧文本写入必须产生 diff');
+      }
+      return { diff: writeResult.diff, occurrences: 1, postWrite: writeResult.postWrite, path: writeResult.path, strategy: 'empty-old-string' };
     }
     const replaced = replaceRuntimeText(previousContent, input.oldString, input.newString, input.replaceAll);
     const writeResult = await this.writeResolvedTextFile(sessionId, target, normalizeWorkspaceLineEnding(replaced.content, detectWorkspaceLineEnding(previousContent)), previousContent);
-    return { diff: writeResult.diff!, occurrences: replaced.occurrences, postWrite: writeResult.postWrite, path: writeResult.path, strategy: replaced.strategy };
+    if (!writeResult.diff) {
+      throw new BadRequestException('文本替换必须产生 diff');
+    }
+    return { diff: writeResult.diff, occurrences: replaced.occurrences, postWrite: writeResult.postWrite, path: writeResult.path, strategy: replaced.strategy };
   }
 
   private async writeResolvedTextFile(sessionId: string, target: RuntimeHostFilesystemResolvedPath, content: string, previousContent?: string | null): Promise<RuntimeFilesystemWriteResult> {

@@ -37,7 +37,6 @@ interface AiExecutionTarget { modelId: string; provider: StoredAiProviderConfig;
 export interface AiModelExecutionStreamResult { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string; }
 
 type AiModelStreamRequest = AiModelExecutionRequest & { abortSignal?: AbortSignal; tools?: Record<string, Tool>; };
-type AiSdkGenerateTextResult = Awaited<ReturnType<typeof generateText>>;
 type AiSdkStreamTextResult = ReturnType<typeof streamText>;
 type OpenAiCompatibleToolCallIdState = { generatedIds: Map<string, string>; streamId: string; };
 type NormalizedOpenAiCompatibleToolCall = { changed: boolean; toolCall: Record<string, unknown>; };

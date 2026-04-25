@@ -3,7 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PluginBootstrapService, type RegisterPluginInput } from '../../plugin/bootstrap/plugin-bootstrap.service';
 import type { RegisteredPluginRecord, RegisteredPluginRemoteRecord } from '../../plugin/persistence/plugin-persistence.service';
 import { CONNECTION_SCOPED_PLUGIN_HOST_METHODS } from '../host/runtime-host.constants';
-import type { RuntimeGatewayAuthClaims, RuntimeGatewayConnectionRecord } from './runtime-gateway.types';
+import type { RuntimeGatewayConnectionRecord } from './runtime-gateway.types';
 
 const CONNECTION_SCOPED_METHODS = new Set<PluginHostMethod>(CONNECTION_SCOPED_PLUGIN_HOST_METHODS);
 const DEFAULT_SUPPORTED_ACTIONS: PluginActionName[] = ['health-check', 'reload', 'reconnect', 'refresh-metadata'];

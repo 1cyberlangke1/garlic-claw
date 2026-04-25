@@ -1,5 +1,5 @@
 import type { ChatMessageMetadata, ChatMessagePart, PluginCallContext } from '@garlic-claw/shared';
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { ToolRegistryService } from '../execution/tool/tool-registry.service';
 import { PersonaService } from '../persona/persona.service';
