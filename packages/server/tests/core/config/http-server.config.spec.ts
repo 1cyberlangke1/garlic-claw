@@ -4,7 +4,7 @@ describe('readHttpServerConfig', () => {
   it('returns defaults when env values are missing', () => {
     expect(readHttpServerConfig({})).toEqual({
       globalPrefix: 'api',
-      port: 23331,
+      port: 23330,
     });
   });
 

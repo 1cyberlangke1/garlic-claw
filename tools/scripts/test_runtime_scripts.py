@@ -521,13 +521,19 @@ class DevRuntimeTests(unittest.TestCase):
         self.assertTrue(devRuntime.编译日志已进入监听态(logPath))
 
     def testStartWaitsForCompilerReadyBeforeLaunchingBackendApp(self) -> None:
-        """开发态应在首轮 watch 编译完成后再启动后端应用。"""
+        """开发态应在首轮 watch 编译完成后先起后端应用，再起前端。"""
         devRuntime = loadPackageModule('tools.scripts.dev_runtime')
         startedNames: list[str] = []
+        waitedPorts: list[int] = []
 
         def fakeStartManagedProcess(service: dict[str, object]) -> mock.Mock:
             startedNames.append(str(service['name']))
             return mock.Mock(pid=100 + len(startedNames))
+
+        def fakeWaitForPort(port: int, timeoutSeconds: int) -> bool:
+            del timeoutSeconds
+            waitedPorts.append(port)
+            return True
 
         with (
             mock.patch.object(devRuntime, '读取受管状态', return_value={}),
@@ -542,7 +548,7 @@ class DevRuntimeTests(unittest.TestCase):
             mock.patch.object(devRuntime, '等待后端编译器首轮完成', return_value=True) as waitCompiler,
             mock.patch.object(devRuntime.runtime, 'startManagedProcess', side_effect=fakeStartManagedProcess),
             mock.patch.object(devRuntime, '保存受管状态'),
-            mock.patch.object(devRuntime.runtime, 'waitForPort', return_value=True),
+            mock.patch.object(devRuntime.runtime, 'waitForPort', side_effect=fakeWaitForPort),
             mock.patch.object(devRuntime.docker_runtime, 'http健康检查', return_value=True),
             mock.patch.object(devRuntime.runtime, 'startSingleLineStatus'),
             mock.patch.object(devRuntime.runtime, 'finishSingleLineStatus'),
@@ -552,8 +558,9 @@ class DevRuntimeTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(
             startedNames,
-            ['后端编译器', '前端开发服务器', '后端应用'],
+            ['后端编译器', '后端应用', '前端开发服务器'],
         )
+        self.assertEqual(waitedPorts, [23330, 23333])
         waitCompiler.assert_called_once_with(
             devRuntime.SERVER_TSC_STDOUT,
             devRuntime.getPortWaitTimeoutSeconds('backend_app'),
@@ -732,6 +739,7 @@ class DevRuntimeTests(unittest.TestCase):
         with (
             mock.patch.object(devRuntime.runtime, 'loadState', return_value=state),
             mock.patch.object(devRuntime.runtime, 'head'),
+            mock.patch.object(devRuntime.runtime, 'killBackendWatchProcessOrphans') as killBackendWatchProcessOrphans,
             mock.patch.object(devRuntime.runtime, 'clearStateFiles') as clearStateFiles,
             mock.patch.object(
                 devRuntime.runtime,
@@ -746,6 +754,7 @@ class DevRuntimeTests(unittest.TestCase):
             state=state,
             ports=[23330, 23331, 23333],
         )
+        killBackendWatchProcessOrphans.assert_called_once_with()
         clearStateFiles.assert_called_once_with()
 
 
@@ -784,6 +793,29 @@ class ProcessRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(stopped, killEvents)
 
+    def testKillBackendWatchProcessOrphansStopsMatchedWatchParents(self) -> None:
+        """孤儿清理应关闭遗留的 backend watch 父进程，并跳过重复 PID。"""
+        common = loadModule('process_runtime_kill_watch_orphans', COMMON_PATH)
+        killEvents: list[tuple[str, int]] = []
+
+        def fakeKillPid(pid: int, source: str) -> bool:
+            killEvents.append((source, pid))
+            return True
+
+        stopped = common.killBackendWatchProcessOrphans(
+            killPid=fakeKillPid,
+            findBackendWatchProcessPidsFn=lambda: [5072, 5072, 6100],
+        )
+
+        self.assertEqual(
+            killEvents,
+            [
+                ('backend_app:watch-orphan', 5072),
+                ('backend_app:watch-orphan', 6100),
+            ],
+        )
+        self.assertEqual(stopped, killEvents)
+
     def testStopServicesHonorsExplicitEmptyPortList(self) -> None:
         """统一关闭逻辑在传入空端口列表时不应回退到默认端口。"""
         common = loadModule('process_runtime_stop_services_empty_ports', COMMON_PATH)
@@ -802,6 +834,36 @@ class ProcessRuntimeTests(unittest.TestCase):
 
         self.assertEqual(killEvents, [('backend_app', 200)])
         self.assertEqual(stopped, [('backend_app', 200)])
+
+    def testStopServicesAlsoKillsBackendWatchParentForPortPid(self) -> None:
+        """Windows 下按端口关掉后端子进程时，也应补杀 watch 父进程。"""
+        common = loadModule('process_runtime_stop_services_watch_parent', COMMON_PATH)
+        killEvents: list[tuple[str, int]] = []
+
+        def fakeKillPid(pid: int, source: str) -> bool:
+            killEvents.append((source, pid))
+            return True
+
+        def fakeReadBackendWatchAncestorPids(pid: int) -> list[int]:
+            return [5072] if pid == 25984 else []
+
+        with mock.patch.object(common, 'IS_WINDOWS', True):
+            stopped = common.stopServices(
+                state={},
+                ports=[23330],
+                killPid=fakeKillPid,
+                findPortPidsFn=lambda port: [25984] if port == 23330 else [],
+                findBackendWatchAncestorPidsFn=fakeReadBackendWatchAncestorPids,
+            )
+
+        self.assertEqual(
+            killEvents,
+            [
+                ('port:23330', 25984),
+                ('backend_app:watch-parent', 5072),
+            ],
+        )
+        self.assertEqual(stopped, killEvents)
 
     def testWindowsPidProbeTreatsAccessDeniedAsStillRunning(self) -> None:
         """Windows 下 OpenProcess 返回 Access Denied 时应视为进程仍存在。"""

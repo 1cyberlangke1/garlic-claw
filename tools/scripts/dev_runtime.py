@@ -501,6 +501,7 @@ def stop() -> int:
         state=state,
         ports=list(DEFAULT_PORTS),
     )
+    runtime.killBackendWatchProcessOrphans()
     runtime.clearStateFiles()
     print("开发服务已停止。")
     return 0
@@ -553,6 +554,8 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
         else:
             runtime.clearStateFiles()
 
+    runtime.killBackendWatchProcessOrphans()
+
     if not 确保端口空闲():
         return 1
 
@@ -578,12 +581,6 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
         compilerProcess = runtime.startRelayManagedProcess(compilerService) if tailLogs else runtime.startManagedProcess(compilerService)
         startedServices[compilerName] = 记录已启动服务(compilerName, compilerService, compilerProcess)
 
-        webName = "web"
-        webService = services[webName]
-        print(f"[2/{totalServices}] 正在启动{webService['name']}...")
-        webProcess = runtime.startRelayManagedProcess(webService) if tailLogs else runtime.startManagedProcess(webService)
-        startedServices[webName] = 记录已启动服务(webName, webService, webProcess)
-
         compilerReadyLabel = "等待后端编译器首轮完成"
         compilerReadyWidth = 获取状态输出宽度([compilerReadyLabel])
         compilerTimeoutSeconds = getBackendCompilerWaitTimeoutSeconds()
@@ -604,26 +601,49 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
             success=True,
         )
 
-        remainingServices = [
-            (serviceName, service)
-            for serviceName, service in services.items()
-            if serviceName not in {compilerName, webName}
-        ]
-        for index, (serviceName, service) in enumerate(remainingServices, start=3):
-            print(f"[{index}/{len(services)}] 正在启动{service['name']}...")
-            process = runtime.startRelayManagedProcess(service) if tailLogs else runtime.startManagedProcess(service)
-            startedServices[serviceName] = 记录已启动服务(serviceName, service, process)
-
-        保存受管状态(startedServices)
+        backendAppName = "backend_app"
+        backendAppService = services[backendAppName]
+        print(f"[2/{totalServices}] 正在启动{backendAppService['name']}...")
+        backendAppProcess = runtime.startRelayManagedProcess(backendAppService) if tailLogs else runtime.startManagedProcess(backendAppService)
+        startedServices[backendAppName] = 记录已启动服务(backendAppName, backendAppService, backendAppProcess)
 
         portStatusWidth = 获取状态输出宽度(
             [
                 f"等待{service['name']}端口就绪"
-                for service in startedServices.values()
+                for service in services.values()
                 if isinstance(service.get("port"), int)
             ]
         )
+        backendPortTimeoutSeconds = getPortWaitTimeoutSeconds(backendAppName)
+        backendPortStatusLabel = f"等待{backendAppService['name']}端口就绪"
+        runtime.startSingleLineStatus(backendPortStatusLabel, width=portStatusWidth)
+        if not runtime.waitForPort(int(backendAppService["port"]), backendPortTimeoutSeconds):
+            runtime.finishSingleLineStatus(
+                backendPortStatusLabel,
+                width=portStatusWidth,
+                result=f"(失败, {backendPortTimeoutSeconds}s)",
+                success=False,
+            )
+            print(f"{backendAppService['name']} 未在 {backendPortTimeoutSeconds} 秒内打开端口 {backendAppService['port']}。")
+            return 启动失败清理(startedServices)
+        runtime.finishSingleLineStatus(
+            backendPortStatusLabel,
+            width=portStatusWidth,
+            result=f"(端口 {backendAppService['port']})",
+            success=True,
+        )
+
+        webName = "web"
+        webService = services[webName]
+        print(f"[3/{totalServices}] 正在启动{webService['name']}...")
+        webProcess = runtime.startRelayManagedProcess(webService) if tailLogs else runtime.startManagedProcess(webService)
+        startedServices[webName] = 记录已启动服务(webName, webService, webProcess)
+
+        保存受管状态(startedServices)
+
         for serviceName, service in startedServices.items():
+            if serviceName == backendAppName:
+                continue
             port = service.get("port")
             if not isinstance(port, int):
                 continue

@@ -5,7 +5,7 @@ import { BootstrapAdminService } from '../../auth/bootstrap-admin.service';
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
 
 const DEFAULT_GLOBAL_PREFIX = 'api';
-const DEFAULT_HTTP_PORT = 23331;
+const DEFAULT_HTTP_PORT = 23330;
 
 export async function bootstrapHttpApp(): Promise<void> {
   const { globalPrefix, port } = readHttpServerConfig();
