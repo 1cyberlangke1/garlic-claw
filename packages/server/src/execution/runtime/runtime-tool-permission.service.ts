@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import type { RuntimeOperationName, RuntimePermissionDecision, RuntimePermissionReplyResult, RuntimePermissionRequest } from '@garlic-claw/shared';
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { uuidv7 } from 'uuidv7';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
 import { expandRuntimeOperationsToCapabilities } from './runtime-operation-policy';
 import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
@@ -47,7 +47,7 @@ export class RuntimeToolPermissionService {
       backendKind: input.backend.kind,
       conversationId: input.conversationId,
       createdAt: new Date().toISOString(),
-      id: randomUUID(),
+      id: uuidv7(),
       operations,
       summary: input.summary,
       toolName: input.toolName,

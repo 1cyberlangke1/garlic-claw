@@ -4,6 +4,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, isLoopFinished, streamText, type LanguageModel, type ModelMessage, type Tool } from 'ai';
 import { createRequire } from 'node:module';
+import { uuidv7 } from 'uuidv7';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
 import type { StoredAiProviderConfig } from '../ai-management/ai-management.types';
 import { stringifyInvalidToolInput } from '../execution/invalid/invalid-tool-record';
@@ -34,12 +35,18 @@ export interface AiModelExecutionResult {
 }
 
 interface AiExecutionTarget { modelId: string; provider: StoredAiProviderConfig; }
-export interface AiModelExecutionStreamResult { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string; }
+export interface AiModelExecutionStreamResult {
+  finishReason?: Promise<unknown> | unknown;
+  fullStream: AsyncIterable<unknown>;
+  modelId: string;
+  providerId: string;
+  usage?: Promise<AiModelUsage | undefined>;
+}
 
-type AiModelStreamRequest = AiModelExecutionRequest & { abortSignal?: AbortSignal; tools?: Record<string, Tool>; };
+type AiModelStreamRequest = AiModelExecutionRequest & { abortSignal?: AbortSignal; tools?: Record<string, Tool> };
 type AiSdkStreamTextResult = ReturnType<typeof streamText>;
-type OpenAiCompatibleToolCallIdState = { generatedIds: Map<string, string>; streamId: string; };
-type NormalizedOpenAiCompatibleToolCall = { changed: boolean; toolCall: Record<string, unknown>; };
+type OpenAiCompatibleToolCallIdState = { generatedIds: Map<string, string>; streamId: string };
+type NormalizedOpenAiCompatibleToolCall = { changed: boolean; toolCall: Record<string, unknown> };
 
 const localRequire = createRequire(__filename);
 
@@ -55,7 +62,13 @@ export class AiModelExecutionService {
   streamText(input: AiModelStreamRequest): AiModelExecutionStreamResult {
     return this.runAcrossTargetsSync(input, 'AI text streaming failed', (target) => {
       const result = this.startTextStream(input, target);
-      return { finishReason: result.finishReason, fullStream: result.fullStream, modelId: target.modelId, providerId: target.provider.id };
+      return {
+        finishReason: result.finishReason,
+        fullStream: result.fullStream,
+        modelId: target.modelId,
+        providerId: target.provider.id,
+        usage: readProviderUsagePromise(result.totalUsage),
+      };
     });
   }
 
@@ -85,21 +98,16 @@ export class AiModelExecutionService {
 
   private buildExecutionTargets(input: AiModelExecutionRequest): AiExecutionTarget[] {
     const primary = this.resolveExecutionTarget(input.providerId, input.modelId);
-    return input.allowFallbackChatModels
-      ? [primary, ...this.aiProviderSettingsService.getHostModelRoutingConfig().fallbackChatModels
-        .filter((target) => target.providerId !== primary.provider.id || target.modelId !== primary.modelId)
-        .map((target) => this.resolveExecutionTarget(target.providerId, target.modelId))]
-      : [primary];
+    return input.allowFallbackChatModels ? [primary, ...this.aiProviderSettingsService.getHostModelRoutingConfig().fallbackChatModels.filter((target) => target.providerId !== primary.provider.id || target.modelId !== primary.modelId).map((target) => this.resolveExecutionTarget(target.providerId, target.modelId))] : [primary];
   }
 
   private resolveExecutionTarget(providerId: string | undefined, modelId: string | undefined): AiExecutionTarget {
     const resolvedProviderId = providerId ?? this.aiProviderSettingsService.listProviders()[0]?.id;
-    if (!resolvedProviderId) {throw new Error('No provider configured');}
-    const provider = this.aiProviderSettingsService.getProvider(resolvedProviderId);
-    const resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
-    if (!resolvedModelId) {throw new Error(`Provider "${provider.id}" does not have any configured model`);}
-    if (!provider.apiKey) {throw new Error(`Provider "${provider.id}" is missing apiKey`);}
-    if (!provider.baseUrl) {throw new Error(`Provider "${provider.id}" is missing baseUrl`);}
+    if (!resolvedProviderId) throw new Error('No provider configured');
+    const provider = this.aiProviderSettingsService.getProvider(resolvedProviderId), resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
+    if (!resolvedModelId) throw new Error(`Provider "${provider.id}" does not have any configured model`);
+    if (!provider.apiKey) throw new Error(`Provider "${provider.id}" is missing apiKey`);
+    if (!provider.baseUrl) throw new Error(`Provider "${provider.id}" is missing baseUrl`);
     return { modelId: resolvedModelId, provider };
   }
 
@@ -115,15 +123,9 @@ export class AiModelExecutionService {
     };
   }
 
-  private buildToolExecutionOptions(tools?: Record<string, Tool>) {
-    return tools ? { experimental_repairToolCall: this.createRepairToolCall(tools), stopWhen: isLoopFinished(), tools } : {};
-  }
+  private buildToolExecutionOptions(tools?: Record<string, Tool>) { return tools ? { experimental_repairToolCall: this.createRepairToolCall(tools), stopWhen: isLoopFinished(), tools } : {}; }
 
-  private async readTextExecutionResult(
-    input: AiModelExecutionRequest,
-    target: AiExecutionTarget,
-    streamCollect: boolean,
-  ): Promise<AiModelExecutionResult> {
+  private async readTextExecutionResult(input: AiModelExecutionRequest, target: AiExecutionTarget, streamCollect: boolean): Promise<AiModelExecutionResult> {
     if (streamCollect) {
       const result = this.startTextStream(input, target);
       const collected = await collectAssistantStream(result.fullStream);
@@ -155,18 +157,11 @@ export class AiModelExecutionService {
   }
 
   private startTextStream(input: AiModelStreamRequest, target: AiExecutionTarget): AiSdkStreamTextResult {
-    return streamText({
-      ...this.buildExecutionInput(input, target),
-      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-      includeRawChunks: true,
-      ...this.buildToolExecutionOptions(input.tools),
-    } as Parameters<typeof streamText>[0]);
+    return streamText({ ...this.buildExecutionInput(input, target), ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}), includeRawChunks: true, ...this.buildToolExecutionOptions(input.tools) } as Parameters<typeof streamText>[0]);
   }
 
   private createLanguageModel(target: AiExecutionTarget): LanguageModel {
-    if (target.provider.driver === 'anthropic') {
-      return createAnthropic({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl })(target.modelId) as unknown as LanguageModel;
-    }
+    if (target.provider.driver === 'anthropic') return createAnthropic({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl })(target.modelId) as unknown as LanguageModel;
     if (target.provider.driver === 'gemini') {
       const { createGoogleGenerativeAI } = localRequire('@ai-sdk/google') as {
         createGoogleGenerativeAI: (options: { apiKey: string; baseURL?: string }) => (modelId: string) => unknown;
@@ -182,10 +177,7 @@ export class AiModelExecutionService {
   }
 
   private createRepairToolCall(tools: Record<string, Tool>) {
-    return async (input: {
-      error: { message?: string; name?: string };
-      toolCall: { input: string; toolCallId: string; toolName: string } & Record<string, unknown>;
-    }) => {
+    return async (input: { error: { message?: string; name?: string }; toolCall: { input: string; toolCallId: string; toolName: string } & Record<string, unknown> }) => {
       if (!tools.invalid) {return null;}
       const inputText = stringifyInvalidToolInput(input.toolCall.input);
       return {
@@ -202,11 +194,11 @@ export class AiModelExecutionService {
   }
 }
 
-async function collectAssistantStream(fullStream: AsyncIterable<unknown>): Promise<{ customBlocks: AssistantCustomBlockEntry[]; text: string; }> {
+async function collectAssistantStream(fullStream: AsyncIterable<unknown>): Promise<{ customBlocks: AssistantCustomBlockEntry[]; text: string }> {
   let text = '';
   let customBlocks: AssistantCustomBlockEntry[] = [];
   for await (const part of fullStream) {
-    if (!isRecord(part) || typeof part.type !== 'string') {continue;}
+    if (!isRecord(part) || typeof part.type !== 'string') continue;
     if (part.type === 'text-delta' && typeof part.text === 'string') {
       text += part.text;
       continue;
@@ -217,42 +209,24 @@ async function collectAssistantStream(fullStream: AsyncIterable<unknown>): Promi
 }
 
 function applyAssistantCustomBlockUpdates(currentBlocks: AssistantCustomBlockEntry[], updates: AssistantCustomBlockEntry[]): AssistantCustomBlockEntry[] {
-  if (updates.length === 0) {return currentBlocks;}
+  if (updates.length === 0) return currentBlocks;
   const nextBlocks = [...currentBlocks];
   for (const update of updates) {
     const blockIndex = nextBlocks.findIndex((entry) => entry.key === update.key);
-    if (blockIndex < 0) {
-      nextBlocks.push(update);
-      continue;
-    }
-    nextBlocks[blockIndex] = update.kind === 'text'
-      ? { key: update.key, kind: 'text', value: `${nextBlocks[blockIndex]?.kind === 'text' ? nextBlocks[blockIndex].value : ''}${update.value}` }
-      : update;
+    nextBlocks[blockIndex < 0 ? nextBlocks.length : blockIndex] = blockIndex < 0 || update.kind !== 'text' ? update : { key: update.key, kind: 'text', value: `${nextBlocks[blockIndex]?.kind === 'text' ? nextBlocks[blockIndex].value : ''}${update.value}` };
   }
   return nextBlocks;
 }
 
-function readFinishReason(value: unknown): string | null {
-  return typeof value === 'string' ? value : null;
+function readFinishReason(value: unknown): string | null { return typeof value === 'string' ? value : null; }
+
+function buildExecutionMessages(messages: PluginLlmMessage[]): ModelMessage[] { return messages.map((message) => ({ content: buildExecutionMessageContent(message.content), role: message.role })) as unknown as ModelMessage[]; }
+
+function buildExecutionMessageContent(content: PluginLlmMessage['content']): string | Array<{ image?: ArrayBuffer | string; mimeType?: string; text?: string; type: 'image' | 'text' }> {
+  return typeof content === 'string' ? content : content.map((part) => part.type === 'text' ? { text: part.text, type: 'text' as const } : { image: toAiSdkImageInput(part.image), ...(part.mimeType ? { mimeType: part.mimeType } : {}), type: 'image' as const });
 }
 
-function buildExecutionMessages(messages: PluginLlmMessage[]): ModelMessage[] {
-  return messages.map((message) => ({ content: buildExecutionMessageContent(message.content), role: message.role })) as unknown as ModelMessage[];
-}
-
-function buildExecutionMessageContent(
-  content: PluginLlmMessage['content'],
-): string | Array<{ image?: ArrayBuffer | string; mimeType?: string; text?: string; type: 'image' | 'text' }> {
-  return typeof content === 'string'
-    ? content
-    : content.map((part) => part.type === 'text'
-      ? { text: part.text, type: 'text' as const }
-      : { image: toAiSdkImageInput(part.image), ...(part.mimeType ? { mimeType: part.mimeType } : {}), type: 'image' as const });
-}
-
-function buildProviderOptions(input: AiModelExecutionRequest): JsonObject | undefined {
-  return input.variant ? { ...(input.providerOptions ?? {}), variant: input.variant } : input.providerOptions;
-}
+function buildProviderOptions(input: AiModelExecutionRequest): JsonObject | undefined { return input.variant ? { ...(input.providerOptions ?? {}), variant: input.variant } : input.providerOptions; }
 
 function readModelUsage(value: unknown, input: AiModelExecutionRequest, text: string): AiModelUsage {
   const providerUsage = readProviderUsage(value);
@@ -262,12 +236,10 @@ function readModelUsage(value: unknown, input: AiModelExecutionRequest, text: st
   return { inputTokens, outputTokens, source: 'estimated', totalTokens: inputTokens + outputTokens };
 }
 
-function readExecutionError(error: unknown, fallback: string): Error {
-  return error instanceof Error ? error : new Error(fallback);
-}
+function readExecutionError(error: unknown, fallback: string): Error { return error instanceof Error ? error : new Error(fallback); }
 
 function readProviderUsage(value: unknown): AiModelUsage | null {
-  if (!isRecord(value)) {return null;}
+  if (!isRecord(value)) return null;
   const totalTokens = readTokenNumber(value.totalTokens);
   let inputTokens = readTokenNumber(value.inputTokens);
   let outputTokens = readTokenNumber(value.outputTokens);
@@ -276,37 +248,30 @@ function readProviderUsage(value: unknown): AiModelUsage | null {
   return inputTokens === null || outputTokens === null ? null : { inputTokens, outputTokens, source: 'provider', totalTokens: totalTokens ?? inputTokens + outputTokens };
 }
 
-function readTokenNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
-}
+function readProviderUsagePromise(value: unknown): Promise<AiModelUsage | undefined> | undefined { return value === undefined ? undefined : Promise.resolve(value).then((usage) => readProviderUsage(usage) ?? undefined).catch(() => undefined); }
 
-function readMessageText(content: PluginLlmMessage['content']): string {
-  return typeof content === 'string' ? content : content.filter((part): part is { text: string; type: 'text' } => part.type === 'text').map((part) => part.text).join('\n');
-}
+function readTokenNumber(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null; }
 
-function estimateTokenCount(text: string): number {
-  return Math.ceil(Buffer.byteLength(text, 'utf8') / 4);
-}
+function readMessageText(content: PluginLlmMessage['content']): string { return typeof content === 'string' ? content : content.filter((part): part is { text: string; type: 'text' } => part.type === 'text').map((part) => part.text).join('\n'); }
+
+function estimateTokenCount(text: string): number { return Math.ceil(Buffer.byteLength(text, 'utf8') / 4); }
 
 function toAiSdkImageInput(image: string): string | ArrayBuffer {
-  if (!image.startsWith('data:')) {return image;}
+  if (!image.startsWith('data:')) return image;
   const matched = /^data:([^;]+);base64,(.+)$/u.exec(image);
-  if (!matched) {throw new Error('Unsupported image data URL');}
+  if (!matched) throw new Error('Unsupported image data URL');
   const binary = Buffer.from(matched[2], 'base64');
   return binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
 }
 
-function createOpenAiCompatibleFetch(providerId: string): typeof fetch {
-  const baseFetch = globalThis.fetch.bind(globalThis);
-  return async (input, init) => normalizeOpenAiCompatibleStreamResponse(await baseFetch(input, init), providerId);
-}
+function createOpenAiCompatibleFetch(providerId: string): typeof fetch { const baseFetch = globalThis.fetch.bind(globalThis); return async (input, init) => normalizeOpenAiCompatibleStreamResponse(await baseFetch(input, init), providerId); }
 
 function normalizeOpenAiCompatibleStreamResponse(response: Response, providerId: string): Response {
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-  if (!response.body || !contentType.includes('text/event-stream')) {return response;}
+  if (!response.body || !contentType.includes('text/event-stream')) return response;
   const headers = new Headers(response.headers);
   headers.delete('content-length');
-  const state: OpenAiCompatibleToolCallIdState = { generatedIds: new Map<string, string>(), streamId: sanitizeOpenAiCompatibleIdFragment(`${providerId}-${crypto.randomUUID()}`) };
+  const state: OpenAiCompatibleToolCallIdState = { generatedIds: new Map<string, string>(), streamId: sanitizeOpenAiCompatibleIdFragment(`${providerId}-${uuidv7()}`) };
   const reader = response.body.getReader();
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -314,46 +279,27 @@ function normalizeOpenAiCompatibleStreamResponse(response: Response, providerId:
   const transformedBody = new ReadableStream<Uint8Array>({
     async pull(controller) {
       const { done, value } = await reader.read();
-      if (done) {
-        flushNormalizedSseChunk(controller, encoder, buffered + decoder.decode(), state, true);
-        controller.close();
-        return;
-      }
+      if (done) { flushNormalizedSseChunk(controller, encoder, buffered + decoder.decode(), state, true); controller.close(); return; }
       buffered += decoder.decode(value, { stream: true });
       const lastNewlineIndex = buffered.lastIndexOf('\n');
-      if (lastNewlineIndex < 0) {return;}
+      if (lastNewlineIndex < 0) return;
       flushNormalizedSseChunk(controller, encoder, buffered.slice(0, lastNewlineIndex + 1), state, false);
       buffered = buffered.slice(lastNewlineIndex + 1);
     },
-    async cancel(reason) {
-      await reader.cancel(reason);
-    },
+    async cancel(reason) { await reader.cancel(reason); },
   });
   return new Response(transformedBody, { headers, status: response.status, statusText: response.statusText });
 }
 
-function flushNormalizedSseChunk(
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  encoder: InstanceType<typeof TextEncoder>,
-  chunk: string,
-  state: OpenAiCompatibleToolCallIdState,
-  flushTail: boolean,
-): void {
-  if (chunk.length === 0) {return;}
-  controller.enqueue(encoder.encode(normalizeOpenAiCompatibleSseLines(chunk, state, flushTail)));
-}
+function flushNormalizedSseChunk(controller: ReadableStreamDefaultController<Uint8Array>, encoder: InstanceType<typeof TextEncoder>, chunk: string, state: OpenAiCompatibleToolCallIdState, flushTail: boolean): void { if (chunk.length === 0) return; controller.enqueue(encoder.encode(normalizeOpenAiCompatibleSseLines(chunk, state, flushTail))); }
 
-function normalizeOpenAiCompatibleSseLines(chunk: string, state: OpenAiCompatibleToolCallIdState, flushTail: boolean): string {
-  const lines = chunk.split('\n');
-  if (!flushTail && !chunk.endsWith('\n')) {lines.pop();}
-  return lines.map((line) => normalizeOpenAiCompatibleSseLine(line, state)).join('\n');
-}
+function normalizeOpenAiCompatibleSseLines(chunk: string, state: OpenAiCompatibleToolCallIdState, flushTail: boolean): string { const lines = chunk.split('\n'); if (!flushTail && !chunk.endsWith('\n')) {lines.pop();} return lines.map((line) => normalizeOpenAiCompatibleSseLine(line, state)).join('\n'); }
 
 function normalizeOpenAiCompatibleSseLine(line: string, state: OpenAiCompatibleToolCallIdState): string {
   const trimmedLine = line.endsWith('\r') ? line.slice(0, -1) : line;
-  if (!trimmedLine.startsWith('data:')) {return trimmedLine;}
+  if (!trimmedLine.startsWith('data:')) return trimmedLine;
   const payload = trimmedLine.slice(5).trimStart();
-  if (!payload || payload === '[DONE]') {return `data: ${payload}`;}
+  if (!payload || payload === '[DONE]') return `data: ${payload}`;
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
@@ -365,30 +311,21 @@ function normalizeOpenAiCompatibleSseLine(line: string, state: OpenAiCompatibleT
 }
 
 function normalizeOpenAiCompatibleChunkPayload(payload: unknown, state: OpenAiCompatibleToolCallIdState): unknown {
-  if (!isRecord(payload) || !Array.isArray(payload.choices)) {return payload;}
+  if (!isRecord(payload) || !Array.isArray(payload.choices)) return payload;
   let changed = false;
   const nextChoices = payload.choices.map((choice, choiceIndex) => {
-    if (!isRecord(choice) || !isRecord(choice.delta) || !Array.isArray(choice.delta.tool_calls)) {return choice;}
+    if (!isRecord(choice) || !isRecord(choice.delta) || !Array.isArray(choice.delta.tool_calls)) return choice;
     let choiceChanged = false;
-    const nextToolCalls = choice.delta.tool_calls.map((toolCall, toolIndex) => {
-      const normalized = normalizeOpenAiCompatibleToolCall(toolCall, choiceIndex, toolIndex, state);
-      choiceChanged ||= normalized.changed;
-      return normalized.toolCall;
-    });
-    if (!choiceChanged) {return choice;}
+    const nextToolCalls = choice.delta.tool_calls.map((toolCall, toolIndex) => { const normalized = normalizeOpenAiCompatibleToolCall(toolCall, choiceIndex, toolIndex, state); choiceChanged ||= normalized.changed; return normalized.toolCall; });
+    if (!choiceChanged) return choice;
     changed = true;
     return { ...choice, delta: { ...choice.delta, tool_calls: nextToolCalls } };
   });
   return changed ? { ...payload, choices: nextChoices } : payload;
 }
 
-function normalizeOpenAiCompatibleToolCall(
-  toolCall: unknown,
-  choiceIndex: number,
-  toolIndex: number,
-  state: OpenAiCompatibleToolCallIdState,
-): NormalizedOpenAiCompatibleToolCall {
-  if (!isRecord(toolCall)) {return { changed: false, toolCall: toolCall as Record<string, unknown> };}
+function normalizeOpenAiCompatibleToolCall(toolCall: unknown, choiceIndex: number, toolIndex: number, state: OpenAiCompatibleToolCallIdState): NormalizedOpenAiCompatibleToolCall {
+  if (!isRecord(toolCall)) return { changed: false, toolCall: toolCall as Record<string, unknown> };
   let changed = false;
   let nextToolCall = toolCall;
   const nextIndex = typeof nextToolCall.index === 'number' ? nextToolCall.index : toolIndex;
@@ -410,18 +347,10 @@ function normalizeOpenAiCompatibleToolCall(
   return { changed, toolCall: nextToolCall };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 
-function sanitizeOpenAiCompatibleIdFragment(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]+/g, '-');
-}
+function sanitizeOpenAiCompatibleIdFragment(value: string): string { return value.replace(/[^a-zA-Z0-9_-]+/g, '-'); }
 
-function readRepairToolErrorMessage(error: { message?: string } | null | undefined): string {
-  return typeof error?.message === 'string' && error.message.trim().length > 0 ? error.message.trim() : '工具调用不合法';
-}
+function readRepairToolErrorMessage(error: { message?: string } | null | undefined): string { return typeof error?.message === 'string' && error.message.trim().length > 0 ? error.message.trim() : '工具调用不合法'; }
 
-function readRepairToolPhase(error: { name?: string } | null | undefined): 'resolve' | 'validate' {
-  return error?.name === 'AI_NoSuchToolError' ? 'resolve' : 'validate';
-}
+function readRepairToolPhase(error: { name?: string } | null | undefined): 'resolve' | 'validate' { return error?.name === 'AI_NoSuchToolError' ? 'resolve' : 'validate'; }

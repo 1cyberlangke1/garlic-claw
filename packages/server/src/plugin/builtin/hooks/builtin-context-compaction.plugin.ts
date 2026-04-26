@@ -1,19 +1,12 @@
-import { randomUUID } from 'node:crypto';
 import { asChatBeforeModelPayload, asConversationHistoryRewritePayload, CONTEXT_COMPACTION_MANIFEST, createPassHookResult, readContextCompactionConfig, resolveContextCompactionRuntimeConfig } from '@garlic-claw/plugin-sdk/authoring';
 import type { PluginHostFacadeMethods } from '@garlic-claw/plugin-sdk/host';
 import type { ChatMessageAnnotation, JsonValue, PluginCallContext, PluginConversationHistoryMessage, PluginConversationHistoryPreviewResult, PluginRouteResponse } from '@garlic-claw/shared';
+import { uuidv7 } from 'uuidv7';
 import type { BuiltinPluginDefinition } from '../builtin-plugin-definition';
 
-const CONTEXT_COMPACTION_ANNOTATION_TYPE = 'context-compaction';
-const CONTEXT_COMPACTION_OWNER = 'builtin.context-compaction';
-const CONTEXT_COMPACTION_VERSION = '1';
-const AUTO_STOP_REPLY = '已完成上下文压缩，本轮不继续生成主回复。';
-const AUTO_STOP_STATE_KEY = 'context-compaction:auto-stop';
-const CONTEXT_COMPACTION_COMMAND = '/compact';
-const CONTEXT_COMPACTION_COMMAND_ALIAS = '/compress';
+const CONTEXT_COMPACTION_ANNOTATION_TYPE = 'context-compaction', CONTEXT_COMPACTION_OWNER = 'builtin.context-compaction', CONTEXT_COMPACTION_VERSION = '1', AUTO_STOP_REPLY = '已完成上下文压缩，本轮不继续生成主回复。', AUTO_STOP_STATE_KEY = 'context-compaction:auto-stop', CONTEXT_COMPACTION_COMMAND = '/compact', CONTEXT_COMPACTION_COMMAND_ALIAS = '/compress';
 const CONTEXT_COMPACTION_COMMANDS = [CONTEXT_COMPACTION_COMMAND, CONTEXT_COMPACTION_COMMAND_ALIAS] as const;
-const CONTEXT_COMPACTION_COMMAND_MODEL = 'context-compaction-command';
-const CONTEXT_COMPACTION_COMMAND_PROVIDER = 'system';
+const CONTEXT_COMPACTION_COMMAND_MODEL = 'context-compaction-command', CONTEXT_COMPACTION_COMMAND_PROVIDER = 'system';
 const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前压缩插件已关闭。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前历史还不足以生成稳定摘要。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
 const CONTEXT_COMPACTION_ROLE_LABELS: Partial<Record<PluginConversationHistoryMessage['role'], string>> = { assistant: '助手', system: '系统' };
 
@@ -37,13 +30,13 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
   hooks: {
     'message:received': async (payload, context) => {
       const commandInput = readContextCompactionCommandInput(payload);
-      if (!commandInput) {return createPassHookResult();}
+      if (!commandInput) return createPassHookResult();
       return createContextCompactionCommandShortCircuit(commandInput.hasUnexpectedArgs ? null : await runManualContextCompaction({ callContext: context.callContext, host: context.host }), commandInput.hasUnexpectedArgs);
     },
     'conversation:history-rewrite': async (payload, context) => {
       const hookPayload = asConversationHistoryRewritePayload(payload);
       const runtimeConfig = await readContextCompactionRuntimeConfigFromHost(context.host.getConfig());
-      if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary' || runtimeConfig.mode !== 'auto') {return createPassHookResult();}
+      if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary' || runtimeConfig.mode !== 'auto') return createPassHookResult();
       const result = await runContextCompactionForCall({ callContext: context.callContext, history: hookPayload.history, host: context.host, runtimeConfig, trigger: hookPayload.trigger });
       if (result.compacted && !runtimeConfig.allowAutoContinue) {
         await context.host.setState(AUTO_STOP_STATE_KEY, { active: true, conversationId: hookPayload.conversationId }, { scope: 'conversation' });
@@ -53,7 +46,7 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
     'chat:before-model': async (payload, context) => {
       const hookPayload = asChatBeforeModelPayload(payload);
       const runtimeConfig = await readContextCompactionRuntimeConfigFromHost(context.host.getConfig());
-      if (!runtimeConfig.enabled) {return createPassHookResult();}
+      if (!runtimeConfig.enabled) return createPassHookResult();
       const conversationId = context.callContext.conversationId ?? null;
       const state = conversationId ? await context.host.getState(AUTO_STOP_STATE_KEY, { scope: 'conversation' }) : null;
       if (conversationId && isRecord(state) && state.active === true && state.conversationId === conversationId) {
@@ -73,7 +66,7 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
         return slidingMessages ? { action: 'mutate', messages: slidingMessages } as unknown as JsonValue : createPassHookResult();
       }
       const historyState = readContextCompactionHistoryState(history.messages, true);
-      if (historyState.visibleMessages.length === history.messages.length) {return createPassHookResult();}
+      if (historyState.visibleMessages.length === history.messages.length) return createPassHookResult();
       const prefixCount = Math.max(hookPayload.request.messages.length - history.messages.length, 0);
       return {
         action: 'mutate',
@@ -93,9 +86,7 @@ export const BUILTIN_CONTEXT_COMPACTION_PLUGIN: BuiltinPluginDefinition = {
         return { body: toJsonValue({ error: 'Method Not Allowed' }), status: 405 } satisfies PluginRouteResponse;
       }
       const conversationId = readBodyString(request.body, 'conversationId') ?? context.callContext.conversationId ?? null;
-      if (!conversationId) {
-        return { body: toJsonValue({ error: 'conversationId is required' }), status: 400 } satisfies PluginRouteResponse;
-      }
+      if (!conversationId) return { body: toJsonValue({ error: 'conversationId is required' }), status: 400 } satisfies PluginRouteResponse;
       return { body: toJsonValue(await runManualContextCompaction({ body: request.body, callContext: context.callContext, host: context.host })), status: 200 };
     },
   },
@@ -125,33 +116,29 @@ async function runManualContextCompaction(input: { body?: JsonValue | null; call
 
 async function runContextCompactionForCall(input: ContextCompactionCallInput): Promise<ContextCompactionRunResult> {
   const runtimeConfig = input.runtimeConfig ?? await readContextCompactionRuntimeConfigFromHost(input.host.getConfig());
-  if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return { compacted: false, reason: 'disabled' };}
+  if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') return { compacted: false, reason: 'disabled' };
   const omitTrailingPendingAssistant = input.trigger === 'prepare-model';
   const beforeState = readContextCompactionHistoryState(input.history.messages, omitTrailingPendingAssistant);
-  const beforePreview = await input.host.previewConversationHistory({ messages: beforeState.modelMessages });
   const { modelId, providerId, thresholdTokens } = await readContextCompactionTarget({
     host: input.host,
     modelId: input.modelId ?? input.callContext.activeModelId ?? undefined,
     providerId: input.providerId ?? input.callContext.activeProviderId ?? undefined,
     runtimeConfig,
   });
+  const beforePreview = await input.host.previewConversationHistory({ messages: beforeState.modelMessages, modelId, providerId });
   if (input.trigger === 'prepare-model' && beforePreview.estimatedTokens < thresholdTokens) {
     return { beforePreview, compacted: false, reason: 'threshold-not-reached', thresholdTokens };
   }
   const keepRecentMessages = Math.min(runtimeConfig.keepRecentMessages, beforeState.visibleMessages.length);
-  const candidateMessages = beforeState.visibleMessages.slice(0, Math.max(0, beforeState.visibleMessages.length - keepRecentMessages));
-  const summarySource = buildSummarySource(candidateMessages);
-  if (!candidateMessages.length || !summarySource) {return { beforePreview, compacted: false, reason: 'not-enough-history' };}
+  const candidateMessages = beforeState.visibleMessages.slice(0, Math.max(0, beforeState.visibleMessages.length - keepRecentMessages)), summarySource = buildSummarySource(candidateMessages);
+  if (!candidateMessages.length || !summarySource) return { beforePreview, compacted: false, reason: 'not-enough-history' };
 
   const summaryText = (await input.host.generateText({ modelId, providerId, prompt: [runtimeConfig.summaryPrompt, '', '历史对话：', summarySource].join('\n'), transportMode: 'generate' })).text.trim();
-  if (!summaryText) {return { beforePreview, compacted: false, reason: 'empty-summary' };}
+  if (!summaryText) return { beforePreview, compacted: false, reason: 'empty-summary' };
 
-  const compactionId = randomUUID();
-  const summaryMessageId = `context-compaction:${randomUUID()}`;
-  const createdAt = new Date().toISOString();
-  const coveredMessageIds = new Set(candidateMessages.map((message) => message.id));
+  const compactionId = uuidv7(), summaryMessageId = `context-compaction:${uuidv7()}`, createdAt = new Date().toISOString(), coveredMessageIds = new Set(candidateMessages.map((message) => message.id));
   const summaryIndex = beforeState.messageStates.reduce((lastCoveredIndex, { message }, index) => coveredMessageIds.has(message.id) ? index + 1 : lastCoveredIndex, -1);
-  if (summaryIndex < 0) {return { beforePreview, compacted: false, reason: 'invalid-history' };}
+  if (summaryIndex < 0) return { beforePreview, compacted: false, reason: 'invalid-history' };
 
   const predictedMessages = applyContextCompaction({
     compactionId,
@@ -164,7 +151,7 @@ async function runContextCompactionForCall(input: ContextCompactionCallInput): P
     summaryText,
   });
   const afterState = readContextCompactionHistoryState(predictedMessages, omitTrailingPendingAssistant);
-  const afterPreview = await input.host.previewConversationHistory({ messages: afterState.modelMessages });
+  const afterPreview = await input.host.previewConversationHistory({ messages: afterState.modelMessages, modelId, providerId });
   const nextMessages = finalizeContextCompactionMessages({
     afterPreview,
     beforePreview,
@@ -183,18 +170,14 @@ async function runContextCompactionForCall(input: ContextCompactionCallInput): P
 }
 
 async function readContextCompactionTarget(input: { host: PluginHostFacadeMethods; modelId?: string; providerId?: string; runtimeConfig: ContextCompactionRuntimeConfig; }) {
-  const current = await input.host.getCurrentProvider();
-  const providerId = input.providerId ?? current.providerId;
-  const modelId = input.modelId ?? current.modelId;
-  const model = await input.host.getProviderModel(providerId, modelId);
-  const availableContext = Math.max(model.contextLength - input.runtimeConfig.reservedTokens, 256);
+  const current = await input.host.getCurrentProvider(), providerId = input.providerId ?? current.providerId, modelId = input.modelId ?? current.modelId, model = await input.host.getProviderModel(providerId, modelId), availableContext = Math.max(model.contextLength - input.runtimeConfig.reservedTokens, 256);
   return { availableContext, modelId, providerId, thresholdTokens: Math.max(1, Math.floor((availableContext * input.runtimeConfig.compressionThreshold) / 100)) };
 }
 
 async function readSlidingWindowMessages(input: { history: ContextCompactionHistorySnapshot; host: PluginHostFacadeMethods; modelId: string; providerId: string; requestMessages: ContextCompactionRequestMessage[]; runtimeConfig: ContextCompactionRuntimeConfig; }): Promise<ContextCompactionRequestMessage[] | null> {
   const historyState = readContextCompactionHistoryState(input.history.messages, true);
   const historyMessages = historyState.modelMessages.map(toContextCompactionRequestMessage);
-  if (!historyMessages.length) {return null;}
+  if (!historyMessages.length) return null;
   const prefixCount = Math.max(input.requestMessages.length - input.history.messages.length, 0);
   const prefixMessages = input.requestMessages.slice(0, prefixCount);
   const target = await readContextCompactionTarget({
@@ -212,11 +195,10 @@ async function readSlidingWindowMessages(input: { history: ContextCompactionHist
     const candidateMessages = [...prefixMessages, ...historyMessages.slice(trimStart)];
     const preview = await input.host.previewConversationHistory({
       messages: candidateMessages.map((message, index) => toContextCompactionPreviewMessage(message, index)),
+      modelId: target.modelId,
+      providerId: target.providerId,
     });
-    if (preview.estimatedTokens <= maxWindowTokens) {
-      selectedMessages = candidateMessages;
-      break;
-    }
+    if (preview.estimatedTokens <= maxWindowTokens) { selectedMessages = candidateMessages; break; }
   }
 
   const fallbackMessages = [...prefixMessages, ...historyMessages.slice(maxTrimStart)];
@@ -286,12 +268,12 @@ function readContextCompactionAnnotationState(message: PluginConversationHistory
   const covered: ContextCompactionCoveredData[] = [];
   let summaryId: string | null = null;
   for (const annotation of message.metadata?.annotations ?? []) {
-    if (!isContextCompactionOwnedAnnotation(annotation)) {continue;}
+    if (!isContextCompactionOwnedAnnotation(annotation)) continue;
     if (summaryId === null && isContextCompactionSummaryMarker(annotation.data)) {
       summaryId = annotation.data.compactionId;
       continue;
     }
-    if (isContextCompactionCoveredData(annotation.data)) {covered.push(annotation.data);}
+    if (isContextCompactionCoveredData(annotation.data)) covered.push(annotation.data);
   }
   return { covered, summaryId };
 }
@@ -335,10 +317,10 @@ function isRecord(value: unknown): value is Record<string, unknown> { return typ
 function toJsonValue<T>(value: T): JsonValue { return value as unknown as JsonValue; }
 
 function readContextCompactionCommandInput(payload: JsonValue): ContextCompactionCommandInput {
-  if (!isRecord(payload) || !isRecord(payload.message)) {return null;}
-  if ((Array.isArray(payload.message.parts) ? payload.message.parts : []).some((part) => isRecord(part) && part.type !== 'text')) {return null;}
+  if (!isRecord(payload) || !isRecord(payload.message)) return null;
+  if ((Array.isArray(payload.message.parts) ? payload.message.parts : []).some((part) => isRecord(part) && part.type !== 'text')) return null;
   const messageContent = typeof payload.message.content === 'string' ? payload.message.content.trim() : '';
-  if (!messageContent) {return null;}
+  if (!messageContent) return null;
   if (CONTEXT_COMPACTION_COMMANDS.includes(messageContent as typeof CONTEXT_COMPACTION_COMMANDS[number])) {
     return { hasUnexpectedArgs: false };
   }

@@ -5,11 +5,13 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { SINGLE_USER_ID } from '../../../src/auth/single-user-auth';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostConversationTodoService } from '../../../src/runtime/host/runtime-host-conversation-todo.service';
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 
 describe('RuntimeHostConversationRecordService', () => {
   const conversationsEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   const runtimeWorkspaceEnvKey = 'GARLIC_CLAW_RUNTIME_WORKSPACES_PATH';
+  const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   let storagePath: string;
   let runtimeWorkspaceRoot: string;
 
@@ -44,6 +46,7 @@ describe('RuntimeHostConversationRecordService', () => {
       title: 'New Chat',
       updatedAt: expect.any(String),
     });
+    expect(conversationId).toMatch(uuidV7Pattern);
     expect(service.listConversations()).toEqual([
       {
         _count: { messages: 0 },
@@ -63,14 +66,6 @@ describe('RuntimeHostConversationRecordService', () => {
       sessionEnabled: true,
       ttsEnabled: false,
     });
-    expect(service.replaceSessionTodo(conversationId, [
-      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
-    ])).toEqual([
-      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
-    ]);
-    expect(service.readSessionTodo(conversationId)).toEqual([
-      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
-    ]);
     expect(service.readRuntimePermissionApprovals(conversationId)).toEqual([]);
     expect(service.rememberRuntimePermissionApproval(conversationId, 'just-bash:command.execute')).toEqual([
       'just-bash:command.execute',
@@ -121,9 +116,6 @@ describe('RuntimeHostConversationRecordService', () => {
 
     const reloaded = new RuntimeHostConversationRecordService();
     expect(reloaded.getConversation(conversationId)).toEqual(service.getConversation(conversationId));
-    expect(reloaded.readSessionTodo(conversationId)).toEqual([
-      { content: '实现 todo 工具', priority: 'high', status: 'in_progress' },
-    ]);
     expect(reloaded.readRuntimePermissionApprovals(conversationId)).toEqual([
       'just-bash:command.execute',
       'just-bash:network.access',
@@ -332,6 +324,112 @@ describe('RuntimeHostConversationRecordService', () => {
     });
   });
 
+  it('prefers the latest matching provider usage annotation when previewing history tokens', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'Usage Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '你好',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'user-message',
+          parts: [{ text: '你好', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+        {
+          content: '世界',
+          createdAt: '2026-04-19T10:01:00.000Z',
+          id: 'assistant-message',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 77,
+                  modelId: 'gpt-5.4',
+                  outputTokens: 13,
+                  providerId: 'openai',
+                  source: 'provider',
+                  totalTokens: 90,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '世界', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).toEqual({
+      estimatedTokens: 77,
+      messageCount: 2,
+      textBytes: Buffer.byteLength('user\n你好\nassistant\n世界', 'utf8'),
+    });
+  });
+
+  it('falls back to estimated history tokens when the preview model changes', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'Model Switch Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '你好',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'assistant-message',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  inputTokens: 77,
+                  modelId: 'gpt-5.4',
+                  outputTokens: 13,
+                  providerId: 'openai',
+                  source: 'provider',
+                  totalTokens: 90,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '你好', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    const expectedTextBytes = Buffer.byteLength('assistant\n你好', 'utf8');
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'claude-3-7-sonnet',
+      providerId: 'anthropic',
+    })).toEqual({
+      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+      messageCount: 1,
+      textBytes: expectedTextBytes,
+    });
+  });
+
   it('deletes runtime workspace together with the conversation', async () => {
     process.env[conversationsEnvKey] = storagePath;
     process.env[runtimeWorkspaceEnvKey] = runtimeWorkspaceRoot;
@@ -346,6 +444,45 @@ describe('RuntimeHostConversationRecordService', () => {
 
     expect(service.deleteConversation(conversationId)).toEqual({ message: 'Conversation deleted' });
     expect(fs.existsSync(sessionRoot)).toBe(false);
+  });
+
+  it('drops legacy todos from conversation storage payload after reload', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    fs.writeFileSync(storagePath, JSON.stringify({
+      conversations: {
+        'conversation-1': {
+          createdAt: '2026-04-10T00:00:00.000Z',
+          hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
+          id: 'conversation-1',
+          messages: [],
+          revision: 'conversation-1:seed:0',
+          revisionVersion: 0,
+          title: 'Legacy Chat',
+          updatedAt: '2026-04-10T00:00:00.000Z',
+          userId: SINGLE_USER_ID,
+        },
+      },
+      todos: {
+        'conversation-1': [
+          { content: 'legacy todo', priority: 'high', status: 'pending' },
+        ],
+      },
+    }, null, 2), 'utf-8');
+
+    const service = new RuntimeHostConversationRecordService();
+    const todoService = new RuntimeHostConversationTodoService(service);
+
+    expect(todoService.readSessionTodo('conversation-1')).toEqual([
+      { content: 'legacy todo', priority: 'high', status: 'pending' },
+    ]);
+    expect(JSON.parse(fs.readFileSync(storagePath, 'utf-8'))).toEqual({
+      conversations: {
+        'conversation-1': expect.objectContaining({
+          id: 'conversation-1',
+          title: 'Legacy Chat',
+        }),
+      },
+    });
   });
 
   it('deletes persisted legacy user conversations that no longer符合单用户模型', () => {

@@ -35,12 +35,8 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
   constructor(private readonly automationExecutionService: AutomationExecutionService) {
     const restored = readAutomationState(this.storagePath);
     this.automationSequence = restored.sequence;
-    for (const [userId, records] of restored.automations.entries()) {
-      this.automations.set(userId, records);
-    }
-    if (restored.migrated) {
-      this.persist();
-    }
+    for (const [userId, records] of restored.automations.entries()) { this.automations.set(userId, records); }
+    if (restored.migrated) { this.persist(); }
   }
 
   onModuleInit(): void { for (const automation of readAllAutomations(this.automations)) {if (automation.enabled) {this.syncCronJob(automation.id, automation.trigger, true);}} }
@@ -49,8 +45,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
   create(userId: string, params: JsonObject): JsonValue {
     const record = createAutomationRecord(userId, params, ++this.automationSequence);
     this.automations.set(userId, [...readUserAutomations(this.automations, userId), record]);
-    this.syncCronJob(record.id, record.trigger, true);
-    this.persist();
+    this.syncCronJob(record.id, record.trigger, true); this.persist();
     return serializeAutomationRecord(record);
   }
 
@@ -63,21 +58,10 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     return { event, matchedAutomationIds };
   }
 
-  listByUser(userId: string): JsonValue {
-    return readUserAutomations(this.automations, userId).map((automation) => serializeAutomationRecord(automation));
-  }
-
-  getById(userId: string, automationId: string): JsonValue {
-    return serializeAutomationRecord(this.requireAutomation(userId, automationId));
-  }
-
-  getLogs(userId: string, automationId: string): JsonValue {
-    return this.requireAutomation(userId, automationId).logs.map((log) => asJsonValue(log));
-  }
-
-  async run(userId: string, automationId: string): Promise<JsonValue> {
-    return this.runRecord(this.requireAutomation(userId, automationId));
-  }
+  listByUser(userId: string): JsonValue { return readUserAutomations(this.automations, userId).map((automation) => serializeAutomationRecord(automation)); }
+  getById(userId: string, automationId: string): JsonValue { return serializeAutomationRecord(this.requireAutomation(userId, automationId)); }
+  getLogs(userId: string, automationId: string): JsonValue { return this.requireAutomation(userId, automationId).logs.map((log) => asJsonValue(log)); }
+  async run(userId: string, automationId: string): Promise<JsonValue> { return this.runRecord(this.requireAutomation(userId, automationId)); }
 
   toggle(userId: string, automationId: string): JsonValue {
     const automation = this.requireAutomation(userId, automationId);
@@ -91,20 +75,15 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
   remove(userId: string, automationId: string): JsonValue {
     const records = readUserAutomations(this.automations, userId);
     const nextRecords = records.filter((record) => record.id !== automationId);
-    if (nextRecords.length === records.length) {
-      throw new NotFoundException(`Automation not found: ${automationId}`);
-    }
+    if (nextRecords.length === records.length) { throw new NotFoundException(`Automation not found: ${automationId}`); }
     this.automations.set(userId, nextRecords);
-    this.removeCronJob(automationId);
-    this.persist();
+    this.removeCronJob(automationId); this.persist();
     return { count: 1 };
   }
 
   private requireAutomation(userId: string, automationId: string): RuntimeAutomationRecord {
     const automation = readUserAutomations(this.automations, userId).find((record) => record.id === automationId);
-    if (!automation) {
-      throw new NotFoundException(`Automation not found: ${automationId}`);
-    }
+    if (!automation) { throw new NotFoundException(`Automation not found: ${automationId}`); }
     return automation;
   }
 
@@ -120,29 +99,18 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
 
   private persist(): void {
     fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-    fs.writeFileSync(this.storagePath, JSON.stringify({
-      automations: Object.fromEntries([...this.automations.entries()].map(([userId, records]) => [userId, cloneJsonValue(records)])),
-      sequence: this.automationSequence,
-    } satisfies AutomationPersistenceFile, null, 2), 'utf-8');
+    fs.writeFileSync(this.storagePath, JSON.stringify({ automations: Object.fromEntries([...this.automations.entries()].map(([userId, records]) => [userId, cloneJsonValue(records)])), sequence: this.automationSequence } satisfies AutomationPersistenceFile, null, 2), 'utf-8');
   }
 
   private syncCronJob(automationId: string, trigger: TriggerConfig, enabled: boolean): boolean {
-    if (!enabled || trigger.type !== 'cron' || !trigger.cron) {
-      this.removeCronJob(automationId);
-      return false;
-    }
+    if (!enabled || trigger.type !== 'cron' || !trigger.cron) { this.removeCronJob(automationId); return false; }
     const intervalMs = readCronInterval(trigger.cron);
     this.removeCronJob(automationId);
-    if (!intervalMs) {
-      this.logger.warn(`自动化 ${automationId} 的 cron 表达式无效：${trigger.cron}`);
-      return false;
-    }
+    if (!intervalMs) { this.logger.warn(`自动化 ${automationId} 的 cron 表达式无效：${trigger.cron}`); return false; }
     this.cronJobs.set(automationId, setInterval(() => {
       const automation = readAllAutomations(this.automations).find((record) => record.id === automationId);
       if (automation) {
-        void this.runRecord(automation).catch((error: Error) => {
-          this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${error.message}`);
-        });
+        void this.runRecord(automation).catch((error: Error) => { this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${error.message}`); });
       }
     }, intervalMs));
     this.logger.log(`已为自动化 ${automationId} 计划 cron：每 ${trigger.cron}`);
@@ -151,9 +119,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
 
   private removeCronJob(automationId: string): void {
     const timer = this.cronJobs.get(automationId);
-    if (timer) {
-      clearInterval(timer);
-    }
+    if (timer) { clearInterval(timer); }
     this.cronJobs.delete(automationId);
   }
 }
@@ -164,12 +130,7 @@ function createAutomationRecord(userId: string, params: JsonObject, sequence: nu
 }
 
 function createAutomationLog(automation: RuntimeAutomationRecord, createdAt: string, result: JsonValue): AutomationLogInfo {
-  return {
-    id: `automation-log-${automation.id}-${automation.logs.length + 1}`,
-    status: readAutomationRunStatus(result),
-    result: JSON.stringify(result),
-    createdAt,
-  };
+  return { id: `automation-log-${automation.id}-${automation.logs.length + 1}`, status: readAutomationRunStatus(result), result: JSON.stringify(result), createdAt };
 }
 
 function serializeAutomationRecord(automation: RuntimeAutomationRecord): JsonValue {
@@ -181,8 +142,15 @@ function readAutomationState(storagePath: string): AutomationStateSnapshot {
   try {
     fs.mkdirSync(path.dirname(storagePath), { recursive: true });
     if (!fs.existsSync(storagePath)) {return { automations: new Map<string, RuntimeAutomationRecord[]>(), migrated: false, sequence: 0 };}
-    const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as Partial<AutomationPersistenceFile>, persistedAutomations = parsed.automations ?? {}, currentRecords = cloneJsonValue(persistedAutomations[SINGLE_USER_ID] ?? []).filter((record: RuntimeAutomationRecord) => record.userId === SINGLE_USER_ID), persistedUserIds = Object.keys(persistedAutomations);
-    return { automations: new Map(currentRecords.length > 0 ? [[SINGLE_USER_ID, currentRecords]] : []), migrated: persistedUserIds.length > (currentRecords.length > 0 ? 1 : 0) || currentRecords.length !== (persistedAutomations[SINGLE_USER_ID] ?? []).length, sequence: typeof parsed.sequence === 'number' ? parsed.sequence : 0 };
+    const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as Partial<AutomationPersistenceFile>;
+    const persistedAutomations = parsed.automations ?? {};
+    const currentRecords = cloneJsonValue(persistedAutomations[SINGLE_USER_ID] ?? []).filter((record: RuntimeAutomationRecord) => record.userId === SINGLE_USER_ID);
+    const persistedCurrent = persistedAutomations[SINGLE_USER_ID] ?? [];
+    return {
+      automations: new Map(currentRecords.length > 0 ? [[SINGLE_USER_ID, currentRecords]] : []),
+      migrated: Object.keys(persistedAutomations).length > (currentRecords.length > 0 ? 1 : 0) || currentRecords.length !== persistedCurrent.length,
+      sequence: typeof parsed.sequence === 'number' ? parsed.sequence : 0,
+    };
   } catch {
     return { automations: new Map<string, RuntimeAutomationRecord[]>(), migrated: false, sequence: 0 };
   }
@@ -193,9 +161,7 @@ function readUserAutomations(automations: Map<string, RuntimeAutomationRecord[]>
 function readEventAutomations(records: RuntimeAutomationRecord[], event: string): RuntimeAutomationRecord[] { return records.filter((record) => record.enabled && record.trigger.type === 'event' && record.trigger.event === event); }
 
 function readAutomationActions(params: JsonObject): ActionConfig[] {
-  if (!Array.isArray(params.actions)) {
-    throw new BadRequestException('actions must be an array');
-  }
+  if (!Array.isArray(params.actions)) { throw new BadRequestException('actions must be an array'); }
   return params.actions.map((entry, index) => readAutomationAction(entry, index));
 }
 
@@ -208,22 +174,14 @@ function readAutomationTrigger(params: JsonObject): TriggerConfig {
 
 function readAutomationAction(value: JsonValue, index: number): ActionConfig {
   const action = readJsonObject(value);
-  if (!action) {
-    throw new BadRequestException(`actions[${index}] must be an object`);
-  }
-  if (action.type !== 'device_command' && action.type !== 'ai_message') {
-    throw new BadRequestException(`actions[${index}].type is invalid`);
-  }
+  if (!action) { throw new BadRequestException(`actions[${index}] must be an object`); }
+  if (action.type !== 'device_command' && action.type !== 'ai_message') { throw new BadRequestException(`actions[${index}].type is invalid`); }
   if (action.type === 'device_command') {
     const params = action.params === undefined ? undefined : readJsonObject(action.params);
     const capability = typeof action.capability === 'string' && action.capability.trim().length > 0 ? action.capability : null;
     const plugin = typeof action.plugin === 'string' && action.plugin.trim().length > 0 ? action.plugin : null;
-    if (action.params !== undefined && !params) {
-      throw new BadRequestException(`actions[${index}].params must be an object`);
-    }
-    if (!capability || !plugin) {
-      throw new BadRequestException(`actions[${index}].type is missing required fields`);
-    }
+    if (action.params !== undefined && !params) { throw new BadRequestException(`actions[${index}].params must be an object`); }
+    if (!capability || !plugin) { throw new BadRequestException(`actions[${index}].type is missing required fields`); }
     return { capability, ...(params ? { params } : {}), plugin, type: action.type };
   }
   const target = action.target ? readJsonObject(action.target) : null;
@@ -243,20 +201,12 @@ function readAutomationRunStatus(result: JsonValue): string {
 
 function readCronInterval(expr: string): number | null {
   const match = expr.trim().match(/^(\d+)\s*(s|m|h)$/i);
-  if (!match) {
-    return null;
-  }
+  if (!match) { return null; }
   const value = parseInt(match[1], 10);
-  switch (match[2].toLowerCase()) {
-    case 's':
-      return value >= 10 ? value * 1000 : null;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    default:
-      return null;
-  }
+  const unit = match[2].toLowerCase();
+  if (unit === 's') { return value >= 10 ? value * 1000 : null; }
+  const unitMs = unit === 'm' ? 60 * 1000 : unit === 'h' ? 60 * 60 * 1000 : null;
+  return unitMs ? value * unitMs : null;
 }
 
 function resolveAutomationStoragePath(): string {

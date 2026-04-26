@@ -5,6 +5,7 @@ import { RuntimeToolPermissionService } from '../../../src/execution/runtime/run
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
 
 describe('RuntimeToolPermissionService', () => {
+  const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   let conversationId: string;
   let service: RuntimeToolPermissionService;
   let conversationsPath: string;
@@ -102,6 +103,7 @@ describe('RuntimeToolPermissionService', () => {
       messageId: 'message-1',
       toolName: 'bash',
     });
+    expect(pendingRequest.id).toMatch(uuidV7Pattern);
 
     expect(service.reply(conversationId, pendingRequest.id, 'always')).toEqual({
       requestId: pendingRequest.id,

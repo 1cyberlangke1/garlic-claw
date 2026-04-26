@@ -17,39 +17,32 @@ import { RuntimeHostPluginRuntimeService } from './runtime-host-plugin-runtime.s
 import { RuntimeHostRuntimeToolService } from './runtime-host-runtime-tool.service';
 import { RuntimeHostSubagentRunnerService } from './runtime-host-subagent-runner.service';
 import { RuntimeHostUserContextService } from './runtime-host-user-context.service';
-import {
-  asJsonValue,
-  readJsonObject,
-  readOptionalString,
-  readPluginLlmMessages,
-  readRequiredString,
-  requireContextField,
-  type AssistantCustomBlockEntry,
-} from './runtime-host-values';
+import { asJsonValue, readJsonObject, readOptionalString, readPluginLlmMessages, readRequiredString, requireContextField, type AssistantCustomBlockEntry } from './runtime-host-values';
 
 type RuntimeHostCallHandler = (input: RuntimeHostCallInput) => JsonValue | Promise<JsonValue>;
 type RuntimeHostLlmMethod = 'llm.generate' | 'llm.generate-text';
 type RuntimeHostStoreAction = 'deleteStoreValue' | 'getStoreValue' | 'listStoreValues' | 'setStoreValue';
-type RuntimeHostToolExecutor = (context: PluginCallContext, params: JsonObject) => Promise<unknown>;
+type RuntimeHostRuntimeToolAction = 'editFile' | 'executeCommand' | 'globPaths' | 'grepContent' | 'readPath' | 'writeFile';
 
-interface RuntimeHostCallInput {
-  context: PluginCallContext;
-  params: JsonObject;
-  plugin: RegisteredPluginRecord;
-  pluginId: string;
-}
+interface RuntimeHostCallInput { context: PluginCallContext; params: JsonObject; plugin: RegisteredPluginRecord; pluginId: string; }
+
+const RUNTIME_HOST_STORE_METHODS = [
+  ['state.delete', 'state', 'deleteStoreValue'], ['state.get', 'state', 'getStoreValue'], ['state.list', 'state', 'listStoreValues'], ['state.set', 'state', 'setStoreValue'],
+  ['storage.delete', 'storage', 'deleteStoreValue'], ['storage.get', 'storage', 'getStoreValue'], ['storage.list', 'storage', 'listStoreValues'], ['storage.set', 'storage', 'setStoreValue'],
+] as const satisfies ReadonlyArray<readonly [PluginHostMethod, 'state' | 'storage', RuntimeHostStoreAction]>;
+
+const RUNTIME_HOST_TOOL_METHODS = [
+  ['runtime.command.execute', 'executeCommand'], ['runtime.fs.edit', 'editFile'], ['runtime.fs.glob', 'globPaths'],
+  ['runtime.fs.grep', 'grepContent'], ['runtime.fs.read', 'readPath'], ['runtime.fs.write', 'writeFile'],
+] as const satisfies ReadonlyArray<readonly [PluginHostMethod, RuntimeHostRuntimeToolAction]>;
 
 @Injectable()
 export class RuntimeHostService implements OnModuleInit {
   private readonly callHandlers: Record<PluginHostMethod, RuntimeHostCallHandler>;
-
   constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly automationService: AutomationService, private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiManagementService: AiManagementService, private readonly runtimeHostKnowledgeService: RuntimeHostKnowledgeService, private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimeHostRuntimeToolService: RuntimeHostRuntimeToolService, private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService, private readonly runtimeHostUserContextService: RuntimeHostUserContextService, private readonly personaService: PersonaService) {
     this.callHandlers = this.buildCallHandlers();
   }
-
-  onModuleInit(): void {
-    this.runtimeHostPluginDispatchService.registerHostCaller((input) => this.call(input));
-  }
+  onModuleInit(): void { this.runtimeHostPluginDispatchService.registerHostCaller((input) => this.call(input)); }
 
   async call(input: {
     context: PluginCallContext;
@@ -66,7 +59,6 @@ export class RuntimeHostService implements OnModuleInit {
     }
     return handler({ ...input, plugin });
   }
-
   private assertHostPermission(plugin: RegisteredPluginRecord, method: PluginHostMethod): void {
     const requiredPermission = PLUGIN_HOST_METHOD_PERMISSION_MAP[method];
     if (!requiredPermission || plugin.manifest.permissions.includes(requiredPermission)) {return;}
@@ -77,44 +69,27 @@ export class RuntimeHostService implements OnModuleInit {
     const conversationId = (input: RuntimeHostCallInput) => requireContextField(input.context, 'conversationId');
     const userId = (input: RuntimeHostCallInput) => requireContextField(input.context, 'userId');
     const personaId = (input: RuntimeHostCallInput) => readRequiredString(input.params, 'personaId');
-    const config = (input: RuntimeHostCallInput) => {
-      const snapshot = createPluginConfigSnapshot(input.plugin).values;
-      const key = readOptionalString(input.params, 'key');
-      return !key ? snapshot : Object.prototype.hasOwnProperty.call(snapshot, key) ? snapshot[key] : null;
-    };
-    const llm = (method: RuntimeHostLlmMethod): RuntimeHostCallHandler => (input) => this.executeLlmGenerate(input.plugin, input.context, input.params, method);
-    const storeHandlers = Object.fromEntries(([
-      ['state.delete', 'state', 'deleteStoreValue'],
-      ['state.get', 'state', 'getStoreValue'],
-      ['state.list', 'state', 'listStoreValues'],
-      ['state.set', 'state', 'setStoreValue'],
-      ['storage.delete', 'storage', 'deleteStoreValue'],
-      ['storage.get', 'storage', 'getStoreValue'],
-      ['storage.list', 'storage', 'listStoreValues'],
-      ['storage.set', 'storage', 'setStoreValue'],
-    ] as const satisfies ReadonlyArray<readonly [PluginHostMethod, 'state' | 'storage', RuntimeHostStoreAction]>).map(([method, surface, action]) => [
+    const llm = (method: RuntimeHostLlmMethod): RuntimeHostCallHandler => ({ context, params, plugin }) =>
+      this.executeLlmGenerate(plugin, context, params, method);
+    const storeHandlers = Object.fromEntries(RUNTIME_HOST_STORE_METHODS.map(([method, surface, action]) => [
       method,
       (input: RuntimeHostCallInput) => this.runtimeHostPluginRuntimeService[action](surface, input.pluginId, input.context, input.params),
     ])) as Partial<Record<PluginHostMethod, RuntimeHostCallHandler>>;
-    const toolHandlers = Object.fromEntries(([
-      ['runtime.command.execute', (context, params) => this.runtimeHostRuntimeToolService.executeCommand(context, params)],
-      ['runtime.fs.edit', (context, params) => this.runtimeHostRuntimeToolService.editFile(context, params)],
-      ['runtime.fs.glob', (context, params) => this.runtimeHostRuntimeToolService.globPaths(context, params)],
-      ['runtime.fs.grep', (context, params) => this.runtimeHostRuntimeToolService.grepContent(context, params)],
-      ['runtime.fs.read', (context, params) => this.runtimeHostRuntimeToolService.readPath(context, params)],
-      ['runtime.fs.write', (context, params) => this.runtimeHostRuntimeToolService.writeFile(context, params)],
-    ] as const satisfies ReadonlyArray<readonly [PluginHostMethod, RuntimeHostToolExecutor]>).map(([method, execute]) => [
+    const toolHandlers = Object.fromEntries(RUNTIME_HOST_TOOL_METHODS.map(([method, action]) => [
       method,
-      async (input: RuntimeHostCallInput) => asJsonValue(await execute(input.context, input.params)),
+      async ({ context, params }: RuntimeHostCallInput) => asJsonValue(await this.runtimeHostRuntimeToolService[action](context, params)),
     ])) as Partial<Record<PluginHostMethod, RuntimeHostCallHandler>>;
-
     return {
       'automation.create': (input) => this.automationService.create(userId(input), input.params),
       'automation.event.emit': async (input) => asJsonValue(await this.automationService.emitEvent(userId(input), readRequiredString(input.params, 'event'))),
       'automation.list': (input) => this.automationService.listByUser(userId(input)),
       'automation.run': (input) => this.automationService.run(userId(input), readRequiredString(input.params, 'automationId')),
       'automation.toggle': (input) => this.automationService.toggle(userId(input), readRequiredString(input.params, 'automationId')),
-      'config.get': config,
+      'config.get': (input) => {
+        const snapshot = createPluginConfigSnapshot(input.plugin).values;
+        const key = readOptionalString(input.params, 'key');
+        return !key ? snapshot : Object.prototype.hasOwnProperty.call(snapshot, key) ? snapshot[key] : null;
+      },
       'cron.delete': (input) => this.runtimeHostPluginRuntimeService.deleteCronJob(input.pluginId, input.params),
       'cron.list': (input) => this.runtimeHostPluginRuntimeService.listCronJobs(input.pluginId),
       'cron.register': (input) => this.runtimeHostPluginRuntimeService.registerCronJob(input.pluginId, input.params),
@@ -144,9 +119,7 @@ export class RuntimeHostService implements OnModuleInit {
       'persona.get': (input) => asJsonValue(this.personaService.readPersona(readRequiredString(input.params, 'personaId'))),
       'persona.list': () => asJsonValue(this.personaService.listPersonas()),
       'plugin.self.get': (input) => buildPluginSelfSummary(input.plugin),
-      'provider.current.get': (input) => input.context.activeProviderId && input.context.activeModelId
-        ? { modelId: input.context.activeModelId, providerId: input.context.activeProviderId, source: 'context' }
-        : asJsonValue(this.aiManagementService.getDefaultProviderSelection()),
+      'provider.current.get': (input) => input.context.activeProviderId && input.context.activeModelId ? { modelId: input.context.activeModelId, providerId: input.context.activeProviderId, source: 'context' } : asJsonValue(this.aiManagementService.getDefaultProviderSelection()),
       'provider.get': (input) => asJsonValue(this.aiManagementService.getProviderSummary(String(input.params.providerId))),
       'provider.list': () => asJsonValue(this.aiManagementService.listProviders()),
       'provider.model.get': (input) => asJsonValue(this.aiManagementService.getProviderModelSummary(String(input.params.providerId), String(input.params.modelId))),
@@ -154,10 +127,7 @@ export class RuntimeHostService implements OnModuleInit {
       'subagent.list': (input) => asJsonValue(this.runtimeHostSubagentRunnerService.listSubagents(input.pluginId)),
       'subagent.run': (input) => this.runtimeHostSubagentRunnerService.runSubagent(input.pluginId, input.context, input.params),
       'subagent.start': (input) => this.runtimeHostSubagentRunnerService.startSubagent(input.pluginId, input.plugin.manifest.name, input.context, input.params),
-      'user.get': (input) => {
-        if (!input.context.userId) {throw new NotFoundException('User not found: unknown');}
-        return asJsonValue(createSingleUserProfile());
-      },
+      'user.get': (input) => { if (!input.context.userId) {throw new NotFoundException('User not found: unknown');} return asJsonValue(createSingleUserProfile()); },
       ...toolHandlers,
       ...storeHandlers,
     } as Record<PluginHostMethod, RuntimeHostCallHandler>;
@@ -185,23 +155,12 @@ export class RuntimeHostService implements OnModuleInit {
       text: result.text,
       ...(result.usage !== undefined ? { usage: result.usage } : {}),
     };
-
-    return method === 'llm.generate-text'
-      ? asJsonValue(base)
-      : asJsonValue({
-          ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
-          message: {
-            content: result.text,
-            ...(metadata ? { metadata } : {}),
-            role: 'assistant',
-          },
-          ...base,
-          toolCalls: [],
-          toolResults: [],
-        });
+    return method === 'llm.generate-text' ? asJsonValue(base) : asJsonValue({
+      ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
+      message: { content: result.text, ...(metadata ? { metadata } : {}), role: 'assistant' }, ...base, toolCalls: [], toolResults: [],
+    });
   }
 }
-
 function readRuntimeHostLlmRequest(input: {
   context: PluginCallContext;
   method: RuntimeHostLlmMethod;
@@ -226,7 +185,6 @@ function readRuntimeHostLlmRequest(input: {
   const system = readOptionalString(input.params, 'system');
   const transportMode = readTransportMode(input.params);
   const variant = readOptionalString(input.params, 'variant');
-
   return {
     ...(headers ? { headers: headers as Record<string, string> } : {}),
     ...(typeof input.params.maxOutputTokens === 'number' ? { maxOutputTokens: input.params.maxOutputTokens } : {}),
@@ -241,7 +199,6 @@ function readRuntimeHostLlmRequest(input: {
     ...(variant ? { variant } : {}),
   };
 }
-
 function readRuntimeHostLlmMetadata(
   providerId: string,
   origin: 'ai-sdk.raw' | 'ai-sdk.response-body',
@@ -251,7 +208,6 @@ function readRuntimeHostLlmMetadata(
     ? asJsonValue({ customBlocks: blocks.map((block) => createRuntimeHostCustomBlock(providerId, origin, block)) })
     : null;
 }
-
 function createRuntimeHostCustomBlock(providerId: string, origin: 'ai-sdk.raw' | 'ai-sdk.response-body', block: AssistantCustomBlockEntry): JsonValue {
   const title = block.key
     .trim()
@@ -271,7 +227,6 @@ function createRuntimeHostCustomBlock(providerId: string, origin: 'ai-sdk.raw' |
   };
   return asJsonValue(block.kind === 'text' ? { ...base, kind: 'text', text: block.value } : { ...base, data: block.value, kind: 'json' });
 }
-
 function readTransportMode(params: JsonObject): PluginLlmTransportMode | null {
   const value = readOptionalString(params, 'transportMode');
   if (!value) {return null;}

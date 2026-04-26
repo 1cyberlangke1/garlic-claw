@@ -11,14 +11,13 @@ describe('ConversationController', () => {
   const conversationTaskService = { stopTask: jest.fn(), subscribe: jest.fn(), waitForTask: jest.fn() };
   const runtimeToolPermissionService = { listPendingRequests: jest.fn(), reply: jest.fn() };
   const runtimeHostConversationMessageService = { deleteMessage: jest.fn(), updateMessage: jest.fn() };
+  const runtimeHostConversationTodoService = { deleteSessionTodo: jest.fn(), readSessionTodo: jest.fn(), replaceSessionTodo: jest.fn() };
   const runtimeHostConversationRecordService = {
     createConversation: jest.fn(),
     deleteConversation: jest.fn(),
     getConversation: jest.fn(),
     listConversations: jest.fn(),
-    readSessionTodo: jest.fn(),
     readConversationHostServices: jest.fn(),
-    replaceSessionTodo: jest.fn(),
     requireConversation: jest.fn(),
     writeConversationHostServices: jest.fn(),
   };
@@ -33,6 +32,7 @@ describe('ConversationController', () => {
       runtimeToolPermissionService as never,
       runtimeHostConversationMessageService as never,
       runtimeHostConversationRecordService as never,
+      runtimeHostConversationTodoService as never,
     );
   });
 
@@ -48,9 +48,10 @@ describe('ConversationController', () => {
     );
 
     expect(source).toContain("@Get('conversations/:id')");
-    expect(source).toContain("@Param('id', ParseUUIDPipe) id: string");
+    expect(source).toContain("const routeUuidPipe = new ParseUUIDPipe({ version: '7' });");
+    expect(source).toContain("@Param('id', routeUuidPipe) id: string");
     expect(source).toContain("@Patch('conversations/:id/messages/:messageId')");
-    expect(source).toContain("@Param('messageId', ParseUUIDPipe) messageId: string");
+    expect(source).toContain("@Param('messageId', routeUuidPipe) messageId: string");
   });
 
   it('creates, lists, reads and deletes conversations through user-owned conversation APIs', () => {
@@ -67,7 +68,15 @@ describe('ConversationController', () => {
     expect(controller.getConversation('user-1', conversationId)).toEqual({ ...overview, messages: [] });
     expect(runtimeHostConversationRecordService.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.deleteConversation('user-1', conversationId)).toEqual({ message: 'Conversation deleted' });
+    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenCalledWith(conversationId);
     expect(runtimeHostConversationRecordService.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(runtimeHostConversationRecordService.requireConversation.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeHostConversationTodoService.deleteSessionTodo.mock.invocationCallOrder[0],
+    );
+    expect(runtimeHostConversationTodoService.deleteSessionTodo.mock.invocationCallOrder[0]).toBeLessThan(
+      runtimeHostConversationRecordService.deleteConversation.mock.invocationCallOrder[0],
+    );
   });
 
   it('reads conversation context window through owned conversation APIs', async () => {
@@ -106,13 +115,13 @@ describe('ConversationController', () => {
 
   it('reads and updates session todo through owned conversation APIs', () => {
     const todos = [{ content: '实现 todo 工具', priority: 'high', status: 'in_progress' }];
-    runtimeHostConversationRecordService.readSessionTodo.mockReturnValue(todos);
-    runtimeHostConversationRecordService.replaceSessionTodo.mockReturnValue(todos);
+    runtimeHostConversationTodoService.readSessionTodo.mockReturnValue(todos);
+    runtimeHostConversationTodoService.replaceSessionTodo.mockReturnValue(todos);
 
     expect(controller.getSessionTodo('user-1', conversationId)).toEqual(todos);
-    expect(runtimeHostConversationRecordService.readSessionTodo).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(runtimeHostConversationTodoService.readSessionTodo).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.updateSessionTodo('user-1', conversationId, { todos } as never)).toEqual(todos);
-    expect(runtimeHostConversationRecordService.replaceSessionTodo).toHaveBeenCalledWith(conversationId, todos, 'user-1');
+    expect(runtimeHostConversationTodoService.replaceSessionTodo).toHaveBeenCalledWith(conversationId, todos, 'user-1');
   });
 
   it('lists and replies runtime permission requests through owned conversation APIs', () => {

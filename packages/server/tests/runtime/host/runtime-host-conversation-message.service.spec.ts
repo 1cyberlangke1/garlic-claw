@@ -9,6 +9,7 @@ import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/
 
 describe('RuntimeHostConversationMessageService', () => {
   const envKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
+  const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   let storagePath: string;
 
   beforeEach(() => {
@@ -53,6 +54,8 @@ describe('RuntimeHostConversationMessageService', () => {
 
     expect(first).toMatchObject({ content: 'hello', id: expect.any(String), role: 'user', status: 'completed' });
     expect(second).toMatchObject({ content: 'draft', id: expect.any(String), model: 'gpt-5.4', provider: 'openai', role: 'assistant', status: 'pending' });
+    expect((first as { id: string }).id).toMatch(uuidV7Pattern);
+    expect((second as { id: string }).id).toMatch(uuidV7Pattern);
     expect(sent).toMatchObject({
       content: 'Plugin reply',
       id: expect.any(String),
@@ -63,6 +66,7 @@ describe('RuntimeHostConversationMessageService', () => {
       status: 'completed',
       target: { id: conversationId, label: 'Conversation One', type: 'conversation' },
     });
+    expect((sent as { id: string }).id).toMatch(uuidV7Pattern);
 
     const revisionBeforeUpdate = service.readConversationRevision(conversationId);
     await expect(service.updateMessage(conversationId, String((sent as { id: string }).id), { content: 'Updated reply' }, SINGLE_USER_ID)).resolves.toMatchObject({
@@ -135,6 +139,23 @@ describe('RuntimeHostConversationMessageService', () => {
 
   it('applies message:created and message:updated metadata mutations', async () => {
     process.env[envKey] = storagePath;
+    const metadata = {
+      annotations: [
+        {
+          data: {
+            inputTokens: 21,
+            modelId: 'gpt-5.4',
+            outputTokens: 9,
+            providerId: 'openai',
+            source: 'provider',
+            totalTokens: 30,
+          },
+          owner: 'conversation.model-usage',
+          type: 'model-usage',
+          version: '1',
+        },
+      ],
+    };
     const runtimeKernelService = {
       invokeHook: jest.fn()
         .mockResolvedValueOnce({
@@ -148,13 +169,14 @@ describe('RuntimeHostConversationMessageService', () => {
           model: 'gpt-5.4',
           provider: 'openai',
           status: 'completed',
-        }),
+        })
+        .mockResolvedValueOnce({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([
         {
           connected: true,
           conversationScopes: {},
           defaultEnabled: true,
-          manifest: { hooks: [{ name: 'message:created' }, { name: 'message:updated' }] },
+          manifest: { hooks: [{ name: 'message:created' }, { name: 'message:updated' }, { name: 'message:deleted' }] },
           pluginId: 'builtin.audit',
         },
       ]),
@@ -163,14 +185,35 @@ describe('RuntimeHostConversationMessageService', () => {
     const service = new RuntimeHostConversationMessageService(recordService, runtimeKernelService);
     const conversationId = (recordService.createConversation({ title: 'Conversation One', userId: 'user-1' }) as { id: string }).id;
 
-    const sent = await service.sendMessage(
-      { conversationId, source: 'http-route', userId: 'user-1' } satisfies PluginCallContext,
-      { content: 'Plugin reply' },
+    const sent = await service.createMessageWithHooks(
+      conversationId,
+      { content: 'Plugin reply', metadata, role: 'assistant', status: 'completed' },
+      'user-1',
     ) as { id: string; model?: string; provider?: string; status: string };
 
     expect(sent).toMatchObject({ model: 'claude-3-7-sonnet', provider: 'anthropic', status: 'pending' });
+    expect(runtimeKernelService.invokeHook.mock.calls[0][0].payload).toMatchObject({
+      message: {
+        metadata,
+      },
+    });
 
     const updated = await service.updateMessage(conversationId, sent.id, { content: 'Updated reply' }, 'user-1') as { model?: string; provider?: string; status: string };
     expect(updated).toMatchObject({ model: 'gpt-5.4', provider: 'openai', status: 'completed' });
+    expect(runtimeKernelService.invokeHook.mock.calls[1][0].payload).toMatchObject({
+      currentMessage: {
+        metadata,
+      },
+      nextMessage: {
+        metadata,
+      },
+    });
+
+    await expect(service.deleteMessage(conversationId, sent.id, 'user-1')).resolves.toEqual({ success: true });
+    expect(runtimeKernelService.invokeHook.mock.calls[2][0].payload).toMatchObject({
+      message: {
+        metadata,
+      },
+    });
   });
 });

@@ -1,17 +1,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import type {
-  ChatMessageMetadata,
-  ChatMessagePart,
-  ConversationHostServices,
-  ConversationTodoItem,
-  JsonObject,
-  JsonValue,
-  PluginCallContext,
-} from '@garlic-claw/shared';
+import type { ChatMessageMetadata, ChatMessagePart, ConversationHostServices, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
+import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
@@ -19,16 +12,16 @@ import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readP
 
 export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; hostServices: ConversationHostServices; id: string; messages: JsonObject[]; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
-interface RuntimeConversationStoragePayload { conversations?: Record<string, RuntimeConversationRecord>; todos?: Record<string, ConversationTodoItem[]>; }
+interface RuntimeConversationStoragePayload { conversations?: Record<string, RuntimeConversationRecord>; }
 type RuntimeConversationRecordView = 'detail' | 'history' | 'overview' | 'summary';
 const DEFAULT_HOST_SERVICES: ConversationHostServices = { llmEnabled: true, sessionEnabled: true, ttsEnabled: true };
+const CONVERSATION_HISTORY_STATUSES = new Set(['pending', 'streaming', 'completed', 'stopped', 'error']);
 
 @Injectable()
 export class RuntimeHostConversationRecordService {
   private readonly conversationSessions = new Map<string, RuntimeConversationSessionRecord>();
   private readonly storagePath = resolveConversationStoragePath();
   private readonly conversations: Map<string, RuntimeConversationRecord>;
-  private readonly conversationTodos: Map<string, ConversationTodoItem[]>;
 
   constructor(
     @Optional() private readonly runtimeHostPluginDispatchService?: RuntimeHostPluginDispatchService,
@@ -36,13 +29,11 @@ export class RuntimeHostConversationRecordService {
   ) {
     const stored = this.readStoredConversations();
     this.conversations = stored.records;
-    this.conversationTodos = stored.todos;
     if (stored.migrated) {this.persistConversations();}
   }
 
   createConversation(input: { title?: string; userId?: string }): JsonValue {
-    const timestamp = new Date().toISOString();
-    const conversationId = randomUUID();
+    const timestamp = new Date().toISOString(), conversationId = uuidv7();
     const conversation: RuntimeConversationRecord = { createdAt: timestamp, hostServices: { ...DEFAULT_HOST_SERVICES }, id: conversationId, messages: [], revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title?.trim() || 'New Chat', updatedAt: timestamp, userId: input.userId ?? SINGLE_USER_ID };
     this.conversations.set(conversation.id, conversation);
     this.persistConversations();
@@ -54,7 +45,6 @@ export class RuntimeHostConversationRecordService {
   deleteConversation(conversationId: string, userId?: string): JsonValue {
     this.requireConversation(conversationId, userId);
     this.conversations.delete(conversationId);
-    this.conversationTodos.delete(conversationId);
     this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(conversationId);
     this.persistConversations();
     return { message: 'Conversation deleted' };
@@ -69,13 +59,12 @@ export class RuntimeHostConversationRecordService {
   finishPluginConversationSession(pluginId: string, conversationId: string): boolean { return this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId)); }
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'summary'); }
   readRuntimePermissionApprovals(conversationId: string, userId?: string): string[] { return [...(this.requireConversation(conversationId, userId).runtimePermissionApprovals ?? [])]; }
-  readSessionTodo(sessionId: string, userId?: string): JsonValue { this.requireConversation(sessionId, userId); return asJsonValue((this.conversationTodos.get(sessionId) ?? []).map((item) => cloneJsonValue(item))); }
   readConversationHistory(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'history'); }
   readCurrentMessageTarget(conversationId: string, userId?: string): JsonValue { const conversation = this.requireConversation(conversationId, userId); return { id: conversation.id, label: conversation.title, type: 'conversation' }; }
 
   keepConversationSession(pluginId: string, context: PluginCallContext, params: JsonObject): JsonValue {
     const current = this.readConversationSession(pluginId, readConversationId(context));
-    if (!current) {return null;}
+    if (!current) return null;
     const timeoutMs = this.readSessionTimeoutMs(params), resetTimeout = readOptionalBoolean(params, 'resetTimeout') ?? true, baseTime = resetTimeout ? Date.now() : Date.parse(current.expiresAt);
     return this.saveConversationSession({ ...current, expiresAt: new Date(baseTime + timeoutMs).toISOString(), timeoutMs: resetTimeout ? timeoutMs : current.timeoutMs + timeoutMs });
   }
@@ -86,9 +75,8 @@ export class RuntimeHostConversationRecordService {
   }
 
   previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
-    const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages);
-    const textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
-    return asJsonValue({ estimatedTokens: Math.ceil(textBytes / 4), messageCount: messages.length, textBytes });
+    const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages), textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
+    return asJsonValue({ estimatedTokens: readConversationHistoryPreviewTokens(messages, { modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes }), messageCount: messages.length, textBytes });
   }
 
   replaceConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
@@ -96,18 +84,9 @@ export class RuntimeHostConversationRecordService {
     const nextMessages = readConversationHistoryMessages(params.messages);
     const current = this.requireConversation(conversationId, userId);
     assertConversationRevision(current, expectedRevision);
-    if (JSON.stringify(current.messages) === JSON.stringify(nextMessages)) {
-      return asJsonValue({ ...(readConversationRecordValue(current, 'history') as JsonObject), changed: false });
-    }
+    if (JSON.stringify(current.messages) === JSON.stringify(nextMessages)) return asJsonValue({ ...(readConversationRecordValue(current, 'history') as JsonObject), changed: false });
     const updated = this.updateConversationRecord(conversationId, userId, (conversation) => { conversation.messages = cloneJsonValue(nextMessages); return conversation; });
     return asJsonValue({ ...(readConversationRecordValue(updated, 'history') as JsonObject), changed: true });
-  }
-
-  replaceSessionTodo(sessionId: string, todos: ConversationTodoItem[], userId?: string): JsonValue {
-    this.requireConversation(sessionId, userId);
-    this.conversationTodos.set(sessionId, todos.map((item) => cloneJsonValue(item)));
-    this.persistConversations();
-    return asJsonValue(todos.map((item) => cloneJsonValue(item)));
   }
 
   rememberConversationActivePersona(conversationId: string, activePersonaId: string, userId?: string): void {
@@ -126,8 +105,8 @@ export class RuntimeHostConversationRecordService {
 
   requireConversation(conversationId: string, userId?: string): RuntimeConversationRecord {
     const conversation = this.conversations.get(conversationId);
-    if (!conversation) {throw new NotFoundException(`Conversation not found: ${conversationId}`);}
-    if (userId && conversation.userId !== userId) {throw new ForbiddenException('Not your conversation');}
+    if (!conversation) throw new NotFoundException(`Conversation not found: ${conversationId}`);
+    if (userId && conversation.userId !== userId) throw new ForbiddenException('Not your conversation');
     return conversation;
   }
 
@@ -138,12 +117,7 @@ export class RuntimeHostConversationRecordService {
     }));
   }
 
-  writeConversationTitle(conversationId: string, title: string, userId?: string): JsonValue {
-    return readConversationRecordValue(this.updateConversationRecord(conversationId, userId, (conversation) => {
-      conversation.title = title;
-      return conversation;
-    }), 'summary');
-  }
+  writeConversationTitle(conversationId: string, title: string, userId?: string): JsonValue { return readConversationRecordValue(this.updateConversationRecord(conversationId, userId, (conversation) => { conversation.title = title; return conversation; }), 'summary'); }
 
   rememberRuntimePermissionApproval(conversationId: string, approvalKey: string, userId?: string): string[] {
     return [...(this.updateConversationRecord(conversationId, userId, (conversation) => {
@@ -152,12 +126,7 @@ export class RuntimeHostConversationRecordService {
     }, { bumpRevision: false }) ?? [])];
   }
 
-  private updateConversationRecord<T>(
-    conversationId: string,
-    userId: string | undefined,
-    mutate: (conversation: RuntimeConversationRecord) => T,
-    options?: { bumpRevision?: boolean },
-  ): T {
+  private updateConversationRecord<T>(conversationId: string, userId: string | undefined, mutate: (conversation: RuntimeConversationRecord) => T, options?: { bumpRevision?: boolean }): T {
     const conversation = this.requireConversation(conversationId, userId);
     const result = mutate(conversation);
     if (options?.bumpRevision !== false) {
@@ -172,51 +141,38 @@ export class RuntimeHostConversationRecordService {
   private readConversationSession(pluginId: string, conversationId: string): RuntimeConversationSessionRecord | null {
     const key = readConversationSessionKey(pluginId, conversationId);
     const session = this.conversationSessions.get(key);
-    if (!session) {return null;}
-    if (Date.parse(session.expiresAt) > Date.now()) {return session;}
+    if (!session) return null;
+    if (Date.parse(session.expiresAt) > Date.now()) return session;
     this.conversationSessions.delete(key);
     return null;
   }
 
-  private saveConversationSession(session: RuntimeConversationSessionRecord): JsonValue {
-    this.conversationSessions.set(readConversationSessionKey(session.pluginId, session.conversationId), session);
-    return serializeConversationSession(session);
-  }
+  private saveConversationSession(session: RuntimeConversationSessionRecord): JsonValue { this.conversationSessions.set(readConversationSessionKey(session.pluginId, session.conversationId), session); return serializeConversationSession(session); }
 
-  private readSessionTimeoutMs(params: JsonObject): number {
-    const timeoutMs = readPositiveInteger(params, 'timeoutMs');
-    if (timeoutMs) {return timeoutMs;}
-    throw new BadRequestException('timeoutMs must be a positive integer');
-  }
+  private readSessionTimeoutMs(params: JsonObject): number { const timeoutMs = readPositiveInteger(params, 'timeoutMs'); if (timeoutMs) {return timeoutMs;} throw new BadRequestException('timeoutMs must be a positive integer'); }
 
   private persistConversations(): void {
     fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
     const conversations = Object.fromEntries([...this.conversations.entries()].map(([id, record]) => [id, cloneJsonValue(record)]));
-    const todos = Object.fromEntries([...this.conversationTodos.entries()].map(([id, items]) => [id, cloneJsonValue(items)]));
-    fs.writeFileSync(this.storagePath, JSON.stringify({ conversations, ...(Object.keys(todos).length > 0 ? { todos } : {}) }, null, 2), 'utf-8');
+    fs.writeFileSync(this.storagePath, JSON.stringify({ conversations }, null, 2), 'utf-8');
   }
 
-  private readStoredConversations(): { migrated: boolean; records: Map<string, RuntimeConversationRecord>; todos: Map<string, ConversationTodoItem[]> } {
+  private readStoredConversations(): { migrated: boolean; records: Map<string, RuntimeConversationRecord> } {
     try {
       fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-      if (!fs.existsSync(this.storagePath)) {return { migrated: false, records: new Map(), todos: new Map() };}
+      if (!fs.existsSync(this.storagePath)) return { migrated: false, records: new Map() };
       const payload = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as RuntimeConversationStoragePayload;
       const entries = Object.entries(payload.conversations ?? {});
       const records = new Map(entries.flatMap(([id, record]) => record.userId === SINGLE_USER_ID ? [[id, cloneJsonValue(record)]] : []));
-      const todos = new Map(Object.entries(payload.todos ?? {}).flatMap(([conversationId, items]) => records.has(conversationId) && Array.isArray(items) ? [[conversationId, cloneJsonValue(items)]] : []));
-      return { migrated: records.size !== entries.length, records, todos };
-    } catch {
-      return { migrated: false, records: new Map(), todos: new Map() };
-    }
+      return { migrated: records.size !== entries.length, records };
+    } catch { return { migrated: false, records: new Map() }; }
   }
 
   private async broadcastConversationCreated(conversation: JsonObject, userId: string): Promise<void> {
     const kernel = this.runtimeHostPluginDispatchService;
-    if (!kernel) {return;}
+    if (!kernel) return;
     const context = { conversationId: String(conversation.id), source: 'http-route' as const, userId };
-    for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'conversation:created', kernel })) {
-      await kernel.invokeHook({ context, hookName: 'conversation:created', payload: asJsonValue({ context, conversation }), pluginId });
-    }
+    for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'conversation:created', kernel })) { await kernel.invokeHook({ context, hookName: 'conversation:created', payload: asJsonValue({ context, conversation }), pluginId }); }
   }
 }
 
@@ -224,7 +180,7 @@ function readConversationId(context: PluginCallContext): string { return require
 function readRevisionSeed(revision: string): string { const lastSeparator = revision.lastIndexOf(':'); return lastSeparator > 0 ? revision.slice(0, lastSeparator) : revision; }
 function readConversationSessionKey(pluginId: string, conversationId: string): string { return `${pluginId}:${conversationId}`; }
 function assertConversationRevision(conversation: RuntimeConversationRecord, expectedRevision: string): void {
-  if (conversation.revision !== expectedRevision) {throw new ConflictException(`Conversation revision mismatch: expected ${expectedRevision}, got ${conversation.revision}`);}
+  if (conversation.revision !== expectedRevision) throw new ConflictException(`Conversation revision mismatch: expected ${expectedRevision}, got ${conversation.revision}`);
 }
 
 function readConversationRecordValue(conversation: RuntimeConversationRecord, view: RuntimeConversationRecordView): JsonValue {
@@ -236,14 +192,12 @@ function readConversationRecordValue(conversation: RuntimeConversationRecord, vi
 }
 
 function resolveConversationStoragePath(): string {
-  if (process.env.GARLIC_CLAW_CONVERSATIONS_PATH) {return process.env.GARLIC_CLAW_CONVERSATIONS_PATH;}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `conversations.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);}
+  if (process.env.GARLIC_CLAW_CONVERSATIONS_PATH) return process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
+  if (process.env.JEST_WORKER_ID) return path.join(process.cwd(), 'tmp', `conversations.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
   return path.join(process.cwd(), 'tmp', 'conversations.server.json');
 }
 
-function serializeConversationSession(session: RuntimeConversationSessionRecord | null): JsonValue {
-  return session ? { ...(session.metadata ? { metadata: cloneJsonValue(session.metadata) } : {}), captureHistory: session.captureHistory, conversationId: session.conversationId, expiresAt: session.expiresAt, historyMessages: session.historyMessages.map((message) => cloneJsonValue(message)), lastMatchedAt: session.lastMatchedAt, pluginId: session.pluginId, startedAt: session.startedAt, timeoutMs: session.timeoutMs } : null;
-}
+function serializeConversationSession(session: RuntimeConversationSessionRecord | null): JsonValue { return session ? { ...(session.metadata ? { metadata: cloneJsonValue(session.metadata) } : {}), captureHistory: session.captureHistory, conversationId: session.conversationId, expiresAt: session.expiresAt, historyMessages: session.historyMessages.map((message) => cloneJsonValue(message)), lastMatchedAt: session.lastMatchedAt, pluginId: session.pluginId, startedAt: session.startedAt, timeoutMs: session.timeoutMs } : null; }
 
 export function serializeConversationMessage(message: JsonObject): JsonObject {
   return {
@@ -282,13 +236,11 @@ function serializeConversationHistoryMessage(message: JsonObject): JsonObject {
   }) as JsonObject;
 }
 
-function readConversationHistoryMessages(value: unknown): JsonObject[] {
-  return readRequiredConversationHistoryArray(value, 'messages', (entry, index) => normalizeConversationHistoryMessage(entry, index));
-}
+function readConversationHistoryMessages(value: unknown): JsonObject[] { return readConversationHistoryArray(value, 'messages', normalizeConversationHistoryMessage); }
 
 function normalizeConversationHistoryMessage(value: unknown, index: number): JsonObject {
-  const label = `messages[${index}]`;
-  const object = readRequiredConversationHistoryObject(value, `${label} must be an object`);
+  const label = readConversationHistoryLabel(index);
+  const object = readConversationHistoryObject(value, label);
   const metadata = readConversationHistoryMetadata(object.metadata, index);
   const toolCalls = readOptionalConversationHistoryArray(object.toolCalls, `${label}.toolCalls`, (entry) => cloneJsonValue(entry) as JsonValue);
   const toolResults = readOptionalConversationHistoryArray(object.toolResults, `${label}.toolResults`, (entry) => cloneJsonValue(entry) as JsonValue);
@@ -310,74 +262,54 @@ function normalizeConversationHistoryMessage(value: unknown, index: number): Jso
 }
 
 function readRequiredConversationHistoryString(params: JsonObject, key: string, index?: number): string {
-  const value = params[key];
-  if (typeof value === 'string' && value.trim()) {return value.trim();}
-  if (index === undefined) {throw new BadRequestException(`${key} is required`);}
-  throw new BadRequestException(`messages[${index}].${key} is required`);
+  const label = index === undefined ? key : `${readConversationHistoryLabel(index)}.${key}`;
+  return readConversationHistoryString(params[key], label, { required: true, trim: true }) as string;
 }
 
-function readOptionalConversationHistoryString(value: unknown, label: string): string | null {
-  if (value === undefined || value === null) {return null;}
-  if (typeof value === 'string') {return value;}
-  throw new BadRequestException(`${label} must be string or null`);
-}
+function readOptionalConversationHistoryString(value: unknown, label: string): string | null { return readConversationHistoryString(value, label, { allowNull: true }); }
 
 function readOptionalConversationHistoryStatus(value: unknown, label: string): string | null {
-  if (value === undefined || value === null) {return null;}
-  if (value === 'pending' || value === 'streaming' || value === 'completed' || value === 'stopped' || value === 'error') {return value;}
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' && CONVERSATION_HISTORY_STATUSES.has(value)) return value;
   throw new BadRequestException(`${label} is invalid`);
 }
 
-function readConversationHistoryTimestamp(value: unknown): string {
-  return typeof value === 'string' && value.trim() ? value : new Date().toISOString();
-}
+function readConversationHistoryTimestamp(value: unknown): string { return typeof value === 'string' && value.trim() ? value : new Date().toISOString(); }
 
-function readRequiredConversationHistoryObject(value: unknown, errorMessage: string): JsonObject {
-  const object = readJsonObject(value);
-  if (object) {return object;}
-  throw new BadRequestException(errorMessage);
-}
+function readConversationHistoryObject(value: unknown, label: string): JsonObject { const object = readJsonObject(value); if (object) return object; throw new BadRequestException(`${label} must be an object`); }
 
-function readRequiredConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] {
-  if (!Array.isArray(value)) {throw new BadRequestException(`${label} must be an array`);}
-  return value.map((entry, index) => readEntry(entry, index));
-}
+function readConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] { if (!Array.isArray(value)) {throw new BadRequestException(`${label} must be an array`);} return value.map((entry, index) => readEntry(entry, index)); }
 
-function readOptionalConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] | null {
-  if (value === undefined || value === null) {return null;}
-  return readRequiredConversationHistoryArray(value, label, readEntry);
-}
+function readOptionalConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] | null { if (value === undefined || value === null) return null; return readConversationHistoryArray(value, label, readEntry); }
 
 function readConversationHistoryPart(value: unknown, messageIndex: number, partIndex: number): ChatMessagePart {
-  const object = readRequiredConversationHistoryObject(value, `messages[${messageIndex}].parts[${partIndex}] is invalid`);
+  const object = readConversationHistoryObject(value, `${readConversationHistoryLabel(messageIndex)}.parts[${partIndex}]`);
   if (object.type === 'text' && typeof object.text === 'string') {return { text: object.text, type: 'text' };}
   if (object.type === 'image' && typeof object.image === 'string') {
     return { image: object.image, ...(typeof object.mimeType === 'string' ? { mimeType: object.mimeType } : {}), type: 'image' };
   }
-  throw new BadRequestException(`messages[${messageIndex}].parts[${partIndex}] is invalid`);
+  throw new BadRequestException(`${readConversationHistoryLabel(messageIndex)}.parts[${partIndex}] is invalid`);
 }
 
 function readConversationHistoryMetadata(value: unknown, index: number): ChatMessageMetadata | null {
-  if (value === undefined || value === null) {return null;}
-  const object = readRequiredConversationHistoryObject(value, `messages[${index}].metadata must be an object`);
-  const metadata: ChatMessageMetadata = {};
-  if (object.visionFallback !== undefined) {metadata.visionFallback = readConversationHistoryVisionFallback(object.visionFallback, index);}
-  if (object.customBlocks !== undefined) {metadata.customBlocks = readConversationHistoryCustomBlocks(object.customBlocks, index);}
-  if (object.annotations !== undefined) {metadata.annotations = readConversationHistoryAnnotations(object.annotations, index);}
-  return metadata;
+  if (value === undefined || value === null) return null;
+  const object = readConversationHistoryObject(value, `${readConversationHistoryLabel(index)}.metadata`);
+  const metadata: ChatMessageMetadata = {
+    ...(object.visionFallback !== undefined ? { visionFallback: readConversationHistoryVisionFallback(object.visionFallback, index) } : {}),
+    ...(object.customBlocks !== undefined ? { customBlocks: readConversationHistoryCustomBlocks(object.customBlocks, index) } : {}),
+    ...(object.annotations !== undefined ? { annotations: readConversationHistoryAnnotations(object.annotations, index) } : {}),
+  };
+  return Object.keys(metadata).length > 0 ? metadata : null;
 }
 
 function readConversationHistoryVisionFallback(value: unknown, index: number): NonNullable<ChatMessageMetadata['visionFallback']> {
-  const object = readRequiredConversationHistoryObject(value, `messages[${index}].metadata.visionFallback is invalid`);
-  if ((object.state !== 'completed' && object.state !== 'transcribing') || !Array.isArray(object.entries)) {
-    throw new BadRequestException(`messages[${index}].metadata.visionFallback is invalid`);
-  }
+  const label = `${readConversationHistoryLabel(index)}.metadata.visionFallback`;
+  const object = readConversationHistoryObject(value, label);
+  if ((object.state !== 'completed' && object.state !== 'transcribing') || !Array.isArray(object.entries)) throw new BadRequestException(`${label} is invalid`);
   return {
     entries: object.entries.map((entry, entryIndex) => {
-      const item = readRequiredConversationHistoryObject(entry, `messages[${index}].metadata.visionFallback.entries[${entryIndex}] is invalid`);
-      if (typeof item.text !== 'string' || (item.source !== 'cache' && item.source !== 'generated')) {
-        throw new BadRequestException(`messages[${index}].metadata.visionFallback.entries[${entryIndex}] is invalid`);
-      }
+      const item = readConversationHistoryObject(entry, `${label}.entries[${entryIndex}]`);
+      if (typeof item.text !== 'string' || (item.source !== 'cache' && item.source !== 'generated')) throw new BadRequestException(`${label}.entries[${entryIndex}] is invalid`);
       return { source: item.source, text: item.text };
     }),
     state: object.state,
@@ -385,11 +317,10 @@ function readConversationHistoryVisionFallback(value: unknown, index: number): N
 }
 
 function readConversationHistoryCustomBlocks(value: unknown, index: number): NonNullable<ChatMessageMetadata['customBlocks']> {
-  return readRequiredConversationHistoryArray(value, `messages[${index}].metadata.customBlocks`, (entry, blockIndex) => {
-    const object = readRequiredConversationHistoryObject(entry, `messages[${index}].metadata.customBlocks[${blockIndex}] is invalid`);
-    if (typeof object.id !== 'string' || typeof object.title !== 'string') {
-      throw new BadRequestException(`messages[${index}].metadata.customBlocks[${blockIndex}] is invalid`);
-    }
+  const label = `${readConversationHistoryLabel(index)}.metadata.customBlocks`;
+  return readConversationHistoryArray(value, label, (entry, blockIndex) => {
+    const object = readConversationHistoryObject(entry, `${label}[${blockIndex}]`);
+    if (typeof object.id !== 'string' || typeof object.title !== 'string') throw new BadRequestException(`${label}[${blockIndex}] is invalid`);
     const source = readConversationHistorySource(object.source);
     const state = object.state === 'done' || object.state === 'streaming' ? object.state : undefined;
     if (object.kind === 'text' && typeof object.text === 'string') {
@@ -398,32 +329,37 @@ function readConversationHistoryCustomBlocks(value: unknown, index: number): Non
     if (object.kind === 'json' && object.data !== undefined) {
       return { data: cloneJsonValue(object.data) as JsonValue, id: object.id, kind: 'json' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), title: object.title };
     }
-    throw new BadRequestException(`messages[${index}].metadata.customBlocks[${blockIndex}] is invalid`);
+    throw new BadRequestException(`${label}[${blockIndex}] is invalid`);
   });
 }
 
-function readConversationHistorySource(value: unknown): { key?: string; origin?: string; providerId?: string } | null {
-  const object = readJsonObject(value);
-  return object ? cloneJsonValue(object) as { key?: string; origin?: string; providerId?: string } : null;
-}
+function readConversationHistorySource(value: unknown): { key?: string; origin?: string; providerId?: string } | null { const object = readJsonObject(value); return object ? cloneJsonValue(object) as { key?: string; origin?: string; providerId?: string } : null; }
 
 function readConversationHistoryAnnotations(value: unknown, index: number): NonNullable<ChatMessageMetadata['annotations']> {
-  return readRequiredConversationHistoryArray(value, `messages[${index}].metadata.annotations`, (entry, annotationIndex) => {
-    const object = readRequiredConversationHistoryObject(entry, `messages[${index}].metadata.annotations[${annotationIndex}] is invalid`);
-    if (typeof object.type !== 'string' || typeof object.owner !== 'string' || typeof object.version !== 'string') {
-      throw new BadRequestException(`messages[${index}].metadata.annotations[${annotationIndex}] is invalid`);
-    }
+  const label = `${readConversationHistoryLabel(index)}.metadata.annotations`;
+  return readConversationHistoryArray(value, label, (entry, annotationIndex) => {
+    const object = readConversationHistoryObject(entry, `${label}[${annotationIndex}]`);
+    if (typeof object.type !== 'string' || typeof object.owner !== 'string' || typeof object.version !== 'string') throw new BadRequestException(`${label}[${annotationIndex}] is invalid`);
     return { ...(object.data !== undefined ? { data: cloneJsonValue(object.data) as JsonValue } : {}), owner: object.owner, type: object.type, version: object.version };
   });
 }
 
-function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | null {
-  if (typeof value !== 'string' || !value.trim()) {return null;}
-  try {
-    return JSON.parse(value) as ChatMessageMetadata;
-  } catch {
+function readConversationHistoryLabel(index: number): string { return `messages[${index}]`; }
+
+function readConversationHistoryString(value: unknown, label: string, options?: { allowNull?: boolean; required?: boolean; trim?: boolean }): string | null {
+  if (value === undefined || value === null) {
+    if (options?.required) throw new BadRequestException(`${label} is required`);
     return null;
   }
+  if (typeof value !== 'string') throw new BadRequestException(`${label} must be string${options?.allowNull ? ' or null' : ''}`);
+  const nextValue = options?.trim ? value.trim() : value;
+  if (!nextValue && options?.required) throw new BadRequestException(`${label} is required`);
+  return options?.trim && !nextValue ? null : nextValue;
+}
+
+function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try { return JSON.parse(value) as ChatMessageMetadata; } catch { return null; }
 }
 
 function readConversationHistoryMessageText(message: JsonObject): string {
@@ -436,3 +372,20 @@ function readConversationHistoryMessageText(message: JsonObject): string {
     : '';
   return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : ''), Array.isArray(message.toolCalls) ? JSON.stringify(message.toolCalls) : '', Array.isArray(message.toolResults) ? JSON.stringify(message.toolResults) : ''].filter(Boolean).join('\n');
 }
+
+function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { modelId: string | null; providerId: string | null; textBytes: number }): number {
+  if (input.modelId && input.providerId) {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const usage = readConversationModelUsageAnnotation(
+        readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined,
+        { modelId: input.modelId, providerId: input.providerId },
+      );
+      if (usage?.source === 'provider') {
+        return usage.inputTokens;
+      }
+    }
+  }
+  return Math.ceil(input.textBytes / 4);
+}
+
+function readConversationHistoryPreviewMetadata(message: JsonObject | undefined, index: number): ChatMessageMetadata | null { return message ? (readConversationHistoryMetadata(message.metadata, index) ?? readStoredConversationMetadata(message.metadataJson)) : null; }

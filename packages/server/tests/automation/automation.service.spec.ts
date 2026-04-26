@@ -399,9 +399,91 @@ describe('AutomationService', () => {
       ],
     });
     expect(runtimeHostConversationMessageService.sendMessage).toHaveBeenCalledWith(
-      { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
+      { source: 'automation', userId: 'user-1', automationId: 'automation-1', conversationId: 'conversation-1' },
       { content: '咖啡已经煮好了', target: { type: 'conversation', id: 'conversation-1' } },
     );
+  });
+
+  it('passes the first conversation target into later device_command action context', async () => {
+    const runtimeHostPluginDispatchService = {
+      executeTool: jest.fn().mockResolvedValue({ sessionId: 'subagent-session-1' }),
+      invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
+      listPlugins: jest.fn().mockReturnValue([]),
+    };
+    const runtimeHostConversationMessageService = {
+      sendMessage: jest.fn().mockResolvedValue({
+        id: 'message-1',
+        target: {
+          type: 'conversation',
+          id: 'conversation-1',
+        },
+        role: 'assistant',
+        content: '自动化主会话',
+        parts: [{ type: 'text', text: '自动化主会话' }],
+        status: 'completed',
+        createdAt: '2026-03-29T15:00:00.000Z',
+        updatedAt: '2026-03-29T15:00:00.000Z',
+      }),
+    };
+    service = createService({
+      runtimeHostPluginDispatchService,
+      conversationMessageService: runtimeHostConversationMessageService,
+    });
+
+    service.create('user-1', {
+      actions: [
+        {
+          type: 'ai_message',
+          message: '自动化主会话',
+          target: { type: 'conversation', id: 'conversation-1' },
+        },
+        {
+          type: 'device_command',
+          plugin: 'builtin.subagent-delegate',
+          capability: 'subagent_background',
+          params: { prompt: '请继续处理', writeBack: false },
+        },
+      ],
+      name: '会话绑定 subagent 自动化',
+      trigger: { type: 'manual' },
+    });
+
+    await expect(service.run('user-1', 'automation-1')).resolves.toEqual({
+      status: 'success',
+      results: [
+        {
+          action: 'ai_message',
+          target: { type: 'conversation', id: 'conversation-1' },
+          result: {
+            id: 'message-1',
+            target: { type: 'conversation', id: 'conversation-1' },
+            role: 'assistant',
+            content: '自动化主会话',
+            parts: [{ type: 'text', text: '自动化主会话' }],
+            status: 'completed',
+            createdAt: '2026-03-29T15:00:00.000Z',
+            updatedAt: '2026-03-29T15:00:00.000Z',
+          },
+        },
+        {
+          action: 'device_command',
+          capability: 'subagent_background',
+          plugin: 'builtin.subagent-delegate',
+          result: { sessionId: 'subagent-session-1' },
+        },
+      ],
+    });
+    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenNthCalledWith(1, {
+      pluginId: 'builtin.subagent-delegate',
+      toolName: 'subagent_background',
+      params: { prompt: '请继续处理', writeBack: false },
+      context: {
+        source: 'automation',
+        userId: 'user-1',
+        automationId: 'automation-1',
+        conversationId: 'conversation-1',
+      },
+    });
   });
 
   it('schedules enabled cron automations and runs them on interval', async () => {

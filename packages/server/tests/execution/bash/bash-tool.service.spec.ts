@@ -159,6 +159,40 @@ describe('BashToolService', () => {
     });
   });
 
+  it('treats wsl-shell as bash syntax even on Windows', async () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'wsl-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'wsl-shell',
+      } as never,
+    );
+
+    expect(service.buildToolDescription()).toContain('当前 shell backend 使用 bash 语法。');
+    expect(service.buildToolDescription()).toContain('请把它们放进同一条命令，并用 && 串起来。');
+  });
+
   it('describes denied network access inside a restricted visible root', async () => {
     const service = new BashToolService(
       {} as never,
@@ -244,6 +278,57 @@ describe('BashToolService', () => {
       requiredOperations: ['command.execute'],
       role: 'shell',
       summary: '检查静态命令提示 (/workspace)；静态提示: 含 cd、文件命令: cd, cat, rm、外部绝对路径: /tmp, /etc/hosts',
+    });
+  });
+
+  it('treats visible-root slash paths as internal virtual workspace paths', async () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'mock-shell',
+      } as never,
+    );
+
+    await expect(service.readRuntimeAccess({
+      backendKind: 'mock-shell',
+      command: 'cp /tmp/source.txt /tmp/dest.txt',
+      description: '检查默认可见根内部路径',
+      sessionId: 'session-1',
+    })).resolves.toEqual({
+      backendKind: 'mock-shell',
+      metadata: {
+        command: 'cp /tmp/source.txt /tmp/dest.txt',
+        commandHints: {
+          absolutePaths: ['/tmp/source.txt', '/tmp/dest.txt'],
+          fileCommands: ['cp'],
+        },
+        description: '检查默认可见根内部路径',
+      },
+      requiredOperations: ['command.execute'],
+      role: 'shell',
+      summary: '检查默认可见根内部路径 (/)；静态提示: 文件命令: cp',
     });
   });
 
@@ -5548,6 +5633,9 @@ describe('BashToolService', () => {
   });
 
   it('treats powershell Join-Path-assigned local variable destinations as external write targets for copy-item', async () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
     const service = new BashToolService(
       {} as never,
       {

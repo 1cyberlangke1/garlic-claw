@@ -7,14 +7,10 @@ import { AiProviderSettingsService } from '../../../src/ai-management/ai-provide
 import { createSingleUserProfile } from '../../../src/auth/single-user-auth';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
-import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
-import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
 import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
-import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
-import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
+import { ProjectWorktreeSearchOverlayService } from '../../../src/execution/project/project-worktree-search-overlay.service';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
-import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
 import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
@@ -23,7 +19,6 @@ import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtim
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
 import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
-import { WriteToolService } from '../../../src/execution/write/write-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -96,10 +91,39 @@ describe('RuntimeHostService', () => {
     const runtimeGatewayConnectionLifecycleService = new RuntimeGatewayConnectionLifecycleService(
       pluginBootstrapService,
     );
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+      runtimeSessionEnvironmentService,
+    );
+    const runtimeCommandService = new RuntimeCommandService(
+      [new RuntimeJustBashService(runtimeSessionEnvironmentService)],
+      new RuntimeCommandCaptureService(runtimeSessionEnvironmentService),
+    );
+    const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService([
+      runtimeHostFilesystemBackendService,
+    ]);
+    const runtimeToolBackendService = new RuntimeToolBackendService(
+      new RuntimeBackendRoutingService(),
+      runtimeCommandService,
+      runtimeFilesystemBackendService,
+    );
+    const runtimeToolPermissionService = new RuntimeToolPermissionService();
+    const projectWorktreeSearchOverlayService = new ProjectWorktreeSearchOverlayService(
+      runtimeSessionEnvironmentService,
+      new ProjectWorktreeRootService(),
+    );
     const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
       builtinPluginRegistryService,
       pluginBootstrapService,
       new RuntimeGatewayRemoteTransportService(runtimeGatewayConnectionLifecycleService),
+      runtimeCommandService,
+      new RuntimeBackendRoutingService(),
+      runtimeFilesystemBackendService,
+      {} as never,
+      runtimeSessionEnvironmentService,
+      runtimeToolBackendService,
+      runtimeToolPermissionService,
+      projectWorktreeSearchOverlayService,
     );
     const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
     const runtimeHostService = new RuntimeHostService(
@@ -1161,20 +1185,10 @@ function createFixture(input?: {
       );
       const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
       const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
-        new BashToolService(
-          runtimeCommandService,
-          runtimeSessionEnvironmentService,
-          runtimeToolBackendService,
-        ),
-        new ReadToolService(
-          runtimeSessionEnvironmentService,
-          runtimeFilesystemBackendService,
-          runtimeFileFreshnessService,
-        ),
-        new GlobToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
-        new GrepToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService),
-        new WriteToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService, runtimeFileFreshnessService),
-        new EditToolService(runtimeSessionEnvironmentService, runtimeFilesystemBackendService, runtimeFileFreshnessService),
+        runtimeCommandService,
+        runtimeFilesystemBackendService,
+        runtimeFileFreshnessService,
+        runtimeSessionEnvironmentService,
         runtimeToolBackendService,
         runtimeToolPermissionService,
       );

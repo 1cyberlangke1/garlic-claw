@@ -1,6 +1,6 @@
 import type { ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { uuidv7 } from 'uuidv7';
 import { RuntimeHostConversationRecordService, serializeConversationMessage } from './runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { applyMutatingDispatchableHooks, listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
@@ -11,7 +11,7 @@ export class RuntimeHostConversationMessageService {
   constructor(private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Optional() private readonly runtimeHostPluginDispatchService?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>) {}
 
   private createMessageRecord(input: MessageWriteInput, timestamp: string): JsonObject {
-    const message: JsonObject = { content: input.content ?? '', createdAt: timestamp, id: randomUUID(), role: input.role, status: input.status, updatedAt: timestamp };
+    const message: JsonObject = { content: input.content ?? '', createdAt: timestamp, id: uuidv7(), role: input.role, status: input.status, updatedAt: timestamp };
     if (input.metadata) {message.metadataJson = JSON.stringify(input.metadata);}
     if (input.parts?.length) {message.parts = asJsonValue(input.parts) as unknown as JsonObject['parts'];}
     if (input.provider) {message.provider = input.provider;}
@@ -139,11 +139,12 @@ export class RuntimeHostConversationMessageService {
 type MessageWriteInput = { content?: string; metadata?: ChatMessageMetadata | null; model?: string | null; parts?: ChatMessagePart[]; provider?: string | null; role: 'assistant' | 'display' | 'user'; status: 'completed' | 'pending'; target?: { id: string; label: string; type: 'conversation' } };
 type ConversationMessageWriteInput = MessageWriteInput & { role: 'assistant' | 'user' };
 type MessagePatch = { content?: string; error?: string | null; metadata?: ChatMessageMetadata | null; model?: string | null; parts?: ChatMessagePart[]; provider?: string | null; status?: ChatMessageStatus; toolCalls?: JsonValue[] | null; toolResults?: JsonValue[] | null };
-type HookMessage = { content: string; model: string | null; parts: ChatMessagePart[]; provider: string | null; role: 'assistant' | 'user'; status: JsonValue };
+type HookMessage = { content: string; metadata?: ChatMessageMetadata; model: string | null; parts: ChatMessagePart[]; provider: string | null; role: 'assistant' | 'user'; status: JsonValue };
 
 function readStoredHookMessage(message: JsonObject): HookMessage {
   return toHookMessage({
     content: typeof message.content === 'string' ? message.content : '',
+    metadata: readStoredMessageMetadata(message.metadataJson),
     model: typeof message.model === 'string' ? message.model : null,
     parts: Array.isArray(message.parts) ? message.parts as unknown as ChatMessagePart[] : [],
     provider: typeof message.provider === 'string' ? message.provider : null,
@@ -179,8 +180,16 @@ function createHookContext(conversation: { activePersonaId?: string; id: string;
   return { ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}), ...(message.model ? { activeModelId: message.model } : {}), ...(message.provider ? { activeProviderId: message.provider } : {}), conversationId: conversation.id, source: 'http-route', userId: conversation.userId };
 }
 
-function toHookMessage(message: { content?: string | null; model?: string | null; parts?: ChatMessagePart[]; provider?: string | null; role: 'assistant' | 'user'; status?: unknown }): HookMessage {
-  return { content: message.content ?? '', model: message.model ?? null, parts: message.parts ?? [], provider: message.provider ?? null, role: message.role, status: (message.status ?? 'completed') as JsonValue };
+function toHookMessage(message: { content?: string | null; metadata?: ChatMessageMetadata | null; model?: string | null; parts?: ChatMessagePart[]; provider?: string | null; role: 'assistant' | 'user'; status?: unknown }): HookMessage {
+  return {
+    content: message.content ?? '',
+    ...(message.metadata ? { metadata: cloneJsonValue(message.metadata) } : {}),
+    model: message.model ?? null,
+    parts: message.parts ?? [],
+    provider: message.provider ?? null,
+    role: message.role,
+    status: (message.status ?? 'completed') as JsonValue,
+  };
 }
 
 function normalizePluginMessageOutput(content: string | null, parts: ChatMessagePart[] | null): { content: string; parts: ChatMessagePart[] } {
@@ -190,3 +199,14 @@ function normalizePluginMessageOutput(content: string | null, parts: ChatMessage
 }
 
 function toMessagePatch(message: HookMessage): MessagePatch { return { content: message.content, parts: message.parts, ...(message.provider !== undefined ? { provider: message.provider } : {}), ...(message.model !== undefined ? { model: message.model } : {}), ...(message.status !== undefined ? { status: message.status as ChatMessageStatus } : {}) }; }
+
+function readStoredMessageMetadata(value: unknown): ChatMessageMetadata | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(value) as ChatMessageMetadata;
+  } catch {
+    return null;
+  }
+}

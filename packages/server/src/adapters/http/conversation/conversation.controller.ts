@@ -7,6 +7,7 @@ import { ConversationTaskService } from '../../../conversation/conversation-task
 import { RuntimeToolPermissionService } from '../../../execution/runtime/runtime-tool-permission.service';
 import { RuntimeHostConversationMessageService } from '../../../runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostConversationTodoService } from '../../../runtime/host/runtime-host-conversation-todo.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
   ConversationTodoItemDto,
@@ -19,6 +20,8 @@ import {
   UpdateMessageDto,
 } from './conversation.dto';
 
+const routeUuidPipe = new ParseUUIDPipe({ version: '7' });
+
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 export class ConversationController {
@@ -29,6 +32,7 @@ export class ConversationController {
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
   ) {}
 
   private requireOwnedConversation(userId: string, id: string) {
@@ -44,12 +48,12 @@ export class ConversationController {
   listConversations(@CurrentUser('id') userId: string) { return this.runtimeHostConversationRecordService.listConversations(userId); }
 
   @Get('conversations/:id')
-  getConversation(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.getConversation(id, userId); }
+  getConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.runtimeHostConversationRecordService.getConversation(id, userId); }
 
   @Get('conversations/:id/context-window')
   getConversationContextWindow(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', routeUuidPipe) id: string,
     @Query('providerId') providerId?: string,
     @Query('modelId') modelId?: string,
   ) {
@@ -58,28 +62,32 @@ export class ConversationController {
   }
 
   @Get('sessions/:id/todo')
-  getSessionTodo(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.readSessionTodo(id, userId); }
+  getSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.runtimeHostConversationTodoService.readSessionTodo(id, userId); }
 
   @Delete('conversations/:id')
-  deleteConversation(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.deleteConversation(id, userId); }
+  deleteConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
+    this.requireOwnedConversation(userId, id);
+    this.runtimeHostConversationTodoService.deleteSessionTodo(id);
+    return this.runtimeHostConversationRecordService.deleteConversation(id, userId);
+  }
 
   @Get('conversations/:id/services')
-  getConversationHostServices(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) { return this.runtimeHostConversationRecordService.readConversationHostServices(id, userId); }
+  getConversationHostServices(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.runtimeHostConversationRecordService.readConversationHostServices(id, userId); }
 
   @Put('conversations/:id/services')
-  updateConversationHostServices(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateConversationHostServicesDto) { return this.runtimeHostConversationRecordService.writeConversationHostServices(id, dto, userId); }
+  updateConversationHostServices(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Body() dto: UpdateConversationHostServicesDto) { return this.runtimeHostConversationRecordService.writeConversationHostServices(id, dto, userId); }
 
   @Put('sessions/:id/todo')
-  updateSessionTodo(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateConversationTodoDto) { return this.runtimeHostConversationRecordService.replaceSessionTodo(id, dto.todos as ConversationTodoItemDto[], userId); }
+  updateSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Body() dto: UpdateConversationTodoDto) { return this.runtimeHostConversationTodoService.replaceSessionTodo(id, dto.todos as ConversationTodoItemDto[], userId); }
 
   @Get('conversations/:id/runtime-permissions/pending')
-  listPendingRuntimePermissions(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) {
+  listPendingRuntimePermissions(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
     return this.runtimeToolPermissionService.listPendingRequests(id);
   }
 
   @Post('conversations/:id/runtime-permissions/:requestId/reply')
-  replyRuntimePermission(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Param('requestId') requestId: string, @Body() dto: ReplyRuntimePermissionDto) {
+  replyRuntimePermission(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('requestId') requestId: string, @Body() dto: ReplyRuntimePermissionDto) {
     this.requireOwnedConversation(userId, id);
     return this.runtimeToolPermissionService.reply(id, requestId, dto.decision);
   }
@@ -87,7 +95,7 @@ export class ConversationController {
   @Post('conversations/:id/messages')
   async sendMessage(
     @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', routeUuidPipe) id: string,
     @Body() dto: SendMessageDto,
     @Res() res: Response,
   ) {
@@ -106,7 +114,7 @@ export class ConversationController {
   }
 
   @Post('conversations/:id/messages/:messageId/retry')
-  async retryMessage(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Param('messageId', ParseUUIDPipe) messageId: string, @Body() dto: RetryMessageDto, @Res() res: Response) {
+  async retryMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string, @Body() dto: RetryMessageDto, @Res() res: Response) {
     this.requireOwnedConversation(userId, id);
     await streamTaskEvents(res, this.conversationTaskService, async () => {
       const assistantMessage = await this.conversationMessageLifecycleService.retryMessageGeneration(id, messageId, dto, userId);
@@ -118,20 +126,20 @@ export class ConversationController {
   }
 
   @Post('conversations/:id/messages/:messageId/stop')
-  stopMessage(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Param('messageId', ParseUUIDPipe) messageId: string) {
+  stopMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string) {
     this.requireOwnedConversation(userId, id);
     return this.conversationMessageLifecycleService.stopMessageGeneration(id, messageId, userId);
   }
 
   @Patch('conversations/:id/messages/:messageId')
-  async updateMessage(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Param('messageId', ParseUUIDPipe) messageId: string, @Body() dto: UpdateMessageDto) {
+  async updateMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string, @Body() dto: UpdateMessageDto) {
     this.requireOwnedConversation(userId, id);
     await this.conversationTaskService.stopTask(messageId);
     return this.runtimeHostConversationMessageService.updateMessage(id, messageId, toUpdateMessagePatch(dto), userId);
   }
 
   @Delete('conversations/:id/messages/:messageId')
-  async deleteMessage(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string, @Param('messageId', ParseUUIDPipe) messageId: string) {
+  async deleteMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string) {
     this.requireOwnedConversation(userId, id);
     await this.conversationTaskService.stopTask(messageId);
     return this.runtimeHostConversationMessageService.deleteMessage(id, messageId, userId);

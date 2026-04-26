@@ -7,6 +7,8 @@ import type {
 import { BUILTIN_CONTEXT_COMPACTION_PLUGIN } from '../../../../src/plugin/builtin/hooks/builtin-context-compaction.plugin';
 
 describe('BuiltinContextCompactionPlugin', () => {
+  const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
   it('short-circuits /compress through message:received and writes compacted history back', async () => {
     const messageReceivedHook = BUILTIN_CONTEXT_COMPACTION_PLUGIN.hooks?.['message:received'];
     expect(messageReceivedHook).toBeDefined();
@@ -249,6 +251,7 @@ describe('BuiltinContextCompactionPlugin', () => {
       },
       role: 'display',
     }));
+    expect(summaryMessage?.id.replace('context-compaction:', '')).toMatch(uuidV7Pattern);
     expect(coveredMessages).toHaveLength(2);
   });
 
