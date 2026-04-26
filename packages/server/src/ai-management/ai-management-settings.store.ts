@@ -2,12 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AiHostModelRoutingConfig, AiProviderMode, VisionFallbackConfig } from '@garlic-claw/shared';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
-import type {
-  AiProviderStorageFile,
-  AiSettingsFile,
-  StoredAiModelConfig,
-  StoredAiProviderConfig,
-} from './ai-management.types';
+import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
 const AI_PROVIDER_DIRECTORY = 'providers';
 const AI_HOST_MODEL_ROUTING_FILE = 'host-model-routing.json';
@@ -26,11 +21,12 @@ export function loadAiSettings(settingsPath: string): AiSettingsFile {
   const empty = createEmptySettings();
   try {
     fs.mkdirSync(readAiProviderDirectory(settingsPath), { recursive: true });
+    const providerFiles = readAiProviderStorageFiles(settingsPath);
     return {
-      hostModelRouting: readAiHostModelRouting(settingsPath, empty.hostModelRouting),
-      models: readAiPersistedModels(settingsPath),
-      providers: readAiProviders(settingsPath),
-      visionFallback: readAiVisionFallback(settingsPath, empty.visionFallback),
+      hostModelRouting: readJsonFile(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), cloneRoutingConfig(empty.hostModelRouting)),
+      models: providerFiles.flatMap((provider) => provider.persistedModels?.map(cloneStoredAiModelConfig) ?? []).sort(compareStoredModels),
+      providers: providerFiles.map(({ persistedModels: _persistedModels, ...provider }) => cloneStoredProviderConfig(provider)).sort((left, right) => left.id.localeCompare(right.id)),
+      visionFallback: readJsonFile(path.join(settingsPath, AI_VISION_FALLBACK_FILE), { ...empty.visionFallback }),
     };
   } catch {
     return empty;
@@ -38,58 +34,39 @@ export function loadAiSettings(settingsPath: string): AiSettingsFile {
 }
 
 export function saveAiSettings(settingsPath: string, settings: AiSettingsFile): void {
-  const providerDirectory = readAiProviderDirectory(settingsPath);
+  const providerDirectory = readAiProviderDirectory(settingsPath), activeProviderIds = new Set(settings.providers.map((provider) => provider.id));
   fs.mkdirSync(providerDirectory, { recursive: true });
-
-  const persistedModelMap = new Map<string, StoredAiModelConfig[]>();
-  for (const model of settings.models) {
-    const current = persistedModelMap.get(model.providerId) ?? [];
-    current.push(cloneStoredAiModelConfig(model));
-    persistedModelMap.set(model.providerId, current);
-  }
-
-  const activeProviderIds = new Set(settings.providers.map((provider) => provider.id));
   for (const entry of fs.readdirSync(providerDirectory, { withFileTypes: true })) {
-    if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.json') {
-      continue;
-    }
-    const providerId = decodeURIComponent(path.basename(entry.name, '.json'));
-    if (!activeProviderIds.has(providerId)) {
-      fs.rmSync(path.join(providerDirectory, entry.name), { force: true });
+    if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.json') {
+      const providerId = decodeURIComponent(path.basename(entry.name, '.json'));
+      if (!activeProviderIds.has(providerId)) { fs.rmSync(path.join(providerDirectory, entry.name), { force: true }); }
     }
   }
-
+  const persistedModels = settings.models.reduce<Map<string, StoredAiModelConfig[]>>((map, model) => {
+    const current = map.get(model.providerId) ?? [];
+    current.push(cloneStoredAiModelConfig(model));
+    map.set(model.providerId, current);
+    return map;
+  }, new Map());
   for (const provider of settings.providers) {
-    const providerFile: AiProviderStorageFile = {
-      ...cloneStoredProviderConfig(provider),
-      persistedModels: (persistedModelMap.get(provider.id) ?? []).map(cloneStoredAiModelConfig),
-    };
     fs.writeFileSync(
       path.join(providerDirectory, `${encodeURIComponent(provider.id)}.json`),
-      JSON.stringify(providerFile, null, 2),
+      JSON.stringify({
+        ...cloneStoredProviderConfig(provider),
+        persistedModels: (persistedModels.get(provider.id) ?? []).map(cloneStoredAiModelConfig),
+      } satisfies AiProviderStorageFile, null, 2),
       'utf-8',
     );
   }
-
-  fs.writeFileSync(
-    path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE),
-    JSON.stringify(cloneRoutingConfig(settings.hostModelRouting), null, 2),
-    'utf-8',
-  );
-  fs.writeFileSync(
-    path.join(settingsPath, AI_VISION_FALLBACK_FILE),
-    JSON.stringify({ ...settings.visionFallback }, null, 2),
-    'utf-8',
-  );
+  fs.writeFileSync(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), JSON.stringify(cloneRoutingConfig(settings.hostModelRouting), null, 2), 'utf-8');
+  fs.writeFileSync(path.join(settingsPath, AI_VISION_FALLBACK_FILE), JSON.stringify({ ...settings.visionFallback }, null, 2), 'utf-8');
 }
 
 export function cloneRoutingConfig(config: AiHostModelRoutingConfig): AiHostModelRoutingConfig {
   return {
     fallbackChatModels: config.fallbackChatModels.map((entry) => ({ ...entry })),
     ...(config.compressionModel ? { compressionModel: { ...config.compressionModel } } : {}),
-    utilityModelRoles: Object.fromEntries(
-      Object.entries(config.utilityModelRoles).map(([role, target]) => [role, target ? { ...target } : target]),
-    ) as AiHostModelRoutingConfig['utilityModelRoles'],
+    utilityModelRoles: Object.fromEntries(Object.entries(config.utilityModelRoles).map(([role, target]) => [role, target ? { ...target } : target])) as AiHostModelRoutingConfig['utilityModelRoles'],
   };
 }
 
@@ -97,42 +74,21 @@ function readAiProviderDirectory(settingsPath: string): string {
   return path.join(settingsPath, AI_PROVIDER_DIRECTORY);
 }
 
-function readAiProviders(settingsPath: string): StoredAiProviderConfig[] {
-  const providerDirectory = readAiProviderDirectory(settingsPath);
-  return fs.readdirSync(providerDirectory, { withFileTypes: true })
+function readAiProviderStorageFiles(settingsPath: string): AiProviderStorageFile[] {
+  return fs.readdirSync(readAiProviderDirectory(settingsPath), { withFileTypes: true })
     .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.json')
-    .map((entry) => readAiProviderStorageFile(path.join(providerDirectory, entry.name)))
-    .filter((entry): entry is AiProviderStorageFile => entry !== null)
-    .map(({ persistedModels: _persistedModels, ...provider }) => cloneStoredProviderConfig(provider))
-    .sort((left, right) => left.id.localeCompare(right.id));
-}
-
-function readAiPersistedModels(settingsPath: string): StoredAiModelConfig[] {
-  const providerDirectory = readAiProviderDirectory(settingsPath);
-  return fs.readdirSync(providerDirectory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.json')
-    .flatMap((entry) => {
-      const provider = readAiProviderStorageFile(path.join(providerDirectory, entry.name));
-      return provider?.persistedModels?.map(cloneStoredAiModelConfig) ?? [];
-    })
-    .sort((left, right) => {
-      const providerOrder = left.providerId.localeCompare(right.providerId);
-      return providerOrder !== 0 ? providerOrder : left.id.localeCompare(right.id);
-    });
+    .map((entry) => readAiProviderStorageFile(path.join(readAiProviderDirectory(settingsPath), entry.name)))
+    .filter((entry): entry is AiProviderStorageFile => entry !== null);
 }
 
 function readAiProviderStorageFile(filePath: string): AiProviderStorageFile | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Partial<AiProviderStorageFile>;
-    const providerId = typeof parsed.id === 'string' && parsed.id.trim()
-      ? parsed.id.trim()
-      : decodeURIComponent(path.basename(filePath, '.json'));
-    const name = typeof parsed.name === 'string' && parsed.name.trim() ? parsed.name.trim() : providerId;
+    const providerId = normalizeOptionalText(parsed.id) ?? decodeURIComponent(path.basename(filePath, '.json'));
+    const name = normalizeOptionalText(parsed.name) ?? providerId;
     const mode = typeof parsed.mode === 'string' ? parsed.mode as AiProviderMode : null;
-    const driver = typeof parsed.driver === 'string' && parsed.driver.trim() ? parsed.driver.trim() : null;
-    if (!providerId || !name || !mode || !driver) {
-      return null;
-    }
+    const driver = normalizeOptionalText(parsed.driver);
+    if (!providerId || !name || !mode || !driver) { return null; }
     return {
       apiKey: normalizeOptionalText(parsed.apiKey),
       baseUrl: normalizeOptionalText(parsed.baseUrl),
@@ -140,53 +96,25 @@ function readAiProviderStorageFile(filePath: string): AiProviderStorageFile | nu
       driver,
       id: providerId,
       mode,
-      models: Array.isArray(parsed.models)
-        ? [...new Set(parsed.models.flatMap((entry) => {
-            const modelId = normalizeOptionalText(entry);
-            return modelId ? [modelId] : [];
-          }))]
-        : [],
+      models: Array.isArray(parsed.models) ? [...new Set(parsed.models.flatMap((entry) => normalizeOptionalText(entry) ? [normalizeOptionalText(entry)!] : []))] : [],
       name,
-      persistedModels: Array.isArray(parsed.persistedModels)
-        ? parsed.persistedModels.flatMap((entry) => normalizeStoredAiModelConfig(entry))
-        : [],
+      persistedModels: Array.isArray(parsed.persistedModels) ? parsed.persistedModels.flatMap(normalizeStoredAiModelConfig) : [],
     };
   } catch {
     return null;
   }
 }
 
-function readAiHostModelRouting(settingsPath: string, fallback: AiHostModelRoutingConfig): AiHostModelRoutingConfig {
+function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
-    const filePath = path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE);
-    if (!fs.existsSync(filePath)) {
-      return cloneRoutingConfig(fallback);
-    }
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as AiHostModelRoutingConfig;
-    return cloneRoutingConfig(parsed);
+    return fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) as T : fallback;
   } catch {
-    return cloneRoutingConfig(fallback);
-  }
-}
-
-function readAiVisionFallback(settingsPath: string, fallback: VisionFallbackConfig): VisionFallbackConfig {
-  try {
-    const filePath = path.join(settingsPath, AI_VISION_FALLBACK_FILE);
-    if (!fs.existsSync(filePath)) {
-      return { ...fallback };
-    }
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as VisionFallbackConfig;
-    return { ...parsed };
-  } catch {
-    return { ...fallback };
+    return fallback;
   }
 }
 
 function cloneStoredProviderConfig(provider: StoredAiProviderConfig): StoredAiProviderConfig {
-  return {
-    ...provider,
-    models: [...provider.models],
-  };
+  return { ...provider, models: [...provider.models] };
 }
 
 function cloneStoredAiModelConfig(model: StoredAiModelConfig): StoredAiModelConfig {
@@ -201,35 +129,17 @@ function cloneStoredAiModelConfig(model: StoredAiModelConfig): StoredAiModelConf
 }
 
 function normalizeStoredAiModelConfig(input: unknown): StoredAiModelConfig[] {
-  if (typeof input !== 'object' || input === null) {
-    return [];
-  }
-  const record = input as Partial<StoredAiModelConfig>;
-  const id = normalizeOptionalText(record.id);
-  const providerId = normalizeOptionalText(record.providerId);
-  const name = normalizeOptionalText(record.name);
-  if (!id || !providerId || !name || typeof record.contextLength !== 'number' || !Number.isFinite(record.contextLength)) {
-    return [];
-  }
+  if (typeof input !== 'object' || input === null) { return []; }
+  const record = input as Partial<StoredAiModelConfig>, id = normalizeOptionalText(record.id), providerId = normalizeOptionalText(record.providerId), name = normalizeOptionalText(record.name);
+  if (!id || !providerId || !name || typeof record.contextLength !== 'number' || !Number.isFinite(record.contextLength)) { return []; }
   const capabilities = typeof record.capabilities === 'object' && record.capabilities !== null
     ? {
-        reasoning: record.capabilities.reasoning === true,
-        toolCall: record.capabilities.toolCall === true,
-        input: {
-          image: record.capabilities.input?.image === true,
-          text: record.capabilities.input?.text !== false,
-        },
-        output: {
-          image: record.capabilities.output?.image === true,
-          text: record.capabilities.output?.text !== false,
-        },
-      }
-    : {
-        reasoning: false,
-        toolCall: false,
-        input: { image: false, text: true },
-        output: { image: false, text: true },
-      };
+      reasoning: record.capabilities.reasoning === true,
+      toolCall: record.capabilities.toolCall === true,
+      input: { image: record.capabilities.input?.image === true, text: record.capabilities.input?.text !== false },
+      output: { image: record.capabilities.output?.image === true, text: record.capabilities.output?.text !== false },
+    }
+    : { reasoning: false, toolCall: false, input: { image: false, text: true }, output: { image: false, text: true } };
   return [{
     capabilities,
     contextLength: record.contextLength,
@@ -240,16 +150,12 @@ function normalizeStoredAiModelConfig(input: unknown): StoredAiModelConfig[] {
   }];
 }
 
+function compareStoredModels(left: StoredAiModelConfig, right: StoredAiModelConfig): number {
+  return left.providerId.localeCompare(right.providerId) || left.id.localeCompare(right.id);
+}
+
 function createEmptySettings(): AiSettingsFile {
-  return {
-    hostModelRouting: {
-      fallbackChatModels: [],
-      utilityModelRoles: {},
-    },
-    models: [],
-    providers: [],
-    visionFallback: { enabled: false },
-  };
+  return { hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} }, models: [], providers: [], visionFallback: { enabled: false } };
 }
 
 function normalizeOptionalText(value: unknown): string | undefined {

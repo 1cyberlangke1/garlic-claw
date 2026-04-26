@@ -56,3 +56,12 @@
    - 结论：`PASS`
    - `P5` 可标记完成：关键 ID 与 v7 路由约束已恢复
    - `P6` 可标记完成：host/automation/hints 三处都是真收口，不是假 facade
+12. `P7` 配置/网关 owner 压体积
+   - 重写：`plugin-bootstrap.service.ts`
+   - 重写：`ai-management-settings.store.ts`
+   - 重写：`runtime-gateway-connection-lifecycle.service.ts`
+   - 目标：继续净减且不改公开语义
+13. `P7` 独立 judge
+   - 结论：`PASS`
+   - `plugin-bootstrap / ai-settings / gateway` 三个 owner 都是真收口
+   - `V3` 总目标仍未完成，当前 `packages/server/src = 15598`

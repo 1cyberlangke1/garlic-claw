@@ -17,9 +17,7 @@ const REMOTE_CAPABILITY_PROFILES = ['query', 'actuate', 'hybrid'] as const;
 const REMOTE_AUTH_MODES = ['none', 'optional', 'required'] as const;
 const CONFIG_TEXT_FIELDS = ['description', 'hint', 'editorLanguage', 'editorTheme', 'specialType'] as const;
 const CONFIG_BOOLEAN_FIELDS = ['obviousHint', 'invisible', 'collapsed', 'editorMode', 'secret'] as const;
-
 type ManifestRecord = Record<string, unknown>;
-type ConfigOptionalState = { condition?: Record<string, PluginConfigConditionValue>; options?: PluginConfigOptionSchema[] };
 
 export interface RegisterPluginInput { connected?: boolean; fallback: PluginManifestFallback; governance?: PluginGovernanceOverrides; manifest?: Partial<PluginManifest> | null; remote?: RegisteredPluginRemoteRecord | null; }
 
@@ -29,7 +27,11 @@ export interface PluginManifestFallback { description?: string; id: string; name
 
 @Injectable()
 export class PluginBootstrapService {
-  constructor(private readonly pluginGovernanceService: PluginGovernanceService, private readonly pluginPersistenceService: PluginPersistenceService, @Optional() private readonly builtinPluginRegistryService?: BuiltinPluginRegistryService) {}
+  constructor(
+    private readonly pluginGovernanceService: PluginGovernanceService,
+    private readonly pluginPersistenceService: PluginPersistenceService,
+    @Optional() private readonly builtinPluginRegistryService?: BuiltinPluginRegistryService,
+  ) {}
 
   getPlugin(pluginId: string): RegisteredPluginRecord { return this.pluginPersistenceService.getPluginOrThrow(pluginId); }
   listPlugins(): RegisteredPluginRecord[] { return this.pluginPersistenceService.listPlugins(); }
@@ -87,9 +89,7 @@ function createRemotePluginRegistration(input: UpsertRemotePluginInput, existing
 }
 
 function normalizeRemotePluginInput(input: UpsertRemotePluginInput): UpsertRemotePluginInput {
-  const description = readText(input.description);
-  const displayName = readText(input.displayName);
-  const version = readText(input.version);
+  const description = readText(input.description), displayName = readText(input.displayName), version = readText(input.version);
   return {
     access: { accessKey: readText(input.access.accessKey), serverUrl: readText(input.access.serverUrl) },
     ...(description ? { description } : {}),
@@ -138,86 +138,70 @@ function readConfig(value: unknown): PluginConfigSchema | null {
 }
 
 function readRemoteDescriptor(value: unknown): PluginRemoteDescriptor | null {
-  const record = readRecord(value);
-  const authMode = readLiteral(readRecord(record?.auth)?.mode, REMOTE_AUTH_MODES);
-  const capabilityProfile = readLiteral(record?.capabilityProfile, REMOTE_CAPABILITY_PROFILES);
-  const remoteEnvironment = readLiteral(record?.remoteEnvironment, REMOTE_ENVIRONMENTS);
+  const record = readRecord(value), authMode = readLiteral(readRecord(record?.auth)?.mode, REMOTE_AUTH_MODES), capabilityProfile = readLiteral(record?.capabilityProfile, REMOTE_CAPABILITY_PROFILES), remoteEnvironment = readLiteral(record?.remoteEnvironment, REMOTE_ENVIRONMENTS);
   return authMode && capabilityProfile && remoteEnvironment ? { auth: { mode: authMode }, capabilityProfile, remoteEnvironment } : null;
 }
 
 function readConfigNode(value: unknown): PluginConfigNodeSchema | null {
-  const record = readRecord(value);
-  const type = readLiteral(record?.type, CONFIG_NODE_TYPES);
+  const record = readRecord(value), type = readLiteral(record?.type, CONFIG_NODE_TYPES);
   if (!record || !type) { return null; }
-  const shared = { ...readConfigNodeBase(record), ...readConfigOptionalState(record.condition, record.options) };
   if (type === 'object') {
     const items = readConfigItems(record.items);
-    return Object.keys(items).length > 0 ? { ...shared, items, type: 'object' } : null;
+    return Object.keys(items).length > 0 ? { ...readConfigShared(record), items, type } : null;
   }
   if (type === 'list') {
     const items = readConfigNode(record.items);
-    const listNode: PluginConfigNodeSchema = items ? { ...shared, items, type: 'list' } : { ...shared, type: 'list' };
-    return listNode;
+    return items ? { ...readConfigShared(record), items, type } : { ...readConfigShared(record), type };
   }
-  return type === 'bool' || type === 'int' || type === 'float' ? { ...shared, type } : { ...shared, type };
+  return { ...readConfigShared(record), type };
 }
 
-function readConfigOptionalState(conditionValue: unknown, optionsValue: unknown): ConfigOptionalState {
-  const condition = readConfigCondition(conditionValue);
-  const options = readConfigOptions(optionsValue);
-  return { ...(condition ? { condition } : {}), ...(options.length > 0 ? { options } : {}) };
+function readConfigShared(record: ManifestRecord): Omit<PluginConfigNodeSchema, 'items' | 'type'> {
+  return {
+    ...readConfigBase(record),
+    ...readConfigConditionState(record.condition),
+    ...readConfigOptionsState(record.options),
+  };
 }
 
-function readConfigNodeBase(record: ManifestRecord): Record<string, JsonValue | PluginConfigRenderType> {
-  const fields: Record<string, JsonValue | PluginConfigRenderType> = {};
-  for (const key of CONFIG_TEXT_FIELDS) {
-    const value = readText(record[key]);
-    if (value) { fields[key] = value; }
-  }
-  for (const key of CONFIG_BOOLEAN_FIELDS) {
-    if (typeof record[key] === 'boolean') { fields[key] = record[key] as boolean; }
-  }
-  const renderType = readLiteral(record.renderType, CONFIG_RENDER_TYPES);
-  if (renderType) { fields.renderType = renderType; }
-  if (isJsonValue(record.defaultValue)) { fields.defaultValue = structuredClone(record.defaultValue); }
-  return fields;
+function readConfigBase(record: ManifestRecord): Record<string, JsonValue | PluginConfigRenderType> {
+  const fields = Object.fromEntries([
+    ...CONFIG_TEXT_FIELDS.map((key) => [key, readText(record[key])] as const),
+    ...CONFIG_BOOLEAN_FIELDS.map((key) => [key, typeof record[key] === 'boolean' ? record[key] as boolean : null] as const),
+    ['renderType', readLiteral(record.renderType, CONFIG_RENDER_TYPES)] as const,
+    ['defaultValue', isJsonValue(record.defaultValue) ? structuredClone(record.defaultValue) : null] as const,
+  ].filter(([, value]) => value !== null));
+  return fields as Record<string, JsonValue | PluginConfigRenderType>;
 }
 
 function readConfigItems(value: unknown): Record<string, PluginConfigNodeSchema> {
   const record = readRecord(value);
-  return record
-    ? Object.entries(record).reduce<Record<string, PluginConfigNodeSchema>>((items, [key, item]) => {
-        const node = readConfigNode(item);
-        if (node) { items[key] = node; }
-        return items;
-      }, {})
-    : {};
+  if (!record) { return {}; }
+  return Object.fromEntries(Object.entries(record).flatMap(([key, item]) => {
+    const node = readConfigNode(item);
+    return node ? [[key, node]] : [];
+  }));
 }
 
-function readConfigCondition(value: unknown): Record<string, PluginConfigConditionValue> | null {
+function readConfigConditionState(value: unknown): Pick<PluginConfigNodeSchema, 'condition'> | Record<string, never> {
   const record = readRecord(value);
-  if (!record) { return null; }
-  const entries = Object.entries(record).filter((entry): entry is [string, PluginConfigConditionValue] => isConfigConditionValue(entry[1]));
-  return entries.length > 0 ? Object.fromEntries(entries) : null;
+  if (!record) { return {}; }
+  const condition = Object.fromEntries(Object.entries(record).filter((entry): entry is [string, PluginConfigConditionValue] => isConfigConditionValue(entry[1])));
+  return Object.keys(condition).length > 0 ? { condition } : {};
+}
+
+function readConfigOptionsState(value: unknown): Pick<PluginConfigNodeSchema, 'options'> | Record<string, never> {
+  const options = Array.isArray(value) ? value.flatMap((item) => {
+    const record = readRecord(item), optionValue = readText(record?.value);
+    if (!record || !optionValue) { return []; }
+    const label = readText(record.label), description = readText(record.description);
+    return [{ value: optionValue, ...(label ? { label } : {}), ...(description ? { description } : {}) } satisfies PluginConfigOptionSchema];
+  }) : [];
+  return options.length > 0 ? { options } : {};
 }
 
 function isConfigConditionValue(value: unknown): value is PluginConfigConditionValue {
   return value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
-}
-
-function readConfigOptions(value: unknown): PluginConfigOptionSchema[] {
-  return Array.isArray(value) ? value.flatMap((item) => { const option = readConfigOption(item); return option ? [option] : []; }) : [];
-}
-
-function readConfigOption(value: unknown): PluginConfigOptionSchema | null {
-  const record = readRecord(value);
-  const optionValue = readText(record?.value);
-  if (!record || !optionValue) {
-    return null;
-  }
-  const label = readText(record.label);
-  const description = readText(record.description);
-  return { value: optionValue, ...(label ? { label } : {}), ...(description ? { description } : {}) };
 }
 
 function isJsonValue(value: unknown): value is JsonValue {
@@ -225,8 +209,8 @@ function isJsonValue(value: unknown): value is JsonValue {
     || typeof value === 'string'
     || typeof value === 'number'
     || typeof value === 'boolean'
-    || (Array.isArray(value) && value.every((item) => isJsonValue(item)))
-    || (typeof value === 'object' && value !== null && Object.values(value).every((item) => typeof item !== 'undefined' && isJsonValue(item)));
+    || (Array.isArray(value) && value.every(isJsonValue))
+    || (typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every((item) => typeof item !== 'undefined' && isJsonValue(item)));
 }
 
 function normalizeRemoteRecord(manifest: PluginManifest, remote: RegisteredPluginRemoteRecord | null): RegisteredPluginRemoteRecord | null {

@@ -125,3 +125,25 @@
     - `runtime-host.service` 为 owner 内部映射收口，不是 facade 转发
     - `automation.service` 为同 owner 内控制流压缩，不是复杂度转移
     - `runtime-shell-command-hints.ts` 的 `visibleRoot='/'` 误判已修复，bash 回归已覆盖
+
+### P7 bootstrap / ai-settings / gateway owner 压体积 `[已完成]`
+
+- 目标：
+  - 继续删除配置解析、远端连接生命周期与持久化配置读写中的重复控制流
+  - 保持 `plugin-bootstrap.service.ts`、`ai-management-settings.store.ts`、`runtime-gateway-connection-lifecycle.service.ts` 公开语义不变
+- 当前进度：
+  - `plugin-bootstrap.service.ts`: `222 -> 208`
+  - `ai-management-settings.store.ts`: `237 -> 148`
+  - `runtime-gateway-connection-lifecycle.service.ts`: `214 -> 154`
+  - `packages/server/src`: `15598`
+- 验收：
+  - `packages/server`: `npm run build`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/gateway/runtime-gateway-connection-lifecycle.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/ai-management/ai-management.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `node tools/count-server-src-lines.mjs`
+- judge：
+  - 结果：`PASS`
+  - 关键结论：
+    - `plugin-bootstrap.service.ts` 的 manifest/config 解析仍在同一 owner 内收口，不是 facade 转移
+    - `ai-management-settings.store.ts` 仍由同一 store owner 负责 provider 分文件与 routing/vision 读写
+    - `runtime-gateway-connection-lifecycle.service.ts` 仍由同一 owner 负责认证、注册、断连、心跳与 health 语义

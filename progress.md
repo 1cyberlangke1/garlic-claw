@@ -3,8 +3,8 @@
 ## 2026-04-26 V3 体积治理
 
 - 当前累计净减：
-  - `packages/server/src`: `16546 -> 15761`
-  - 本轮累计净减：`785`
+  - `packages/server/src`: `16546 -> 15598`
+  - 本轮累计净减：`948`
 - 已重写并压缩：
   - `packages/server/src/plugin/builtin/tools/runtime-tools/runtime-tools-plugin-runtime.ts`
     - `462 -> 332`
@@ -34,6 +34,12 @@
     - `241 -> 193`
   - `packages/server/src/execution/runtime/runtime-shell-command-hints.ts`
     - 旧实现删除后整文件重写，当前回归通过
+  - `packages/server/src/plugin/bootstrap/plugin-bootstrap.service.ts`
+    - `222 -> 208`
+  - `packages/server/src/ai-management/ai-management-settings.store.ts`
+    - `237 -> 148`
+  - `packages/server/src/runtime/gateway/runtime-gateway-connection-lifecycle.service.ts`
+    - `214 -> 154`
 
 - 已删除未使用依赖：
   - root: `effect`
@@ -74,11 +80,13 @@
   - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/bash/bash-tool.service.spec.ts`
   - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host.service.spec.ts tests/execution/bash/bash-tool.service.spec.ts`
   - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/runtime/host/runtime-host-conversation-message.service.spec.ts tests/execution/runtime/runtime-tool-permission.service.spec.ts tests/conversation/conversation.controller.spec.ts tests/plugin/builtin/hooks/builtin-context-compaction.plugin.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/automation/automation.service.spec.ts tests/adapters/http/automation/automation.controller.spec.ts tests/execution/bash/bash-tool.service.spec.ts`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/gateway/runtime-gateway-connection-lifecycle.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/ai-management/ai-management.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
 - root
-  - `node tools/count-server-src-lines.mjs` -> `15761`
+  - `node tools/count-server-src-lines.mjs` -> `15598`
   - `npm run smoke:server` -> `server HTTP smoke passed: 187 checks`
 
 ## 独立 judge
 
 - `P5 uuidv7 语义恢复`：`PASS`
 - `P6 host / automation owner 压体积`：`PASS`
+- `P7 bootstrap / ai-settings / gateway owner 压体积`：`PASS`

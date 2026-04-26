@@ -56,3 +56,17 @@
   - `P5`：关键 ID 已恢复为 `uuidv7`，HTTP conversation/message 路由已收口为 v7 校验
   - `P6`：`runtime-host.service`、`automation.service`、`runtime-shell-command-hints.ts` 都是真 owner 收口
   - 非阻塞残余只剩上层 `V3 <= 15000` 尚未完成
+
+- 新一轮更适合改“配置解析 / 持久化读写 / 连接生命周期”这类稳定 owner：
+  - `plugin-bootstrap.service.ts` 可通过表驱动读取压掉 manifest/config 重复分支
+  - `ai-management-settings.store.ts` 可通过合并 provider 文件扫描与 JSON 读取压掉双遍目录遍历
+  - `runtime-gateway-connection-lifecycle.service.ts` 可通过合并连接状态更新路径压掉认证/断连样板
+
+- 当前剩余差距已更新：
+  - `packages/server/src` 当前 `15598`
+  - 距离 `<=15000` 还差 `598`
+
+- 独立 judge 已确认 `P7` 可收口：
+  - `plugin-bootstrap.service.ts`：manifest/config 解析压缩后仍保持 fallback、typed config、builtin runtime-tools config 语义
+  - `ai-management-settings.store.ts`：provider 分文件、routing/vision 文件读写语义未变
+  - `runtime-gateway-connection-lifecycle.service.ts`：remote gateway 认证、注册、断连、心跳、health 语义未变
