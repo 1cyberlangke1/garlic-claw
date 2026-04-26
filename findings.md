@@ -162,6 +162,10 @@
 - `I4` judge 通过后还剩两类非阻塞噪音：
   - `plugin-sdk` 里其他 builtin manifest 常量仍可能被维护者误会成“server 默认 builtin 集合”
   - 前端个别测试与过程记录里还保留旧 owner / 旧组件命名噪音
+- `runtime-tools` 的前端 shell 枚举和底层已注册 backend 不是同一层概念：
+  - `wsl-shell` 已经是真实现，Windows 下直接走 `wsl.exe --cd ... bash -lc ...`
+  - `just-bash` 之前只是被配置层收口隐藏，不是执行层缺失
+  - 因此补回前端选项只需要改配置 schema 与验收，不需要新增 backend owner
 - `I9` 的验收不能只看测试文件名：
   - 测试夹具中的 owner 标识也要同步到当前内部语义
   - 同目录的相关前端测试也要一起清理，否则 judge 会把阶段视为“去噪未完成”

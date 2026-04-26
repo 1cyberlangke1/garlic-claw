@@ -377,6 +377,10 @@ describe('SchemaConfigForm', () => {
                       value: 'wsl-shell',
                       label: 'WSL',
                     },
+                    {
+                      value: 'just-bash',
+                      label: 'just-bash',
+                    },
                   ]
                   : [
                     {
@@ -385,7 +389,7 @@ describe('SchemaConfigForm', () => {
                     },
                   ],
                 hint: process.platform === 'win32'
-                  ? 'Windows 下只提供 PowerShell / WSL'
+                  ? 'Windows 下提供 PowerShell / WSL / just-bash'
                   : 'Linux 下只提供 bash',
               },
               bashOutput: {
@@ -424,7 +428,7 @@ describe('SchemaConfigForm', () => {
     expect(wrapper.text()).toContain('展开高级配置')
     const backendInput = wrapper.get('select.config-input')
     expect((backendInput.element as HTMLSelectElement).value).toBe('native-shell')
-    await backendInput.setValue(process.platform === 'win32' ? 'wsl-shell' : 'native-shell')
+    await backendInput.setValue(process.platform === 'win32' ? 'just-bash' : 'native-shell')
 
     await wrapper.get('button.collapsed-toggle').trigger('click')
 
@@ -434,7 +438,7 @@ describe('SchemaConfigForm', () => {
     expect(wrapper.emitted('save')).toEqual([
       [
         {
-          shellBackend: process.platform === 'win32' ? 'wsl-shell' : 'native-shell',
+          shellBackend: process.platform === 'win32' ? 'just-bash' : 'native-shell',
           bashOutput: {
             maxLines: 80,
             maxBytes: 8192,

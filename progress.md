@@ -183,14 +183,17 @@
   - `packages/plugin-sdk` 移除 `MEMORY_CONTEXT_MANIFEST / CONVERSATION_TITLE_MANIFEST / CONTEXT_COMPACTION_MANIFEST` 与对应 JSON manifest 数据
   - `docs/插件开发指南.md` 已改成“内部能力边界”描述，不再宣称服务端默认装载这些上下文 builtin
 - `I3` 二次 fresh
-  - `packages/plugin-sdk`
-    - `npm test`
-  - `packages/server`
-    - `npm run build`
-    - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
+- `packages/plugin-sdk`
+  - `npm test`
+- `packages/server`
+  - `npm run build`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
   - root
     - `npm run smoke:server` -> `server HTTP smoke passed: 184 checks`
     - `node tools/count-server-src-lines.mjs` -> `15534`
+- `2026-04-26 runtime-tools shell 选项补齐`
+  - Windows 配置枚举重新加入 `just-bash`
+  - 已核对 `RuntimeWslShellService` 真实执行 `wsl.exe --cd ... bash -lc ...`
 - `I3` 二次独立 judge：`PASS`
   - 关键结论：
     - 退役 builtin 记录清理已接入启动主链

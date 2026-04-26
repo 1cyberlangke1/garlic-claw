@@ -16,7 +16,7 @@
 
 - 不新增 `helper / helpers` 语义命名。
 - 禁止 `any`，除非外部类型客观缺失且无法补齐。
-- Windows 下 shell 选项只允许 `PowerShell / WSL`；Linux 下只允许 `bash`。
+- Windows 下 shell 选项允许 `PowerShell / WSL / just-bash`；Linux 下只允许 `bash`。
 - `TODO.md` 已完成事项只保留摘要；未完成旧计划不能消失，只能标记为 `已完成 / 已取消 / 已废弃 / 已被新计划替代`。
 - 每个阶段都必须有：
   - 代码变更
@@ -50,7 +50,7 @@
 
 - `builtin.runtime-tools` 的 manifest / plugin-tool / runtime 壳文件已删除；`builtin-plugin-registry.service.ts` 与 `RuntimeHostPluginDispatchService` 都不再保留 runtime-tools plugin 旁路。
 - `ToolRegistryService` 已稳定暴露 `internal:runtime-tools`；宿主执行链直接走 `bash/read/glob/grep/write/edit` 内部 owner 与 `RuntimeToolsSettingsService`。
-- 前后端已接通 `/ai/runtime-tools-config` 与 AI 设置页里的“执行工具配置 / 执行工具治理”，不再通过插件页伪装内部能力。
+- 前后端已接通 `/ai/runtime-tools-config` 与 AI 设置页里的“执行工具配置 / 执行工具治理”，不再通过插件页伪装内部能力；Windows 额外暴露 `just-bash` 热切换选项，Linux 仍只暴露 `bash`。
 - fresh 验收已通过：`npm run -w packages/server build`、runtime-tools 相关 jest、`npm run smoke:server`、`npm run -w packages/web typecheck`、`npm run -w packages/web smoke:browser`。
 - 独立 judge：`PASS`。结论：代码 owner、宿主链路、前端入口都已对齐；未见“仅换路径留壳”的假完成。
 
@@ -77,7 +77,7 @@
 ### P1-P4 runtime-tools 对齐与收口 `[已被 I1-I4 替代]`
 
 - 摘要：
-  - 平台 shell options 已收口为 Windows `PowerShell / WSL`、Linux `bash`
+  - 平台 shell options 已收口为 Windows `PowerShell / WSL / just-bash`、Linux `bash`
   - 语义与测试曾收口一轮，但“已迁成 direct owner”的判断已证伪
   - 当时真实状态仍是 `builtin.runtime-tools` 插件壳调用内部 runtime 服务
   - 本阶段验收记录保留，但 owner 结论失效，后续以 `I1` 新计划重做

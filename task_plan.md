@@ -218,6 +218,10 @@
 49. `I5` 验收计划
    - `packages/plugin-sdk`: `npm test`
    - `packages/server`: `npm run build`
+50. runtime-tools shell 选项补齐
+   - Windows 前端配置重新暴露 `just-bash`
+   - Linux 继续只暴露 `bash`
+   - 同步核对 `wsl-shell` 不是占位实现，而是 `wsl.exe --cd ... bash -lc ...`
 50. `I5` 下一步
    - 完成代码与文档同步后发独立 judge
 51. `I5` 代码与文档同步

@@ -25,7 +25,7 @@ export const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
       type: 'string',
       description: 'bash 执行后端',
       hint: process.platform === 'win32'
-        ? '默认使用 PowerShell；Windows 下可在 PowerShell 与 WSL 之间热切换。'
+        ? '默认使用 PowerShell；Windows 下可在 PowerShell、WSL 与 just-bash 之间热切换。'
         : '默认使用 bash；Linux 下只提供 bash backend。',
       defaultValue: 'native-shell',
       options: readRuntimeToolsShellBackendOptions(),
@@ -175,6 +175,7 @@ function readRuntimeToolsShellBackendOptions(): Array<{ label: string; value: Ru
     return [
       { label: 'PowerShell', value: 'native-shell' },
       { label: 'WSL', value: 'wsl-shell' },
+      { label: 'just-bash', value: 'just-bash' },
     ];
   }
   return [{ label: 'bash', value: 'native-shell' }];
