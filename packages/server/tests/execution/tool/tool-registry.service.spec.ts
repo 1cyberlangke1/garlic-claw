@@ -67,7 +67,11 @@ const originalHintsTestRoot = process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
 
 describe('ToolRegistryService', () => {
   afterEach(() => {
-    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = originalRuntimeWorkspaceRoot;
+    if (originalRuntimeWorkspaceRoot === undefined) {
+      delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
+    } else {
+      process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = originalRuntimeWorkspaceRoot;
+    }
     if (originalRuntimeToolsConfigPath === undefined) {
       delete process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
     } else {
