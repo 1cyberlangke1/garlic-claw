@@ -1,145 +1,235 @@
-import type { JsonObject, PluginCallContext, RuntimeBackendKind } from '@garlic-claw/shared';
+import type {
+  JsonObject,
+  JsonValue,
+  PluginCallContext,
+  PluginRuntimeCommandResult,
+  PluginRuntimeEditResult,
+  PluginRuntimeGlobResult,
+  PluginRuntimeGrepResult,
+  PluginRuntimeReadResult,
+  PluginRuntimeWriteResult,
+  RuntimeBackendKind,
+} from '@garlic-claw/shared';
 import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { BashToolService } from '../../execution/bash/bash-tool.service';
+import { EditToolService } from '../../execution/edit/edit-tool.service';
+import { GlobToolService } from '../../execution/glob/glob-tool.service';
+import { GrepToolService } from '../../execution/grep/grep-tool.service';
 import { ProjectWorktreeSearchOverlayService } from '../../execution/project/project-worktree-search-overlay.service';
-import { RuntimeCommandService } from '../../execution/runtime/runtime-command.service';
+import {
+  readRuntimeClaimedPathInstructionReminder,
+  readRuntimePathInstructionReminder,
+} from '../../execution/read/read-path-instruction';
+import { ReadToolService } from '../../execution/read/read-tool.service';
 import { RuntimeFileFreshnessService } from '../../execution/runtime/runtime-file-freshness.service';
 import { RuntimeFilesystemBackendService } from '../../execution/runtime/runtime-filesystem-backend.service';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../../execution/runtime/runtime-tool-backend.service';
+import type { RuntimeToolAccessRequest } from '../../execution/runtime/runtime-tool-access';
 import { RuntimeToolPermissionService } from '../../execution/runtime/runtime-tool-permission.service';
-import {
-  editBuiltinRuntimeFile,
-  executeBuiltinRuntimeCommand,
-  globBuiltinRuntimePaths,
-  grepBuiltinRuntimeContent,
-  readBuiltinRuntimePath,
-  readBuiltinRuntimeRequiredText,
-  writeBuiltinRuntimeFile,
-} from '../../plugin/builtin/tools/runtime-tools/runtime-tools-plugin-runtime';
+import { RuntimeToolsSettingsService } from '../../execution/runtime/runtime-tools-settings.service';
+import { WriteToolService } from '../../execution/write/write-tool.service';
 
-type RuntimeHostBuiltinContext = Parameters<typeof executeBuiltinRuntimeCommand>[0];
+const DEFAULT_READ_LIMIT = 2000;
+const MAX_READ_LINE_LENGTH = 2000;
+const MAX_GLOB_RESULTS = 100;
+const MAX_GREP_MATCHES = 100;
+const MAX_GREP_LINE_LENGTH = 2000;
 
 @Injectable()
 export class RuntimeHostRuntimeToolService {
   constructor(
-    private readonly runtimeCommandService: RuntimeCommandService,
-    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+    private readonly bashToolService: BashToolService,
+    private readonly editToolService: EditToolService,
+    private readonly globToolService: GlobToolService,
+    private readonly grepToolService: GrepToolService,
+    private readonly readToolService: ReadToolService,
     private readonly runtimeFileFreshnessService: RuntimeFileFreshnessService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
     private readonly runtimeToolBackendService: RuntimeToolBackendService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
+    private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
+    private readonly writeToolService: WriteToolService,
     @Optional() private readonly projectWorktreeSearchOverlayService?: ProjectWorktreeSearchOverlayService,
   ) {}
 
-  executeCommand(context: PluginCallContext, params: JsonObject) {
-    return executeBuiltinRuntimeCommand(this.buildExecutionContext(context), {
-      ...(readOptionalRuntimeHostTrimmedString(params.backendKind) ? { backendKind: readRuntimeBackendKind(params.backendKind) } : {}),
-      command: readRequiredRuntimeHostString(params, 'command', 'bash.command 不能为空'),
-      description: readRequiredRuntimeHostString(params, 'description', 'bash.description 不能为空'),
-      ...(readOptionalRuntimeHostTimeout(params.timeout) !== undefined ? { timeout: readOptionalRuntimeHostTimeout(params.timeout) } : {}),
-      ...(readOptionalRuntimeHostTrimmedString(params.workdir) ? { workdir: readOptionalRuntimeHostTrimmedString(params.workdir) } : {}),
-    });
+  async executeCommand(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeCommandResult> {
+    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
+    const backendKind = readRuntimeHostBackendKind(params.backendKind) ?? this.runtimeToolsSettingsService.readConfiguredShellBackend();
+    const runtimeInput = this.bashToolService.readInput(params, readRuntimeHostSessionId(context, 'bash'), backendKind);
+    await this.reviewRuntimeToolAccess(context, assistantMessageId, 'bash', await this.bashToolService.readRuntimeAccess(runtimeInput));
+    return this.bashToolService.execute(runtimeInput);
   }
 
-  readPath(context: PluginCallContext, params: JsonObject) {
-    return readBuiltinRuntimePath(this.buildExecutionContext(context), {
-      filePath: readRequiredRuntimeHostString(params, 'filePath', 'read.filePath 不能为空'),
-      ...(readPositiveRuntimeHostInteger(params.limit, 'read.limit') !== undefined ? { limit: readPositiveRuntimeHostInteger(params.limit, 'read.limit') } : {}),
-      ...(readPositiveRuntimeHostInteger(params.offset, 'read.offset') !== undefined ? { offset: readPositiveRuntimeHostInteger(params.offset, 'read.offset') } : {}),
-    });
-  }
-
-  globPaths(context: PluginCallContext, params: JsonObject) {
-    return globBuiltinRuntimePaths(this.buildExecutionContext(context), {
-      pattern: readRequiredRuntimeHostString(params, 'pattern', 'glob.pattern 不能为空'),
-      ...(readOptionalRuntimeHostTrimmedString(params.path) ? { path: readOptionalRuntimeHostTrimmedString(params.path) } : {}),
-    });
-  }
-
-  grepContent(context: PluginCallContext, params: JsonObject) {
-    return grepBuiltinRuntimeContent(this.buildExecutionContext(context), {
-      pattern: readRequiredRuntimeHostString(params, 'pattern', 'grep.pattern 不能为空'),
-      ...(readOptionalRuntimeHostTrimmedString(params.include) ? { include: readOptionalRuntimeHostTrimmedString(params.include) } : {}),
-      ...(readOptionalRuntimeHostTrimmedString(params.path) ? { path: readOptionalRuntimeHostTrimmedString(params.path) } : {}),
-    });
-  }
-
-  writeFile(context: PluginCallContext, params: JsonObject) {
-    return writeBuiltinRuntimeFile(this.buildExecutionContext(context), {
-      content: readBuiltinRuntimeRequiredText(params.content, 'write.content'),
-      filePath: readRequiredRuntimeHostString(params, 'filePath', 'write.filePath 不能为空'),
-    });
-  }
-
-  editFile(context: PluginCallContext, params: JsonObject) {
-    const oldString = readBuiltinRuntimeRequiredText(params.oldString, 'edit.oldString');
-    const newString = readBuiltinRuntimeRequiredText(params.newString, 'edit.newString');
-    if (oldString === newString) {
-      throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');
+  async readPath(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeReadResult> {
+    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
+    const runtimeInput = this.readToolService.readInput(
+      params,
+      readRuntimeHostSessionId(context, 'read'),
+      undefined,
+      assistantMessageId,
+    );
+    await this.reviewRuntimeToolAccess(context, assistantMessageId, 'read', this.readToolService.readRuntimeAccess(runtimeInput));
+    const readResult = await this.runtimeFilesystemBackendService.readPathRange(
+      runtimeInput.sessionId,
+      {
+        limit: runtimeInput.limit ?? DEFAULT_READ_LIMIT,
+        maxLineLength: MAX_READ_LINE_LENGTH,
+        offset: runtimeInput.offset ?? 1,
+        path: runtimeInput.filePath,
+      },
+      runtimeInput.backendKind,
+    );
+    if (readResult.type !== 'file') {
+      return { freshnessReminders: [], loaded: [], readResult, reminderEntries: [] };
     }
-    return editBuiltinRuntimeFile(this.buildExecutionContext(context), {
-      filePath: readRequiredRuntimeHostString(params, 'filePath', 'edit.filePath 不能为空'),
-      newString,
-      oldString,
-      ...(typeof params.replaceAll === 'boolean' ? { replaceAll: params.replaceAll } : {}),
+    await this.runtimeFileFreshnessService.rememberRead(runtimeInput.sessionId, readResult.path, runtimeInput.backendKind, {
+      lineCount: readResult.lines.length,
+      offset: readResult.offset,
+      totalLines: readResult.totalLines,
+      truncated: readResult.truncated,
     });
-  }
-
-  private buildExecutionContext(callContext: PluginCallContext): RuntimeHostBuiltinContext {
+    const reminder = await readRuntimePathInstructionReminder(
+      {
+        backendKind: runtimeInput.backendKind,
+        path: readResult.path,
+        sessionId: runtimeInput.sessionId,
+        visibleRoot: this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot,
+      },
+      this.runtimeFilesystemBackendService,
+    );
+    const claimedReminder = readRuntimeClaimedPathInstructionReminder({
+      assistantMessageId,
+      claimPaths: this.runtimeFileFreshnessService.claimReadInstructionPaths.bind(this.runtimeFileFreshnessService),
+      reminder,
+      sessionId: runtimeInput.sessionId,
+    });
     return {
-      callContext,
-      host: {
-        runtimeTools: {
-          projectWorktreeSearchOverlayService: this.projectWorktreeSearchOverlayService,
-          runtimeCommandService: this.runtimeCommandService,
-          runtimeBackendRoutingService: {
-            getConfiguredFilesystemBackendKind: () => readRuntimeBackendKind(process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND),
-            getConfiguredShellBackendKind: () => readRuntimeBackendKind(process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND),
-          } as never,
-          runtimeFileFreshnessService: this.runtimeFileFreshnessService,
-          runtimeFilesystemBackendService: this.runtimeFilesystemBackendService,
-          runtimeSessionEnvironmentService: this.runtimeSessionEnvironmentService,
-          storedConfig: {},
-          runtimeToolBackendService: this.runtimeToolBackendService,
-          runtimeToolPermissionService: this.runtimeToolPermissionService,
-        },
-      } as unknown as RuntimeHostBuiltinContext['host'],
+      freshnessReminders: this.runtimeFileFreshnessService.buildReadSystemReminder(runtimeInput.sessionId, {
+        excludePath: readResult.path,
+        limit: 5,
+      }),
+      loaded: claimedReminder.loadedPaths,
+      readResult,
+      reminderEntries: claimedReminder.entries,
     };
   }
-}
 
-function readRequiredRuntimeHostString(params: JsonObject, key: string, errorMessage: string): string {
-  const value = readOptionalRuntimeHostTrimmedString(params[key]);
-  if (!value) {
-    throw new BadRequestException(errorMessage);
+  async globPaths(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeGlobResult> {
+    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
+    const runtimeInput = this.globToolService.readInput(params, readRuntimeHostSessionId(context, 'glob'));
+    await this.reviewRuntimeToolAccess(context, assistantMessageId, 'glob', this.globToolService.readRuntimeAccess(runtimeInput));
+    const globResult = await this.runtimeFilesystemBackendService.globPaths(
+      runtimeInput.sessionId,
+      {
+        maxResults: MAX_GLOB_RESULTS,
+        pattern: runtimeInput.pattern,
+        ...(runtimeInput.path ? { path: runtimeInput.path } : {}),
+      },
+      runtimeInput.backendKind,
+    );
+    return {
+      globResult,
+      overlay: await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({
+        basePath: globResult.basePath,
+        matches: globResult.matches,
+        sessionId: runtimeInput.sessionId,
+      }) ?? [],
+    };
   }
-  return value;
+
+  async grepContent(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeGrepResult> {
+    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
+    const runtimeInput = this.grepToolService.readInput(params, readRuntimeHostSessionId(context, 'grep'));
+    await this.reviewRuntimeToolAccess(context, assistantMessageId, 'grep', this.grepToolService.readRuntimeAccess(runtimeInput));
+    const grepResult = await this.runtimeFilesystemBackendService.grepText(
+      runtimeInput.sessionId,
+      {
+        maxLineLength: MAX_GREP_LINE_LENGTH,
+        maxMatches: MAX_GREP_MATCHES,
+        pattern: runtimeInput.pattern,
+        ...(runtimeInput.include ? { include: runtimeInput.include } : {}),
+        ...(runtimeInput.path ? { path: runtimeInput.path } : {}),
+      },
+      runtimeInput.backendKind,
+    );
+    return {
+      grepResult,
+      overlay: await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({
+        basePath: grepResult.basePath,
+        matches: grepResult.matches,
+        sessionId: runtimeInput.sessionId,
+      }) ?? [],
+    };
+  }
+
+  async writeFile(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeWriteResult> {
+    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
+    const runtimeInput = this.writeToolService.readInput(params, readRuntimeHostSessionId(context, 'write'));
+    await this.reviewRuntimeToolAccess(context, assistantMessageId, 'write', this.writeToolService.readRuntimeAccess(runtimeInput));
+    const result = await this.writeToolService.execute(runtimeInput);
+    return {
+      created: result.created,
+      diff: result.diff,
+      lineCount: result.lineCount,
+      path: result.path,
+      postWrite: result.postWrite,
+      size: result.size,
+    };
+  }
+
+  async editFile(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeEditResult> {
+    const assistantMessageId = readRuntimeHostAssistantMessageId(context);
+    const runtimeInput = this.editToolService.readInput(params, readRuntimeHostSessionId(context, 'edit'));
+    await this.reviewRuntimeToolAccess(context, assistantMessageId, 'edit', this.editToolService.readRuntimeAccess(runtimeInput));
+    const result = await this.editToolService.execute(runtimeInput);
+    return {
+      diff: result.diff,
+      occurrences: result.occurrences,
+      path: result.path,
+      postWrite: result.postWrite,
+      strategy: result.strategy,
+    };
+  }
+
+  private async reviewRuntimeToolAccess(
+    context: PluginCallContext,
+    assistantMessageId: string | undefined,
+    toolName: string,
+    access: RuntimeToolAccessRequest,
+  ): Promise<void> {
+    await this.runtimeToolPermissionService.review({
+      backend: this.runtimeToolBackendService.getBackendDescriptor(access.role, access.backendKind),
+      conversationId: context.conversationId,
+      ...(assistantMessageId ? { messageId: assistantMessageId } : {}),
+      ...(access.metadata !== undefined ? { metadata: access.metadata as JsonValue } : {}),
+      requiredOperations: access.requiredOperations,
+      summary: access.summary,
+      toolName,
+    });
+  }
 }
 
-function readOptionalRuntimeHostTrimmedString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+function readRuntimeHostSessionId(
+  context: PluginCallContext,
+  toolName: 'bash' | 'edit' | 'glob' | 'grep' | 'read' | 'write',
+): string {
+  if (context.conversationId) {
+    return context.conversationId;
+  }
+  throw new BadRequestException(`${toolName} 工具只能在 session 上下文中使用`);
 }
 
-function readPositiveRuntimeHostInteger(value: unknown, fieldName: string): number | undefined {
-  if (value === undefined) {
+function readRuntimeHostAssistantMessageId(context: PluginCallContext): string | undefined {
+  const metadata = context.metadata;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
     return undefined;
   }
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    throw new BadRequestException(`${fieldName} 必须是大于 0 的整数`);
-  }
-  return value;
+  const messageId = metadata.assistantMessageId;
+  return typeof messageId === 'string' && messageId.trim() ? messageId.trim() : undefined;
 }
 
-function readOptionalRuntimeHostTimeout(value: unknown): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    throw new BadRequestException('bash.timeout 必须是大于 0 的毫秒数');
-  }
-  return value;
-}
-
-function readRuntimeBackendKind(value: unknown): RuntimeBackendKind | undefined {
+function readRuntimeHostBackendKind(value: unknown): RuntimeBackendKind | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

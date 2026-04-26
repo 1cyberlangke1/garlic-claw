@@ -782,7 +782,7 @@ function readContextCompactionAnnotations(
   return (message.metadata?.annotations ?? []).filter(
     (annotation) =>
       annotation.type === "context-compaction" &&
-      annotation.owner === "builtin.context-compaction",
+      annotation.owner === "conversation.context-governance",
   );
 }
 

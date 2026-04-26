@@ -128,7 +128,7 @@ export class RuntimeHostSubagentSessionStoreService {
 function readSessionStorage(storagePath: string): { sessionSequence: number; sessions: Map<string, RuntimeSubagentSessionRecord> } {
   try {
     fs.mkdirSync(path.dirname(storagePath), { recursive: true });
-    if (!fs.existsSync(storagePath)) return { sessionSequence: 0, sessions: new Map<string, RuntimeSubagentSessionRecord>() };
+    if (!fs.existsSync(storagePath)) {return { sessionSequence: 0, sessions: new Map<string, RuntimeSubagentSessionRecord>() };}
     const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as { sessionSequence?: number; sessions?: Record<string, RuntimeSubagentSessionRecord> };
     return { sessionSequence: typeof parsed.sessionSequence === 'number' ? parsed.sessionSequence : 0, sessions: new Map(Object.entries(parsed.sessions ?? {}).map(([sessionId, session]) => [sessionId, normalizeSessionRecord(session)])) };
   } catch {

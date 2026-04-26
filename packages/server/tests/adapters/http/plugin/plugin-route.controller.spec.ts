@@ -24,10 +24,6 @@ describe('PluginController route forwarding', () => {
     listPluginStorage: jest.fn(),
     setPluginStorage: jest.fn(),
   };
-  const runtimeHostSubagentRunnerService = {
-    getSubagentOrThrow: jest.fn(),
-    listOverview: jest.fn(),
-  };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
     invokeRoute: jest.fn(),
@@ -46,7 +42,6 @@ describe('PluginController route forwarding', () => {
       runtimeHostConversationRecordService as never,
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
-      runtimeHostSubagentRunnerService as never,
       runtimePluginGovernanceService as never,
     );
   });

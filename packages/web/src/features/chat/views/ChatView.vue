@@ -128,6 +128,7 @@ import ChatMessageList from '@/features/chat/components/ChatMessageList.vue'
 import ChatRuntimePermissionPanel from '@/features/chat/components/ChatRuntimePermissionPanel.vue'
 import { loadCurrentPersona } from '@/features/personas/composables/persona-settings.data'
 import { useChatStore } from '@/features/chat/store/chat'
+import { isValidConversationRouteId } from '@/utils/uuid'
 
 const chat = useChatStore()
 const toolbarExpanded = ref(true)
@@ -163,7 +164,7 @@ const {
 watch(
   currentConversationId,
   (conversationId) => {
-    if (!conversationId) {
+    if (!conversationId || !isValidConversationRouteId(conversationId)) {
       currentConversationPersona.value = null
       return
     }

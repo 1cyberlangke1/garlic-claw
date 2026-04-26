@@ -26,10 +26,6 @@ describe('PluginController runtime resources', () => {
     listPluginStorage: jest.fn(),
     setPluginStorage: jest.fn(),
   };
-  const runtimeHostSubagentRunnerService = {
-    getSubagentOrThrow: jest.fn(),
-    listOverview: jest.fn(),
-  };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
     listPlugins: jest.fn(),
@@ -47,7 +43,6 @@ describe('PluginController runtime resources', () => {
       runtimeHostConversationRecordService as never,
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
-      runtimeHostSubagentRunnerService as never,
       runtimePluginGovernanceService as never,
     );
   });

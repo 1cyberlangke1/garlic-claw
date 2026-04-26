@@ -38,14 +38,15 @@ import {
   replaceOrAppendMessage,
 } from "@/features/chat/store/chat-store.runtime";
 import {
-  PLUGIN_CONFIG_CHANGED_EVENT,
-  type PluginConfigChangedDetail,
-} from "@/features/plugins/plugin-config-change";
+  INTERNAL_CONFIG_CHANGED_EVENT,
+  type InternalConfigChangedDetail,
+} from "@/features/ai-settings/internal-config-change";
 import type {
   ChatMessage,
   ChatPendingRuntimePermission,
   ChatSendInput,
 } from "@/features/chat/store/chat-store.types";
+import { isValidConversationRouteId } from "@/utils/uuid";
 
 interface QueuedChatSendRequest {
   conversationId: string;
@@ -87,8 +88,6 @@ export function createChatStoreModule() {
   let conversationTodoRequestId = 0;
 
   const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
-  const CONTEXT_COMPACTION_PLUGIN_NAME = "builtin.context-compaction";
-
   const retryableMessageId = computed(() =>
     getRetryableMessageId(messages.value),
   );
@@ -117,6 +116,31 @@ export function createChatStoreModule() {
     messages.value = markRaw(sliceConversationMessages(nextMessages));
   }
 
+  function clearCurrentConversationState() {
+    abortChatStream(streamState);
+    discardPendingMessageUpdates(streamState);
+    stopChatRecovery(streamState);
+    currentConversationId.value = null;
+    contextWindowPreview.value = null;
+    selectedProvider.value = null;
+    selectedModel.value = null;
+    pendingRuntimePermissions.value = [];
+    todoItems.value = [];
+    replaceMessages([]);
+    syncChatStreamingState(streamState);
+  }
+
+  function resolveValidConversationId(conversationId: string | null) {
+    if (!conversationId) {
+      return null;
+    }
+    if (isValidConversationRouteId(conversationId)) {
+      return conversationId;
+    }
+    clearCurrentConversationState();
+    return null;
+  }
+
   function sliceConversationMessages(nextMessages: ChatMessage[]) {
     const windowSize = Math.max(
       1,
@@ -128,12 +152,12 @@ export function createChatStoreModule() {
       : nextMessages;
   }
 
-  function handlePluginConfigChanged(rawEvent: Event) {
+  function handleInternalConfigChanged(rawEvent: Event) {
     if (!(rawEvent instanceof CustomEvent)) {
       return;
     }
-    const event = rawEvent as CustomEvent<PluginConfigChangedDetail>;
-    if (event.detail.pluginName !== CONTEXT_COMPACTION_PLUGIN_NAME) {
+    const event = rawEvent as CustomEvent<InternalConfigChangedDetail>;
+    if (event.detail.scope !== "context-governance") {
       return;
     }
     if (!currentConversationId.value || streaming.value) {
@@ -143,12 +167,12 @@ export function createChatStoreModule() {
   }
 
   if (typeof window !== "undefined") {
-    window.addEventListener(PLUGIN_CONFIG_CHANGED_EVENT, handlePluginConfigChanged);
+    window.addEventListener(INTERNAL_CONFIG_CHANGED_EVENT, handleInternalConfigChanged);
     if (getCurrentScope()) {
       onScopeDispose(() => {
         window.removeEventListener(
-          PLUGIN_CONFIG_CHANGED_EVENT,
-          handlePluginConfigChanged,
+          INTERNAL_CONFIG_CHANGED_EVENT,
+          handleInternalConfigChanged,
         );
       });
     }
@@ -249,22 +273,12 @@ export function createChatStoreModule() {
     conversations.value = nextConversations;
 
     if (
-      currentConversationId.value &&
+      resolveValidConversationId(currentConversationId.value) &&
       !nextConversations.some(
         (conversation) => conversation.id === currentConversationId.value,
       )
     ) {
-      abortChatStream(streamState);
-      discardPendingMessageUpdates(streamState);
-      stopChatRecovery(streamState);
-      currentConversationId.value = null;
-      contextWindowPreview.value = null;
-      selectedProvider.value = null;
-      selectedModel.value = null;
-      pendingRuntimePermissions.value = [];
-      todoItems.value = [];
-      replaceMessages([]);
-      syncChatStreamingState(streamState);
+      clearCurrentConversationState();
     }
     queuedSendRequests.value = queuedSendRequests.value.filter((entry) =>
       nextConversations.some((conversation) => conversation.id === entry.conversationId),
@@ -278,6 +292,10 @@ export function createChatStoreModule() {
   }
 
   async function selectConversation(id: string) {
+    if (!isValidConversationRouteId(id)) {
+      clearCurrentConversationState();
+      return;
+    }
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
@@ -464,6 +482,9 @@ export function createChatStoreModule() {
   }
 
   async function loadConversationDetail(conversationId: string) {
+    if (!resolveValidConversationId(conversationId)) {
+      return;
+    }
     const requestId = ++conversationDetailRequestId;
     const nextMessages = await loadConversationMessages(conversationId);
     if (
@@ -478,6 +499,9 @@ export function createChatStoreModule() {
   }
 
   async function loadConversationContextWindow(conversationId: string) {
+    if (!resolveValidConversationId(conversationId)) {
+      return;
+    }
     const requestId = ++conversationContextWindowRequestId;
     const nextPreview = await loadConversationContextWindowRecord(conversationId, {
       modelId: selectedModel.value,
@@ -503,6 +527,9 @@ export function createChatStoreModule() {
   }
 
   async function loadConversationTodo(conversationId: string) {
+    if (!resolveValidConversationId(conversationId)) {
+      return;
+    }
     const requestId = ++conversationTodoRequestId;
     const nextTodoItems = await loadConversationTodoRecord(conversationId);
     if (
@@ -516,6 +543,9 @@ export function createChatStoreModule() {
   }
 
   async function loadConversationRuntimePermissions(conversationId: string) {
+    if (!resolveValidConversationId(conversationId)) {
+      return;
+    }
     const requestId = ++conversationRuntimePermissionRequestId;
     const nextPermissions = await loadPendingRuntimePermissionsRecord(conversationId);
     if (

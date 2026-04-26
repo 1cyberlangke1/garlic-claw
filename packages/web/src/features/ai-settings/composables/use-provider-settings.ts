@@ -6,9 +6,11 @@ import type {
   AiProviderConfig,
   AiProviderSummary,
   DiscoveredAiModel,
+  PluginConfigSnapshot,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import { useAsyncState } from '@/composables/use-async-state'
+import { emitInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 import {
   addProviderModel,
   deleteProviderConfig,
@@ -24,6 +26,9 @@ import {
   saveProviderDefaultModel,
   saveProviderModelCapabilities,
   saveProviderConfig,
+  saveSubagentConfig as saveSubagentConfigRequest,
+  saveRuntimeToolsConfig as saveRuntimeToolsConfigRequest,
+  saveContextGovernanceConfig as saveContextGovernanceConfigRequest,
   saveVisionFallbackConfig,
   testProviderConnection as testProviderConnectionRequest,
   toErrorMessage,
@@ -48,6 +53,9 @@ export function useProviderSettings() {
   const error = providerRequestState.error
   const appError = providerRequestState.appError
   const savingVision = ref(false)
+  const savingRuntimeToolsConfig = ref(false)
+  const savingSubagentConfig = ref(false)
+  const savingContextGovernanceConfig = ref(false)
   const discoveringModels = ref(false)
   const testingConnection = ref(false)
   const catalog = ref<AiProviderCatalogItem[]>([])
@@ -61,6 +69,9 @@ export function useProviderSettings() {
     fallbackChatModels: [],
     utilityModelRoles: {},
   })
+  const runtimeToolsConfigSnapshot = ref<PluginConfigSnapshot | null>(null)
+  const subagentConfigSnapshot = ref<PluginConfigSnapshot | null>(null)
+  const contextGovernanceConfigSnapshot = ref<PluginConfigSnapshot | null>(null)
   const visionOptions = ref<VisionModelOption[]>([])
   const hostModelRoutingOptions = ref<HostModelRoutingOption[]>([])
   const showProviderDialog = ref(false)
@@ -88,6 +99,9 @@ export function useProviderSettings() {
         fallbackChatModels: [],
         utilityModelRoles: {},
       }
+      runtimeToolsConfigSnapshot.value = baseData.runtimeToolsConfigSnapshot
+      subagentConfigSnapshot.value = baseData.subagentConfigSnapshot
+      contextGovernanceConfigSnapshot.value = baseData.contextGovernanceConfigSnapshot
       providerModelsByProviderId.value = Object.fromEntries(
         Object.entries(providerModelsByProviderId.value).filter(([providerId]) =>
           baseData.providers.some((provider) => provider.id === providerId),
@@ -381,6 +395,36 @@ export function useProviderSettings() {
     hostModelRoutingConfig.value = await saveHostModelRouting(config)
   }
 
+  async function saveRuntimeToolsConfig(values: PluginConfigSnapshot['values']) {
+    savingRuntimeToolsConfig.value = true
+    try {
+      runtimeToolsConfigSnapshot.value = await saveRuntimeToolsConfigRequest(values)
+      emitInternalConfigChanged({ scope: 'runtime-tools' })
+    } finally {
+      savingRuntimeToolsConfig.value = false
+    }
+  }
+
+  async function saveSubagentConfig(values: PluginConfigSnapshot['values']) {
+    savingSubagentConfig.value = true
+    try {
+      subagentConfigSnapshot.value = await saveSubagentConfigRequest(values)
+      emitInternalConfigChanged({ scope: 'subagent' })
+    } finally {
+      savingSubagentConfig.value = false
+    }
+  }
+
+  async function saveContextGovernanceConfig(values: PluginConfigSnapshot['values']) {
+    savingContextGovernanceConfig.value = true
+    try {
+      contextGovernanceConfigSnapshot.value = await saveContextGovernanceConfigRequest(values)
+      emitInternalConfigChanged({ scope: 'context-governance' })
+    } finally {
+      savingContextGovernanceConfig.value = false
+    }
+  }
+
   /**
    * 重新构建 provider 相关模型候选列表。
    */
@@ -419,6 +463,9 @@ export function useProviderSettings() {
   return {
     loadingProviders,
     savingVision,
+    savingRuntimeToolsConfig,
+    savingSubagentConfig,
+    savingContextGovernanceConfig,
     discoveringModels,
     testingConnection,
     error,
@@ -430,6 +477,9 @@ export function useProviderSettings() {
     selectedModels,
     visionConfig,
     hostModelRoutingConfig,
+    runtimeToolsConfigSnapshot,
+    subagentConfigSnapshot,
+    contextGovernanceConfigSnapshot,
     visionOptions,
     hostModelRoutingOptions,
     showProviderDialog,
@@ -453,5 +503,8 @@ export function useProviderSettings() {
     testProviderConnection,
     saveVisionConfig,
     saveHostModelRoutingConfig,
+    saveRuntimeToolsConfig,
+    saveSubagentConfig,
+    saveContextGovernanceConfig,
   }
 }

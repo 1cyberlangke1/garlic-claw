@@ -4,7 +4,7 @@ import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../gateway/runtime-gateway-connection-lifecycle.service';
 
-const BUILTIN_PLUGIN_ACTIONS: PluginActionName[] = ['health-check', 'reload'];
+const LOCAL_PLUGIN_ACTIONS: PluginActionName[] = ['health-check'];
 const REMOTE_PLUGIN_ACTIONS: PluginActionName[] = ['health-check', 'reload', 'reconnect', 'refresh-metadata'];
 const REMOTE_PLUGIN_ACTION_MESSAGES = {
   'refresh-metadata': '已请求远程插件重新同步元数据',
@@ -32,7 +32,12 @@ export class RuntimePluginGovernanceService {
 
   listSupportedActions(pluginId: string): PluginActionName[] {
     const plugin = this.pluginBootstrapService.getPlugin(pluginId);
-    return [...(plugin.manifest.runtime === 'local' ? BUILTIN_PLUGIN_ACTIONS : REMOTE_PLUGIN_ACTIONS)];
+    if (plugin.manifest.runtime !== 'local') {
+      return [...REMOTE_PLUGIN_ACTIONS];
+    }
+    return this.pluginBootstrapService.canReloadBuiltin(pluginId)
+      ? [...LOCAL_PLUGIN_ACTIONS, 'reload']
+      : [...LOCAL_PLUGIN_ACTIONS];
   }
 
   async runPluginAction(input: { action: PluginActionName; pluginId: string }) {
@@ -43,7 +48,7 @@ export class RuntimePluginGovernanceService {
         : readPluginHealth(plugin, input.pluginId, this.runtimeGatewayConnectionLifecycleService);
       return createAcceptedActionResult(input.pluginId, input.action, health.ok ? '插件健康检查通过' : '插件健康检查失败');
     }
-    if (input.action === 'reload' && plugin.manifest.runtime === 'local') {
+    if (input.action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadBuiltin(input.pluginId)) {
       this.pluginBootstrapService.reloadBuiltin(input.pluginId);
       return createAcceptedActionResult(input.pluginId, input.action, '已重新装载本地插件');
     }

@@ -1,5 +1,5 @@
 import type { PluginManifest } from "@garlic-claw/shared";
-import builtinManifestData from "./builtin-manifest-data.json";
+import authoringConfigData from "./authoring-config-data.json";
 import { pickOptionalStringFields, readJsonObjectValue } from "./common-helpers";
 export interface PluginProviderRouterConfig {
   targetProviderId?: string;
@@ -23,9 +23,9 @@ export interface PluginPersonaSummaryInfo {
   id?: string;
   prompt?: string;
 }
-export const PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY = builtinManifestData.defaults.providerRouterDefaultShortCircuitReply;
-export const PROVIDER_ROUTER_CONFIG_SCHEMA = builtinManifestData.providerRouterConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
-export const PERSONA_ROUTER_CONFIG_SCHEMA = builtinManifestData.personaRouterConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
+export const PROVIDER_ROUTER_DEFAULT_SHORT_CIRCUIT_REPLY = authoringConfigData.defaults.providerRouterDefaultShortCircuitReply;
+export const PROVIDER_ROUTER_CONFIG_SCHEMA = authoringConfigData.providerRouterConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
+export const PERSONA_ROUTER_CONFIG_SCHEMA = authoringConfigData.personaRouterConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
 export function readProviderRouterConfig(value: unknown): PluginProviderRouterConfig {
   const object = readJsonObjectValue(value);
   const routing = readJsonObjectValue(object?.routing);

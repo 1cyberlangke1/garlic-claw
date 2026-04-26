@@ -177,7 +177,7 @@ describe('PluginsView', () => {
         stubs: {
           PluginAttentionPanel: { template: '<div />' },
           PluginSidebar: { template: '<div />' },
-          PluginConfigForm: { template: '<div />' },
+          SchemaConfigForm: { template: '<div />' },
           PluginLlmPreferencePanel: { template: '<div>插件模型策略</div>' },
           PluginScopeEditor: { template: '<div />' },
           ToolGovernancePanel: { template: '<div>插件工具治理</div>' },
@@ -230,7 +230,7 @@ describe('PluginsView', () => {
         stubs: {
           PluginAttentionPanel: { template: '<div />' },
           PluginSidebar: { template: '<div />' },
-          PluginConfigForm: { template: '<div />' },
+          SchemaConfigForm: { template: '<div />' },
           PluginLlmPreferencePanel: { template: '<div>插件模型策略</div>' },
           PluginScopeEditor: { template: '<div />' },
           ToolGovernancePanel: { template: '<div>插件工具治理</div>' },

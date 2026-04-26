@@ -37,7 +37,17 @@ export class PluginBootstrapService {
   listPlugins(): RegisteredPluginRecord[] { return this.pluginPersistenceService.listPlugins(); }
   markPluginOffline(pluginId: string): RegisteredPluginRecord { return this.pluginPersistenceService.setConnectionState(pluginId, false); }
   touchHeartbeat(pluginId: string, seenAt: string = new Date().toISOString()): RegisteredPluginRecord { return this.pluginPersistenceService.touchHeartbeat(pluginId, seenAt); }
-  bootstrapBuiltins(): string[] { return this.builtinPluginRegistryService ? this.builtinPluginRegistryService.listDefinitions().map((definition) => this.registerBuiltinDefinition(definition).pluginId) : []; }
+  bootstrapBuiltins(): string[] {
+    if (!this.builtinPluginRegistryService) {
+      return [];
+    }
+    this.pluginPersistenceService.dropPluginRecords(this.builtinPluginRegistryService.listRetiredPluginIds());
+    return this.builtinPluginRegistryService.listDefinitions().map((definition) => this.registerBuiltinDefinition(definition).pluginId);
+  }
+
+  canReloadBuiltin(pluginId: string): boolean {
+    return this.builtinPluginRegistryService?.hasDefinition(pluginId) ?? false;
+  }
 
   registerPlugin(input: RegisterPluginInput): RegisteredPluginRecord {
     const manifest = normalizePluginManifest(input.manifest, input.fallback);

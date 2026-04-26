@@ -90,11 +90,11 @@ export class RuntimeHostConversationTodoService {
   private readStoredTodos(): { cleanupLegacy: boolean; migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
     const direct = readConversationTodoStoragePayload(this.storagePath);
     if (direct) {
-      return { cleanupLegacy: false, migrated: false, todos: direct };
+      return filterStoredTodos(this.runtimeHostConversationRecordService, direct, false);
     }
     const legacy = readConversationTodoStoragePayload(resolveLegacyConversationStoragePath());
     return legacy
-      ? { cleanupLegacy: true, migrated: true, todos: legacy }
+      ? filterStoredTodos(this.runtimeHostConversationRecordService, legacy, true)
       : { cleanupLegacy: false, migrated: false, todos: new Map() };
   }
 
@@ -167,4 +167,26 @@ function cleanupLegacyConversationTodoPayload(): void {
   } catch {
     // 迁移清理失败不影响当前 todo owner 可用性。
   }
+}
+
+function filterStoredTodos(
+  runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+  todos: Map<string, ConversationTodoItem[]>,
+  cleanupLegacy: boolean,
+): { cleanupLegacy: boolean; migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
+  const filtered = new Map(
+    [...todos.entries()].flatMap(([conversationId, items]) => {
+      try {
+        runtimeHostConversationRecordService.requireConversation(conversationId);
+        return [[conversationId, items]] as const;
+      } catch {
+        return [];
+      }
+    }),
+  );
+  return {
+    cleanupLegacy,
+    migrated: cleanupLegacy || filtered.size !== todos.size,
+    todos: filtered,
+  };
 }

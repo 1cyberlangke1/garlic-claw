@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue, PluginCallContext, PluginLlmMessage, PluginMessageTargetInfo, PluginSubagentDetail, PluginSubagentExecutionResult, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSummary, SubagentAfterRunHookResult, SubagentBeforeRunHookResult } from '@garlic-claw/shared';
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, forwardRef } from '@nestjs/common';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
 import { ProjectSubagentTypeRegistryService } from '../../execution/project/project-subagent-type-registry.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
@@ -24,7 +24,7 @@ export class RuntimeHostSubagentRunnerService {
   constructor(
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
-    private readonly toolRegistryService: ToolRegistryService,
+    @Inject(forwardRef(() => ToolRegistryService)) private readonly toolRegistryService: ToolRegistryService,
     @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
     private readonly runtimeHostSubagentStoreService: RuntimeHostSubagentStoreService,
     private readonly runtimeHostSubagentSessionStoreService: RuntimeHostSubagentSessionStoreService,
@@ -319,7 +319,11 @@ async function collectSubagentRunResult(input: { finishReason?: Promise<unknown>
     if (!part) { continue; }
     if (part.type === 'text-delta') { text += part.text; continue; }
     const payload = { toolCallId: part.toolCallId, toolName: part.toolName };
-    part.type === 'tool-call' ? toolCalls.push({ ...payload, input: asJsonValue(part.input) }) : toolResults.push({ ...payload, output: asJsonValue(part.output) });
+    if (part.type === 'tool-call') {
+      toolCalls.push({ ...payload, input: asJsonValue(part.input) });
+    } else {
+      toolResults.push({ ...payload, output: asJsonValue(part.output) });
+    }
   }
   const finishReason = await input.finishReason;
   return { ...(finishReason !== undefined ? { finishReason: finishReason === null ? null : String(finishReason) } : {}), message: { content: text, role: 'assistant' }, modelId: input.modelId, providerId: input.providerId, text, toolCalls, toolResults };

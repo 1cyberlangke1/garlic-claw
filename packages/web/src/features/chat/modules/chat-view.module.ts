@@ -23,6 +23,7 @@ import {
   measureDataUrlBytes,
 } from '@/utils/chat-image-upload'
 import { getErrorMessage } from '@/utils/error'
+import { isValidConversationRouteId } from '@/utils/uuid'
 import { useChatCommandCatalog } from '@/features/chat/composables/use-chat-command-catalog'
 
 /**
@@ -413,7 +414,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     conversationId: string | null = chat.currentConversationId,
   ) {
     const requestId = ++conversationHostServicesRequestId
-    if (!conversationId) {
+    if (!conversationId || !isValidConversationRouteId(conversationId)) {
       conversationHostServices.value = null
       return
     }

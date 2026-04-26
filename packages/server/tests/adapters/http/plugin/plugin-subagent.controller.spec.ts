@@ -1,54 +1,18 @@
-import { PluginController } from '../../../../src/adapters/http/plugin/plugin.controller';
+import { SubagentController } from '../../../../src/adapters/http/subagent/subagent.controller';
 
-describe('PluginController subagent routes', () => {
-  const pluginRemoteBootstrapService = {
-    issueBootstrap: jest.fn(),
-  };
-  const pluginPersistenceService = {
-    deletePlugin: jest.fn(),
-    getPluginOrThrow: jest.fn(),
-    upsertPlugin: jest.fn(),
-  };
-  const runtimeHostConversationRecordService = {
-    listPluginConversationSessions: jest.fn(),
-  };
-  const runtimeHostPluginDispatchService = {
-    invokeRoute: jest.fn(),
-    listPlugins: jest.fn(),
-  };
-  const runtimeHostPluginRuntimeService = {
-    deleteCronJob: jest.fn(),
-    listCronJobs: jest.fn(),
-    deletePluginStorage: jest.fn(),
-    listPluginStorage: jest.fn(),
-    setPluginStorage: jest.fn(),
-  };
+describe('SubagentController', () => {
   const runtimeHostSubagentRunnerService = {
     getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
     listTypes: jest.fn(),
     removeSubagentSession: jest.fn(),
   };
-  const runtimePluginGovernanceService = {
-    checkPluginHealth: jest.fn(),
-    listPlugins: jest.fn(),
-    listSupportedActions: jest.fn(),
-    runPluginAction: jest.fn(),
-  };
 
-  let controller: PluginController;
+  let controller: SubagentController;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new PluginController(
-      pluginRemoteBootstrapService as never,
-      pluginPersistenceService as never,
-      runtimeHostConversationRecordService as never,
-      runtimeHostPluginDispatchService as never,
-      runtimeHostPluginRuntimeService as never,
-      runtimeHostSubagentRunnerService as never,
-      runtimePluginGovernanceService as never,
-    );
+    controller = new SubagentController(runtimeHostSubagentRunnerService as never);
   });
 
   it('returns the background subagent overview', async () => {
@@ -58,8 +22,8 @@ describe('PluginController subagent routes', () => {
           sessionId: 'subagent-session-1',
           sessionMessageCount: 2,
           sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-          pluginId: 'builtin.subagent-delegate',
-          pluginDisplayName: '子代理委派',
+          pluginId: 'subagent',
+          pluginDisplayName: 'Subagent',
           runtimeKind: 'local',
           status: 'completed',
           requestPreview: '请帮我总结当前对话',
@@ -75,7 +39,7 @@ describe('PluginController subagent routes', () => {
       ],
     });
 
-    expect(controller.listSubagentOverview()).toEqual({
+    expect(controller.listOverview()).toEqual({
       subagents: [
         expect.objectContaining({
           sessionId: 'subagent-session-1',
@@ -90,8 +54,8 @@ describe('PluginController subagent routes', () => {
       sessionId: 'subagent-session-1',
       sessionMessageCount: 2,
       sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-      pluginId: 'builtin.subagent-delegate',
-      pluginDisplayName: '子代理委派',
+      pluginId: 'subagent',
+      pluginDisplayName: 'Subagent',
       runtimeKind: 'local',
       status: 'completed',
       requestPreview: '请帮我总结当前对话',
@@ -163,7 +127,7 @@ describe('PluginController subagent routes', () => {
       },
     ]);
 
-    expect(controller.listSubagentTypes()).toEqual([
+    expect(controller.listTypes()).toEqual([
       {
         id: 'general',
         name: '通用',

@@ -1,7 +1,7 @@
 import type { PluginActionName, PluginParamSchema, PluginRuntimeKind } from './plugin';
 import type { EventLogSettings } from './plugin-records';
 
-export type ToolSourceKind = 'plugin' | 'mcp' | 'skill';
+export type ToolSourceKind = 'internal' | 'plugin' | 'mcp' | 'skill';
 
 export type ToolHealthStatus = 'healthy' | 'error' | 'unknown';
 

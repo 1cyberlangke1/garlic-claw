@@ -1,0 +1,15 @@
+{
+  "memoryContext": {
+    "enabled": true,
+    "limit": 6,
+    "promptPrefix": "Smoke Memory"
+  },
+  "conversationTitle": {
+    "enabled": true,
+    "maxMessages": 3
+  },
+  "contextCompaction": {
+    "strategy": "sliding",
+    "keepRecentMessages": 5
+  }
+}

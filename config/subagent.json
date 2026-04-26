@@ -1,0 +1,8 @@
+{
+  "llm": {
+    "targetSubagentType": "general"
+  },
+  "session": {
+    "maxConversationSubagents": 6
+  }
+}

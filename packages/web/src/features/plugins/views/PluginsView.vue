@@ -53,9 +53,12 @@
             :saving="savingRemoteAccess"
             @save="saveRemoteAccess"
           />
-          <PluginConfigForm
+          <SchemaConfigForm
             :snapshot="configSnapshot"
             :saving="savingConfig"
+            title="插件配置"
+            description="宿主按插件声明的配置元数据统一渲染，不再依赖扁平字段表单。"
+            empty-text="当前插件没有声明配置元数据。"
             @save="saveConfig"
           />
           <PluginLlmPreferencePanel
@@ -143,7 +146,7 @@ import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import PluginAttentionPanel from '@/features/plugins/components/PluginAttentionPanel.vue'
-import PluginConfigForm from '@/features/plugins/components/PluginConfigForm.vue'
+import SchemaConfigForm from '@/features/config/components/SchemaConfigForm.vue'
 import PluginConversationSessionList from '@/features/plugins/components/PluginConversationSessionList.vue'
 import PluginCronList from '@/features/plugins/components/PluginCronList.vue'
 import PluginDetailOverview from '@/features/plugins/components/PluginDetailOverview.vue'

@@ -409,6 +409,8 @@ function formatTime(value: string | null): string {
 
 function sourceKindLabel(kind: ToolSourceKind): string {
   switch (kind) {
+    case 'internal':
+      return '内部工具源'
     case 'plugin':
       return '插件工具源'
     case 'mcp':

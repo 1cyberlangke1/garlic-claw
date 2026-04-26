@@ -1,7 +1,6 @@
-import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, JsonObject, JsonValue, PluginSubagentRunParams, PluginSubagentRunResult, PluginSubagentStartParams, PluginSubagentSummary, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, JsonObject, JsonValue, TriggerConfig } from "@garlic-claw/shared";
 import { toHostJsonValue } from "../host";
-import { pickOptionalStringFields, readOptionalObjectParam, readOptionalStringParam, readRequiredStringParam, sanitizeOptionalText, readJsonObjectValue } from "./index";
-import { PluginSubagentDelegateConfig } from "./builtin-manifests";
+import { pickOptionalStringFields, readOptionalObjectParam, readOptionalStringParam, readRequiredStringParam, readJsonObjectValue } from "./index";
 export function readMemorySearchResults(value: JsonValue): Array<{ content?: string; category?: string; createdAt?: string }> {
   return Array.isArray(value)
     ? value.flatMap((entry) => {
@@ -13,27 +12,6 @@ export function readMemorySearchResults(value: JsonValue): Array<{ content?: str
 export function readMemorySaveResultId(value: JsonValue): string | null {
   const object = readJsonObjectValue(value);
   return object && typeof object.id === "string" ? object.id : null;
-}
-export function readSubagentDelegateConfig(value: unknown): PluginSubagentDelegateConfig {
-  const object = readJsonObjectValue(value);
-  const llm = readJsonObjectValue(object?.llm);
-  const session = readJsonObjectValue(object?.session);
-  const tools = readJsonObjectValue(object?.tools);
-  const allowedToolNames = readOptionalToolNames(tools?.allowedToolNames);
-  return {
-    ...pickOptionalStringFields(llm, ["targetSubagentType", "targetProviderId", "targetModelId"] as const),
-    ...(typeof session?.maxConversationSubagents === 'number' && Number.isInteger(session.maxConversationSubagents) && session.maxConversationSubagents > 0
-      ? { maxConversationSubagents: session.maxConversationSubagents }
-      : {}),
-    ...(allowedToolNames ? { allowedToolNames } : {}),
-  };
-}
-export function buildSubagentDelegateRunParams(input: { config: PluginSubagentDelegateConfig; prompt: string; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentRunParams {
-  return buildSubagentDelegateBaseParams(input);
-}
-export function buildSubagentDelegateStartParams(input: { config: PluginSubagentDelegateConfig; prompt: string; shouldWriteBack: boolean; conversationId?: string | null; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentStartParams {
-  const base = buildSubagentDelegateBaseParams(input);
-  return { ...base, ...(input.shouldWriteBack && input.conversationId ? { writeBack: { target: { type: "conversation", id: input.conversationId } } } : {}) };
 }
 export function readPluginCreateAutomationParams(params: JsonObject): {
   name: string;
@@ -112,43 +90,6 @@ export function createRouteInspectorContextResponse(input: {
   body: JsonValue;
 } {
   return { status: 200, body: toHostJsonValue({ plugin: readJsonObjectValue(input.plugin), user: readJsonObjectValue(input.user), conversation: input.conversation, messageCount: input.messageCount }) };
-}
-export function createSubagentRunSummary(result: PluginSubagentRunResult): JsonValue {
-  return toHostJsonValue({
-    sessionId: result.sessionId,
-    sessionMessageCount: result.sessionMessageCount,
-    providerId: result.providerId,
-    modelId: result.modelId,
-    text: result.text,
-    toolCalls: result.toolCalls,
-    toolResults: result.toolResults,
-    ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
-  });
-}
-export function createSubagentSummaryResult(result: PluginSubagentSummary): JsonValue { return toHostJsonValue(result); }
-function buildSubagentDelegateBaseParams(input: { config: PluginSubagentDelegateConfig; prompt: string; description?: string | null; subagentType?: string | null; sessionId?: string | null }): PluginSubagentRunParams {
-  const toolNames = input.config.allowedToolNames?.length ? input.config.allowedToolNames : null;
-  return {
-    ...(sanitizeOptionalText(input.sessionId ?? undefined) ? { sessionId: sanitizeOptionalText(input.sessionId ?? undefined) } : {}),
-    ...(sanitizeOptionalText(input.description ?? undefined) ? { description: sanitizeOptionalText(input.description ?? undefined) } : {}),
-    ...(typeof input.config.maxConversationSubagents === 'number' ? { maxConversationSubagents: input.config.maxConversationSubagents } : {}),
-    ...(sanitizeOptionalText(input.subagentType ?? undefined) ? { subagentType: sanitizeOptionalText(input.subagentType ?? undefined) } : sanitizeOptionalText(input.config.targetSubagentType) ? { subagentType: sanitizeOptionalText(input.config.targetSubagentType) } : {}),
-    ...(sanitizeOptionalText(input.config.targetProviderId) ? { providerId: sanitizeOptionalText(input.config.targetProviderId) } : {}),
-    ...(sanitizeOptionalText(input.config.targetModelId) ? { modelId: sanitizeOptionalText(input.config.targetModelId) } : {}),
-    messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
-    ...(toolNames ? { toolNames } : {}),
-  };
-}
-
-function readOptionalToolNames(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const normalized = value
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return normalized.length > 0 ? normalized : undefined;
 }
 function readPluginAutomationActionsParam(params: JsonObject): ActionConfig[] {
   const value = params.actions;

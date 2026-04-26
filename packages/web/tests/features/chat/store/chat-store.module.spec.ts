@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createChatStoreModule } from '@/features/chat/modules/chat-store.module'
-import { PLUGIN_CONFIG_CHANGED_EVENT } from '@/features/plugins/plugin-config-change'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
 import type { Conversation } from '@garlic-claw/shared'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
 
@@ -117,6 +117,39 @@ describe('createChatStoreModule', () => {
     expect(chatStreamModule.abortChatStream).toHaveBeenCalledTimes(1)
     expect(chatStreamModule.stopChatRecovery).toHaveBeenCalledTimes(1)
     expect(chatStreamModule.syncChatStreamingState).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears an invalid legacy conversation id before issuing conversation requests', async () => {
+    const legacyConversationId = '11111111-1111-4111-8111-111111111111'
+    vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
+      createChatMessage('message-1', '不会被读取'),
+    ])
+    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([
+      { content: '不会被读取', priority: 'medium', status: 'pending' },
+    ])
+    vi.mocked(chatConversationData.loadPendingRuntimePermissionsRecord).mockResolvedValue([
+      {
+        id: 'permission-1',
+        conversationId: legacyConversationId,
+        backendKind: 'just-bash',
+        toolName: 'bash',
+        operations: ['command.execute'],
+        createdAt: '2026-04-20T09:00:00.000Z',
+        summary: '不会被读取',
+      },
+    ])
+
+    const store = createChatStoreModule()
+
+    await store.selectConversation(legacyConversationId)
+
+    expect(store.currentConversationId.value).toBeNull()
+    expect(store.messages.value).toEqual([])
+    expect(store.todoItems.value).toEqual([])
+    expect(store.pendingRuntimePermissions.value).toEqual([])
+    expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
+    expect(chatConversationData.loadConversationTodoRecord).not.toHaveBeenCalled()
+    expect(chatConversationData.loadPendingRuntimePermissionsRecord).not.toHaveBeenCalled()
   })
 
   it('refreshes conversation-related state after a streamed send finishes', async () => {
@@ -1141,10 +1174,9 @@ describe('createChatStoreModule', () => {
     const store = createChatStoreModule()
     store.currentConversationId.value = 'conversation-1'
 
-    window.dispatchEvent(new CustomEvent(PLUGIN_CONFIG_CHANGED_EVENT, {
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
       detail: {
-        changeType: 'config',
-        pluginName: 'builtin.context-compaction',
+        scope: 'context-governance',
       },
     }))
     await new Promise((resolve) => setTimeout(resolve, 0))

@@ -1,15 +1,14 @@
 import type { JsonValue, PluginManifest } from "@garlic-claw/shared";
-import builtinManifestData from "./builtin-manifest-data.json";
+import authoringConfigData from "./authoring-config-data.json";
 import { pickOptionalNumberFields, pickOptionalStringFields, readJsonObjectValue, sanitizeOptionalText } from "./common-helpers";
 
 export interface PluginConversationTitleConfig {
   defaultTitle?: string;
   maxMessages?: number;
 }
-export const CONVERSATION_TITLE_DEFAULT_TITLE = builtinManifestData.defaults.conversationTitleDefaultTitle;
-export const CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES = builtinManifestData.defaults.conversationTitleMaxMessages;
-export const CONVERSATION_TITLE_CONFIG_SCHEMA = builtinManifestData.conversationTitleConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
-export const CONVERSATION_TITLE_MANIFEST = builtinManifestData.conversationTitleManifest as unknown as PluginManifest;
+export const CONVERSATION_TITLE_DEFAULT_TITLE = authoringConfigData.defaults.conversationTitleDefaultTitle;
+export const CONVERSATION_TITLE_DEFAULT_MAX_MESSAGES = authoringConfigData.defaults.conversationTitleMaxMessages;
+export const CONVERSATION_TITLE_CONFIG_SCHEMA = authoringConfigData.conversationTitleConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
 export function readConversationSummary(value: JsonValue): {
   id?: string;
   title?: string;
@@ -81,10 +80,11 @@ export function sanitizeConversationTitle(raw?: string): string {
     return "";
   }
   const firstLine = raw.trim().split("\n")[0].trim();
-  return firstLine
+  const title = firstLine
     .replace(/^["'`「『]+/, "")
     .replace(/["'`」』]+$/, "")
     .trim();
+  return isGeneratedConversationTitleCandidateValid(title) ? title : "";
 }
 export function normalizePositiveInteger(value: number | undefined, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -103,4 +103,11 @@ function mapConversationRoleLabel(role?: string): string {
     default:
       return "用户";
   }
+}
+
+function isGeneratedConversationTitleCandidateValid(title: string): boolean {
+  return Boolean(title)
+    && title.length <= 40
+    && !/^((本地 smoke 回复|Generated)\s*[:：]\s*)/iu.test(title)
+    && !/(请为下面这段对话生成一个简洁中文标题|只输出标题本身|不要输出序号或解释|要求：|对话：|^(用户|助手|系统|工具)\s*[:：])/u.test(title);
 }

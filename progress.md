@@ -1,6 +1,6 @@
 # Progress
 
-## 2026-04-26 V3 体积治理
+## 2026-04-26 体积治理与 owner 收口
 
 - 当前累计净减：
   - `packages/server/src`: `16546 -> 14998`
@@ -95,6 +95,44 @@
 - `packages/server`
   - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/runtime/host/runtime-host-subagent-session-store.service.spec.ts tests/runtime/host/runtime-host-subagent-store.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/execution/mcp/mcp.service.spec.ts`
   - `npm run build`
+- `packages/plugin-sdk`
+  - `npm test`
+- `packages/server`
+  - `npm run typecheck`
+  - `npm test -- tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/plugin/builtin/hooks/builtin-conversation-title.plugin.spec.ts`
+- `packages/web`
+  - `npm run typecheck`
+  - `npm run test:run -- tests/features/chat/store/chat-store.module.spec.ts`
+- root
+  - `npm run smoke:server` -> `server HTTP smoke passed: 187 checks`
+  - `npm run smoke:web-ui` -> `browser UI smoke passed`
+  - `node tools/count-server-src-lines.mjs` -> `14616`
+- `packages/server`
+  - `npm run build`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-runtime-tool.service.spec.ts`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/tool/tool-registry.service.spec.ts -t "applies internal runtime-tools bash output config through the internal settings owner|routes internal runtime-tools bash execution through the configured shell backend|uses the platform default backend when internal runtime-tools shellBackend is unset|supports hot-switching internal runtime-tools bash execution to the platform-scoped secondary backend"`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host.service.spec.ts -t "registers the host caller so builtin tools can round-trip into host config reads"`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/adapters/http/ai/ai.controller.spec.ts`
+- root
+  - `npm run smoke:server` -> `server HTTP smoke passed: 187 checks`
+- `packages/web`
+  - `npm run typecheck`
+  - `npm run smoke:browser` -> `browser UI smoke passed`
+- `packages/plugin-sdk`
+  - `npm test`
+- `packages/server`
+  - `npm run build`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/runtime/host/runtime-host-subagent-store.service.spec.ts tests/runtime/host/runtime-host-subagent-session-store.service.spec.ts`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/adapters/http/plugin/plugin-subagent.controller.spec.ts`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/tool/tool-registry.service.spec.ts -t "lists internal subagent tools as a dedicated internal source|routes internal subagent tools through the internal subagent owner|applies internal runtime-tools bash output config through the internal settings owner|routes internal runtime-tools bash execution through the configured shell backend|supports hot-switching internal runtime-tools bash execution to the platform-scoped secondary backend|uses the platform default backend when internal runtime-tools shellBackend is unset"`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/automation/automation.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/adapters/http/ai/ai.controller.spec.ts tests/runtime/host/runtime-host.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
+- `packages/web`
+  - `npm run typecheck`
+  - `npm run test:run -- tests/features/subagents/composables/use-subagents.spec.ts tests/features/subagents/views/SubagentView.spec.ts`
+- root
+  - `npm run smoke:server` -> `server HTTP smoke passed: 188 checks`
+  - `npm run smoke:web-ui` -> `browser UI smoke passed`
+  - `node tools/count-server-src-lines.mjs` -> `14893`
 
 ## 独立 judge
 
@@ -102,3 +140,190 @@
 - `P6 host / automation owner 压体积`：`PASS`
 - `P7 bootstrap / ai-settings / gateway owner 压体积`：`PASS`
 - `P8 subagent / text-replace / event-log owner 压体积`：`PASS`
+- `I1 runtime-tools 收回内部`：首轮 `FAIL`
+  - 原因：`TODO.md` 仍写旧 owner，文档同步缺失
+- `I1 runtime-tools 收回内部`：复核 `PASS`
+  - 关键结论：代码 owner、宿主链路、前端入口、`TODO.md` 同步已一致
+- `I2 subagent 收回内部`：`PASS`
+  - 关键结论：内部 subagent owner、automation internal source、plugin-sdk authoring、前端 `subagents` 命名与 smoke 覆盖已一致
+- `I3 上下文治理收回内部`：
+  - 会话测试已改为直接注入 `ContextGovernanceService / ContextGovernanceSettingsService / RuntimeHostUserContextService`
+  - `ContextGovernanceService` 已修复两类真实回归：
+    - 记忆注入读取字符串消息时崩溃
+    - 在存在 pending assistant 时，摘要/滑动窗口误算前缀，导致 persona `beginDialogs` 与 vision fallback 描述丢失
+  - `http-smoke.mjs` 已补齐远程插件治理路由覆盖：
+    - `plugins/:pluginId/config`
+    - `plugins/:pluginId/llm-preference`
+    - `plugins/:pluginId/scopes`
+    - `plugins/:pluginId/event-log`
+    - `plugins/:pluginId/events`
+    - `plugins/:pluginId/storage`
+    - `plugins/:pluginId/crons`
+- 本轮 fresh
+  - `packages/server`
+    - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-planning.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - `npm run build`
+  - `packages/plugin-sdk`
+    - `npm test`
+  - `packages/web`
+    - `npm run typecheck`
+  - root
+    - `npm run smoke:server` -> `server HTTP smoke passed: 184 checks`
+    - `node tools/count-server-src-lines.mjs` -> `15500`
+- `I3` 首轮 judge：`FAIL`
+  - 关键阻塞：
+    - 旧持久化 builtin 记录升级后仍可能继续暴露到插件页
+    - 普通 local plugin 仍错误暴露 `reload`
+    - `plugin-sdk` authoring / 文档仍在声明上下文 builtin
+- `I3` judge 后修复
+  - `BuiltinPluginRegistryService` 新增退役 builtin ID 清单
+  - `PluginBootstrapService.bootstrapBuiltins()` 启动时清理退役 builtin 持久化记录
+  - `RuntimePluginGovernanceService` 只给真实 builtin definition 暴露 `reload`
+  - 删除 `packages/server/tests/plugin/builtin/hooks/*` 旧上下文 builtin hook 测试
+  - `packages/plugin-sdk` 移除 `MEMORY_CONTEXT_MANIFEST / CONVERSATION_TITLE_MANIFEST / CONTEXT_COMPACTION_MANIFEST` 与对应 JSON manifest 数据
+  - `docs/插件开发指南.md` 已改成“内部能力边界”描述，不再宣称服务端默认装载这些上下文 builtin
+- `I3` 二次 fresh
+  - `packages/plugin-sdk`
+    - `npm test`
+  - `packages/server`
+    - `npm run build`
+    - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
+  - root
+    - `npm run smoke:server` -> `server HTTP smoke passed: 184 checks`
+    - `node tools/count-server-src-lines.mjs` -> `15534`
+- `I3` 二次独立 judge：`PASS`
+  - 关键结论：
+    - 退役 builtin 记录清理已接入启动主链
+    - ordinary local plugin 不再错误暴露 `reload`
+    - `plugin-sdk` 与文档已移除上下文 builtin 的对外声明
+    - `server/web` 运行时入口均已切到内部上下文治理 owner
+- `I4` 代码收口
+  - `packages/plugin-sdk/src/authoring/builtin-manifest-data.json`
+    - 删除 `providerRouterManifest / personaRouterManifest`
+  - `packages/plugin-sdk/src/authoring/builtin-manifests.ts`
+    - 删除 `PROVIDER_ROUTER_MANIFEST / PERSONA_ROUTER_MANIFEST` 导出
+  - `packages/web/src/features/config/components/SchemaConfigForm.vue`
+    - 新增通用 schema 配置表单，支持 headerless 内部配置面
+  - `packages/web/src/features/config/components/SchemaConfigNodeRenderer.vue`
+    - 新增通用 schema 配置节点渲染器
+  - `packages/web/src/features/plugins/components/*`
+    - 旧插件前缀配置表单组件已删除，语义已迁到通用 schema 配置组件
+  - `packages/web/src/features/ai-settings/components/{RuntimeToolsSettingsPanel,SubagentSettingsPanel,ContextGovernanceSettingsPanel}.vue`
+    - 已切到通用配置组件，不再显示“插件配置”头
+  - `packages/web/src/features/plugins/views/PluginsView.vue`
+    - 已切到通用配置组件，并显式传入插件页文案
+- `I4` 测试与 fresh
+  - `packages/web`
+    - `npm run typecheck`
+    - `npm run test:run -- tests/features/plugins/components/SchemaConfigForm.spec.ts tests/features/plugins/components/PluginSidebar.spec.ts tests/features/plugins/components/PluginScopeEditor.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/plugins/views/PluginsView.spec.ts`
+  - `packages/plugin-sdk`
+    - `npm test`
+  - `packages/server`
+    - `npm run build`
+  - root
+    - `npm run smoke:server` -> `server HTTP smoke passed: 184 checks`
+    - `npm run smoke:web-ui` -> `browser UI smoke passed`
+- `I4` 独立 judge：`PASS`
+  - 关键结论：
+    - `provider-router / persona-router` 已只剩内部 routing schema/default 常量，不再对外导出 builtin manifest
+    - AI 设置页内部配置已切到 `SchemaConfigForm / SchemaConfigNodeRenderer`，旧插件命名组件已删除
+    - 插件页配置入口与文案仍保留，未误删真实外部扩展能力
+- `V4` 启动
+  - 已修正 `TODO.md` 中 `I4.3` 的漏状态
+  - 当前进入 `conversation` owner 压体积，优先看：
+    - `packages/server/src/conversation/context-governance.service.ts`
+    - `packages/server/src/conversation/conversation-message-planning.service.ts`
+- `V4` 本轮收口
+  - `packages/server/src/conversation/context-governance.service.ts`
+    - `723 -> 529`
+  - `packages/server/src/conversation/context-governance-settings.service.ts`
+    - `128 -> 126`
+  - `packages/server/src/conversation/conversation-message-planning.service.ts`
+    - `160 -> 152`
+  - `packages/server/src/runtime/host/runtime-host-conversation-record.service.ts`
+    - `353 -> 276`
+  - `packages/server/src`
+    - `15206 -> 14925`
+- `V4` fresh
+  - `packages/server`
+    - `npm run build`
+    - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-planning.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts`
+  - root
+    - `npm run smoke:server` -> `server HTTP smoke passed: 184 checks`
+    - `node tools/count-server-src-lines.mjs` -> `14925`
+- `V4` 独立 judge：`PASS`
+  - 四个目标文件都在原 owner 内真实收口，不是换名、换路径或拆壳
+  - `summary / sliding / memory / title` 四条语义仍在主链
+  - `TODO.md / task_plan.md / progress.md / findings.md` 已同步到当前事实
+- `I5` 代码收口
+  - 新增：`packages/plugin-sdk/src/authoring/authoring-config-data.json`
+  - 删除：`packages/plugin-sdk/src/authoring/builtin-manifests.ts`
+  - 删除：`packages/plugin-sdk/src/authoring/builtin-manifest-data.json`
+  - `prompt-helpers / conversation-helpers / context-compaction / router-helpers`
+    - 已直接从 `authoring-config-data.json` 读取默认值与 schema
+  - `packages/plugin-sdk/src/authoring/index.ts`
+    - 已移除 `builtin-manifests` 聚合导出
+  - `docs/插件开发指南.md`
+    - 已改成当前 authoring 边界，不再把内部能力表述成默认 builtin plugin
+- `I5` fresh
+  - `packages/plugin-sdk`
+    - `npm test`
+  - `packages/server`
+    - `npm run build`
+- `I5` 独立 judge：`PASS`
+  - `builtin-manifests` 聚合入口与旧混装 JSON 已真实删除
+  - `server` 依赖的上下文治理 / router schema/default 已回到明确语义文件
+  - `docs/插件开发指南.md` 已同步当前 authoring 边界
+- `I6` 代码收口
+  - 新增：`packages/plugin-sdk/src/authoring/observation-summaries.ts`
+  - `packages/plugin-sdk/src/authoring/builtin-observers.ts`
+    - 只保留 observer manifest 常量
+  - `packages/plugin-sdk/src/authoring/index.ts`
+    - 已改为导出 `observation-summaries`，不再直接导出 `builtin-observers`
+- `I6` fresh
+  - `packages/plugin-sdk`
+    - `npm test`
+- `I6` 回归补强
+  - `packages/plugin-sdk/tests/authoring.test.js`
+    - 新增反向断言：根 `authoring` 入口不可直接拿到 `*_MANIFEST`
+  - `packages/plugin-sdk`
+    - `npm test`
+- `I6` 独立 judge：`PASS`
+  - 根 `authoring` 入口已不再暴露 observer manifest
+  - 观测摘要/持久化逻辑仍完整可用
+  - 测试防回退缺口已收口
+- `I7` 代码收口
+  - 删除：`packages/plugin-sdk/src/authoring/builtin-observers.ts`
+  - 删除：`packages/plugin-sdk/src/authoring/builtin-observer-manifests.json`
+  - `docs/插件开发指南.md`
+    - 已删除对已退役 observer manifest 文件的边界描述
+- `I7` fresh
+  - `packages/plugin-sdk`
+    - `npm test`
+- `I7` 独立 judge：`PASS`
+  - 已删除文件不存在隐藏消费链
+  - authoring 导出边界仍完整
+- `I8` 文案去歧义
+  - `docs/插件开发指南.md`
+    - 已把“authoring 静态资产”和“运行时 builtin plugin”措辞拆开
+  - `packages/plugin-sdk/tests/index.test.js`
+    - 已把测试名从 `builtin plugins` 改成 `authoring flows`
+- `I8` fresh
+  - `packages/plugin-sdk`
+    - `npm test`
+- `I8` 独立 judge：`PASS`
+  - 文档与测试命名已与当前 authoring 边界对齐
+- `I9` 前端测试命名去噪
+  - `packages/web/tests/features/plugins/components/SchemaConfigForm.spec.ts`
+    - 文件名与当前通用 schema 配置组件保持一致
+  - `packages/web/tests/features/subagents/composables/use-subagents.spec.ts`
+    - 文件名与当前 subagents composable 保持一致，测试夹具 owner 已切到内部语义
+  - `packages/web/tests/features/subagents/views/SubagentView.spec.ts`
+    - 视图测试夹具 owner 已切到内部语义
+  - `TODO.md / task_plan.md / progress.md / findings.md`
+    - 已清理旧测试文件名、旧组件命名与旧 owner 噪音
+- `I9` fresh
+  - `packages/web`
+    - `npm run test:run -- tests/features/plugins/components/SchemaConfigForm.spec.ts tests/features/subagents/composables/use-subagents.spec.ts tests/features/subagents/views/SubagentView.spec.ts`
+- `I9` 独立 judge：`PASS`
+  - 三个前端测试文件名、夹具语义与过程文档记录已全部对齐

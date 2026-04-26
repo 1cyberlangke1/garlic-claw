@@ -20,7 +20,7 @@ function createCommand(commandId: string, trigger: string, connected = true) {
     kind: 'command' as const,
     path: [trigger.replace(/^\//, '')],
     pluginDisplayName: '上下文压缩',
-    pluginId: 'builtin.context-compaction',
+    pluginId: 'internal.context-governance',
     runtimeKind: 'local' as const,
     source: 'manifest' as const,
     variants: [trigger],
@@ -36,7 +36,7 @@ describe('useChatCommandCatalog', () => {
     })
     vi.mocked(chatCommandCatalogData.loadChatCommandCatalog).mockResolvedValue({
       version: 'catalog-v1',
-      commands: [createCommand('builtin.context-compaction:/compact:command', '/compact')],
+      commands: [createCommand('internal.context-governance:/compact:command', '/compact')],
       conflicts: [],
     })
   })
@@ -46,7 +46,7 @@ describe('useChatCommandCatalog', () => {
       'garlic-claw:chat-command-catalog',
       JSON.stringify({
         version: 'catalog-v1',
-        commands: [createCommand('builtin.context-compaction:/compact:command', '/compact')],
+        commands: [createCommand('internal.context-governance:/compact:command', '/compact')],
       }),
     )
 
@@ -71,8 +71,8 @@ describe('useChatCommandCatalog', () => {
     vi.mocked(chatCommandCatalogData.loadChatCommandCatalog).mockResolvedValue({
       version: 'catalog-v1',
       commands: [
-        createCommand('builtin.context-compaction:/compact:command', '/compact'),
-        createCommand('builtin.context-compaction:/compact/deep:command', '/compact deep'),
+        createCommand('internal.context-governance:/compact:command', '/compact'),
+        createCommand('internal.context-governance:/compact/deep:command', '/compact deep'),
       ],
       conflicts: [],
     })
@@ -100,7 +100,7 @@ describe('useChatCommandCatalog', () => {
       'garlic-claw:chat-command-catalog',
       JSON.stringify({
         version: 'catalog-v1',
-        commands: [createCommand('builtin.context-compaction:/compact:command', '/compact')],
+        commands: [createCommand('internal.context-governance:/compact:command', '/compact')],
       }),
     )
     vi.mocked(chatCommandCatalogData.loadChatCommandCatalogVersion).mockResolvedValue({
@@ -109,8 +109,8 @@ describe('useChatCommandCatalog', () => {
     vi.mocked(chatCommandCatalogData.loadChatCommandCatalog).mockResolvedValue({
       version: 'catalog-v2',
       commands: [
-        createCommand('builtin.context-compaction:/compact:command', '/compact'),
-        createCommand('builtin.context-compaction:/compress:command', '/compress'),
+        createCommand('internal.context-governance:/compact:command', '/compact'),
+        createCommand('internal.context-governance:/compress:command', '/compress'),
       ],
       conflicts: [],
     })

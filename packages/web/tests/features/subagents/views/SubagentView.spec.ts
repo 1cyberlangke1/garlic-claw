@@ -6,8 +6,8 @@ import SubagentViewSource from '@/features/subagents/views/SubagentView.vue?raw'
 
 const removeSubagentSession = vi.fn()
 
-vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
-  usePluginSubagents: () => ({
+vi.mock('@/features/subagents/composables/use-subagents', () => ({
+  useSubagents: () => ({
     loading: ref(false),
     error: ref(null),
     detailLoading: ref(false),
@@ -18,8 +18,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-        pluginId: 'builtin.subagent-delegate',
-        pluginDisplayName: '子代理委派',
+        pluginId: 'internal.subagent',
+        pluginDisplayName: '后台子代理',
         subagentType: 'explore',
         subagentTypeName: '探索',
         runtimeKind: 'local',
@@ -49,8 +49,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
             sessionId: 'subagent-session-1',
             sessionMessageCount: 3,
             sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-            pluginId: 'builtin.subagent-delegate',
-            pluginDisplayName: '子代理委派',
+            pluginId: 'internal.subagent',
+            pluginDisplayName: '后台子代理',
             subagentType: 'explore',
             subagentTypeName: '探索',
             runtimeKind: 'local',
@@ -86,8 +86,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
               sessionId: 'subagent-session-1',
               sessionMessageCount: 3,
               sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-              pluginId: 'builtin.subagent-delegate',
-              pluginDisplayName: '子代理委派',
+              pluginId: 'internal.subagent',
+              pluginDisplayName: '后台子代理',
               subagentType: 'explore',
               subagentTypeName: '探索',
               runtimeKind: 'local',
@@ -117,8 +117,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
               sessionId: 'subagent-session-2',
               sessionMessageCount: 2,
               sessionUpdatedAt: '2026-03-30T12:10:05.000Z',
-              pluginId: 'builtin.subagent-delegate',
-              pluginDisplayName: '子代理委派',
+              pluginId: 'internal.subagent',
+              pluginDisplayName: '后台子代理',
               runtimeKind: 'local',
               status: 'completed',
               requestPreview: '继续第二个任务',
@@ -141,8 +141,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-        pluginId: 'builtin.subagent-delegate',
-        pluginDisplayName: '子代理委派',
+        pluginId: 'internal.subagent',
+        pluginDisplayName: '后台子代理',
         subagentType: 'explore',
         subagentTypeName: '探索',
         runtimeKind: 'local',
@@ -173,8 +173,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-        pluginId: 'builtin.subagent-delegate',
-        pluginDisplayName: '子代理委派',
+        pluginId: 'internal.subagent',
+        pluginDisplayName: '后台子代理',
         subagentType: 'explore',
         subagentTypeName: '探索',
         runtimeKind: 'local',
@@ -211,8 +211,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
           sessionId: 'subagent-session-1',
           sessionMessageCount: 3,
           sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-          pluginId: 'builtin.subagent-delegate',
-          pluginDisplayName: '子代理委派',
+          pluginId: 'internal.subagent',
+          pluginDisplayName: '后台子代理',
           subagentType: 'explore',
           subagentTypeName: '探索',
           runtimeKind: 'local',
@@ -242,8 +242,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
           sessionId: 'subagent-session-2',
           sessionMessageCount: 2,
           sessionUpdatedAt: '2026-03-30T12:10:05.000Z',
-          pluginId: 'builtin.subagent-delegate',
-          pluginDisplayName: '子代理委派',
+          pluginId: 'internal.subagent',
+          pluginDisplayName: '后台子代理',
           runtimeKind: 'local',
           status: 'completed',
           requestPreview: '继续第二个任务',
@@ -262,8 +262,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
         conversationId: 'conversation-1',
         source: 'plugin',
       },
-      pluginId: 'builtin.subagent-delegate',
-      pluginDisplayName: '子代理委派',
+      pluginId: 'internal.subagent',
+      pluginDisplayName: '后台子代理',
       request: {
         messages: [
           {
@@ -308,8 +308,8 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-        pluginId: 'builtin.subagent-delegate',
-        pluginDisplayName: '子代理委派',
+        pluginId: 'internal.subagent',
+        pluginDisplayName: '后台子代理',
         subagentType: 'explore',
         subagentTypeName: '探索',
         runtimeKind: 'local',
@@ -349,7 +349,7 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
 }))
 
 describe('SubagentView', () => {
-  it('renders workspace tabs, subagent context and plugin deep-links', () => {
+  it('renders workspace tabs, subagent context and governance link', () => {
     removeSubagentSession.mockReset()
     const wrapper = mount(SubagentView, {
       global: {
@@ -368,7 +368,7 @@ describe('SubagentView', () => {
     expect(wrapper.text()).toContain('agent1')
     expect(wrapper.text()).toContain('agent2')
     expect(wrapper.text()).toContain('继续已有后台子代理')
-    expect(wrapper.text()).toContain('子代理委派')
+    expect(wrapper.text()).toContain('后台子代理')
     expect(wrapper.text()).toContain('探索')
     expect(wrapper.text()).toContain('请帮我总结当前对话')
     expect(wrapper.text()).toContain('上下文消息')
@@ -376,7 +376,7 @@ describe('SubagentView', () => {
     expect(wrapper.text()).toContain('会话 3 条')
     expect(wrapper.text()).toContain('回写等待中')
     expect(wrapper.text()).toContain('查看上下文')
-    expect(wrapper.text()).toContain('打开插件治理')
+    expect(wrapper.text()).toContain('打开工具治理')
     expect(wrapper.text()).toContain('移除')
     expect(wrapper.get('[data-test="window-strip"]').classes()).toContain('window-strip')
     expect(SubagentViewSource).toContain('.window-strip')

@@ -80,6 +80,14 @@ export class PluginPersistenceService {
     return cloneRegisteredPluginRecord(record);
   }
 
+  dropPluginRecords(pluginIds: string[]): string[] {
+    const droppedPluginIds = pluginIds.filter((pluginId) => this.records.delete(pluginId));
+    if (droppedPluginIds.length > 0) {
+      this.persistRecords();
+    }
+    return droppedPluginIds;
+  }
+
   touchHeartbeat(pluginId: string, seenAt: string): RegisteredPluginRecord {
     return this.updatePlugin(pluginId, (record) => ({ ...record, connected: true, lastSeenAt: seenAt, status: PLUGIN_STATUS.ONLINE, updatedAt: seenAt }));
   }

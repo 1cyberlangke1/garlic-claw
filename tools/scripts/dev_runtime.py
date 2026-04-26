@@ -293,9 +293,39 @@ def 等待后端编译器首轮完成(logPath: Path, timeoutSeconds: int) -> boo
 
 
 def getPortWaitTimeoutSeconds(serviceName: str) -> int:
+    serviceOverride = 读取超时环境变量秒数(
+        f"GARLIC_CLAW_DEV_{serviceName.upper()}_PORT_WAIT_TIMEOUT_SECONDS"
+    )
+    if serviceOverride is not None:
+        return serviceOverride
+
+    globalOverride = 读取超时环境变量秒数("GARLIC_CLAW_DEV_PORT_WAIT_TIMEOUT_SECONDS")
+    if globalOverride is not None:
+        return globalOverride
+
     if serviceName == "backend_app" and not runtime.IS_WINDOWS:
         return 180
     return 60
+
+
+def getBackendCompilerWaitTimeoutSeconds() -> int:
+    compilerOverride = 读取超时环境变量秒数(
+        "GARLIC_CLAW_DEV_BACKEND_COMPILER_WAIT_TIMEOUT_SECONDS"
+    )
+    if compilerOverride is not None:
+        return compilerOverride
+    return getPortWaitTimeoutSeconds("backend_app")
+
+
+def 读取超时环境变量秒数(envName: str) -> int | None:
+    rawValue = os.environ.get(envName, "").strip()
+    if not rawValue:
+        return None
+    try:
+        parsedValue = int(rawValue)
+    except ValueError:
+        return None
+    return parsedValue if parsedValue > 0 else None
 
 
 def stopServices(
@@ -556,7 +586,7 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
 
         compilerReadyLabel = "等待后端编译器首轮完成"
         compilerReadyWidth = 获取状态输出宽度([compilerReadyLabel])
-        compilerTimeoutSeconds = getPortWaitTimeoutSeconds("backend_app")
+        compilerTimeoutSeconds = getBackendCompilerWaitTimeoutSeconds()
         runtime.startSingleLineStatus(compilerReadyLabel, width=compilerReadyWidth)
         if not 等待后端编译器首轮完成(SERVER_TSC_STDOUT, compilerTimeoutSeconds):
             runtime.finishSingleLineStatus(

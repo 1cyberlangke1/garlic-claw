@@ -1,0 +1,234 @@
+{
+  "defaults": {
+    "memoryContextLimit": 5,
+    "memoryContextPromptPrefix": "与此用户相关的记忆",
+    "kbContextLimit": 3,
+    "kbContextPromptPrefix": "与当前问题相关的系统知识",
+    "conversationTitleDefaultTitle": "New Chat",
+    "conversationTitleMaxMessages": 4,
+    "providerRouterDefaultShortCircuitReply": "本轮请求已由 provider-router 直接处理。",
+    "contextCompactionMode": "auto",
+    "contextCompactionStrategy": "summary",
+    "contextCompactionCompressionThreshold": 72,
+    "contextCompactionKeepRecentMessages": 6,
+    "contextCompactionFrontendMessageWindowSize": 200,
+    "contextCompactionReservedTokens": 12000,
+    "contextCompactionSlidingWindowUsagePercent": 50,
+    "contextCompactionSummaryPrompt": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
+    "contextCompactionShowCoveredMarker": true,
+    "contextCompactionAllowAutoContinue": true
+  },
+  "memoryContextConfigSchema": {
+    "type": "object",
+    "items": {
+      "limit": {
+        "type": "int",
+        "description": "每次检索长期记忆的最大条数",
+        "defaultValue": 5
+      },
+      "promptPrefix": {
+        "type": "string",
+        "description": "记忆摘要写入系统提示词时的前缀",
+        "defaultValue": "与此用户相关的记忆"
+      }
+    }
+  },
+  "kbContextConfigSchema": {
+    "type": "object",
+    "items": {
+      "limit": {
+        "type": "int",
+        "description": "每次检索系统知识的最大条数",
+        "defaultValue": 3
+      },
+      "promptPrefix": {
+        "type": "string",
+        "description": "知识摘要写入系统提示词时的前缀",
+        "defaultValue": "与当前问题相关的系统知识"
+      }
+    }
+  },
+  "conversationTitleConfigSchema": {
+    "type": "object",
+    "items": {
+      "defaultTitle": {
+        "type": "string",
+        "description": "仍命中该默认标题时才尝试自动改标题",
+        "defaultValue": "New Chat"
+      },
+      "maxMessages": {
+        "type": "int",
+        "description": "参与标题生成的最大消息条数",
+        "defaultValue": 4
+      }
+    }
+  },
+  "contextCompactionConfigSchema": {
+    "type": "object",
+    "items": {
+      "enabled": {
+        "type": "bool",
+        "description": "是否启用上下文压缩插件",
+        "defaultValue": true
+      },
+      "mode": {
+        "type": "string",
+        "description": "摘要模式的触发方式。manual 只允许手动触发，auto 会在进入模型前按预算自动触发。",
+        "defaultValue": "auto",
+        "condition": {
+          "strategy": "summary"
+        },
+        "options": [
+          {
+            "value": "auto",
+            "label": "自动"
+          },
+          {
+            "value": "manual",
+            "label": "仅手动"
+          }
+        ]
+      },
+      "strategy": {
+        "type": "string",
+        "description": "上下文治理策略。summary 会生成摘要并写回历史，sliding 只在送模时保留最近窗口。",
+        "defaultValue": "summary",
+        "options": [
+          {
+            "value": "summary",
+            "label": "摘要压缩"
+          },
+          {
+            "value": "sliding",
+            "label": "滑动窗口"
+          }
+        ]
+      },
+      "compressionThreshold": {
+        "type": "int",
+        "description": "摘要压缩的自动触发阈值，表示预计输入 token 达到可用上下文窗口百分之多少时开始压缩。",
+        "condition": {
+          "strategy": "summary"
+        },
+        "defaultValue": 72
+      },
+      "keepRecentMessages": {
+        "type": "int",
+        "description": "无论摘要压缩还是滑动窗口，都至少保留最近多少条消息",
+        "defaultValue": 6
+      },
+      "frontendMessageWindowSize": {
+        "type": "int",
+        "description": "前端本地最多缓存多少条最近消息；更早的历史仍保留在服务端，必要时可重新拉取。",
+        "defaultValue": 200
+      },
+      "reservedTokens": {
+        "type": "int",
+        "description": "为当前回复与工具链预留的 token 数",
+        "defaultValue": 12000
+      },
+      "slidingWindowUsagePercent": {
+        "type": "int",
+        "description": "滑动窗口模式下，最多允许历史消息占用可用上下文窗口的百分比。",
+        "condition": {
+          "strategy": "sliding"
+        },
+        "defaultValue": 50
+      },
+      "summaryPrompt": {
+        "type": "text",
+        "description": "摘要压缩模式生成历史摘要时附加给压缩模型的提示词",
+        "condition": {
+          "strategy": "summary"
+        },
+        "defaultValue": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。\n要求：\n- 保留事实、约束、用户偏好、未完成事项与关键决定\n- 如果有 TODO、待确认项、失败尝试，也要保留\n- 使用简洁 Markdown\n- 不要编造未出现的信息",
+        "editorMode": true
+      },
+      "showCoveredMarker": {
+        "type": "bool",
+        "description": "是否在已纳入压缩的原始消息上显示标记",
+        "condition": {
+          "strategy": "summary"
+        },
+        "defaultValue": true
+      },
+      "allowAutoContinue": {
+        "type": "bool",
+        "description": "自动压缩完成后是否继续当前主回复。关闭后本轮只整理历史，不继续回复。",
+        "condition": {
+          "strategy": "summary",
+          "mode": "auto"
+        },
+        "defaultValue": true
+      }
+    }
+  },
+  "providerRouterConfigSchema": {
+    "type": "object",
+    "items": {
+      "routing": {
+        "type": "object",
+        "description": "路由目标",
+        "items": {
+          "targetProviderId": {
+            "type": "string",
+            "description": "命中路由时切换到的 provider ID",
+            "specialType": "selectProvider"
+          },
+          "targetModelId": {
+            "type": "string",
+            "description": "命中路由时切换到的 model ID"
+          }
+        }
+      },
+      "tools": {
+        "type": "object",
+        "description": "工具过滤",
+        "hint": "留空表示不裁剪工具，继续向模型暴露当前上下文中的全部可用工具。",
+        "collapsed": true,
+        "items": {
+          "allowedToolNames": {
+            "type": "list",
+            "description": "允许暴露给模型的工具名列表",
+            "items": {
+              "type": "string"
+            },
+            "editorMode": true
+          }
+        }
+      },
+      "shortCircuit": {
+        "type": "object",
+        "description": "短路回复",
+        "hint": "配置关键字后，命中时将直接返回固定回复，不再继续请求模型。",
+        "obviousHint": true,
+        "collapsed": true,
+        "items": {
+          "shortCircuitKeyword": {
+            "type": "string",
+            "description": "当最近一条用户消息包含该关键字时，直接返回 short-circuit"
+          },
+          "shortCircuitReply": {
+            "type": "text",
+            "description": "short-circuit 时直接写回给 assistant 的文本",
+            "defaultValue": "本轮请求已由 provider-router 直接处理。"
+          }
+        }
+      }
+    }
+  },
+  "personaRouterConfigSchema": {
+    "type": "object",
+    "items": {
+      "targetPersonaId": {
+        "type": "string",
+        "description": "命中路由后要切换到的 persona ID",
+        "specialType": "selectPersona"
+      },
+      "switchKeyword": {
+        "type": "string",
+        "description": "当最近一条用户消息包含该关键字时，切换到目标 persona"
+      }
+    }
+  }
+}

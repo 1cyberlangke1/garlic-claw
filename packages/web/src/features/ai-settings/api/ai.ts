@@ -8,6 +8,7 @@ import type {
   AiProviderConnectionTestResult,
   AiProviderSummary,
   DiscoveredAiModel,
+  PluginConfigSnapshot,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 
@@ -98,4 +99,28 @@ export function getHostModelRoutingConfig() {
 
 export function updateHostModelRoutingConfig(payload: AiHostModelRoutingConfig) {
   return put<AiHostModelRoutingConfig>('/ai/host-model-routing', payload)
+}
+
+export function getRuntimeToolsConfig() {
+  return get<PluginConfigSnapshot>('/ai/runtime-tools-config')
+}
+
+export function updateRuntimeToolsConfig(values: PluginConfigSnapshot['values']) {
+  return put<PluginConfigSnapshot>('/ai/runtime-tools-config', { values })
+}
+
+export function getSubagentConfig() {
+  return get<PluginConfigSnapshot>('/ai/subagent-config')
+}
+
+export function updateSubagentConfig(values: PluginConfigSnapshot['values']) {
+  return put<PluginConfigSnapshot>('/ai/subagent-config', { values })
+}
+
+export function getContextGovernanceConfig() {
+  return get<PluginConfigSnapshot>('/ai/context-governance-config')
+}
+
+export function updateContextGovernanceConfig(values: PluginConfigSnapshot['values']) {
+  return put<PluginConfigSnapshot>('/ai/context-governance-config', { values })
 }

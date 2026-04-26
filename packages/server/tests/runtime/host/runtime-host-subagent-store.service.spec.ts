@@ -26,8 +26,8 @@ describe('RuntimeHostSubagentStoreService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      pluginDisplayName: '子代理委派',
-      pluginId: 'builtin.subagent-delegate',
+      pluginDisplayName: 'Subagent',
+      pluginId: 'subagent',
       request: {
         messages: [{ content: 'summarize', role: 'user' }],
       },
@@ -40,15 +40,15 @@ describe('RuntimeHostSubagentStoreService', () => {
     });
 
     expect(store.listOverview().subagents).toHaveLength(1);
-    expect(store.removeSession('subagent-session-1', 'builtin.subagent-delegate')).toBe(true);
+    expect(store.removeSession('subagent-session-1', 'subagent')).toBe(true);
     expect(store.listOverview().subagents).toEqual([]);
-    expect(store.listSubagents('builtin.subagent-delegate')).toEqual([]);
-    expect(store.listPendingSubagents('builtin.subagent-delegate')).toEqual([]);
+    expect(store.listSubagents('subagent')).toEqual([]);
+    expect(store.listPendingSubagents('subagent')).toEqual([]);
     expect(() => store.getSubagentOrThrow('subagent-session-1')).toThrow(
       'Subagent session not found: subagent-session-1',
     );
 
-    store.updateSubagent('builtin.subagent-delegate', created.id, (subagent, now) => {
+    store.updateSubagent('subagent', created.id, (subagent, now) => {
       subagent.finishedAt = now;
       subagent.status = 'completed';
     });

@@ -153,12 +153,12 @@ describe('RuntimePluginGovernanceService', () => {
     ]);
   });
 
-  it('reloads builtin plugins through the builtin bootstrap owner and reports governance actions', async () => {
+  it('does not expose reload for ordinary local plugins and still reports health actions', async () => {
     const { pluginBootstrapService, service } = createService();
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'local.memory-context',
+        name: 'Local Memory Context',
         runtime: 'local',
       },
       manifest: {
@@ -167,42 +167,34 @@ describe('RuntimePluginGovernanceService', () => {
         version: '1.0.0',
       } as never,
     });
-    pluginBootstrapService.markPluginOffline('builtin.memory-context');
+    pluginBootstrapService.markPluginOffline('local.memory-context');
 
-    expect(service.listSupportedActions('builtin.memory-context')).toEqual([
-      'health-check',
-      'reload',
-    ]);
+    expect(service.listSupportedActions('local.memory-context')).toEqual(['health-check']);
     await expect(
       service.runPluginAction({
         action: 'health-check',
-        pluginId: 'builtin.memory-context',
+        pluginId: 'local.memory-context',
       }),
     ).resolves.toEqual({
       accepted: true,
       action: 'health-check',
-      pluginId: 'builtin.memory-context',
+      pluginId: 'local.memory-context',
       message: '插件健康检查失败',
     });
     await expect(
       service.runPluginAction({
         action: 'reload',
-        pluginId: 'builtin.memory-context',
+        pluginId: 'local.memory-context',
       }),
-    ).resolves.toEqual({
-      accepted: true,
-      action: 'reload',
-      pluginId: 'builtin.memory-context',
-      message: '已重新装载本地插件',
-    });
-    expect(pluginBootstrapService.getPlugin('builtin.memory-context')).toMatchObject({
-      connected: true,
-      pluginId: 'builtin.memory-context',
+    ).rejects.toThrow('does not support action reload');
+    expect(pluginBootstrapService.getPlugin('local.memory-context')).toMatchObject({
+      connected: false,
+      pluginId: 'local.memory-context',
     });
     await expect(
       service.runPluginAction({
         action: 'reconnect',
-        pluginId: 'builtin.memory-context',
+        pluginId: 'local.memory-context',
       }),
     ).rejects.toThrow('does not support action reconnect');
   });
@@ -488,20 +480,15 @@ function createService() {
           throw new Error('RuntimeHostConversationMessageService is not available');
         },
       } as never,
+      {
+        executeRegisteredTool: jest.fn(),
+      } as never,
     ),
   );
   const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
   );
   const runtimeHostService = new RuntimeHostService(
     pluginBootstrapService,

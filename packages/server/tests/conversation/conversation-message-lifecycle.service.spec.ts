@@ -3,9 +3,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
+import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
+import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
 import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostConversationTodoService } from '../../src/runtime/host/runtime-host-conversation-todo.service';
+import { RuntimeHostUserContextService } from '../../src/runtime/host/runtime-host-user-context.service';
 import { ConversationMessageLifecycleService } from '../../src/conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
@@ -21,9 +24,8 @@ describe('ConversationMessageLifecycleService', () => {
     getProviderModel: jest.fn(),
     listProviders: jest.fn(),
   };
-  const aiModelExecutionService = { streamText: jest.fn() };
+  const aiModelExecutionService = { generateText: jest.fn(), streamText: jest.fn() };
   const aiVisionService = { resolveImageText: jest.fn(), resolveMessageParts: jest.fn() };
-  const pluginPersistenceService = { findPlugin: jest.fn() };
   const toolRegistryService = {
     buildToolSet: jest.fn().mockResolvedValue(undefined),
     listAvailableTools: jest.fn().mockResolvedValue([]),
@@ -38,6 +40,8 @@ describe('ConversationMessageLifecycleService', () => {
 
   let conversationTaskService: ConversationTaskService;
   let conversationId: string;
+  let contextGovernanceConfigPath: string;
+  let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let storagePath: string;
   let conversationMessagePlanningService: ConversationMessagePlanningService;
   let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
@@ -50,16 +54,21 @@ describe('ConversationMessageLifecycleService', () => {
       os.tmpdir(),
       `conversation-message-lifecycle.service.spec-${Date.now()}-${Math.random()}.json`,
     );
+    contextGovernanceConfigPath = path.join(
+      os.tmpdir(),
+      `context-governance-lifecycle.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
     process.env[envKey] = storagePath;
+    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
     jest.clearAllMocks();
     aiManagementService.getDefaultProviderSelection.mockReset();
     aiManagementService.getProvider.mockReset();
     aiManagementService.getProviderModel.mockReset();
     aiManagementService.listProviders.mockReset();
+    aiModelExecutionService.generateText.mockReset();
     aiModelExecutionService.streamText.mockReset();
     aiVisionService.resolveImageText.mockReset();
     aiVisionService.resolveMessageParts.mockReset();
-    pluginPersistenceService.findPlugin.mockReset();
     toolRegistryService.buildToolSet.mockReset();
     toolRegistryService.listAvailableTools.mockReset();
     runtimeHostPluginDispatchService.invokeHook.mockReset();
@@ -70,7 +79,11 @@ describe('ConversationMessageLifecycleService', () => {
     aiManagementService.getProvider.mockReturnValue({ defaultModel: 'gpt-5.4', id: 'openai', models: ['gpt-5.4'] });
     aiManagementService.getProviderModel.mockReturnValue({ contextLength: 128 * 1024, id: 'gpt-5.4', providerId: 'openai' });
     aiManagementService.listProviders.mockReturnValue([{ id: 'openai' }]);
-    pluginPersistenceService.findPlugin.mockReturnValue(null);
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: '压缩后的历史摘要',
+    });
     toolRegistryService.buildToolSet.mockResolvedValue(undefined);
     toolRegistryService.listAvailableTools.mockResolvedValue([]);
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([]);
@@ -86,11 +99,17 @@ describe('ConversationMessageLifecycleService', () => {
       new RuntimeToolPermissionService(),
       runtimeHostConversationTodoService,
     );
+    contextGovernanceSettingsService = new ContextGovernanceSettingsService();
     conversationMessagePlanningService = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
-      aiManagementService as never,
       aiVisionService as never,
-      pluginPersistenceService as never,
+      new ContextGovernanceService(
+        aiManagementService as never,
+        aiModelExecutionService as never,
+        contextGovernanceSettingsService,
+        runtimeHostConversationRecordService,
+        new RuntimeHostUserContextService(),
+      ),
       runtimeHostConversationRecordService,
       personaService as never,
       toolRegistryService as never,
@@ -125,9 +144,13 @@ describe('ConversationMessageLifecycleService', () => {
 
   afterEach(() => {
     delete process.env[envKey];
+    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
     try {
       if (fs.existsSync(storagePath)) {
         fs.unlinkSync(storagePath);
+      }
+      if (fs.existsSync(contextGovernanceConfigPath)) {
+        fs.unlinkSync(contextGovernanceConfigPath);
       }
     } catch {
       // 忽略临时文件清理失败，避免影响测试主语义。
@@ -166,15 +189,10 @@ describe('ConversationMessageLifecycleService', () => {
   });
 
   it('can read context window preview after a real message lifecycle round', async () => {
-    pluginPersistenceService.findPlugin.mockReturnValue({
-      configValues: {
-        enabled: true,
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
         strategy: 'summary',
       },
-      connected: true,
-      conversationScopes: {},
-      defaultEnabled: true,
-      pluginId: 'builtin.context-compaction',
     });
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '真正的模型回复'));
 
@@ -621,21 +639,24 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
   })
 
-  it('short-circuits the conversation mainline for plugin message commands', async () => {
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.context-compaction', ['message:received'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
-      action: 'short-circuit',
-      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
-      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
-      modelId: 'context-compaction-command',
-      providerId: 'system',
-      reason: 'context-compaction:command',
+  it('short-circuits the conversation mainline for internal context governance commands', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        keepRecentMessages: 1,
+        strategy: 'summary',
+      },
     });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '第一条历史消息'),
+      createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
+      createHistoryMessage('history-3', 'user', '第三条历史追问'),
+    ]);
 
     const started = await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
+    const tailMessages = readConversation(runtimeHostConversationRecordService).messages.slice(-2);
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
-    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+    expect(tailMessages).toMatchObject([
       {
         content: '/compact',
         metadataJson: JSON.stringify({
@@ -667,8 +688,6 @@ describe('ConversationMessageLifecycleService', () => {
             },
           ],
         }),
-        model: 'context-compaction-command',
-        provider: 'system',
         role: 'display',
         status: 'completed',
       },
@@ -677,20 +696,22 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'display' });
   });
 
-  it('still allows plugin message commands when llm auto reply is turned off', async () => {
+  it('still allows internal context governance commands when llm auto reply is turned off', async () => {
     runtimeHostConversationRecordService.writeConversationHostServices(conversationId, {
       llmEnabled: false,
       sessionEnabled: true,
     });
-    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.context-compaction', ['message:received'])]);
-    runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({
-      action: 'short-circuit',
-      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
-      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
-      modelId: 'context-compaction-command',
-      providerId: 'system',
-      reason: 'context-compaction:command',
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        keepRecentMessages: 1,
+        strategy: 'summary',
+      },
     });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '第一条历史消息'),
+      createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
+      createHistoryMessage('history-3', 'user', '第三条历史追问'),
+    ]);
 
     await expect(
       startAndWait(service, conversationTaskService, { content: '/compress' }, 'user-1'),
@@ -798,5 +819,17 @@ function streamed(modelId: string, providerId: string, text: string) {
     })(),
     modelId,
     providerId,
+  };
+}
+
+function createHistoryMessage(id: string, role: 'assistant' | 'user', content: string) {
+  return {
+    content,
+    createdAt: '2026-04-25T00:00:00.000Z',
+    id,
+    parts: [{ text: content, type: 'text' as const }],
+    role,
+    status: 'completed',
+    updatedAt: '2026-04-25T00:00:00.000Z',
   };
 }

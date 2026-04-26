@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { AiHostModelRoutingConfig, AiProviderMode, VisionFallbackConfig } from '@garlic-claw/shared';
+import type { AiHostModelRoutingConfig, AiProviderMode } from '@garlic-claw/shared';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
 import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
@@ -96,7 +96,12 @@ function readAiProviderStorageFile(filePath: string): AiProviderStorageFile | nu
       driver,
       id: providerId,
       mode,
-      models: Array.isArray(parsed.models) ? [...new Set(parsed.models.flatMap((entry) => normalizeOptionalText(entry) ? [normalizeOptionalText(entry)!] : []))] : [],
+      models: Array.isArray(parsed.models)
+        ? [...new Set(parsed.models.flatMap((entry) => {
+          const value = normalizeOptionalText(entry);
+          return value ? [value] : [];
+        }))]
+        : [],
       name,
       persistedModels: Array.isArray(parsed.persistedModels) ? parsed.persistedModels.flatMap(normalizeStoredAiModelConfig) : [],
     };

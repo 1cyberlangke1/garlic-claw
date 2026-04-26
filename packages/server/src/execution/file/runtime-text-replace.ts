@@ -10,13 +10,13 @@ const ESCAPES: Record<string, string> = { n: '\n', t: '\t', r: '\r', '\'': '\'',
 const NOT_FOUND_MESSAGE = ['edit.oldString 未在文件中找到。', '请重新读取当前文件，确保 oldString 与文件中的文本一致。', '如果目标片段重复出现，请补更多上下文，至少包含前后几行稳定锚点。'].join(' ');
 
 export function replaceRuntimeText(content: string, oldString: string, newString: string, replaceAll = false): RuntimeTextReplaceResult {
-  if (oldString === newString) throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');
+  if (oldString === newString) {throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');}
   const source = readSource(content);
   for (const strategy of STRATEGIES) {
     const matches = dedupeMatches(readStrategyMatches(strategy, content, oldString, source));
-    if (matches.length === 0) continue;
-    if (replaceAll) return replaceAllMatches(content, oldString, newString, strategy, matches);
-    if (matches.length > 1) throw new BadRequestException(readAmbiguousMessage(strategy, matches, false));
+    if (matches.length === 0) {continue;}
+    if (replaceAll) {return replaceAllMatches(content, oldString, newString, strategy, matches);}
+    if (matches.length > 1) {throw new BadRequestException(readAmbiguousMessage(strategy, matches, false));}
     const match = matches[0], replacement = normalizeReplacement(strategy, match.candidate, oldString, newString);
     return { content: `${content.slice(0, match.startIndex)}${replacement}${content.slice(match.startIndex + match.candidate.length)}`, occurrences: 1, strategy };
   }
@@ -25,7 +25,7 @@ export function replaceRuntimeText(content: string, oldString: string, newString
 
 function replaceAllMatches(content: string, oldString: string, newString: string, strategy: RuntimeTextReplaceStrategy, matches: RuntimeTextMatch[]): RuntimeTextReplaceResult {
   const candidates = [...new Set(matches.map((match) => match.candidate))];
-  if (candidates.length > 1) throw new BadRequestException(readAmbiguousMessage(strategy, matches, true));
+  if (candidates.length > 1) {throw new BadRequestException(readAmbiguousMessage(strategy, matches, true));}
   const candidate = candidates[0], replacement = normalizeReplacement(strategy, candidate, oldString, newString);
   return { content: content.split(candidate).join(replacement), occurrences: countOccurrences(content, candidate), strategy };
 }
@@ -62,11 +62,11 @@ function readSource(content: string): RuntimeTextSource {
 }
 
 function readExactMatches(content: string, target: string): RuntimeTextMatch[] {
-  if (!target.length) return [];
+  if (!target.length) {return [];}
   const matches: RuntimeTextMatch[] = [];
   for (let index = 0; index <= content.length;) {
     const startIndex = content.indexOf(target, index);
-    if (startIndex < 0) break;
+    if (startIndex < 0) {break;}
     matches.push({ candidate: target, line: startIndex <= 0 ? 1 : content.slice(0, startIndex).split('\n').length, startIndex });
     index = startIndex + target.length;
   }
@@ -84,32 +84,32 @@ function readNormalizedMatches(find: string, source: RuntimeTextSource, normaliz
 }
 
 function readWindowMatches(source: RuntimeTextSource, find: string, findLines: string[], matches: (block: string[], lineIndex: number) => boolean): RuntimeTextMatch[] {
-  if (findLines.length === 0 || findLines.length > source.lines.length) return [];
+  if (findLines.length === 0 || findLines.length > source.lines.length) {return [];}
   const result: RuntimeTextMatch[] = [];
   for (let lineIndex = 0; lineIndex <= source.lines.length - findLines.length; lineIndex += 1) {
     const block = source.lines.slice(lineIndex, lineIndex + findLines.length);
-    if (matches(block, lineIndex)) result.push({ candidate: find.endsWith('\n') ? `${block.join('\n')}\n` : block.join('\n'), line: lineIndex + 1, startIndex: source.starts[lineIndex] ?? 0 });
+    if (matches(block, lineIndex)) {result.push({ candidate: find.endsWith('\n') ? `${block.join('\n')}\n` : block.join('\n'), line: lineIndex + 1, startIndex: source.starts[lineIndex] ?? 0 });}
   }
   return result;
 }
 
 function readAnchoredMatches(find: string, source: RuntimeTextSource, fixedLength: boolean): RuntimeTextMatch[] {
   const lines = splitFindLines(find);
-  if (lines.length < 3) return [];
+  if (lines.length < 3) {return [];}
   const first = lines[0].trim(), last = lines.at(-1)?.trim() ?? '';
   let best = 0.5;
   const matches: RuntimeTextMatch[] = [];
   for (let start = 0; start < source.lines.length; start += 1) {
-    if (source.lines[start].trim() !== first) continue;
+    if (source.lines[start].trim() !== first) {continue;}
     for (let end = start + (fixedLength ? lines.length - 1 : 2); end < source.lines.length; end += 1) {
-      if (fixedLength && end > start + lines.length - 1) break;
-      if (source.lines[end].trim() !== last) continue;
+      if (fixedLength && end > start + lines.length - 1) {break;}
+      if (source.lines[end].trim() !== last) {continue;}
       const block = source.lines.slice(start, end + 1);
-      if (fixedLength && block.length !== lines.length) continue;
+      if (fixedLength && block.length !== lines.length) {continue;}
       const score = readAnchorSimilarity(block, lines, fixedLength);
-      if (score < 0.5) continue;
+      if (score < 0.5) {continue;}
       const match = { candidate: find.endsWith('\n') ? `${block.join('\n')}\n` : block.join('\n'), line: start + 1, startIndex: source.starts[start] ?? 0 };
-      if (score > best + 0.0001) { best = score; matches.length = 0; matches.push(match); } else if (Math.abs(score - best) < 0.0001) matches.push(match);
+      if (score > best + 0.0001) { best = score; matches.length = 0; matches.push(match); } else if (Math.abs(score - best) < 0.0001) {matches.push(match);}
       break;
     }
   }
@@ -118,13 +118,13 @@ function readAnchoredMatches(find: string, source: RuntimeTextSource, fixedLengt
 
 function readAnchorSimilarity(block: string[], find: string[], fixedLength: boolean): number {
   const middle = Math.min(block.length, find.length) - 2;
-  if (middle <= 0) return 1;
+  if (middle <= 0) {return 1;}
   let matched = 0, total = 0;
   for (let index = 1; index <= middle; index += 1) {
     const left = block[index].trim(), right = find[index].trim();
     if (fixedLength) {
-      if (!left.length && !right.length) continue;
-      total += 1; if (left === right) matched += 1;
+      if (!left.length && !right.length) {continue;}
+      total += 1; if (left === right) {matched += 1;}
       continue;
     }
     const maxLength = Math.max(left.length, right.length);
@@ -139,7 +139,7 @@ function normalizeReplacement(strategy: RuntimeTextReplaceStrategy, candidate: s
 
 function normalizeReplacementLineEndings(candidate: string, replacement: string): string {
   const replacementEndings = Array.from(replacement.matchAll(/\r?\n/g), (match) => match[0]), candidateEndings = Array.from(candidate.matchAll(/\r?\n/g), (match) => match[0]);
-  if (replacementEndings.length === 0 || candidateEndings.length === 0) return replacement;
+  if (replacementEndings.length === 0 || candidateEndings.length === 0) {return replacement;}
   const preferred = candidateEndings.filter((lineEnding) => lineEnding === '\r\n').length * 2 >= candidateEndings.length ? '\r\n' : '\n';
   const endings = candidateEndings.length === replacementEndings.length ? candidateEndings : Array.from({ length: replacementEndings.length }, () => preferred);
   return replacement.split(/\r?\n/g).reduce((text, part, index) => index === 0 ? part : `${text}${endings[index - 1]}${part}`, '');
@@ -147,7 +147,7 @@ function normalizeReplacementLineEndings(candidate: string, replacement: string)
 
 function normalizeIndentationReplacement(candidate: string, target: string, replacement: string): string {
   const candidateIndent = readCommonIndentation(normalizeLineEndings(candidate)), targetIndent = readCommonIndentation(normalizeLineEndings(target));
-  if (candidateIndent === targetIndent) return normalizeLineEndings(replacement);
+  if (candidateIndent === targetIndent) {return normalizeLineEndings(replacement);}
   return normalizeLineEndings(replacement).split('\n').map((line) => !line.trim().length ? line : !targetIndent.length ? `${candidateIndent}${line}` : line.startsWith(targetIndent) ? `${candidateIndent}${line.slice(targetIndent.length)}` : line).join('\n');
 }
 
@@ -172,7 +172,7 @@ function dedupeMatches(matches: RuntimeTextMatch[]): RuntimeTextMatch[] {
   const seen = new Set<string>();
   return matches.filter((match) => {
     const key = `${match.startIndex}:${match.candidate}`;
-    if (!match.candidate.length || match.startIndex < 0 || seen.has(key)) return false;
+    if (!match.candidate.length || match.startIndex < 0 || seen.has(key)) {return false;}
     seen.add(key);
     return true;
   });
@@ -182,7 +182,7 @@ function countOccurrences(content: string, target: string): number {
   let count = 0, index = 0;
   while (target.length > 0 && index <= content.length) {
     const matched = content.indexOf(target, index);
-    if (matched < 0) break;
+    if (matched < 0) {break;}
     count += 1; index = matched + target.length;
   }
   return count;
@@ -201,8 +201,8 @@ function unescapeValue(value: string): string {
 }
 
 function readLevenshtein(left: string, right: string): number {
-  if (!left.length || !right.length) return Math.max(left.length, right.length);
+  if (!left.length || !right.length) {return Math.max(left.length, right.length);}
   const matrix = Array.from({ length: left.length + 1 }, (_, row) => Array.from({ length: right.length + 1 }, (_, column) => row === 0 ? column : column === 0 ? row : 0));
-  for (let row = 1; row <= left.length; row += 1) for (let column = 1; column <= right.length; column += 1) matrix[row][column] = Math.min(matrix[row - 1][column] + 1, matrix[row][column - 1] + 1, matrix[row - 1][column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1));
+  for (let row = 1; row <= left.length; row += 1) {for (let column = 1; column <= right.length; column += 1) {matrix[row][column] = Math.min(matrix[row - 1][column] + 1, matrix[row][column - 1] + 1, matrix[row - 1][column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1));}}
   return matrix[left.length][right.length];
 }

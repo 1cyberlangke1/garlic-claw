@@ -7,6 +7,7 @@ import type {
   AiProviderConfig,
   AiProviderSummary,
   DiscoveredAiModel,
+  PluginConfigSnapshot,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import {
@@ -15,6 +16,9 @@ import {
   discoverAiProviderModels,
   getAiProvider,
   getHostModelRoutingConfig,
+  getContextGovernanceConfig,
+  getRuntimeToolsConfig,
+  getSubagentConfig,
   getVisionFallbackConfig,
   listAiModels,
   listAiProviderCatalog,
@@ -23,6 +27,9 @@ import {
   testAiProviderConnection,
   updateAiModelCapabilities,
   updateHostModelRoutingConfig,
+  updateContextGovernanceConfig,
+  updateRuntimeToolsConfig,
+  updateSubagentConfig,
   updateVisionFallbackConfig,
   upsertAiModel,
   upsertAiProvider,
@@ -78,6 +85,9 @@ export interface ProviderSettingsBaseData {
   providers: AiProviderSummary[]
   visionConfig: VisionFallbackConfig
   hostModelRoutingConfig: AiHostModelRoutingConfig
+  runtimeToolsConfigSnapshot: PluginConfigSnapshot
+  subagentConfigSnapshot: PluginConfigSnapshot
+  contextGovernanceConfigSnapshot: PluginConfigSnapshot
 }
 
 /**
@@ -93,11 +103,14 @@ export interface ProviderSettingsSelectionData {
  * @returns 官方目录、provider 列表和视觉配置
  */
 export async function loadProviderSettingsBaseData(): Promise<ProviderSettingsBaseData> {
-  const [catalog, providers, visionConfig, hostModelRoutingConfig] = await Promise.all([
+  const [catalog, providers, visionConfig, hostModelRoutingConfig, runtimeToolsConfigSnapshot, subagentConfigSnapshot, contextGovernanceConfigSnapshot] = await Promise.all([
     listAiProviderCatalog(),
     listAiProviders(),
     getVisionFallbackConfig(),
     getHostModelRoutingConfig(),
+    getRuntimeToolsConfig(),
+    getSubagentConfig(),
+    getContextGovernanceConfig(),
   ])
 
   return {
@@ -105,6 +118,9 @@ export async function loadProviderSettingsBaseData(): Promise<ProviderSettingsBa
     providers,
     visionConfig,
     hostModelRoutingConfig,
+    runtimeToolsConfigSnapshot,
+    subagentConfigSnapshot,
+    contextGovernanceConfigSnapshot,
   }
 }
 
@@ -219,6 +235,24 @@ export function deleteProviderModel(providerId: string, modelId: string) {
  */
 export function saveProviderDefaultModel(providerId: string, modelId: string) {
   return setAiProviderDefaultModel(providerId, modelId)
+}
+
+export function saveRuntimeToolsConfig(
+  values: PluginConfigSnapshot['values'],
+) {
+  return updateRuntimeToolsConfig(values)
+}
+
+export function saveSubagentConfig(
+  values: PluginConfigSnapshot['values'],
+) {
+  return updateSubagentConfig(values)
+}
+
+export function saveContextGovernanceConfig(
+  values: PluginConfigSnapshot['values'],
+) {
+  return updateContextGovernanceConfig(values)
 }
 
 /**

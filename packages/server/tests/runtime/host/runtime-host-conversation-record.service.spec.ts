@@ -83,7 +83,7 @@ describe('RuntimeHostConversationRecordService', () => {
     service.replaceMessages(conversationId, [{
       content: 'hello',
       createdAt: '2026-04-11T00:00:00.000Z',
-      id: '11111111-1111-4111-8111-111111111111',
+      id: '019dc88c-1a10-7d45-9c5b-c748bc2ce1b4',
       role: 'assistant',
       status: 'completed',
       updatedAt: '2026-04-11T00:00:00.000Z',
@@ -98,7 +98,7 @@ describe('RuntimeHostConversationRecordService', () => {
           content: 'hello',
           createdAt: '2026-04-11T00:00:00.000Z',
           error: null,
-          id: '11111111-1111-4111-8111-111111111111',
+          id: '019dc88c-1a10-7d45-9c5b-c748bc2ce1b4',
           metadataJson: null,
           model: null,
           partsJson: null,
@@ -448,14 +448,15 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('drops legacy todos from conversation storage payload after reload', () => {
     process.env[conversationsEnvKey] = storagePath;
+    const legacyConversationId = '019dc88c-1a11-7806-a2ff-9f4ab8d4fb47';
     fs.writeFileSync(storagePath, JSON.stringify({
       conversations: {
-        'conversation-1': {
+        [legacyConversationId]: {
           createdAt: '2026-04-10T00:00:00.000Z',
           hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
-          id: 'conversation-1',
+          id: legacyConversationId,
           messages: [],
-          revision: 'conversation-1:seed:0',
+          revision: `${legacyConversationId}:seed:0`,
           revisionVersion: 0,
           title: 'Legacy Chat',
           updatedAt: '2026-04-10T00:00:00.000Z',
@@ -463,7 +464,7 @@ describe('RuntimeHostConversationRecordService', () => {
         },
       },
       todos: {
-        'conversation-1': [
+        [legacyConversationId]: [
           { content: 'legacy todo', priority: 'high', status: 'pending' },
         ],
       },
@@ -472,13 +473,13 @@ describe('RuntimeHostConversationRecordService', () => {
     const service = new RuntimeHostConversationRecordService();
     const todoService = new RuntimeHostConversationTodoService(service);
 
-    expect(todoService.readSessionTodo('conversation-1')).toEqual([
+    expect(todoService.readSessionTodo(legacyConversationId)).toEqual([
       { content: 'legacy todo', priority: 'high', status: 'pending' },
     ]);
     expect(JSON.parse(fs.readFileSync(storagePath, 'utf-8'))).toEqual({
       conversations: {
-        'conversation-1': expect.objectContaining({
-          id: 'conversation-1',
+        [legacyConversationId]: expect.objectContaining({
+          id: legacyConversationId,
           title: 'Legacy Chat',
         }),
       },
@@ -499,6 +500,50 @@ describe('RuntimeHostConversationRecordService', () => {
           title: 'Legacy Chat',
           updatedAt: '2026-04-10T00:00:00.000Z',
           userId: 'legacy-user',
+        },
+      },
+    }, null, 2), 'utf-8');
+
+    const service = new RuntimeHostConversationRecordService();
+
+    expect(service.listConversations(SINGLE_USER_ID)).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(storagePath, 'utf-8'))).toEqual({
+      conversations: {},
+    });
+  });
+
+  it('deletes persisted legacy conversations with non-v7 conversation or message ids', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    fs.writeFileSync(storagePath, JSON.stringify({
+      conversations: {
+        'conversation-legacy': {
+          createdAt: '2026-04-10T00:00:00.000Z',
+          hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
+          id: 'conversation-legacy',
+          messages: [],
+          revision: 'conversation-legacy:seed:0',
+          revisionVersion: 0,
+          title: 'Legacy Chat',
+          updatedAt: '2026-04-10T00:00:00.000Z',
+          userId: SINGLE_USER_ID,
+        },
+        '0196f0d8-4d30-7b0a-9f4f-20f6db0ad250': {
+          createdAt: '2026-04-10T00:00:00.000Z',
+          hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
+          id: '0196f0d8-4d30-7b0a-9f4f-20f6db0ad250',
+          messages: [{
+            content: 'legacy message',
+            createdAt: '2026-04-10T00:00:00.000Z',
+            id: '11111111-1111-4111-8111-111111111111',
+            role: 'assistant',
+            status: 'completed',
+            updatedAt: '2026-04-10T00:00:00.000Z',
+          }],
+          revision: '0196f0d8-4d30-7b0a-9f4f-20f6db0ad250:seed:0',
+          revisionVersion: 0,
+          title: 'Legacy Message Chat',
+          updatedAt: '2026-04-10T00:00:00.000Z',
+          userId: SINGLE_USER_ID,
         },
       },
     }, null, 2), 'utf-8');

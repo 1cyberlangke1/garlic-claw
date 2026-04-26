@@ -103,40 +103,13 @@ function readPersonaAvatarAlt(name?: string | null) {
             : '先在左侧选中一个对话，再把人设应用到该会话。' }}
         </p>
       </article>
-
-      <article class="hero-card">
-        <span class="hero-kicker">Selected Persona</span>
-        <div v-if="editorMode === 'edit' && selectedPersona" class="persona-identity">
-          <div class="persona-avatar persona-avatar-large" data-persona-avatar="selected-hero">
-            <img v-if="selectedPersona.avatar" :src="selectedPersona.avatar" :alt="readPersonaAvatarAlt(selectedPersona.name)" class="persona-avatar-image" />
-            <span v-else>{{ readPersonaAvatarLabel(selectedPersona.name) }}</span>
-          </div>
-          <div class="persona-identity-copy">
-            <h2>{{ selectedPersona.name }}</h2>
-            <p>
-              当前选中：
-              <strong>{{ selectedPersona.id }}</strong>
-              <span v-if="selectedPersona.isDefault" class="persona-badge">默认</span>
-            </p>
-          </div>
-        </div>
-        <h2 v-else>{{ editorMode === 'create' ? '创建新的人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
-        <p v-if="editorMode === 'edit' && selectedPersona">
-          当前选中：
-          <strong>{{ selectedPersona.id }}</strong>
-          <span v-if="selectedPersona.isDefault" class="persona-badge">默认</span>
-        </p>
-        <p v-else-if="editorMode === 'create'">
-          在左侧选中已有的人设，或者直接新建一个。
-        </p>
-        <p v-if="deleteResult" class="hero-hint">
-          已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
-          <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
-        </p>
-      </article>
     </section>
 
     <p v-if="error" class="page-error">{{ error }}</p>
+    <p v-if="deleteResult" class="page-hint">
+      已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
+      <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
+    </p>
 
     <div class="persona-grid">
       <section class="persona-list-card">
@@ -442,7 +415,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .hero-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .hero-card,
@@ -531,6 +504,11 @@ function readPersonaAvatarAlt(name?: string | null) {
 .page-error {
   margin: 0;
   color: var(--danger);
+}
+
+.page-hint {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .persona-grid {

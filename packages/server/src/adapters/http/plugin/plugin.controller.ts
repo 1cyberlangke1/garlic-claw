@@ -1,14 +1,13 @@
-import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginCommandCatalogVersion, type PluginCommandOverview, type PluginLlmPreference, type PluginRemoteDescriptor, type PluginSubagentDetail, type PluginSubagentOverview, type PluginSubagentTypeSummary } from '@garlic-claw/shared';
+import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginLlmPreference, type PluginRemoteDescriptor } from '@garlic-claw/shared';
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/http-auth';
-import { buildPluginCommandCatalogVersion, buildPluginCommandOverview, buildPluginInfo, listPluginCommands } from '../../../plugin/persistence/plugin-read-model';
+import { buildPluginInfo } from '../../../plugin/persistence/plugin-read-model';
 import { PluginPersistenceService } from '../../../plugin/persistence/plugin-persistence.service';
 import { buildRemotePluginConnectionInfo, PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from '../../../runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../runtime/host/runtime-host-plugin-runtime.service';
-import { RuntimeHostSubagentRunnerService } from '../../../runtime/host/runtime-host-subagent-runner.service';
 import { RuntimePluginGovernanceService } from '../../../runtime/kernel/runtime-plugin-governance.service';
 import { readPluginEventQuery, readPluginRouteInvocation, writePluginRouteResponse } from '../http-request.codec';
 
@@ -31,7 +30,7 @@ interface PluginEventQueryInput { limit?: string; level?: string; type?: string;
 
 @Controller()
 export class PluginController {
-  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService) {}
+  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService) {}
 
   @Get('plugins')
   listPlugins() { return this.runtimePluginGovernanceService.listPlugins().map((plugin) => buildPluginInfo(plugin, this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId))); }
@@ -152,30 +151,6 @@ export class PluginController {
 
   @Delete('plugins/:pluginId/sessions/:conversationId')
   finishPluginConversationSession(@Param('pluginId') pluginId: string, @Param('conversationId') conversationId: string) { return this.runtimeHostConversationRecordService.finishPluginConversationSession(pluginId, conversationId); }
-
-  @Get('plugin-commands/overview')
-  async listCommandOverview(): Promise<PluginCommandOverview> {
-    const commands = this.runtimePluginGovernanceService.listPlugins().flatMap((plugin) => listPluginCommands(plugin, plugin.connected));
-    return buildPluginCommandOverview(commands);
-  }
-
-  @Get('plugin-commands/version')
-  async getCommandCatalogVersion(): Promise<PluginCommandCatalogVersion> {
-    const commands = this.runtimePluginGovernanceService.listPlugins().flatMap((plugin) => listPluginCommands(plugin, plugin.connected));
-    return buildPluginCommandCatalogVersion(commands);
-  }
-
-  @Get('plugin-subagents/overview')
-  listSubagentOverview(): PluginSubagentOverview { return this.runtimeHostSubagentRunnerService.listOverview(); }
-
-  @Get('plugin-subagents/types')
-  listSubagentTypes(): PluginSubagentTypeSummary[] { return this.runtimeHostSubagentRunnerService.listTypes(); }
-
-  @Get('plugin-subagents/:sessionId')
-  getSubagent(@Param('sessionId') sessionId: string): PluginSubagentDetail { return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(sessionId); }
-
-  @Delete('plugin-subagents/:sessionId')
-  removeSubagent(@Param('sessionId') sessionId: string): Promise<boolean> { return this.runtimeHostSubagentRunnerService.removeSubagentSession(sessionId); }
 
   private recordPluginEvent(inputPluginId: string, input: {
     level?: 'error' | 'info' | 'warn';

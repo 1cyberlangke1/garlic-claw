@@ -1,5 +1,5 @@
 import type { JsonValue, PluginManifest } from "@garlic-claw/shared";
-import builtinManifestData from "./builtin-manifest-data.json";
+import authoringConfigData from "./authoring-config-data.json";
 import {
   pickOptionalNumberFields,
   pickOptionalStringFields,
@@ -25,30 +25,28 @@ export interface PluginContextCompactionConfig {
 }
 
 export const CONTEXT_COMPACTION_DEFAULT_MODE =
-  builtinManifestData.defaults.contextCompactionMode as PluginContextCompactionMode;
+  authoringConfigData.defaults.contextCompactionMode as PluginContextCompactionMode;
 export const CONTEXT_COMPACTION_DEFAULT_STRATEGY =
-  builtinManifestData.defaults
+  authoringConfigData.defaults
     .contextCompactionStrategy as PluginContextCompactionStrategy;
 export const CONTEXT_COMPACTION_DEFAULT_THRESHOLD =
-  builtinManifestData.defaults.contextCompactionCompressionThreshold;
+  authoringConfigData.defaults.contextCompactionCompressionThreshold;
 export const CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT =
-  builtinManifestData.defaults.contextCompactionKeepRecentMessages;
+  authoringConfigData.defaults.contextCompactionKeepRecentMessages;
 export const CONTEXT_COMPACTION_DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE =
-  builtinManifestData.defaults.contextCompactionFrontendMessageWindowSize;
+  authoringConfigData.defaults.contextCompactionFrontendMessageWindowSize;
 export const CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS =
-  builtinManifestData.defaults.contextCompactionReservedTokens;
+  authoringConfigData.defaults.contextCompactionReservedTokens;
 export const CONTEXT_COMPACTION_DEFAULT_SLIDING_WINDOW_USAGE_PERCENT =
-  builtinManifestData.defaults.contextCompactionSlidingWindowUsagePercent;
+  authoringConfigData.defaults.contextCompactionSlidingWindowUsagePercent;
 export const CONTEXT_COMPACTION_DEFAULT_SUMMARY_PROMPT =
-  builtinManifestData.defaults.contextCompactionSummaryPrompt;
+  authoringConfigData.defaults.contextCompactionSummaryPrompt;
 export const CONTEXT_COMPACTION_DEFAULT_SHOW_COVERED_MARKER =
-  builtinManifestData.defaults.contextCompactionShowCoveredMarker;
+  authoringConfigData.defaults.contextCompactionShowCoveredMarker;
 export const CONTEXT_COMPACTION_DEFAULT_ALLOW_AUTO_CONTINUE =
-  builtinManifestData.defaults.contextCompactionAllowAutoContinue;
+  authoringConfigData.defaults.contextCompactionAllowAutoContinue;
 export const CONTEXT_COMPACTION_CONFIG_SCHEMA =
-  builtinManifestData.contextCompactionConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
-export const CONTEXT_COMPACTION_MANIFEST =
-  builtinManifestData.contextCompactionManifest as unknown as PluginManifest;
+  authoringConfigData.contextCompactionConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
 
 export function readContextCompactionConfig(
   value: JsonValue,

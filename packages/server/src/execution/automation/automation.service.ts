@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, JsonObject, JsonValue, TriggerConfig } from '@garlic-claw/shared';
+import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, JsonObject, JsonValue, TriggerConfig, ToolSourceKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { asJsonValue, cloneJsonValue, readJsonObject, readRequiredString } from '../../runtime/host/runtime-host-values';
@@ -180,9 +180,11 @@ function readAutomationAction(value: JsonValue, index: number): ActionConfig {
     const params = action.params === undefined ? undefined : readJsonObject(action.params);
     const capability = typeof action.capability === 'string' && action.capability.trim().length > 0 ? action.capability : null;
     const plugin = typeof action.plugin === 'string' && action.plugin.trim().length > 0 ? action.plugin : null;
+    const sourceId = typeof action.sourceId === 'string' && action.sourceId.trim().length > 0 ? action.sourceId.trim() : null;
+    const sourceKind = readAutomationToolSourceKind(action.sourceKind);
     if (action.params !== undefined && !params) { throw new BadRequestException(`actions[${index}].params must be an object`); }
-    if (!capability || !plugin) { throw new BadRequestException(`actions[${index}].type is missing required fields`); }
-    return { capability, ...(params ? { params } : {}), plugin, type: action.type };
+    if (!capability || (!plugin && !(sourceKind && sourceId))) { throw new BadRequestException(`actions[${index}].type is missing required fields`); }
+    return { capability, ...(params ? { params } : {}), ...(plugin ? { plugin } : {}), ...(sourceId ? { sourceId } : {}), ...(sourceKind ? { sourceKind } : {}), type: action.type };
   }
   const target = action.target ? readJsonObject(action.target) : null;
   if (action.target && (!target || target.type !== 'conversation' || typeof target.id !== 'string')) {
@@ -197,6 +199,12 @@ function readAutomationAction(value: JsonValue, index: number): ActionConfig {
 
 function readAutomationRunStatus(result: JsonValue): string {
   return typeof result === 'object' && result !== null && typeof (result as { status?: unknown }).status === 'string' ? (result as { status: string }).status : 'success';
+}
+
+function readAutomationToolSourceKind(value: unknown): ToolSourceKind | null {
+  return value === 'internal' || value === 'plugin' || value === 'mcp' || value === 'skill'
+    ? value
+    : null;
 }
 
 function readCronInterval(expr: string): number | null {

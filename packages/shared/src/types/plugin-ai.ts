@@ -235,7 +235,7 @@ export interface PluginAvailableToolSummary {
   parameters: Record<string, PluginParamSchema>;
   pluginId?: string;
   runtimeKind?: PluginRuntimeKind;
-  sourceKind?: 'plugin' | 'mcp' | 'skill';
+  sourceKind?: 'internal' | 'plugin' | 'mcp' | 'skill';
   sourceId?: string;
 }
 

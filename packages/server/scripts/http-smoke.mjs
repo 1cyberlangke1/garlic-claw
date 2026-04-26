@@ -848,6 +848,30 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(skillToolResults) && skillToolResults.some((entry) => entry?.toolName === 'skill'), 'Expected skill loop assistant message to persist native skill tool result');
   });
 
+  await runStep('ai.subagent-config.get', async () => {
+    const config = await getJson(apiBase, '/ai/subagent-config');
+    ensure(typeof config === 'object' && config !== null, 'Expected subagent config snapshot');
+    ensure(config.schema?.items?.llm?.type === 'object', 'Expected subagent llm schema');
+    ensure(config.schema?.items?.session?.type === 'object', 'Expected subagent session schema');
+  });
+
+  await runStep('ai.subagent-config.put', async () => {
+    const config = await putJson(apiBase, '/ai/subagent-config', {
+      body: {
+        values: {
+          llm: {
+            targetSubagentType: 'general',
+          },
+          session: {
+            maxConversationSubagents: 6,
+          },
+        },
+      },
+    });
+    ensure(config.values?.llm?.targetSubagentType === 'general', 'Expected subagent targetSubagentType to persist');
+    ensure(config.values?.session?.maxConversationSubagents === 6, 'Expected subagent maxConversationSubagents to persist');
+  });
+
   await runStep('chat.messages.subagent-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
@@ -975,16 +999,16 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(webFetchToolResults) && webFetchToolResults.some((entry) => entry?.toolName === 'webfetch'), 'Expected webfetch loop assistant message to persist native webfetch tool result');
   });
 
-  await runStep('plugins.runtime-tools.config.get', async () => {
-    const config = await getJson(apiBase, '/plugins/builtin.runtime-tools/config');
+  await runStep('ai.runtime-tools-config.get', async () => {
+    const config = await getJson(apiBase, '/ai/runtime-tools-config');
     ensure(typeof config === 'object' && config !== null, 'Expected runtime tools config snapshot');
     ensure(config.schema?.items?.shellBackend?.type === 'string', 'Expected runtime tools shell backend schema');
     ensure(Array.isArray(config.schema?.items?.shellBackend?.options), 'Expected runtime tools shell backend options');
     ensure(config.schema?.items?.bashOutput?.type === 'object', 'Expected runtime tools bash output schema');
   });
 
-  await runStep('plugins.runtime-tools.config.put.compact', async () => {
-    const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
+  await runStep('ai.runtime-tools-config.put.compact', async () => {
+    const config = await putJson(apiBase, '/ai/runtime-tools-config', {
       body: {
         values: {
           shellBackend: readSmokeRuntimeToolsShellBackendKind(),
@@ -1041,8 +1065,8 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(!bashToolContent.includes('output truncated'), 'Expected bash config loop follow-up request to hide truncation details');
   });
 
-  await runStep('plugins.runtime-tools.config.put.default', async () => {
-    const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
+  await runStep('ai.runtime-tools-config.put.default', async () => {
+    const config = await putJson(apiBase, '/ai/runtime-tools-config', {
       body: {
         values: {
           shellBackend: readSmokeRuntimeToolsShellBackendKind(),
@@ -1705,162 +1729,62 @@ async function runHttpFlow(apiBase, state, input) {
 
   await runStep('plugins.list', async () => {
     const plugins = await getJson(apiBase, '/plugins');
-    ensure(Array.isArray(plugins) && plugins.some((entry) => entry.id === 'builtin.memory-context'), 'Expected builtin plugin list');
+    ensure(Array.isArray(plugins), 'Expected plugin list payload');
   });
 
   await runStep('plugins.connected', async () => {
     const plugins = await getJson(apiBase, '/plugins/connected');
-    ensure(Array.isArray(plugins) && plugins.some((entry) => entry.name === 'builtin.memory-context'), 'Expected builtin connected plugin list');
+    ensure(Array.isArray(plugins), 'Expected connected plugin list payload');
   });
 
-  await runStep('plugins.health', async () => {
-    const health = await getJson(apiBase, '/plugins/builtin.memory-context/health');
-    ensure(health?.status === 'healthy', 'Expected plugin health response');
+  await runStep('ai.context-governance.get', async () => {
+    const config = await getJson(apiBase, '/ai/context-governance-config');
+    ensure(typeof config === 'object' && config !== null, 'Expected context governance config snapshot');
   });
 
-  await runStep('plugins.config.get', async () => {
-    const config = await getJson(apiBase, '/plugins/builtin.memory-context/config');
-    ensure(typeof config === 'object' && config !== null, 'Expected plugin config snapshot');
-  });
-
-  await runStep('plugins.config.put', async () => {
-    const config = await putJson(apiBase, '/plugins/builtin.memory-context/config', {
+  await runStep('ai.context-governance.put', async () => {
+    const config = await putJson(apiBase, '/ai/context-governance-config', {
       body: {
         values: {
-          limit: 6,
-          promptPrefix: 'Smoke Memory',
+          contextCompaction: {
+            keepRecentMessages: 5,
+            strategy: 'sliding',
+          },
+          conversationTitle: {
+            enabled: true,
+            maxMessages: 3,
+          },
+          memoryContext: {
+            enabled: true,
+            limit: 6,
+            promptPrefix: 'Smoke Memory',
+          },
         },
       },
     });
-    ensure(config.values.limit === 6, 'Expected plugin config update to persist');
+    ensure(config.values.memoryContext.limit === 6, 'Expected context governance config update to persist');
+    ensure(config.values.contextCompaction.strategy === 'sliding', 'Expected context governance compaction strategy to persist');
   });
 
-  await runStep('plugins.llm-preference.get', async () => {
-    const preference = await getJson(apiBase, '/plugins/builtin.memory-context/llm-preference');
-    ensure(preference.mode === 'inherit', 'Expected plugin llm preference to default to inherit');
+  await runStep('commands.overview', async () => {
+    const overview = await getJson(apiBase, '/command-catalog/overview');
+    ensure(Array.isArray(overview.commands), 'Expected command overview payload');
+    ensure(overview.commands.some((entry) => entry.commandId === 'internal.context-governance:/compact:command'), 'Expected internal context governance command');
+    ensure(typeof overview.version === 'string' && overview.version.length > 0, 'Expected command overview version');
   });
 
-  await runStep('plugins.llm-preference.put', async () => {
-    const preference = await putJson(apiBase, '/plugins/builtin.memory-context/llm-preference', {
-      body: {
-        mode: 'override',
-        modelId: state.modelId,
-        providerId: state.providerId,
-      },
-    });
-    ensure(preference.mode === 'override', 'Expected plugin llm preference update to persist');
-    ensure(preference.providerId === state.providerId && preference.modelId === state.modelId, 'Expected plugin llm preference to store provider/model');
-  });
-
-  await runStep('plugins.scopes.get', async () => {
-    const scope = await getJson(apiBase, '/plugins/builtin.memory-context/scopes');
-    ensure(typeof scope.defaultEnabled === 'boolean', 'Expected plugin scope payload');
-  });
-
-  await runStep('plugins.event-log.get', async () => {
-    const settings = await getJson(apiBase, '/plugins/builtin.memory-context/event-log');
-    ensure(typeof settings.maxFileSizeMb === 'number', 'Expected plugin event log settings payload');
-  });
-
-  await runStep('plugins.events.get.initial', async () => {
-    const events = await getJson(apiBase, '/plugins/builtin.memory-context/events?limit=20');
-    ensure(Array.isArray(events.items), 'Expected plugin events payload');
-  });
-
-  await runStep('plugins.event-log.put', async () => {
-    const settings = await putJson(apiBase, '/plugins/builtin.memory-context/event-log', {
-      body: {
-        maxFileSizeMb: 2,
-      },
-    });
-    ensure(settings.maxFileSizeMb === 2, 'Expected plugin event log update to persist');
-  });
-
-  await runStep('plugins.scopes.put', async () => {
-    const scope = await putJson(apiBase, '/plugins/builtin.memory-context/scopes', {
-      body: {
-        conversations: {
-          [state.conversationId]: true,
-        },
-        defaultEnabled: true,
-      },
-    });
-    ensure(scope.conversations[state.conversationId] === true, 'Expected plugin scope update to persist');
-  });
-
-  await runStep('plugins.events.get.filtered', async () => {
-    const events = await getJson(apiBase, '/plugins/builtin.memory-context/events?limit=10&type=plugin:scope.updated');
-    ensure(Array.isArray(events.items), 'Expected filtered plugin events payload');
-  });
-
-  await runStep('plugins.action.health-check', async () => {
-    const result = await postJson(apiBase, '/plugins/builtin.memory-context/actions/health-check');
-    ensure(result.accepted === true, 'Expected plugin health-check action to succeed');
-  });
-
-  await runStep('plugins.action.reload', async () => {
-    const result = await postJson(apiBase, '/plugins/builtin.memory-context/actions/reload');
-    ensure(result.accepted === true, 'Expected builtin plugin reload to succeed');
-  });
-
-  await runStep('plugins.storage.list', async () => {
-    const entries = await getJson(apiBase, '/plugins/builtin.memory-context/storage');
-    ensure(Array.isArray(entries), 'Expected plugin storage list');
-  });
-
-  await runStep('plugins.storage.put', async () => {
-    const entry = await putJson(apiBase, '/plugins/builtin.memory-context/storage', {
-      body: {
-        key: 'smoke.flag',
-        value: { ok: true },
-      },
-    });
-    ensure(entry.key === 'smoke.flag', 'Expected plugin storage update to persist');
-  });
-
-  await runStep('plugins.storage.delete', async () => {
-    const deleted = await deleteJson(apiBase, '/plugins/builtin.memory-context/storage?key=smoke.flag');
-    ensure(deleted === true, 'Expected plugin storage delete to succeed');
-  });
-
-  await runStep('plugins.crons.list', async () => {
-    const crons = await getJson(apiBase, '/plugins/builtin.memory-context/crons');
-    ensure(Array.isArray(crons), 'Expected plugin cron list');
-  });
-
-  await runStep('plugins.crons.delete', async () => {
-    const deleted = await deleteJson(apiBase, '/plugins/builtin.memory-context/crons/cron-missing');
-    ensure(deleted === false, 'Expected deleting missing plugin cron to return false');
-  });
-
-  await runStep('plugins.sessions.list', async () => {
-    const sessions = await getJson(apiBase, '/plugins/builtin.memory-context/sessions');
-    ensure(Array.isArray(sessions), 'Expected plugin session list');
-  });
-
-  await runStep('plugins.sessions.delete', async () => {
-    const deleted = await deleteJson(apiBase, `/plugins/builtin.memory-context/sessions/${state.conversationId}`);
-    ensure(deleted === false, 'Expected deleting missing plugin session to return false');
-  });
-
-  await runStep('plugins.command-overview', async () => {
-    const overview = await getJson(apiBase, '/plugin-commands/overview');
-    ensure(Array.isArray(overview.commands), 'Expected plugin command overview payload');
-    ensure(typeof overview.version === 'string' && overview.version.length > 0, 'Expected plugin command overview version');
-  });
-
-  await runStep('plugins.command-version', async () => {
-    const version = await getJson(apiBase, '/plugin-commands/version');
-    ensure(typeof version.version === 'string' && version.version.length > 0, 'Expected plugin command catalog version payload');
+  await runStep('commands.version', async () => {
+    const version = await getJson(apiBase, '/command-catalog/version');
+    ensure(typeof version.version === 'string' && version.version.length > 0, 'Expected command catalog version payload');
   });
 
   await runStep('plugins.subagent-overview', async () => {
-    const overview = await getJson(apiBase, '/plugin-subagents/overview');
+    const overview = await getJson(apiBase, '/subagents/overview');
     ensure(Array.isArray(overview.subagents), 'Expected subagent overview payload');
   });
 
   await runStep('plugins.subagents.types', async () => {
-    const subagentTypes = await getJson(apiBase, '/plugin-subagents/types');
+    const subagentTypes = await getJson(apiBase, '/subagents/types');
     ensure(Array.isArray(subagentTypes), 'Expected subagent type list payload');
     ensure(subagentTypes.some((entry) => entry.id === 'general'), 'Expected general subagent type');
     ensure(subagentTypes.some((entry) => entry.id === 'explore'), 'Expected explore subagent type');
@@ -1868,13 +1792,13 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('plugins.subagent-detail.missing', async () => {
-    await getJson(apiBase, '/plugin-subagents/subagent-session-missing', {
+    await getJson(apiBase, '/subagents/subagent-session-missing', {
       expectedStatus: 404,
     });
   });
 
   await runStep('plugins.routes.missing', async () => {
-    await requestJson(apiBase, '/plugin-routes/builtin.memory-context/inspect/context', {
+    await requestJson(apiBase, '/plugin-routes/plugin-missing/inspect/context', {
       expectedStatus: 404,
       headers: userHeaders(),
       method: 'GET',
@@ -1922,6 +1846,108 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('plugins.remote.health.online', async () => {
     const health = await getJson(apiBase, `/plugins/${state.remotePluginId}/health`);
     ensure(health?.status === 'healthy', 'Expected connected remote plugin health to be healthy');
+  });
+
+  await runStep('plugins.config.get', async () => {
+    const config = await getJson(apiBase, `/plugins/${state.remotePluginId}/config`);
+    ensure(typeof config === 'object' && config !== null, 'Expected plugin config snapshot payload');
+  });
+
+  await runStep('plugins.config.put.rejected-without-schema', async () => {
+    const result = await putJson(apiBase, `/plugins/${state.remotePluginId}/config`, {
+      body: {
+        values: {
+          mode: 'smoke',
+        },
+      },
+      expectedStatus: 400,
+    });
+    ensure(String(result?.message ?? '').includes('未声明配置 schema'), 'Expected plugin config update without schema to be rejected');
+  });
+
+  await runStep('plugins.llm-preference.get', async () => {
+    const preference = await getJson(apiBase, `/plugins/${state.remotePluginId}/llm-preference`);
+    ensure(preference.mode === 'inherit', 'Expected plugin llm preference to default to inherit');
+  });
+
+  await runStep('plugins.llm-preference.put', async () => {
+    const preference = await putJson(apiBase, `/plugins/${state.remotePluginId}/llm-preference`, {
+      body: {
+        mode: 'override',
+        modelId: state.modelId,
+        providerId: state.providerId,
+      },
+    });
+    ensure(preference.mode === 'override', 'Expected plugin llm preference override to persist');
+    ensure(preference.modelId === state.modelId, 'Expected plugin llm preference model to persist');
+    ensure(preference.providerId === state.providerId, 'Expected plugin llm preference provider to persist');
+  });
+
+  await runStep('plugins.scopes.get', async () => {
+    const scope = await getJson(apiBase, `/plugins/${state.remotePluginId}/scopes`);
+    ensure(typeof scope.defaultEnabled === 'boolean', 'Expected plugin scope payload');
+  });
+
+  await runStep('plugins.scopes.put', async () => {
+    const scope = await putJson(apiBase, `/plugins/${state.remotePluginId}/scopes`, {
+      body: {
+        conversations: {
+          [state.conversationId]: true,
+        },
+        defaultEnabled: true,
+      },
+    });
+    ensure(scope.defaultEnabled === true, 'Expected plugin default scope to remain enabled');
+    ensure(scope.conversations?.[state.conversationId] === true, 'Expected plugin conversation scope update to persist');
+  });
+
+  await runStep('plugins.event-log.get', async () => {
+    const settings = await getJson(apiBase, `/plugins/${state.remotePluginId}/event-log`);
+    ensure(typeof settings.maxFileSizeMb === 'number', 'Expected plugin event log settings payload');
+  });
+
+  await runStep('plugins.event-log.put', async () => {
+    const settings = await putJson(apiBase, `/plugins/${state.remotePluginId}/event-log`, {
+      body: {
+        maxFileSizeMb: 2,
+      },
+    });
+    ensure(settings.maxFileSizeMb === 2, 'Expected plugin event log settings update to persist');
+  });
+
+  await runStep('plugins.events.get', async () => {
+    const events = await getJson(apiBase, `/plugins/${state.remotePluginId}/events?limit=20`);
+    ensure(Array.isArray(events.items), 'Expected plugin events list payload');
+    ensure(events.items.length > 0, 'Expected plugin events list to contain governance records');
+  });
+
+  await runStep('plugins.storage.list.initial', async () => {
+    const entries = await getJson(apiBase, `/plugins/${state.remotePluginId}/storage`);
+    ensure(Array.isArray(entries), 'Expected plugin storage list payload');
+  });
+
+  await runStep('plugins.storage.put', async () => {
+    const entry = await putJson(apiBase, `/plugins/${state.remotePluginId}/storage`, {
+      body: {
+        key: 'smoke/runtime',
+        value: {
+          enabled: true,
+          source: 'http-smoke',
+        },
+      },
+    });
+    ensure(entry.key === 'smoke/runtime', 'Expected plugin storage key to persist');
+    ensure(entry.value?.enabled === true, 'Expected plugin storage value to persist');
+  });
+
+  await runStep('plugins.storage.list.after-put', async () => {
+    const entries = await getJson(apiBase, `/plugins/${state.remotePluginId}/storage?prefix=smoke/`);
+    ensure(entries.some((entry) => entry.key === 'smoke/runtime'), 'Expected plugin storage list to include stored key');
+  });
+
+  await runStep('plugins.storage.delete', async () => {
+    const deleted = await deleteJson(apiBase, `/plugins/${state.remotePluginId}/storage?key=${encodeURIComponent('smoke/runtime')}`);
+    ensure(deleted === true, 'Expected plugin storage deletion to succeed');
   });
 
   await runStep('plugins.remote.metadata.cached.initial', async () => {
@@ -2061,6 +2087,11 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof state.remotePluginCronId === 'string', 'Expected remote plugin host op to register cron');
   });
 
+  await runStep('plugins.crons.list', async () => {
+    const crons = await getJson(apiBase, `/plugins/${state.remotePluginId}/crons`);
+    ensure(crons.some((entry) => entry.id === state.remotePluginCronId), 'Expected plugin cron list to include created cron');
+  });
+
   await runStep('plugins.crons.delete.success', async () => {
     const deleted = await deleteJson(apiBase, `/plugins/${state.remotePluginId}/crons/${state.remotePluginCronId}`);
     ensure(deleted === true, 'Expected deleting created plugin cron to succeed');
@@ -2136,16 +2167,18 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('tools.overview', async () => {
     const overview = await getJson(apiBase, '/tools/overview');
     ensure(Array.isArray(overview.sources), 'Expected tool overview sources');
-    const pluginSource = overview.sources.find((entry) => entry.kind === 'plugin');
-    const tool = overview.tools[0];
-    ensure(pluginSource, 'Expected at least one plugin tool source');
+    const runtimeSource = overview.sources.find((entry) => entry.kind === 'internal' && entry.id === 'runtime-tools');
+    const subagentSource = overview.sources.find((entry) => entry.kind === 'internal' && entry.id === 'subagent');
+    const tool = overview.tools.find((entry) => entry.sourceKind === 'internal' && entry.sourceId === 'runtime-tools');
+    ensure(runtimeSource, 'Expected internal runtime-tools source');
+    ensure(subagentSource, 'Expected internal subagent source');
     ensure(tool, 'Expected at least one tool');
-    state.toolSourceId = pluginSource.id;
+    state.toolSourceId = runtimeSource.id;
     state.toolId = tool.toolId;
   });
 
   await runStep('tools.source.enabled.false', async () => {
-    const source = await putJson(apiBase, `/tools/sources/plugin/${encodeURIComponent(state.toolSourceId)}/enabled`, {
+    const source = await putJson(apiBase, `/tools/sources/internal/${encodeURIComponent(state.toolSourceId)}/enabled`, {
       body: {
         enabled: false,
       },
@@ -2154,7 +2187,7 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('tools.source.enabled.true', async () => {
-    const source = await putJson(apiBase, `/tools/sources/plugin/${encodeURIComponent(state.toolSourceId)}/enabled`, {
+    const source = await putJson(apiBase, `/tools/sources/internal/${encodeURIComponent(state.toolSourceId)}/enabled`, {
       body: {
         enabled: true,
       },
@@ -2178,11 +2211,6 @@ async function runHttpFlow(apiBase, state, input) {
       },
     });
     ensure(tool.enabled === true, 'Expected tool to re-enable');
-  });
-
-  await runStep('tools.source.action', async () => {
-    const result = await postJson(apiBase, `/tools/sources/plugin/${encodeURIComponent(state.toolSourceId)}/actions/health-check`);
-    ensure(result.accepted === true, 'Expected tool source health-check to succeed');
   });
 
   await runStep('mcp.servers.get.initial', async () => {
@@ -2281,7 +2309,8 @@ async function runHttpFlow(apiBase, state, input) {
               prompt: '请输出 smoke automation task',
               writeBack: false,
             },
-            plugin: 'builtin.subagent-delegate',
+            sourceId: 'subagent',
+            sourceKind: 'internal',
             type: 'device_command',
           },
         ],
@@ -2336,7 +2365,7 @@ async function runHttpFlow(apiBase, state, input) {
     const result = await postJson(apiBase, `/automations/${state.automationId}/run`, {
       headers: userHeaders(),
     });
-    const taskAction = result.results.find((entry) => entry.plugin === 'builtin.subagent-delegate');
+    const taskAction = result.results.find((entry) => entry.sourceKind === 'internal' && entry.sourceId === 'subagent');
     state.automationSubagentSessionId = taskAction?.result?.sessionId ?? null;
     ensure(typeof state.automationSubagentSessionId === 'string', 'Expected automation run to create subagent session');
     ensure(result.status === 'success', 'Expected automation run to succeed');
@@ -2349,7 +2378,7 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('plugins.subagent-overview.with-subagent', async () => {
-    const overview = await getJson(apiBase, '/plugin-subagents/overview');
+    const overview = await getJson(apiBase, '/subagents/overview');
     const subagent = overview.subagents.find((entry) => entry.sessionId === state.automationSubagentSessionId);
     ensure(subagent, 'Expected subagent overview to include automation-created session projection');
     ensure(subagent.description === '自动化烟测任务', 'Expected subagent overview to expose persisted subagent description');
@@ -2362,7 +2391,7 @@ async function runHttpFlow(apiBase, state, input) {
     const subagent = await waitForSubagentTaskCompletion(apiBase, state.automationSubagentSessionId);
     ensure(subagent.sessionId === state.automationSubagentSessionId, 'Expected subagent session detail to load');
     ensure(subagent.description === '自动化烟测任务', 'Expected subagent detail to expose persisted description');
-    ensure(subagent.pluginId === 'builtin.subagent-delegate', 'Expected subagent detail plugin id');
+    ensure(subagent.pluginId === 'subagent', 'Expected subagent detail source id');
     ensure(subagent.requestPreview === '请输出 smoke automation task', 'Expected subagent detail to keep prompt preview separate from description');
     ensure(typeof subagent.sessionId === 'string' && subagent.sessionId.length > 0, 'Expected subagent detail to expose session id');
     ensure(typeof subagent.sessionMessageCount === 'number' && subagent.sessionMessageCount >= 2, 'Expected subagent detail to expose updated session message count');
@@ -2371,7 +2400,7 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('plugins.subagent-delete.success', async () => {
-    const deleted = await deleteJson(apiBase, `/plugin-subagents/${state.automationSubagentSessionId}`);
+    const deleted = await deleteJson(apiBase, `/subagents/${state.automationSubagentSessionId}`);
     ensure(deleted === true, 'Expected subagent session deletion to succeed');
     const startedAt = Date.now();
     while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
@@ -2387,7 +2416,7 @@ async function runHttpFlow(apiBase, state, input) {
   });
 
   await runStep('plugins.subagent-detail.after-delete', async () => {
-    await getJson(apiBase, `/plugin-subagents/${state.automationSubagentSessionId}`, {
+    await getJson(apiBase, `/subagents/${state.automationSubagentSessionId}`, {
       expectedStatus: 404,
     });
   });
@@ -2945,7 +2974,7 @@ async function waitForSubagentTaskCompletion(apiBase, sessionId) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
-    const subagent = await getJson(apiBase, `/plugin-subagents/${sessionId}`);
+    const subagent = await getJson(apiBase, `/subagents/${sessionId}`);
     if (subagent?.status === 'completed') {
       return subagent;
     }

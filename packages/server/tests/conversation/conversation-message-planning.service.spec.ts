@@ -1,6 +1,11 @@
-import { CONTEXT_COMPACTION_MANIFEST } from '@garlic-claw/plugin-sdk/authoring';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
+import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
+import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostUserContextService } from '../../src/runtime/host/runtime-host-user-context.service';
 
 describe('ConversationMessagePlanningService', () => {
   const aiManagementService = {
@@ -9,19 +14,28 @@ describe('ConversationMessagePlanningService', () => {
     getProviderModel: jest.fn(),
     listProviders: jest.fn(),
   };
-  const aiModelExecutionService = { streamText: jest.fn() };
+  const aiModelExecutionService = {
+    generateText: jest.fn(),
+    streamText: jest.fn(),
+  };
   const aiVisionService = { resolveMessageParts: jest.fn() };
   const personaService = { readCurrentPersona: jest.fn() };
-  const pluginPersistenceService = { findPlugin: jest.fn() };
   const runtimeHostPluginDispatchService = { invokeHook: jest.fn(), listPlugins: jest.fn().mockReturnValue([]) };
   const toolRegistryService = { buildToolSet: jest.fn(), listAvailableTools: jest.fn() };
 
+  let contextGovernanceConfigPath: string;
   let conversationId: string;
+  let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
   let service: ConversationMessagePlanningService;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    contextGovernanceConfigPath = path.join(
+      os.tmpdir(),
+      `context-governance-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
+    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
     aiManagementService.getDefaultProviderSelection.mockReturnValue({ modelId: 'gpt-5.4', providerId: 'openai', source: 'default' });
     aiManagementService.getProvider.mockReturnValue({ defaultModel: 'gpt-5.4', id: 'openai', models: ['gpt-5.4'] });
     aiManagementService.getProviderModel.mockReturnValue({
@@ -38,21 +52,29 @@ describe('ConversationMessagePlanningService', () => {
       status: 'active',
     });
     aiManagementService.listProviders.mockReturnValue([{ id: 'openai' }]);
-    pluginPersistenceService.findPlugin.mockReturnValue({
-      configValues: {},
-      connected: true,
-      conversationScopes: {},
-      defaultEnabled: true,
-      manifest: CONTEXT_COMPACTION_MANIFEST,
-      pluginId: 'builtin.context-compaction',
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: '压缩后的历史摘要',
     });
     runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
+    contextGovernanceSettingsService = new ContextGovernanceSettingsService();
+    contextGovernanceSettingsService.updateConfig({
+      memoryContext: {
+        enabled: false,
+      },
+    });
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
-      aiManagementService as never,
       aiVisionService as never,
-      pluginPersistenceService as never,
+      new ContextGovernanceService(
+        aiManagementService as never,
+        aiModelExecutionService as never,
+        contextGovernanceSettingsService,
+        runtimeHostConversationRecordService,
+        new RuntimeHostUserContextService(),
+      ),
       runtimeHostConversationRecordService,
       personaService as never,
       toolRegistryService as never,
@@ -60,20 +82,25 @@ describe('ConversationMessagePlanningService', () => {
     );
   });
 
+  afterEach(() => {
+    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
+    try {
+      if (fs.existsSync(contextGovernanceConfigPath)) {
+        fs.unlinkSync(contextGovernanceConfigPath);
+      }
+    } catch {
+      // 忽略临时配置文件清理失败，避免影响测试主语义。
+    }
+  });
+
   it('returns a sliding context window preview and trims oldest history messages', async () => {
-    pluginPersistenceService.findPlugin.mockReturnValue({
-      configValues: {
-        enabled: true,
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
         keepRecentMessages: 1,
         reservedTokens: 256,
         slidingWindowUsagePercent: 50,
         strategy: 'sliding',
       },
-      connected: true,
-      conversationScopes: {},
-      defaultEnabled: true,
-      manifest: CONTEXT_COMPACTION_MANIFEST,
-      pluginId: 'builtin.context-compaction',
     });
     runtimeHostConversationRecordService.replaceMessages(conversationId, [
       createMessage('history-1', 'user', 'a'.repeat(220)),
@@ -94,17 +121,11 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   it('returns summary context preview from rewritten history and excludes covered messages', async () => {
-    pluginPersistenceService.findPlugin.mockReturnValue({
-      configValues: {
-        enabled: true,
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
         keepRecentMessages: 2,
         strategy: 'summary',
       },
-      connected: true,
-      conversationScopes: {},
-      defaultEnabled: true,
-      manifest: CONTEXT_COMPACTION_MANIFEST,
-      pluginId: 'builtin.context-compaction',
     });
     runtimeHostConversationRecordService.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条历史消息', {
@@ -116,7 +137,7 @@ describe('ConversationMessagePlanningService', () => {
             role: 'covered',
             summaryMessageId: 'summary-1',
           },
-          owner: 'builtin.context-compaction',
+          owner: 'conversation.context-governance',
           type: 'context-compaction',
           version: '1',
         }],
@@ -130,7 +151,7 @@ describe('ConversationMessagePlanningService', () => {
             role: 'covered',
             summaryMessageId: 'summary-1',
           },
-          owner: 'builtin.context-compaction',
+          owner: 'conversation.context-governance',
           type: 'context-compaction',
           version: '1',
         }],
@@ -148,7 +169,7 @@ describe('ConversationMessagePlanningService', () => {
             role: 'summary',
             trigger: 'manual',
           },
-          owner: 'builtin.context-compaction',
+          owner: 'conversation.context-governance',
           type: 'context-compaction',
           version: '1',
         }],
@@ -169,16 +190,11 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   it('falls back to plain history when context compaction is disabled', async () => {
-    pluginPersistenceService.findPlugin.mockReturnValue({
-      configValues: {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
         enabled: false,
         strategy: 'sliding',
       },
-      connected: true,
-      conversationScopes: {},
-      defaultEnabled: true,
-      manifest: CONTEXT_COMPACTION_MANIFEST,
-      pluginId: 'builtin.context-compaction',
     });
     runtimeHostConversationRecordService.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条消息'),
@@ -188,11 +204,12 @@ describe('ConversationMessagePlanningService', () => {
 
     await expect(service.getContextWindowPreview({ conversationId, userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
       enabled: false,
+      estimatedTokens: 12,
       excludedMessageIds: [],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-1', 'history-2'],
       keepRecentMessages: 6,
-      maxWindowTokens: 256,
+      maxWindowTokens: 128,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));

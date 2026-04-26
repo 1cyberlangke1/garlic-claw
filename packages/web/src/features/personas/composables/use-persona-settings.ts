@@ -10,6 +10,7 @@ import type {
 } from '@garlic-claw/shared'
 import { useAsyncState } from '@/composables/use-async-state'
 import { useChatStore } from '@/features/chat/store/chat'
+import { isValidConversationRouteId } from '@/utils/uuid'
 import {
   activateConversationPersona,
   createPersona,
@@ -144,6 +145,11 @@ export function usePersonaSettings() {
 
   async function refreshCurrentPersona() {
     const conversationId = currentConversationId.value
+    if (conversationId && !isValidConversationRouteId(conversationId)) {
+      currentPersona.value = null
+      loadingCurrentPersona.value = false
+      return
+    }
     loadingCurrentPersona.value = true
     requestState.clearError()
     try {

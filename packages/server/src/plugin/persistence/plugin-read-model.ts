@@ -58,7 +58,14 @@ export function listPluginCommands(record: RegisteredPluginRecord, connected: bo
 export function buildPluginCommandConflicts(commands: PluginCommandInfo[]): PluginCommandConflict[] {
   const triggers = new Map<string, PluginCommandInfo[]>();
   for (const command of commands) {
-    for (const trigger of command.variants) { (triggers.get(trigger) ?? triggers.set(trigger, []).get(trigger)!).push(command); }
+    for (const trigger of command.variants) {
+      const entries = triggers.get(trigger);
+      if (entries) {
+        entries.push(command);
+        continue;
+      }
+      triggers.set(trigger, [command]);
+    }
   }
   return [...triggers].flatMap(([trigger, entries]) => entries.length < 2 ? [] : [{ trigger, commands: entries.map(toPluginCommandConflictEntry) }]);
 }

@@ -430,25 +430,17 @@ describe('PluginSidebar', () => {
           }),
           createPlugin({
             id: 'plugin-2',
-            name: 'builtin.provider-router',
-            displayName: 'Provider Router',
+            name: 'builtin.memory-tools',
+            displayName: 'Memory Tools',
             description: 'user-facing builtin',
             runtimeKind: 'local',
             manifest: {
-              id: 'builtin.provider-router',
-              name: 'Provider Router',
+              id: 'builtin.memory-tools',
+              name: 'Memory Tools',
               version: '1.0.0',
               runtime: 'local',
-              permissions: ['config:read', 'provider:read'],
-              tools: [],
-              config: {
-                type: 'object',
-                items: {
-                  targetProviderId: {
-                    type: 'string',
-                  },
-                },
-              },
+              permissions: ['memory:read', 'memory:write'],
+              tools: [{ name: 'save_memory', description: 'save', parameters: {} }],
             },
             health: {
               status: 'healthy',
@@ -504,7 +496,7 @@ describe('PluginSidebar', () => {
 
     expect(wrapper.text()).toContain('已隐藏 1 个系统本地插件')
     let titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
-    expect(titles).toEqual(['PC Host', 'Provider Router'])
+    expect(titles).toEqual(['Memory Tools', 'PC Host'])
     expect(wrapper.text()).not.toContain('Tool Audit')
 
     await wrapper.get('[data-test="plugin-sidebar-toggle-system"] input').setValue(true)

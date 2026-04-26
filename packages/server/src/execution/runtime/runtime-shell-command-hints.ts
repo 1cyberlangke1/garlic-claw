@@ -164,7 +164,8 @@ function readSpecialWriteTargets(command: string, args: string[]): string[] | nu
     'out-file': { fallback: 'path', positionalValueFlags: FLAG_SETS.outFile }, 'remove-item': { fallback: 'path', positionalValueFlags: FLAG_SETS.removeItem, pathFlags: FLAG_SETS.basePath },
     'rename-item': { fallback: 'path', positionalValueFlags: FLAG_SETS.renameItem, leafFlags: FLAG_SETS.newName, pathFlags: FLAG_SETS.basePath, buildPath: resolveRenamePath }, 'set-content': { fallback: 'path', positionalValueFlags: FLAG_SETS.content },
   };
-  return command in rules ? readPowerShellTargets(args, rules[command]!) : null;
+  const rule = rules[command];
+  return rule ? readPowerShellTargets(args, rule) : null;
 }
 function readDefaultWriteTargets(command: string, args: string[]): string[] {
   const flagged = command.includes('-') ? readPowerShellOptionValues(args, FLAG_SETS.path, normalizeQuotedToken) : [];

@@ -718,7 +718,7 @@ test('createPluginAuthorTransportExecutor runs author definitions with shared ro
   ]);
 });
 
-test('plugin-sdk exposes shared author-side text helpers for builtin plugins', () => {
+test('plugin-sdk exposes shared author-side text helpers for authoring flows', () => {
   assert.equal(
     readLatestUserTextFromMessages([
       {
@@ -941,6 +941,23 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.frontendMessageWindowSize.type, 'int');
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.strategy.type, 'string');
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.slidingWindowUsagePercent.type, 'int');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.strategy.type, 'string');
+  assert.equal(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.strategy.options[1].value,
+    'sliding',
+  );
+  assert.deepEqual(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.mode.condition,
+    { strategy: 'summary' },
+  );
+  assert.equal(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.slidingWindowUsagePercent.type,
+    'int',
+  );
+  assert.deepEqual(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.slidingWindowUsagePercent.condition,
+    { strategy: 'sliding' },
+  );
   assert.deepEqual(
     readCurrentProviderInfo({
       providerId: 'openai',
@@ -1027,6 +1044,10 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(
     sanitizeConversationTitle('「咖啡店会员系统设计」\n补充解释'),
     '咖啡店会员系统设计',
+  );
+  assert.equal(
+    sanitizeConversationTitle('本地 smoke 回复: 请为下面这段对话生成一个简洁中文标题。'),
+    '',
   );
 });
 

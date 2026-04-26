@@ -5,7 +5,7 @@
         <div>
           <span class="hero-kicker">Background Subagents</span>
           <h1>后台 Subagent</h1>
-          <p>统一查看插件发起的后台子代理、完成态结果、回写状态与当前上下文。</p>
+          <p>统一查看后台子代理、完成态结果、回写状态与当前上下文。</p>
         </div>
         <div class="subagent-hero-side">
           <button
@@ -138,7 +138,7 @@
                   <p>{{ activeSubagentSummary.description || activeSubagentSummary.requestPreview }}</p>
                 </article>
                 <article class="detail-card">
-                  <span class="overview-label">插件 / 模型</span>
+                  <span class="overview-label">发起方 / 模型</span>
                   <strong>{{ activeSubagentSummary.pluginDisplayName || activeSubagentSummary.pluginId }}</strong>
                   <p>{{ activeSubagentSummary.providerId || '未指定 provider' }} / {{ activeSubagentSummary.modelId || '未指定 model' }}</p>
                 </article>
@@ -197,7 +197,7 @@
         <div>
           <span class="panel-kicker">Subagent Overview</span>
           <h2>子代理账本</h2>
-          <p>按插件、模型和状态查看后台子代理，不再让结果只停留在运行时内存里。</p>
+          <p>按发起方、模型和状态查看后台子代理，不再让结果只停留在运行时内存里。</p>
         </div>
         <button
           type="button"
@@ -214,7 +214,7 @@
           v-model="searchKeyword"
           data-test="subagent-search"
           type="text"
-          placeholder="搜索插件、请求摘要、结果摘要或模型"
+          placeholder="搜索发起方、请求摘要、结果摘要或模型"
         >
         <SegmentedSwitch v-model="filter" :options="filterOptions" />
       </div>
@@ -246,7 +246,7 @@
                 <span class="status-pill" :class="subagent.status">{{ statusLabel(subagent.status) }}</span>
               </div>
               <p v-if="subagent.description" class="detail-line muted-text">
-                插件: {{ subagent.pluginDisplayName || subagent.pluginId }}
+                发起方: {{ subagent.pluginDisplayName || subagent.pluginId }}
               </p>
               <p>{{ subagent.requestPreview }}</p>
             </div>
@@ -269,9 +269,9 @@
               </button>
               <RouterLink
                 class="ghost-button link-button"
-                :to="{ name: 'plugins', query: { plugin: subagent.pluginId } }"
+                :to="{ name: 'tools' }"
               >
-                打开插件治理
+                打开工具治理
               </RouterLink>
             </div>
           </div>
@@ -337,7 +337,7 @@ import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import type { ChatMessagePart, PluginSubagentSummary } from '@garlic-claw/shared'
 import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
-import { usePluginSubagents } from '../composables/use-plugin-subagents'
+import { useSubagents } from '../composables/use-subagents'
 
 const {
   loading,
@@ -373,7 +373,7 @@ const {
   selectConversation,
   selectWindow,
   subagentCount,
-} = usePluginSubagents()
+} = useSubagents()
 
 const activeConversationLabel = computed(() =>
   conversationWorkspaces.value.find((workspace) => workspace.id === activeConversationId.value)?.label ?? '暂无主会话',

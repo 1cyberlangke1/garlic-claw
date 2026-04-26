@@ -13,7 +13,7 @@ export class RuntimeEventLogService {
 
   appendLog(kind: RuntimeEventLogKind, entityId: string, settings: EventLogSettings | null | undefined, input: RuntimeEventLogInput): EventLogRecord | null {
     const maxFileSizeMb = normalizeEventLogSettings(settings).maxFileSizeMb;
-    if (maxFileSizeMb <= 0) return null;
+    if (maxFileSizeMb <= 0) {return null;}
     const record: EventLogRecord = { createdAt: new Date().toISOString(), id: `event-log-${randomUUID()}`, level: input.level, message: input.message, metadata: input.metadata ? structuredClone(input.metadata) : null, type: input.type };
     const filePath = resolveEventLogFilePath(this.logRootPath, kind, entityId), records = readRuntimeEventLogFile(filePath);
     records.push(record);
@@ -51,8 +51,8 @@ function writeRuntimeEventLogFile(filePath: string, records: EventLogRecord[]): 
 
 function trimRuntimeEventLogRecords(records: EventLogRecord[], maxFileSizeMb: number): EventLogRecord[] {
   const maxBytes = Math.floor(maxFileSizeMb * 1024 * 1024), nextRecords = records.map((record) => structuredClone(record));
-  if (maxBytes <= 0) return [];
-  while (nextRecords.length > 0 && Buffer.byteLength(JSON.stringify({ records: nextRecords }), 'utf8') > maxBytes) nextRecords.shift();
+  if (maxBytes <= 0) {return [];}
+  while (nextRecords.length > 0 && Buffer.byteLength(JSON.stringify({ records: nextRecords }), 'utf8') > maxBytes) {nextRecords.shift();}
   return nextRecords;
 }
 
@@ -66,8 +66,8 @@ function resolveEventLogFilePath(rootPath: string, kind: RuntimeEventLogKind, en
 }
 
 function resolveEventLogRootPath(): string {
-  if (process.env.GARLIC_CLAW_LOG_ROOT) return path.resolve(process.env.GARLIC_CLAW_LOG_ROOT);
-  if (process.env.JEST_WORKER_ID) return path.join(process.cwd(), 'tmp', `log.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  if (process.env.GARLIC_CLAW_LOG_ROOT) {return path.resolve(process.env.GARLIC_CLAW_LOG_ROOT);}
+  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `log.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);}
   return path.join(resolveProjectRoot(), 'log');
 }
 
@@ -77,7 +77,7 @@ function resolveProjectRoot(): string {
 
 function findProjectRoot(startPath: string): string | null {
   for (let currentPath = path.resolve(startPath); ; currentPath = path.dirname(currentPath)) {
-    if (fs.existsSync(path.join(currentPath, 'package.json')) && fs.existsSync(path.join(currentPath, 'packages', 'server'))) return currentPath;
-    if (path.dirname(currentPath) === currentPath) return null;
+    if (fs.existsSync(path.join(currentPath, 'package.json')) && fs.existsSync(path.join(currentPath, 'packages', 'server'))) {return currentPath;}
+    if (path.dirname(currentPath) === currentPath) {return null;}
   }
 }

@@ -1,12 +1,19 @@
 import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { AiManagementService } from '../../../ai-management/ai-management.service';
 import { AiProviderSettingsService } from '../../../ai-management/ai-provider-settings.service';
+import { ContextGovernanceService } from '../../../conversation/context-governance.service';
+import { RuntimeToolsSettingsService } from '../../../execution/runtime/runtime-tools-settings.service';
+import { SubagentSettingsService } from '../../../execution/subagent/subagent-settings.service';
+import type { JsonObject } from '@garlic-claw/shared';
 
 @Controller('ai')
 export class AiController {
   constructor(
     private readonly aiManagementService: AiManagementService,
     private readonly aiProviderSettingsService: AiProviderSettingsService,
+    private readonly contextGovernanceService: ContextGovernanceService,
+    private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
+    private readonly subagentSettingsService: SubagentSettingsService,
   ) {}
 
   @Get('provider-catalog')
@@ -89,5 +96,35 @@ export class AiController {
   @Put('host-model-routing')
   updateHostModelRoutingConfig(@Body() dto: Record<string, unknown>) {
     return this.aiProviderSettingsService.updateHostModelRoutingConfig(dto as never);
+  }
+
+  @Get('runtime-tools-config')
+  getRuntimeToolsConfig() {
+    return this.runtimeToolsSettingsService.getConfigSnapshot();
+  }
+
+  @Put('runtime-tools-config')
+  updateRuntimeToolsConfig(@Body() dto: { values: JsonObject }) {
+    return this.runtimeToolsSettingsService.updateConfig(dto.values);
+  }
+
+  @Get('subagent-config')
+  getSubagentConfig() {
+    return this.subagentSettingsService.getConfigSnapshot();
+  }
+
+  @Put('subagent-config')
+  updateSubagentConfig(@Body() dto: { values: JsonObject }) {
+    return this.subagentSettingsService.updateConfig(dto.values);
+  }
+
+  @Get('context-governance-config')
+  getContextGovernanceConfig() {
+    return this.contextGovernanceService.getConfigSnapshot();
+  }
+
+  @Put('context-governance-config')
+  updateContextGovernanceConfig(@Body() dto: { values: JsonObject }) {
+    return this.contextGovernanceService.updateConfig(dto.values);
   }
 }

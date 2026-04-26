@@ -67,7 +67,7 @@ export class ConversationTaskService {
   ) {}
 
   startTask(input: StartConversationTaskInput): void {
-    if (this.tasks.has(input.assistantMessageId)) throw new Error(`Conversation task already exists for message ${input.assistantMessageId}`);
+    if (this.tasks.has(input.assistantMessageId)) {throw new Error(`Conversation task already exists for message ${input.assistantMessageId}`);}
     let resolveCompletion: () => void = () => undefined;
     const handle: ConversationTaskHandle = { abortController: new AbortController(), completion: new Promise<void>((resolve) => { resolveCompletion = resolve; }), listeners: new Set() };
     this.tasks.set(input.assistantMessageId, handle);
@@ -76,7 +76,7 @@ export class ConversationTaskService {
 
   subscribe(messageId: string, listener: (event: ConversationTaskEvent) => void): () => void {
     const task = this.tasks.get(messageId);
-    if (!task) return () => undefined;
+    if (!task) {return () => undefined;}
     task.listeners.add(listener);
     return () => task.listeners.delete(listener);
   }
@@ -85,7 +85,7 @@ export class ConversationTaskService {
 
   async stopTask(messageId: string): Promise<boolean> {
     const task = this.tasks.get(messageId);
-    if (!task) return false;
+    if (!task) {return false;}
     task.abortController.abort(new Error('用户主动停止了本次生成'));
     await task.completion;
     return true;
@@ -109,7 +109,7 @@ export class ConversationTaskService {
 
       for await (const rawPart of streamSource.stream.fullStream) {
         const events = readConversationTaskEvents(runtime.state, runtime.assistantMessageId, runtime.providerId, rawPart);
-        if (events.length === 0) continue;
+        if (events.length === 0) {continue;}
         await this.writeTaskSnapshot(runtime, 'streaming');
         this.emitAll(task, events);
       }
@@ -167,7 +167,7 @@ export class ConversationTaskService {
     return snapshot;
   }
 
-  private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void { for (const listener of task.listeners) listener(event); }
+  private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void { for (const listener of task.listeners) {listener(event);} }
   private emitAll(task: ConversationTaskHandle, events: readonly ConversationTaskEvent[]): void { events.forEach((event) => this.emit(task, event)); }
 }
 
@@ -178,7 +178,7 @@ function toConversationTaskPermissionEvent(event: ConversationTaskPermissionEven
 }
 
 async function readConversationTaskOutcome(abortSignal: AbortSignal, resolver: StartConversationTaskInput['resolveErrorMessage'], error: unknown): Promise<ConversationTaskOutcome> {
-  if (abortSignal.aborted) return { status: 'stopped' };
+  if (abortSignal.aborted) {return { status: 'stopped' };}
   return { error: await resolver?.(error) ?? (error instanceof Error ? error.message : 'Conversation generation failed'), status: 'error' };
 }
 
@@ -202,7 +202,7 @@ function readConversationTaskEvents(
 ): ConversationTaskEvent[] {
   const metadataEvents = readConversationTaskMetadataEvents(state, messageId, providerId, readAssistantRawCustomBlocks(rawPart));
   const part = readAssistantStreamPart(rawPart);
-  if (!part) return metadataEvents;
+  if (!part) {return metadataEvents;}
   if (part.type === 'text-delta') {
     state.content += part.text;
     return [...metadataEvents, { messageId, text: part.text, type: 'text-delta' }];
@@ -222,7 +222,7 @@ function readConversationTaskMetadataEvents(
   updates: ConversationTaskCustomBlockUpdate[],
 ): ConversationTaskEvent[] {
   const metadata = applyConversationTaskMetadataUpdates(state.metadata, providerId, updates);
-  if (metadata === state.metadata) return [];
+  if (metadata === state.metadata) {return [];}
   state.metadata = metadata;
   return metadata ? [{ messageId, metadata: cloneJsonValue(metadata), type: 'message-metadata' }] : [];
 }
@@ -232,7 +232,7 @@ function applyConversationTaskMetadataUpdates(
   providerId: string,
   updates: ConversationTaskCustomBlockUpdate[],
 ): ChatMessageMetadata | undefined {
-  if (updates.length === 0) return currentMetadata;
+  if (updates.length === 0) {return currentMetadata;}
   const metadata = cloneJsonValue(currentMetadata ?? {}) as ChatMessageMetadata;
   const customBlocks = [...(metadata.customBlocks ?? [])];
   let changed = false;

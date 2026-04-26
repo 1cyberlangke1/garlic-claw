@@ -1,5 +1,6 @@
 import type { ActionConfig, AutomationBeforeRunHookResult, AutomationInfo, JsonValue } from '@garlic-claw/shared';
 import { Inject, Injectable } from '@nestjs/common';
+import { ToolRegistryService } from '../tool/tool-registry.service';
 import { asJsonValue, cloneJsonValue } from '../../runtime/host/runtime-host-values';
 import { RuntimeHostConversationMessageService } from '../../runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostPluginDispatchService } from '../../runtime/host/runtime-host-plugin-dispatch.service';
@@ -19,6 +20,7 @@ export class AutomationExecutionService {
   constructor(
     @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
     @Inject(RuntimeHostConversationMessageService) private readonly conversationMessageService: RuntimeHostConversationMessageService,
+    private readonly toolRegistryService: ToolRegistryService,
   ) {}
 
   async executeAutomation(automation: RuntimeAutomationRecord): Promise<JsonValue> {
@@ -27,7 +29,7 @@ export class AutomationExecutionService {
     if ('action' in prepared) {
       return asJsonValue({ results: prepared.results, status: prepared.status });
     }
-    const execution = await executeAutomationActions(prepared, this.runtimeHostPluginDispatchService, this.conversationMessageService);
+    const execution = await executeAutomationActions(prepared, this.conversationMessageService, this.toolRegistryService);
     return asJsonValue(await settleAutomationRun(prepared, execution, this.runtimeHostPluginDispatchService));
   }
 }
@@ -77,14 +79,14 @@ async function prepareAutomationRun(
 
 async function executeAutomationActions(
   plan: AutomationRunPlan,
-  kernel: RuntimeHostPluginDispatchService,
   conversationMessageService: RuntimeHostConversationMessageService,
+  toolRegistryService: ToolRegistryService,
 ): Promise<AutomationExecutionOutcome> {
   const results: JsonValue[] = [];
   let status = 'success';
   for (const action of plan.actions) {
     try {
-      results.push(await executeAutomationAction(action, plan.context, kernel, conversationMessageService));
+      results.push(await executeAutomationAction(action, plan.context, conversationMessageService, toolRegistryService));
     } catch (error) {
       status = 'error';
       results.push({ action: action.type, error: error instanceof Error ? error.message : String(error) });
@@ -96,21 +98,26 @@ async function executeAutomationActions(
 async function executeAutomationAction(
   action: ActionConfig,
   context: AutomationRunContext,
-  kernel: RuntimeHostPluginDispatchService,
   conversationMessageService: RuntimeHostConversationMessageService,
+  toolRegistryService: ToolRegistryService,
 ): Promise<JsonValue> {
-  if (action.type === 'device_command' && action.plugin && action.capability) {
-    return {
+  const toolSourceId = action.sourceId ?? action.plugin;
+  const toolSourceKind = action.sourceKind ?? (action.plugin ? 'plugin' : undefined);
+  if (action.type === 'device_command' && action.capability && toolSourceId && toolSourceKind) {
+    return asJsonValue({
       action: action.type,
       capability: action.capability,
-      plugin: action.plugin,
-      result: await kernel.executeTool({
-        pluginId: action.plugin,
-        toolName: action.capability,
-        params: action.params || {},
+      ...(action.plugin ? { plugin: action.plugin } : {}),
+      ...(action.sourceId ? { sourceId: action.sourceId } : {}),
+      ...(action.sourceKind ? { sourceKind: action.sourceKind } : {}),
+      result: await toolRegistryService.executeRegisteredTool({
         context,
+        params: action.params || {},
+        sourceId: toolSourceId,
+        sourceKind: toolSourceKind,
+        toolName: action.capability,
       }),
-    };
+    });
   }
   if (action.type !== 'ai_message') {
     return { action: action.type };

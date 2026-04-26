@@ -256,83 +256,32 @@ describe('PluginBootstrapService', () => {
     });
   });
 
-  it('registers builtin plugins from the builtin registry and can reload one by id', () => {
+  it('drops retired builtin plugin records during bootstrap', () => {
+    const persistence = new PluginPersistenceService();
     const service = new PluginBootstrapService(
       new PluginGovernanceService(),
-      new PluginPersistenceService(),
+      persistence,
       new BuiltinPluginRegistryService(),
     );
 
-    expect(service.bootstrapBuiltins()).toEqual([
-      'builtin.context-compaction',
-      'builtin.conversation-title',
-      'builtin.memory-context',
-      'builtin.runtime-tools',
-      'builtin.subagent-delegate',
-    ]);
-    expect(service.reloadBuiltin('builtin.memory-context')).toBe('builtin.memory-context');
-    expect(service.listPlugins()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          manifest: expect.objectContaining({
-            commands: [
-              expect.objectContaining({
-                aliases: ['/compress'],
-                canonicalCommand: '/compact',
-                variants: ['/compact', '/compress'],
-              }),
-            ],
-            hooks: expect.arrayContaining([
-              expect.objectContaining({
-                name: 'message:received',
-              }),
-            ]),
-            permissions: expect.arrayContaining([
-              'state:read',
-              'state:write',
-            ]),
-          }),
-          pluginId: 'builtin.context-compaction',
-        }),
-        expect.objectContaining({ pluginId: 'builtin.conversation-title' }),
-        expect.objectContaining({ pluginId: 'builtin.memory-context' }),
-        expect.objectContaining({
-          manifest: expect.objectContaining({
-            config: expect.objectContaining({
-              items: expect.objectContaining({
-                shellBackend: expect.objectContaining({
-                  options: process.platform === 'win32'
-                    ? [
-                      { label: 'PowerShell', value: 'native-shell' },
-                      { label: 'WSL', value: 'wsl-shell' },
-                    ]
-                    : [
-                      { label: 'bash', value: 'native-shell' },
-                    ],
-                  type: 'string',
-                }),
-                bashOutput: expect.objectContaining({
-                  type: 'object',
-                }),
-              }),
-            }),
-            tools: expect.arrayContaining([
-              expect.objectContaining({ name: 'bash' }),
-              expect.objectContaining({ name: 'read' }),
-            ]),
-          }),
-          pluginId: 'builtin.runtime-tools',
-        }),
-        expect.objectContaining({
-          manifest: expect.objectContaining({
-            tools: expect.arrayContaining([
-              expect.objectContaining({ name: 'subagent' }),
-              expect.objectContaining({ name: 'subagent_background' }),
-            ]),
-          }),
-          pluginId: 'builtin.subagent-delegate',
-        }),
-      ]),
-    );
+    persistence.upsertPlugin({
+      connected: false,
+      defaultEnabled: true,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'builtin.memory-context',
+        name: 'Memory Context',
+        permissions: [],
+        runtime: 'local',
+        tools: [],
+        version: '1.0.0',
+      },
+      pluginId: 'builtin.memory-context',
+    });
+
+    expect(service.bootstrapBuiltins()).toEqual([]);
+    expect(service.listPlugins()).toEqual([]);
+    expect(service.canReloadBuiltin('builtin.memory-context')).toBe(false);
   });
 });

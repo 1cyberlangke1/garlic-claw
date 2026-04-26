@@ -164,7 +164,7 @@ describe('ChatMessageList', () => {
               annotations: [
                 {
                   type: 'context-compaction',
-                  owner: 'builtin.context-compaction',
+                  owner: 'conversation.context-governance',
                   version: '1',
                   data: {
                     role: 'summary',

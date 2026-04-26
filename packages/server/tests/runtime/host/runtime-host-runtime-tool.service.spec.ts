@@ -1,8 +1,11 @@
+import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
+import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 
 describe('RuntimeHostRuntimeToolService', () => {
   it('reuses one filesystem backend kind across access review and raw read execution', async () => {
     const runtimeFilesystemBackendService = {
+      getDefaultBackendKind: jest.fn().mockReturnValue('mock-filesystem'),
       readPathRange: jest.fn().mockResolvedValue({
         byteLimited: false,
         limit: 20,
@@ -61,13 +64,24 @@ describe('RuntimeHostRuntimeToolService', () => {
     const runtimeToolPermissionService = {
       review: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new RuntimeHostRuntimeToolService(
-      {} as never,
+    const readToolService = new ReadToolService(
+      runtimeSessionEnvironmentService as never,
       runtimeFilesystemBackendService as never,
       runtimeFileFreshnessService as never,
+    );
+    const service = new RuntimeHostRuntimeToolService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      readToolService,
+      runtimeFileFreshnessService as never,
+      runtimeFilesystemBackendService as never,
       runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
       runtimeToolPermissionService as never,
+      {} as never,
+      {} as never,
     );
 
     await expect(service.readPath({
@@ -102,7 +116,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       ],
     });
 
-    expect(runtimeToolBackendService.getFilesystemBackendKind).toHaveBeenCalledTimes(1);
+    expect(runtimeFilesystemBackendService.getDefaultBackendKind).toHaveBeenCalledTimes(1);
     expect(runtimeToolPermissionService.review).toHaveBeenCalledWith(expect.objectContaining({
       backend: expect.objectContaining({
         kind: 'mock-filesystem',
@@ -178,13 +192,27 @@ describe('RuntimeHostRuntimeToolService', () => {
     const runtimeToolPermissionService = {
       review: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new RuntimeHostRuntimeToolService(
+    const runtimeToolsSettingsService = {
+      readConfiguredShellBackend: jest.fn().mockReturnValue('mock-shell'),
+    };
+    const bashToolService = new BashToolService(
       runtimeCommandService as never,
+      runtimeSessionEnvironmentService as never,
+      runtimeToolBackendService as never,
+    );
+    const service = new RuntimeHostRuntimeToolService(
+      bashToolService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
       runtimeToolPermissionService as never,
+      runtimeToolsSettingsService as never,
+      {} as never,
     );
 
     try {
@@ -270,13 +298,27 @@ describe('RuntimeHostRuntimeToolService', () => {
     const runtimeToolPermissionService = {
       review: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new RuntimeHostRuntimeToolService(
+    const runtimeToolsSettingsService = {
+      readConfiguredShellBackend: jest.fn().mockReturnValue(undefined),
+    };
+    const bashToolService = new BashToolService(
       runtimeCommandService as never,
+      runtimeSessionEnvironmentService as never,
+      runtimeToolBackendService as never,
+    );
+    const service = new RuntimeHostRuntimeToolService(
+      bashToolService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
       runtimeToolPermissionService as never,
+      runtimeToolsSettingsService as never,
+      {} as never,
     );
 
     await service.executeCommand({
@@ -289,7 +331,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       description: '打印当前目录',
     } as never);
 
-    expect(runtimeToolBackendService.getShellBackendKind).toHaveBeenCalledWith('native-shell');
+    expect(runtimeToolBackendService.getShellBackendKind).not.toHaveBeenCalled();
     expect(runtimeCommandService.executeCommand).toHaveBeenCalledWith({
       backendKind: 'native-shell',
       command: 'pwd',

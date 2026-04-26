@@ -244,24 +244,16 @@ describe('usePluginManagement', () => {
       }),
       createPlugin({
         id: 'plugin-2',
-        name: 'builtin.provider-router',
-        displayName: 'Provider Router',
+        name: 'builtin.memory-tools',
+        displayName: 'Memory Tools',
         description: 'user-facing builtin',
         manifest: {
-          id: 'builtin.provider-router',
-          name: 'Provider Router',
+          id: 'builtin.memory-tools',
+          name: 'Memory Tools',
           version: '1.0.0',
           runtime: 'local',
-          permissions: ['config:read', 'provider:read'],
-          tools: [],
-          config: {
-            type: 'object',
-            items: {
-              targetProviderId: {
-                type: 'string',
-              },
-            },
-          },
+          permissions: ['memory:read', 'memory:write'],
+          tools: [{ name: 'recall_memory', description: 'recall', parameters: {} }],
         },
         lastSeenAt: null,
       }),
@@ -281,61 +273,46 @@ describe('usePluginManagement', () => {
     mount(Harness)
     await flushPromises()
 
-    expect(state.selectedPluginName.value).toBe('builtin.provider-router')
+    expect(state.selectedPluginName.value).toBe('builtin.memory-tools')
     expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
-      'builtin.provider-router',
+      'builtin.memory-tools',
       { limit: 50 },
       '',
     )
   })
 
   it('honors a preferred plugin name from a business-page deep link', async () => {
-    const preferredPluginName = ref('builtin.persona-router')
+    const preferredPluginName = ref('builtin.route-inspector')
 
     vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([
       createPlugin({
         id: 'plugin-1',
-        name: 'builtin.provider-router',
-        displayName: 'Provider Router',
-        description: 'provider routing',
+        name: 'builtin.memory-tools',
+        displayName: 'Memory Tools',
+        description: 'memory tools',
         manifest: {
-          id: 'builtin.provider-router',
-          name: 'Provider Router',
+          id: 'builtin.memory-tools',
+          name: 'Memory Tools',
           version: '1.0.0',
           runtime: 'local',
-          permissions: ['config:read', 'provider:read'],
-          tools: [],
-          config: {
-            type: 'object',
-            items: {
-              targetProviderId: {
-                type: 'string',
-              },
-            },
-          },
+          permissions: ['memory:read', 'memory:write'],
+          tools: [{ name: 'save_memory', description: 'save', parameters: {} }],
         },
         lastSeenAt: null,
       }),
       createPlugin({
         id: 'plugin-2',
-        name: 'builtin.persona-router',
-        displayName: 'Persona Router',
-        description: 'persona routing',
+        name: 'builtin.route-inspector',
+        displayName: 'Route Inspector',
+        description: 'route inspection',
         manifest: {
-          id: 'builtin.persona-router',
-          name: 'Persona Router',
+          id: 'builtin.route-inspector',
+          name: 'Route Inspector',
           version: '1.0.0',
           runtime: 'local',
-          permissions: ['config:read', 'persona:read', 'persona:write'],
+          permissions: ['conversation:read'],
           tools: [],
-          config: {
-            type: 'object',
-            items: {
-              targetPersonaId: {
-                type: 'string',
-              },
-            },
-          },
+          routes: [{ path: 'inspect/context', methods: ['GET'] }],
         },
         lastSeenAt: null,
       }),
@@ -357,9 +334,9 @@ describe('usePluginManagement', () => {
     mount(Harness)
     await flushPromises()
 
-    expect(state.selectedPluginName.value).toBe('builtin.persona-router')
+    expect(state.selectedPluginName.value).toBe('builtin.route-inspector')
     expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
-      'builtin.persona-router',
+      'builtin.route-inspector',
       { limit: 50 },
       '',
     )

@@ -173,7 +173,7 @@ export function updatePluginRemoteAccess(
 }
 
 export function listSubagentTypes() {
-  return get<PluginSubagentTypeSummary[]>('/plugin-subagents/types')
+  return get<PluginSubagentTypeSummary[]>('/subagents/types')
 }
 
 export interface PluginLlmRouteOption {

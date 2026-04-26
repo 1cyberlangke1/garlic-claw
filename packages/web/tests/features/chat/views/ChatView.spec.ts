@@ -35,10 +35,10 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     contextWindowPreview: ref(null),
     commandSuggestions: ref([
       {
-        commandId: 'builtin.context-compaction:/compact:command',
+        commandId: 'internal.context-governance:/compact:command',
         trigger: '/compact',
         canonicalCommand: '/compact',
-        pluginId: 'builtin.context-compaction',
+        pluginId: 'internal.context-governance',
         pluginDisplayName: '上下文压缩',
         connected: true,
         defaultEnabled: true,

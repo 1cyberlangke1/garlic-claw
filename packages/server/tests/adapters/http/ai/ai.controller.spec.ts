@@ -21,6 +21,18 @@ describe('AiController', () => {
     updateHostModelRoutingConfig: jest.fn(),
     updateVisionFallbackConfig: jest.fn(),
   };
+  const runtimeToolsSettingsService = {
+    getConfigSnapshot: jest.fn(),
+    updateConfig: jest.fn(),
+  };
+  const subagentSettingsService = {
+    getConfigSnapshot: jest.fn(),
+    updateConfig: jest.fn(),
+  };
+  const contextGovernanceService = {
+    getConfigSnapshot: jest.fn(),
+    updateConfig: jest.fn(),
+  };
 
   let controller: AiController;
 
@@ -29,6 +41,9 @@ describe('AiController', () => {
     controller = new AiController(
       aiManagementService as never,
       modelRuntimeConfigService as never,
+      contextGovernanceService as never,
+      runtimeToolsSettingsService as never,
+      subagentSettingsService as never,
     );
   });
 
@@ -112,5 +127,57 @@ describe('AiController', () => {
     await controller.testConnection('ds2api', { modelId: 'deepseek-reasoner' });
     expect(aiManagementService.discoverModels).toHaveBeenCalledWith('ds2api');
     expect(aiManagementService.testConnection).toHaveBeenCalledWith('ds2api', 'deepseek-reasoner');
+  });
+
+  it('reads runtime-tools config through the internal settings owner', () => {
+    runtimeToolsSettingsService.getConfigSnapshot.mockReturnValue({
+      schema: { type: 'object', items: {} },
+      values: { shellBackend: 'native-shell' },
+    });
+
+    expect(controller.getRuntimeToolsConfig()).toEqual({
+      schema: { type: 'object', items: {} },
+      values: { shellBackend: 'native-shell' },
+    });
+  });
+
+  it('updates runtime-tools config through the internal settings owner', () => {
+    const dto = {
+      values: {
+        bashOutput: {
+          maxLines: 20,
+        },
+      },
+    };
+    runtimeToolsSettingsService.updateConfig.mockReturnValue(dto);
+
+    expect(controller.updateRuntimeToolsConfig(dto)).toEqual(dto);
+    expect(runtimeToolsSettingsService.updateConfig).toHaveBeenCalledWith(dto.values);
+  });
+
+  it('reads and updates subagent config through the internal settings owner', () => {
+    const snapshot = {
+      schema: { type: 'object', items: {} },
+      values: { llm: { targetSubagentType: 'explore' } },
+    };
+    subagentSettingsService.getConfigSnapshot.mockReturnValue(snapshot);
+    subagentSettingsService.updateConfig.mockReturnValue(snapshot);
+
+    expect(controller.getSubagentConfig()).toEqual(snapshot);
+    expect(controller.updateSubagentConfig({ values: snapshot.values })).toEqual(snapshot);
+    expect(subagentSettingsService.updateConfig).toHaveBeenCalledWith(snapshot.values);
+  });
+
+  it('reads and updates context governance config through the internal settings owner', () => {
+    const snapshot = {
+      schema: { type: 'object', items: {} },
+      values: { contextCompaction: { strategy: 'sliding' } },
+    };
+    contextGovernanceService.getConfigSnapshot.mockReturnValue(snapshot);
+    contextGovernanceService.updateConfig.mockReturnValue(snapshot);
+
+    expect(controller.getContextGovernanceConfig()).toEqual(snapshot);
+    expect(controller.updateContextGovernanceConfig({ values: snapshot.values })).toEqual(snapshot);
+    expect(contextGovernanceService.updateConfig).toHaveBeenCalledWith(snapshot.values);
   });
 });

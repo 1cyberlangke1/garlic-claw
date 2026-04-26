@@ -16,10 +16,13 @@ const WEB_DIR = path.resolve(__dirname, '..', '..');
 const PROJECT_ROOT = path.resolve(WEB_DIR, '..', '..');
 const STATE_FILE = path.join(PROJECT_ROOT, 'other', 'dev-processes.json');
 
-const WEB_ORIGIN = 'http://127.0.0.1:23333';
+const DEFAULT_WEB_ORIGIN = 'http://127.0.0.1:23333';
 const API_ORIGIN = 'http://127.0.0.1:23330/api';
-const REQUEST_TIMEOUT_MS = 20_000;
-const STARTUP_TIMEOUT_MS = 120_000;
+const REQUEST_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_REQUEST_TIMEOUT_MS', 20_000);
+const STARTUP_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_STARTUP_TIMEOUT_MS', 120_000);
+const COMMAND_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_COMMAND_TIMEOUT_MS', 180_000);
+const DEV_SERVICE_WAIT_TIMEOUT_SECONDS = readBrowserSmokeTimeoutSeconds('GARLIC_CLAW_BROWSER_SMOKE_DEV_SERVICE_WAIT_TIMEOUT_SECONDS', 30);
+const DEV_RESTART_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_DEV_RESTART_TIMEOUT_MS', 90_000);
 const RETRYABLE_FETCH_ATTEMPTS = 8;
 const LOGIN_SECRET = process.env.GARLIC_CLAW_LOGIN_SECRET || 'smoke-login-secret';
 const SMOKE_PREFIX_ROOT = 'smoke-ui-';
@@ -33,6 +36,7 @@ const AUTOMATION_MESSAGE = `${PREFIX} automation message`;
 const REMOTE_PLUGIN_ID = `${PREFIX}-remote-iot-light`;
 let suppressExpectedTeardownConsoleErrors = false;
 let browserSmokeCompleted = false;
+let webOrigin = process.env.GARLIC_CLAW_WEB_ORIGIN || DEFAULT_WEB_ORIGIN;
 
 async function main() {
   const fakeOpenAi = await startFakeOpenAiServer();
@@ -44,7 +48,7 @@ async function main() {
   const serviceSession = await ensureDevServices();
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    baseURL: WEB_ORIGIN,
+    baseURL: webOrigin,
   });
   const page = await context.newPage();
   const handlePageError = (error) => {
@@ -70,18 +74,22 @@ async function main() {
   let remotePluginHandle = null;
 
   try {
-    await page.goto('/login', { waitUntil: 'networkidle' });
-    await page.locator('input[type="password"]').fill(LOGIN_SECRET);
-    await page.getByRole('button', { exact: true, name: '登录' }).click();
-    accessToken = await waitFor(async () => {
-      const token = await readAccessToken(page);
-      return token || null;
-    }, '等待登录 token');
-    assert.ok(accessToken, '登录后未拿到 accessToken');
+    accessToken = await loginBrowserSmokeAdmin();
+    await page.addInitScript((token) => {
+      try {
+        window.localStorage.setItem('accessToken', token);
+      } catch {}
+    }, accessToken);
     initialProviderIds = new Set((await requestJson('/ai/providers', {
       headers: createAuthHeaders(accessToken),
     }).catch(() => [])).map((provider) => provider.id));
     await page.goto('/', { waitUntil: 'networkidle' });
+    await page.evaluate((token) => {
+      try {
+        window.localStorage.setItem('accessToken', token);
+      } catch {}
+    }, accessToken);
+    await page.reload({ waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
     await cleanupSmokeArtifacts(accessToken, {
@@ -99,6 +107,7 @@ async function main() {
     await verifyCommandsPage(page);
     await verifySubagentsPage(page);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
+    await verifyRuntimeToolsSettingsPage(page);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
 
@@ -136,26 +145,67 @@ async function main() {
 }
 
 async function ensureDevServices() {
-  if (await isManagedDevEnvironmentReady()) {
+  const [apiReady, webReady] = await Promise.all([
+    isPortListening(23330),
+    isPortListening(23333),
+  ]);
+  const webIsGarlic = webReady ? await isGarlicWebApp(webOrigin) : false;
+  console.log(`[browser-smoke] service probe apiReady=${apiReady} webReady=${webReady} webIsGarlic=${webIsGarlic}`);
+
+  if (apiReady && webReady && webIsGarlic) {
+    console.log('[browser-smoke] reuse existing backend and web dev services');
     return {
-      startedBySmoke: false,
+      mode: 'reuse',
       async stop() {},
     };
   }
 
+  if (webReady && !webIsGarlic) {
+    console.log('[browser-smoke] keep external web port, start isolated Garlic services');
+    const started = [];
+    if (!apiReady) {
+      started.push(await startBrowserSmokeBackendApp());
+    }
+    started.push(await startBrowserSmokeWebApp());
+    await waitForHttpReady(`${API_ORIGIN}/health`);
+    await waitForHttpReady(webOrigin);
+    return {
+      mode: 'isolated-web',
+      async stop() {
+        await Promise.all(started.map((entry) => entry.stop()));
+      },
+    };
+  }
+
+  if (webReady && !apiReady) {
+    console.log('[browser-smoke] reuse existing web, start backend only');
+    const backendApp = await startBrowserSmokeBackendApp();
+    await waitForHttpReady(`${API_ORIGIN}/health`);
+    return {
+      mode: 'backend-only',
+      async stop() {
+        await backendApp.stop();
+      },
+    };
+  }
+
+  console.log('[browser-smoke] restart managed dev services through launcher');
   await runCommand(resolvePythonCommand(), ['tools/start_launcher.py', 'restart'], {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      GARLIC_CLAW_DEV_BACKEND_APP_PORT_WAIT_TIMEOUT_SECONDS: String(DEV_SERVICE_WAIT_TIMEOUT_SECONDS),
+      GARLIC_CLAW_DEV_BACKEND_COMPILER_WAIT_TIMEOUT_SECONDS: String(DEV_SERVICE_WAIT_TIMEOUT_SECONDS),
       GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
     },
     label: '启动开发环境',
+    timeoutMs: DEV_RESTART_TIMEOUT_MS,
   });
   await waitForHttpReady(`${API_ORIGIN}/health`);
-  await waitForHttpReady(WEB_ORIGIN);
+  await waitForHttpReady(webOrigin);
 
   return {
-    startedBySmoke: true,
+    mode: 'full-stack',
     async stop() {
       await runCommand(resolvePythonCommand(), ['tools/start_launcher.py', '--stop'], {
         cwd: PROJECT_ROOT,
@@ -185,6 +235,80 @@ async function isManagedDevEnvironmentReady() {
   } catch {
     return false;
   }
+}
+
+async function isGarlicWebApp(origin) {
+  try {
+    const response = await fetch(origin, { signal: AbortSignal.timeout(5_000) });
+    const text = await response.text();
+    return text.includes('Garlic Claw - AI 秘书') && text.includes('<div id="app"></div>');
+  } catch {
+    return false;
+  }
+}
+
+async function startBrowserSmokeBackendApp() {
+  console.log('[browser-smoke] build backend for smoke');
+  await runCommand(process.execPath, [readNpmCliPath(), 'run', 'build:server'], {
+    cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
+    },
+    label: '构建后端',
+    timeoutMs: COMMAND_TIMEOUT_MS,
+  });
+
+  console.log('[browser-smoke] start backend process');
+  const child = spawn(process.execPath, ['dist/src/main.js'], {
+    cwd: path.join(PROJECT_ROOT, 'packages', 'server'),
+    env: {
+      ...process.env,
+      GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.on('data', () => {});
+  child.stderr?.on('data', () => {});
+
+  return {
+    async stop() {
+      if (child.exitCode !== null) {
+        return;
+      }
+      child.kill();
+      await Promise.race([
+        new Promise((resolve) => child.once('exit', resolve)),
+        delay(5_000).then(() => undefined),
+      ]);
+    },
+  };
+}
+
+async function startBrowserSmokeWebApp() {
+  const port = await getFreePort();
+  webOrigin = `http://127.0.0.1:${port}`;
+  console.log(`[browser-smoke] start isolated web dev server on ${webOrigin}`);
+  const child = spawn(process.execPath, [readViteCliPath(), '--host', '127.0.0.1', '--port', String(port)], {
+    cwd: path.join(PROJECT_ROOT, 'packages', 'web'),
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.on('data', () => {});
+  child.stderr?.on('data', () => {});
+  await waitForHttpReady(webOrigin);
+  return {
+    async stop() {
+      if (child.exitCode !== null) {
+        return;
+      }
+      child.kill();
+      await Promise.race([
+        new Promise((resolve) => child.once('exit', resolve)),
+        delay(5_000).then(() => undefined),
+      ]);
+    },
+  };
 }
 
 async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
@@ -467,17 +591,22 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
     await page.waitForLoadState('networkidle');
   }
 
-  await page.goto(`/plugins?plugin=${encodeURIComponent('builtin.runtime-tools')}`, { waitUntil: 'networkidle' });
-  await expectText(page, 'Runtime Tools');
-  await expectText(page, '插件配置')
-  const collapsedToggle = page.locator('button.collapsed-toggle').first()
-  if (await collapsedToggle.count() > 0) {
-    await collapsedToggle.click()
-    await expectText(page, '收起高级配置')
-  }
-  await expectText(page, 'bash 执行后端')
-  await expectText(page, 'bash 输出治理')
   return remotePluginHandle
+}
+
+async function verifyRuntimeToolsSettingsPage(page) {
+  await page.goto('/ai', { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.getByRole('heading', { name: '执行工具配置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.getByRole('heading', { name: '执行工具治理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await expectText(page, 'bash 执行后端');
+  await expectText(page, '内部工具源');
+  const collapsedToggle = page.locator('button.collapsed-toggle').first();
+  if (await collapsedToggle.count() > 0) {
+    await collapsedToggle.click();
+    await expectText(page, '收起高级配置');
+    await expectText(page, 'bash 输出治理');
+  }
 }
 
 async function verifySubagentsPage(page) {
@@ -635,6 +764,17 @@ async function listAutomations(accessToken) {
   });
 }
 
+async function loginBrowserSmokeAdmin() {
+  const payload = await requestJson('/auth/login', {
+    body: {
+      secret: LOGIN_SECRET,
+    },
+    method: 'POST',
+  });
+  assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
+  return payload.accessToken;
+}
+
 async function requestJson(routePath, options = {}) {
   const requestInit = {
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -707,6 +847,17 @@ function resolvePythonCommand() {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 
+function readNpmCliPath() {
+  if (typeof process.env.npm_execpath === 'string' && process.env.npm_execpath.trim()) {
+    return process.env.npm_execpath;
+  }
+  throw new Error('当前环境缺少 npm_execpath，无法从浏览器 smoke 补启动后端');
+}
+
+function readViteCliPath() {
+  return path.join(PROJECT_ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+}
+
 async function fetchWithRetry(url, requestInit) {
   let lastError = null;
   for (let attempt = 0; attempt < RETRYABLE_FETCH_ATTEMPTS; attempt += 1) {
@@ -740,20 +891,72 @@ function parseMaybeJson(text) {
 
 async function runCommand(command, args, options) {
   await new Promise((resolve, reject) => {
+    let settled = false;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
       stdio: 'inherit',
     });
-    child.once('error', reject);
-    child.once('exit', (code) => {
-      if (code === 0) {
-        resolve();
+    const timeoutHandle = options.timeoutMs && options.timeoutMs > 0
+      ? setTimeout(() => {
+        void stopSmokeCommandProcess(child.pid);
+        finish(() => reject(new Error(`${options.label}超时: ${options.timeoutMs}ms`)));
+      }, options.timeoutMs)
+      : null;
+    const finish = (callback) => {
+      if (settled) {
         return;
       }
-      reject(new Error(`${options.label}失败: ${code ?? 'unknown'}`));
+      settled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      callback();
+    };
+    child.once('error', (error) => finish(() => reject(error)));
+    child.once('exit', (code) => {
+      if (code === 0) {
+        finish(resolve);
+        return;
+      }
+      finish(() => reject(new Error(`${options.label}失败: ${code ?? 'unknown'}`)));
     });
   });
+}
+
+async function stopSmokeCommandProcess(pid) {
+  if (!pid || pid <= 0) {
+    return;
+  }
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => {
+      const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      killer.once('error', () => resolve(undefined));
+      killer.once('exit', () => resolve(undefined));
+    });
+    return;
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {}
+}
+
+function readBrowserSmokeTimeoutMs(envName, fallback) {
+  const raw = process.env[envName]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function readBrowserSmokeTimeoutSeconds(envName, fallback) {
+  const raw = process.env[envName]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 async function isPortListening(port) {
@@ -765,6 +968,27 @@ async function isPortListening(port) {
     });
     socket.once('error', () => {
       resolve(false);
+    });
+  });
+}
+
+async function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('无法分配临时端口')));
+        return;
+      }
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(address.port);
+      });
     });
   });
 }

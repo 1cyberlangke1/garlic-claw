@@ -103,11 +103,11 @@ export class AiModelExecutionService {
 
   private resolveExecutionTarget(providerId: string | undefined, modelId: string | undefined): AiExecutionTarget {
     const resolvedProviderId = providerId ?? this.aiProviderSettingsService.listProviders()[0]?.id;
-    if (!resolvedProviderId) throw new Error('No provider configured');
+    if (!resolvedProviderId) {throw new Error('No provider configured');}
     const provider = this.aiProviderSettingsService.getProvider(resolvedProviderId), resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
-    if (!resolvedModelId) throw new Error(`Provider "${provider.id}" does not have any configured model`);
-    if (!provider.apiKey) throw new Error(`Provider "${provider.id}" is missing apiKey`);
-    if (!provider.baseUrl) throw new Error(`Provider "${provider.id}" is missing baseUrl`);
+    if (!resolvedModelId) {throw new Error(`Provider "${provider.id}" does not have any configured model`);}
+    if (!provider.apiKey) {throw new Error(`Provider "${provider.id}" is missing apiKey`);}
+    if (!provider.baseUrl) {throw new Error(`Provider "${provider.id}" is missing baseUrl`);}
     return { modelId: resolvedModelId, provider };
   }
 
@@ -161,7 +161,7 @@ export class AiModelExecutionService {
   }
 
   private createLanguageModel(target: AiExecutionTarget): LanguageModel {
-    if (target.provider.driver === 'anthropic') return createAnthropic({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl })(target.modelId) as unknown as LanguageModel;
+    if (target.provider.driver === 'anthropic') {return createAnthropic({ apiKey: target.provider.apiKey as string, baseURL: target.provider.baseUrl })(target.modelId) as unknown as LanguageModel;}
     if (target.provider.driver === 'gemini') {
       const { createGoogleGenerativeAI } = localRequire('@ai-sdk/google') as {
         createGoogleGenerativeAI: (options: { apiKey: string; baseURL?: string }) => (modelId: string) => unknown;
@@ -198,7 +198,7 @@ async function collectAssistantStream(fullStream: AsyncIterable<unknown>): Promi
   let text = '';
   let customBlocks: AssistantCustomBlockEntry[] = [];
   for await (const part of fullStream) {
-    if (!isRecord(part) || typeof part.type !== 'string') continue;
+    if (!isRecord(part) || typeof part.type !== 'string') {continue;}
     if (part.type === 'text-delta' && typeof part.text === 'string') {
       text += part.text;
       continue;
@@ -209,7 +209,7 @@ async function collectAssistantStream(fullStream: AsyncIterable<unknown>): Promi
 }
 
 function applyAssistantCustomBlockUpdates(currentBlocks: AssistantCustomBlockEntry[], updates: AssistantCustomBlockEntry[]): AssistantCustomBlockEntry[] {
-  if (updates.length === 0) return currentBlocks;
+  if (updates.length === 0) {return currentBlocks;}
   const nextBlocks = [...currentBlocks];
   for (const update of updates) {
     const blockIndex = nextBlocks.findIndex((entry) => entry.key === update.key);
@@ -239,7 +239,7 @@ function readModelUsage(value: unknown, input: AiModelExecutionRequest, text: st
 function readExecutionError(error: unknown, fallback: string): Error { return error instanceof Error ? error : new Error(fallback); }
 
 function readProviderUsage(value: unknown): AiModelUsage | null {
-  if (!isRecord(value)) return null;
+  if (!isRecord(value)) {return null;}
   const totalTokens = readTokenNumber(value.totalTokens);
   let inputTokens = readTokenNumber(value.inputTokens);
   let outputTokens = readTokenNumber(value.outputTokens);
@@ -257,9 +257,9 @@ function readMessageText(content: PluginLlmMessage['content']): string { return 
 function estimateTokenCount(text: string): number { return Math.ceil(Buffer.byteLength(text, 'utf8') / 4); }
 
 function toAiSdkImageInput(image: string): string | ArrayBuffer {
-  if (!image.startsWith('data:')) return image;
+  if (!image.startsWith('data:')) {return image;}
   const matched = /^data:([^;]+);base64,(.+)$/u.exec(image);
-  if (!matched) throw new Error('Unsupported image data URL');
+  if (!matched) {throw new Error('Unsupported image data URL');}
   const binary = Buffer.from(matched[2], 'base64');
   return binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
 }
@@ -268,7 +268,7 @@ function createOpenAiCompatibleFetch(providerId: string): typeof fetch { const b
 
 function normalizeOpenAiCompatibleStreamResponse(response: Response, providerId: string): Response {
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
-  if (!response.body || !contentType.includes('text/event-stream')) return response;
+  if (!response.body || !contentType.includes('text/event-stream')) {return response;}
   const headers = new Headers(response.headers);
   headers.delete('content-length');
   const state: OpenAiCompatibleToolCallIdState = { generatedIds: new Map<string, string>(), streamId: sanitizeOpenAiCompatibleIdFragment(`${providerId}-${uuidv7()}`) };
@@ -282,7 +282,7 @@ function normalizeOpenAiCompatibleStreamResponse(response: Response, providerId:
       if (done) { flushNormalizedSseChunk(controller, encoder, buffered + decoder.decode(), state, true); controller.close(); return; }
       buffered += decoder.decode(value, { stream: true });
       const lastNewlineIndex = buffered.lastIndexOf('\n');
-      if (lastNewlineIndex < 0) return;
+      if (lastNewlineIndex < 0) {return;}
       flushNormalizedSseChunk(controller, encoder, buffered.slice(0, lastNewlineIndex + 1), state, false);
       buffered = buffered.slice(lastNewlineIndex + 1);
     },
@@ -291,15 +291,15 @@ function normalizeOpenAiCompatibleStreamResponse(response: Response, providerId:
   return new Response(transformedBody, { headers, status: response.status, statusText: response.statusText });
 }
 
-function flushNormalizedSseChunk(controller: ReadableStreamDefaultController<Uint8Array>, encoder: InstanceType<typeof TextEncoder>, chunk: string, state: OpenAiCompatibleToolCallIdState, flushTail: boolean): void { if (chunk.length === 0) return; controller.enqueue(encoder.encode(normalizeOpenAiCompatibleSseLines(chunk, state, flushTail))); }
+function flushNormalizedSseChunk(controller: ReadableStreamDefaultController<Uint8Array>, encoder: InstanceType<typeof TextEncoder>, chunk: string, state: OpenAiCompatibleToolCallIdState, flushTail: boolean): void { if (chunk.length === 0) {return;} controller.enqueue(encoder.encode(normalizeOpenAiCompatibleSseLines(chunk, state, flushTail))); }
 
 function normalizeOpenAiCompatibleSseLines(chunk: string, state: OpenAiCompatibleToolCallIdState, flushTail: boolean): string { const lines = chunk.split('\n'); if (!flushTail && !chunk.endsWith('\n')) {lines.pop();} return lines.map((line) => normalizeOpenAiCompatibleSseLine(line, state)).join('\n'); }
 
 function normalizeOpenAiCompatibleSseLine(line: string, state: OpenAiCompatibleToolCallIdState): string {
   const trimmedLine = line.endsWith('\r') ? line.slice(0, -1) : line;
-  if (!trimmedLine.startsWith('data:')) return trimmedLine;
+  if (!trimmedLine.startsWith('data:')) {return trimmedLine;}
   const payload = trimmedLine.slice(5).trimStart();
-  if (!payload || payload === '[DONE]') return `data: ${payload}`;
+  if (!payload || payload === '[DONE]') {return `data: ${payload}`;}
   let parsed: unknown;
   try {
     parsed = JSON.parse(payload);
@@ -311,13 +311,13 @@ function normalizeOpenAiCompatibleSseLine(line: string, state: OpenAiCompatibleT
 }
 
 function normalizeOpenAiCompatibleChunkPayload(payload: unknown, state: OpenAiCompatibleToolCallIdState): unknown {
-  if (!isRecord(payload) || !Array.isArray(payload.choices)) return payload;
+  if (!isRecord(payload) || !Array.isArray(payload.choices)) {return payload;}
   let changed = false;
   const nextChoices = payload.choices.map((choice, choiceIndex) => {
-    if (!isRecord(choice) || !isRecord(choice.delta) || !Array.isArray(choice.delta.tool_calls)) return choice;
+    if (!isRecord(choice) || !isRecord(choice.delta) || !Array.isArray(choice.delta.tool_calls)) {return choice;}
     let choiceChanged = false;
     const nextToolCalls = choice.delta.tool_calls.map((toolCall, toolIndex) => { const normalized = normalizeOpenAiCompatibleToolCall(toolCall, choiceIndex, toolIndex, state); choiceChanged ||= normalized.changed; return normalized.toolCall; });
-    if (!choiceChanged) return choice;
+    if (!choiceChanged) {return choice;}
     changed = true;
     return { ...choice, delta: { ...choice.delta, tool_calls: nextToolCalls } };
   });
@@ -325,7 +325,7 @@ function normalizeOpenAiCompatibleChunkPayload(payload: unknown, state: OpenAiCo
 }
 
 function normalizeOpenAiCompatibleToolCall(toolCall: unknown, choiceIndex: number, toolIndex: number, state: OpenAiCompatibleToolCallIdState): NormalizedOpenAiCompatibleToolCall {
-  if (!isRecord(toolCall)) return { changed: false, toolCall: toolCall as Record<string, unknown> };
+  if (!isRecord(toolCall)) {return { changed: false, toolCall: toolCall as Record<string, unknown> };}
   let changed = false;
   let nextToolCall = toolCall;
   const nextIndex = typeof nextToolCall.index === 'number' ? nextToolCall.index : toolIndex;

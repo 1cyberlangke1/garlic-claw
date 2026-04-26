@@ -410,6 +410,9 @@ describe('AutomationService', () => {
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
+    const toolRegistryService = {
+      executeRegisteredTool: jest.fn().mockResolvedValue({ sessionId: 'subagent-session-1' }),
+    };
     const runtimeHostConversationMessageService = {
       sendMessage: jest.fn().mockResolvedValue({
         id: 'message-1',
@@ -428,6 +431,7 @@ describe('AutomationService', () => {
     service = createService({
       runtimeHostPluginDispatchService,
       conversationMessageService: runtimeHostConversationMessageService,
+      toolRegistryService,
     });
 
     service.create('user-1', {
@@ -439,7 +443,8 @@ describe('AutomationService', () => {
         },
         {
           type: 'device_command',
-          plugin: 'builtin.subagent-delegate',
+          sourceKind: 'internal',
+          sourceId: 'subagent',
           capability: 'subagent_background',
           params: { prompt: '请继续处理', writeBack: false },
         },
@@ -468,13 +473,15 @@ describe('AutomationService', () => {
         {
           action: 'device_command',
           capability: 'subagent_background',
-          plugin: 'builtin.subagent-delegate',
+          sourceKind: 'internal',
+          sourceId: 'subagent',
           result: { sessionId: 'subagent-session-1' },
         },
       ],
     });
-    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenNthCalledWith(1, {
-      pluginId: 'builtin.subagent-delegate',
+    expect(toolRegistryService.executeRegisteredTool).toHaveBeenNthCalledWith(1, {
+      sourceKind: 'internal',
+      sourceId: 'subagent',
       toolName: 'subagent_background',
       params: { prompt: '请继续处理', writeBack: false },
       context: {
@@ -607,17 +614,24 @@ function createService(input?: {
     invokeHook: (...args: unknown[]) => Promise<unknown>;
     listPlugins: () => unknown[];
   };
+  toolRegistryService?: {
+    executeRegisteredTool: (...args: unknown[]) => Promise<unknown>;
+  };
 }): AutomationService {
+  const runtimeHostPluginDispatchService = input?.runtimeHostPluginDispatchService ?? {
+    executeTool: jest.fn(),
+    invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
+    listPlugins: jest.fn().mockReturnValue([]),
+  };
   const automationExecutionService = new AutomationExecutionService(
-    (input?.runtimeHostPluginDispatchService ?? {
-      executeTool: jest.fn(),
-      invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
-      listPlugins: jest.fn().mockReturnValue([]),
-    }) as never,
+    runtimeHostPluginDispatchService as never,
     (input?.conversationMessageService ?? {
       sendMessage: async () => {
         throw new Error('RuntimeHostConversationMessageService is not available');
       },
+    }) as never,
+    (input?.toolRegistryService ?? {
+      executeRegisteredTool: async ({ context, params, sourceId, toolName }: { context: unknown; params: unknown; sourceId: string; toolName: string }) => runtimeHostPluginDispatchService.executeTool({ context, params, pluginId: sourceId, toolName }),
     }) as never,
   );
   return new AutomationService(
