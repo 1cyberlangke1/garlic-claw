@@ -77,6 +77,7 @@ export function createChatStoreModule() {
     streamController,
     recoveryTimer,
     currentStreamingMessageId,
+    todoItems,
     streaming,
   } as ChatStreamState;
   let conversationListRequestId = 0;
@@ -184,11 +185,6 @@ export function createChatStoreModule() {
     }
 
     await tryLoadConversationContextWindow(conversationId);
-    if (currentConversationId.value !== conversationId) {
-      return;
-    }
-
-    await loadConversationTodo(conversationId);
   }
 
   async function refreshConversationStreamState(
@@ -214,12 +210,11 @@ export function createChatStoreModule() {
       return;
     }
 
-    await Promise.all([
-      ...(input.permissionStateChanged
+    await Promise.all(
+      input.permissionStateChanged
         ? [loadConversationRuntimePermissions(conversationId)]
-        : []),
-      loadConversationTodo(conversationId),
-    ]);
+        : [],
+    );
   }
 
   async function refreshConversationTailState(
@@ -234,10 +229,7 @@ export function createChatStoreModule() {
       return;
     }
 
-    await Promise.all([
-      loadConversationRuntimePermissions(conversationId),
-      loadConversationTodo(conversationId),
-    ]);
+    await loadConversationRuntimePermissions(conversationId);
   }
 
   async function loadConversationWindowSnapshot(conversationId: string) {

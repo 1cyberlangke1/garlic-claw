@@ -143,16 +143,16 @@ describe('createChatStoreModule', () => {
         model: null,
       },
     ])
-    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([
-      {
-        content: '更新会话摘要',
-        priority: 'high',
-        status: 'in_progress',
-      },
-    ])
     vi.mocked(chatModelSelection.ensureChatModelSelection).mockResolvedValue()
     vi.mocked(chatStreamModule.dispatchSendMessage).mockImplementation(
-      async (_state, _input, params) => {
+      async (state, _input, params) => {
+        state.todoItems.value = [
+          {
+            content: '更新会话摘要',
+            priority: 'high',
+            status: 'in_progress',
+          },
+        ]
         await params?.refreshConversationSummary?.()
         await params?.refreshConversationState?.({ summaryRefreshed: true })
       },
@@ -177,7 +177,7 @@ describe('createChatStoreModule', () => {
         providerId: null,
       },
     )
-    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledWith('conversation-1')
+    expect(chatConversationData.loadConversationTodoRecord).not.toHaveBeenCalled()
     expect(store.conversations.value).toEqual([
       expect.objectContaining({
         id: 'conversation-1',
@@ -312,9 +312,15 @@ describe('createChatStoreModule', () => {
         model: null,
       },
     ])
-    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([])
     vi.mocked(chatStreamModule.dispatchRetryMessage).mockImplementation(
-      async (_state, _messageId, params) => {
+      async (state, _messageId, params) => {
+        state.todoItems.value = [
+          {
+            content: '重试期间同步 todo',
+            priority: 'medium',
+            status: 'pending',
+          },
+        ]
         await params?.refreshConversationSummary?.()
         await params?.refreshConversationState?.({ summaryRefreshed: true })
       },
@@ -337,11 +343,16 @@ describe('createChatStoreModule', () => {
         providerId: null,
       },
     )
-    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledWith('conversation-1')
+    expect(chatConversationData.loadConversationTodoRecord).not.toHaveBeenCalled()
     expect(store.conversations.value).toEqual([
       expect.objectContaining({
         id: 'conversation-1',
         title: '重试后标题',
+      }),
+    ])
+    expect(store.todoItems.value).toEqual([
+      expect.objectContaining({
+        content: '重试期间同步 todo',
       }),
     ])
   })
@@ -407,13 +418,6 @@ describe('createChatStoreModule', () => {
         _count: { messages: 1 },
       },
     ] satisfies Conversation[])
-    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([
-      {
-        content: '停止当前生成',
-        priority: 'medium',
-        status: 'pending',
-      },
-    ])
     vi.mocked(chatConversationData.updateConversationMessageRecord).mockResolvedValue({
       id: 'assistant-1',
       role: 'assistant',
@@ -442,6 +446,13 @@ describe('createChatStoreModule', () => {
         model: null,
       },
     ]
+    store.todoItems.value = [
+      {
+        content: '停止当前生成',
+        priority: 'medium',
+        status: 'pending',
+      },
+    ]
 
     await store.updateMessage('assistant-1', { content: '修改后' })
     await store.deleteMessage('assistant-1')
@@ -458,7 +469,7 @@ describe('createChatStoreModule', () => {
     expect(chatConversationData.loadConversationList).toHaveBeenCalledTimes(2)
     expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
     expect(chatConversationData.loadPendingRuntimePermissionsRecord).not.toHaveBeenCalled()
-    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledTimes(2)
+    expect(chatConversationData.loadConversationTodoRecord).not.toHaveBeenCalled()
     expect(store.messages.value).toEqual([])
     expect(store.todoItems.value).toEqual([
       expect.objectContaining({
@@ -468,13 +479,6 @@ describe('createChatStoreModule', () => {
   })
 
   it('marks the current assistant as stopped and refreshes only tail state after stop', async () => {
-    vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([
-      {
-        content: '检查停止后的上下文窗口',
-        priority: 'medium',
-        status: 'pending',
-      },
-    ])
     vi.mocked(chatConversationData.stopConversationMessageRecord).mockResolvedValue({
       message: 'Generation stopped',
     })
@@ -497,6 +501,13 @@ describe('createChatStoreModule', () => {
         model: null,
       },
     ]
+    store.todoItems.value = [
+      {
+        content: '检查停止后的上下文窗口',
+        priority: 'medium',
+        status: 'pending',
+      },
+    ]
 
     await store.stopStreaming()
 
@@ -513,7 +524,7 @@ describe('createChatStoreModule', () => {
         providerId: null,
       },
     )
-    expect(chatConversationData.loadConversationTodoRecord).toHaveBeenCalledWith('conversation-1')
+    expect(chatConversationData.loadConversationTodoRecord).not.toHaveBeenCalled()
     expect(chatStreamModule.scheduleChatRecoveryWithState).not.toHaveBeenCalled()
     expect(store.messages.value).toEqual([
       expect.objectContaining({

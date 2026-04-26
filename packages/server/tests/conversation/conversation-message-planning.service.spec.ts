@@ -225,6 +225,76 @@ describe('ConversationMessagePlanningService', () => {
       strategy: 'summary',
     }));
   });
+
+  it('prefers the last matching provider usage annotation for context window preview tokens', async () => {
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '第一条消息'),
+      createMessage('history-2', 'assistant', '第二条消息', {
+        annotations: [{
+          data: {
+            inputTokens: 88,
+            modelId: 'gpt-5.4',
+            outputTokens: 12,
+            providerId: 'openai',
+            source: 'provider',
+            totalTokens: 100,
+          },
+          owner: 'conversation.model-usage',
+          type: 'model-usage',
+          version: '1',
+        }],
+      }),
+    ]);
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 88,
+      includedMessageIds: ['history-1', 'history-2'],
+    }));
+  });
+
+  it('keeps the model message chain unchanged when session todo changes', async () => {
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'assistant', '先前回复'),
+      createMessage('history-2', 'user', '当前问题'),
+    ]);
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: undefined,
+      fullStream: (async function* () { yield { text: 'ok', type: 'text-delta' as const }; })(),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usage: undefined,
+    });
+
+    await service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-pending',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [
+        expect.objectContaining({ role: 'assistant' }),
+        expect.objectContaining({ role: 'user' }),
+      ],
+      system: '你是测试助手',
+    }));
+  });
 });
 
 function createMessage(

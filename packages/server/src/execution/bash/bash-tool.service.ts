@@ -12,7 +12,7 @@ import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.servi
 export interface BashToolInput { backendKind: RuntimeBackendKind; command: string; description: string; sessionId: string; timeout?: number; workdir?: string; }
 
 export const BASH_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
-  command: { description: '要执行的命令。命令语法跟随当前 shell backend：just-bash 与 Linux/WSL native-shell 系 backend 使用 bash，Windows native-shell 系 backend 使用 PowerShell。', required: true, type: 'string' },
+  command: { description: '要执行的命令。命令语法跟随当前 shell backend：bash / WSL 使用 bash，Windows PowerShell backend 使用 PowerShell。', required: true, type: 'string' },
   description: { description: '用 5 到 10 个词描述这条命令在做什么，便于审查和后续理解。', required: true, type: 'string' },
   workdir: { description: '可选工作目录。相对路径会基于当前 backend 的可见根解析。优先使用该字段，不要在命令里先写 cd。', required: false, type: 'string' },
   timeout: { description: '可选超时时间，单位毫秒，默认 30000，最大 120000。', required: false, type: 'number' },

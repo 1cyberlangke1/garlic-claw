@@ -3,6 +3,7 @@ import {
   RuntimeHostConversationRecordService,
   serializeConversationMessage,
 } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostConversationTodoService } from '../../src/runtime/host/runtime-host-conversation-todo.service';
 import { ConversationTaskService, type ConversationTaskEvent } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
 
@@ -10,14 +11,16 @@ describe('ConversationTaskService', () => {
   let conversationId: string;
   let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
   let runtimeHostConversationMessageService: RuntimeHostConversationMessageService;
+  let runtimeHostConversationTodoService: RuntimeHostConversationTodoService;
   let runtimeToolPermissionService: RuntimeToolPermissionService;
   let service: ConversationTaskService;
 
   beforeEach(() => {
     runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
     runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(runtimeHostConversationRecordService);
+    runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(runtimeHostConversationRecordService);
     runtimeToolPermissionService = new RuntimeToolPermissionService();
-    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeToolPermissionService);
+    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeToolPermissionService, runtimeHostConversationTodoService);
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1' }) as { id: string }).id;
   });
 
@@ -40,6 +43,12 @@ describe('ConversationTaskService', () => {
             yield toolCall();
             yield toolResult();
           })(),
+          usage: Promise.resolve({
+            inputTokens: 21,
+            outputTokens: 9,
+            source: 'provider',
+            totalTokens: 30,
+          }),
         },
       }),
       modelId: 'gpt-5.4',
@@ -100,24 +109,9 @@ describe('ConversationTaskService', () => {
     ]);
 
     const conversation = runtimeHostConversationRecordService.requireConversation(conversationId);
+    const persistedMetadata = JSON.parse(String(conversation.messages[0].metadataJson));
     expect(conversation.messages[0]).toMatchObject({
       content: '最终回复',
-      metadataJson: JSON.stringify({
-        customBlocks: [
-          {
-            id: 'custom-field:reasoning_content',
-            kind: 'text',
-            source: {
-              key: 'reasoning_content',
-              origin: 'ai-sdk.raw',
-              providerId: 'openai',
-            },
-            state: 'done',
-            text: '先检查上下文',
-            title: 'Reasoning Content',
-          },
-        ],
-      }),
       model: 'gpt-5.4',
       provider: 'openai',
       role: 'assistant',
@@ -125,24 +119,40 @@ describe('ConversationTaskService', () => {
       toolCalls: [toolCallRecord()],
       toolResults: [toolResultRecord()],
     });
+    expect(persistedMetadata).toEqual({
+      annotations: [
+        {
+          data: {
+            inputTokens: 21,
+            modelId: 'gpt-5.4',
+            outputTokens: 9,
+            providerId: 'openai',
+            source: 'provider',
+            totalTokens: 30,
+          },
+          owner: 'conversation.model-usage',
+          type: 'model-usage',
+          version: '1',
+        },
+      ],
+      customBlocks: [
+        {
+          id: 'custom-field:reasoning_content',
+          kind: 'text',
+          source: {
+            key: 'reasoning_content',
+            origin: 'ai-sdk.raw',
+            providerId: 'openai',
+          },
+          state: 'done',
+          text: '先检查上下文',
+          title: 'Reasoning Content',
+        },
+      ],
+    });
     expect(serializeConversationMessage(conversation.messages[0] as never)).toMatchObject({
       content: '最终回复',
-      metadataJson: JSON.stringify({
-        customBlocks: [
-          {
-            id: 'custom-field:reasoning_content',
-            kind: 'text',
-            source: {
-              key: 'reasoning_content',
-              origin: 'ai-sdk.raw',
-              providerId: 'openai',
-            },
-            state: 'done',
-            text: '先检查上下文',
-            title: 'Reasoning Content',
-          },
-        ],
-      }),
+      metadataJson: JSON.stringify(persistedMetadata),
       toolCalls: JSON.stringify([toolCallRecord()]),
       toolResults: JSON.stringify([toolResultRecord()]),
     });
@@ -313,6 +323,43 @@ describe('ConversationTaskService', () => {
           resolution: 'approved',
         },
         type: 'permission-resolved',
+      },
+    ]));
+  });
+
+  it('forwards todo owner updates into the task stream without parsing tool text output', async () => {
+    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const events: ConversationTaskEvent[] = [];
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream: async () => ({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            runtimeHostConversationTodoService.replaceSessionTodo(conversationId, [
+              { content: '同步 todo 面板', priority: 'high', status: 'in_progress' },
+            ]);
+            yield delta('todo 已更新');
+          })(),
+        },
+      }),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    service.subscribe(String(assistantMessage.id), (event) => events.push(event));
+
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(events).toEqual(expect.arrayContaining([
+      {
+        conversationId,
+        todos: [
+          { content: '同步 todo 面板', priority: 'high', status: 'in_progress' },
+        ],
+        type: 'todo-updated',
       },
     ]));
   });

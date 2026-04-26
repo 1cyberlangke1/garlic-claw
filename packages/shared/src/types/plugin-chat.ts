@@ -21,6 +21,7 @@ export interface PluginMessageHookInfo {
   role: string;
   content: string | null;
   parts: ChatMessagePart[];
+  metadata?: ChatMessageMetadata;
   provider?: string | null;
   model?: string | null;
   status?: ChatMessageStatus;
@@ -53,6 +54,8 @@ export interface PluginConversationHistorySnapshot {
 /** 会话历史预览参数。 */
 export interface PluginConversationHistoryPreviewParams {
   messages?: PluginConversationHistoryMessage[];
+  modelId?: string;
+  providerId?: string;
 }
 
 /** 会话历史预览结果。 */

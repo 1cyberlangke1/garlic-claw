@@ -12,6 +12,7 @@ import type {
   Conversation,
   ConversationDetail,
   ConversationHostServices,
+  ConversationTodoItem,
   DiscoveredAiModel,
   Message,
   PluginInfo,
@@ -229,6 +230,18 @@ const patchedSseEvent: SSEEvent = {
   content: 'patched',
 }
 
+const todoItems: ConversationTodoItem[] = [{
+  content: '同步 todo 面板',
+  priority: 'high',
+  status: 'in_progress',
+}]
+
+const todoUpdatedEvent: SSEEvent = {
+  type: 'todo-updated',
+  conversationId: 'conversation-1',
+  todos: todoItems,
+}
+
 const trigger: TriggerConfig = {
   type: 'manual',
 }
@@ -271,6 +284,7 @@ void [
   retryPayload,
   sseEvent,
   patchedSseEvent,
+  todoUpdatedEvent,
   automation,
 ]
 

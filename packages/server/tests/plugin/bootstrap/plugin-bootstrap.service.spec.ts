@@ -301,6 +301,14 @@ describe('PluginBootstrapService', () => {
             config: expect.objectContaining({
               items: expect.objectContaining({
                 shellBackend: expect.objectContaining({
+                  options: process.platform === 'win32'
+                    ? [
+                      { label: 'PowerShell', value: 'native-shell' },
+                      { label: 'WSL', value: 'wsl-shell' },
+                    ]
+                    : [
+                      { label: 'bash', value: 'native-shell' },
+                    ],
                   type: 'string',
                 }),
                 bashOutput: expect.objectContaining({

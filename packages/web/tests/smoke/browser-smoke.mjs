@@ -31,6 +31,8 @@ const SHADOW_MODEL_ID = `${PREFIX}-shadow-model`;
 const AUTOMATION_NAME = `${PREFIX}-automation`;
 const AUTOMATION_MESSAGE = `${PREFIX} automation message`;
 const REMOTE_PLUGIN_ID = `${PREFIX}-remote-iot-light`;
+let suppressExpectedTeardownConsoleErrors = false;
+let browserSmokeCompleted = false;
 
 async function main() {
   const fakeOpenAi = await startFakeOpenAiServer();
@@ -45,14 +47,23 @@ async function main() {
     baseURL: WEB_ORIGIN,
   });
   const page = await context.newPage();
-  page.on('pageerror', (error) => {
+  const handlePageError = (error) => {
     console.error('[browser-smoke:pageerror]', error);
-  });
-  page.on('console', (message) => {
+  };
+  const handlePageConsole = (message) => {
+    if (
+      suppressExpectedTeardownConsoleErrors
+      && message.type() === 'error'
+      && message.text().includes('Failed to fetch')
+    ) {
+      return;
+    }
     if (message.type() === 'error') {
       console.error('[browser-smoke:console]', message.text());
     }
-  });
+  };
+  page.on('pageerror', handlePageError);
+  page.on('console', handlePageConsole);
   let accessToken = '';
   let createdConversationId = null;
   let initialProviderIds = new Set();
@@ -83,13 +94,32 @@ async function main() {
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
     createdConversationId = await runChatFlow(page, accessToken);
     await verifyMcpPage(page);
+    await verifyPersonasPage(page);
+    await verifySkillsPage(page);
+    await verifyCommandsPage(page);
     await verifySubagentsPage(page);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
 
+    await page.goto('about:blank', { waitUntil: 'load' });
     console.log('browser UI smoke passed');
+    browserSmokeCompleted = true;
+    page.off('pageerror', handlePageError);
+    page.off('console', handlePageConsole);
   } finally {
+    suppressExpectedTeardownConsoleErrors = true;
+    await page.evaluate(() => {
+      window.__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ = true;
+    }).catch(() => undefined);
+    if (!browserSmokeCompleted) {
+      page.off('pageerror', handlePageError);
+      page.off('console', handlePageConsole);
+    }
+    await Promise.allSettled([
+      context.close(),
+      browser.close(),
+    ]);
     await Promise.allSettled([
       cleanupSmokeArtifacts(accessToken, {
         conversationId: createdConversationId,
@@ -98,12 +128,10 @@ async function main() {
         providerId: PROVIDER_ID,
       }),
       remotePluginHandle?.stop?.() ?? Promise.resolve(),
-      context.close(),
-      browser.close(),
       fakeOpenAi.close(),
       fsPromises.rm(tempDir, { recursive: true, force: true }),
-      serviceSession.stop(),
     ]);
+    await serviceSession.stop();
   }
 }
 
@@ -379,6 +407,32 @@ async function verifyMcpPage(page) {
   await page.locator('[data-test="mcp-new-button"]').click();
   await page.locator('[data-test="mcp-name-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="mcp-command-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifyPersonasPage(page) {
+  await page.goto('/personas', { waitUntil: 'networkidle' });
+  await expectText(page, '人设管理');
+  await expectText(page, '人设索引');
+  await expectText(page, '可用人设');
+  await page.getByRole('button', { name: '新建人设' }).click();
+  await page.locator('input[placeholder="persona.writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('input[placeholder="Writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('textarea[placeholder="输入人设的系统提示词。"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifySkillsPage(page) {
+  await page.goto('/skills', { waitUntil: 'networkidle' });
+  await expectText(page, '技能目录');
+  await expectText(page, '已拒绝加载');
+  await page.getByPlaceholder('搜索技能名称、说明、标签').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifyCommandsPage(page) {
+  await page.goto('/commands', { waitUntil: 'networkidle' });
+  await expectText(page, '命令治理');
+  await expectText(page, '冲突触发词');
+  await expectText(page, '命令目录');
+  await page.getByPlaceholder('搜索插件、命令、别名或说明').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
 async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {

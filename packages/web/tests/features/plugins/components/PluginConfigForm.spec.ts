@@ -357,7 +357,7 @@ describe('PluginConfigForm', () => {
     expect(wrapper.text()).toContain('JSON 数组格式无效')
   })
 
-  it('renders builtin runtime-tools bash output config schema for the host plugin UI', async () => {
+  it('renders builtin runtime-tools config schema as platform-scoped backend options', async () => {
     const wrapper = mount(PluginConfigForm, {
       props: {
         saving: false,
@@ -367,16 +367,26 @@ describe('PluginConfigForm', () => {
             items: {
               shellBackend: {
                 type: 'string',
-                options: [
-                  {
-                    value: 'just-bash',
-                    label: 'just-bash',
-                  },
-                  {
-                    value: 'native-shell',
-                    label: 'native-shell',
-                  },
-                ],
+                options: process.platform === 'win32'
+                  ? [
+                    {
+                      value: 'native-shell',
+                      label: 'PowerShell',
+                    },
+                    {
+                      value: 'wsl-shell',
+                      label: 'WSL',
+                    },
+                  ]
+                  : [
+                    {
+                      value: 'native-shell',
+                      label: 'bash',
+                    },
+                  ],
+                hint: process.platform === 'win32'
+                  ? 'Windows 下只提供 PowerShell / WSL'
+                  : 'Linux 下只提供 bash',
               },
               bashOutput: {
                 type: 'object',
@@ -412,9 +422,9 @@ describe('PluginConfigForm', () => {
     })
 
     expect(wrapper.text()).toContain('展开高级配置')
-    const options = wrapper.findAll('option').map((node) => node.text())
-    expect(options).toContain('just-bash')
-    expect(options).toContain('native-shell')
+    const backendInput = wrapper.get('select.config-input')
+    expect((backendInput.element as HTMLSelectElement).value).toBe('native-shell')
+    await backendInput.setValue(process.platform === 'win32' ? 'wsl-shell' : 'native-shell')
 
     await wrapper.get('button.collapsed-toggle').trigger('click')
 
@@ -424,7 +434,7 @@ describe('PluginConfigForm', () => {
     expect(wrapper.emitted('save')).toEqual([
       [
         {
-          shellBackend: 'native-shell',
+          shellBackend: process.platform === 'win32' ? 'wsl-shell' : 'native-shell',
           bashOutput: {
             maxLines: 80,
             maxBytes: 8192,

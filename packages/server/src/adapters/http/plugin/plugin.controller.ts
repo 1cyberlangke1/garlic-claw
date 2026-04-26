@@ -174,6 +174,9 @@ export class PluginController {
   @Get('plugin-subagents/:sessionId')
   getSubagent(@Param('sessionId') sessionId: string): PluginSubagentDetail { return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(sessionId); }
 
+  @Delete('plugin-subagents/:sessionId')
+  removeSubagent(@Param('sessionId') sessionId: string): Promise<boolean> { return this.runtimeHostSubagentRunnerService.removeSubagentSession(sessionId); }
+
   private recordPluginEvent(inputPluginId: string, input: {
     level?: 'error' | 'info' | 'warn';
     message: string;

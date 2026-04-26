@@ -579,7 +579,7 @@ function logRequestError(
   url: string,
   error: AppError,
 ): void {
-  if (!import.meta.env.DEV) {
+  if (!import.meta.env.DEV || shouldSilenceRequestErrorLogs()) {
     return;
   }
 
@@ -616,4 +616,13 @@ function isRetryableStatus(status?: number) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function shouldSilenceRequestErrorLogs(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return (window as Window & {
+    __GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__?: boolean;
+  }).__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ === true;
 }

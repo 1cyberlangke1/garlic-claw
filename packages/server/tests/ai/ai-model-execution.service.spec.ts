@@ -460,6 +460,12 @@ describe('AiModelExecutionService', () => {
     expect(streamed.modelId).toBe('gpt-5.4');
     expect(streamed.providerId).toBe('openai');
     await expect(streamed.finishReason).resolves.toBe('stop');
+    await expect(streamed.usage).resolves.toEqual({
+      inputTokens: 1,
+      outputTokens: 2,
+      source: 'provider',
+      totalTokens: 3,
+    });
 
     const parts: unknown[] = [];
     for await (const part of streamed.fullStream) {

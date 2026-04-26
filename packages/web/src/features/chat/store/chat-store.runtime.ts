@@ -190,6 +190,8 @@ export function applySseEvent(
         ...message,
         metadata: event.metadata,
       }))
+    case 'todo-updated':
+      return messages
     case 'permission-request':
     case 'permission-resolved':
       return messages

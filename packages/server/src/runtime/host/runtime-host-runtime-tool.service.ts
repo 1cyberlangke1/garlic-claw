@@ -1,122 +1,145 @@
-import type { JsonObject, PluginCallContext } from '@garlic-claw/shared';
-import { Injectable } from '@nestjs/common';
-import { BashToolService } from '../../execution/bash/bash-tool.service';
-import { EditToolService } from '../../execution/edit/edit-tool.service';
-import { GlobToolService } from '../../execution/glob/glob-tool.service';
-import { GrepToolService } from '../../execution/grep/grep-tool.service';
-import { ReadToolService } from '../../execution/read/read-tool.service';
+import type { JsonObject, PluginCallContext, RuntimeBackendKind } from '@garlic-claw/shared';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { ProjectWorktreeSearchOverlayService } from '../../execution/project/project-worktree-search-overlay.service';
+import { RuntimeCommandService } from '../../execution/runtime/runtime-command.service';
+import { RuntimeFileFreshnessService } from '../../execution/runtime/runtime-file-freshness.service';
+import { RuntimeFilesystemBackendService } from '../../execution/runtime/runtime-filesystem-backend.service';
+import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../../execution/runtime/runtime-tool-backend.service';
 import { RuntimeToolPermissionService } from '../../execution/runtime/runtime-tool-permission.service';
-import type { RuntimeToolAccessRequest } from '../../execution/runtime/runtime-tool-access';
-import { WriteToolService } from '../../execution/write/write-tool.service';
-import { readJsonObject, readOptionalString } from './runtime-host-values';
+import {
+  editBuiltinRuntimeFile,
+  executeBuiltinRuntimeCommand,
+  globBuiltinRuntimePaths,
+  grepBuiltinRuntimeContent,
+  readBuiltinRuntimePath,
+  readBuiltinRuntimeRequiredText,
+  writeBuiltinRuntimeFile,
+} from '../../plugin/builtin/tools/runtime-tools/runtime-tools-plugin-runtime';
 
-interface RuntimeHostToolDefinition<TInput, TResult> {
-  execute(input: TInput): Promise<TResult>;
-  getToolName(): string;
-  readInput(
-    args: Record<string, unknown>,
-    sessionId?: string,
-    backendKind?: string,
-    assistantMessageId?: string,
-  ): TInput;
-  readRuntimeAccess(input: TInput): RuntimeToolAccessRequest | Promise<RuntimeToolAccessRequest>;
-}
+type RuntimeHostBuiltinContext = Parameters<typeof executeBuiltinRuntimeCommand>[0];
 
 @Injectable()
 export class RuntimeHostRuntimeToolService {
   constructor(
-    private readonly bashToolService: BashToolService,
-    private readonly readToolService: ReadToolService,
-    private readonly globToolService: GlobToolService,
-    private readonly grepToolService: GrepToolService,
-    private readonly writeToolService: WriteToolService,
-    private readonly editToolService: EditToolService,
+    private readonly runtimeCommandService: RuntimeCommandService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+    private readonly runtimeFileFreshnessService: RuntimeFileFreshnessService,
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
     private readonly runtimeToolBackendService: RuntimeToolBackendService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
+    @Optional() private readonly projectWorktreeSearchOverlayService?: ProjectWorktreeSearchOverlayService,
   ) {}
 
-  async executeCommand(context: PluginCallContext, params: JsonObject) {
-    return this.runShellTool(context, params, this.bashToolService);
-  }
-
-  async readPath(context: PluginCallContext, params: JsonObject) {
-    return this.runFilesystemTool(context, params, this.readToolService);
-  }
-
-  async globPaths(context: PluginCallContext, params: JsonObject) {
-    return this.runFilesystemTool(context, params, this.globToolService);
-  }
-
-  async grepContent(context: PluginCallContext, params: JsonObject) {
-    return this.runFilesystemTool(context, params, this.grepToolService);
-  }
-
-  async writeFile(context: PluginCallContext, params: JsonObject) {
-    return this.runFilesystemTool(context, params, this.writeToolService);
-  }
-
-  async editFile(context: PluginCallContext, params: JsonObject) {
-    return this.runFilesystemTool(context, params, this.editToolService);
-  }
-
-  private async runFilesystemTool<TInput, TResult>(
-    context: PluginCallContext,
-    params: JsonObject,
-    tool: RuntimeHostToolDefinition<TInput, TResult>,
-  ): Promise<TResult> {
-    const backendKind = this.runtimeToolBackendService.getFilesystemBackendKind();
-    return this.runPreparedTool(context, params, tool, backendKind);
-  }
-
-  private async runPreparedTool<TInput, TResult>(
-    context: PluginCallContext,
-    params: JsonObject,
-    tool: RuntimeHostToolDefinition<TInput, TResult>,
-    backendKind: string,
-  ): Promise<TResult> {
-    const metadata = readJsonObject(context.metadata);
-    const input = tool.readInput(
-      params,
-      context.conversationId,
-      backendKind,
-      metadata ? (readOptionalString(metadata, 'assistantMessageId') ?? undefined) : undefined,
-    );
-    await this.reviewAccess(context, tool.getToolName(), await tool.readRuntimeAccess(input));
-    return tool.execute(input);
-  }
-
-  private async runShellTool<TInput, TResult>(
-    context: PluginCallContext,
-    params: JsonObject,
-    tool: RuntimeHostToolDefinition<TInput, TResult>,
-  ): Promise<TResult> {
-    const backendKind = this.runtimeToolBackendService.getShellBackendKind(
-      readOptionalString(params, 'backendKind') ?? undefined,
-    );
-    return this.runPreparedTool(context, params, tool, backendKind);
-  }
-
-  private async reviewAccess(
-    context: PluginCallContext,
-    toolName: string,
-    access: RuntimeToolAccessRequest,
-  ): Promise<void> {
-    const requiredOperations = access.requiredOperations;
-    if (requiredOperations.length === 0) {
-      return;
-    }
-    const backend = this.runtimeToolBackendService.getBackendDescriptor(access.role, access.backendKind);
-    const metadata = readJsonObject(context.metadata);
-    const assistantMessageId = metadata ? readOptionalString(metadata, 'assistantMessageId') : null;
-    await this.runtimeToolPermissionService.review({
-      backend,
-      conversationId: context.conversationId,
-      ...(access.metadata !== undefined ? { metadata: access.metadata } : {}),
-      ...(assistantMessageId ? { messageId: assistantMessageId } : {}),
-      requiredOperations,
-      summary: access.summary,
-      toolName,
+  executeCommand(context: PluginCallContext, params: JsonObject) {
+    return executeBuiltinRuntimeCommand(this.buildExecutionContext(context), {
+      ...(readOptionalRuntimeHostTrimmedString(params.backendKind) ? { backendKind: readRuntimeBackendKind(params.backendKind) } : {}),
+      command: readRequiredRuntimeHostString(params, 'command', 'bash.command 不能为空'),
+      description: readRequiredRuntimeHostString(params, 'description', 'bash.description 不能为空'),
+      ...(readOptionalRuntimeHostTimeout(params.timeout) !== undefined ? { timeout: readOptionalRuntimeHostTimeout(params.timeout) } : {}),
+      ...(readOptionalRuntimeHostTrimmedString(params.workdir) ? { workdir: readOptionalRuntimeHostTrimmedString(params.workdir) } : {}),
     });
   }
+
+  readPath(context: PluginCallContext, params: JsonObject) {
+    return readBuiltinRuntimePath(this.buildExecutionContext(context), {
+      filePath: readRequiredRuntimeHostString(params, 'filePath', 'read.filePath 不能为空'),
+      ...(readPositiveRuntimeHostInteger(params.limit, 'read.limit') !== undefined ? { limit: readPositiveRuntimeHostInteger(params.limit, 'read.limit') } : {}),
+      ...(readPositiveRuntimeHostInteger(params.offset, 'read.offset') !== undefined ? { offset: readPositiveRuntimeHostInteger(params.offset, 'read.offset') } : {}),
+    });
+  }
+
+  globPaths(context: PluginCallContext, params: JsonObject) {
+    return globBuiltinRuntimePaths(this.buildExecutionContext(context), {
+      pattern: readRequiredRuntimeHostString(params, 'pattern', 'glob.pattern 不能为空'),
+      ...(readOptionalRuntimeHostTrimmedString(params.path) ? { path: readOptionalRuntimeHostTrimmedString(params.path) } : {}),
+    });
+  }
+
+  grepContent(context: PluginCallContext, params: JsonObject) {
+    return grepBuiltinRuntimeContent(this.buildExecutionContext(context), {
+      pattern: readRequiredRuntimeHostString(params, 'pattern', 'grep.pattern 不能为空'),
+      ...(readOptionalRuntimeHostTrimmedString(params.include) ? { include: readOptionalRuntimeHostTrimmedString(params.include) } : {}),
+      ...(readOptionalRuntimeHostTrimmedString(params.path) ? { path: readOptionalRuntimeHostTrimmedString(params.path) } : {}),
+    });
+  }
+
+  writeFile(context: PluginCallContext, params: JsonObject) {
+    return writeBuiltinRuntimeFile(this.buildExecutionContext(context), {
+      content: readBuiltinRuntimeRequiredText(params.content, 'write.content'),
+      filePath: readRequiredRuntimeHostString(params, 'filePath', 'write.filePath 不能为空'),
+    });
+  }
+
+  editFile(context: PluginCallContext, params: JsonObject) {
+    const oldString = readBuiltinRuntimeRequiredText(params.oldString, 'edit.oldString');
+    const newString = readBuiltinRuntimeRequiredText(params.newString, 'edit.newString');
+    if (oldString === newString) {
+      throw new BadRequestException('edit.oldString 和 edit.newString 不能完全相同');
+    }
+    return editBuiltinRuntimeFile(this.buildExecutionContext(context), {
+      filePath: readRequiredRuntimeHostString(params, 'filePath', 'edit.filePath 不能为空'),
+      newString,
+      oldString,
+      ...(typeof params.replaceAll === 'boolean' ? { replaceAll: params.replaceAll } : {}),
+    });
+  }
+
+  private buildExecutionContext(callContext: PluginCallContext): RuntimeHostBuiltinContext {
+    return {
+      callContext,
+      host: {
+        runtimeTools: {
+          projectWorktreeSearchOverlayService: this.projectWorktreeSearchOverlayService,
+          runtimeCommandService: this.runtimeCommandService,
+          runtimeBackendRoutingService: {
+            getConfiguredFilesystemBackendKind: () => readRuntimeBackendKind(process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND),
+            getConfiguredShellBackendKind: () => readRuntimeBackendKind(process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND),
+          } as never,
+          runtimeFileFreshnessService: this.runtimeFileFreshnessService,
+          runtimeFilesystemBackendService: this.runtimeFilesystemBackendService,
+          runtimeSessionEnvironmentService: this.runtimeSessionEnvironmentService,
+          storedConfig: {},
+          runtimeToolBackendService: this.runtimeToolBackendService,
+          runtimeToolPermissionService: this.runtimeToolPermissionService,
+        },
+      } as unknown as RuntimeHostBuiltinContext['host'],
+    };
+  }
+}
+
+function readRequiredRuntimeHostString(params: JsonObject, key: string, errorMessage: string): string {
+  const value = readOptionalRuntimeHostTrimmedString(params[key]);
+  if (!value) {
+    throw new BadRequestException(errorMessage);
+  }
+  return value;
+}
+
+function readOptionalRuntimeHostTrimmedString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readPositiveRuntimeHostInteger(value: unknown, fieldName: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new BadRequestException(`${fieldName} 必须是大于 0 的整数`);
+  }
+  return value;
+}
+
+function readOptionalRuntimeHostTimeout(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new BadRequestException('bash.timeout 必须是大于 0 的毫秒数');
+  }
+  return value;
+}
+
+function readRuntimeBackendKind(value: unknown): RuntimeBackendKind | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }

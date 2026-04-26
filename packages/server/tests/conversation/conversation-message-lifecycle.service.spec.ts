@@ -5,6 +5,7 @@ import type { ChatMessagePart } from '@garlic-claw/shared';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostConversationTodoService } from '../../src/runtime/host/runtime-host-conversation-todo.service';
 import { ConversationMessageLifecycleService } from '../../src/conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
@@ -41,6 +42,7 @@ describe('ConversationMessageLifecycleService', () => {
   let conversationMessagePlanningService: ConversationMessagePlanningService;
   let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
   let runtimeHostConversationMessageService: RuntimeHostConversationMessageService;
+  let runtimeHostConversationTodoService: RuntimeHostConversationTodoService;
   let service: ConversationMessageLifecycleService;
 
   beforeEach(() => {
@@ -76,9 +78,13 @@ describe('ConversationMessageLifecycleService', () => {
     runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
       runtimeHostConversationRecordService,
     );
+    runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(
+      runtimeHostConversationRecordService,
+    );
     conversationTaskService = new ConversationTaskService(
       runtimeHostConversationMessageService,
       new RuntimeToolPermissionService(),
+      runtimeHostConversationTodoService,
     );
     conversationMessagePlanningService = new ConversationMessagePlanningService(
       aiModelExecutionService as never,

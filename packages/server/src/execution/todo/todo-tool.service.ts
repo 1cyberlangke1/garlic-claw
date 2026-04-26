@@ -1,7 +1,7 @@
 import type { ConversationTodoItem, PluginParamSchema } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
-import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostConversationTodoService } from '../../runtime/host/runtime-host-conversation-todo.service';
 
 export interface TodoToolResult {
   sessionId: string;
@@ -19,7 +19,7 @@ const TODO_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class TodoToolService {
-  constructor(private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService) {}
+  constructor(private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService) {}
 
   getToolName(): string {
     return 'todowrite';
@@ -51,7 +51,7 @@ export class TodoToolService {
       throw new BadRequestException('todowrite 工具只能在 session 上下文中使用');
     }
     const normalizedTodos = normalizeTodoItems(input.todos);
-    this.runtimeHostConversationRecordService.replaceSessionTodo(
+    this.runtimeHostConversationTodoService.replaceSessionTodo(
       input.sessionId,
       normalizedTodos,
       input.userId,

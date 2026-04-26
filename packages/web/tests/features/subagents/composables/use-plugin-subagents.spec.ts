@@ -7,6 +7,7 @@ import * as subagentData from '@/features/subagents/composables/plugin-subagents
 vi.mock('@/features/subagents/composables/plugin-subagents.data', () => ({
   loadPluginSubagentDetail: vi.fn(),
   loadPluginSubagentOverview: vi.fn(),
+  removePluginSubagentSession: vi.fn(),
   toErrorMessage: vi.fn((error: Error | undefined, fallback: string) => error?.message ?? fallback),
 }))
 
@@ -153,6 +154,38 @@ describe('usePluginSubagents', () => {
 
     await vi.advanceTimersByTimeAsync(5000)
     expect(subagentData.loadPluginSubagentOverview).toHaveBeenCalledTimes(2)
+
+    wrapper.unmount()
+  })
+
+  it('removes the active subagent session and clears the current workspace window', async () => {
+    vi.mocked(subagentData.loadPluginSubagentOverview)
+      .mockResolvedValueOnce(createOverview())
+      .mockResolvedValueOnce({ subagents: [] })
+    vi.mocked(subagentData.removePluginSubagentSession).mockResolvedValue(true)
+
+    let state!: ReturnType<typeof usePluginSubagents>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginSubagents()
+        return () => null
+      },
+    })
+
+    const wrapper = mount(Harness)
+    await flushPromises()
+
+    state.selectWindow('subagent-session-1')
+    await flushPromises()
+    await state.removeSubagentSession('subagent-session-1')
+    await flushPromises()
+
+    expect(subagentData.removePluginSubagentSession).toHaveBeenCalledWith('subagent-session-1')
+    expect(state.subagentCount.value).toBe(0)
+    expect(state.conversationWorkspaces.value).toEqual([])
+    expect(state.activeConversationId.value).toBeNull()
+    expect(state.activeWindowId.value).toBe('main')
+    expect(state.activeSubagentDetail.value).toBeNull()
 
     wrapper.unmount()
   })

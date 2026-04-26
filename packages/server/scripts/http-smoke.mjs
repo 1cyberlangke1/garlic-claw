@@ -44,8 +44,15 @@ function readSmokeShellBackendKind() {
   return process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND || 'just-bash';
 }
 
+function readSmokeRuntimeToolsShellBackendKind() {
+  if (process.platform === 'win32') {
+    return readSmokeShellBackendKind() === 'wsl-shell' ? 'wsl-shell' : 'native-shell';
+  }
+  return 'native-shell';
+}
+
 function usesNativePowerShellBackend() {
-  return readSmokeShellBackendKind() === 'native-shell' && process.platform === 'win32';
+  return readSmokeRuntimeToolsShellBackendKind() === 'native-shell' && process.platform === 'win32';
 }
 
 function buildSmokeShellCommand({ bash, powershell }) {
@@ -972,6 +979,7 @@ async function runHttpFlow(apiBase, state, input) {
     const config = await getJson(apiBase, '/plugins/builtin.runtime-tools/config');
     ensure(typeof config === 'object' && config !== null, 'Expected runtime tools config snapshot');
     ensure(config.schema?.items?.shellBackend?.type === 'string', 'Expected runtime tools shell backend schema');
+    ensure(Array.isArray(config.schema?.items?.shellBackend?.options), 'Expected runtime tools shell backend options');
     ensure(config.schema?.items?.bashOutput?.type === 'object', 'Expected runtime tools bash output schema');
   });
 
@@ -979,7 +987,7 @@ async function runHttpFlow(apiBase, state, input) {
     const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
       body: {
         values: {
-          shellBackend: readSmokeShellBackendKind(),
+          shellBackend: readSmokeRuntimeToolsShellBackendKind(),
           bashOutput: {
             maxBytes: 16 * 1024,
             maxLines: 2,
@@ -988,7 +996,7 @@ async function runHttpFlow(apiBase, state, input) {
         },
       },
     });
-    ensure(config.values?.shellBackend === readSmokeShellBackendKind(), 'Expected runtime tools shell backend to persist');
+    ensure(config.values?.shellBackend === readSmokeRuntimeToolsShellBackendKind(), 'Expected runtime tools shell backend to persist');
     ensure(config.values?.bashOutput?.maxLines === 2, 'Expected runtime tools config maxLines to persist');
     ensure(config.values?.bashOutput?.showTruncationDetails === false, 'Expected runtime tools config truncation details toggle to persist');
   });
@@ -1037,7 +1045,7 @@ async function runHttpFlow(apiBase, state, input) {
     const config = await putJson(apiBase, '/plugins/builtin.runtime-tools/config', {
       body: {
         values: {
-          shellBackend: readSmokeShellBackendKind(),
+          shellBackend: readSmokeRuntimeToolsShellBackendKind(),
           bashOutput: {
             maxBytes: 16 * 1024,
             maxLines: 200,
@@ -1046,7 +1054,7 @@ async function runHttpFlow(apiBase, state, input) {
         },
       },
     });
-    ensure(config.values?.shellBackend === readSmokeShellBackendKind(), 'Expected runtime tools shell backend to restore');
+    ensure(config.values?.shellBackend === readSmokeRuntimeToolsShellBackendKind(), 'Expected runtime tools shell backend to restore');
     ensure(config.values?.bashOutput?.maxLines === 200, 'Expected runtime tools config maxLines to restore');
     ensure(config.values?.bashOutput?.showTruncationDetails === true, 'Expected runtime tools config truncation details toggle to restore');
   });
@@ -2360,6 +2368,28 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof subagent.sessionMessageCount === 'number' && subagent.sessionMessageCount >= 2, 'Expected subagent detail to expose updated session message count');
     ensure(subagent.status === 'completed', 'Expected subagent detail status to be completed');
     ensure(typeof subagent.result?.text === 'string' && subagent.result.text.length > 0, 'Expected subagent detail result text');
+  });
+
+  await runStep('plugins.subagent-delete.success', async () => {
+    const deleted = await deleteJson(apiBase, `/plugin-subagents/${state.automationSubagentSessionId}`);
+    ensure(deleted === true, 'Expected subagent session deletion to succeed');
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
+      const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, {
+        headers: userHeaders(),
+      });
+      if (conversation.messages.some((message) => message.content === '子代理「自动化烟测任务」已被手动移除，后续结果不会再回写到主会话。')) {
+        return;
+      }
+      await delay(250);
+    }
+    throw new Error('Timed out waiting for manual subagent removal notice');
+  });
+
+  await runStep('plugins.subagent-detail.after-delete', async () => {
+    await getJson(apiBase, `/plugin-subagents/${state.automationSubagentSessionId}`, {
+      expectedStatus: 404,
+    });
   });
 
   await runStep('automations.logs', async () => {

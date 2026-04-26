@@ -27,6 +27,7 @@ describe('PluginController subagent routes', () => {
     getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
     listTypes: jest.fn(),
+    removeSubagentSession: jest.fn(),
   };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
@@ -173,5 +174,11 @@ describe('PluginController subagent routes', () => {
         name: '探索',
       },
     ]);
+  });
+
+  it('removes one persisted background subagent session projection', () => {
+    runtimeHostSubagentRunnerService.removeSubagentSession.mockResolvedValue(true);
+
+    return expect(controller.removeSubagent('subagent-session-1')).resolves.toBe(true);
   });
 });

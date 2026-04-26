@@ -31,12 +31,51 @@ export interface PluginRuntimeReadParams {
   offset?: number;
 }
 
-export interface PluginRuntimeReadResult {
-  loaded: string[];
-  output: string;
+export interface PluginRuntimeReadInstructionEntry {
+  content: string;
   path: string;
+}
+
+export interface PluginRuntimeReadDirectoryResult {
+  entries: string[];
+  limit: number;
+  offset: number;
+  path: string;
+  totalEntries: number;
   truncated: boolean;
-  type: 'binary' | 'directory' | 'file' | 'image' | 'pdf';
+  type: 'directory';
+}
+
+export interface PluginRuntimeReadFileResult {
+  byteLimited: boolean;
+  limit: number;
+  lines: string[];
+  mimeType: string;
+  offset: number;
+  path: string;
+  totalBytes: number;
+  totalLines: number;
+  truncated: boolean;
+  type: 'file';
+}
+
+export interface PluginRuntimeReadAssetResult {
+  mimeType: string;
+  path: string;
+  size: number;
+  type: 'binary' | 'image' | 'pdf';
+}
+
+export type PluginRuntimeReadBackendResult =
+  | PluginRuntimeReadDirectoryResult
+  | PluginRuntimeReadFileResult
+  | PluginRuntimeReadAssetResult;
+
+export interface PluginRuntimeReadResult {
+  freshnessReminders: string[];
+  loaded: string[];
+  readResult: PluginRuntimeReadBackendResult;
+  reminderEntries: PluginRuntimeReadInstructionEntry[];
 }
 
 export interface PluginRuntimeGlobParams {
@@ -44,10 +83,26 @@ export interface PluginRuntimeGlobParams {
   pattern: string;
 }
 
-export interface PluginRuntimeGlobResult {
-  count: number;
-  output: string;
+export type PluginRuntimeSearchSkippedReason = 'binary' | 'inaccessible' | 'unreadable';
+
+export interface PluginRuntimeSearchSkippedEntry {
+  path: string;
+  reason: PluginRuntimeSearchSkippedReason;
+}
+
+export interface PluginRuntimeGlobBackendResult {
+  basePath: string;
+  matches: string[];
+  partial: boolean;
+  skippedEntries: PluginRuntimeSearchSkippedEntry[];
+  skippedPaths: string[];
+  totalMatches: number;
   truncated: boolean;
+}
+
+export interface PluginRuntimeGlobResult {
+  globResult: PluginRuntimeGlobBackendResult;
+  overlay: string[];
 }
 
 export interface PluginRuntimeGrepParams {
@@ -56,10 +111,25 @@ export interface PluginRuntimeGrepParams {
   pattern: string;
 }
 
-export interface PluginRuntimeGrepResult {
-  matches: number;
-  output: string;
+export interface PluginRuntimeGrepMatch {
+  line: number;
+  text: string;
+  virtualPath: string;
+}
+
+export interface PluginRuntimeGrepBackendResult {
+  basePath: string;
+  matches: PluginRuntimeGrepMatch[];
+  partial: boolean;
+  skippedEntries: PluginRuntimeSearchSkippedEntry[];
+  skippedPaths: string[];
+  totalMatches: number;
   truncated: boolean;
+}
+
+export interface PluginRuntimeGrepResult {
+  grepResult: PluginRuntimeGrepBackendResult;
+  overlay: string[];
 }
 
 export interface PluginRuntimeWriteParams {
@@ -80,11 +150,26 @@ export interface PluginRuntimeFormattingSummary {
   label: string;
 }
 
+export interface PluginRuntimeDiagnosticEntry {
+  code?: string;
+  column: number;
+  line: number;
+  message: string;
+  path: string;
+  severity: 'error' | 'hint' | 'info' | 'warning';
+  source: string;
+}
+
 export interface PluginRuntimeDiagnosticSeverityCounts {
   error: number;
   hint: number;
   info: number;
   warning: number;
+}
+
+export interface PluginRuntimePostWriteResult {
+  diagnostics: PluginRuntimeDiagnosticEntry[];
+  formatting: PluginRuntimeFormattingSummary | null;
 }
 
 export interface PluginRuntimePostWriteSummary {
@@ -103,12 +188,11 @@ export interface PluginRuntimePostWriteSummary {
 
 export interface PluginRuntimeWriteResult {
   created: boolean;
-  diff?: PluginRuntimeFileDiffSummary | null;
-  lineCount?: number;
-  output: string;
+  diff: PluginRuntimeFileDiffSummary | null;
+  lineCount: number;
   path: string;
-  postWriteSummary: PluginRuntimePostWriteSummary;
-  size?: number;
+  postWrite: PluginRuntimePostWriteResult;
+  size: number;
 }
 
 export interface PluginRuntimeEditParams {
@@ -119,10 +203,9 @@ export interface PluginRuntimeEditParams {
 }
 
 export interface PluginRuntimeEditResult {
-  diff?: PluginRuntimeFileDiffSummary;
+  diff: PluginRuntimeFileDiffSummary;
   occurrences: number;
-  output: string;
   path: string;
-  postWriteSummary: PluginRuntimePostWriteSummary;
-  strategy?: string;
+  postWrite: PluginRuntimePostWriteResult;
+  strategy: string;
 }

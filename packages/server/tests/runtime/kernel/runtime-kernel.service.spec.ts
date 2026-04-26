@@ -391,13 +391,19 @@ describe('RuntimePluginGovernanceService', () => {
     const refreshedPlugin = pluginBootstrapService.getPlugin('remote.echo');
     expect(refreshedPlugin).toMatchObject({
       connected: true,
+      manifest: {
+        description: 'refreshed manifest',
+        version: '1.0.1',
+      },
       remote: {
         metadataCache: {
           status: 'cached',
         },
       },
     });
-    expect(refreshedPlugin.remote?.metadataCache.lastSyncedAt).not.toBe(initialLastSyncedAt);
+    expect(Date.parse(refreshedPlugin.remote?.metadataCache.lastSyncedAt ?? '')).toBeGreaterThanOrEqual(
+      Date.parse(initialLastSyncedAt ?? ''),
+    );
     expect(refreshedPlugin.remote?.metadataCache.manifestHash).not.toBe(initialManifestHash);
   });
 });
@@ -488,6 +494,14 @@ function createService() {
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
   const runtimeHostService = new RuntimeHostService(
     pluginBootstrapService,

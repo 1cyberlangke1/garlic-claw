@@ -5,6 +5,7 @@ import { ProjectWorktreePostWriteService } from '../../../src/execution/project/
 
 describe('ProjectWorktreePostWriteService', () => {
   const tempRoots: string[] = [];
+  const inlineRoot = path.join(os.tmpdir(), 'gc-post-write-inline');
 
   afterEach(() => {
     while (tempRoots.length > 0) {
@@ -20,9 +21,9 @@ describe('ProjectWorktreePostWriteService', () => {
 
     const result = service.processTextFile({
       content: '{"value":1}\n',
-      hostPath: path.join('C:', 'tmp', 'docs', 'config.json'),
+      hostPath: path.join(inlineRoot, 'docs', 'config.json'),
       path: '/docs/config.json',
-      sessionRoot: path.join('C:', 'tmp'),
+      sessionRoot: inlineRoot,
       visibleRoot: '/',
     });
 
@@ -43,9 +44,9 @@ describe('ProjectWorktreePostWriteService', () => {
 
     const result = service.processTextFile({
       content: 'const answer = ;\n',
-      hostPath: path.join('C:', 'tmp', 'docs', 'broken.ts'),
+      hostPath: path.join(inlineRoot, 'docs', 'broken.ts'),
       path: '/docs/broken.ts',
-      sessionRoot: path.join('C:', 'tmp'),
+      sessionRoot: inlineRoot,
       visibleRoot: '/',
     });
 
@@ -67,9 +68,9 @@ describe('ProjectWorktreePostWriteService', () => {
 
     const result = service.processTextFile({
       content: '{"value": }',
-      hostPath: path.join('C:', 'tmp', 'docs', 'invalid.json'),
+      hostPath: path.join(inlineRoot, 'docs', 'invalid.json'),
       path: '/docs/invalid.json',
-      sessionRoot: path.join('C:', 'tmp'),
+      sessionRoot: inlineRoot,
       visibleRoot: '/',
     });
 

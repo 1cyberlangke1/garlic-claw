@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import SubagentView from '@/features/subagents/views/SubagentView.vue'
 import SubagentViewSource from '@/features/subagents/views/SubagentView.vue?raw'
 
+const removeSubagentSession = vi.fn()
+
 vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
   usePluginSubagents: () => ({
     loading: ref(false),
@@ -297,6 +299,7 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
       writeBackStatus: 'pending',
       finishedAt: null,
     }),
+    removingSessionId: ref(null),
     searchKeyword: ref(''),
     filter: ref('all'),
     pagedSubagents: computed(() => [
@@ -341,11 +344,13 @@ vi.mock('@/features/subagents/composables/use-plugin-subagents', () => ({
     selectConversation: vi.fn(),
     selectWindow: vi.fn(),
     refreshAll: vi.fn(),
+    removeSubagentSession,
   }),
 }))
 
 describe('SubagentView', () => {
   it('renders workspace tabs, subagent context and plugin deep-links', () => {
+    removeSubagentSession.mockReset()
     const wrapper = mount(SubagentView, {
       global: {
         stubs: {
@@ -372,8 +377,12 @@ describe('SubagentView', () => {
     expect(wrapper.text()).toContain('回写等待中')
     expect(wrapper.text()).toContain('查看上下文')
     expect(wrapper.text()).toContain('打开插件治理')
+    expect(wrapper.text()).toContain('移除')
     expect(wrapper.get('[data-test="window-strip"]').classes()).toContain('window-strip')
     expect(SubagentViewSource).toContain('.window-strip')
     expect(SubagentViewSource).toContain('overflow-x: auto;')
+
+    wrapper.get('[data-test="remove-subagent-button"]').trigger('click')
+    expect(removeSubagentSession).toHaveBeenCalledWith('subagent-session-1')
   })
 })

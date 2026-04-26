@@ -493,6 +493,127 @@ describe('RuntimeHostSubagentRunnerService', () => {
     }));
   });
 
+  it('releases conversation capacity after a subagent session is removed', async () => {
+    const subagentStore = new RuntimeHostSubagentStoreService();
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    const session = sessionStore.createSession({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      messages: [{ content: 'original task', role: 'user' }],
+      pluginId: 'builtin.memory-context',
+    });
+    subagentStore.createSubagent({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      pluginDisplayName: 'Memory Context',
+      pluginId: 'builtin.memory-context',
+      request: {
+        messages: [{ content: 'original task', role: 'user' }],
+      },
+      requestPreview: 'original task',
+      sessionId: session.id,
+      sessionMessageCount: 1,
+      sessionUpdatedAt: session.updatedAt,
+      visibility: 'background',
+      writeBackTarget: null,
+    });
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      subagentStore,
+      sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    );
+
+    await expect(runner.removeSubagentSession(session.id)).resolves.toBe(true);
+    expect(runner.listOverview().subagents).toEqual([]);
+    await expect(runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      maxConversationSubagents: 1,
+      messages: [
+        {
+          content: 'new task',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).resolves.toEqual(expect.objectContaining({
+      sessionId: expect.any(String),
+    }));
+  });
+
+  it('writes a removal notice to the main conversation and suppresses later write-back when a session is manually removed', async () => {
+    const conversationRecordService = new RuntimeHostConversationRecordService();
+    const conversationId = (conversationRecordService.createConversation({
+      title: 'Main conversation',
+      userId: 'user-1',
+    }) as { id: string }).id;
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(conversationRecordService),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    );
+
+    const started = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
+      conversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [
+        {
+          content: '后台继续执行',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      writeBack: {
+        target: {
+          id: conversationId,
+          type: 'conversation',
+        },
+      },
+    });
+
+    await expect(runner.removeSubagentSession((started as { sessionId: string }).sessionId)).resolves.toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(conversationRecordService.requireConversation(conversationId, 'user-1').messages).toEqual([
+      expect.objectContaining({
+        content: '子代理已被手动移除，后续结果不会再回写到主会话。',
+        role: 'assistant',
+        status: 'completed',
+      }),
+    ]);
+  });
+
   it('reuses previous session request context when sessionId is provided', async () => {
     const subagentStore = new RuntimeHostSubagentStoreService();
     const sessionStore = new RuntimeHostSubagentSessionStoreService();

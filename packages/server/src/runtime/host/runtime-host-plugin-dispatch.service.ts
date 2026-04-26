@@ -12,6 +12,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { BuiltinPluginRegistryService } from '../../plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
+import { ProjectWorktreeSearchOverlayService } from '../../execution/project/project-worktree-search-overlay.service';
+import { RuntimeCommandService } from '../../execution/runtime/runtime-command.service';
+import { RuntimeBackendRoutingService } from '../../execution/runtime/runtime-backend-routing.service';
+import { RuntimeFileFreshnessService } from '../../execution/runtime/runtime-file-freshness.service';
+import { RuntimeFilesystemBackendService } from '../../execution/runtime/runtime-filesystem-backend.service';
+import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
+import { RuntimeToolBackendService } from '../../execution/runtime/runtime-tool-backend.service';
+import { RuntimeToolPermissionService } from '../../execution/runtime/runtime-tool-permission.service';
 import { RuntimeGatewayRemoteTransportService } from '../gateway/runtime-gateway-remote-transport.service';
 import type { RuntimeHostService } from './runtime-host.service';
 
@@ -25,6 +33,14 @@ export class RuntimeHostPluginDispatchService {
     private readonly builtinPluginRegistryService: BuiltinPluginRegistryService,
     private readonly pluginBootstrapService: PluginBootstrapService,
     private readonly runtimeGatewayRemoteTransportService: RuntimeGatewayRemoteTransportService,
+    private readonly runtimeCommandService: RuntimeCommandService,
+    private readonly runtimeBackendRoutingService: RuntimeBackendRoutingService,
+    private readonly runtimeFilesystemBackendService: RuntimeFilesystemBackendService,
+    private readonly runtimeFileFreshnessService: RuntimeFileFreshnessService,
+    private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    private readonly runtimeToolBackendService: RuntimeToolBackendService,
+    private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
+    private readonly projectWorktreeSearchOverlayService: ProjectWorktreeSearchOverlayService,
   ) {}
 
   registerHostCaller(runtimeHostCaller: RuntimeHostCaller): void {
@@ -98,8 +114,22 @@ export class RuntimeHostPluginDispatchService {
   private createBuiltinHostFacade(pluginId: string, context: PluginCallContext) {
     const runtimeHostCaller = this.runtimeHostCaller;
     if (!runtimeHostCaller) {throw new Error('RuntimeHostPluginDispatchService host caller not registered');}
+    const plugin = this.pluginBootstrapService.getPlugin(pluginId);
     const callHost = <T>(method: Parameters<RuntimeHostService['call']>[0]['method'], params: JsonObject = {}) => runtimeHostCaller({ context, method, params, pluginId }) as Promise<T>;
-    return createPluginHostFacade({ call: (method, params) => callHost(method, params), callHost });
+    return {
+      ...createPluginHostFacade({ call: (method, params) => callHost(method, params), callHost }),
+      runtimeTools: {
+        projectWorktreeSearchOverlayService: this.projectWorktreeSearchOverlayService,
+        runtimeCommandService: this.runtimeCommandService,
+        runtimeBackendRoutingService: this.runtimeBackendRoutingService,
+        runtimeFileFreshnessService: this.runtimeFileFreshnessService,
+        runtimeFilesystemBackendService: this.runtimeFilesystemBackendService,
+        runtimeSessionEnvironmentService: this.runtimeSessionEnvironmentService,
+        storedConfig: (plugin.configValues ?? {}) as JsonValue,
+        runtimeToolBackendService: this.runtimeToolBackendService,
+        runtimeToolPermissionService: this.runtimeToolPermissionService,
+      },
+    };
   }
 }
 

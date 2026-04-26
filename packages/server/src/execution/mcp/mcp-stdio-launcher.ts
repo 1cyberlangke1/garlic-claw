@@ -108,11 +108,17 @@ function failMcpLaunch(error: unknown, exitCode: number): void {
 }
 
 function resolveBundledNpmCli(command: 'npm' | 'npx'): string {
-  const cliPath = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', command === 'npx' ? 'npx-cli.js' : 'npm-cli.js');
-  if (!fs.existsSync(cliPath)) {
-    throw new Error(`无法解析 ${command} CLI 入口: ${cliPath}`);
+  const cliFileName = command === 'npx' ? 'npx-cli.js' : 'npm-cli.js';
+  const candidates = [
+    path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', cliFileName),
+    path.join(path.dirname(path.dirname(process.execPath)), 'lib', 'node_modules', 'npm', 'bin', cliFileName),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
-  return cliPath;
+  throw new Error(`无法解析 ${command} CLI 入口: ${candidates.join(', ')}`);
 }
 
 if (require.main === module) {

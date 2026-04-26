@@ -3,6 +3,7 @@
 import type { Ref } from "vue";
 import type {
   ConversationContextWindowPreview,
+  ConversationTodoItem,
   SSEEvent,
 } from "@garlic-claw/shared";
 import type { ChatSendInput } from "@/features/chat/store/chat-store.types";
@@ -40,6 +41,7 @@ export interface ChatStreamState {
   streamController: Ref<AbortController | null>;
   recoveryTimer: Ref<number | null>;
   currentStreamingMessageId: Ref<string | null>;
+  todoItems: Ref<ConversationTodoItem[]>;
   pendingRuntimePermissions: Ref<ChatPendingRuntimePermission[]>;
   streaming: Ref<boolean>;
 }
@@ -192,6 +194,13 @@ function applyRuntimePermissionEvent(
     .filter((entry) => entry.id !== event.result.requestId);
 }
 
+function applyTodoUpdatedEvent(
+  state: ChatStreamState,
+  event: Extract<SSEEvent, { type: "todo-updated" }>,
+) {
+  state.todoItems.value = event.todos;
+}
+
 export function abortChatStream(state: ChatStreamState) {
   state.streamController.value?.abort();
   state.streamController.value = null;
@@ -278,6 +287,10 @@ export async function dispatchSendMessage(
         ) {
           didChangeRuntimePermissionsDuringStream = true;
           applyRuntimePermissionEvent(state, event);
+          return;
+        }
+        if (event.type === "todo-updated") {
+          applyTodoUpdatedEvent(state, event);
           return;
         }
 
@@ -392,6 +405,10 @@ export async function dispatchRetryMessage(
         ) {
           didChangeRuntimePermissionsDuringStream = true;
           applyRuntimePermissionEvent(state, event);
+          return;
+        }
+        if (event.type === "todo-updated") {
+          applyTodoUpdatedEvent(state, event);
           return;
         }
 

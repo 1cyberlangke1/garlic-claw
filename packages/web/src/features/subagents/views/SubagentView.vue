@@ -258,6 +258,15 @@
               >
                 查看上下文
               </button>
+              <button
+                type="button"
+                class="ghost-button danger-button"
+                data-test="remove-subagent-button"
+                :disabled="removingSessionId === subagent.sessionId"
+                @click="removeSubagentSession(subagent.sessionId)"
+              >
+                {{ removingSessionId === subagent.sessionId ? '移除中...' : '移除' }}
+              </button>
               <RouterLink
                 class="ghost-button link-button"
                 :to="{ name: 'plugins', query: { plugin: subagent.pluginId } }"
@@ -343,6 +352,7 @@ const {
   activeWindowKind,
   activeWorkspaceWindows,
   activeSubagentDetail,
+  removingSessionId,
   searchKeyword,
   filter,
   pagedSubagents,
@@ -359,6 +369,7 @@ const {
   errorSubagentCount,
   writeBackAttentionCount,
   refreshAll,
+  removeSubagentSession,
   selectConversation,
   selectWindow,
   subagentCount,
@@ -687,6 +698,11 @@ function formatMessagePart(part: ChatMessagePart) {
 .status-pill.error,
 .writeback-chip.failed {
   border-color: rgba(184, 74, 74, 0.4);
+  color: #b84a4a;
+}
+
+.danger-button {
+  border-color: rgba(184, 74, 74, 0.24);
   color: #b84a4a;
 }
 

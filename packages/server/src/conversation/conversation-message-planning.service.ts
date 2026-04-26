@@ -6,16 +6,14 @@ import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { ToolRegistryService } from '../execution/tool/tool-registry.service';
 import { PersonaService } from '../persona/persona.service';
 import { PluginPersistenceService } from '../plugin/persistence/plugin-persistence.service';
-import { applyMutatingDispatchableHooks, listDispatchableHookPluginIds, runDispatchableHookChain } from '../runtime/kernel/runtime-plugin-hook-governance';
-import type { DispatchableHookChainResult } from '../runtime/kernel/runtime-plugin-hook-governance';
-import { isPluginEnabledForContext } from '../runtime/kernel/runtime-plugin-hook-governance';
+import { applyMutatingDispatchableHooks, isPluginEnabledForContext, listDispatchableHookPluginIds, runDispatchableHookChain, type DispatchableHookChainResult } from '../runtime/kernel/runtime-plugin-hook-governance';
 import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-plugin-dispatch.service';
 import { asJsonObject, asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/runtime-host-values';
 import { AiVisionService } from '../vision/ai-vision.service';
 import type { CompletedConversationTaskResult, ResolvedConversationTaskStreamSource } from './conversation-task.service';
 
-type ModelMessage = { content: string | ChatMessagePart[]; role: 'assistant' | 'user' };
+type ModelMessage = { content: string | ChatMessagePart[]; role: 'assistant' | 'system' | 'user' };
 type ConversationHookInput = { activePersonaId?: string; conversationId?: string; modelId?: string; providerId?: string; userId?: string };
 type ResolvedPersonaPlan = { beginDialogs: Array<{ content: string; role: 'assistant' | 'user' }>; customErrorMessage: string | null; personaId: string; prompt: string; toolNames: string[] | null };
 type BeforeModelState = { action: 'continue'; activePersonaId?: string; conversationId: string; messages: ModelMessage[]; modelId: string; providerId: string; systemPrompt: string; userId?: string };
@@ -65,26 +63,14 @@ export class ConversationMessagePlanningService {
 
   async getContextWindowPreview(input: { conversationId: string; modelId?: string; providerId?: string; userId?: string }): Promise<ConversationContextWindowPreview> {
     this.runtimeHostConversationRecordService.requireConversation(input.conversationId, input.userId);
-    const history = readConversationHistorySnapshot(this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId));
-    const runtimeConfig = this.readContextWindowRuntimeConfig();
-    const featureEnabled = this.isContextWindowEnabledForConversation(input.conversationId) && runtimeConfig.enabled;
-    const target = this.readContextWindowTarget(input.providerId, input.modelId);
+    const history = readConversationHistorySnapshot(this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId)), runtimeConfig = this.readContextWindowRuntimeConfig(), featureEnabled = this.isContextWindowEnabledForConversation(input.conversationId) && runtimeConfig.enabled, target = this.readContextWindowTarget(input.providerId, input.modelId);
     const maxWindowTokens = Math.max(1, Math.floor((Math.max(target.contextLength - runtimeConfig.reservedTokens, 256) * (featureEnabled && runtimeConfig.strategy === 'sliding' ? runtimeConfig.slidingWindowUsagePercent : 100)) / 100));
     if (!featureEnabled) {
-      const includedMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage);
-      const preview = this.previewHistoryMessages(input.conversationId, includedMessages, input.userId);
-      return createContextWindowPreview(runtimeConfig, {
-        enabled: false,
-        estimatedTokens: preview.estimatedTokens,
-        includedMessageIds: includedMessages.map((message) => message.id),
-        maxWindowTokens,
-        strategy: runtimeConfig.strategy,
-      });
+      const includedMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage), preview = this.previewHistoryMessages(input.conversationId, includedMessages, target.modelId, target.providerId, input.userId);
+      return createContextWindowPreview(runtimeConfig, { enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), maxWindowTokens, strategy: runtimeConfig.strategy });
     }
-    if (runtimeConfig.strategy === 'sliding') {
-      return this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, input.userId);
-    }
-    return this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, input.userId);
+    if (runtimeConfig.strategy === 'sliding') return this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, target.modelId, target.providerId, input.userId);
+    return this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, target.modelId, target.providerId, input.userId);
   }
 
   async createStreamPlan(input: { activePersonaId?: string; abortSignal: AbortSignal; conversationId: string; messageId: string; modelId: string; persona?: ResolvedPersonaPlan; providerId: string; userId?: string }): Promise<ConversationStreamPlan> {
@@ -103,9 +89,7 @@ export class ConversationMessagePlanningService {
       systemPrompt: persona.prompt,
       userId: input.userId,
     });
-    if (beforeModel.action === 'short-circuit') {
-      return { modelId: beforeModel.modelId, providerId: beforeModel.providerId, responseSource: 'short-circuit', shortCircuitParts: beforeModel.assistantParts, stream: createShortCircuitStream(beforeModel.assistantContent) };
-    }
+    if (beforeModel.action === 'short-circuit') return { modelId: beforeModel.modelId, providerId: beforeModel.providerId, responseSource: 'short-circuit', shortCircuitParts: beforeModel.assistantParts, stream: createShortCircuitStream(beforeModel.assistantContent) };
     const context = createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId });
     const tools = await this.toolRegistryService.buildToolSet({ abortSignal: input.abortSignal, allowedToolNames: persona.toolNames ?? undefined, assistantMessageId: input.messageId, context });
     const stream = this.aiModelExecutionService.streamText({
@@ -123,37 +107,20 @@ export class ConversationMessagePlanningService {
   async finalizeTaskResult(result: CompletedConversationTaskResult, responseSource: ConversationResponseSource, shortCircuitParts: ChatMessagePart[] | null): Promise<CompletedConversationTaskResult> {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(result.conversationId);
     const context = { activePersonaId: conversation.activePersonaId, conversationId: result.conversationId, userId: conversation.userId };
-    const assistantResult = responseSource === 'short-circuit'
-      ? { ...result, metadata: createDisplayMessageMetadata('result'), parts: shortCircuitParts ?? result.parts }
-      : await this.applyAssistantMutation('chat:after-model', context, result);
+    const assistantResult = responseSource === 'short-circuit' ? { ...result, metadata: createDisplayMessageMetadata('result'), parts: shortCircuitParts ?? result.parts } : await this.applyAssistantMutation('chat:after-model', context, result);
     return this.applyAssistantMutation('response:before-send', context, assistantResult, responseSource);
   }
 
   async broadcastAfterSend(contextInput: { activePersonaId?: string; conversationId: string; userId?: string }, result: CompletedConversationTaskResult, responseSource: ConversationResponseSource): Promise<void> {
     const context = createConversationHookContext({ ...contextInput, modelId: result.modelId, providerId: result.providerId });
-    const payload = asJsonValue({
-      assistantContent: result.content,
-      assistantMessageId: result.assistantMessageId,
-      assistantParts: result.parts,
-      context,
-      conversationId: result.conversationId,
-      modelId: result.modelId,
-      providerId: result.providerId,
-      responseSource,
-      sentAt: new Date().toISOString(),
-      toolCalls: result.toolCalls,
-      toolResults: result.toolResults,
-    });
+    const payload = asJsonValue({ assistantContent: result.content, assistantMessageId: result.assistantMessageId, assistantParts: result.parts, context, conversationId: result.conversationId, modelId: result.modelId, providerId: result.providerId, responseSource, sentAt: new Date().toISOString(), toolCalls: result.toolCalls, toolResults: result.toolResults });
     for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'response:after-send', kernel: this.runtimeHostPluginDispatchService })) {
       await this.runtimeHostPluginDispatchService.invokeHook({ context, hookName: 'response:after-send', payload, pluginId });
     }
   }
 
   private async buildModelMessages(conversationId: string, messageId: string): Promise<ModelMessage[]> {
-    return Promise.all(this.runtimeHostConversationRecordService.requireConversation(conversationId).messages.filter((message) => message.id !== messageId && (message.role === 'assistant' || message.role === 'user')).map(async (message) => ({
-      content: Array.isArray(message.parts) ? await this.aiVisionService.resolveMessageParts(conversationId, message.parts as unknown as ChatMessagePart[]) : typeof message.content === 'string' ? message.content : '',
-      role: message.role === 'assistant' ? 'assistant' : 'user',
-    })));
+    return Promise.all(this.runtimeHostConversationRecordService.requireConversation(conversationId).messages.filter((message) => message.id !== messageId && (message.role === 'assistant' || message.role === 'user')).map(async (message) => ({ content: Array.isArray(message.parts) ? await this.aiVisionService.resolveMessageParts(conversationId, message.parts as unknown as ChatMessagePart[]) : typeof message.content === 'string' ? message.content : '', role: message.role === 'assistant' ? 'assistant' : 'user' })));
   }
 
   private async runConversationHistoryRewrite(input: { activePersonaId?: string; conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
@@ -198,7 +165,7 @@ export class ConversationMessagePlanningService {
 
   private isContextWindowEnabledForConversation(conversationId: string): boolean {
     const plugin = this.pluginPersistenceService.findPlugin(CONTEXT_COMPACTION_PLUGIN_ID);
-    if (!plugin?.connected) {return false;}
+    if (!plugin?.connected) return false;
     const scope: PluginScopeSettings = {
       conversations: { ...(plugin.conversationScopes ?? {}) },
       defaultEnabled: plugin.defaultEnabled,
@@ -206,12 +173,8 @@ export class ConversationMessagePlanningService {
     return isPluginEnabledForContext(scope, { conversationId });
   }
 
-  private previewHistoryMessages(conversationId: string, messages: PluginConversationHistoryMessage[], userId?: string): PluginConversationHistoryPreviewResult {
-    return this.runtimeHostConversationRecordService.previewConversationHistory(
-      conversationId,
-      asJsonObject({ messages: sanitizeContextWindowPreviewMessages(messages) }),
-      userId,
-    ) as unknown as PluginConversationHistoryPreviewResult;
+  private previewHistoryMessages(conversationId: string, messages: PluginConversationHistoryMessage[], modelId: string, providerId: string, userId?: string): PluginConversationHistoryPreviewResult {
+    return this.runtimeHostConversationRecordService.previewConversationHistory(conversationId, asJsonObject({ messages: sanitizeContextWindowPreviewMessages(messages), modelId, providerId }), userId) as unknown as PluginConversationHistoryPreviewResult;
   }
 
   private readContextWindowRuntimeConfig(): ContextWindowRuntimeConfig {
@@ -221,10 +184,9 @@ export class ConversationMessagePlanningService {
 
   private readContextWindowTarget(providerId?: string, modelId?: string): { contextLength: number; modelId: string; providerId: string } {
     const resolvedProviderId = providerId ?? this.aiManagementService.getDefaultProviderSelection().providerId ?? this.aiManagementService.listProviders()[0]?.id ?? null;
-    if (!resolvedProviderId) {throw new NotFoundException('当前没有可用的 AI provider');}
-    const provider = this.aiManagementService.getProvider(resolvedProviderId);
-    const resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0] ?? null;
-    if (!resolvedModelId) {throw new NotFoundException(`Provider "${resolvedProviderId}" 没有可用模型`);}
+    if (!resolvedProviderId) throw new NotFoundException('当前没有可用的 AI provider');
+    const provider = this.aiManagementService.getProvider(resolvedProviderId), resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0] ?? null;
+    if (!resolvedModelId) throw new NotFoundException(`Provider "${resolvedProviderId}" 没有可用模型`);
     const model = this.aiManagementService.getProviderModel(resolvedProviderId, resolvedModelId);
     return { contextLength: model.contextLength, modelId: resolvedModelId, providerId: resolvedProviderId };
   }
@@ -234,22 +196,20 @@ export class ConversationMessagePlanningService {
     historyMessages: PluginConversationHistoryMessage[],
     runtimeConfig: ContextWindowRuntimeConfig,
     maxWindowTokens: number,
+    modelId: string,
+    providerId: string,
     userId?: string,
   ): ConversationContextWindowPreview {
     const candidates = readContextWindowCompactedHistory(historyMessages).filter((entry): entry is ContextWindowCandidateMessage => entry.modelMessage !== null);
     const keepRecentCount = Math.min(runtimeConfig.keepRecentMessages, candidates.length);
     const maxTrimStart = Math.max(0, candidates.length - keepRecentCount);
     let selected = candidates;
-    let preview = this.previewHistoryMessages(conversationId, candidates.map((entry) => entry.modelMessage), userId);
+    let preview = this.previewHistoryMessages(conversationId, candidates.map((entry) => entry.modelMessage), modelId, providerId, userId);
 
     for (let trimStart = 0; trimStart <= maxTrimStart; trimStart += 1) {
       const nextSelected = candidates.slice(trimStart);
-      const nextPreview = this.previewHistoryMessages(conversationId, nextSelected.map((entry) => entry.modelMessage), userId);
-      if (nextPreview.estimatedTokens <= maxWindowTokens) {
-        selected = nextSelected;
-        preview = nextPreview;
-        break;
-      }
+      const nextPreview = this.previewHistoryMessages(conversationId, nextSelected.map((entry) => entry.modelMessage), modelId, providerId, userId);
+      if (nextPreview.estimatedTokens <= maxWindowTokens) { selected = nextSelected; preview = nextPreview; break; }
       if (trimStart === maxTrimStart) {
         selected = nextSelected;
         preview = nextPreview;
@@ -272,39 +232,23 @@ export class ConversationMessagePlanningService {
     historyMessages: PluginConversationHistoryMessage[],
     runtimeConfig: ContextWindowRuntimeConfig,
     maxWindowTokens: number,
+    modelId: string,
+    providerId: string,
     userId?: string,
   ): ConversationContextWindowPreview {
     const entries = readContextWindowCompactedHistory(historyMessages);
-    const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null);
-    const preview = this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), userId);
-    const includedMessageIds = includedEntries.map((entry) => entry.id);
-    return createContextWindowPreview(runtimeConfig, {
-      enabled: true,
-      estimatedTokens: preview.estimatedTokens,
-      excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)),
-      includedMessageIds,
-      maxWindowTokens,
-      strategy: runtimeConfig.strategy,
-    });
+    const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null), preview = this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId), includedMessageIds = includedEntries.map((entry) => entry.id);
+    return createContextWindowPreview(runtimeConfig, { enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, maxWindowTokens, strategy: runtimeConfig.strategy });
   }
 }
 
-function createContextWindowPreview(runtimeConfig: ContextWindowRuntimeConfig, input: Pick<ConversationContextWindowPreview, 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'maxWindowTokens' | 'strategy'> & { excludedMessageIds?: string[] }): ConversationContextWindowPreview {
-  return { ...input, excludedMessageIds: input.excludedMessageIds ?? [], frontendMessageWindowSize: runtimeConfig.frontendMessageWindowSize, keepRecentMessages: runtimeConfig.keepRecentMessages, slidingWindowUsagePercent: runtimeConfig.slidingWindowUsagePercent };
-}
+function createContextWindowPreview(runtimeConfig: ContextWindowRuntimeConfig, input: Pick<ConversationContextWindowPreview, 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'maxWindowTokens' | 'strategy'> & { excludedMessageIds?: string[] }): ConversationContextWindowPreview { return { ...input, excludedMessageIds: input.excludedMessageIds ?? [], frontendMessageWindowSize: runtimeConfig.frontendMessageWindowSize, keepRecentMessages: runtimeConfig.keepRecentMessages, slidingWindowUsagePercent: runtimeConfig.slidingWindowUsagePercent }; }
 
-export function createShortCircuitStream(content: string) {
-  const normalized = content.trim();
-  return { finishReason: 'short-circuit', fullStream: (async function* () { if (normalized) { yield { text: normalized, type: 'text-delta' as const }; } })() };
-}
+export function createShortCircuitStream(content: string) { const normalized = content.trim(); return { finishReason: 'short-circuit', fullStream: (async function* () { if (normalized) yield { text: normalized, type: 'text-delta' as const }; })() }; }
 
-function createConversationHookContext(input: ConversationHookInput): PluginCallContext {
-  return { ...(input.modelId ? { activeModelId: input.modelId } : {}), ...(input.providerId ? { activeProviderId: input.providerId } : {}), ...(input.conversationId ? { conversationId: input.conversationId } : {}), ...(input.userId ? { userId: input.userId } : {}), ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}), source: 'http-route' };
-}
+function createConversationHookContext(input: ConversationHookInput): PluginCallContext { return { ...(input.modelId ? { activeModelId: input.modelId } : {}), ...(input.providerId ? { activeProviderId: input.providerId } : {}), ...(input.conversationId ? { conversationId: input.conversationId } : {}), ...(input.userId ? { userId: input.userId } : {}), ...(input.activePersonaId ? { activePersonaId: input.activePersonaId } : {}), source: 'http-route' }; }
 
-function toUserModelMessage(input: { content: string; parts: ChatMessagePart[] }): ModelMessage {
-  return input.parts.length > 0 ? { content: input.parts, role: 'user' } : { content: input.content, role: 'user' };
-}
+function toUserModelMessage(input: { content: string; parts: ChatMessagePart[] }): ModelMessage { return input.parts.length > 0 ? { content: input.parts, role: 'user' } : { content: input.content, role: 'user' }; }
 
 function readMessageReceivedHookResponse<TPayload extends { content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }>(
   payload: TPayload,
@@ -337,10 +281,7 @@ function readStringMutation(value: unknown, fallback: string): string { return t
 
 function readChatMessageParts(value: unknown): ChatMessagePart[] { return Array.isArray(value) ? value as ChatMessagePart[] : []; }
 
-function readConversationHistorySnapshot(value: unknown): { messages: PluginConversationHistoryMessage[]; revision: string } {
-  const record = value as { messages?: PluginConversationHistoryMessage[]; revision?: string } | null;
-  return { messages: Array.isArray(record?.messages) ? record.messages : [], revision: typeof record?.revision === 'string' ? record.revision : '' };
-}
+function readConversationHistorySnapshot(value: unknown): { messages: PluginConversationHistoryMessage[]; revision: string } { const record = value as { messages?: PluginConversationHistoryMessage[]; revision?: string } | null; return { messages: Array.isArray(record?.messages) ? record.messages : [], revision: typeof record?.revision === 'string' ? record.revision : '' }; }
 
 function readContextWindowCompactedHistory(messages: PluginConversationHistoryMessage[]): ContextWindowEntry[] {
   const entries = messages.map((message) => ({ candidate: isContextWindowCandidateMessage(message), coveredCompactionIds: readCoveredCompactionIds(message), id: message.id, modelMessage: toContextWindowModelMessage(message), summaryCompactionId: readSummaryCompactionId(message) }));
@@ -357,16 +298,14 @@ function toContextWindowModelMessage(message: PluginConversationHistoryMessage):
   return isConversationHistoryModelMessage(message) ? message : readSummaryCompactionId(message) ? { ...message, role: 'assistant' } : null;
 }
 
-function omitTrailingPendingAssistant<T extends { role: string; status?: string }>(messages: T[]): T[] {
-  const lastMessage = messages.at(-1);
-  return lastMessage && lastMessage.role === 'assistant' && lastMessage.status === 'pending' ? messages.slice(0, -1) : messages;
-}
+function omitTrailingPendingAssistant<T extends { role: string; status?: string }>(messages: T[]): T[] { const lastMessage = messages.at(-1); return lastMessage && lastMessage.role === 'assistant' && lastMessage.status === 'pending' ? messages.slice(0, -1) : messages; }
 
 function sanitizeContextWindowPreviewMessages(messages: PluginConversationHistoryMessage[]): PluginConversationHistoryMessage[] { return messages.map((message, index) => sanitizeContextWindowPreviewMessage(message, index)); }
 
 function sanitizeContextWindowPreviewMessage(message: PluginConversationHistoryMessage, index: number): PluginConversationHistoryMessage {
   const createdAt = typeof message.createdAt === 'string' && message.createdAt.trim().length > 0 ? message.createdAt : new Date(0).toISOString();
   const updatedAt = typeof message.updatedAt === 'string' && message.updatedAt.trim().length > 0 ? message.updatedAt : createdAt;
+  const metadata = sanitizeContextWindowPreviewMetadata(message.metadata);
   const toolCalls = sanitizeContextWindowPreviewJsonArray(message.toolCalls);
   const toolResults = sanitizeContextWindowPreviewJsonArray(message.toolResults);
   return {
@@ -374,6 +313,7 @@ function sanitizeContextWindowPreviewMessage(message: PluginConversationHistoryM
     createdAt,
     ...(typeof message.error === 'string' ? { error: message.error } : {}),
     id: typeof message.id === 'string' && message.id.trim().length > 0 ? message.id : `context-window-preview-${index}`,
+    ...(metadata ? { metadata } : {}),
     ...(typeof message.model === 'string' ? { model: message.model } : {}),
     parts: sanitizeContextWindowPreviewParts(message.parts),
     ...(typeof message.provider === 'string' ? { provider: message.provider } : {}),
@@ -385,38 +325,22 @@ function sanitizeContextWindowPreviewMessage(message: PluginConversationHistoryM
   };
 }
 
+function sanitizeContextWindowPreviewMetadata(value: unknown): ChatMessageMetadata | null {
+  const normalized = sanitizeContextWindowPreviewJsonValue(value);
+  return isRecord(normalized) ? normalized as ChatMessageMetadata : null;
+}
+
 function sanitizeContextWindowPreviewParts(parts: unknown): ChatMessagePart[] {
-  if (!Array.isArray(parts)) {
-    return [];
-  }
-  const sanitized: ChatMessagePart[] = [];
-  for (const part of parts) {
-    if (!isRecord(part) || typeof part.type !== 'string') {
-      continue;
-    }
-    if (part.type === 'text' && typeof part.text === 'string') {
-      sanitized.push({ text: part.text, type: 'text' });
-      continue;
-    }
-    if (part.type === 'image' && typeof part.image === 'string') {
-      sanitized.push({
-        image: part.image,
-        ...(typeof part.mimeType === 'string' ? { mimeType: part.mimeType } : {}),
-        type: 'image',
-      });
-    }
-  }
-  return sanitized;
+  return Array.isArray(parts) ? parts.flatMap<ChatMessagePart>((part) => {
+    if (!isRecord(part) || typeof part.type !== 'string') return [];
+    if (part.type === 'text' && typeof part.text === 'string') return [{ text: part.text, type: 'text' as const }];
+    return part.type === 'image' && typeof part.image === 'string' ? [{ image: part.image, ...(typeof part.mimeType === 'string' ? { mimeType: part.mimeType } : {}), type: 'image' as const }] : [];
+  }) : [];
 }
 
 function sanitizeContextWindowPreviewJsonArray(value: unknown): JsonValue[] | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const sanitized = value.flatMap((entry) => {
-    const normalized = sanitizeContextWindowPreviewJsonValue(entry);
-    return normalized === null ? [] : [normalized];
-  });
+  if (!Array.isArray(value)) return null;
+  const sanitized = value.flatMap((entry) => { const normalized = sanitizeContextWindowPreviewJsonValue(entry); return normalized === null ? [] : [normalized]; });
   return sanitized.length > 0 ? sanitized : null;
 }
 
@@ -434,25 +358,16 @@ function readContextWindowPreviewStatus(value: unknown): PluginConversationHisto
 }
 
 function readSummaryCompactionId(message: PluginConversationHistoryMessage): string | null {
-  for (const annotation of message.metadata?.annotations ?? []) {
-    if (annotation.type !== 'context-compaction' || annotation.owner !== 'builtin.context-compaction') {continue;}
-    if (isRecord(annotation.data) && annotation.data.role === 'summary' && typeof annotation.data.compactionId === 'string') {
-      return annotation.data.compactionId;
-    }
-  }
-  return null;
+  const match = readContextCompactionAnnotationData(message).find((data) => data.role === 'summary' && typeof data.compactionId === 'string');
+  return typeof match?.compactionId === 'string' ? match.compactionId : null;
 }
 
 function readCoveredCompactionIds(message: PluginConversationHistoryMessage): string[] {
-  return (message.metadata?.annotations ?? []).flatMap((annotation) =>
-    annotation.type === 'context-compaction'
-      && annotation.owner === 'builtin.context-compaction'
-      && isRecord(annotation.data)
-      && annotation.data.role === 'covered'
-      && typeof annotation.data.compactionId === 'string'
-      ? [annotation.data.compactionId]
-      : [],
-  );
+  return readContextCompactionAnnotationData(message).flatMap((data) => data.role === 'covered' && typeof data.compactionId === 'string' ? [data.compactionId] : []);
+}
+
+function readContextCompactionAnnotationData(message: PluginConversationHistoryMessage): Array<Record<string, unknown>> {
+  return (message.metadata?.annotations ?? []).flatMap((annotation) => annotation.type === 'context-compaction' && annotation.owner === 'builtin.context-compaction' && isRecord(annotation.data) ? [annotation.data] : []);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

@@ -22,6 +22,7 @@ function createState(messages: ChatMessage[] = []) {
     contextWindowPreview: ref(null),
     messages: ref<ChatMessage[]>(messages),
     pendingRuntimePermissions: ref([]),
+    todoItems: ref([]),
     selectedProvider: ref<string | null>('demo-provider'),
     selectedModel: ref<string | null>('demo-model'),
     streamController: ref<AbortController | null>(null),
@@ -302,6 +303,51 @@ describe('dispatchSendMessage', () => {
     expect(refreshConversationSummary).toHaveBeenCalledTimes(0)
     expect(refreshConversationState).toHaveBeenCalledWith({
       permissionStateChanged: true,
+      summaryRefreshed: false,
+    })
+  })
+
+  it('applies todo-updated events directly to the current todo panel without forcing summary refresh', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'todo-updated',
+          conversationId: 'conversation-1',
+          todos: [
+            {
+              content: '同步 todo 面板',
+              priority: 'high',
+              status: 'in_progress',
+            },
+          ],
+        })
+      },
+    )
+    const state = createState()
+    const refreshConversationSummary = vi.fn().mockResolvedValue(undefined)
+    const refreshConversationState = vi.fn().mockResolvedValue(undefined)
+
+    await dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      {
+        refreshConversationSummary,
+        refreshConversationState,
+      },
+    )
+
+    expect(state.todoItems.value).toEqual([
+      {
+        content: '同步 todo 面板',
+        priority: 'high',
+        status: 'in_progress',
+      },
+    ])
+    expect(refreshConversationSummary).not.toHaveBeenCalled()
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: false,
       summaryRefreshed: false,
     })
   })

@@ -306,6 +306,11 @@ export type SSEEvent =
       metadata: ChatMessageMetadata;
     }
   | {
+      type: 'todo-updated';
+      conversationId: string;
+      todos: ConversationTodoItem[];
+    }
+  | {
       type: 'permission-request';
       messageId: string;
       request: RuntimePermissionRequest;

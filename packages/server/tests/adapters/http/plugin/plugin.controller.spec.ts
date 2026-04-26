@@ -37,6 +37,7 @@ describe('PluginController', () => {
     getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
     listTypes: jest.fn(),
+    removeSubagentSession: jest.fn(),
   };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
@@ -652,6 +653,12 @@ describe('PluginController', () => {
       }),
     );
     expect(runtimeHostSubagentRunnerService.getSubagentOrThrow).toHaveBeenCalledWith('subagent-session-1');
+  });
+
+  it('delegates subagent removal to the subagent runtime owner', () => {
+    runtimeHostSubagentRunnerService.removeSubagentSession.mockResolvedValue(true);
+
+    return expect(controller.removeSubagent('subagent-session-1')).resolves.toBe(true);
   });
 
   it('deletes plugins through persistence owner and records plugin deletion events', async () => {

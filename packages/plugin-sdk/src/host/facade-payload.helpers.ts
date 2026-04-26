@@ -116,6 +116,8 @@ export function buildPluginConversationHistoryPreviewParams(
 ): JsonObject {
   return {
     ...(input.messages ? { messages: toHostJsonValue(input.messages) } : {}),
+    ...(input.modelId ? { modelId: input.modelId } : {}),
+    ...(input.providerId ? { providerId: input.providerId } : {}),
   };
 }
 

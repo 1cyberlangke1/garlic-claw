@@ -166,6 +166,14 @@ function createRuntimeFixture() {
     builtinPluginRegistryService,
     pluginBootstrapService,
     new RuntimeGatewayRemoteTransportService(runtimeGatewayConnectionLifecycleService),
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
   const runtimeHostService = new RuntimeHostService(
     pluginBootstrapService,

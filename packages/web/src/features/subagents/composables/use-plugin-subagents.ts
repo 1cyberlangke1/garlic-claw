@@ -9,6 +9,7 @@ import { usePagination } from '@/composables/use-pagination'
 import {
   loadPluginSubagentDetail,
   loadPluginSubagentOverview,
+  removePluginSubagentSession as requestRemovePluginSubagentSession,
 } from './plugin-subagents.data'
 
 type SubagentFilter = 'all' | 'running' | 'completed' | 'error' | 'writeback-failed'
@@ -51,6 +52,7 @@ export function usePluginSubagents() {
   const detailError = detailState.error
   const subagents = shallowRef<PluginSubagentSummary[]>([])
   const activeSubagentDetail = shallowRef<PluginSubagentDetail | null>(null)
+  const removingSessionId = ref<string | null>(null)
   const searchKeyword = ref('')
   const filter = ref<SubagentFilter>('all')
   const activeConversationId = ref<string | null>(null)
@@ -195,6 +197,26 @@ export function usePluginSubagents() {
     }
   }
 
+  async function removeSubagentSession(sessionId: string) {
+    if (!sessionId.trim() || removingSessionId.value) {
+      return
+    }
+    removingSessionId.value = sessionId
+    requestState.clearError()
+    try {
+      const removed = await requestRemovePluginSubagentSession(sessionId)
+      if (removed) {
+        await refreshAll()
+      }
+    } catch (caughtError) {
+      requestState.setError(caughtError, '移除后台子代理失败')
+    } finally {
+      if (removingSessionId.value === sessionId) {
+        removingSessionId.value = null
+      }
+    }
+  }
+
   return {
     loading,
     error,
@@ -210,6 +232,7 @@ export function usePluginSubagents() {
     activeWindowKind,
     activeWorkspaceWindows,
     activeSubagentDetail,
+    removingSessionId,
     searchKeyword,
     filter,
     pagedSubagents,
@@ -229,6 +252,7 @@ export function usePluginSubagents() {
     selectConversation,
     selectWindow,
     refreshAll,
+    removeSubagentSession,
   }
 }
 

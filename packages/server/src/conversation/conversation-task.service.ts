@@ -1,42 +1,18 @@
-import type {
-  ChatMessageCustomBlock,
-  ChatMessageMetadata,
-  ChatMessagePart,
-  ChatMessageStatus,
-  JsonValue,
-  PluginSubagentToolCall,
-  PluginSubagentToolResult,
-  SSEEvent,
-} from '@garlic-claw/shared';
+import type { AiModelUsage, ChatMessageCustomBlock, ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonValue, PluginSubagentToolCall, PluginSubagentToolResult, SSEEvent } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
 import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-host-conversation-message.service';
+import { RuntimeHostConversationTodoService } from '../runtime/host/runtime-host-conversation-todo.service';
 import { cloneJsonValue, readAssistantRawCustomBlocks, readAssistantStreamPart } from '../runtime/host/runtime-host-values';
+import { appendConversationModelUsageMetadata } from './conversation-model-usage.annotation';
 
 export type ConversationTaskToolCall = PluginSubagentToolCall & Record<string, JsonValue>;
 export type ConversationTaskToolResult = PluginSubagentToolResult & Record<string, JsonValue>;
-export type ConversationTaskEvent = Extract<
-  SSEEvent,
-  {
-    type:
-      | 'finish'
-      | 'message-metadata'
-      | 'message-patch'
-      | 'permission-request'
-      | 'permission-resolved'
-      | 'status'
-      | 'text-delta'
-      | 'tool-call'
-      | 'tool-result';
-  }
->;
+export type ConversationTaskEvent = Extract<SSEEvent, { type: 'finish' | 'message-metadata' | 'message-patch' | 'permission-request' | 'permission-resolved' | 'status' | 'todo-updated' | 'text-delta' | 'tool-call' | 'tool-result' }>;
 export type ResolvedConversationTaskStreamSource = {
   modelId: string;
   providerId: string;
-  stream: {
-    finishReason?: Promise<unknown> | unknown;
-    fullStream: AsyncIterable<unknown>;
-  };
+  stream: { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; usage?: Promise<AiModelUsage | undefined> };
 };
 
 export interface CompletedConversationTaskResult {
@@ -67,26 +43,17 @@ export interface StartConversationTaskInput {
 }
 
 type ConversationTaskPermissionEvent = Parameters<Parameters<RuntimeToolPermissionService['subscribe']>[1]>[0];
-type ConversationTaskCustomBlockUpdate =
-  | { key: string; kind: 'json'; value: JsonValue }
-  | { key: string; kind: 'text'; value: string };
-type ConversationTaskOutcome =
-  | { status: 'completed' | 'stopped' }
-  | { error: string; status: 'error' };
-type ConversationTaskRuntime = Omit<StartConversationTaskInput, 'createStream'> & { state: ConversationTaskState };
+type ConversationTaskCustomBlockUpdate = { key: string; kind: 'json'; value: JsonValue } | { key: string; kind: 'text'; value: string };
+type ConversationTaskOutcome = { status: 'completed' | 'stopped' } | { error: string; status: 'error' };
 type ConversationTaskSnapshot = Omit<CompletedConversationTaskResult, 'assistantMessageId' | 'conversationId'>;
+type ConversationTaskRuntime = Omit<StartConversationTaskInput, 'createStream'> & {
+  state: { content: string; metadata?: ChatMessageMetadata; toolCalls: ConversationTaskToolCall[]; toolResults: ConversationTaskToolResult[] };
+};
 
 interface ConversationTaskHandle {
   abortController: AbortController;
   completion: Promise<void>;
   listeners: Set<(event: ConversationTaskEvent) => void>;
-}
-
-interface ConversationTaskState {
-  content: string;
-  metadata?: ChatMessageMetadata;
-  toolCalls: ConversationTaskToolCall[];
-  toolResults: ConversationTaskToolResult[];
 }
 
 @Injectable()
@@ -96,47 +63,29 @@ export class ConversationTaskService {
   constructor(
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
+    private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
   ) {}
 
   startTask(input: StartConversationTaskInput): void {
-    if (this.tasks.has(input.assistantMessageId)) {
-      throw new Error(`Conversation task already exists for message ${input.assistantMessageId}`);
-    }
+    if (this.tasks.has(input.assistantMessageId)) throw new Error(`Conversation task already exists for message ${input.assistantMessageId}`);
     let resolveCompletion: () => void = () => undefined;
-    const handle: ConversationTaskHandle = {
-      abortController: new AbortController(),
-      completion: new Promise<void>((resolve) => {
-        resolveCompletion = resolve;
-      }),
-      listeners: new Set(),
-    };
+    const handle: ConversationTaskHandle = { abortController: new AbortController(), completion: new Promise<void>((resolve) => { resolveCompletion = resolve; }), listeners: new Set() };
     this.tasks.set(input.assistantMessageId, handle);
-    setTimeout(() => {
-      void this.runTask(handle, input).finally(() => {
-        this.tasks.delete(input.assistantMessageId);
-        resolveCompletion();
-      });
-    }, 0);
+    setTimeout(() => void this.runTask(handle, input).finally(() => { this.tasks.delete(input.assistantMessageId); resolveCompletion(); }), 0);
   }
 
   subscribe(messageId: string, listener: (event: ConversationTaskEvent) => void): () => void {
     const task = this.tasks.get(messageId);
-    if (!task) {
-      return () => undefined;
-    }
+    if (!task) return () => undefined;
     task.listeners.add(listener);
     return () => task.listeners.delete(listener);
   }
 
-  async waitForTask(messageId: string): Promise<void> {
-    await this.tasks.get(messageId)?.completion;
-  }
+  async waitForTask(messageId: string): Promise<void> { await this.tasks.get(messageId)?.completion; }
 
   async stopTask(messageId: string): Promise<boolean> {
     const task = this.tasks.get(messageId);
-    if (!task) {
-      return false;
-    }
+    if (!task) return false;
     task.abortController.abort(new Error('用户主动停止了本次生成'));
     await task.completion;
     return true;
@@ -144,39 +93,46 @@ export class ConversationTaskService {
 
   private async runTask(task: ConversationTaskHandle, input: StartConversationTaskInput): Promise<void> {
     const runtime: ConversationTaskRuntime = { ...input, state: { content: '', toolCalls: [], toolResults: [] } };
-    const unsubscribePermission = this.runtimeToolPermissionService.subscribe(
-      input.conversationId,
-      (event) => this.emit(task, readConversationTaskPermissionEvent(event, input.assistantMessageId)),
-    );
+    const unsubscribePermission = this.runtimeToolPermissionService.subscribe(input.conversationId, (event) => {
+      this.emit(task, toConversationTaskPermissionEvent(event, input.assistantMessageId));
+    });
+    const unsubscribeTodo = this.runtimeHostConversationTodoService.subscribe(input.conversationId, (event) => {
+      this.emit(task, { conversationId: event.sessionId, todos: cloneJsonValue(event.todos), type: 'todo-updated' });
+    });
+
     try {
       const streamSource = await input.createStream(task.abortController.signal);
       runtime.modelId = streamSource.modelId;
       runtime.providerId = streamSource.providerId;
-      await this.persistTaskSnapshot(runtime, 'streaming');
+      await this.writeTaskSnapshot(runtime, 'streaming');
       this.emit(task, { messageId: runtime.assistantMessageId, status: 'streaming', type: 'status' });
+
       for await (const rawPart of streamSource.stream.fullStream) {
-        const events = consumeConversationTaskPart(runtime.state, runtime.assistantMessageId, runtime.providerId, rawPart);
-        if (events.length === 0) {
-          continue;
-        }
-        await this.persistTaskSnapshot(runtime, 'streaming');
+        const events = readConversationTaskEvents(runtime.state, runtime.assistantMessageId, runtime.providerId, rawPart);
+        if (events.length === 0) continue;
+        await this.writeTaskSnapshot(runtime, 'streaming');
         this.emitAll(task, events);
       }
-      const outcome: ConversationTaskOutcome = { status: task.abortController.signal.aborted ? 'stopped' : 'completed' };
-      await this.finishTask(task, runtime, outcome);
+
+      const usage = await readConversationTaskUsage(streamSource.stream.usage);
+      if (usage?.source === 'provider') {
+        runtime.state.metadata = appendConversationModelUsageMetadata(runtime.state.metadata, {
+          ...usage,
+          modelId: runtime.modelId,
+          providerId: runtime.providerId,
+        });
+      }
+      await this.finishTask(task, runtime, { status: task.abortController.signal.aborted ? 'stopped' : 'completed' });
     } catch (error) {
-      await this.finishTask(task, runtime, await resolveConversationTaskOutcome(task.abortController.signal, runtime.resolveErrorMessage, error));
+      await this.finishTask(task, runtime, await readConversationTaskOutcome(task.abortController.signal, runtime.resolveErrorMessage, error));
     } finally {
       unsubscribePermission();
+      unsubscribeTodo();
     }
   }
 
-  private async finishTask(
-    task: ConversationTaskHandle,
-    runtime: ConversationTaskRuntime,
-    outcome: ConversationTaskOutcome,
-  ): Promise<void> {
-    const snapshot = await this.persistTaskSnapshot(runtime, outcome.status, 'error' in outcome ? outcome.error : null);
+  private async finishTask(task: ConversationTaskHandle, runtime: ConversationTaskRuntime, outcome: ConversationTaskOutcome): Promise<void> {
+    const snapshot = await this.writeTaskSnapshot(runtime, outcome.status, 'error' in outcome ? outcome.error : null);
     if (outcome.status !== 'completed') {
       this.emitAll(task, [
         { ...('error' in outcome ? { error: outcome.error } : {}), messageId: runtime.assistantMessageId, status: outcome.status, type: 'status' },
@@ -184,91 +140,50 @@ export class ConversationTaskService {
       ]);
       return;
     }
-    const completed: CompletedConversationTaskResult = {
-      assistantMessageId: runtime.assistantMessageId,
-      conversationId: runtime.conversationId,
-      ...snapshot,
-    };
+
+    const completed: CompletedConversationTaskResult = { assistantMessageId: runtime.assistantMessageId, conversationId: runtime.conversationId, ...snapshot };
     const patched = await runtime.onComplete?.(completed);
     const finalResult = patched ?? completed;
-    if (patched && hasPatchedResult(completed, patched)) {
-      await this.runtimeHostConversationMessageService.writeMessage(
-        runtime.conversationId,
-        runtime.assistantMessageId,
-        readConversationTaskMessageBody(patched, 'completed'),
-      );
-      this.emit(task, {
-        content: patched.content,
-        messageId: runtime.assistantMessageId,
-        ...(patched.parts.length > 0 ? { parts: patched.parts } : {}),
-        type: 'message-patch',
-      });
+
+    if (patched && hasPatchedTaskResult(completed, patched)) {
+      await this.runtimeHostConversationMessageService.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(patched, 'completed'));
+      this.emit(task, { content: patched.content, messageId: runtime.assistantMessageId, ...(patched.parts.length > 0 ? { parts: patched.parts } : {}), type: 'message-patch' });
     }
     this.emit(task, { messageId: runtime.assistantMessageId, status: 'completed', type: 'finish' });
     await runtime.onSent?.(finalResult);
   }
 
-  private async persistTaskSnapshot(
-    runtime: ConversationTaskRuntime,
-    status: ChatMessageStatus,
-    error: string | null = null,
-  ): Promise<ConversationTaskSnapshot> {
+  private async writeTaskSnapshot(runtime: ConversationTaskRuntime, status: ChatMessageStatus, error: string | null = null): Promise<ConversationTaskSnapshot> {
     const snapshot: ConversationTaskSnapshot = {
       content: runtime.state.content.trim(),
-      ...(runtime.state.metadata ? { metadata: finalizeCustomBlockMetadata(runtime.state.metadata, status) } : {}),
+      ...(runtime.state.metadata ? { metadata: finalizeConversationTaskMetadata(runtime.state.metadata, status) } : {}),
       modelId: runtime.modelId,
       parts: toAssistantParts(runtime.state.content),
       providerId: runtime.providerId,
       toolCalls: runtime.state.toolCalls.map((entry) => ({ ...entry })),
       toolResults: runtime.state.toolResults.map((entry) => ({ ...entry })),
     };
-    await this.runtimeHostConversationMessageService.writeMessage(
-      runtime.conversationId,
-      runtime.assistantMessageId,
-      readConversationTaskMessageBody(snapshot, status, error),
-    );
+    await this.runtimeHostConversationMessageService.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(snapshot, status, error));
     return snapshot;
   }
 
-  private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void {
-    for (const listener of task.listeners) { listener(event); }
-  }
-
-  private emitAll(task: ConversationTaskHandle, events: readonly ConversationTaskEvent[]): void {
-    events.forEach((event) => this.emit(task, event));
-  }
+  private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void { for (const listener of task.listeners) listener(event); }
+  private emitAll(task: ConversationTaskHandle, events: readonly ConversationTaskEvent[]): void { events.forEach((event) => this.emit(task, event)); }
 }
 
-function readConversationTaskPermissionEvent(
-  event: ConversationTaskPermissionEvent,
-  assistantMessageId: string,
-): ConversationTaskEvent {
+function toConversationTaskPermissionEvent(event: ConversationTaskPermissionEvent, assistantMessageId: string): ConversationTaskEvent {
   return event.type === 'request'
-    ? {
-        messageId: event.request.messageId ?? assistantMessageId,
-        request: cloneJsonValue(event.request),
-        type: 'permission-request',
-      }
-    : {
-        messageId: event.messageId ?? assistantMessageId,
-        result: cloneJsonValue(event.result),
-        type: 'permission-resolved',
-      };
+    ? { messageId: event.request.messageId ?? assistantMessageId, request: cloneJsonValue(event.request), type: 'permission-request' }
+    : { messageId: event.messageId ?? assistantMessageId, result: cloneJsonValue(event.result), type: 'permission-resolved' };
 }
 
-async function resolveConversationTaskErrorMessage(
-  resolver: StartConversationTaskInput['resolveErrorMessage'],
-  error: unknown,
-): Promise<string> {
-  return await resolver?.(error) ?? (error instanceof Error ? error.message : 'Conversation generation failed');
+async function readConversationTaskOutcome(abortSignal: AbortSignal, resolver: StartConversationTaskInput['resolveErrorMessage'], error: unknown): Promise<ConversationTaskOutcome> {
+  if (abortSignal.aborted) return { status: 'stopped' };
+  return { error: await resolver?.(error) ?? (error instanceof Error ? error.message : 'Conversation generation failed'), status: 'error' };
 }
 
-async function resolveConversationTaskOutcome(
-  abortSignal: AbortSignal,
-  resolver: StartConversationTaskInput['resolveErrorMessage'],
-  error: unknown,
-): Promise<ConversationTaskOutcome> {
-  return abortSignal.aborted ? { status: 'stopped' } : { error: await resolveConversationTaskErrorMessage(resolver, error), status: 'error' };
+async function readConversationTaskUsage(usage: Promise<AiModelUsage | undefined> | undefined): Promise<AiModelUsage | undefined> {
+  try { return usage ? await usage : undefined; } catch { return undefined; }
 }
 
 function readConversationTaskMessageBody(
@@ -276,79 +191,66 @@ function readConversationTaskMessageBody(
   status: ChatMessageStatus,
   error: string | null = null,
 ) {
-  return {
-    content: input.content,
-    error,
-    metadata: input.metadata,
-    model: input.modelId,
-    parts: input.parts,
-    provider: input.providerId,
-    status,
-    toolCalls: input.toolCalls,
-    toolResults: input.toolResults,
-  };
+  return { content: input.content, error, metadata: input.metadata, model: input.modelId, parts: input.parts, provider: input.providerId, status, toolCalls: input.toolCalls, toolResults: input.toolResults };
 }
 
-function consumeConversationTaskPart(
-  state: ConversationTaskState,
+function readConversationTaskEvents(
+  state: ConversationTaskRuntime['state'],
   messageId: string,
   providerId: string,
   rawPart: unknown,
 ): ConversationTaskEvent[] {
-  const events = readConversationTaskMetadataEvents(state, messageId, providerId, readAssistantRawCustomBlocks(rawPart));
+  const metadataEvents = readConversationTaskMetadataEvents(state, messageId, providerId, readAssistantRawCustomBlocks(rawPart));
   const part = readAssistantStreamPart(rawPart);
-  if (!part) {
-    return events;
-  }
+  if (!part) return metadataEvents;
   if (part.type === 'text-delta') {
     state.content += part.text;
-    return [...events, { messageId, text: part.text, type: 'text-delta' }];
+    return [...metadataEvents, { messageId, text: part.text, type: 'text-delta' }];
   }
   if (part.type === 'tool-call') {
     state.toolCalls.push({ input: part.input, toolCallId: part.toolCallId, toolName: part.toolName });
-    return [...events, { input: part.input, messageId, toolName: part.toolName, type: 'tool-call' }];
+    return [...metadataEvents, { input: part.input, messageId, toolName: part.toolName, type: 'tool-call' }];
   }
   state.toolResults.push({ output: part.output, toolCallId: part.toolCallId, toolName: part.toolName });
-  return [...events, { messageId, output: part.output, toolName: part.toolName, type: 'tool-result' }];
+  return [...metadataEvents, { messageId, output: part.output, toolName: part.toolName, type: 'tool-result' }];
 }
 
 function readConversationTaskMetadataEvents(
-  state: ConversationTaskState,
+  state: ConversationTaskRuntime['state'],
   messageId: string,
   providerId: string,
   updates: ConversationTaskCustomBlockUpdate[],
 ): ConversationTaskEvent[] {
-  const nextMetadata = applyCustomBlockUpdates(state.metadata, providerId, updates); if (nextMetadata === state.metadata) { return []; }
-  state.metadata = nextMetadata;
-  return nextMetadata ? [{ messageId, metadata: cloneJsonValue(nextMetadata), type: 'message-metadata' }] : [];
+  const metadata = applyConversationTaskMetadataUpdates(state.metadata, providerId, updates);
+  if (metadata === state.metadata) return [];
+  state.metadata = metadata;
+  return metadata ? [{ messageId, metadata: cloneJsonValue(metadata), type: 'message-metadata' }] : [];
 }
 
-function applyCustomBlockUpdates(
+function applyConversationTaskMetadataUpdates(
   currentMetadata: ChatMessageMetadata | undefined,
   providerId: string,
   updates: ConversationTaskCustomBlockUpdate[],
 ): ChatMessageMetadata | undefined {
-  if (updates.length === 0) {
-    return currentMetadata;
-  }
+  if (updates.length === 0) return currentMetadata;
   const metadata = cloneJsonValue(currentMetadata ?? {}) as ChatMessageMetadata;
-  const nextBlocks = [...(metadata.customBlocks ?? [])];
+  const customBlocks = [...(metadata.customBlocks ?? [])];
   let changed = false;
   for (const update of updates) {
     const blockId = `custom-field:${update.key}`;
-    const blockIndex = nextBlocks.findIndex((entry) => entry.id === blockId);
-    const nextBlock = readConversationTaskCustomBlock(nextBlocks[blockIndex], blockId, providerId, update);
-    if (blockIndex < 0) {
-      nextBlocks.push(nextBlock);
+    const nextBlock = readConversationTaskCustomBlock(customBlocks.find((entry) => entry.id === blockId), blockId, providerId, update);
+    const index = customBlocks.findIndex((entry) => entry.id === blockId);
+    if (index < 0) {
+      customBlocks.push(nextBlock);
       changed = true;
       continue;
     }
-    if (JSON.stringify(nextBlocks[blockIndex]) !== JSON.stringify(nextBlock)) {
-      nextBlocks[blockIndex] = nextBlock;
+    if (JSON.stringify(customBlocks[index]) !== JSON.stringify(nextBlock)) {
+      customBlocks[index] = nextBlock;
       changed = true;
     }
   }
-  return changed ? { ...metadata, customBlocks: nextBlocks } : currentMetadata;
+  return changed ? { ...metadata, customBlocks } : currentMetadata;
 }
 
 function readConversationTaskCustomBlock(
@@ -357,39 +259,19 @@ function readConversationTaskCustomBlock(
   providerId: string,
   update: ConversationTaskCustomBlockUpdate,
 ): ChatMessageCustomBlock {
-  const source = { key: update.key, origin: 'ai-sdk.raw' as const, providerId };
-  if (update.kind === 'text') {
-    return {
-      id: blockId,
-      kind: 'text',
-      source,
-      state: 'streaming',
-      text: `${currentBlock?.kind === 'text' ? currentBlock.text : ''}${update.value}`,
-      title: formatCustomBlockTitle(update.key),
-    };
-  }
-  return {
-    data: cloneJsonValue(update.value),
-    id: blockId,
-    kind: 'json',
-    source,
-    state: 'streaming',
-    title: formatCustomBlockTitle(update.key),
-  };
+  const base = { id: blockId, source: { key: update.key, origin: 'ai-sdk.raw' as const, providerId }, state: 'streaming' as const, title: formatCustomBlockTitle(update.key) };
+  return update.kind === 'text'
+    ? { ...base, kind: 'text', text: `${currentBlock?.kind === 'text' ? currentBlock.text : ''}${update.value}` }
+    : { ...base, data: cloneJsonValue(update.value), kind: 'json' };
 }
 
-function finalizeCustomBlockMetadata(
-  metadata: ChatMessageMetadata | undefined,
-  status: ChatMessageStatus,
-): ChatMessageMetadata | undefined {
-  if (!metadata?.customBlocks?.length || status === 'pending' || status === 'streaming') { return metadata; }
-  return { ...metadata, customBlocks: metadata.customBlocks.map((block) => ({ ...block, state: 'done' })) };
+function finalizeConversationTaskMetadata(metadata: ChatMessageMetadata | undefined, status: ChatMessageStatus): ChatMessageMetadata | undefined {
+  return !metadata?.customBlocks?.length || status === 'pending' || status === 'streaming'
+    ? metadata
+    : { ...metadata, customBlocks: metadata.customBlocks.map((block) => ({ ...block, state: 'done' })) };
 }
 
-function hasPatchedResult(
-  original: CompletedConversationTaskResult,
-  patched: CompletedConversationTaskResult,
-): boolean {
+function hasPatchedTaskResult(original: CompletedConversationTaskResult, patched: CompletedConversationTaskResult): boolean {
   return original.content !== patched.content
     || JSON.stringify(original.metadata ?? null) !== JSON.stringify(patched.metadata ?? null)
     || original.providerId !== patched.providerId
@@ -405,5 +287,6 @@ function formatCustomBlockTitle(key: string): string {
 }
 
 function toAssistantParts(content: string): ChatMessagePart[] {
-  const text = content.trim(); return text ? [{ text, type: 'text' }] : [];
+  const text = content.trim();
+  return text ? [{ text, type: 'text' }] : [];
 }

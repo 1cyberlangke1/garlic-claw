@@ -7,16 +7,11 @@ import { AiManagementService } from '../../../src/ai-management/ai-management.se
 import { AiProviderSettingsService } from '../../../src/ai-management/ai-provider-settings.service';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
-import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
-import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
 import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
-import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
-import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { InvalidToolService } from '../../../src/execution/invalid/invalid-tool.service';
 import { ProjectWorktreeSearchOverlayService } from '../../../src/execution/project/project-worktree-search-overlay.service';
 import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
-import { ReadToolService } from '../../../src/execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
 import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
@@ -28,11 +23,11 @@ import type { RuntimeFilesystemBackend } from '../../../src/execution/runtime/ru
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
 import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
+import { RuntimeWslShellService } from '../../../src/execution/runtime/runtime-wsl-shell.service';
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
 import { WebFetchToolService } from '../../../src/execution/webfetch/webfetch-tool.service';
-import { WriteToolService } from '../../../src/execution/write/write-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -43,6 +38,7 @@ import { RuntimeGatewayConnectionLifecycleService } from '../../../src/runtime/g
 import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gateway/runtime-gateway-remote-transport.service';
 import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostConversationTodoService } from '../../../src/runtime/host/runtime-host-conversation-todo.service';
 import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-host-knowledge.service';
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
@@ -590,6 +586,94 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('uses the platform default backend when builtin runtime-tools shellBackend is unset', async () => {
+    const { conversationId, runtimeToolPermissionService, service } = createFixture();
+
+    const toolSet = await service.buildToolSet({
+      assistantMessageId: 'assistant-message-shell-default-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['bash'],
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: process.platform === 'win32'
+        ? "Write-Output 'default-platform-backend'"
+        : "printf \"default-platform-backend\\n\"",
+      description: '验证 builtin runtime-tools 默认 shell backend',
+    });
+    const request = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(request).toMatchObject({
+      backendKind: 'native-shell',
+      messageId: 'assistant-message-shell-default-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, request.id, 'once');
+    const result = await execution;
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('default-platform-backend'),
+    }));
+  });
+
+  it('supports hot-switching builtin runtime-tools bash execution to the platform-scoped secondary backend', async () => {
+    const secondaryShellBackendKind = process.platform === 'win32' ? 'wsl-shell' : 'native-shell';
+    const runtimeBackends = process.platform === 'win32'
+      ? (() => {
+        const baseRuntimeBackends = createRealRuntimeBackendsForShellRouting(undefined, { includeWsl: false });
+        return [
+          ...baseRuntimeBackends,
+          createKindAliasedRuntimeBackend('wsl-shell', baseRuntimeBackends, 'just-bash'),
+        ];
+      })()
+      : undefined;
+    const { conversationId, pluginBootstrapService, runtimeToolPermissionService, service } = createFixture({
+      ...(runtimeBackends ? { runtimeBackends } : {}),
+    });
+    const pluginPersistenceService = (pluginBootstrapService as unknown as {
+      pluginPersistenceService: PluginPersistenceService;
+    }).pluginPersistenceService;
+    pluginPersistenceService.updatePluginConfig('builtin.runtime-tools', {
+      shellBackend: secondaryShellBackendKind,
+    });
+
+    const toolSet = await service.buildToolSet({
+      assistantMessageId: 'assistant-message-shell-config-alias-1',
+      context: {
+        conversationId,
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['bash'],
+    });
+    const bashTool = toolSet?.bash;
+    expect(bashTool).toBeDefined();
+
+    const execution = (bashTool as any).execute({
+      command: 'printf "configured-secondary-backend\\n"',
+      description: '验证配置热切换 secondary shell backend',
+    });
+    const request = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
+    expect(request).toMatchObject({
+      backendKind: secondaryShellBackendKind,
+      messageId: 'assistant-message-shell-config-alias-1',
+      toolName: 'bash',
+    });
+    runtimeToolPermissionService.reply(conversationId, request.id, 'once');
+    const result = await execution;
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('configured-secondary-backend'),
+    }));
+  });
+
   it('keeps bash description on stable workspace semantics instead of backend governance details', async () => {
     const { service } = createFixture();
 
@@ -673,7 +757,11 @@ describe('ToolRegistryService', () => {
         },
         description: '检查 bash 审批提示',
       },
-      summary: '检查 bash 审批提示 (/)；静态提示: 含 cd、文件命令: cd, cat, rm',
+      summary: `检查 bash 审批提示 (/)；静态提示: ${[
+        '含 cd',
+        ...(usesRuntimePowerShellBackend() ? ['Windows native-shell 中不建议使用 &&'] : []),
+        '文件命令: cd, cat, rm',
+      ].join('、')}`,
       toolName: 'bash',
     });
     runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
@@ -718,7 +806,12 @@ describe('ToolRegistryService', () => {
         description: '检查 bash workdir 提示',
         workdir: 'nested',
       },
-      summary: '检查 bash workdir 提示 (nested)；静态提示: 含 cd、已提供 workdir，命令里仍含 cd、文件命令: cd, cat',
+      summary: `检查 bash workdir 提示 (nested)；静态提示: ${[
+        '含 cd',
+        '已提供 workdir，命令里仍含 cd',
+        ...(usesRuntimePowerShellBackend() ? ['Windows native-shell 中不建议使用 &&'] : []),
+        '文件命令: cd, cat',
+      ].join('、')}`,
       toolName: 'bash',
     });
     runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
@@ -762,7 +855,12 @@ describe('ToolRegistryService', () => {
         },
         description: '检查 bash 上级目录提示',
       },
-      summary: '检查 bash 上级目录提示 (/)；静态提示: 含 cd、相对上级路径: .., ../notes.txt、文件命令: cd, cat',
+      summary: `检查 bash 上级目录提示 (/)；静态提示: ${[
+        '含 cd',
+        '相对上级路径: .., ../notes.txt',
+        ...(usesRuntimePowerShellBackend() ? ['Windows native-shell 中不建议使用 &&'] : []),
+        '文件命令: cd, cat',
+      ].join('、')}`,
       toolName: 'bash',
     });
     runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
@@ -5706,7 +5804,7 @@ describe('ToolRegistryService', () => {
     });
     const pendingRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
     expect(pendingRequest).toMatchObject({
-      backendKind: 'just-bash',
+      backendKind: 'native-shell',
       messageId: 'assistant-message-bash-ast-fallback-1',
       metadata: {
         command: 'cp /workspace/input.txt ~/copied-from-fallback.txt (',
@@ -7310,7 +7408,7 @@ describe('ToolRegistryService', () => {
   });
 
   it('dispatches native todowrite tool execution through the session todo owner', async () => {
-    const { conversationId, runtimeHostConversationRecordService, service } = createFixture();
+    const { conversationId, runtimeHostConversationTodoService, service } = createFixture();
 
     const toolSet = await service.buildToolSet({
       context: {
@@ -7342,7 +7440,7 @@ describe('ToolRegistryService', () => {
       type: 'text',
       value: expect.stringContaining('<todo_result>'),
     }));
-    expect(runtimeHostConversationRecordService.readSessionTodo(conversationId)).toEqual(todos);
+    expect(runtimeHostConversationTodoService.readSessionTodo(conversationId)).toEqual(todos);
   });
 
   it('excludes disconnected remote plugins from the executable tool set', async () => {
@@ -7423,6 +7521,7 @@ function createFixture(options: {
     runtimeGatewayConnectionLifecycleService,
   );
   const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
+  const runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(runtimeHostConversationRecordService);
   const conversationId = (runtimeHostConversationRecordService.createConversation({
     title: 'Tool Registry Todo',
     userId: 'user-1',
@@ -7494,12 +7593,6 @@ function createFixture(options: {
     governance: runtimeToolsDefinition.governance,
     manifest: runtimeToolsDefinition.manifest,
   });
-  const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
-    builtinPluginRegistryService,
-    pluginBootstrapService,
-    runtimeGatewayRemoteTransportService,
-  );
-
   const mcpService: {
     callTool: jest.Mock;
     getToolingSnapshot: jest.Mock;
@@ -7601,45 +7694,27 @@ function createFixture(options: {
     withWriteFreshnessGuard: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
   } as never;
   const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
-  const bashToolService = new BashToolService(
+  const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
+    builtinPluginRegistryService,
+    pluginBootstrapService,
+    runtimeGatewayRemoteTransportService,
     runtimeCommandService,
-    runtimeSessionEnvironmentService,
-    runtimeToolBackendService,
-  );
-  const readToolService = new ReadToolService(
-    runtimeSessionEnvironmentService,
+    runtimeBackendRoutingService,
     runtimeFilesystemBackendService,
-    runtimeFileFreshnessService,
-  );
-  const globToolService = new GlobToolService(
+    runtimeFileFreshnessService as never,
     runtimeSessionEnvironmentService,
-    runtimeFilesystemBackendService,
-    projectWorktreeSearchOverlayService,
-  );
-  const grepToolService = new GrepToolService(
-    runtimeSessionEnvironmentService,
-    runtimeFilesystemBackendService,
-    projectWorktreeSearchOverlayService,
-  );
-  const writeToolService = new WriteToolService(
-    runtimeSessionEnvironmentService,
-    runtimeFilesystemBackendService,
-    runtimeFileFreshnessService,
-  );
-  const editToolService = new EditToolService(
-    runtimeSessionEnvironmentService,
-    runtimeFilesystemBackendService,
-    runtimeFileFreshnessService,
-  );
-  const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
-    bashToolService,
-    readToolService,
-    globToolService,
-    grepToolService,
-    writeToolService,
-    editToolService,
     runtimeToolBackendService,
     runtimeToolPermissionService,
+    projectWorktreeSearchOverlayService,
+  );
+  const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
+    runtimeCommandService,
+    runtimeFilesystemBackendService,
+    runtimeFileFreshnessService,
+    runtimeSessionEnvironmentService,
+    runtimeToolBackendService,
+    runtimeToolPermissionService,
+    projectWorktreeSearchOverlayService,
   );
   const runtimeHostService = new RuntimeHostService(
     pluginBootstrapService,
@@ -7662,7 +7737,7 @@ function createFixture(options: {
     runtimeGatewayConnectionLifecycleService,
   );
   const invalidToolService = new InvalidToolService();
-  const todoToolService = new TodoToolService(runtimeHostConversationRecordService as never);
+  const todoToolService = new TodoToolService(runtimeHostConversationTodoService);
   const webFetchService = {
     fetch: jest.fn().mockResolvedValue({
       contentType: 'text/html',
@@ -7679,6 +7754,7 @@ function createFixture(options: {
     mcpService,
     pluginBootstrapService,
     runtimeHostConversationRecordService,
+    runtimeHostConversationTodoService,
     runtimePluginGovernanceService,
     runtimeHostSubagentRunnerService,
     skillRegistryService,
@@ -7752,21 +7828,31 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
 
 function createRealRuntimeBackendsForShellRouting(
   runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService(),
+  options: {
+    includeWsl?: boolean;
+  } = {},
 ): RuntimeBackend[] {
   return [
     new RuntimeJustBashService(runtimeSessionEnvironmentService),
     new RuntimeNativeShellService(runtimeSessionEnvironmentService),
+    ...(process.platform === 'win32' && (options.includeWsl ?? true)
+      ? [new RuntimeWslShellService(runtimeSessionEnvironmentService)]
+      : []),
   ];
 }
 
-function createKindAliasedRuntimeBackend(kind: string, backends: RuntimeBackend[]): RuntimeBackend {
-  const nativeShellBackend = backends.find((backend) => backend.getKind() === 'native-shell');
-  if (!nativeShellBackend) {
-    throw new Error('native-shell backend is required to create alias shell backend');
+function createKindAliasedRuntimeBackend(
+  kind: string,
+  backends: RuntimeBackend[],
+  sourceKind: string = 'native-shell',
+): RuntimeBackend {
+  const sourceBackend = backends.find((backend) => backend.getKind() === sourceKind);
+  if (!sourceBackend) {
+    throw new Error(`${sourceKind} backend is required to create alias shell backend`);
   }
   return {
     async executeCommand(input) {
-      const result = await nativeShellBackend.executeCommand(input);
+      const result = await sourceBackend.executeCommand(input);
       return {
         ...result,
         backendKind: kind,
@@ -7774,7 +7860,7 @@ function createKindAliasedRuntimeBackend(kind: string, backends: RuntimeBackend[
     },
     getDescriptor() {
       return {
-        ...nativeShellBackend.getDescriptor(),
+        ...sourceBackend.getDescriptor(),
         kind,
       };
     },
@@ -7850,8 +7936,7 @@ function buildRuntimeShellEchoCommand(text: string): string {
 function usesRuntimePowerShellBackend(): boolean {
   const configuredBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND?.trim();
   return process.platform === 'win32'
-    && !!configuredBackend
-    && configuredBackend.includes('native-shell');
+    && (!configuredBackend || (configuredBackend.includes('native-shell') && !configuredBackend.includes('wsl')));
 }
 
 function escapePowerShellString(value: string): string {

@@ -1,21 +1,40 @@
 import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 
 describe('RuntimeHostRuntimeToolService', () => {
-  it('reuses one filesystem backend kind across access review and tool execution', async () => {
-    const readToolService = {
-      execute: jest.fn().mockResolvedValue({ output: '<read_result />' }),
-      getToolName: () => 'read',
-      readInput: jest.fn((_params, sessionId, backendKind) => ({
-        backendKind,
-        filePath: 'docs/readme.md',
-        sessionId,
-      })),
-      readRuntimeAccess: jest.fn((input) => ({
-        backendKind: input.backendKind,
-        requiredOperations: ['file.read'],
-        role: 'filesystem',
-        summary: `读取路径 ${input.filePath}`,
-      })),
+  it('reuses one filesystem backend kind across access review and raw read execution', async () => {
+    const runtimeFilesystemBackendService = {
+      readPathRange: jest.fn().mockResolvedValue({
+        byteLimited: false,
+        limit: 20,
+        lines: ['hello'],
+        mimeType: 'text/plain',
+        offset: 1,
+        path: '/docs/readme.md',
+        totalBytes: 5,
+        totalLines: 1,
+        truncated: false,
+        type: 'file',
+      }),
+      readTextFile: jest.fn().mockResolvedValue({
+        content: 'follow the docs',
+        path: '/docs/AGENTS.md',
+      }),
+      statPath: jest.fn().mockResolvedValue({
+        exists: true,
+        mtime: null,
+        size: 16,
+        type: 'file',
+        virtualPath: '/docs/AGENTS.md',
+      }),
+    };
+    const runtimeFileFreshnessService = {
+      buildReadSystemReminder: jest.fn().mockReturnValue(['fresh reminder']),
+      claimReadInstructionPaths: jest.fn().mockReturnValue(['/docs/AGENTS.md']),
+      rememberRead: jest.fn().mockResolvedValue(undefined),
+      withWriteFreshnessGuard: jest.fn(),
+    };
+    const runtimeSessionEnvironmentService = {
+      getDescriptor: jest.fn().mockReturnValue({ visibleRoot: '/' }),
     };
     const runtimeToolBackendService = {
       getBackendDescriptor: jest.fn().mockReturnValue({
@@ -44,11 +63,9 @@ describe('RuntimeHostRuntimeToolService', () => {
     };
     const service = new RuntimeHostRuntimeToolService(
       {} as never,
-      readToolService as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      runtimeFilesystemBackendService as never,
+      runtimeFileFreshnessService as never,
+      runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
       runtimeToolPermissionService as never,
     );
@@ -62,21 +79,30 @@ describe('RuntimeHostRuntimeToolService', () => {
       userId: 'user-1',
     } as never, {
       filePath: 'docs/readme.md',
-    } as never)).resolves.toEqual({ output: '<read_result />' });
+    } as never)).resolves.toEqual({
+      freshnessReminders: ['fresh reminder'],
+      loaded: ['/docs/AGENTS.md'],
+      readResult: {
+        byteLimited: false,
+        limit: 20,
+        lines: ['hello'],
+        mimeType: 'text/plain',
+        offset: 1,
+        path: '/docs/readme.md',
+        totalBytes: 5,
+        totalLines: 1,
+        truncated: false,
+        type: 'file',
+      },
+      reminderEntries: [
+        {
+          content: 'follow the docs',
+          path: '/docs/AGENTS.md',
+        },
+      ],
+    });
 
     expect(runtimeToolBackendService.getFilesystemBackendKind).toHaveBeenCalledTimes(1);
-    expect(readToolService.readInput).toHaveBeenCalledWith(
-      { filePath: 'docs/readme.md' },
-      'conversation-1',
-      'mock-filesystem',
-      'assistant-message-1',
-    );
-    expect(readToolService.readRuntimeAccess).toHaveBeenCalledWith({
-      backendKind: 'mock-filesystem',
-      filePath: 'docs/readme.md',
-      sessionId: 'conversation-1',
-    });
-    expect(runtimeToolBackendService.getBackendDescriptor).toHaveBeenCalledWith('filesystem', 'mock-filesystem');
     expect(runtimeToolPermissionService.review).toHaveBeenCalledWith(expect.objectContaining({
       backend: expect.objectContaining({
         kind: 'mock-filesystem',
@@ -86,29 +112,46 @@ describe('RuntimeHostRuntimeToolService', () => {
       requiredOperations: ['file.read'],
       toolName: 'read',
     }));
-    expect(readToolService.execute).toHaveBeenCalledWith({
-      backendKind: 'mock-filesystem',
-      filePath: 'docs/readme.md',
-      sessionId: 'conversation-1',
-    });
+    expect(runtimeFilesystemBackendService.readPathRange).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        limit: 2000,
+        maxLineLength: 2000,
+        offset: 1,
+        path: 'docs/readme.md',
+      },
+      'mock-filesystem',
+    );
+    expect(runtimeFileFreshnessService.rememberRead).toHaveBeenCalledWith(
+      'conversation-1',
+      '/docs/readme.md',
+      'mock-filesystem',
+      {
+        lineCount: 1,
+        offset: 1,
+        totalLines: 1,
+        truncated: false,
+      },
+    );
   });
 
   it('reuses one shell backend kind across access review and command execution', async () => {
-    const bashToolService = {
-      execute: jest.fn().mockResolvedValue({ cwd: '/', exitCode: 0, stderr: '', stdout: 'ok' }),
-      getToolName: () => 'bash',
-      readInput: jest.fn((_params, sessionId, backendKind) => ({
-        backendKind,
-        command: 'pwd',
-        description: '打印当前目录',
-        sessionId,
-      })),
-      readRuntimeAccess: jest.fn((input) => ({
-        backendKind: input.backendKind,
-        requiredOperations: ['command.execute'],
-        role: 'shell',
-        summary: input.description,
-      })),
+    const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
+    process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'mock-shell';
+    const runtimeCommandService = {
+      executeCommand: jest.fn().mockResolvedValue({
+        backendKind: 'mock-shell',
+        cwd: '/',
+        exitCode: 0,
+        sessionId: 'conversation-2',
+        stderr: '',
+        stderrStats: { bytes: 0, lines: 0 },
+        stdout: 'ok',
+        stdoutStats: { bytes: 2, lines: 1 },
+      }),
+    };
+    const runtimeSessionEnvironmentService = {
+      getDescriptor: jest.fn().mockReturnValue({ visibleRoot: '/' }),
     };
     const runtimeToolBackendService = {
       getBackendDescriptor: jest.fn().mockReturnValue({
@@ -136,65 +179,71 @@ describe('RuntimeHostRuntimeToolService', () => {
       review: jest.fn().mockResolvedValue(undefined),
     };
     const service = new RuntimeHostRuntimeToolService(
-      bashToolService as never,
+      runtimeCommandService as never,
       {} as never,
       {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
       runtimeToolPermissionService as never,
     );
 
-    await expect(service.executeCommand({
-      conversationId: 'conversation-2',
-      source: 'plugin',
-      userId: 'user-1',
-    } as never, {
-      command: 'pwd',
-      description: '打印当前目录',
-    } as never)).resolves.toEqual({ cwd: '/', exitCode: 0, stderr: '', stdout: 'ok' });
+    try {
+      await expect(service.executeCommand({
+        conversationId: 'conversation-2',
+        source: 'plugin',
+        userId: 'user-1',
+      } as never, {
+        command: 'pwd',
+        description: '打印当前目录',
+      } as never)).resolves.toEqual({
+        backendKind: 'mock-shell',
+        cwd: '/',
+        exitCode: 0,
+        sessionId: 'conversation-2',
+        stderr: '',
+        stderrStats: { bytes: 0, lines: 0 },
+        stdout: 'ok',
+        stdoutStats: { bytes: 2, lines: 1 },
+      });
 
-    expect(runtimeToolBackendService.getShellBackendKind).toHaveBeenCalledTimes(1);
-    expect(bashToolService.readInput).toHaveBeenCalledWith(
-      { command: 'pwd', description: '打印当前目录' },
-      'conversation-2',
-      'mock-shell',
-      undefined,
-    );
-    expect(runtimeToolBackendService.getBackendDescriptor).toHaveBeenCalledWith('shell', 'mock-shell');
-    expect(runtimeToolPermissionService.review).toHaveBeenCalledWith(expect.objectContaining({
-      backend: expect.objectContaining({
-        kind: 'mock-shell',
-      }),
-      conversationId: 'conversation-2',
-      requiredOperations: ['command.execute'],
-      toolName: 'bash',
-    }));
-    expect(bashToolService.execute).toHaveBeenCalledWith({
-      backendKind: 'mock-shell',
-      command: 'pwd',
-      description: '打印当前目录',
-      sessionId: 'conversation-2',
-    });
+      expect(runtimeToolPermissionService.review).toHaveBeenCalledWith(expect.objectContaining({
+        backend: expect.objectContaining({
+          kind: 'mock-shell',
+        }),
+        conversationId: 'conversation-2',
+        requiredOperations: ['command.execute'],
+        toolName: 'bash',
+      }));
+      expect(runtimeCommandService.executeCommand).toHaveBeenCalledWith({
+        backendKind: 'mock-shell',
+        command: 'pwd',
+        description: '打印当前目录',
+        sessionId: 'conversation-2',
+      });
+    } finally {
+      if (originalShellBackend === undefined) {
+        delete process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
+      } else {
+        process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = originalShellBackend;
+      }
+    }
   });
 
   it('allows shell tools to override backend kind through host params', async () => {
-    const bashToolService = {
-      execute: jest.fn().mockResolvedValue({ cwd: '/', exitCode: 0, stderr: '', stdout: 'override-ok' }),
-      getToolName: () => 'bash',
-      readInput: jest.fn((_params, sessionId, backendKind) => ({
-        backendKind,
-        command: 'pwd',
-        description: '打印当前目录',
-        sessionId,
-      })),
-      readRuntimeAccess: jest.fn((input) => ({
-        backendKind: input.backendKind,
-        requiredOperations: ['command.execute'],
-        role: 'shell',
-        summary: input.description,
-      })),
+    const runtimeCommandService = {
+      executeCommand: jest.fn().mockResolvedValue({
+        backendKind: 'native-shell',
+        cwd: '/',
+        exitCode: 0,
+        sessionId: 'conversation-3',
+        stderr: '',
+        stderrStats: { bytes: 0, lines: 0 },
+        stdout: 'override-ok',
+        stdoutStats: { bytes: 11, lines: 1 },
+      }),
+    };
+    const runtimeSessionEnvironmentService = {
+      getDescriptor: jest.fn().mockReturnValue({ visibleRoot: '/' }),
     };
     const runtimeToolBackendService = {
       getBackendDescriptor: jest.fn().mockReturnValue({
@@ -222,17 +271,15 @@ describe('RuntimeHostRuntimeToolService', () => {
       review: jest.fn().mockResolvedValue(undefined),
     };
     const service = new RuntimeHostRuntimeToolService(
-      bashToolService as never,
+      runtimeCommandService as never,
       {} as never,
       {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
+      runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
       runtimeToolPermissionService as never,
     );
 
-    await expect(service.executeCommand({
+    await service.executeCommand({
       conversationId: 'conversation-3',
       source: 'plugin',
       userId: 'user-1',
@@ -240,17 +287,10 @@ describe('RuntimeHostRuntimeToolService', () => {
       backendKind: 'native-shell',
       command: 'pwd',
       description: '打印当前目录',
-    } as never)).resolves.toEqual({ cwd: '/', exitCode: 0, stderr: '', stdout: 'override-ok' });
+    } as never);
 
     expect(runtimeToolBackendService.getShellBackendKind).toHaveBeenCalledWith('native-shell');
-    expect(bashToolService.readInput).toHaveBeenCalledWith(
-      { backendKind: 'native-shell', command: 'pwd', description: '打印当前目录' },
-      'conversation-3',
-      'native-shell',
-      undefined,
-    );
-    expect(runtimeToolBackendService.getBackendDescriptor).toHaveBeenCalledWith('shell', 'native-shell');
-    expect(bashToolService.execute).toHaveBeenCalledWith({
+    expect(runtimeCommandService.executeCommand).toHaveBeenCalledWith({
       backendKind: 'native-shell',
       command: 'pwd',
       description: '打印当前目录',

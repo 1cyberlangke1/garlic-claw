@@ -33,15 +33,26 @@ export class AutomationExecutionService {
 }
 
 function createAutomationRunPlan(automation: RuntimeAutomationRecord): AutomationRunPlan {
+  const conversationId = readAutomationConversationId(automation.actions);
   return {
     actions: automation.actions.map((action) => cloneJsonValue(action)),
     automation: toAutomationInfo(automation),
     context: {
       automationId: automation.id,
+      ...(conversationId ? { conversationId } : {}),
       source: 'automation',
       userId: automation.userId,
     },
   };
+}
+
+function readAutomationConversationId(actions: ActionConfig[]): string | null {
+  for (const action of actions) {
+    if (action.type === 'ai_message' && action.target?.type === 'conversation' && typeof action.target.id === 'string' && action.target.id.trim()) {
+      return action.target.id;
+    }
+  }
+  return null;
 }
 
 async function prepareAutomationRun(

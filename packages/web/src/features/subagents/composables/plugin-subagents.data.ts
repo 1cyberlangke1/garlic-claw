@@ -5,6 +5,7 @@ import type {
 import {
   getPluginSubagent,
   listPluginSubagentOverview,
+  removePluginSubagent,
 } from '@/features/subagents/api/plugin-subagents'
 import { getErrorMessage } from '@/utils/error'
 
@@ -27,6 +28,15 @@ export function loadPluginSubagentOverview(): Promise<PluginSubagentOverviewData
  */
 export function loadPluginSubagentDetail(sessionId: string): Promise<PluginSubagentDetail> {
   return getPluginSubagent(sessionId)
+}
+
+/**
+ * 移除后台子代理会话。
+ * @param sessionId 子代理 session ID
+ * @returns 是否成功移除
+ */
+export function removePluginSubagentSession(sessionId: string): Promise<boolean> {
+  return removePluginSubagent(sessionId)
 }
 
 /**

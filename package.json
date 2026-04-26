@@ -31,9 +31,6 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "dependencies": {
-    "effect": "^3.19.19"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
