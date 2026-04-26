@@ -54,10 +54,11 @@
 - 旧方向是继续压 host runtime-tool 主链。
 - 当前已改成先把 builtin 主执行链迁出 host，再重开体积阶段。
 
-### V3 体积阶段总验收 `[进行中]`
+### V3 体积阶段总验收 `[已完成]`
 
 - `P1-P4` 收口后重开。
-- 当前计数：`node tools/count-server-src-lines.mjs` -> `15761`，仍高于 `15000`。
+- 当前计数：`node tools/count-server-src-lines.mjs` -> `14998`。
+- `P8` fresh 验收与独立 judge 已通过，本阶段收口。
 
 ## 当前阶段计划
 
@@ -147,3 +148,26 @@
     - `plugin-bootstrap.service.ts` 的 manifest/config 解析仍在同一 owner 内收口，不是 facade 转移
     - `ai-management-settings.store.ts` 仍由同一 store owner 负责 provider 分文件与 routing/vision 读写
     - `runtime-gateway-connection-lifecycle.service.ts` 仍由同一 owner 负责认证、注册、断连、心跳与 health 语义
+
+### P8 subagent / text-replace / event-log owner 压体积 `[已完成]`
+
+- 目标：
+  - 继续删掉 subagent session 持久化、文本替换、多类事件日志里的重复控制流
+  - 把 `packages/server/src` 压到 `<= 15000`
+  - 不改 `subagent` 软删除/回写、`edit` 替换策略、事件日志分页与裁剪语义
+- 当前进度：
+  - `runtime-host-subagent-session-store.service.ts`: `192 -> 171`
+  - `runtime-text-replace.ts`: `196 -> 184`
+  - `runtime-event-log.service.ts`: `190 -> 70`
+  - `packages/server/src`: `14998`
+- fresh 验收：
+  - `packages/server`: `npm run build`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/runtime/host/runtime-host-subagent-session-store.service.spec.ts tests/runtime/host/runtime-host-subagent-store.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/execution/mcp/mcp.service.spec.ts`
+  - root: `npm run smoke:server`
+  - root: `node tools/count-server-src-lines.mjs`
+- judge：
+  - 结果：`PASS`
+  - 关键结论：
+    - `runtime-host-subagent-session-store.service.ts` 仍保持 removed 会话“对外隐藏、对内可追写”的语义
+    - `runtime-text-replace.ts` 的策略顺序、歧义报错与 `replaceAll` 限制未变
+    - `runtime-event-log.service.ts` 仍保持 append/list、cursor 分页、maxFileSize 裁剪与 `plugin/skill/mcp` 路由语义

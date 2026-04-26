@@ -70,3 +70,22 @@
   - `plugin-bootstrap.service.ts`：manifest/config 解析压缩后仍保持 fallback、typed config、builtin runtime-tools config 语义
   - `ai-management-settings.store.ts`：provider 分文件、routing/vision 文件读写语义未变
   - `runtime-gateway-connection-lifecycle.service.ts`：remote gateway 认证、注册、断连、心跳、health 语义未变
+
+- `runtime-event-log.service.ts` 这类存储 owner 适合直接整文件重写：
+  - 目录路由、分页 cursor、文件裁剪三段语义稳定
+  - 不需要保留旧的多层包装函数，压缩空间很大
+
+- `runtime-text-replace.ts` 的高风险点不是策略数量，而是歧义报错语义：
+  - `replaceAll` 必须继续拒绝“同策略命中不同原文”
+  - `line-trimmed` 与 `context-aware` 的优先级不能互换
+  - 这类文件可压，但必须直接跑独立 spec
+
+- 当前 `V3` 已达到计数目标：
+  - `packages/server/src` 当前 `14998`
+  - 还差 `P8` 独立 judge，才能把 `V3` 标记收口
+
+- 独立 judge 已确认 `P8` 可收口：
+  - `runtime-host-subagent-session-store.service.ts`：removed 会话仍保持“对外隐藏、对内可读写补全”边界
+  - `runtime-text-replace.ts`：策略顺序、歧义提示、replaceAll 约束未回退
+  - `runtime-event-log.service.ts`：append/list、cursor、裁剪、kind 路由与 JEST 临时目录语义未变
+  - `V3 <= 15000` 已完成，当前 `packages/server/src = 14998`

@@ -5,9 +5,7 @@ import type {
   JsonObject,
   JsonValue,
   ListPluginEventOptions,
-  PluginConfigListSchema,
   PluginConfigNodeSchema,
-  PluginConfigObjectSchema,
   PluginConfigSnapshot,
   PluginEventLevel,
   PluginEventListResult,
@@ -54,7 +52,7 @@ export class PluginPersistenceService {
   private readonly storagePath = resolvePluginStatePath();
 
   constructor(@Optional() private readonly runtimeEventLogService: RuntimeEventLogService = new RuntimeEventLogService()) {
-    for (const record of loadPersistedPluginRecords(this.storagePath)) {this.records.set(record.pluginId, cloneRegisteredPluginRecord(record));}
+    for (const record of loadPersistedPluginRecords(this.storagePath)) { this.records.set(record.pluginId, cloneRegisteredPluginRecord(record)); }
   }
 
   findPlugin(pluginId: string): RegisteredPluginRecord | null { return clonePluginRecord(this.records.get(pluginId)); }
@@ -67,8 +65,7 @@ export class PluginPersistenceService {
   listPlugins(): RegisteredPluginRecord[] { return [...this.records.values()].map(cloneRegisteredPluginRecord); }
 
   recordPluginEvent(pluginId: string, input: PluginEventInput): PluginEventRecord {
-    const record = this.readPlugin(pluginId);
-    return this.runtimeEventLogService.appendLog('plugin', pluginId, record.eventLog, input) ?? createDisabledPluginEventRecord(input);
+    return this.runtimeEventLogService.appendLog('plugin', pluginId, this.readPlugin(pluginId).eventLog, input) ?? createDisabledPluginEventRecord(input);
   }
 
   setConnectionState(pluginId: string, connected: boolean): RegisteredPluginRecord {
@@ -77,7 +74,7 @@ export class PluginPersistenceService {
 
   deletePlugin(pluginId: string): RegisteredPluginRecord {
     const record = this.readPlugin(pluginId);
-    if (record.connected) {throw new BadRequestException(`Plugin ${record.pluginId} is still connected`);}
+    if (record.connected) { throw new BadRequestException(`Plugin ${record.pluginId} is still connected`); }
     this.records.delete(pluginId);
     this.persistRecords();
     return cloneRegisteredPluginRecord(record);
@@ -88,9 +85,7 @@ export class PluginPersistenceService {
   }
 
   upsertPlugin(record: UpsertPluginRecordInput): RegisteredPluginRecord {
-    const now = new Date().toISOString();
-    const existing = this.records.get(record.pluginId);
-    const remote = normalizeRegisteredPluginRemote(record.manifest, record.remote ?? existing?.remote);
+    const existing = this.records.get(record.pluginId), now = new Date().toISOString(), remote = normalizeRegisteredPluginRemote(record.manifest, record.remote ?? existing?.remote);
     return this.writeRecord({
       ...record,
       configValues: record.configValues ?? {},
@@ -122,20 +117,20 @@ export class PluginPersistenceService {
   }
 
   updatePluginLlmPreference(pluginId: string, preference: PluginLlmPreference): PluginLlmPreference {
-    const normalizedPreference = normalizePluginLlmPreference(preference);
-    this.updatePlugin(pluginId, (record, timestamp) => ({ ...record, llmPreference: normalizedPreference, updatedAt: timestamp }));
-    return { ...normalizedPreference };
+    const nextPreference = normalizePluginLlmPreference(preference);
+    this.updatePlugin(pluginId, (record, timestamp) => ({ ...record, llmPreference: nextPreference, updatedAt: timestamp }));
+    return { ...nextPreference };
   }
 
   updatePluginEventLog(pluginId: string, settings: EventLogSettings): EventLogSettings {
-    const normalizedSettings = normalizeEventLogSettings(settings);
-    this.updatePlugin(pluginId, (record, timestamp) => ({ ...record, eventLog: normalizedSettings, updatedAt: timestamp }));
-    return { ...normalizedSettings };
+    const nextSettings = normalizeEventLogSettings(settings);
+    this.updatePlugin(pluginId, (record, timestamp) => ({ ...record, eventLog: nextSettings, updatedAt: timestamp }));
+    return { ...nextSettings };
   }
 
   private readPlugin(pluginId: string): RegisteredPluginRecord {
     const record = this.records.get(pluginId);
-    if (!record) {throw new NotFoundException(`Plugin not found: ${pluginId}`);}
+    if (!record) { throw new NotFoundException(`Plugin not found: ${pluginId}`); }
     return record;
   }
 
@@ -176,7 +171,7 @@ export function cloneRegisteredPluginRecord(record: RegisteredPluginRecord): Reg
 }
 
 function normalizeRegisteredPluginRemote(manifest: PluginManifest, remote: RegisteredPluginRemoteRecord | null | undefined): RegisteredPluginRemoteRecord | null {
-  if (manifest.runtime !== 'remote') {return null;}
+  if (manifest.runtime !== 'remote') { return null; }
   const descriptor = remote?.descriptor ?? manifest.remote ?? { auth: { mode: 'required' }, capabilityProfile: 'query', remoteEnvironment: 'api' };
   return {
     access: { accessKey: remote?.access.accessKey ?? null, serverUrl: remote?.access.serverUrl ?? null },
@@ -196,7 +191,7 @@ function normalizePersistedPluginManifest(manifest: PluginManifest, descriptor: 
 function loadPersistedPluginRecords(storagePath: string): RegisteredPluginRecord[] {
   try {
     fs.mkdirSync(path.dirname(storagePath), { recursive: true });
-    if (!fs.existsSync(storagePath)) {return [];}
+    if (!fs.existsSync(storagePath)) { return []; }
     const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as Partial<PluginPersistenceFile>;
     return Array.isArray(parsed.records) ? parsed.records.map((record) => ({ ...cloneRegisteredPluginRecord(record), eventLog: normalizeEventLogSettings(record.eventLog) })) : [];
   } catch {
@@ -205,9 +200,10 @@ function loadPersistedPluginRecords(storagePath: string): RegisteredPluginRecord
 }
 
 function resolvePluginStatePath(): string {
-  if (process.env.GARLIC_CLAW_PLUGIN_STATE_PATH) {return process.env.GARLIC_CLAW_PLUGIN_STATE_PATH;}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `plugins.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);}
-  return path.join(process.cwd(), 'tmp', 'plugins.server.json');
+  return process.env.GARLIC_CLAW_PLUGIN_STATE_PATH
+    ?? (process.env.JEST_WORKER_ID
+      ? path.join(process.cwd(), 'tmp', `plugins.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`)
+      : path.join(process.cwd(), 'tmp', 'plugins.server.json'));
 }
 
 function toPluginScopeSettings(record: RegisteredPluginRecord): PluginScopeSettings {
@@ -215,60 +211,52 @@ function toPluginScopeSettings(record: RegisteredPluginRecord): PluginScopeSetti
 }
 
 export function normalizePluginLlmPreference(preference?: PluginLlmPreference | null): PluginLlmPreference {
-  if (!preference || preference.mode === 'inherit') {return { mode: 'inherit', modelId: null, providerId: null };}
-  const providerId = preference.providerId?.trim();
-  const modelId = preference.modelId?.trim();
-  if (!providerId || !modelId) {throw new BadRequestException('插件模型覆盖必须同时指定 providerId 和 modelId');}
+  if (!preference || preference.mode === 'inherit') { return { mode: 'inherit', modelId: null, providerId: null }; }
+  const providerId = preference.providerId?.trim(), modelId = preference.modelId?.trim();
+  if (!providerId || !modelId) { throw new BadRequestException('插件模型覆盖必须同时指定 providerId 和 modelId'); }
   return { mode: 'override', modelId, providerId };
 }
 
 export function validatePluginConfig(manifest: PluginManifest, values: JsonObject): void {
-  const schema = manifest.config;
-  if (!schema) {throw new BadRequestException(`Plugin ${manifest.id} 未声明配置 schema`);}
-  validateConfigNode(schema, values, []);
+  if (!manifest.config) { throw new BadRequestException(`Plugin ${manifest.id} 未声明配置 schema`); }
+  validateConfigNode(manifest.config, values, []);
 }
 
 function validateConfigNode(schema: PluginConfigNodeSchema, value: JsonValue | undefined, scope: string[]): void {
-  if (value === undefined) {return;}
-  const label = scope.length > 0 ? scope.join('.') : 'config';
-  const allowedOptionValues = new Set((schema.options ?? []).map((option) => option.value));
-  if (schema.type === 'object') {return validateObjectConfigNode(schema, value, scope);}
-  if (schema.type === 'list') {return validateListConfigNode(schema, value, scope, allowedOptionValues);}
-  if (schema.type === 'string' || schema.type === 'text') {
-    if (typeof value !== 'string') {throw new BadRequestException(`配置字段 ${label} 必须是字符串`);}
-    return validateOptionValue(allowedOptionValues, value, scope);
-  }
-  if (schema.type === 'int' || schema.type === 'float') {
-    if (typeof value !== 'number' || Number.isNaN(value)) {throw new BadRequestException(`配置字段 ${label} 必须是数字`);}
+  if (value === undefined) { return; }
+  const label = scope.length > 0 ? scope.join('.') : 'config', allowedOptions = new Set((schema.options ?? []).map((option) => option.value));
+  if (schema.type === 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) { throw new BadRequestException(`配置字段 ${label} 必须是对象`); }
+    for (const key of Object.keys(value as JsonObject)) {
+      const childSchema = schema.items[key], childScope = [...scope, key];
+      if (!childSchema) { throw new BadRequestException(`未知配置字段: ${childScope.join('.')}`); }
+      validateConfigNode(childSchema, (value as JsonObject)[key], childScope);
+    }
     return;
   }
-  if (schema.type === 'bool' && typeof value !== 'boolean') {throw new BadRequestException(`配置字段 ${label} 必须是布尔值`);}
-}
-
-function validateObjectConfigNode(schema: PluginConfigObjectSchema, value: JsonValue, scope: string[]): void {
-  const label = scope.length > 0 ? scope.join('.') : 'config';
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {throw new BadRequestException(`配置字段 ${label} 必须是对象`);}
-  const record = value as JsonObject;
-  for (const key of Object.keys(record)) {
-    const childSchema = schema.items[key];
-    if (!childSchema) {throw new BadRequestException(`未知配置字段: ${[...scope, key].join('.')}`);}
-    validateConfigNode(childSchema, record[key], [...scope, key]);
+  if (schema.type === 'list') {
+    if (!Array.isArray(value)) { throw new BadRequestException(`配置字段 ${label} 必须是数组`); }
+    value.forEach((item, index) => {
+      const itemScope = [...scope, String(index)];
+      assertOptionValue(allowedOptions, item, itemScope);
+      if (schema.items) { validateConfigNode(schema.items, item, itemScope); }
+    });
+    return;
   }
+  if (schema.type === 'string' || schema.type === 'text') {
+    if (typeof value !== 'string') { throw new BadRequestException(`配置字段 ${label} 必须是字符串`); }
+    assertOptionValue(allowedOptions, value, scope);
+    return;
+  }
+  if (schema.type === 'int' || schema.type === 'float') {
+    if (typeof value !== 'number' || Number.isNaN(value)) { throw new BadRequestException(`配置字段 ${label} 必须是数字`); }
+    return;
+  }
+  if (typeof value !== 'boolean') { throw new BadRequestException(`配置字段 ${label} 必须是布尔值`); }
 }
 
-function validateListConfigNode(schema: PluginConfigListSchema, value: JsonValue, scope: string[], allowedOptionValues: Set<string>): void {
-  const label = scope.length > 0 ? scope.join('.') : 'config';
-  if (!Array.isArray(value)) {throw new BadRequestException(`配置字段 ${label} 必须是数组`);}
-  value.forEach((item, index) => {
-    const nextScope = [...scope, String(index)];
-    validateOptionValue(allowedOptionValues, item, nextScope);
-    if (schema.items) {validateConfigNode(schema.items, item, nextScope);}
-  });
-}
-
-function validateOptionValue(allowedOptionValues: Set<string>, value: JsonValue, scope: string[]): void {
-  if (allowedOptionValues.size === 0) {return;}
-  if (typeof value !== 'string' || !allowedOptionValues.has(value)) {
+function assertOptionValue(allowedOptions: Set<string>, value: JsonValue, scope: string[]): void {
+  if (allowedOptions.size > 0 && (typeof value !== 'string' || !allowedOptions.has(value))) {
     throw new BadRequestException(`配置字段 ${scope.length > 0 ? scope.join('.') : 'config'} 必须命中声明的 options`);
   }
 }

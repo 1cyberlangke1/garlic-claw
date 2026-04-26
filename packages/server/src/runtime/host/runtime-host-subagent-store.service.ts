@@ -1,60 +1,43 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type {
-  PluginCallContext,
-  PluginSubagentDetail,
-  PluginSubagentOverview,
-  PluginSubagentRequest,
-  PluginSubagentSummary,
-} from '@garlic-claw/shared';
+import type { PluginCallContext, PluginSubagentDetail, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSummary } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { cloneJsonValue } from './runtime-host-values';
 
 export type RuntimeSubagentRecord = PluginSubagentDetail & {
   id: string;
+  removedAt?: string;
   visibility: 'background' | 'inline';
   writeBackConversationRevision?: string;
 };
 
 @Injectable()
 export class RuntimeHostSubagentStoreService {
+  private readonly storagePath = process.env.GARLIC_CLAW_SUBAGENTS_PATH ?? path.join(process.cwd(), 'tmp', 'subagents.server.json');
   private readonly subagents: Map<string, RuntimeSubagentRecord[]>;
-  private readonly storagePath = process.env.GARLIC_CLAW_SUBAGENTS_PATH
-    ?? path.join(process.cwd(), 'tmp', 'subagents.server.json');
   private subagentSequence = 0;
 
   constructor() {
-    this.subagents = this.loadSubagents();
+    const stored = readSubagentStorage(this.storagePath);
+    this.subagentSequence = stored.subagentSequence;
+    this.subagents = stored.subagents;
   }
 
-  getSubagent(pluginId: string, sessionId: string): PluginSubagentDetail {
-    return toSubagentDetail(this.requireLatestSubagentBySession(sessionId, pluginId));
-  }
+  getSubagent(pluginId: string, sessionId: string): PluginSubagentDetail { return toSubagentDetail(this.requireSessionProjection(sessionId, pluginId)); }
+  getSubagentOrThrow(sessionId: string): PluginSubagentDetail { return toSubagentDetail(this.requireSessionProjection(sessionId)); }
+  summarizeSubagent(subagent: RuntimeSubagentRecord): PluginSubagentSummary { return toSubagentSummary(subagent); }
+  readSubagent(subagentId: string, pluginId?: string): RuntimeSubagentRecord { return cloneJsonValue(this.requireSubagent(subagentId, pluginId)) as RuntimeSubagentRecord; }
+  listOverview(): PluginSubagentOverview { return { subagents: this.readSessionProjection(undefined, 'background').map(toSubagentSummary) }; }
+  listSubagents(pluginId: string): PluginSubagentSummary[] { return this.readSessionProjection(pluginId, 'background', true).map(toSubagentSummary); }
+  listPendingSubagents(pluginId?: string): RuntimeSubagentRecord[] { return this.readRecords(pluginId).filter((item) => item.status === 'queued' || item.status === 'running').map(copySubagentRecord); }
 
-  getSubagentOrThrow(sessionId: string): PluginSubagentDetail {
-    return toSubagentDetail(this.requireLatestSubagentBySession(sessionId));
-  }
-
-  readSubagent(subagentId: string, pluginId?: string): RuntimeSubagentRecord {
-    return cloneJsonValue(this.requireSubagent(subagentId, pluginId)) as RuntimeSubagentRecord;
-  }
-
-  listOverview(): PluginSubagentOverview {
-    return { subagents: this.summarizeSubagents(this.listSessionProjectionRecords(undefined, 'background'), false) };
-  }
-
-  listSubagents(pluginId: string): PluginSubagentSummary[] {
-    return this.summarizeSubagents(this.listSessionProjectionRecords(pluginId, 'background'), true);
-  }
-
-  summarizeSubagent(subagent: RuntimeSubagentRecord): PluginSubagentSummary {
-    return toSubagentSummary(subagent);
-  }
-
-  listPendingSubagents(pluginId?: string): RuntimeSubagentRecord[] {
-    return this.listSubagentRecords(pluginId)
-      .filter((subagent) => subagent.status === 'queued' || subagent.status === 'running')
-      .map((subagent) => cloneJsonValue(subagent) as RuntimeSubagentRecord);
+  removeSession(sessionId: string, pluginId?: string): boolean {
+    const records = this.readRecords(pluginId, undefined, true).filter((item) => item.sessionId === sessionId && !item.removedAt);
+    if (records.length === 0) { return false; }
+    const removedAt = new Date().toISOString();
+    records.forEach((item) => { item.removedAt = removedAt; });
+    this.saveSubagents();
+    return true;
   }
 
   createSubagent(input: {
@@ -62,31 +45,27 @@ export class RuntimeHostSubagentStoreService {
     conversationRevision?: string;
     pluginDisplayName: string | undefined;
     pluginId: string;
-    subagentType?: string;
-    subagentTypeName?: string;
     request: PluginSubagentRequest;
     requestPreview: string;
     sessionId: string;
     sessionMessageCount: number;
     sessionUpdatedAt: string;
+    subagentType?: string;
+    subagentTypeName?: string;
     visibility: 'background' | 'inline';
     writeBackTarget: PluginSubagentSummary['writeBackTarget'] | null;
   }): RuntimeSubagentRecord {
-    const now = new Date().toISOString();
     const subagent: RuntimeSubagentRecord = {
       context: cloneJsonValue(input.context),
-      ...(input.request.description ? { description: input.request.description } : {}),
       finishedAt: null,
       id: `subagent-${++this.subagentSequence}`,
       modelId: input.request.modelId,
       pluginDisplayName: input.pluginDisplayName,
       pluginId: input.pluginId,
-      ...(input.subagentType ? { subagentType: input.subagentType } : {}),
-      ...(input.subagentTypeName ? { subagentTypeName: input.subagentTypeName } : {}),
       providerId: input.request.providerId,
       request: input.request,
       requestPreview: input.requestPreview,
-      requestedAt: now,
+      requestedAt: new Date().toISOString(),
       result: null,
       resultPreview: undefined,
       runtimeKind: 'local',
@@ -99,131 +78,93 @@ export class RuntimeHostSubagentStoreService {
       writeBackError: undefined,
       writeBackMessageId: undefined,
       writeBackStatus: input.writeBackTarget ? 'pending' : 'skipped',
-      writeBackTarget: input.writeBackTarget ?? undefined,
-      ...(input.conversationRevision ? { writeBackConversationRevision: input.conversationRevision } : {}),
       ...(input.context.conversationId ? { conversationId: input.context.conversationId } : {}),
       ...(input.context.userId ? { userId: input.context.userId } : {}),
+      ...(input.conversationRevision ? { writeBackConversationRevision: input.conversationRevision } : {}),
+      ...(input.request.description ? { description: input.request.description } : {}),
+      ...(input.subagentType ? { subagentType: input.subagentType } : {}),
+      ...(input.subagentTypeName ? { subagentTypeName: input.subagentTypeName } : {}),
+      ...(input.writeBackTarget ? { writeBackTarget: input.writeBackTarget } : {}),
     };
     const records = this.subagents.get(input.pluginId) ?? [];
     records.push(subagent);
     this.subagents.set(input.pluginId, records);
     this.saveSubagents();
-    return cloneJsonValue(subagent) as RuntimeSubagentRecord;
+    return copySubagentRecord(subagent);
   }
 
-  updateSubagent(
-    pluginId: string,
-    subagentId: string,
-    mutate: (subagent: RuntimeSubagentRecord, now: string) => void,
-  ): void {
-    const now = new Date().toISOString();
-    mutate(this.requireSubagent(subagentId, pluginId), now);
+  updateSubagent(pluginId: string, subagentId: string, mutate: (subagent: RuntimeSubagentRecord, now: string) => void): void {
+    mutate(this.requireSubagent(subagentId, pluginId), new Date().toISOString());
     this.saveSubagents();
   }
 
-  private listSubagentRecords(
-    pluginId?: string,
-    visibility?: RuntimeSubagentRecord['visibility'],
-  ): RuntimeSubagentRecord[] {
+  private readRecords(pluginId?: string, visibility?: RuntimeSubagentRecord['visibility'], includeRemoved = false): RuntimeSubagentRecord[] {
     const records = pluginId ? (this.subagents.get(pluginId) ?? []) : [...this.subagents.values()].flat();
-    return visibility ? records.filter((subagent) => subagent.visibility === visibility) : records;
+    return records.filter((item) => (includeRemoved || !item.removedAt) && (!visibility || item.visibility === visibility));
   }
 
-  private listSessionProjectionRecords(
-    pluginId?: string,
-    visibility?: RuntimeSubagentRecord['visibility'],
-  ): RuntimeSubagentRecord[] {
+  private readSessionProjection(pluginId?: string, visibility?: RuntimeSubagentRecord['visibility'], ascending = false): RuntimeSubagentRecord[] {
     const latestBySession = new Map<string, RuntimeSubagentRecord>();
-    for (const subagent of this.listSubagentRecords(pluginId, visibility)) {
+    for (const subagent of this.readRecords(pluginId, visibility)) {
       const current = latestBySession.get(subagent.sessionId);
-      if (!current) {
-        latestBySession.set(subagent.sessionId, subagent);
-        continue;
-      }
-      if (current.requestedAt.localeCompare(subagent.requestedAt) < 0) {
-        latestBySession.set(subagent.sessionId, subagent);
-        continue;
-      }
-      if (current.requestedAt === subagent.requestedAt && current.id.localeCompare(subagent.id) < 0) {
+      if (!current || current.requestedAt.localeCompare(subagent.requestedAt) < 0 || (current.requestedAt === subagent.requestedAt && current.id.localeCompare(subagent.id) < 0)) {
         latestBySession.set(subagent.sessionId, subagent);
       }
     }
-    return [...latestBySession.values()];
-  }
-
-  private summarizeSubagents(subagents: RuntimeSubagentRecord[], ascending: boolean): PluginSubagentSummary[] {
     const direction = ascending ? 1 : -1;
-    return subagents
-      .slice()
-      .sort((left, right) => direction * left.requestedAt.localeCompare(right.requestedAt))
-      .map(summarizeSubagent);
-  }
-
-  private loadSubagents(): Map<string, RuntimeSubagentRecord[]> {
-    try {
-      fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-      if (!fs.existsSync(this.storagePath)) {
-        return new Map<string, RuntimeSubagentRecord[]>();
-      }
-      const parsed = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as {
-        subagentSequence?: number;
-        subagents?: Record<string, RuntimeSubagentRecord[]>;
-      };
-      this.subagentSequence = typeof parsed.subagentSequence === 'number' ? parsed.subagentSequence : 0;
-      return new Map<string, RuntimeSubagentRecord[]>(
-        Object.entries(parsed.subagents ?? {}).map(([pluginId, records]) => [
-          pluginId,
-          Array.isArray(records) ? records.map(normalizeSubagentRecord) : [],
-        ]),
-      );
-    } catch {
-      return new Map<string, RuntimeSubagentRecord[]>();
-    }
+    return [...latestBySession.values()].sort((left, right) => direction * left.requestedAt.localeCompare(right.requestedAt));
   }
 
   private requireSubagent(subagentId: string, pluginId?: string): RuntimeSubagentRecord {
-    const subagent = this.listSubagentRecords(pluginId).find((entry) => entry.id === subagentId);
-    if (subagent) {
-      return subagent;
-    }
+    const subagent = this.readRecords(pluginId, undefined, true).find((item) => item.id === subagentId);
+    if (subagent) { return subagent; }
     throw new NotFoundException(`Subagent not found: ${subagentId}`);
   }
 
-  private requireLatestSubagentBySession(sessionId: string, pluginId?: string): RuntimeSubagentRecord {
-    const subagent = this.listSessionProjectionRecords(pluginId).find((entry) => entry.sessionId === sessionId);
-    if (subagent) {
-      return subagent;
-    }
+  private requireSessionProjection(sessionId: string, pluginId?: string): RuntimeSubagentRecord {
+    const subagent = this.readSessionProjection(pluginId).find((item) => item.sessionId === sessionId);
+    if (subagent) { return subagent; }
     throw new NotFoundException(`Subagent session not found: ${sessionId}`);
   }
 
   private saveSubagents(): void {
     fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-    fs.writeFileSync(
-      this.storagePath,
-      JSON.stringify({ subagentSequence: this.subagentSequence, subagents: Object.fromEntries(this.subagents) }, null, 2),
-      'utf-8',
-    );
+    fs.writeFileSync(this.storagePath, JSON.stringify({ subagentSequence: this.subagentSequence, subagents: Object.fromEntries(this.subagents) }, null, 2), 'utf-8');
   }
 }
 
-function summarizeSubagent(subagent: RuntimeSubagentRecord): PluginSubagentSummary {
-  const { context: _context, id: _id, request: _request, result: _result, visibility: _visibility, ...summary } = cloneJsonValue(subagent);
-  return summary;
+function copySubagentRecord(subagent: RuntimeSubagentRecord): RuntimeSubagentRecord {
+  return cloneJsonValue(subagent) as RuntimeSubagentRecord;
+}
+
+function readSubagentStorage(storagePath: string): { subagentSequence: number; subagents: Map<string, RuntimeSubagentRecord[]> } {
+  try {
+    fs.mkdirSync(path.dirname(storagePath), { recursive: true });
+    if (!fs.existsSync(storagePath)) { return { subagentSequence: 0, subagents: new Map<string, RuntimeSubagentRecord[]>() }; }
+    const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as { subagentSequence?: number; subagents?: Record<string, RuntimeSubagentRecord[]> };
+    return {
+      subagentSequence: typeof parsed.subagentSequence === 'number' ? parsed.subagentSequence : 0,
+      subagents: new Map(Object.entries(parsed.subagents ?? {}).map(([pluginId, records]) => [pluginId, Array.isArray(records) ? records.map(normalizeSubagentRecord) : []])),
+    };
+  } catch {
+    return { subagentSequence: 0, subagents: new Map<string, RuntimeSubagentRecord[]>() };
+  }
 }
 
 function toSubagentSummary(subagent: RuntimeSubagentRecord): PluginSubagentSummary {
-  return summarizeSubagent(subagent);
+  const { context: _context, id: _id, request: _request, result: _result, visibility: _visibility, ...summary } = copySubagentRecord(subagent);
+  return summary;
 }
 
 function toSubagentDetail(subagent: RuntimeSubagentRecord): PluginSubagentDetail {
-  const { id: _id, visibility: _visibility, ...detail } = cloneJsonValue(subagent);
+  const { id: _id, visibility: _visibility, ...detail } = copySubagentRecord(subagent);
   return detail;
 }
 
 function normalizeSubagentRecord(subagent: RuntimeSubagentRecord): RuntimeSubagentRecord {
   return {
     ...subagent,
+    ...(typeof subagent.removedAt === 'string' && subagent.removedAt.trim().length > 0 ? { removedAt: subagent.removedAt } : {}),
     sessionId: typeof subagent.sessionId === 'string' && subagent.sessionId.trim().length > 0 ? subagent.sessionId : subagent.id,
     sessionMessageCount: typeof subagent.sessionMessageCount === 'number' ? subagent.sessionMessageCount : subagent.request.messages.length,
     sessionUpdatedAt: typeof subagent.sessionUpdatedAt === 'string' && subagent.sessionUpdatedAt.trim().length > 0 ? subagent.sessionUpdatedAt : subagent.requestedAt,

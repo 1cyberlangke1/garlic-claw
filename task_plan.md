@@ -33,13 +33,9 @@
 
 ### 当前结论
 
-- 当前 `packages/server/src` 非空行数：`15761`
-- 与 `<=15000` 目标还差：`761`
-- `uuidv7` 恢复已完成定向 build + Jest，当前可继续回到大文件 owner 重写
-- 下一步继续找 `350+` 行且有独立回归面的 owner 文件，优先：
-  - `plugin-persistence.service.ts`
-  - `runtime-host-subagent-runner.service.ts` 继续二次收口
-  - `runtime-shell-command-hints.ts`
+- 当前 `packages/server/src` 非空行数：`14998`
+- `<=15000` 目标已命中，当前只差 `P8` 独立 judge 收口
+- 本轮证明：中型稳定 owner 也能一次性大块净减，不必硬撞最宽主链
 
 ### 本轮补充
 
@@ -65,3 +61,17 @@
    - 结论：`PASS`
    - `plugin-bootstrap / ai-settings / gateway` 三个 owner 都是真收口
    - `V3` 总目标仍未完成，当前 `packages/server/src = 15598`
+14. `P8` subagent / text-replace / event-log owner 压体积
+   - 重写：`runtime-host-subagent-session-store.service.ts`
+   - 重写：`runtime-text-replace.ts`
+   - 重写：`runtime-event-log.service.ts`
+   - 结果：`packages/server/src = 14998`
+15. `P8` fresh 验收
+   - `packages/server`: `npm run build`
+   - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/runtime/host/runtime-host-subagent-session-store.service.spec.ts tests/runtime/host/runtime-host-subagent-store.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/execution/mcp/mcp.service.spec.ts`
+   - root: `npm run smoke:server`
+   - root: `node tools/count-server-src-lines.mjs`
+16. `P8` 独立 judge
+   - 结论：`PASS`
+   - `subagent-session-store / runtime-text-replace / runtime-event-log` 三个 owner 都是真收口
+   - `V3` 总目标已完成，当前 `packages/server/src = 14998`

@@ -3,8 +3,8 @@
 ## 2026-04-26 V3 体积治理
 
 - 当前累计净减：
-  - `packages/server/src`: `16546 -> 15598`
-  - 本轮累计净减：`948`
+  - `packages/server/src`: `16546 -> 14998`
+  - 本轮累计净减：`1548`
 - 已重写并压缩：
   - `packages/server/src/plugin/builtin/tools/runtime-tools/runtime-tools-plugin-runtime.ts`
     - `462 -> 332`
@@ -40,6 +40,12 @@
     - `237 -> 148`
   - `packages/server/src/runtime/gateway/runtime-gateway-connection-lifecycle.service.ts`
     - `214 -> 154`
+  - `packages/server/src/runtime/host/runtime-host-subagent-session-store.service.ts`
+    - `192 -> 171`
+  - `packages/server/src/execution/file/runtime-text-replace.ts`
+    - `196 -> 184`
+  - `packages/server/src/runtime/log/runtime-event-log.service.ts`
+    - `190 -> 70`
 
 - 已删除未使用依赖：
   - root: `effect`
@@ -84,9 +90,15 @@
 - root
   - `node tools/count-server-src-lines.mjs` -> `15598`
   - `npm run smoke:server` -> `server HTTP smoke passed: 187 checks`
+  - `node tools/count-server-src-lines.mjs` -> `14998`
+  - `npm run smoke:server` -> `server HTTP smoke passed: 187 checks`
+- `packages/server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/file/runtime-text-replace.spec.ts tests/runtime/host/runtime-host-subagent-session-store.service.spec.ts tests/runtime/host/runtime-host-subagent-store.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts tests/execution/mcp/mcp.service.spec.ts`
+  - `npm run build`
 
 ## 独立 judge
 
 - `P5 uuidv7 语义恢复`：`PASS`
 - `P6 host / automation owner 压体积`：`PASS`
 - `P7 bootstrap / ai-settings / gateway owner 压体积`：`PASS`
+- `P8 subagent / text-replace / event-log owner 压体积`：`PASS`
