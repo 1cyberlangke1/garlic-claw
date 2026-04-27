@@ -51,6 +51,10 @@
 - 提交前必须再次实际跑完全部冒烟测试，直到全部通过后才能继续；只要有一项失败，就先修复，不能跳过
 - 提交前先检查，不提交半成品
 - 提交 git 只是保存阶段进度；如果当前计划未完成，提交后必须继续推进直到完成
+- `smoke:web-ui` 失败或明显超时时，先区分“浏览器链路失败”与“开发环境启动失败”：
+  - 该命令会先探测并按需拉起前后端，不是纯前端脚本
+  - 若卡在启动前置，先检查 `prisma generate` 文件锁、后端健康检查、前端 dev server 是否已就绪；不要在未分层定位前反复盲跑整条 smoke
+- 浏览器 smoke 复跑前，先清理上一轮由自己启动的 `smoke:web-ui / browser-smoke.mjs` 残留进程；只能按 PID 精确清理，不能扩大到全部 `node`
 
 ## 命名与注释
 
@@ -73,6 +77,9 @@
 - DTO 使用 `class-validator`
 - 依赖方向保持 `Controller → Service → Prisma`，单向依赖，禁止循环依赖
 - 模块通过 `exports` 暴露公共 API，其他模块通过 `imports` 引入
+- provider 配置、模型路由、vision fallback 等 AI 设置的持久化 owner 只允许在后端：
+  - 前端只通过 `/api/ai/*` 接口读写，不得直接写本地配置文件
+  - 若出现“前端新增 provider 消失”之类问题，先查后端 `AiProviderSettingsService / ai-management-settings.store` 的写盘与迁移链
 
 ## 项目结构
 
@@ -109,6 +116,7 @@ packages/: server(NestJS) | web(Vue) | shared | plugin-sdk | plugins
 - `packages/server/scripts/http-smoke.mjs` 当前已验证需要：
   - 先确保 `packages/server/tmp` 存在
   - 启动阶段等待上限单独放宽，避免 Windows 冷启动误判
+  - `port / wsPort` 在真正启动后端前再申请，避免 Windows 上因预占端口过早导致 `EADDRINUSE`
 
 ## WSL 网络判定
 
