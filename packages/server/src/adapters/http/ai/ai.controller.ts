@@ -26,6 +26,11 @@ export class AiController {
     return this.aiManagementService.listProviders();
   }
 
+  @Get('default-selection')
+  getDefaultSelection() {
+    return this.aiManagementService.getDefaultProviderSelection();
+  }
+
   @Get('providers/:providerId')
   getProvider(@Param('providerId') providerId: string) {
     return this.aiManagementService.getProvider(providerId);

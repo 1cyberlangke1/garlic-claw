@@ -132,6 +132,18 @@ export interface AiProviderSummary {
 }
 
 /**
+ * 默认 provider / model 选择结果。
+ */
+export interface AiDefaultProviderSelection {
+  /** provider ID。 */
+  providerId: string | null;
+  /** model ID。 */
+  modelId: string | null;
+  /** 选择来源。 */
+  source: 'default' | 'context';
+}
+
+/**
  * provider 详情配置。
  */
 export interface AiProviderConfig {

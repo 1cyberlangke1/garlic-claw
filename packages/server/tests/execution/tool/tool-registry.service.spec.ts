@@ -97,17 +97,17 @@ describe('ToolRegistryService', () => {
     await expect(service.listOverview()).resolves.toEqual(expect.objectContaining({
       sources: expect.arrayContaining([
         expect.objectContaining({
-          id: 'builtin.memory-tools',
+          id: 'builtin.memory',
           kind: 'plugin',
           totalTools: 2,
         }),
       ]),
       tools: expect.arrayContaining([
         expect.objectContaining({
-          toolId: 'plugin:builtin.memory-tools:save_memory',
+          toolId: 'plugin:builtin.memory:save_memory',
         }),
         expect.objectContaining({
-          toolId: 'plugin:builtin.memory-tools:search_memory',
+          toolId: 'plugin:builtin.memory:search_memory',
         }),
       ]),
     }));
@@ -219,33 +219,33 @@ describe('ToolRegistryService', () => {
     })) as never;
 
     await expect(
-      service.setSourceEnabled('plugin', 'builtin.memory-tools', false),
+      service.setSourceEnabled('plugin', 'builtin.memory', false),
     ).resolves.toEqual(
       expect.objectContaining({
         enabled: false,
-        id: 'builtin.memory-tools',
+        id: 'builtin.memory',
       }),
     );
     await expect(
-      service.setToolEnabled('plugin:builtin.memory-tools:save_memory', false),
+      service.setToolEnabled('plugin:builtin.memory:save_memory', false),
     ).resolves.toEqual(
       expect.objectContaining({
         enabled: false,
-        toolId: 'plugin:builtin.memory-tools:save_memory',
+        toolId: 'plugin:builtin.memory:save_memory',
       }),
     );
     await expect(
-      service.runSourceAction('plugin', 'builtin.memory-tools', 'health-check'),
+      service.runSourceAction('plugin', 'builtin.memory', 'health-check'),
     ).resolves.toEqual({
       accepted: true,
       action: 'health-check',
       sourceKind: 'plugin',
-      sourceId: 'builtin.memory-tools',
+      sourceId: 'builtin.memory',
       message: '插件健康检查通过',
     });
     await expect(
-      service.runSourceAction('plugin', 'builtin.memory-tools', 'reload'),
-    ).rejects.toThrow('工具源 plugin:builtin.memory-tools 不支持治理动作 reload');
+      service.runSourceAction('plugin', 'builtin.memory', 'reload'),
+    ).rejects.toThrow('工具源 plugin:builtin.memory 不支持治理动作 reload');
   });
 
   it('updates MCP source enabled flags and dispatches MCP source actions', async () => {
@@ -294,7 +294,7 @@ describe('ToolRegistryService', () => {
       pluginPersistenceService: PluginPersistenceService;
     }).pluginPersistenceService;
     builtinPersisted.upsertPlugin({
-      ...pluginBootstrapService.getPlugin('builtin.memory-tools'),
+      ...pluginBootstrapService.getPlugin('builtin.memory'),
       connected: true,
       conversationScopes: {
         'conversation-1': false,
@@ -7612,8 +7612,8 @@ function createFixture(options: {
   );
   pluginBootstrapService.registerPlugin({
     fallback: {
-      id: 'builtin.memory-tools',
-      name: '记忆工具',
+      id: 'builtin.memory',
+      name: '记忆',
       runtime: 'local',
     },
     manifest: {

@@ -8,7 +8,7 @@ import {
   resolveContextCompactionRuntimeConfig,
   resolveConversationTitleRuntimeConfig,
 } from '@garlic-claw/plugin-sdk/authoring';
-import type { JsonObject, JsonValue, PluginConfigSchema, PluginConfigSnapshot } from '@garlic-claw/shared';
+import type { AiModelRouteTarget, JsonObject, JsonValue, PluginConfigSchema, PluginConfigSnapshot } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
 import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
@@ -19,7 +19,10 @@ const MAX_CONFIG_INTEGER = 1_000_000;
 const CONTEXT_GOVERNANCE_SECTION_NAMES = ['conversationTitle', 'contextCompaction'] as const;
 type ContextGovernanceSectionName = typeof CONTEXT_GOVERNANCE_SECTION_NAMES[number];
 
-export interface StoredContextGovernanceConfig { contextCompaction: ReturnType<typeof resolveContextCompactionRuntimeConfig>; conversationTitle: ReturnType<typeof resolveConversationTitleRuntimeConfig> & { enabled: boolean }; }
+export interface StoredContextGovernanceConfig {
+  contextCompaction: ReturnType<typeof resolveContextCompactionRuntimeConfig> & { compressionModel?: AiModelRouteTarget };
+  conversationTitle: ReturnType<typeof resolveConversationTitleRuntimeConfig> & { enabled: boolean };
+}
 
 const CONTEXT_GOVERNANCE_CONFIG_SCHEMA: PluginConfigSchema = { type: 'object', items: {
   conversationTitle: { type: 'object', description: '在默认标题会话完成首次回复后自动生成标题。', collapsed: true, items: { enabled: { type: 'bool', description: '是否启用自动标题生成', defaultValue: true }, ...CONVERSATION_TITLE_CONFIG_SCHEMA.items } },
@@ -39,7 +42,10 @@ export class ContextGovernanceSettingsService {
     const titleValues = readNestedObject(this.configValues, 'conversationTitle');
     const compactionValues = readNestedObject(this.configValues, 'contextCompaction');
     return {
-      contextCompaction: resolveContextCompactionRuntimeConfig(readContextCompactionConfig(compactionValues)),
+      contextCompaction: {
+        ...resolveContextCompactionRuntimeConfig(readContextCompactionConfig(compactionValues)),
+        ...(readRouteTarget(compactionValues?.compressionModel) ? { compressionModel: readRouteTarget(compactionValues?.compressionModel) ?? undefined } : {}),
+      },
       conversationTitle: {
         enabled: readEnabled(titleValues),
         ...resolveConversationTitleRuntimeConfig(readConversationTitleConfig(titleValues)),
@@ -95,12 +101,21 @@ function sanitizeContextGovernanceSection(sectionName: ContextGovernanceSectionN
     writeOptionalText(next, values.summaryPrompt, 'contextCompaction.summaryPrompt');
     writeOptionalBoolean(next, values.showCoveredMarker, 'contextCompaction.showCoveredMarker');
     writeOptionalBoolean(next, values.allowAutoContinue, 'contextCompaction.allowAutoContinue');
+    writeOptionalRouteTarget(next, values.compressionModel, 'contextCompaction.compressionModel');
   }
   return Object.keys(next).length > 0 ? next : null;
 }
 
 function readNestedObject(value: JsonObject, key: ContextGovernanceSectionName): JsonObject | null { return isJsonObject(value[key]) ? value[key] : null; }
 function readEnabled(section: JsonObject | null): boolean { return typeof section?.enabled === 'boolean' ? section.enabled : true; }
+function readRouteTarget(value: unknown): AiModelRouteTarget | null {
+  if (!isJsonObject(value) || typeof value.providerId !== 'string' || typeof value.modelId !== 'string') {
+    return null;
+  }
+  const providerId = value.providerId.trim();
+  const modelId = value.modelId.trim();
+  return providerId && modelId ? { providerId, modelId } : null;
+}
 
 function writeOptionalInteger(target: JsonObject, value: unknown, fieldName: string, min: number): void {
   if (value === undefined) {return;}
@@ -125,6 +140,16 @@ function writeOptionalTextOption<T extends string>(target: JsonObject, value: un
   if (value === undefined) {return;}
   if (typeof value !== 'string' || !options.includes(value as T)) {throw new BadRequestException(`${fieldName} 必须命中声明的 options`);}
   target[fieldName.split('.').at(-1) as string] = value;
+}
+
+function writeOptionalRouteTarget(target: JsonObject, value: unknown, fieldName: string): void {
+  if (value === undefined) {return;}
+  const routeTarget = readRouteTarget(value);
+  if (!routeTarget) {throw new BadRequestException(`${fieldName} 必须同时提供 providerId 和 modelId`);}
+  target[fieldName.split('.').at(-1) as string] = {
+    modelId: routeTarget.modelId,
+    providerId: routeTarget.providerId,
+  };
 }
 
 function isJsonObject(value: JsonValue | unknown): value is JsonObject { return typeof value === 'object' && value !== null && !Array.isArray(value); }

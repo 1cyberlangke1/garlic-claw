@@ -416,7 +416,7 @@ describe('ConversationMessageLifecycleService', () => {
   it('applies chat before-model hooks before invoking the model', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('claude-3-7-sonnet', 'anthropic', '模型回复'));
     toolRegistryService.listAvailableTools.mockResolvedValue([
-      { description: 'search memory', name: 'memory.search', parameters: {}, pluginId: 'builtin.memory-context', sourceId: 'builtin.memory-context', sourceKind: 'plugin' },
+      { description: 'search memory', name: 'memory.search', parameters: {}, pluginId: 'builtin.memory', sourceId: 'builtin.memory', sourceKind: 'plugin' },
     ]);
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.before-model-recorder', ['chat:before-model'])]);
     runtimeHostPluginDispatchService.invokeHook.mockResolvedValue({

@@ -125,3 +125,26 @@
   - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/execution/webfetch/webfetch-service.spec.ts tests/execution/runtime/runtime-tools-settings.service.spec.ts`
   - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/runtime/runtime-native-shell.service.spec.ts`
   - `npm run smoke:server`
+
+## 2026-04-27 默认模型重启后恢复错误
+
+- 用户反馈：
+  - 前端已把 `openai/gpt-oss-20b` 设为默认模型
+  - 重启后 UI 又显示成别的模型
+- 已确认当前直接证据：
+  - `config/ai/providers/nvidia.json` 中 `defaultModel` 已经写成 `openai/gpt-oss-20b`
+  - 所以问题不在 `setDefaultModel` 写盘失败
+- 本轮已完成：
+  - 后端已新增 `GET /ai/default-selection`，直接暴露已持久化的默认 provider/model 选择
+  - shared 已补 `AiDefaultProviderSelection` 公共契约，前后端不再各自拼 shape
+  - 聊天页恢复模型时已改为：
+    - 先尊重当前会话内最后一条 assistant 的 provider/model
+    - 无会话历史或历史已失效时，优先读取后端默认选择
+    - 只有后端默认不可用时，才回退到前端本地枚举逻辑
+  - 已补前端回归测试，覆盖“后端默认优先于本地 provider 顺序”与“后端默认失效时回退”两条路径
+- 本轮 fresh 验收已通过：
+  - `npm run build:shared`
+  - `npm run typecheck:server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/adapters/http/ai/ai.controller.spec.ts`
+  - `npm run typecheck -w packages/web`
+  - `npm run test:run -w packages/web -- tests/features/chat/modules/chat-model-selection.spec.ts`

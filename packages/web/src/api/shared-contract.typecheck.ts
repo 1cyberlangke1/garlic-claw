@@ -1,5 +1,6 @@
 import type {
   ActionConfig,
+  AiDefaultProviderSelection,
   AiModelCapabilities,
   AiModelConfig,
   AiProviderCatalogItem,
@@ -101,6 +102,12 @@ const connectionResult: AiProviderConnectionTestResult = {
   providerId: 'openai',
   modelId: 'gpt-4o-mini',
   text: 'ok',
+}
+
+const defaultSelection: AiDefaultProviderSelection = {
+  providerId: 'openai',
+  modelId: 'gpt-4o-mini',
+  source: 'default',
 }
 
 const pluginInfo: PluginInfo = {
@@ -274,6 +281,7 @@ void [
   visionConfig,
   discoveredModel,
   connectionResult,
+  defaultSelection,
   catalogItem,
   pluginInfo,
   pluginStorageEntry,

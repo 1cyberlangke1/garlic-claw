@@ -49,24 +49,33 @@ describe('ContextGovernanceService', () => {
       providerId: 'nvidia',
       source: 'default',
     });
-    aiManagementService.getProvider.mockReturnValue({
-      defaultModel: 'gpt-oss-20b',
-      id: 'nvidia',
-      models: ['gpt-oss-20b'],
+    aiManagementService.getProvider.mockImplementation((providerId: string) => {
+      if (providerId === 'openai') {
+        return {
+          defaultModel: 'gpt-4.1-mini',
+          id: 'openai',
+          models: ['gpt-4.1-mini'],
+        };
+      }
+      return {
+        defaultModel: 'gpt-oss-20b',
+        id: 'nvidia',
+        models: ['gpt-oss-20b'],
+      };
     });
-    aiManagementService.getProviderModel.mockReturnValue({
+    aiManagementService.getProviderModel.mockImplementation((providerId: string, modelId: string) => ({
       capabilities: {
         input: { image: false, text: true },
         output: { image: false, text: true },
         reasoning: false,
         toolCall: true,
       },
-      contextLength: 1024,
-      id: 'gpt-oss-20b',
-      name: 'openai/gpt-oss-20b',
-      providerId: 'nvidia',
+      contextLength: providerId === 'openai' ? 2048 : 1024,
+      id: modelId,
+      name: modelId,
+      providerId,
       status: 'active',
-    });
+    }));
     aiManagementService.listProviders.mockReturnValue([{ id: 'nvidia' }]);
     settingsService = new ContextGovernanceSettingsService();
     conversationRecordService = new RuntimeHostConversationRecordService();
@@ -233,6 +242,56 @@ describe('ContextGovernanceService', () => {
       providerId: 'nvidia',
       reason: 'context-compaction:auto-stop',
     });
+  });
+
+  it('uses the configured compression model while keeping context window budget bound to the active chat model', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionModel: {
+          modelId: 'gpt-4.1-mini',
+          providerId: 'openai',
+        },
+        enabled: true,
+        keepRecentMessages: 1,
+        mode: 'manual',
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一条历史消息。'),
+      createHistoryMessage('message-2', 'assistant', '第二条历史回复。'),
+      createHistoryMessage('message-3', 'user', '第三条消息保留给最近窗口。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-4.1-mini',
+      providerId: 'openai',
+      text: '压缩摘要：改用独立压缩模型。',
+    });
+
+    await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
+      modelId: 'gpt-4.1-mini',
+      providerId: 'openai',
+      transportMode: 'generate',
+    }));
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown> }> } }>;
+    };
+    const summaryMessage = history.messages.find((message) => message.content === '压缩摘要：改用独立压缩模型。');
+    const summaryAnnotation = summaryMessage?.metadata?.annotations?.find((annotation) => annotation.data?.role === 'summary');
+    expect(summaryAnnotation?.data).toEqual(expect.objectContaining({
+      modelId: 'gpt-4.1-mini',
+      providerId: 'openai',
+    }));
   });
 });
 

@@ -1,5 +1,6 @@
 import { delete as del, get, post, put } from '@/api/http'
 import type {
+  AiDefaultProviderSelection,
   AiHostModelRoutingConfig,
   AiModelCapabilities,
   AiModelConfig,
@@ -18,6 +19,10 @@ export function listAiProviderCatalog() {
 
 export function listAiProviders() {
   return get<AiProviderSummary[]>('/ai/providers')
+}
+
+export function getAiDefaultSelection() {
+  return get<AiDefaultProviderSelection>('/ai/default-selection')
 }
 
 export function getAiProvider(providerId: string) {

@@ -5,6 +5,7 @@ describe('AiController', () => {
     deleteModel: jest.fn(),
     deleteProvider: jest.fn(),
     discoverModels: jest.fn(),
+    getDefaultProviderSelection: jest.fn(),
     getProvider: jest.fn(),
     listModels: jest.fn(),
     listProviderCatalog: jest.fn(),
@@ -59,6 +60,21 @@ describe('AiController', () => {
     expect(controller.listProviders()).toEqual([{ id: 'openai-main' }]);
     expect(controller.getProvider('openai-main')).toEqual({ id: 'openai-main', models: ['gpt-4o-mini'] });
     expect(aiManagementService.getProvider).toHaveBeenCalledWith('openai-main');
+  });
+
+  it('reads the persisted default provider selection through the management owner', () => {
+    aiManagementService.getDefaultProviderSelection.mockReturnValue({
+      modelId: 'openai/gpt-oss-20b',
+      providerId: 'nvidia',
+      source: 'default',
+    });
+
+    expect(controller.getDefaultSelection()).toEqual({
+      modelId: 'openai/gpt-oss-20b',
+      providerId: 'nvidia',
+      source: 'default',
+    });
+    expect(aiManagementService.getDefaultProviderSelection).toHaveBeenCalledTimes(1);
   });
 
   it('forwards provider upsert requests to the management service', () => {

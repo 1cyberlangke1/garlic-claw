@@ -26,7 +26,7 @@ function createAutomationInfo(): AutomationInfo {
     actions: [
       {
         type: 'device_command',
-        plugin: 'builtin.memory-tools',
+        plugin: 'builtin.memory',
         capability: 'save_memory',
       },
     ],
@@ -78,7 +78,7 @@ describe('useAutomations', () => {
     state.form.value.name = '咖啡完成提醒'
     state.form.value.triggerType = 'event'
     state.form.value.eventName = 'coffee.ready'
-    state.form.value.plugin = 'builtin.memory-tools'
+    state.form.value.plugin = 'builtin.memory'
     state.form.value.capability = 'save_memory'
 
     expect(state.canCreate.value).toBe(true)
@@ -94,7 +94,7 @@ describe('useAutomations', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
         },
       ],

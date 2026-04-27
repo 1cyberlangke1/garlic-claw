@@ -244,11 +244,11 @@ describe('usePluginManagement', () => {
       }),
       createPlugin({
         id: 'plugin-2',
-        name: 'builtin.memory-tools',
+        name: 'builtin.memory',
         displayName: 'Memory Tools',
         description: 'user-facing builtin',
         manifest: {
-          id: 'builtin.memory-tools',
+          id: 'builtin.memory',
           name: 'Memory Tools',
           version: '1.0.0',
           runtime: 'local',
@@ -273,9 +273,9 @@ describe('usePluginManagement', () => {
     mount(Harness)
     await flushPromises()
 
-    expect(state.selectedPluginName.value).toBe('builtin.memory-tools')
+    expect(state.selectedPluginName.value).toBe('builtin.memory')
     expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
-      'builtin.memory-tools',
+      'builtin.memory',
       { limit: 50 },
       '',
     )
@@ -287,11 +287,11 @@ describe('usePluginManagement', () => {
     vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([
       createPlugin({
         id: 'plugin-1',
-        name: 'builtin.memory-tools',
+        name: 'builtin.memory',
         displayName: 'Memory Tools',
-        description: 'memory tools',
+        description: 'memory',
         manifest: {
-          id: 'builtin.memory-tools',
+          id: 'builtin.memory',
           name: 'Memory Tools',
           version: '1.0.0',
           runtime: 'local',

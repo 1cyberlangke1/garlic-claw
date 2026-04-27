@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { BuiltinPluginDefinition } from './builtin-plugin-definition';
-import { BUILTIN_MEMORY_CONTEXT_PLUGIN } from './hooks/builtin-memory-context.plugin';
-import { BUILTIN_MEMORY_TOOLS_PLUGIN } from './tools/builtin-memory-tools.plugin';
+import { BUILTIN_MEMORY_PLUGIN } from './builtin-memory.plugin';
 
 const RETIRED_BUILTIN_PLUGIN_IDS = [
+  'builtin.memory-context',
+  'builtin.memory-tools',
   'builtin.runtime-tools',
   'builtin.subagent-delegate',
   'builtin.conversation-title',
@@ -13,8 +14,7 @@ const RETIRED_BUILTIN_PLUGIN_IDS = [
 @Injectable()
 export class BuiltinPluginRegistryService {
   private readonly definitions: BuiltinPluginDefinition[] = [
-    BUILTIN_MEMORY_CONTEXT_PLUGIN,
-    BUILTIN_MEMORY_TOOLS_PLUGIN,
+    BUILTIN_MEMORY_PLUGIN,
   ];
 
   hasDefinition(pluginId: string): boolean {

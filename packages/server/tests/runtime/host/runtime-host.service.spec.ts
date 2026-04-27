@@ -98,7 +98,7 @@ describe('RuntimeHostService', () => {
       context: hookContext(),
       method: 'plugin.unknown' as never,
       params: {},
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
     })).rejects.toThrow('Host API plugin.unknown is not implemented in the current server runtime');
   });
 
@@ -220,7 +220,7 @@ describe('RuntimeHostService', () => {
     });
 
     await expect(callMemory(service, 'memory.search', { query: 'coffee' }, hookContext({ conversationId: undefined })))
-      .rejects.toThrow('Plugin builtin.memory-context is missing permission memory:read');
+      .rejects.toThrow('Plugin builtin.memory is missing permission memory:read');
     await expect(callMemory(service, 'config.get', {}, providerContext)).resolves.toEqual({
       defaultLimit: 5,
     });
@@ -257,8 +257,8 @@ describe('RuntimeHostService', () => {
     await expect(callMemory(service, 'plugin.self.get', {}, pluginContext())).resolves.toMatchObject({
       connected: true,
       defaultEnabled: true,
-      id: 'builtin.memory-context',
-      name: 'Memory Context',
+      id: 'builtin.memory',
+      name: 'Memory',
       runtimeKind: 'local',
       version: '1.0.0',
     });
@@ -333,7 +333,7 @@ describe('RuntimeHostService', () => {
       metadata: {
         flow: 'memory',
       },
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       timeoutMs: 60_000,
     });
     await expect(memoryHookCall(service, 'conversation.session.keep', {
@@ -341,12 +341,12 @@ describe('RuntimeHostService', () => {
       timeoutMs: 30_000,
     })).resolves.toMatchObject({
       conversationId: fixtureConversationId,
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       timeoutMs: 90_000,
     });
     await expect(memoryHookCall(service, 'conversation.session.get', {})).resolves.toMatchObject({
       conversationId: fixtureConversationId,
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       timeoutMs: 90_000,
     });
     await expect(memoryPluginCall(service, 'cron.register', {
@@ -359,7 +359,7 @@ describe('RuntimeHostService', () => {
     }, { userId: 'user-1' })).resolves.toMatchObject({
       cron: '10s',
       name: 'heartbeat',
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       source: 'host',
     });
     await expect(memoryPluginCall(service, 'cron.list', {})).resolves.toEqual([
@@ -481,7 +481,7 @@ describe('RuntimeHostService', () => {
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(started).toMatchObject({
       sessionId: expect.any(String),
-      pluginDisplayName: 'Memory Context',
+      pluginDisplayName: 'Memory',
       status: 'queued',
       writeBackStatus: 'pending',
     });
@@ -622,7 +622,7 @@ describe('RuntimeHostService', () => {
           providerId: 'openai',
           transportMode: 'stream-collect',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
       }),
     ).resolves.toEqual({
       metadata: {
@@ -748,7 +748,7 @@ describe('RuntimeHostService', () => {
         params: {
           prompt: '请总结当前插件行为',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
       }),
     ).resolves.toEqual({
       metadata: {
@@ -778,7 +778,7 @@ describe('RuntimeHostService', () => {
       },
     });
 
-    pluginPersistenceService.updatePluginLlmPreference('builtin.memory-context', {
+    pluginPersistenceService.updatePluginLlmPreference('builtin.memory', {
       mode: 'override',
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
@@ -796,7 +796,7 @@ describe('RuntimeHostService', () => {
         params: {
           prompt: '请总结当前插件行为',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
       }),
     ).resolves.toEqual({
       metadata: {
@@ -1160,8 +1160,8 @@ function createFixture(input?: {
   );
   pluginBootstrapService.registerPlugin({
     fallback: {
-      id: 'builtin.memory-context',
-      name: 'Memory Context',
+      id: 'builtin.memory',
+      name: 'Memory',
       runtime: 'local',
     },
     manifest: {
@@ -1286,7 +1286,7 @@ function callMemory(
     context: context as never,
     method: method as never,
     params,
-    pluginId: 'builtin.memory-context',
+    pluginId: 'builtin.memory',
   });
 }
 

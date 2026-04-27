@@ -87,8 +87,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
     );
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'builtin.memory',
+        name: 'Memory',
         runtime: 'local',
       },
       manifest: {
@@ -145,7 +145,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const result = await runner.runSubagent('builtin.memory-context', {
+    const result = await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -209,8 +209,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
     );
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'builtin.memory',
+        name: 'Memory',
         runtime: 'local',
       },
       manifest: {
@@ -273,7 +273,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const hookedResult = await runner.runSubagent('builtin.memory-context', {
+    const hookedResult = await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -331,7 +331,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    await runner.runSubagent('builtin.memory-context', {
+    await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -369,7 +369,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const result = await runner.runSubagent('builtin.memory-context', {
+    const result = await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -414,7 +414,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    await runner.runSubagent('builtin.memory-context', {
+    await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -450,7 +450,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         userId: 'user-1',
       },
       messages: [{ content: 'session-1', role: 'user' }],
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
     });
     sessionStore.createSession({
       context: {
@@ -459,7 +459,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         userId: 'user-1',
       },
       messages: [{ content: 'session-2', role: 'user' }],
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
     });
     const runner = new RuntimeHostSubagentRunnerService(
       createAiModelExecutionService(),
@@ -476,7 +476,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    await expect(runner.startSubagent('builtin.memory-context', 'Memory Context', {
+    await expect(runner.startSubagent('builtin.memory', 'Memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -503,7 +503,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       },
       messages: [{ content: 'original prompt', role: 'user' }],
       modelId: 'gpt-5.4',
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       providerId: 'openai',
     });
     const runner = new RuntimeHostSubagentRunnerService(
@@ -521,7 +521,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    await expect(runner.runSubagent('builtin.memory-context', {
+    await expect(runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -548,7 +548,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         userId: 'user-1',
       },
       messages: [{ content: 'existing prompt', role: 'user' }],
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
     });
     const runner = new RuntimeHostSubagentRunnerService(
       createAiModelExecutionService(),
@@ -565,7 +565,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    await expect(runner.runSubagent('builtin.memory-context', {
+    await expect(runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -591,7 +591,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         userId: 'user-1',
       },
       messages: [{ content: 'original task', role: 'user' }],
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
     });
     subagentStore.createSubagent({
       context: {
@@ -599,8 +599,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      pluginDisplayName: 'Memory Context',
-      pluginId: 'builtin.memory-context',
+      pluginDisplayName: 'Memory',
+      pluginId: 'builtin.memory',
       request: {
         messages: [{ content: 'original task', role: 'user' }],
       },
@@ -628,7 +628,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
 
     await expect(runner.removeSubagentSession(session.id)).resolves.toBe(true);
     expect(runner.listOverview().subagents).toEqual([]);
-    await expect(runner.runSubagent('builtin.memory-context', {
+    await expect(runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -668,7 +668,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const started = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
+    const started = await runner.startSubagent('builtin.memory', 'Memory', {
       conversationId,
       source: 'plugin',
       userId: 'user-1',
@@ -719,8 +719,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         },
       ],
       modelId: 'gpt-5.4',
-      pluginDisplayName: 'Memory Context',
-      pluginId: 'builtin.memory-context',
+      pluginDisplayName: 'Memory',
+      pluginId: 'builtin.memory',
       providerId: 'openai',
       subagentId: 'subagent-1',
       toolNames: ['memory.search'],
@@ -731,8 +731,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      pluginDisplayName: 'Memory Context',
-      pluginId: 'builtin.memory-context',
+      pluginDisplayName: 'Memory',
+      pluginId: 'builtin.memory',
       request: {
         description: '已有后台子代理',
         messages: [
@@ -769,7 +769,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    await runner.runSubagent('builtin.memory-context', {
+    await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -822,8 +822,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         },
       ],
       modelId: 'gpt-5.4',
-      pluginDisplayName: 'Memory Context',
-      pluginId: 'builtin.memory-context',
+      pluginDisplayName: 'Memory',
+      pluginId: 'builtin.memory',
       providerId: 'openai',
       subagentId: 'subagent-1',
     });
@@ -833,8 +833,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      pluginDisplayName: 'Memory Context',
-      pluginId: 'builtin.memory-context',
+      pluginDisplayName: 'Memory',
+      pluginId: 'builtin.memory',
       request: {
         description: '已有后台子代理',
         messages: [
@@ -856,7 +856,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
         type: 'conversation',
       },
     });
-    subagentStore.updateSubagent('builtin.memory-context', 'subagent-1', (subagent, now) => {
+    subagentStore.updateSubagent('builtin.memory', 'subagent-1', (subagent, now) => {
       subagent.status = 'completed';
       subagent.finishedAt = now;
       subagent.result = {
@@ -888,7 +888,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
+    const summary = await runner.startSubagent('builtin.memory', 'Memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -917,7 +917,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       status: 'queued',
       writeBackStatus: 'pending',
     });
-    expect(subagentStore.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
+    expect(subagentStore.getSubagent('builtin.memory', 'subagent-session-1')).toMatchObject({
       request: {
         description: '继续已有后台子代理',
         messages: [
@@ -955,7 +955,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
+    const summary = await runner.startSubagent('builtin.memory', 'Memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -999,7 +999,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
+    const summary = await runner.startSubagent('builtin.memory', 'Memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1019,7 +1019,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       subagentType: 'explore',
       subagentTypeName: '探索',
     });
-    expect(subagentStore.getSubagent('builtin.memory-context', (summary as { sessionId: string }).sessionId)).toMatchObject({
+    expect(subagentStore.getSubagent('builtin.memory', (summary as { sessionId: string }).sessionId)).toMatchObject({
       subagentType: 'explore',
       subagentTypeName: '探索',
       request: {
@@ -1035,8 +1035,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
     );
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'builtin.memory',
+        name: 'Memory',
         runtime: 'local',
       },
       manifest: {
@@ -1096,7 +1096,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const result = await runner.runSubagent('builtin.memory-context', {
+    const result = await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1170,7 +1170,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
 
-    const result = await runner.runSubagent('builtin.memory-context', {
+    const result = await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1214,8 +1214,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
     );
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'builtin.memory',
+        name: 'Memory',
         runtime: 'local',
       },
       manifest: {
@@ -1280,7 +1280,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       toolResults: [],
     });
 
-    await runner.runSubagent('builtin.memory-context', {
+    await runner.runSubagent('builtin.memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1305,8 +1305,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
     );
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'builtin.memory',
+        name: 'Memory',
         runtime: 'local',
       },
       manifest: {
@@ -1330,7 +1330,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new RuntimeHostSubagentSessionStoreService(),
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
-    originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
+    originalRunner.startSubagent('builtin.memory', 'Memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1376,7 +1376,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(resumedRunner.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
+    expect(resumedRunner.getSubagent('builtin.memory', 'subagent-session-1')).toMatchObject({
       result: {
         text: 'resume me',
       },
@@ -1408,7 +1408,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       throw new Error('OpenAI 429');
     });
 
-    const summary = await runner.startSubagent('builtin.memory-context', 'Memory Context', {
+    const summary = await runner.startSubagent('builtin.memory', 'Memory', {
       conversationId,
       source: 'plugin',
       userId: 'user-1',
@@ -1432,7 +1432,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(runner.getSubagent('builtin.memory-context', (summary as { sessionId: string }).sessionId)).toMatchObject({
+    expect(runner.getSubagent('builtin.memory', (summary as { sessionId: string }).sessionId)).toMatchObject({
       error: 'OpenAI 429',
       status: 'error',
       writeBackStatus: 'sent',
@@ -1453,8 +1453,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
     );
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'builtin.memory',
+        name: 'Memory',
         runtime: 'local',
       },
       manifest: {
@@ -1478,7 +1478,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new RuntimeHostSubagentSessionStoreService(),
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
-    await originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
+    await originalRunner.startSubagent('builtin.memory', 'Memory', {
       conversationId: 'conversation-1',
       source: 'plugin',
       userId: 'user-1',
@@ -1530,7 +1530,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(resumedRunner.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
+    expect(resumedRunner.getSubagent('builtin.memory', 'subagent-session-1')).toMatchObject({
       status: 'completed',
       writeBackError: 'Conversation not found: conversation-1',
       writeBackStatus: 'failed',
@@ -1550,8 +1550,8 @@ describe('RuntimeHostSubagentRunnerService', () => {
     );
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'builtin.memory',
+        name: 'Memory',
         runtime: 'local',
       },
       manifest: {
@@ -1581,7 +1581,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       new RuntimeHostSubagentSessionStoreService(),
       new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
     );
-    await originalRunner.startSubagent('builtin.memory-context', 'Memory Context', {
+    await originalRunner.startSubagent('builtin.memory', 'Memory', {
       conversationId: originalConversationId,
       source: 'plugin',
       userId: 'user-1',
@@ -1646,7 +1646,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(resumedRunner.getSubagent('builtin.memory-context', 'subagent-session-1')).toMatchObject({
+    expect(resumedRunner.getSubagent('builtin.memory', 'subagent-session-1')).toMatchObject({
       status: 'completed',
       writeBackError: `Conversation revision changed: ${originalConversationId}`,
       writeBackStatus: 'failed',

@@ -1,18 +1,23 @@
 import {
   asChatBeforeModelPayload,
   clipContextText,
+  createMemoryRecallToolResult,
+  createMemorySaveToolResult,
   createPassHookResult,
   MEMORY_CONTEXT_CONFIG_SCHEMA,
   MEMORY_CONTEXT_DEFAULT_LIMIT,
   MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
   readLatestUserTextFromMessages,
+  readMemorySaveResultId,
   readMemorySearchResults,
+  readOptionalStringParam,
   readPromptBlockConfig,
+  readRequiredStringParam,
   resolvePromptBlockConfig,
 } from '@garlic-claw/plugin-sdk/authoring';
-import type { BuiltinPluginDefinition } from '../builtin-plugin-definition';
+import type { BuiltinPluginDefinition } from './builtin-plugin-definition';
 
-export const BUILTIN_MEMORY_CONTEXT_PLUGIN: BuiltinPluginDefinition = {
+export const BUILTIN_MEMORY_PLUGIN: BuiltinPluginDefinition = {
   governance: {
     builtinRole: 'system-optional',
     canDisable: true,
@@ -20,18 +25,49 @@ export const BUILTIN_MEMORY_CONTEXT_PLUGIN: BuiltinPluginDefinition = {
   },
   manifest: {
     config: MEMORY_CONTEXT_CONFIG_SCHEMA,
-    description: '在模型调用前检索并注入用户长期记忆摘要的本地插件。',
+    description: '提供长期记忆写入、检索，并在模型调用前自动注入相关记忆摘要。',
     hooks: [
       {
         description: '在模型调用前补入用户长期记忆摘要',
         name: 'chat:before-model',
       },
     ],
-    id: 'builtin.memory-context',
-    name: '记忆上下文',
-    permissions: ['config:read', 'memory:read'],
+    id: 'builtin.memory',
+    name: '记忆',
+    permissions: ['config:read', 'memory:read', 'memory:write'],
     runtime: 'local',
-    tools: [],
+    tools: [
+      {
+        description: '将重要信息保存到长期记忆中',
+        name: 'save_memory',
+        parameters: {
+          category: {
+            description: '记忆类别',
+            type: 'string',
+          },
+          content: {
+            description: '要记住的信息',
+            required: true,
+            type: 'string',
+          },
+          keywords: {
+            description: '逗号分隔的关键词',
+            type: 'string',
+          },
+        },
+      },
+      {
+        description: '搜索用户长期记忆',
+        name: 'search_memory',
+        parameters: {
+          query: {
+            description: '搜索查询',
+            required: true,
+            type: 'string',
+          },
+        },
+      },
+    ],
     version: '1.0.0',
   },
   hooks: {
@@ -61,6 +97,28 @@ export const BUILTIN_MEMORY_CONTEXT_PLUGIN: BuiltinPluginDefinition = {
       const messages = insertMemoryContextMessage(hookPayload.request.messages, promptBlock);
       return messages ? { action: 'mutate', messages } : createPassHookResult();
     },
+  },
+  tools: {
+    save_memory: async (params, context) => (
+      createMemorySaveToolResult(
+        readMemorySaveResultId(
+          await context.host.saveMemory({
+            ...(readOptionalStringParam(params, 'category') ? { category: readOptionalStringParam(params, 'category') ?? undefined } : {}),
+            content: readRequiredStringParam(params, 'content'),
+            ...(readOptionalStringParam(params, 'keywords') ? { keywords: readOptionalStringParam(params, 'keywords') ?? undefined } : {}),
+          }),
+        ),
+      )
+    ),
+    search_memory: async (params, context) => (
+      createMemoryRecallToolResult(
+        readMemorySearchResults(
+          await context.host.searchMemories(
+            readRequiredStringParam(params, 'query'),
+          ),
+        ),
+      )
+    ),
   },
 };
 

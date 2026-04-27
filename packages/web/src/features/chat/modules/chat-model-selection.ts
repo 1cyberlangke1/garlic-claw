@@ -1,6 +1,11 @@
 import type { Ref } from 'vue'
-import { listAiModels, listAiProviders } from '@/features/ai-settings/api/ai'
+import {
+  getAiDefaultSelection,
+  listAiModels,
+  listAiProviders,
+} from '@/features/ai-settings/api/ai'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
+import type { AiDefaultProviderSelection } from '@garlic-claw/shared'
 
 interface ConversationProviderSummary {
   id: string
@@ -74,6 +79,14 @@ export async function resolveChatModelSelection(preferred: {
     }
   }
 
+  const defaultSelection = await readDefaultSelectionSafely()
+  const resolvedDefaultSelection = defaultSelection
+    ? await resolveProviderSelection(providers, defaultSelection)
+    : null
+  if (resolvedDefaultSelection) {
+    return resolvedDefaultSelection
+  }
+
   for (const provider of providers) {
     if (provider.defaultModel) {
       return {
@@ -114,11 +127,43 @@ async function findProvidersByModelId(
   )
 }
 
+async function resolveProviderSelection(
+  providers: ConversationProviderSummary[],
+  selection: Pick<AiDefaultProviderSelection, 'providerId' | 'modelId'>,
+): Promise<{ providerId: string; modelId: string } | null> {
+  if (!selection.providerId || !selection.modelId) {
+    return null
+  }
+
+  const provider = providers.find((entry) => entry.id === selection.providerId)
+  if (!provider) {
+    return null
+  }
+
+  const models = await listProviderModelsSafely(provider.id)
+  if (!models.some((model) => model.id === selection.modelId)) {
+    return null
+  }
+
+  return {
+    providerId: provider.id,
+    modelId: selection.modelId,
+  }
+}
+
 async function listAvailableProvidersSafely(): Promise<ConversationProviderSummary[]> {
   try {
     return (await listAiProviders()).filter((provider) => provider.available)
   } catch {
     return []
+  }
+}
+
+async function readDefaultSelectionSafely(): Promise<AiDefaultProviderSelection | null> {
+  try {
+    return await getAiDefaultSelection()
+  } catch {
+    return null
   }
 }
 

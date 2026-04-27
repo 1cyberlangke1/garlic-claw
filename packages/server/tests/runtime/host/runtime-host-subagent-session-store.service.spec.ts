@@ -27,17 +27,17 @@ describe('RuntimeHostSubagentSessionStoreService', () => {
         userId: 'user-1',
       },
       messages: [{ content: 'first task', role: 'user' }],
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
     });
 
     expect(store.countConversationSessions('conversation-1')).toBe(1);
-    expect(store.removeSession('builtin.memory-context', session.id)).toBe(true);
+    expect(store.removeSession('builtin.memory', session.id)).toBe(true);
     expect(store.countConversationSessions('conversation-1')).toBe(0);
-    expect(() => store.getSession('builtin.memory-context', session.id)).toThrow(
+    expect(() => store.getSession('builtin.memory', session.id)).toThrow(
       `Subagent session not found: ${session.id}`,
     );
 
-    const appended = store.appendAssistantMessage('builtin.memory-context', session.id, {
+    const appended = store.appendAssistantMessage('builtin.memory', session.id, {
       message: {
         content: 'done',
         role: 'assistant',
@@ -54,6 +54,6 @@ describe('RuntimeHostSubagentSessionStoreService', () => {
       { content: 'first task', role: 'user' },
       { content: 'done', role: 'assistant' },
     ]);
-    expect(store.readStoredSession('builtin.memory-context', session.id).messages).toHaveLength(2);
+    expect(store.readStoredSession('builtin.memory', session.id).messages).toHaveLength(2);
   });
 });

@@ -1,4 +1,5 @@
 import {
+  type AiDefaultProviderSelection,
   type AiModelConfig,
   type DiscoveredAiModel,
   type AiProviderSummary,
@@ -25,7 +26,7 @@ export class AiManagementService {
 
   listProviders() { return this.aiProviderSettingsService.listProviders(); }
 
-  getDefaultProviderSelection(): { modelId: string | null; providerId: string | null; source: 'default' } {
+  getDefaultProviderSelection(): AiDefaultProviderSelection {
     const provider = this.aiProviderSettingsService.readPreferredProvider();
     const modelId = provider?.defaultModel ?? provider?.models[0] ?? null;
     return !provider || !modelId ? { modelId: null, providerId: null, source: 'default' } : { modelId, providerId: provider.id, source: 'default' };

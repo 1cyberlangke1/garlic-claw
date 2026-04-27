@@ -111,12 +111,12 @@ describe('AutomationService', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           params: { content: '自动化保存的记忆' },
         },
       ],
-      name: '记忆工具自动化',
+      name: '记忆自动化',
       trigger: { type: 'manual' },
     });
 
@@ -125,14 +125,14 @@ describe('AutomationService', () => {
       results: [
         {
           action: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           result: { saved: true, id: 'memory-1' },
         },
       ],
     });
     expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
-      pluginId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '自动化保存的记忆' },
       context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
@@ -151,7 +151,7 @@ describe('AutomationService', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           params: { content: '自动化保存失败' },
         },
@@ -206,7 +206,7 @@ describe('AutomationService', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           params: { content: '失败后仍需 after-run' },
         },
@@ -264,7 +264,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create('user-1', {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '原始内容' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '原始内容' } }],
       name: '自动化短路',
       trigger: { type: 'manual' },
     });
@@ -302,7 +302,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create('user-1', {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '原始结果' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '原始结果' } }],
       name: 'after-run 改写',
       trigger: { type: 'manual' },
     });
@@ -325,7 +325,7 @@ describe('AutomationService', () => {
             {
               capability: 'save_memory',
               params: { content: '原始结果' },
-              plugin: 'builtin.memory-tools',
+              plugin: 'builtin.memory',
               type: 'device_command',
             },
           ],
@@ -338,7 +338,7 @@ describe('AutomationService', () => {
           {
             action: 'device_command',
             capability: 'save_memory',
-            plugin: 'builtin.memory-tools',
+            plugin: 'builtin.memory',
             result: { saved: true },
           },
         ],
@@ -502,7 +502,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create('user-1', {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '定时执行' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '定时执行' } }],
       name: '定时自动化',
       trigger: { type: 'cron', cron: '10s' },
     });
@@ -510,7 +510,7 @@ describe('AutomationService', () => {
     await jest.advanceTimersByTimeAsync(10000);
 
     expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
-      pluginId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '定时执行' },
       context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
@@ -552,7 +552,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create(SINGLE_USER_ID, {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '恢复执行' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '恢复执行' } }],
       name: '定时自动化',
       trigger: { type: 'cron', cron: '10s' },
     });
@@ -569,7 +569,7 @@ describe('AutomationService', () => {
     await jest.advanceTimersByTimeAsync(10000);
 
     expect(reloadedKernel.executeTool).toHaveBeenCalledWith({
-      pluginId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '恢复执行' },
       context: { source: 'automation', userId: SINGLE_USER_ID, automationId: 'automation-1' },

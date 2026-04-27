@@ -430,12 +430,12 @@ describe('PluginSidebar', () => {
           }),
           createPlugin({
             id: 'plugin-2',
-            name: 'builtin.memory-tools',
+            name: 'builtin.memory',
             displayName: 'Memory Tools',
             description: 'user-facing builtin',
             runtimeKind: 'local',
             manifest: {
-              id: 'builtin.memory-tools',
+              id: 'builtin.memory',
               name: 'Memory Tools',
               version: '1.0.0',
               runtime: 'local',

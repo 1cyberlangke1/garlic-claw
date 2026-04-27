@@ -73,13 +73,13 @@ describe('PluginScopeEditor', () => {
         saving: false,
         plugin: {
           id: 'plugin-1',
-          name: 'builtin.memory-tools',
+          name: 'builtin.memory',
           status: 'online',
           connected: true,
           defaultEnabled: true,
           manifest: {
-            id: 'builtin.memory-tools',
-            name: 'builtin.memory-tools',
+            id: 'builtin.memory',
+            name: 'builtin.memory',
             version: '1.0.0',
             runtime: 'local',
             permissions: ['memory:read'],
