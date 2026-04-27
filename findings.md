@@ -1,5 +1,26 @@
 # Findings
 
+## 2026-04-27 CRUD 覆盖补齐
+
+- `AiController` 当前已覆盖：
+  - `listProviderCatalog`
+  - `listProviders / getProvider / deleteProvider`
+  - `discoverModels / testConnection`
+  - `listModels / upsertModel / setDefaultModel / deleteModel`
+  - `updateModelCapabilities`
+  - `get/update` vision-fallback / host-model-routing / runtime-tools / subagent-config / context-governance-config
+- `http-smoke.mjs` 当前已补的删后校验：
+  - `ai.model.delete` -> `ai.model.list.after-delete`
+  - `ai.provider.delete` -> `ai.provider.get.after-delete` / `ai.providers.list.after-delete`
+  - `plugins.storage.delete` -> `plugins.storage.list.after-delete`
+  - `plugins.crons.delete.success` -> `plugins.crons.list.after-delete`
+  - `plugins.sessions.delete.success` -> `plugins.sessions.list.after-delete`
+  - `plugins.remote.delete` -> `plugins.list.after-remote-delete`
+  - `chat.conversation.delete` -> detail 404 / list 不可见
+- `/compact` smoke 结论：
+  - 通用命令 smoke 只应校验 display message 不进入模型上下文
+  - 是否触发摘要模型请求必须放在 `compact-with-summary` 专用步骤里单独断言
+
 ## 2026-04-27 LLM 覆盖矩阵与 smoke 复用收口
 
 - 当前真实可用 provider 能力：

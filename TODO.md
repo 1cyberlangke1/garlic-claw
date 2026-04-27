@@ -7,10 +7,25 @@
   - `testConnection` 已改为真实联网
   - `smoke:server:real` 已支持按 provider 执行
   - `nvidia` 与修正后的 `ds2api` 真实 smoke 已可通过
+- CRUD 覆盖已补齐：
+  - `AiController` 的 provider/model/config 相关 HTTP 方法已补齐缺失单测
+  - `http-smoke.mjs` 的既有删除链路已补删后 404 / 列表不可见校验
+  - `/compact` fake smoke 已改为稳定断言，专用 summary 冒烟仍单独校验模型请求
+
+## 已完成阶段摘要
+
+- `P1 ~ P5` 已完成：
+  - 所有调用 LLM 的核心 owner 已完成覆盖矩阵核对
+  - fake/real smoke 已复用同一套步骤编排
+  - 测试产物自动清理已补齐
+  - fresh 验收与独立 judge 已通过
 
 ## 当前边界
 
-- 本轮只处理“所有调用 LLM 的路径覆盖、fake/real smoke 复用、测试产物自动清理”。
+- 本轮只处理“CRUD 覆盖补齐”，不扩新功能。
+- 当前 CRUD 覆盖范围限定为：
+  - `AiController` 的 provider/model/config 相关 HTTP 方法
+  - `http-smoke.mjs` 已存在资源链路的“删后不可读/不可见”校验
 - 必须覆盖的 LLM owner：
   - `AiManagementService`
   - `ConversationMessagePlanningService`
@@ -23,20 +38,3 @@
 - 禁止 `any`。
 - fake LLM 与 real LLM 的 smoke 路径必须复用同一套步骤编排，不能平行复制控制流。
 - 测试创建的会话、provider、临时配置、临时目录、子代理记录必须自动清理。
-
-## 当前阶段
-
-- `[已完成] P1 覆盖矩阵`
-  - `AiManagementService / ContextGovernanceService / AiVisionService / RuntimeHostService / RuntimeHostSubagentRunnerService / ConversationMessagePlanningService` 已补齐归属核对
-  - 真实图片 provider 仍缺，因此 `AiVisionService` 保持 fake 覆盖
-- `[已完成] P2 smoke 复用收口`
-  - fake/real 已共用 provider 选择、连接测试、会话创建、文本对话、会话删除、上下文压缩步骤
-  - `http-smoke.mjs` 的临时目录、会话与配置清理继续统一走 `finally`
-- `[已完成] P3 覆盖补齐`
-  - fake：已补齐 `context-compaction / runtime-host llm.generate-text / runtime-host llm.generate / subagent / vision fallback`
-  - real：已补齐 `testConnection / chat / title / context-compaction`
-- `[已完成] P4 fresh 验收`
-  - `packages/server` 相关 Jest、root `smoke:server`、`nvidia` / `ds2api` 真实 smoke、`typecheck:server`、`lint` 已 fresh 通过
-- `[已完成] P5 judge 复核`
-  - 独立 judge 已给 `PASS`
-  - fake/real smoke 复用、LLM owner 覆盖、自动清理三项已复核通过

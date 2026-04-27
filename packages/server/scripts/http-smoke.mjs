@@ -143,9 +143,11 @@ async function main() {
     aiSettingsPath: path.join(tempDir, 'config', 'ai'),
     automationsPath: path.join(tempDir, 'automations.server.json'),
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
+    contextGovernanceConfigPath: path.join(tempDir, 'config', 'context-governance.json'),
     mcpConfigPath: path.join(tempDir, 'config', 'mcp', 'servers'),
     personasPath: path.join(tempDir, 'config', 'personas'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
+    runtimeToolsConfigPath: path.join(tempDir, 'config', 'runtime-tools.json'),
     runtimeWorkspacesPath: path.join(tempDir, 'runtime-workspaces'),
     skillGovernancePath: path.join(tempDir, 'config', 'skills', 'governance.json'),
     subagentPath: path.join(tempDir, 'config', 'subagent'),
@@ -420,6 +422,21 @@ async function runSmokeConversationDelete(apiBase, state, input) {
   });
 }
 
+async function runSmokeConversationDeleteVerification(apiBase, state, input) {
+  await runStep(input.detailStepName, async () => {
+    await getJson(apiBase, `/chat/conversations/${state.conversationId}`, {
+      expectedStatus: 404,
+      headers: input.headers(),
+    });
+  });
+  await runStep(input.listStepName, async () => {
+    const conversations = await getJson(apiBase, '/chat/conversations', {
+      headers: input.headers(),
+    });
+    ensure(Array.isArray(conversations) && !conversations.some((entry) => entry.id === state.conversationId), 'Expected deleted conversation to disappear from list');
+  });
+}
+
 async function runContextCompactionModelSmoke(apiBase, state, input) {
   await runStep(input.configStepName, async () => {
     const config = await putJson(apiBase, '/ai/context-governance-config', {
@@ -529,6 +546,11 @@ async function runRealProviderHttpFlow(apiBase, state, input) {
   await runSmokeConversationDelete(apiBase, state, {
     headers: userHeaders,
     stepName: 'chat.conversation.delete.real',
+  });
+  await runSmokeConversationDeleteVerification(apiBase, state, {
+    detailStepName: 'chat.conversation.get.after-delete.real',
+    headers: userHeaders,
+    listStepName: 'chat.conversation.list.after-delete.real',
   });
 }
 
@@ -1003,8 +1025,6 @@ async function runHttpFlow(apiBase, state, input) {
 
   await runStep('chat.messages.command.no-model', async () => {
     const requests = input.fakeOpenAi.readChatCompletions();
-    ensure(requests.length > 0, 'Expected slash command to trigger context compaction summary request');
-    ensure(requests.some((entry) => containsText(entry.body?.messages ?? [], '历史对话：')), 'Expected slash command to trigger a context compaction summary model request');
     ensure(requests.every((entry) => !containsText(entry.body?.messages ?? [], '/compact')), 'Expected slash command display messages to stay out of model context');
   });
 
@@ -2183,6 +2203,11 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(deleted === true, 'Expected plugin storage deletion to succeed');
   });
 
+  await runStep('plugins.storage.list.after-delete', async () => {
+    const entries = await getJson(apiBase, `/plugins/${state.remotePluginId}/storage?prefix=smoke/`);
+    ensure(!entries.some((entry) => entry.key === 'smoke/runtime'), 'Expected plugin storage list to exclude deleted key');
+  });
+
   await runStep('plugins.remote.metadata.cached.initial', async () => {
     const plugins = await getJson(apiBase, '/plugins');
     const plugin = plugins.find((entry) => entry.name === state.remotePluginId);
@@ -2364,6 +2389,11 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(deleted === true, 'Expected deleting created plugin cron to succeed');
   });
 
+  await runStep('plugins.crons.list.after-delete', async () => {
+    const crons = await getJson(apiBase, `/plugins/${state.remotePluginId}/crons`);
+    ensure(!crons.some((entry) => entry.id === state.remotePluginCronId), 'Expected plugin cron list to exclude deleted cron');
+  });
+
   await runStep('plugins.host.session.create', async () => {
     const result = await postJson(apiBase, `/plugin-routes/${state.remotePluginId}/host/ops`, {
       body: {
@@ -2383,6 +2413,11 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('plugins.sessions.delete.success', async () => {
     const deleted = await deleteJson(apiBase, `/plugins/${state.remotePluginId}/sessions/${state.conversationId}`);
     ensure(deleted === true, 'Expected deleting created plugin session to succeed');
+  });
+
+  await runStep('plugins.sessions.list.after-delete', async () => {
+    const sessions = await getJson(apiBase, `/plugins/${state.remotePluginId}/sessions`);
+    ensure(!sessions.some((entry) => entry.conversationId === state.conversationId), 'Expected plugin session list to exclude deleted session');
   });
 
   await runStep('plugins.remote.action.refresh-metadata', async () => {
@@ -2429,6 +2464,11 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('plugins.remote.delete', async () => {
     const deleted = await deleteJson(apiBase, `/plugins/${state.remotePluginId}`);
     ensure(deleted.pluginId === state.remotePluginId, 'Expected remote plugin deletion to succeed');
+  });
+
+  await runStep('plugins.list.after-remote-delete', async () => {
+    const plugins = await getJson(apiBase, '/plugins');
+    ensure(!plugins.some((entry) => entry.pluginId === state.remotePluginId), 'Expected plugin list to exclude deleted remote plugin');
   });
 
   await runStep('tools.overview', async () => {
@@ -2708,9 +2748,20 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(result.success === true, 'Expected model delete response');
   });
 
+  await runStep('ai.model.list.after-delete', async () => {
+    const models = await getJson(apiBase, `/ai/providers/${state.providerId}/models`);
+    ensure(!models.some((entry) => entry.id === 'smoke-extra'), 'Expected model list to exclude deleted model');
+  });
+
   await runSmokeConversationDelete(apiBase, state, {
     headers: userHeaders,
     stepName: 'chat.conversation.delete',
+  });
+
+  await runSmokeConversationDeleteVerification(apiBase, state, {
+    detailStepName: 'chat.conversation.get.after-delete',
+    headers: userHeaders,
+    listStepName: 'chat.conversation.list.after-delete',
   });
 
   await runStep('chat.conversation.delete.workspace', async () => {
@@ -2720,6 +2771,17 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('ai.provider.delete', async () => {
     const result = await deleteJson(apiBase, `/ai/providers/${state.providerId}`);
     ensure(result.success === true, 'Expected provider delete response');
+  });
+
+  await runStep('ai.provider.get.after-delete', async () => {
+    await getJson(apiBase, `/ai/providers/${state.providerId}`, {
+      expectedStatus: 404,
+    });
+  });
+
+  await runStep('ai.providers.list.after-delete', async () => {
+    const providers = await getJson(apiBase, '/ai/providers');
+    ensure(!providers.some((entry) => entry.id === state.providerId), 'Expected provider list to exclude deleted provider');
   });
 }
 
@@ -3015,6 +3077,7 @@ async function startBackend(port, wsPort, databaseUrl, files, options = {}) {
       ...process.env,
       DATABASE_URL: databaseUrl,
       GARLIC_CLAW_AI_SETTINGS_PATH: files.aiSettingsPath,
+      GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH: files.contextGovernanceConfigPath,
       GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
       GARLIC_CLAW_AUTOMATIONS_PATH: files.automationsPath,
       GARLIC_CLAW_CONVERSATIONS_PATH: files.conversationsPath,
@@ -3022,6 +3085,7 @@ async function startBackend(port, wsPort, databaseUrl, files, options = {}) {
       GARLIC_CLAW_PERSONAS_PATH: files.personasPath,
       GARLIC_CLAW_PLUGIN_STATE_PATH: files.pluginStatePath,
       GARLIC_CLAW_RUNTIME_APPROVAL_MODE: options.runtimeApprovalMode ?? 'review',
+      GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH: files.runtimeToolsConfigPath,
       GARLIC_CLAW_RUNTIME_WORKSPACES_PATH: files.runtimeWorkspacesPath,
       GARLIC_CLAW_SKILL_GOVERNANCE_PATH: files.skillGovernancePath,
       GARLIC_CLAW_SUBAGENT_PATH: files.subagentPath,

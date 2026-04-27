@@ -52,6 +52,15 @@ describe('AiController', () => {
     expect(controller.listProviderCatalog()).toEqual([{ id: 'openai' }]);
   });
 
+  it('reads provider list and provider detail through the management owner', () => {
+    aiManagementService.listProviders.mockReturnValue([{ id: 'openai-main' }]);
+    aiManagementService.getProvider.mockReturnValue({ id: 'openai-main', models: ['gpt-4o-mini'] });
+
+    expect(controller.listProviders()).toEqual([{ id: 'openai-main' }]);
+    expect(controller.getProvider('openai-main')).toEqual({ id: 'openai-main', models: ['gpt-4o-mini'] });
+    expect(aiManagementService.getProvider).toHaveBeenCalledWith('openai-main');
+  });
+
   it('forwards provider upsert requests to the management service', () => {
     const dto = {
       mode: 'catalog',
@@ -62,6 +71,40 @@ describe('AiController', () => {
 
     controller.upsertProvider('openai-main', dto);
     expect(aiManagementService.upsertProvider).toHaveBeenCalledWith('openai-main', dto);
+  });
+
+  it('forwards provider delete requests to the management service and returns success payload', () => {
+    expect(controller.deleteProvider('openai-main')).toEqual({ success: true });
+    expect(aiManagementService.deleteProvider).toHaveBeenCalledWith('openai-main');
+  });
+
+  it('reads provider models through the management owner', () => {
+    aiManagementService.listModels.mockReturnValue([{ id: 'gpt-4o-mini' }]);
+
+    expect(controller.listModels('openai-main')).toEqual([{ id: 'gpt-4o-mini' }]);
+    expect(aiManagementService.listModels).toHaveBeenCalledWith('openai-main');
+  });
+
+  it('forwards model upsert and default-model updates to the management service', () => {
+    const modelDto = {
+      contextLength: 65_536,
+      name: 'Smoke Extra',
+    };
+    const defaultDto = {
+      modelId: 'gpt-4o-mini',
+    };
+    aiManagementService.upsertModel.mockReturnValue({ id: 'smoke-extra' });
+    aiManagementService.setDefaultModel.mockReturnValue({ defaultModel: 'gpt-4o-mini', id: 'openai-main' });
+
+    expect(controller.upsertModel('openai-main', 'smoke-extra', modelDto)).toEqual({ id: 'smoke-extra' });
+    expect(controller.setDefaultModel('openai-main', defaultDto)).toEqual({ defaultModel: 'gpt-4o-mini', id: 'openai-main' });
+    expect(aiManagementService.upsertModel).toHaveBeenCalledWith('openai-main', 'smoke-extra', modelDto);
+    expect(aiManagementService.setDefaultModel).toHaveBeenCalledWith('openai-main', 'gpt-4o-mini');
+  });
+
+  it('forwards model delete requests to the management service and returns success payload', () => {
+    expect(controller.deleteModel('openai-main', 'smoke-extra')).toEqual({ success: true });
+    expect(aiManagementService.deleteModel).toHaveBeenCalledWith('openai-main', 'smoke-extra');
   });
 
   it('forwards model capability updates to the management service', () => {

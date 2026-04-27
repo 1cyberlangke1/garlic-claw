@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-27 CRUD 覆盖补齐
+
+- 已完成当前 CRUD 覆盖收口：
+  - `AiController` 已补齐 provider/model/config 缺失 CRUD 单测
+  - `http-smoke.mjs` 已给既有删除链路补删后不可读/不可见校验
+  - `/compact` fake smoke 已删除不稳定的“必须触发摘要模型请求”硬断言，专用 summary smoke 继续单独验模型请求
+- 本轮 fresh 验收已通过：
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/adapters/http/ai/ai.controller.spec.ts`
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=nvidia npm run smoke:server:real`
+  - `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=ds2api npm run smoke:server:real`
+  - `npm run typecheck:server`
+  - `npm run lint`
+- 独立 judge：
+  - `PASS`
+  - 已确认本轮未引入 fake/real 平行复制控制流，也未出现假成功验收
+
 ## 2026-04-27 LLM 覆盖矩阵与 smoke 复用收口
 
 - 已把 `TODO.md / task_plan.md` 切换到当前任务：

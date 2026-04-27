@@ -32,3 +32,29 @@
 - 步骤 4 已完成
 - 步骤 5 已完成
 - 步骤 6 已完成
+
+## 2026-04-27 CRUD 覆盖补齐
+
+1. 更新计划文件
+  - 压缩上一轮已完成阶段
+  - 切到当前“CRUD 覆盖补齐”任务
+2. 盘点缺口
+  - 查 `AiController` 未覆盖的方法
+  - 查 smoke 中删除后缺失的读回/列表校验
+3. 补测试
+  - 增补 `AiController` 的 provider/model/config CRUD 单测
+  - 增补 smoke 的删后不可见断言
+4. fresh 验收
+  - 相关 Jest
+  - `npm run smoke:server`
+  - 必要时补跑真实 smoke
+5. judge
+  - 独立检查 CRUD 覆盖是否补齐，且未破坏既有 LLM 覆盖
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+- 步骤 4 已完成
+- 步骤 5 已完成
