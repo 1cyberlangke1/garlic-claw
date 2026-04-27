@@ -58,4 +58,53 @@ describe('RuntimeHostSubagentStoreService', () => {
       status: 'completed',
     });
   });
+
+  it('includes inline and background sessions in overview projections', () => {
+    const store = new RuntimeHostSubagentStoreService();
+    store.createSubagent({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      pluginDisplayName: 'Subagent',
+      pluginId: 'subagent',
+      request: {
+        messages: [{ content: 'sync summary', role: 'user' }],
+      },
+      requestPreview: 'sync summary',
+      sessionId: 'subagent-session-inline',
+      sessionMessageCount: 1,
+      sessionUpdatedAt: '2026-04-25T00:00:00.000Z',
+      visibility: 'inline',
+      writeBackTarget: null,
+    });
+    store.createSubagent({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      pluginDisplayName: 'Subagent',
+      pluginId: 'subagent',
+      request: {
+        messages: [{ content: 'background summary', role: 'user' }],
+      },
+      requestPreview: 'background summary',
+      sessionId: 'subagent-session-background',
+      sessionMessageCount: 1,
+      sessionUpdatedAt: '2026-04-25T00:01:00.000Z',
+      visibility: 'background',
+      writeBackTarget: null,
+    });
+
+    expect(store.listOverview().subagents).toEqual([
+      expect.objectContaining({ sessionId: 'subagent-session-background', visibility: 'background' }),
+      expect.objectContaining({ sessionId: 'subagent-session-inline', visibility: 'inline' }),
+    ]);
+    expect(store.listSubagents('subagent')).toEqual([
+      expect.objectContaining({ sessionId: 'subagent-session-inline', visibility: 'inline' }),
+      expect.objectContaining({ sessionId: 'subagent-session-background', visibility: 'background' }),
+    ]);
+  });
 });

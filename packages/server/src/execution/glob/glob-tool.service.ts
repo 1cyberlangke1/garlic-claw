@@ -41,13 +41,17 @@ export class GlobToolService {
   }
 
   async execute(input: GlobToolInput): Promise<GlobToolResult> {
-    const result = await this.runtimeFilesystemBackendService.globPaths(input.sessionId, { maxResults: MAX_GLOB_RESULTS, pattern: input.pattern, ...(input.path ? { path: input.path } : {}) }, input.backendKind);
-    const overlay = await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({ basePath: result.basePath, matches: result.matches, sessionId: input.sessionId }) ?? [];
-    return {
-      count: result.totalMatches,
-      output: ['<glob_result>', `Base: ${result.basePath}`, ...overlay, `Pattern: ${input.pattern}`, '<matches>', ...(result.matches.length > 0 ? result.matches : ['(no matches)']), result.truncated ? renderRuntimeSearchTruncationSummary({ continuationHint: 'Refine path or pattern to continue.', shown: result.matches.length, total: result.totalMatches }) : renderRuntimeSearchTotalSummary({ emptyHint: renderRuntimeSearchEmptyHint(), followUpHint: result.totalMatches > 0 ? renderRuntimeSearchReadFollowUpHint('glob') : undefined, total: result.totalMatches }), renderRuntimeSearchSuggestedReadHint(result.matches), ...renderRuntimeGlobSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths), '</matches>', '</glob_result>'].filter((entry): entry is string => Boolean(entry)).join('\n'),
-      truncated: result.truncated,
-    };
+    try {
+      const result = await this.runtimeFilesystemBackendService.globPaths(input.sessionId, { maxResults: MAX_GLOB_RESULTS, pattern: input.pattern, ...(input.path ? { path: input.path } : {}) }, input.backendKind);
+      const overlay = await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({ basePath: result.basePath, matches: result.matches, sessionId: input.sessionId }) ?? [];
+      return {
+        count: result.totalMatches,
+        output: ['<glob_result>', `Base: ${result.basePath}`, ...overlay, `Pattern: ${input.pattern}`, '<matches>', ...(result.matches.length > 0 ? result.matches : ['(no matches)']), result.truncated ? renderRuntimeSearchTruncationSummary({ continuationHint: 'Refine path or pattern to continue.', shown: result.matches.length, total: result.totalMatches }) : renderRuntimeSearchTotalSummary({ emptyHint: renderRuntimeSearchEmptyHint(), followUpHint: result.totalMatches > 0 ? renderRuntimeSearchReadFollowUpHint('glob') : undefined, total: result.totalMatches }), renderRuntimeSearchSuggestedReadHint(result.matches), ...renderRuntimeGlobSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths), '</matches>', '</glob_result>'].filter((entry): entry is string => Boolean(entry)).join('\n'),
+        truncated: result.truncated,
+      };
+    } finally {
+      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(input.sessionId);
+    }
   }
 
   readRuntimeAccess(input: GlobToolInput): RuntimeToolAccessRequest {

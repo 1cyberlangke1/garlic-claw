@@ -29,6 +29,7 @@ import { ProjectWorktreeOverlayModule } from './execution/project/project-worktr
 import { PluginModule } from './plugin/plugin.module';
 import { RuntimeHostModule } from './runtime/host/runtime-host.module';
 import { RuntimeKernelModule } from './runtime/kernel/runtime-kernel.module';
+import { ServerWorkspaceLifecycleService } from './runtime/server-workspace-lifecycle.service';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { RuntimeKernelModule } from './runtime/kernel/runtime-kernel.module';
     ConversationTaskService,
     JwtAuthGuard,
     RequestAuthService,
+    ServerWorkspaceLifecycleService,
   ],
 })
 export class AppModule {}

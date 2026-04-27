@@ -28,7 +28,13 @@ export class BashToolService {
 
   getToolName(): string { return 'bash'; }
   getToolParameters(): Record<string, PluginParamSchema> { return BASH_TOOL_PARAMETERS; }
-  async execute(input: BashToolInput): Promise<RuntimeCommandResult> { return this.runtimeCommandService.executeCommand(input); }
+  async execute(input: BashToolInput): Promise<RuntimeCommandResult> {
+    try {
+      return await this.runtimeCommandService.executeCommand(input);
+    } finally {
+      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(input.sessionId);
+    }
+  }
 
   buildToolDescription(): string {
     const backend = this.runtimeToolBackendService.getShellBackendDescriptor(), visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot, visibleRootDescription = visibleRoot === '/' ? '同一 session 下写入 backend 当前可见路径的文件，会在后续工具调用中继续可见。' : `同一 session 下写入 ${visibleRoot} 内的文件，会在后续工具调用中继续可见。`;

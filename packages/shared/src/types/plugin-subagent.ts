@@ -26,6 +26,7 @@ export interface PluginSubagentSummary {
   sessionId: string;
   sessionMessageCount: number;
   sessionUpdatedAt: string;
+  visibility: 'background' | 'inline';
   description?: string;
   subagentType?: string;
   subagentTypeName?: string;

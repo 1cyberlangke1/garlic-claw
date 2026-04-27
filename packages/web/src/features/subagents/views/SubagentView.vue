@@ -3,9 +3,9 @@
     <section class="subagent-hero">
       <header class="subagent-hero-header">
         <div>
-          <span class="hero-kicker">Background Subagents</span>
-          <h1>后台 Subagent</h1>
-          <p>统一查看后台子代理、完成态结果、回写状态与当前上下文。</p>
+          <span class="hero-kicker">Subagent Sessions</span>
+          <h1>Subagent</h1>
+          <p>统一查看同步与后台子代理、完成态结果、回写状态与当前上下文。</p>
         </div>
         <div class="subagent-hero-side">
           <button
@@ -19,7 +19,7 @@
           <div class="hero-note">
             <span class="hero-note-label">当前子代理面</span>
             <strong>{{ heroHeadline }}</strong>
-            <p>每个主会话会聚合成一个工作区，支持在 `main / agent*` 之间切换查看。</p>
+          <p>每个主会话会聚合成一个工作区，支持在 `main / agent*` 之间切换查看。</p>
           </div>
         </div>
       </header>
@@ -45,12 +45,12 @@
         <div>
           <span class="panel-kicker">Workspace Windows</span>
           <h2>会话窗口</h2>
-          <p>按主会话聚合后台子代理，并在 `main / agent*` 之间查看上下文。</p>
+          <p>按主会话聚合同步与后台子代理，并在 `main / agent*` 之间查看上下文。</p>
         </div>
       </div>
 
       <div v-if="conversationWorkspaces.length === 0" class="sidebar-state">
-        当前还没有可查看的后台子代理会话。
+        当前还没有可查看的子代理会话。
       </div>
       <template v-else>
         <div class="conversation-rail" data-test="conversation-rail">
@@ -90,7 +90,7 @@
               <article class="workspace-summary-card">
                 <span class="overview-label">当前主会话</span>
                 <strong>{{ activeConversationLabel }}</strong>
-                <p>当前窗口下共有 {{ activeConversationSubagents.length }} 个后台子代理会话。</p>
+                <p>当前窗口下共有 {{ activeConversationSubagents.length }} 个子代理会话。</p>
               </article>
               <article class="workspace-summary-card">
                 <span class="overview-label">运行态</span>
@@ -147,6 +147,11 @@
                   <strong>{{ writeBackLabel(activeSubagentSummary.writeBackStatus) }}</strong>
                   <p>{{ activeSubagentSummary.writeBackError || '当前没有回写异常' }}</p>
                 </article>
+                <article class="detail-card">
+                  <span class="overview-label">可见性</span>
+                  <strong>{{ visibilityLabel(activeSubagentSummary.visibility) }}</strong>
+                  <p>{{ activeSubagentSummary.visibility === 'background' ? '会保留在后台队列与回写链路里。' : '当前由同步 subagent 工具直接返回结果。' }}</p>
+                </article>
               </div>
 
               <article v-if="activeSubagentDetail.request.system" class="detail-section">
@@ -197,7 +202,7 @@
         <div>
           <span class="panel-kicker">Subagent Overview</span>
           <h2>子代理账本</h2>
-          <p>按发起方、模型和状态查看后台子代理，不再让结果只停留在运行时内存里。</p>
+          <p>按发起方、模型和状态查看同步与后台子代理，不再让结果只停留在运行时内存里。</p>
         </div>
         <button
           type="button"
@@ -231,7 +236,7 @@
 
       <div v-if="loading" class="sidebar-state">加载中...</div>
       <div v-else-if="pagedSubagents.length === 0" class="sidebar-state">
-        当前筛选下没有后台子代理。
+        当前筛选下没有子代理。
       </div>
       <div v-else class="subagent-list">
         <article
@@ -269,7 +274,7 @@
               </button>
               <RouterLink
                 class="ghost-button link-button"
-                :to="{ name: 'tools' }"
+                to="/tools"
               >
                 打开工具治理
               </RouterLink>
@@ -278,6 +283,7 @@
 
           <div class="meta-row">
             <span class="meta-chip">{{ subagent.runtimeKind === 'local' ? '本地' : '远程' }}</span>
+            <span class="meta-chip">{{ visibilityLabel(subagent.visibility) }}</span>
             <span v-if="subagent.subagentTypeName || subagent.subagentType" class="meta-chip">
               {{ subagent.subagentTypeName || subagent.subagentType }}
             </span>
@@ -406,7 +412,7 @@ const overviewCards = computed(() => [
   {
     label: '子代理总数',
     value: String(subagentCount.value),
-    note: '后台子代理会被持久化记录，刷新页面也不会丢',
+    note: '同步与后台子代理都会被持久化记录，刷新页面也不会丢',
     tone: 'accent',
   },
   {
@@ -467,6 +473,10 @@ function writeBackLabel(status: 'pending' | 'sent' | 'failed' | 'skipped') {
     default:
       return '未回写'
   }
+}
+
+function visibilityLabel(visibility: 'background' | 'inline') {
+  return visibility === 'background' ? '后台' : '同步'
 }
 
 function formatTime(iso: string) {

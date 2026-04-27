@@ -12,7 +12,7 @@ import { RuntimeHostSubagentStoreService, type RuntimeSubagentRecord } from './r
 
 type ResolvedSubagentType = ReturnType<ProjectSubagentTypeRegistryService['getType']>;
 type RuntimeSubagentRequestEnvelopeSource = Partial<Pick<PluginSubagentRequest, 'description' | 'subagentType' | 'providerId' | 'modelId' | 'system' | 'toolNames' | 'variant' | 'providerOptions' | 'headers' | 'maxOutputTokens'>>;
-interface ResolvedSubagentInvocation { request: PluginSubagentRequest; requestPreview: string; resolvedSubagentType: ResolvedSubagentType; session: RuntimeSubagentSessionRecord; }
+interface ResolvedSubagentInvocation { request: PluginSubagentRequest; requestPreview: string; resolvedSubagentType: ResolvedSubagentType; reusedSession: boolean; session: RuntimeSubagentSessionRecord; }
 interface StoredSubagentExecutionInput { context: PluginCallContext; pluginId: string; request: PluginSubagentRequest; sessionId: string; subagentId: string; writeBackConversationRevision?: string; writeBackTarget: PluginMessageTargetInfo | null; }
 interface SubagentSessionWriteInput { context: PluginCallContext; messages: PluginLlmMessage[]; pluginDisplayName?: string; pluginId: string; request: RuntimeSubagentRequestEnvelopeSource; resolvedSubagentTypeName?: string; session?: RuntimeSubagentSessionRecord | null; subagentId?: string; }
 interface SubagentWriteBackResult { error: string | null; messageId: string | null; status: 'failed' | 'sent' | 'skipped'; }
@@ -73,8 +73,9 @@ export class RuntimeHostSubagentRunnerService {
     visibility: 'background' | 'inline';
     writeBackTarget: PluginMessageTargetInfo | null;
   }): { execution: StoredSubagentExecutionInput; subagent: RuntimeSubagentRecord } {
-    this.assertConversationSubagentCapacity(input.context, input.params);
-    const invocation = this.resolveSubagentInvocation(input.pluginId, input.pluginDisplayName, input.context, input.params);
+    const session = this.readReusableSubagentSession(input.pluginId, input.params);
+    this.assertConversationSubagentCapacity(input.context, input.params, Boolean(session));
+    const invocation = this.resolveSubagentInvocation(input.pluginId, input.pluginDisplayName, input.context, input.params, session);
     const subagent = this.runtimeHostSubagentStoreService.createSubagent({
       ...(input.conversationRevision ? { conversationRevision: input.conversationRevision } : {}),
       context: input.context,
@@ -93,9 +94,9 @@ export class RuntimeHostSubagentRunnerService {
     return { execution: readStoredSubagentExecutionInput(subagent, invocation.session), subagent };
   }
 
-  private assertConversationSubagentCapacity(context: PluginCallContext, params: JsonObject): void {
+  private assertConversationSubagentCapacity(context: PluginCallContext, params: JsonObject, reusedSession: boolean): void {
     const maxConversationSubagents = readPositiveInteger(params, 'maxConversationSubagents');
-    if (!context.conversationId || !maxConversationSubagents || readOptionalString(params, 'sessionId')) { return; }
+    if (!context.conversationId || !maxConversationSubagents || reusedSession) { return; }
     const sessionCount = this.runtimeHostSubagentSessionStoreService.countConversationSessions(context.conversationId);
     if (sessionCount >= maxConversationSubagents) { throw new BadRequestException(`当前会话最多允许 ${maxConversationSubagents} 个 subagent 会话，已达到上限`); }
   }
@@ -144,14 +145,20 @@ export class RuntimeHostSubagentRunnerService {
     }
   }
 
-  private resolveSubagentInvocation(pluginId: string, pluginDisplayName: string | undefined, context: PluginCallContext, params: JsonObject): ResolvedSubagentInvocation {
-    const sessionId = readOptionalString(params, 'sessionId') ?? undefined, session = sessionId ? this.runtimeHostSubagentSessionStoreService.getSession(pluginId, sessionId) : null, nextRequest = readSubagentRequest(params, { allowMissingMessages: Boolean(session) }), request = session ? mergeSubagentRequests(session, nextRequest) : nextRequest, resolved = this.resolveEffectiveSubagentRequest(request);
+  private resolveSubagentInvocation(pluginId: string, pluginDisplayName: string | undefined, context: PluginCallContext, params: JsonObject, session: RuntimeSubagentSessionRecord | null): ResolvedSubagentInvocation {
+    const nextRequest = readSubagentRequest(params, { allowMissingMessages: Boolean(session) }), request = session ? mergeSubagentRequests(session, nextRequest) : nextRequest, resolved = this.resolveEffectiveSubagentRequest(request);
     return {
-      request,
+      request: resolved.request,
       requestPreview: readSubagentRequestPreview(nextRequest),
       resolvedSubagentType: resolved.subagentType,
+      reusedSession: Boolean(session),
       session: this.persistSubagentSession({ context, messages: session ? request.messages : nextRequest.messages, pluginDisplayName, pluginId, request: resolved.request, resolvedSubagentTypeName: resolved.subagentType?.name, session }),
     };
+  }
+
+  private readReusableSubagentSession(pluginId: string, params: JsonObject): RuntimeSubagentSessionRecord | null {
+    const sessionId = readOptionalString(params, 'sessionId');
+    return sessionId ? this.runtimeHostSubagentSessionStoreService.findSession(pluginId, sessionId) : null;
   }
 
   private persistSubagentSession(input: SubagentSessionWriteInput): RuntimeSubagentSessionRecord {
@@ -228,12 +235,14 @@ export class RuntimeHostSubagentRunnerService {
   private resolveEffectiveSubagentRequest(request: PluginSubagentRequest): { subagentType: ResolvedSubagentType; request: PluginSubagentRequest } {
     const nextRequest = cloneJsonValue(request) as PluginSubagentRequest;
     if (!request.subagentType) { return { subagentType: null, request: nextRequest }; }
-    const subagentType = this.projectSubagentTypeRegistryService.getType(request.subagentType);
+    const normalizedSubagentType = normalizeSubagentTypeId(request.subagentType);
+    const subagentType = this.projectSubagentTypeRegistryService.getType(normalizedSubagentType);
     if (!subagentType) { throw new BadRequestException(`Unknown subagent type: ${request.subagentType}`); }
     return {
       subagentType,
       request: {
         ...nextRequest,
+        subagentType: normalizedSubagentType,
         ...(subagentType.providerId && !request.providerId ? { providerId: subagentType.providerId } : {}),
         ...(subagentType.modelId && !request.modelId ? { modelId: subagentType.modelId } : {}),
         ...(subagentType.system && !request.system ? { system: subagentType.system } : {}),
@@ -258,6 +267,11 @@ function readSubagentRequest(params: JsonObject, options?: { allowMissingMessage
     ...(typeof params.maxOutputTokens === 'number' ? { maxOutputTokens: params.maxOutputTokens } : {}),
     messages: hasMessages || !options?.allowMissingMessages ? readPluginLlmMessages(params.messages, 'subagent request requires non-empty messages') : [],
   };
+}
+
+function normalizeSubagentTypeId(subagentType: string): string {
+  const normalized = subagentType.trim();
+  return normalized === 'default' ? 'general' : normalized;
 }
 
 function readSubagentWriteBackTarget(params: JsonObject): PluginMessageTargetInfo | null {

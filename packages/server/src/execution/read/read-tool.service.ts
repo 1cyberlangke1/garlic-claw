@@ -94,48 +94,52 @@ export class ReadToolService {
   }
 
   async execute(input: ReadToolInput): Promise<ReadToolResult> {
-    const result = await this.runtimeFilesystemBackendService.readPathRange(input.sessionId, {
-      limit: input.limit ?? DEFAULT_READ_LIMIT,
-      maxLineLength: MAX_LINE_LENGTH,
-      offset: input.offset ?? 1,
-      path: input.filePath,
-    }, input.backendKind);
-    if (result.type === 'directory') {
-      return { loaded: [], output: renderDirectoryReadOutput(result), path: result.path, truncated: result.truncated, type: 'directory' };
-    }
-    if (result.type === 'image' || result.type === 'pdf' || result.type === 'binary') {
-      return { loaded: [], output: renderAssetReadOutput(result), path: result.path, truncated: false, type: result.type };
-    }
-    if (result.type !== 'file') {
-      throw new BadRequestException(`不支持的 read 结果类型: ${String((result as { type?: unknown }).type)}`);
-    }
-    await this.runtimeFileFreshnessService.rememberRead(input.sessionId, result.path, input.backendKind, {
-      lineCount: result.lines.length,
-      offset: result.offset,
-      totalLines: result.totalLines,
-      truncated: result.truncated,
-    });
-    const pathInstructions = readRuntimeClaimedPathInstructionReminder({
-      assistantMessageId: input.assistantMessageId,
-      claimPaths: this.runtimeFileFreshnessService.claimReadInstructionPaths?.bind(this.runtimeFileFreshnessService),
-      reminder: await readRuntimePathInstructionReminder({
-        backendKind: input.backendKind,
-        path: result.path,
+    try {
+      const result = await this.runtimeFilesystemBackendService.readPathRange(input.sessionId, {
+        limit: input.limit ?? DEFAULT_READ_LIMIT,
+        maxLineLength: MAX_LINE_LENGTH,
+        offset: input.offset ?? 1,
+        path: input.filePath,
+      }, input.backendKind);
+      if (result.type === 'directory') {
+        return { loaded: [], output: renderDirectoryReadOutput(result), path: result.path, truncated: result.truncated, type: 'directory' };
+      }
+      if (result.type === 'image' || result.type === 'pdf' || result.type === 'binary') {
+        return { loaded: [], output: renderAssetReadOutput(result), path: result.path, truncated: false, type: result.type };
+      }
+      if (result.type !== 'file') {
+        throw new BadRequestException(`不支持的 read 结果类型: ${String((result as { type?: unknown }).type)}`);
+      }
+      await this.runtimeFileFreshnessService.rememberRead(input.sessionId, result.path, input.backendKind, {
+        lineCount: result.lines.length,
+        offset: result.offset,
+        totalLines: result.totalLines,
+        truncated: result.truncated,
+      });
+      const pathInstructions = readRuntimeClaimedPathInstructionReminder({
+        assistantMessageId: input.assistantMessageId,
+        claimPaths: this.runtimeFileFreshnessService.claimReadInstructionPaths?.bind(this.runtimeFileFreshnessService),
+        reminder: await readRuntimePathInstructionReminder({
+          backendKind: input.backendKind,
+          path: result.path,
+          sessionId: input.sessionId,
+          visibleRoot: this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot,
+        }, this.runtimeFilesystemBackendService),
         sessionId: input.sessionId,
-        visibleRoot: this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot,
-      }, this.runtimeFilesystemBackendService),
-      sessionId: input.sessionId,
-    });
-    return {
-      loaded: pathInstructions.loadedPaths,
-      output: renderFileReadOutput(result, [
-        ...renderRuntimePathInstructionReminder(pathInstructions.entries),
-        ...this.runtimeFileFreshnessService.buildReadSystemReminder(input.sessionId, { excludePath: result.path, limit: 5 }),
-      ], { maxReadBytesLabel: MAX_READ_BYTES_LABEL }),
-      path: result.path,
-      truncated: result.truncated,
-      type: 'file',
-    };
+      });
+      return {
+        loaded: pathInstructions.loadedPaths,
+        output: renderFileReadOutput(result, [
+          ...renderRuntimePathInstructionReminder(pathInstructions.entries),
+          ...this.runtimeFileFreshnessService.buildReadSystemReminder(input.sessionId, { excludePath: result.path, limit: 5 }),
+        ], { maxReadBytesLabel: MAX_READ_BYTES_LABEL }),
+        path: result.path,
+        truncated: result.truncated,
+        type: 'file',
+      };
+    } finally {
+      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(input.sessionId);
+    }
   }
 
   readRuntimeAccess(input: ReadToolInput): RuntimeToolAccessRequest {

@@ -49,13 +49,17 @@ export class GrepToolService {
   }
 
   async execute(input: GrepToolInput): Promise<GrepToolResult> {
-    const result = await this.runtimeFilesystemBackendService.grepText(input.sessionId, { ...(input.include ? { include: input.include } : {}), maxLineLength: MAX_GREP_LINE_LENGTH, maxMatches: MAX_GREP_MATCHES, ...(input.path ? { path: input.path } : {}), pattern: input.pattern }, input.backendKind);
-    const overlay = await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({ basePath: result.basePath, matches: result.matches, sessionId: input.sessionId }) ?? [];
-    return {
-      matches: result.totalMatches,
-      output: ['<grep_result>', `Base: ${result.basePath}`, ...overlay, `Pattern: ${input.pattern}`, input.include ? `Include: ${input.include}` : undefined, '<matches>', ...buildRuntimeGrepOutput(result.matches), result.matches.length > 0 ? undefined : '(no matches)', result.truncated ? renderRuntimeSearchTruncationSummary({ continuationHint: renderRuntimeGrepContinuationHint(input.include), shown: result.matches.length, total: result.totalMatches }) : renderRuntimeSearchTotalSummary({ emptyHint: renderRuntimeSearchEmptyHint(input.include), followUpHint: result.totalMatches > 0 ? renderRuntimeSearchReadFollowUpHint('grep') : undefined, total: result.totalMatches }), renderRuntimeSearchSuggestedReadHint(result.matches), ...renderRuntimeGrepSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths), '</matches>', '</grep_result>'].filter((entry): entry is string => Boolean(entry)).join('\n'),
-      truncated: result.truncated,
-    };
+    try {
+      const result = await this.runtimeFilesystemBackendService.grepText(input.sessionId, { ...(input.include ? { include: input.include } : {}), maxLineLength: MAX_GREP_LINE_LENGTH, maxMatches: MAX_GREP_MATCHES, ...(input.path ? { path: input.path } : {}), pattern: input.pattern }, input.backendKind);
+      const overlay = await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({ basePath: result.basePath, matches: result.matches, sessionId: input.sessionId }) ?? [];
+      return {
+        matches: result.totalMatches,
+        output: ['<grep_result>', `Base: ${result.basePath}`, ...overlay, `Pattern: ${input.pattern}`, input.include ? `Include: ${input.include}` : undefined, '<matches>', ...buildRuntimeGrepOutput(result.matches), result.matches.length > 0 ? undefined : '(no matches)', result.truncated ? renderRuntimeSearchTruncationSummary({ continuationHint: renderRuntimeGrepContinuationHint(input.include), shown: result.matches.length, total: result.totalMatches }) : renderRuntimeSearchTotalSummary({ emptyHint: renderRuntimeSearchEmptyHint(input.include), followUpHint: result.totalMatches > 0 ? renderRuntimeSearchReadFollowUpHint('grep') : undefined, total: result.totalMatches }), renderRuntimeSearchSuggestedReadHint(result.matches), ...renderRuntimeGrepSearchDiagnostics(result.partial, result.skippedEntries, result.skippedPaths), '</matches>', '</grep_result>'].filter((entry): entry is string => Boolean(entry)).join('\n'),
+        truncated: result.truncated,
+      };
+    } finally {
+      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(input.sessionId);
+    }
   }
 
   readRuntimeAccess(input: GrepToolInput): RuntimeToolAccessRequest {

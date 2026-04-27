@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { JsonObject, PluginCallContext, PluginLlmMessage, PluginSubagentExecutionResult } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { resolveServerStatePath } from '../server-workspace-paths';
 import { cloneJsonValue } from './runtime-host-values';
 
 export interface RuntimeSubagentSessionRecord {
@@ -32,7 +33,7 @@ export interface RuntimeSubagentSessionRecord {
 export class RuntimeHostSubagentSessionStoreService {
   private readonly sessions = new Map<string, RuntimeSubagentSessionRecord>();
   private readonly storagePath = process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH
-    ?? path.join(process.cwd(), 'tmp', 'subagent-sessions.server.json');
+    ?? resolveServerStatePath('subagent-sessions.server.json');
   private sessionSequence = 0;
 
   constructor() {
@@ -70,6 +71,14 @@ export class RuntimeHostSubagentSessionStoreService {
     };
     this.sessions.set(session.id, session);
     this.saveSessions();
+    return cloneJsonValue(session);
+  }
+
+  findSession(pluginId: string, sessionId: string): RuntimeSubagentSessionRecord | null {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.pluginId !== pluginId || session.removedAt) {
+      return null;
+    }
     return cloneJsonValue(session);
   }
 

@@ -611,7 +611,7 @@ async function verifyRuntimeToolsSettingsPage(page) {
 
 async function verifySubagentsPage(page) {
   await page.goto('/subagents', { waitUntil: 'networkidle' });
-  await expectText(page, '后台 Subagent');
+  await expectText(page, 'Subagent');
   await expectText(page, '子代理账本');
 }
 

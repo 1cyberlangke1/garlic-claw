@@ -18,6 +18,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+        visibility: 'inline',
         pluginId: 'internal.subagent',
         pluginDisplayName: '后台子代理',
         subagentType: 'explore',
@@ -49,6 +50,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
             sessionId: 'subagent-session-1',
             sessionMessageCount: 3,
             sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+            visibility: 'inline',
             pluginId: 'internal.subagent',
             pluginDisplayName: '后台子代理',
             subagentType: 'explore',
@@ -86,6 +88,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
               sessionId: 'subagent-session-1',
               sessionMessageCount: 3,
               sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+              visibility: 'inline',
               pluginId: 'internal.subagent',
               pluginDisplayName: '后台子代理',
               subagentType: 'explore',
@@ -117,6 +120,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
               sessionId: 'subagent-session-2',
               sessionMessageCount: 2,
               sessionUpdatedAt: '2026-03-30T12:10:05.000Z',
+              visibility: 'background',
               pluginId: 'internal.subagent',
               pluginDisplayName: '后台子代理',
               runtimeKind: 'local',
@@ -141,6 +145,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+        visibility: 'inline',
         pluginId: 'internal.subagent',
         pluginDisplayName: '后台子代理',
         subagentType: 'explore',
@@ -173,6 +178,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+        visibility: 'inline',
         pluginId: 'internal.subagent',
         pluginDisplayName: '后台子代理',
         subagentType: 'explore',
@@ -211,6 +217,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
           sessionId: 'subagent-session-1',
           sessionMessageCount: 3,
           sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+          visibility: 'inline',
           pluginId: 'internal.subagent',
           pluginDisplayName: '后台子代理',
           subagentType: 'explore',
@@ -242,6 +249,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
           sessionId: 'subagent-session-2',
           sessionMessageCount: 2,
           sessionUpdatedAt: '2026-03-30T12:10:05.000Z',
+          visibility: 'background',
           pluginId: 'internal.subagent',
           pluginDisplayName: '后台子代理',
           runtimeKind: 'local',
@@ -293,6 +301,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
       sessionId: 'subagent-session-1',
       sessionMessageCount: 3,
       sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+      visibility: 'inline',
       startedAt: '2026-03-30T12:00:01.000Z',
       status: 'running',
       requestedAt: '2026-03-30T12:00:00.000Z',
@@ -308,6 +317,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         sessionId: 'subagent-session-1',
         sessionMessageCount: 3,
         sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+        visibility: 'inline',
         pluginId: 'internal.subagent',
         pluginDisplayName: '后台子代理',
         subagentType: 'explore',
@@ -362,7 +372,7 @@ describe('SubagentView', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('后台 Subagent')
+    expect(wrapper.text()).toContain('Subagent')
     expect(wrapper.text()).toContain('会话窗口')
     expect(wrapper.text()).toContain('main')
     expect(wrapper.text()).toContain('agent1')
@@ -374,6 +384,7 @@ describe('SubagentView', () => {
     expect(wrapper.text()).toContain('上下文消息')
     expect(wrapper.text()).toContain('这是后台子代理总结')
     expect(wrapper.text()).toContain('会话 3 条')
+    expect(wrapper.text()).toContain('同步')
     expect(wrapper.text()).toContain('回写等待中')
     expect(wrapper.text()).toContain('查看上下文')
     expect(wrapper.text()).toContain('打开工具治理')

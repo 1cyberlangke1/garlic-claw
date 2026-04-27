@@ -19,13 +19,20 @@
   - fake/real smoke 已复用同一套步骤编排
   - 测试产物自动清理已补齐
   - fresh 验收与独立 judge 已通过
+- `runtime/workspace 路径收口 + tmp 清理` 已完成：
+  - runtime 工作目录统一落到仓库根 `workspace/`
+  - server 默认运行态存储不再继续写入 `packages/server/tmp`
+  - `packages/server/tmp` 历史垃圾已删除
+  - Jest 临时产物已改为 `workspace/test-artifacts/server/process-<pid>`，并接入 `globalSetup/globalTeardown`
+  - `http-smoke` 临时目录已在脚本结束后自动删除
+- `subagent 可见性 + 空工作目录回收` 已完成：
+  - `subagentType: "default"` 已映射到 `general`
+  - 无效 `sessionId` 已按新会话处理，且不会绕过容量限制
+  - Subagent 页面已同时展示 `同步 / 后台` 两类记录
+  - 空的 `workspace/runtime-workspaces/<session>` 会在工具调用后自动回收
 
 ## 当前边界
 
-- 本轮只处理“CRUD 覆盖补齐”，不扩新功能。
-- 当前 CRUD 覆盖范围限定为：
-  - `AiController` 的 provider/model/config 相关 HTTP 方法
-  - `http-smoke.mjs` 已存在资源链路的“删后不可读/不可见”校验
 - 必须覆盖的 LLM owner：
   - `AiManagementService`
   - `ConversationMessagePlanningService`

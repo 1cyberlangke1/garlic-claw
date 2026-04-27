@@ -414,7 +414,7 @@ describe('RuntimeHostService', () => {
     });
   });
 
-  it('runs subagent requests and tracks background subagents', async () => {
+  it('runs subagent requests and tracks inline and background subagents', async () => {
     jest.useFakeTimers();
     const { service } = createFixture({
       permissions: ['conversation:read', 'conversation:write', 'subagent:run'],
@@ -453,7 +453,13 @@ describe('RuntimeHostService', () => {
     await expect(memoryPluginCall(service, 'subagent.list', {}, {
       userId: 'user-1',
       conversationId: fixtureConversationId,
-    })).resolves.toEqual([]);
+    })).resolves.toEqual([
+      expect.objectContaining({
+        sessionId: (inlineRun as { sessionId: string }).sessionId,
+        status: 'completed',
+        visibility: 'inline',
+      }),
+    ]);
     await memoryPluginCall(service, 'conversation.title.set', {
       title: fixtureConversationTitle,
     }, { userId: 'user-1', conversationId: fixtureConversationId });
@@ -485,8 +491,14 @@ describe('RuntimeHostService', () => {
       conversationId: fixtureConversationId,
     })).resolves.toEqual([
       expect.objectContaining({
+        sessionId: (inlineRun as { sessionId: string }).sessionId,
+        status: 'completed',
+        visibility: 'inline',
+      }),
+      expect.objectContaining({
         sessionId: (started as { sessionId: string }).sessionId,
         status: 'completed',
+        visibility: 'background',
       }),
     ]);
     await expect(memoryPluginCall(service, 'subagent.get', {

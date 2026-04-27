@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { PluginCallContext, PluginSubagentDetail, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSummary } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { resolveServerStatePath } from '../server-workspace-paths';
 import { cloneJsonValue } from './runtime-host-values';
 
 export type RuntimeSubagentRecord = PluginSubagentDetail & {
@@ -13,7 +14,7 @@ export type RuntimeSubagentRecord = PluginSubagentDetail & {
 
 @Injectable()
 export class RuntimeHostSubagentStoreService {
-  private readonly storagePath = process.env.GARLIC_CLAW_SUBAGENTS_PATH ?? path.join(process.cwd(), 'tmp', 'subagents.server.json');
+  private readonly storagePath = process.env.GARLIC_CLAW_SUBAGENTS_PATH ?? resolveServerStatePath('subagents.server.json');
   private readonly subagents: Map<string, RuntimeSubagentRecord[]>;
   private subagentSequence = 0;
 
@@ -27,8 +28,8 @@ export class RuntimeHostSubagentStoreService {
   getSubagentOrThrow(sessionId: string): PluginSubagentDetail { return toSubagentDetail(this.requireSessionProjection(sessionId)); }
   summarizeSubagent(subagent: RuntimeSubagentRecord): PluginSubagentSummary { return toSubagentSummary(subagent); }
   readSubagent(subagentId: string, pluginId?: string): RuntimeSubagentRecord { return cloneJsonValue(this.requireSubagent(subagentId, pluginId)) as RuntimeSubagentRecord; }
-  listOverview(): PluginSubagentOverview { return { subagents: this.readSessionProjection(undefined, 'background').map(toSubagentSummary) }; }
-  listSubagents(pluginId: string): PluginSubagentSummary[] { return this.readSessionProjection(pluginId, 'background', true).map(toSubagentSummary); }
+  listOverview(): PluginSubagentOverview { return { subagents: this.readSessionProjection().map(toSubagentSummary) }; }
+  listSubagents(pluginId: string): PluginSubagentSummary[] { return this.readSessionProjection(pluginId, undefined, true).map(toSubagentSummary); }
   listPendingSubagents(pluginId?: string): RuntimeSubagentRecord[] { return this.readRecords(pluginId).filter((item) => item.status === 'queued' || item.status === 'running').map(copySubagentRecord); }
 
   removeSession(sessionId: string, pluginId?: string): boolean {
@@ -152,12 +153,12 @@ function readSubagentStorage(storagePath: string): { subagentSequence: number; s
 }
 
 function toSubagentSummary(subagent: RuntimeSubagentRecord): PluginSubagentSummary {
-  const { context: _context, id: _id, request: _request, result: _result, visibility: _visibility, ...summary } = copySubagentRecord(subagent);
+  const { context: _context, id: _id, request: _request, result: _result, ...summary } = copySubagentRecord(subagent);
   return summary;
 }
 
 function toSubagentDetail(subagent: RuntimeSubagentRecord): PluginSubagentDetail {
-  const { id: _id, visibility: _visibility, ...detail } = copySubagentRecord(subagent);
+  const { id: _id, ...detail } = copySubagentRecord(subagent);
   return detail;
 }
 

@@ -27,6 +27,7 @@ import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
 import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
 import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
+import { createServerTestArtifactPath } from '../../../src/runtime/server-workspace-paths';
 
 describe('RuntimeHostSubagentRunnerService', () => {
   let conversationsPath: string;
@@ -352,6 +353,48 @@ describe('RuntimeHostSubagentRunnerService', () => {
     }));
   });
 
+  it('maps the default subagent type alias to general', async () => {
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      new RuntimeHostSubagentSessionStoreService(),
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    );
+
+    const result = await runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [
+        {
+          content: '用默认子代理执行',
+          role: 'user',
+        },
+      ],
+      subagentType: 'default',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      sessionId: expect.any(String),
+    }));
+    expect(runner.listOverview().subagents).toEqual([
+      expect.objectContaining({
+        sessionId: (result as { sessionId: string }).sessionId,
+        subagentType: 'general',
+        visibility: 'inline',
+      }),
+    ]);
+  });
+
   it('lets explicit request fields override subagent type defaults', async () => {
     const toolRegistryService = {
       buildToolSet: jest.fn().mockResolvedValue({
@@ -494,6 +537,48 @@ describe('RuntimeHostSubagentRunnerService', () => {
     })).resolves.toEqual(expect.objectContaining({
       sessionId: 'subagent-session-1',
     }));
+  });
+
+  it('treats an unknown session id as a new session instead of bypassing capacity checks', async () => {
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    sessionStore.createSession({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      messages: [{ content: 'existing prompt', role: 'user' }],
+      pluginId: 'builtin.memory-context',
+    });
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService()),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    );
+
+    await expect(runner.runSubagent('builtin.memory-context', {
+      conversationId: 'conversation-1',
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      maxConversationSubagents: 1,
+      messages: [
+        {
+          content: 'continue task',
+          role: 'user',
+        },
+      ],
+      sessionId: 'chat-001',
+    })).rejects.toThrow('当前会话最多允许 1 个 subagent 会话，已达到上限');
   });
 
   it('releases conversation capacity after a subagent session is removed', async () => {
@@ -1456,9 +1541,9 @@ describe('RuntimeHostSubagentRunnerService', () => {
     const conversationEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
     const taskEnvKey = 'GARLIC_CLAW_SUBAGENTS_PATH';
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const originalConversationPath = path.join(process.cwd(), 'tmp', `runtime-host-subagent-runner.original-conversations.${suffix}.json`);
-    const resumedConversationPath = path.join(process.cwd(), 'tmp', `runtime-host-subagent-runner.resumed-conversations.${suffix}.json`);
-    const taskPath = path.join(process.cwd(), 'tmp', `runtime-host-subagent-runner.tasks.${suffix}.json`);
+    const originalConversationPath = createServerTestArtifactPath({ extension: '.json', prefix: `runtime-host-subagent-runner.original-conversations.${suffix}`, subdirectory: 'server' });
+    const resumedConversationPath = createServerTestArtifactPath({ extension: '.json', prefix: `runtime-host-subagent-runner.resumed-conversations.${suffix}`, subdirectory: 'server' });
+    const taskPath = createServerTestArtifactPath({ extension: '.json', prefix: `runtime-host-subagent-runner.tasks.${suffix}`, subdirectory: 'server' });
     const pluginBootstrapService = new PluginBootstrapService(
       new PluginGovernanceService(),
       new PluginPersistenceService(),

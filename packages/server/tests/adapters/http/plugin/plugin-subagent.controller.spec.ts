@@ -15,13 +15,14 @@ describe('SubagentController', () => {
     controller = new SubagentController(runtimeHostSubagentRunnerService as never);
   });
 
-  it('returns the background subagent overview', async () => {
+  it('returns the subagent overview', async () => {
     runtimeHostSubagentRunnerService.listOverview.mockReturnValue({
       subagents: [
         {
           sessionId: 'subagent-session-1',
           sessionMessageCount: 2,
           sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+          visibility: 'background',
           pluginId: 'subagent',
           pluginDisplayName: 'Subagent',
           runtimeKind: 'local',
@@ -49,11 +50,12 @@ describe('SubagentController', () => {
     });
   });
 
-  it('returns one persisted background subagent session projection', async () => {
+  it('returns one persisted subagent session projection', async () => {
     runtimeHostSubagentRunnerService.getSubagentOrThrow.mockReturnValue({
       sessionId: 'subagent-session-1',
       sessionMessageCount: 2,
       sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+      visibility: 'background',
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       runtimeKind: 'local',
@@ -140,7 +142,7 @@ describe('SubagentController', () => {
     ]);
   });
 
-  it('removes one persisted background subagent session projection', () => {
+  it('removes one persisted subagent session projection', () => {
     runtimeHostSubagentRunnerService.removeSubagentSession.mockResolvedValue(true);
 
     return expect(controller.removeSubagent('subagent-session-1')).resolves.toBe(true);

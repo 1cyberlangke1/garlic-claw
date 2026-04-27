@@ -71,97 +71,109 @@ export class RuntimeHostRuntimeToolService {
       assistantMessageId,
     );
     await this.reviewRuntimeToolAccess(context, assistantMessageId, 'read', this.readToolService.readRuntimeAccess(runtimeInput));
-    const readResult = await this.runtimeFilesystemBackendService.readPathRange(
-      runtimeInput.sessionId,
-      {
-        limit: runtimeInput.limit ?? DEFAULT_READ_LIMIT,
-        maxLineLength: MAX_READ_LINE_LENGTH,
-        offset: runtimeInput.offset ?? 1,
-        path: runtimeInput.filePath,
-      },
-      runtimeInput.backendKind,
-    );
-    if (readResult.type !== 'file') {
-      return { freshnessReminders: [], loaded: [], readResult, reminderEntries: [] };
-    }
-    await this.runtimeFileFreshnessService.rememberRead(runtimeInput.sessionId, readResult.path, runtimeInput.backendKind, {
-      lineCount: readResult.lines.length,
-      offset: readResult.offset,
-      totalLines: readResult.totalLines,
-      truncated: readResult.truncated,
-    });
-    const reminder = await readRuntimePathInstructionReminder(
-      {
-        backendKind: runtimeInput.backendKind,
-        path: readResult.path,
+    try {
+      const readResult = await this.runtimeFilesystemBackendService.readPathRange(
+        runtimeInput.sessionId,
+        {
+          limit: runtimeInput.limit ?? DEFAULT_READ_LIMIT,
+          maxLineLength: MAX_READ_LINE_LENGTH,
+          offset: runtimeInput.offset ?? 1,
+          path: runtimeInput.filePath,
+        },
+        runtimeInput.backendKind,
+      );
+      if (readResult.type !== 'file') {
+        return { freshnessReminders: [], loaded: [], readResult, reminderEntries: [] };
+      }
+      await this.runtimeFileFreshnessService.rememberRead(runtimeInput.sessionId, readResult.path, runtimeInput.backendKind, {
+        lineCount: readResult.lines.length,
+        offset: readResult.offset,
+        totalLines: readResult.totalLines,
+        truncated: readResult.truncated,
+      });
+      const reminder = await readRuntimePathInstructionReminder(
+        {
+          backendKind: runtimeInput.backendKind,
+          path: readResult.path,
+          sessionId: runtimeInput.sessionId,
+          visibleRoot: this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot,
+        },
+        this.runtimeFilesystemBackendService,
+      );
+      const claimedReminder = readRuntimeClaimedPathInstructionReminder({
+        assistantMessageId,
+        claimPaths: this.runtimeFileFreshnessService.claimReadInstructionPaths.bind(this.runtimeFileFreshnessService),
+        reminder,
         sessionId: runtimeInput.sessionId,
-        visibleRoot: this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot,
-      },
-      this.runtimeFilesystemBackendService,
-    );
-    const claimedReminder = readRuntimeClaimedPathInstructionReminder({
-      assistantMessageId,
-      claimPaths: this.runtimeFileFreshnessService.claimReadInstructionPaths.bind(this.runtimeFileFreshnessService),
-      reminder,
-      sessionId: runtimeInput.sessionId,
-    });
-    return {
-      freshnessReminders: this.runtimeFileFreshnessService.buildReadSystemReminder(runtimeInput.sessionId, {
-        excludePath: readResult.path,
-        limit: 5,
-      }),
-      loaded: claimedReminder.loadedPaths,
-      readResult,
-      reminderEntries: claimedReminder.entries,
-    };
+      });
+      return {
+        freshnessReminders: this.runtimeFileFreshnessService.buildReadSystemReminder(runtimeInput.sessionId, {
+          excludePath: readResult.path,
+          limit: 5,
+        }),
+        loaded: claimedReminder.loadedPaths,
+        readResult,
+        reminderEntries: claimedReminder.entries,
+      };
+    } finally {
+      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(runtimeInput.sessionId);
+    }
   }
 
   async globPaths(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeGlobResult> {
     const assistantMessageId = readRuntimeHostAssistantMessageId(context);
     const runtimeInput = this.globToolService.readInput(params, readRuntimeHostSessionId(context, 'glob'));
     await this.reviewRuntimeToolAccess(context, assistantMessageId, 'glob', this.globToolService.readRuntimeAccess(runtimeInput));
-    const globResult = await this.runtimeFilesystemBackendService.globPaths(
-      runtimeInput.sessionId,
-      {
-        maxResults: MAX_GLOB_RESULTS,
-        pattern: runtimeInput.pattern,
-        ...(runtimeInput.path ? { path: runtimeInput.path } : {}),
-      },
-      runtimeInput.backendKind,
-    );
-    return {
-      globResult,
-      overlay: await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({
-        basePath: globResult.basePath,
-        matches: globResult.matches,
-        sessionId: runtimeInput.sessionId,
-      }) ?? [],
-    };
+    try {
+      const globResult = await this.runtimeFilesystemBackendService.globPaths(
+        runtimeInput.sessionId,
+        {
+          maxResults: MAX_GLOB_RESULTS,
+          pattern: runtimeInput.pattern,
+          ...(runtimeInput.path ? { path: runtimeInput.path } : {}),
+        },
+        runtimeInput.backendKind,
+      );
+      return {
+        globResult,
+        overlay: await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({
+          basePath: globResult.basePath,
+          matches: globResult.matches,
+          sessionId: runtimeInput.sessionId,
+        }) ?? [],
+      };
+    } finally {
+      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(runtimeInput.sessionId);
+    }
   }
 
   async grepContent(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeGrepResult> {
     const assistantMessageId = readRuntimeHostAssistantMessageId(context);
     const runtimeInput = this.grepToolService.readInput(params, readRuntimeHostSessionId(context, 'grep'));
     await this.reviewRuntimeToolAccess(context, assistantMessageId, 'grep', this.grepToolService.readRuntimeAccess(runtimeInput));
-    const grepResult = await this.runtimeFilesystemBackendService.grepText(
-      runtimeInput.sessionId,
-      {
-        maxLineLength: MAX_GREP_LINE_LENGTH,
-        maxMatches: MAX_GREP_MATCHES,
-        pattern: runtimeInput.pattern,
-        ...(runtimeInput.include ? { include: runtimeInput.include } : {}),
-        ...(runtimeInput.path ? { path: runtimeInput.path } : {}),
-      },
-      runtimeInput.backendKind,
-    );
-    return {
-      grepResult,
-      overlay: await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({
-        basePath: grepResult.basePath,
-        matches: grepResult.matches,
-        sessionId: runtimeInput.sessionId,
-      }) ?? [],
-    };
+    try {
+      const grepResult = await this.runtimeFilesystemBackendService.grepText(
+        runtimeInput.sessionId,
+        {
+          maxLineLength: MAX_GREP_LINE_LENGTH,
+          maxMatches: MAX_GREP_MATCHES,
+          pattern: runtimeInput.pattern,
+          ...(runtimeInput.include ? { include: runtimeInput.include } : {}),
+          ...(runtimeInput.path ? { path: runtimeInput.path } : {}),
+        },
+        runtimeInput.backendKind,
+      );
+      return {
+        grepResult,
+        overlay: await this.projectWorktreeSearchOverlayService?.buildSearchOverlay({
+          basePath: grepResult.basePath,
+          matches: grepResult.matches,
+          sessionId: runtimeInput.sessionId,
+        }) ?? [],
+      };
+    } finally {
+      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(runtimeInput.sessionId);
+    }
   }
 
   async writeFile(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeWriteResult> {
