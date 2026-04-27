@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RuntimeToolsSettingsService } from '../../../src/execution/runtime/runtime-tools-settings.service';
+import {
+  readRuntimeToolsConfiguredShellBackend,
+  RuntimeToolsSettingsService,
+} from '../../../src/execution/runtime/runtime-tools-settings.service';
 
 describe('RuntimeToolsSettingsService', () => {
   const originalConfigPath = process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
@@ -33,11 +36,12 @@ describe('RuntimeToolsSettingsService', () => {
 
     expect(shellBackend.options).toEqual(process.platform === 'win32'
       ? [
+          { label: 'just-bash', value: 'just-bash' },
           { label: 'PowerShell', value: 'native-shell' },
           { label: 'WSL', value: 'wsl-shell' },
-          { label: 'just-bash', value: 'just-bash' },
         ]
       : [{ label: 'bash', value: 'native-shell' }]);
+    expect(shellBackend.defaultValue).toBe(process.platform === 'win32' ? 'just-bash' : 'native-shell');
   });
 
   it('accepts just-bash as a stored shell backend on Windows', () => {
@@ -55,6 +59,31 @@ describe('RuntimeToolsSettingsService', () => {
       values: { shellBackend: 'just-bash' },
     }));
     expect(service.readConfiguredShellBackend()).toBe('just-bash');
+  });
+
+  it('falls back to just-bash when native-shell is configured on Windows without PowerShell', () => {
+    const originalPath = process.env.PATH;
+    const originalSystemRoot = process.env.SystemRoot;
+    const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-tools-shell-'));
+
+    try {
+      process.env.PATH = fakeRoot;
+      process.env.SystemRoot = path.join(fakeRoot, 'missing-system-root');
+
+      expect(readRuntimeToolsConfiguredShellBackend({ shellBackend: 'native-shell' }, 'win32' as NodeJS.Platform)).toBe('just-bash');
+    } finally {
+      if (originalPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = originalPath;
+      }
+      if (originalSystemRoot === undefined) {
+        delete process.env.SystemRoot;
+      } else {
+        process.env.SystemRoot = originalSystemRoot;
+      }
+      fs.rmSync(fakeRoot, { force: true, recursive: true });
+    }
   });
 });
 

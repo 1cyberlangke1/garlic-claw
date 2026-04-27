@@ -648,6 +648,48 @@ describe('AiModelExecutionService', () => {
     });
   });
 
+  it('repairs polluted tool names back to known tools before falling back to invalid', async () => {
+    const service = createService();
+
+    service.streamText({
+      messages: [
+        {
+          content: '先加载 skill 再继续',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      tools: {
+        invalid: {} as never,
+        skill: {} as never,
+      },
+    } as never);
+
+    const repairToolCall = mockStreamText.mock.calls[0][0].experimental_repairToolCall as
+      | ((input: {
+          error: { message?: string; name?: string };
+          toolCall: { input: string; toolCallId: string; toolName: string };
+        }) => Promise<{ input: string; toolCallId: string; toolName: string } | null>)
+      | undefined;
+
+    await expect(repairToolCall?.({
+      error: {
+        message: 'Model tried to call unavailable tool',
+        name: 'AI_NoSuchToolError',
+      },
+      toolCall: {
+        input: '{"name":"weather-query"}',
+        toolCallId: 'tool-call-2',
+        toolName: 'skill<|channel|>commentary',
+      },
+    })).resolves.toEqual({
+      input: '{"name":"weather-query"}',
+      toolCallId: 'tool-call-2',
+      toolName: 'skill',
+    });
+  });
+
   it('normalizes streamed tool calls for openai-compatible providers when the endpoint omits id and type', async () => {
     const service = createService();
     const originalFetch = global.fetch;

@@ -86,3 +86,10 @@
   - Windows `curl.exe` 同样在 TLS 握手阶段失败
   - WSL `curl` 与 `openssl s_client` 结果一致，说明不是单一运行时的 TLS 栈问题
   - 当前域名 `ds2api.cyberlangke.dpdns.org` 在本机解析到 `198.18.0.66`，流量走 `FlClash` 接口；这说明还需要结合本机代理 / TUN / fake-ip 环境判断是否属于仓库外部条件
+
+## 2026-04-27 skill 链路运行时故障修复
+
+- `skill` 是否被调用，不应靠主观判断；从实际日志看，`skill` 已成功返回 `weather-query`，所以问题在后续链路。
+- 工具名污染目前没有仓库内显式常量；更像模型把外层工具语法中的 channel 片段直接吐进了 `toolName`。这类问题应在 repair 阶段清洗，而不是只把报错喂回模型重试。
+- `webfetch` 当前只接受 `text/*`、`application/json`、`application/xml`、`application/xhtml+xml`。`wttr.in` 返回 `application/text` 时会被误拒绝。
+- Windows 侧 runtime shell 当前虽然提供 `just-bash / native-shell / wsl-shell` 三种 backend，但 runtime-tools 配置 schema 默认值仍是 `native-shell`；如果前端把默认值写回配置，就会把常见 bash 风格命令推向 PowerShell 语义。

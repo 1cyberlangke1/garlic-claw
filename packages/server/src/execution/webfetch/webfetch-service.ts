@@ -113,7 +113,7 @@ function normalizeContentType(value: string | null): string {
 function isSupportedContentType(contentType: string): boolean {
   return !contentType
     || contentType.startsWith('text/')
-    || ['application/json', 'application/xml', 'application/xhtml+xml'].includes(contentType);
+    || ['application/json', 'application/text', 'application/xml', 'application/xhtml+xml'].includes(contentType);
 }
 
 function renderFetchOutput(content: string, contentType: string, format: WebFetchFormat): string {

@@ -26,9 +26,9 @@ export const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
       type: 'string',
       description: 'bash 执行后端',
       hint: process.platform === 'win32'
-        ? '默认使用 PowerShell；Windows 下可在 PowerShell、WSL 与 just-bash 之间热切换。'
+        ? '默认使用 just-bash；Windows 下可在 just-bash、PowerShell 与 WSL 之间热切换。'
         : '默认使用 bash；Linux 下只提供 bash backend。',
-      defaultValue: 'native-shell',
+      defaultValue: readRuntimeToolsDefaultShellBackend(),
       options: readRuntimeToolsShellBackendOptions(),
     },
     bashOutput: {
@@ -92,14 +92,21 @@ export class RuntimeToolsSettingsService {
   }
 }
 
-export function readRuntimeToolsConfiguredShellBackend(config: JsonValue): RuntimeBackendKind | undefined {
+export function readRuntimeToolsConfiguredShellBackend(
+  config: JsonValue,
+  platform: NodeJS.Platform = process.platform,
+): RuntimeBackendKind | undefined {
   const record = isJsonObject(config) ? config : null;
   const backendKind = typeof record?.shellBackend === 'string'
     ? record.shellBackend.trim()
     : '';
-  return readRuntimeToolsShellBackendOptions().some((option) => option.value === backendKind)
-    ? backendKind
-    : undefined;
+  if (!readRuntimeToolsShellBackendOptions(platform).some((option) => option.value === backendKind)) {
+    return undefined;
+  }
+  if (backendKind === 'native-shell' && platform === 'win32' && !hasWindowsPowerShellRuntime()) {
+    return 'just-bash';
+  }
+  return backendKind;
 }
 
 export function readRuntimeToolsBashOutputOptions(config: JsonValue): RuntimeCommandTextOutputOptions {
@@ -171,15 +178,42 @@ function persistRuntimeToolsConfig(configPath: string, values: JsonObject): void
   fs.writeFileSync(configPath, JSON.stringify(values, null, 2), 'utf-8');
 }
 
-function readRuntimeToolsShellBackendOptions(): Array<{ label: string; value: RuntimeBackendKind }> {
-  if (process.platform === 'win32') {
+function readRuntimeToolsDefaultShellBackend(platform: NodeJS.Platform = process.platform): RuntimeBackendKind {
+  return platform === 'win32' ? 'just-bash' : 'native-shell';
+}
+
+function readRuntimeToolsShellBackendOptions(platform: NodeJS.Platform = process.platform): Array<{ label: string; value: RuntimeBackendKind }> {
+  if (platform === 'win32') {
     return [
+      { label: 'just-bash', value: 'just-bash' },
       { label: 'PowerShell', value: 'native-shell' },
       { label: 'WSL', value: 'wsl-shell' },
-      { label: 'just-bash', value: 'just-bash' },
     ];
   }
   return [{ label: 'bash', value: 'native-shell' }];
+}
+
+function hasWindowsPowerShellRuntime(): boolean {
+  const candidatePaths = new Set<string>();
+  const systemRoot = process.env.SystemRoot?.trim();
+  if (systemRoot) {
+    candidatePaths.add(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
+    candidatePaths.add(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'pwsh.exe'));
+  }
+  const pathEntries = (process.env.PATH ?? '')
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  for (const basePath of pathEntries) {
+    candidatePaths.add(path.join(basePath, 'powershell.exe'));
+    candidatePaths.add(path.join(basePath, 'pwsh.exe'));
+  }
+  for (const candidatePath of candidatePaths) {
+    if (fs.existsSync(candidatePath)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function readRuntimeToolsNonNegativeInteger(value: number, fieldName: string): number {

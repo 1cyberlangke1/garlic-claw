@@ -8,6 +8,7 @@ import { uuidv7 } from 'uuidv7';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
 import type { StoredAiProviderConfig } from '../ai-management/ai-management.types';
 import { stringifyInvalidToolInput } from '../execution/invalid/invalid-tool-record';
+import { resolveKnownModelToolCallName } from '../execution/tool/model-tool-call-name';
 import { readAssistantRawCustomBlocks, readAssistantResponseCustomBlocks, type AssistantCustomBlockEntry } from '../runtime/host/runtime-host-values';
 
 export interface AiModelExecutionRequest {
@@ -183,6 +184,13 @@ export class AiModelExecutionService {
 
   private createRepairToolCall(tools: Record<string, Tool>) {
     return async (input: { error: { message?: string; name?: string }; toolCall: { input: string; toolCallId: string; toolName: string } & Record<string, unknown> }) => {
+      const repairedToolName = resolveKnownModelToolCallName(input.toolCall.toolName, Object.keys(tools));
+      if (repairedToolName && repairedToolName !== input.toolCall.toolName) {
+        return {
+          ...input.toolCall,
+          toolName: repairedToolName,
+        };
+      }
       if (!tools.invalid) {return null;}
       const inputText = stringifyInvalidToolInput(input.toolCall.input);
       return {

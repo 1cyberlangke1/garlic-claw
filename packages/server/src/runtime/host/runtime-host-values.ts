@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue, PluginCallContext, PluginLlmMessage } from '@garlic-claw/shared';
 import { BadRequestException } from '@nestjs/common';
 import { createInvalidToolResult, stringifyInvalidToolInput } from '../../execution/invalid/invalid-tool-record';
+import { sanitizeModelToolCallName } from '../../execution/tool/model-tool-call-name';
 
 export const DEFAULT_PERSONA_ID = 'builtin.default-assistant';
 export const DEFAULT_PROVIDER_ID = 'builtin.default';
@@ -44,14 +45,16 @@ export function readAssistantStreamPart(rawPart: unknown): { type: 'text-delta';
   if (!isRecord(rawPart) || typeof rawPart.type !== 'string') { return null; }
   if (rawPart.type === 'text-delta' && typeof rawPart.text === 'string') { return { text: rawPart.text, type: 'text-delta' }; }
   if ((rawPart.type === 'tool-call' || rawPart.type === 'tool-result') && typeof rawPart.toolCallId === 'string' && typeof rawPart.toolName === 'string') {
-    return rawPart.type === 'tool-call' ? { input: rawPart.input as JsonValue, toolCallId: rawPart.toolCallId, toolName: rawPart.toolName, type: 'tool-call' } : { output: rawPart.output as JsonValue, toolCallId: rawPart.toolCallId, toolName: rawPart.toolName, type: 'tool-result' };
+    const toolName = sanitizeModelToolCallName(rawPart.toolName);
+    return rawPart.type === 'tool-call' ? { input: rawPart.input as JsonValue, toolCallId: rawPart.toolCallId, toolName, type: 'tool-call' } : { output: rawPart.output as JsonValue, toolCallId: rawPart.toolCallId, toolName, type: 'tool-result' };
   }
   if (rawPart.type === 'tool-error' && typeof rawPart.toolCallId === 'string' && typeof rawPart.toolName === 'string') {
     const inputText = stringifyInvalidToolInput(rawPart.input);
+    const toolName = sanitizeModelToolCallName(rawPart.toolName);
     return {
-      output: createInvalidToolResult({ error: readToolErrorMessage(rawPart.error), ...(inputText ? { inputText } : {}), phase: 'execute', tool: rawPart.toolName }) as unknown as JsonValue,
+      output: createInvalidToolResult({ error: readToolErrorMessage(rawPart.error), ...(inputText ? { inputText } : {}), phase: 'execute', tool: toolName }) as unknown as JsonValue,
       toolCallId: rawPart.toolCallId,
-      toolName: rawPart.toolName,
+      toolName,
       type: 'tool-result',
     };
   }

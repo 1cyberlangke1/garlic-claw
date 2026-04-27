@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import { Injectable } from '@nestjs/common';
 import type {
   RuntimeBackend,
@@ -37,11 +38,15 @@ export class RuntimeNativeShellService implements RuntimeBackend {
       input.workdir,
       `bash.workdir 必须位于 ${session.visibleRoot} 内`,
     );
+    const hostCwd = toRuntimeHostPath(session.sessionRoot, session.visibleRoot, cwd);
+    if (!fs.existsSync(hostCwd)) {
+      throw new Error(`bash.workdir 不存在: ${cwd}`);
+    }
     const timeoutMs = readRuntimeNativeShellTimeout(input.timeout);
     try {
       const result = await executeRuntimeNativeShell({
         command: input.command,
-        cwd: toRuntimeHostPath(session.sessionRoot, session.visibleRoot, cwd),
+        cwd: hostCwd,
         timeoutMs,
       });
       return {
@@ -63,8 +68,33 @@ function executeRuntimeNativeShell(input: {
   cwd: string;
   timeoutMs: number;
 }): Promise<{ exitCode: number; stderr: string; stdout: string }> {
+  return runRuntimeNativeShellCandidates(readRuntimeNativeShellProcesses(input.command), input);
+}
+
+async function runRuntimeNativeShellCandidates(
+  candidates: Array<{ args: string[]; command: string }>,
+  input: { command: string; cwd: string; timeoutMs: number },
+): Promise<{ exitCode: number; stderr: string; stdout: string }> {
+  let lastSpawnError: Error | null = null;
+  for (const candidate of candidates) {
+    try {
+      return await executeRuntimeNativeShellProcess(candidate, input);
+    } catch (error) {
+      if (isRuntimeShellSpawnMissing(error)) {
+        lastSpawnError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastSpawnError ?? new Error('bash 执行失败');
+}
+
+function executeRuntimeNativeShellProcess(
+  shell: { args: string[]; command: string },
+  input: { command: string; cwd: string; timeoutMs: number },
+): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   return new Promise((resolve, reject) => {
-    const shell = readRuntimeNativeShellProcess(input.command);
     const child = spawn(shell.command, shell.args, {
       cwd: input.cwd,
       env: process.env,
@@ -102,10 +132,10 @@ function executeRuntimeNativeShell(input: {
   });
 }
 
-function readRuntimeNativeShellProcess(command: string): { args: string[]; command: string } {
+function readRuntimeNativeShellProcesses(command: string): Array<{ args: string[]; command: string }> {
   if (process.platform === 'win32') {
-    return {
-      command: 'powershell.exe',
+    return ['powershell.exe', 'pwsh.exe', 'pwsh'].map((shellCommand) => ({
+      command: shellCommand,
       args: [
         '-NoLogo',
         '-NoProfile',
@@ -120,9 +150,9 @@ function readRuntimeNativeShellProcess(command: string): { args: string[]; comma
           command,
         ].join('; '),
       ],
-    };
+    }));
   }
-  return { command: 'bash', args: ['-lc', command] };
+  return [{ command: 'bash', args: ['-lc', command] }];
 }
 
 function normalizeRuntimeNativeShellOutput(text: string): string {
@@ -133,5 +163,14 @@ function normalizeRuntimeNativeShellError(error: unknown, timeoutMs: number): Er
   if (error instanceof Error && error.message === RUNTIME_NATIVE_SHELL_TIMEOUT_CODE) {
     return new Error(`bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`);
   }
+  if (isRuntimeShellSpawnMissing(error)) {
+    return new Error('native-shell 缺少可用的 PowerShell 可执行文件，请改用 just-bash / WSL，或安装并暴露 powershell.exe / pwsh.exe 到 PATH。');
+  }
   return error instanceof Error ? error : new Error('bash 执行失败');
+}
+
+function isRuntimeShellSpawnMissing(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error
+    && 'code' in error
+    && error.code === 'ENOENT';
 }

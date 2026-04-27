@@ -20,6 +20,31 @@
 - 步骤 2 已完成
 - 步骤 3 已完成
 
+## 2026-04-27 skill 链路运行时故障修复
+
+1. 更新计划文件
+  - 记录 `skill` 已成功加载，但后续链路存在运行时故障
+  - 明确本轮验收聚焦 `tool repair / shell backend / webfetch`
+2. 根因调查
+  - 追踪 `toolName` 被污染为 `<|channel|>commentary` 的进入点
+  - 核对 shell backend 默认选择、配置落点与运行宿主不一致的问题
+  - 核对 `webfetch` 的文本内容类型白名单
+3. 实现修复
+  - 工具名污染时优先清洗并自动修正到真实工具
+  - Windows 下 shell backend 默认与配置语义收口到可执行、与模型习惯一致的 backend
+  - `webfetch` 支持 `application/text` 这类文本响应
+4. fresh 验收
+  - `packages/server` typecheck
+  - 相关 Jest：`ai-model-execution / runtime-native-shell / runtime-tools-settings / webfetch`
+  - `npm run smoke:server`
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+- 步骤 4 已完成
+
 ## 2026-04-27 LLM 覆盖矩阵与 smoke 复用收口
 
 1. 同步计划文件

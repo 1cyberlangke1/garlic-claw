@@ -51,6 +51,29 @@ describe('WebFetchService', () => {
     }
   });
 
+  it('accepts application/text as plain text content', async () => {
+    const server = await startFixtureServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/text; charset=utf-8' });
+      response.end('Zhongshan: sunny 27C');
+    });
+
+    try {
+      const result = await service.fetch({
+        url: server.url,
+        format: 'text',
+      });
+
+      expect(result).toEqual(expect.objectContaining({
+        contentType: 'application/text',
+        format: 'text',
+        output: 'Zhongshan: sunny 27C',
+        status: 200,
+      }));
+    } finally {
+      await server.close();
+    }
+  });
+
   it('rejects urls outside http or https', async () => {
     await expect(service.fetch({
       url: 'file:///tmp/test.txt',

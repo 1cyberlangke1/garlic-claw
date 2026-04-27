@@ -90,6 +90,20 @@ describe('RuntimeNativeShellService', () => {
     expect(normalizeNativeShellOutput(result.stdout)).toContain(readNativeExpectedPwdSuffix('/nested'));
   });
 
+  it('reports a missing workdir explicitly', async () => {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-native-shell-'));
+    workspaceRoots.push(workspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
+
+    const service = new RuntimeNativeShellService(new RuntimeSessionEnvironmentService());
+
+    await expect(service.executeCommand({
+      command: buildNativePwdCommand(),
+      sessionId: 'session-1',
+      workdir: '/workspace',
+    })).rejects.toThrow('bash.workdir 不存在: /workspace');
+  });
+
   it('reads configurable timeout and network descriptor options', () => {
     process.env.GARLIC_CLAW_RUNTIME_NATIVE_SHELL_DEFAULT_TIMEOUT_MS = '45000';
     process.env.GARLIC_CLAW_RUNTIME_NATIVE_SHELL_MAX_TIMEOUT_MS = '90000';

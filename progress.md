@@ -103,3 +103,25 @@
     - Windows `curl.exe -I https://ds2api.cyberlangke.dpdns.org/v1/models` 报 `schannel: failed to receive handshake`
     - WSL `curl -Ik https://ds2api.cyberlangke.dpdns.org/v1/models` 报 `OpenSSL SSL_connect: SSL_ERROR_SYSCALL`
     - WSL `openssl s_client -tls1_2/-tls1_3` 都显示 `unexpected eof while reading`，且 `no peer certificate available`
+
+## 2026-04-27 skill 链路运行时故障修复
+
+- 已确认这不是“没用 skill”：
+  - 日志里 `skill` 已成功调用两次，并返回 `weather-query`
+  - 失败发生在 skill 后续依赖的 runtime tool 链路
+- 已确认当前直接故障点：
+  - 工具名被污染成 `skill<|channel|>commentary`、`bash<|channel|>commentary`、`webfetch<|channel|>commentary<|channel|>`
+  - shell backend 落到 `native-shell` 后尝试 `powershell.exe`，当前实际执行环境报 `ENOENT`
+  - `webfetch` 直接拒绝 `application/text`
+- 本轮已完成：
+  - `AiModelExecutionService` 已在 repair 阶段优先把被污染的工具名清洗回已知工具，不再直接掉进 `invalid`
+  - `runtime-host-values` 已同步清洗流式 tool name，避免前端继续看到带 `<|channel|>` 的名称
+  - `runtime-tools` 配置默认 backend 已改为 Windows `just-bash`
+  - 当 Windows 配置显式写成 `native-shell`，但宿主上找不到 `powershell.exe / pwsh.exe` 时，会自动回退到 `just-bash`
+  - `RuntimeNativeShellService` 已补 `pwsh.exe / pwsh` 候选，并在缺少 PowerShell 时给出明确报错
+  - `webfetch` 已支持 `application/text`
+- 本轮 fresh 验收已通过：
+  - `npm run typecheck:server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/execution/webfetch/webfetch-service.spec.ts tests/execution/runtime/runtime-tools-settings.service.spec.ts`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/execution/runtime/runtime-native-shell.service.spec.ts`
+  - `npm run smoke:server`
