@@ -15,8 +15,7 @@ const catalog: AiProviderCatalogItem[] = [
 function createProvider(): AiProviderConfig {
   return {
     id: 'ds2api',
-    name: 's2api',
-    mode: 'protocol',
+    name: 'ds2api',
     driver: 'openai',
     baseUrl: 'https://example.com/v1',
     defaultModel: 'deepseek-chat',
@@ -101,8 +100,8 @@ describe('AiProviderModelsPanel', () => {
     expect(wrapper.text()).toContain('第 1 / 1 页')
     expect(wrapper.findAll('.model-item')).toHaveLength(1)
     expect(wrapper.text()).toContain('deepseek-reasoner-search')
-    expect(wrapper.text()).toContain('协议接入')
-    expect(wrapper.text()).toContain('OpenAI 协议接入')
+    expect(wrapper.text()).toContain('自定义')
+    expect(wrapper.text()).toContain('OpenAI 兼容协议')
   })
 
   it('emits context length updates for a model', async () => {

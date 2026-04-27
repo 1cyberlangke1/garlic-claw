@@ -150,7 +150,6 @@ export async function loadProviderSelectionData(
 export async function saveProviderConfig(provider: AiProviderConfig): Promise<void> {
   await upsertAiProvider(provider.id, {
     name: provider.name,
-    mode: provider.mode,
     driver: provider.driver,
     apiKey: provider.apiKey,
     baseUrl: provider.baseUrl,

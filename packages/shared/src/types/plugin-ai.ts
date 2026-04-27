@@ -145,7 +145,7 @@ export interface PluginProviderCurrentInfo {
 /** 插件可见的 provider 安全摘要。 */
 export type PluginProviderSummary = Pick<
   AiProviderSummary,
-  'id' | 'name' | 'mode' | 'driver' | 'defaultModel' | 'available'
+  'id' | 'name' | 'driver' | 'defaultModel' | 'available'
 >;
 
 /** 插件可见的模型安全摘要。 */

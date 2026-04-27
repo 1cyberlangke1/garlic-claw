@@ -148,3 +148,29 @@
   - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/adapters/http/ai/ai.controller.spec.ts`
   - `npm run typecheck -w packages/web`
   - `npm run test:run -w packages/web -- tests/features/chat/modules/chat-model-selection.spec.ts`
+
+## 2026-04-27 provider 接入语义收口与新对话默认模型修复
+
+- 已完成本轮 provider 语义收口：
+  - 公开 provider 配置与摘要已移除 `mode`
+  - 前后端统一只保留 `driver`
+  - 内建供应商与自定义供应商改为按 `provider id 是否等于 driver` 推断
+- 已完成本轮默认模型修复：
+  - AI 设置页改默认模型后，后端会显式写入默认 provider/model 选择
+  - 新对话读取 `/api/ai/default-selection` 时会优先使用这条显式默认选择
+  - 删除默认 provider / 默认模型时，会自动回退或清空该显式选择
+- 已完成本轮 smoke 对齐：
+  - `browser-smoke` 已去掉旧的“接入方式”下拉框操作
+  - `http-smoke` 的 provider upsert 请求体已移除旧 `mode`
+- 关于 `Restarting 'dist/src/main.js'`：
+  - 当前来自 `packages/server/package.json` 的 `node --watch dist/src/main.js`
+  - 只要 `tsc --watch` 重写 `dist`，Node 就会打印这行并重启后端进程
+  - 这属于开发态热重启，不等于服务崩溃
+- 本轮 fresh 验收已通过：
+  - `npm run build -w packages/shared`
+  - `npm run typecheck:server`
+  - `npm run typecheck -w packages/web`
+  - `npx jest --runInBand tests/ai-management/ai-management.service.spec.ts tests/ai-management/ai-provider-settings.service.spec.ts tests/adapters/http/ai/ai.controller.spec.ts`
+  - `npx vitest run tests/features/ai-settings/components/provider-editor-form.spec.ts tests/features/ai-settings/components/AiProviderSidebar.spec.ts tests/features/ai-settings/components/AiProviderModelsPanel.spec.ts tests/features/chat/modules/chat-model-selection.spec.ts tests/features/ai-settings/composables/use-provider-settings.spec.ts tests/components/ModelQuickInput.spec.ts`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`

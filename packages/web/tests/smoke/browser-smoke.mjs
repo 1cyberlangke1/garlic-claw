@@ -322,8 +322,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     await page.getByRole('button', { exact: true, name: '新增' }).click();
     const dialog = page.locator('[data-test="provider-dialog-overlay"]');
     await dialog.waitFor({ state: 'visible' });
-    await dialog.locator('select').nth(0).selectOption('protocol');
-    await dialog.locator('select').nth(1).selectOption('openai');
+    await dialog.locator('select').nth(0).selectOption('openai');
     await dialog.getByPlaceholder('openai 或 my-company').fill(PROVIDER_ID);
     await dialog.getByPlaceholder('显示名称').fill(PROVIDER_NAME);
     await dialog.getByPlaceholder('https://...').fill(fakeOpenAiUrl);

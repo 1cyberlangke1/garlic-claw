@@ -78,7 +78,6 @@ function createProvider(id: string, defaultModel?: string) {
   return {
     id,
     name: id,
-    mode: 'catalog' as const,
     driver: id,
     defaultModel,
     modelCount: defaultModel ? 1 : 0,

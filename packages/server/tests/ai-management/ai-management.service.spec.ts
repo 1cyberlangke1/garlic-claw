@@ -6,6 +6,7 @@ import type { AiSettingsFile } from '../../src/ai-management/ai-management.types
 
 jest.mock('../../src/ai-management/ai-management-settings.store', () => {
   const settings: AiSettingsFile = {
+    defaultSelection: null,
     models: [],
     providers: [],
     visionFallback: {
@@ -18,6 +19,7 @@ jest.mock('../../src/ai-management/ai-management-settings.store', () => {
   };
 
   return {
+    cloneDefaultSelection: jest.fn((selection) => selection ? { ...selection } : null),
     cloneRoutingConfig: jest.fn((config) => JSON.parse(JSON.stringify(config))),
     loadAiSettings: jest.fn(() => settings),
     resolveAiSettingsPath: jest.fn(() => 'memory://ai-settings.json'),
@@ -31,6 +33,7 @@ jest.mock('../../src/ai-management/ai-management-settings.store', () => {
         },
       }));
       settings.providers = next.providers.map((provider) => ({ ...provider, models: [...provider.models] }));
+      settings.defaultSelection = next.defaultSelection ? { ...next.defaultSelection } : null;
       settings.visionFallback = { ...next.visionFallback };
       settings.hostModelRouting = JSON.parse(JSON.stringify(next.hostModelRouting));
     }),
@@ -42,6 +45,7 @@ describe('AiManagementService', () => {
     const loadAiSettings = settingsStore.loadAiSettings as unknown as jest.Mock<AiSettingsFile, []>;
     loadAiSettings().models = [];
     loadAiSettings().providers = [];
+    loadAiSettings().defaultSelection = null;
     loadAiSettings().visionFallback = {
       enabled: false,
     };
@@ -70,7 +74,6 @@ describe('AiManagementService', () => {
     const provider = service.upsertProvider('openai-main', {
       apiKey: 'openai-key',
       driver: 'openai',
-      mode: 'catalog',
       models: ['gpt-4o-mini', 'gpt-4.1-mini'],
       name: 'OpenAI',
     });
@@ -79,7 +82,6 @@ describe('AiManagementService', () => {
       defaultModel: 'gpt-4o-mini',
       driver: 'openai',
       id: 'openai-main',
-      mode: 'catalog',
       models: ['gpt-4o-mini', 'gpt-4.1-mini'],
       name: 'OpenAI',
     });
@@ -133,7 +135,6 @@ describe('AiManagementService', () => {
     service.upsertProvider('openai-main', {
       apiKey: 'openai-key',
       driver: 'openai',
-      mode: 'catalog',
       models: ['gpt-4o-mini', 'gpt-4.1-mini'],
       name: 'OpenAI',
     });
@@ -145,7 +146,6 @@ describe('AiManagementService', () => {
     service.upsertProvider('openai-main', {
       apiKey: 'openai-key',
       driver: 'openai',
-      mode: 'catalog',
       models: ['gpt-4.1-mini'],
       name: 'OpenAI',
     });
@@ -155,7 +155,6 @@ describe('AiManagementService', () => {
     service.upsertProvider('openai-main', {
       apiKey: 'openai-key',
       driver: 'openai',
-      mode: 'catalog',
       models: ['gpt-4o-mini', 'gpt-4.1-mini'],
       name: 'OpenAI',
     });
@@ -173,7 +172,6 @@ describe('AiManagementService', () => {
     const service = new AiManagementService(new AiProviderSettingsService());
     service.upsertProvider('ds2api', {
       driver: 'openai',
-      mode: 'protocol',
       models: ['deepseek-chat'],
       name: 'ds2api',
     });
@@ -189,7 +187,6 @@ describe('AiManagementService', () => {
       apiKey: 'openai-key',
       baseUrl: 'https://api.openai.com/v1',
       driver: 'openai',
-      mode: 'catalog',
       models: ['gpt-4o-mini'],
       name: 'OpenAI',
     });
@@ -211,7 +208,6 @@ describe('AiManagementService', () => {
     service.upsertProvider('anthropic-main', {
       apiKey: 'anthropic-key',
       driver: 'anthropic',
-      mode: 'catalog',
       models: ['claude-3-5-sonnet-20241022', 'claude-3-7-sonnet-20250219'],
       name: 'Anthropic',
     });
@@ -244,7 +240,6 @@ describe('AiManagementService', () => {
     const service = new AiManagementService(new AiProviderSettingsService());
     service.upsertProvider('empty', {
       driver: 'openai',
-      mode: 'protocol',
       models: [],
       name: 'Empty',
     });
@@ -259,7 +254,6 @@ describe('AiManagementService', () => {
       baseUrl: 'https://api.anthropic.com/v1',
       defaultModel: 'claude-3-5-sonnet-20241022',
       driver: 'anthropic',
-      mode: 'catalog',
       models: ['claude-3-5-sonnet-20241022'],
       name: 'Anthropic',
     });
@@ -268,7 +262,6 @@ describe('AiManagementService', () => {
       baseUrl: 'https://dsapi.cyberlangke.dpdns.org/v1',
       defaultModel: 'deepseek-v4-flash',
       driver: 'openai',
-      mode: 'protocol',
       models: ['deepseek-v4-flash'],
       name: 'ds2api',
     });
@@ -276,6 +269,24 @@ describe('AiManagementService', () => {
     expect(service.getDefaultProviderSelection()).toEqual({
       modelId: 'deepseek-v4-flash',
       providerId: 'ds2api',
+      source: 'default',
+    });
+  });
+
+  it('pins new conversations to the explicitly changed default model', () => {
+    const service = new AiManagementService(new AiProviderSettingsService());
+    service.upsertProvider('openai-main', {
+      apiKey: 'openai-key',
+      driver: 'openai',
+      models: ['gpt-4o-mini', 'gpt-4.1-mini'],
+      name: 'OpenAI',
+    });
+
+    service.setDefaultModel('openai-main', 'gpt-4.1-mini');
+
+    expect(service.getDefaultProviderSelection()).toEqual({
+      modelId: 'gpt-4.1-mini',
+      providerId: 'openai-main',
       source: 'default',
     });
   });
@@ -290,7 +301,6 @@ describe('AiManagementService', () => {
       baseUrl: 'https://dsapi.cyberlangke.dpdns.org/v1',
       defaultModel: 'deepseek-v4-flash',
       driver: 'openai',
-      mode: 'protocol',
       models: ['deepseek-v4-flash'],
       name: 'ds2api',
     });

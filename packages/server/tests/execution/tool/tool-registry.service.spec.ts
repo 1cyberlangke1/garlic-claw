@@ -7701,7 +7701,6 @@ function createFixture(options: {
     apiKey: 'test-openai-key',
     defaultModel: 'gpt-5.4',
     driver: 'openai',
-    mode: 'protocol',
     models: ['gpt-5.4'],
     name: 'OpenAI',
   });

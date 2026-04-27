@@ -3,7 +3,7 @@
     <div v-if="provider" class="panel-header">
       <div>
         <h2>{{ provider.name }}</h2>
-        <p>{{ provider.id }} · {{ getProviderModeLabel(provider, catalog) }} · {{ getProviderDriverLabel(provider, catalog) }}</p>
+        <p>{{ provider.id }} · {{ getProviderKindLabel(provider, catalog) }} · {{ getProviderDriverLabel(provider, catalog) }}</p>
       </div>
       <div class="header-actions">
         <button type="button" class="ghost-button" :disabled="discoveringModels" @click="$emit('discover-models')">
@@ -138,7 +138,7 @@ import type {
 } from '@garlic-claw/shared'
 import AiModelCapabilityToggles from './AiModelCapabilityToggles.vue'
 import { usePagination } from '@/composables/use-pagination'
-import { getProviderDriverLabel, getProviderModeLabel } from './provider-catalog'
+import { getProviderDriverLabel, getProviderKindLabel } from './provider-catalog'
 
 const props = defineProps<{
   provider: AiProviderConfig | null

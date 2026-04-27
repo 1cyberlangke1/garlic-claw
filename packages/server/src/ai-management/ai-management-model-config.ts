@@ -2,7 +2,6 @@ import {
   type AiModelCapabilities,
   type AiModelConfig,
   type AiProviderCatalogItem,
-  type AiProviderMode,
   type ProviderProtocolDriver,
 } from '@garlic-claw/shared';
 import type { StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
@@ -123,14 +122,9 @@ export function validateAiProviderInput(
   providerCatalog: AiProviderCatalogItem[],
   input: Omit<StoredAiProviderConfig, 'id'>,
 ): void {
-  if (isCatalogProviderMode(input.mode)) {
-    if (!findAiProviderCatalogItem(providerCatalog, input.driver)) {
-      throw new Error(`Unknown provider catalog driver "${input.driver}"`);
-    }
-    return;
-  }
   if (!isProviderProtocolDriver(input.driver)) {
-    throw new Error('Protocol provider driver must be one of: openai, anthropic, gemini');
+    const supportedDrivers = providerCatalog.map((item) => item.protocol).join(', ');
+    throw new Error(`Provider driver must be one of: ${supportedDrivers}`);
   }
 }
 
@@ -139,10 +133,6 @@ export function findAiProviderCatalogItem(
   driver: string,
 ): AiProviderCatalogItem | null {
   return catalog.find((item) => item.id === driver) ?? null;
-}
-
-export function isCatalogProviderMode(mode: AiProviderMode): boolean {
-  return mode === 'catalog';
 }
 
 export function isProviderProtocolDriver(

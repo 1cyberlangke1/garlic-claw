@@ -1676,7 +1676,6 @@ function createAiModelExecutionService(): AiModelExecutionService {
     baseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-5.4',
     driver: 'openai',
-    mode: 'protocol',
     models: ['gpt-5.4'],
     name: 'OpenAI',
   });

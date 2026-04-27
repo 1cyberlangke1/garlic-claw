@@ -27,6 +27,15 @@ export class AiManagementService {
   listProviders() { return this.aiProviderSettingsService.listProviders(); }
 
   getDefaultProviderSelection(): AiDefaultProviderSelection {
+    const explicitSelection = this.aiProviderSettingsService.readDefaultSelection();
+    if (explicitSelection) {
+      try {
+        this.getProviderModel(explicitSelection.providerId, explicitSelection.modelId);
+        return { ...explicitSelection, source: 'default' };
+      } catch {
+        this.aiProviderSettingsService.writeDefaultSelection(null);
+      }
+    }
     const provider = this.aiProviderSettingsService.readPreferredProvider();
     const modelId = provider?.defaultModel ?? provider?.models[0] ?? null;
     return !provider || !modelId ? { modelId: null, providerId: null, source: 'default' } : { modelId, providerId: provider.id, source: 'default' };
@@ -52,10 +61,21 @@ export class AiManagementService {
 
   getProvider(providerId: string): StoredAiProviderConfig { return this.aiProviderSettingsService.getProvider(providerId); }
 
-  upsertProvider(providerId: string, input: Omit<StoredAiProviderConfig, 'id'>): StoredAiProviderConfig { return this.aiProviderSettingsService.upsertProvider(providerId, input); }
+  upsertProvider(providerId: string, input: Omit<StoredAiProviderConfig, 'id'>): StoredAiProviderConfig {
+    const provider = this.aiProviderSettingsService.upsertProvider(providerId, input);
+    const modelId = provider.defaultModel ?? provider.models[0] ?? null;
+    if (modelId && input.defaultModel) {
+      this.aiProviderSettingsService.writeDefaultSelection({ modelId, providerId });
+    }
+    return provider;
+  }
 
   deleteProvider(providerId: string): void {
+    const currentDefaultSelection = this.aiProviderSettingsService.readDefaultSelection();
     this.aiProviderSettingsService.removeProvider(providerId);
+    if (currentDefaultSelection?.providerId === providerId) {
+      this.aiProviderSettingsService.writeDefaultSelection(null);
+    }
   }
 
   listModels(providerId: string): AiModelConfig[] { return this.getProvider(providerId).models.map((modelId) => this.getProviderModel(providerId, modelId)); }
@@ -104,11 +124,19 @@ export class AiManagementService {
       if (provider.defaultModel === modelId) {provider.defaultModel = provider.models[0];}
     });
     this.aiProviderSettingsService.removePersistedModel(providerId, modelId);
+    const currentDefaultSelection = this.aiProviderSettingsService.readDefaultSelection();
+    if (currentDefaultSelection?.providerId === providerId && currentDefaultSelection.modelId === modelId) {
+      const provider = this.getProvider(providerId);
+      const nextModelId = provider.defaultModel ?? provider.models[0] ?? null;
+      this.aiProviderSettingsService.writeDefaultSelection(nextModelId ? { modelId: nextModelId, providerId } : null);
+    }
   }
 
   setDefaultModel(providerId: string, modelId: string): StoredAiProviderConfig {
     this.getProviderModel(providerId, modelId);
-    return this.updateProvider(providerId, (provider) => { provider.defaultModel = modelId; });
+    const provider = this.updateProvider(providerId, (provider) => { provider.defaultModel = modelId; });
+    this.aiProviderSettingsService.writeDefaultSelection({ modelId, providerId });
+    return provider;
   }
 
   updateModelCapabilities(

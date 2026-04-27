@@ -53,7 +53,6 @@ const modelCapabilities: AiModelCapabilities = {
 const providerSummary: AiProviderSummary = {
   id: 'openai',
   name: 'OpenAI',
-  mode: 'catalog',
   driver: 'openai',
   defaultModel: 'gpt-4o-mini',
   baseUrl: 'https://api.openai.com/v1',
@@ -64,7 +63,6 @@ const providerSummary: AiProviderSummary = {
 const providerConfig: AiProviderConfig = {
   id: 'openai',
   name: 'OpenAI',
-  mode: 'catalog',
   driver: 'openai',
   defaultModel: 'gpt-4o-mini',
   models: ['gpt-4o-mini'],

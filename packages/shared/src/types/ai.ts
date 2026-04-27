@@ -1,9 +1,4 @@
 /**
- * provider 模式。
- */
-export type AiProviderMode = 'catalog' | 'protocol';
-
-/**
  * 协议接入协议族。
  */
 export type ProviderProtocolDriver = 'openai' | 'anthropic' | 'gemini';
@@ -117,10 +112,8 @@ export interface AiProviderSummary {
   id: string;
   /** provider 名称。 */
   name: string;
-  /** provider 模式。 */
-  mode: AiProviderMode;
-  /** catalog driver 或协议协议族。 */
-  driver: string;
+  /** 协议驱动。 */
+  driver: ProviderProtocolDriver;
   /** 默认模型。 */
   defaultModel?: string;
   /** Base URL。 */
@@ -151,10 +144,8 @@ export interface AiProviderConfig {
   id: string;
   /** provider 名称。 */
   name: string;
-  /** provider 模式。 */
-  mode: AiProviderMode;
-  /** catalog driver 或协议协议族。 */
-  driver: string;
+  /** 协议驱动。 */
+  driver: ProviderProtocolDriver;
   /** API key。 */
   apiKey?: string;
   /** Base URL。 */

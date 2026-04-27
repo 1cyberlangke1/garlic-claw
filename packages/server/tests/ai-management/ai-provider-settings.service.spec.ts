@@ -29,7 +29,6 @@ describe('AiProviderSettingsService runtime config', () => {
     fs.writeFileSync(path.join(defaultConfigRoot, 'providers', 'openai.json'), JSON.stringify({
       id: 'openai',
       name: 'OpenAI',
-      mode: 'protocol',
       driver: 'openai',
       apiKey: 'test-openai-key',
       baseUrl: 'https://api.openai.com/v1',
@@ -77,7 +76,6 @@ describe('AiProviderSettingsService runtime config', () => {
     fs.writeFileSync(path.join(providerRoot, 'openai.json'), JSON.stringify({
       id: 'openai',
       name: 'OpenAI',
-      mode: 'protocol',
       driver: 'openai',
       apiKey: 'current-openai-key',
       baseUrl: 'https://api.openai.com/v1',
@@ -90,7 +88,6 @@ describe('AiProviderSettingsService runtime config', () => {
         {
           id: 'openai',
           name: 'OpenAI',
-          mode: 'protocol',
           driver: 'openai',
           apiKey: 'legacy-openai-key',
           baseUrl: 'https://api.openai.com/v1',
@@ -100,7 +97,6 @@ describe('AiProviderSettingsService runtime config', () => {
         {
           id: 'nvidia',
           name: 'nvidia',
-          mode: 'protocol',
           driver: 'openai',
           apiKey: 'legacy-nvidia-key',
           baseUrl: 'https://integrate.api.nvidia.com/v1',
@@ -236,7 +232,6 @@ describe('AiProviderSettingsService runtime config', () => {
     const providerPayload = {
       id: 'openai',
       name: 'OpenAI',
-      mode: 'protocol',
       driver: 'openai',
       apiKey: 'same-openai-key',
       baseUrl: 'https://api.openai.com/v1',
@@ -289,7 +284,6 @@ describe('AiProviderSettingsService runtime config', () => {
       baseUrl: 'https://api.anthropic.com/v1',
       defaultModel: 'claude-3-5-sonnet-20241022',
       driver: 'anthropic',
-      mode: 'catalog',
       models: ['claude-3-5-sonnet-20241022'],
       name: 'Anthropic',
     });
@@ -298,7 +292,6 @@ describe('AiProviderSettingsService runtime config', () => {
       baseUrl: 'https://dsapi.cyberlangke.dpdns.org/v1',
       defaultModel: 'deepseek-v4-flash',
       driver: 'openai',
-      mode: 'protocol',
       models: ['deepseek-v4-flash'],
       name: 'ds2api',
     });

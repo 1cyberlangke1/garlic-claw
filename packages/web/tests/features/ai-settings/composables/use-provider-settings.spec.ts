@@ -37,7 +37,6 @@ function createProviderSummary(id: string, name = id): AiProviderSummary {
   return {
     id,
     name,
-    mode: 'catalog',
     driver: 'openai',
     defaultModel: `${id}-default`,
     baseUrl: 'https://example.com/v1',
@@ -50,7 +49,6 @@ function createProviderConfig(id: string, name = id): AiProviderConfig {
   return {
     id,
     name,
-    mode: 'catalog',
     driver: 'openai',
     defaultModel: `${id}-default`,
     baseUrl: 'https://example.com/v1',

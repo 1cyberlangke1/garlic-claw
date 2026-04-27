@@ -1,11 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { AiHostModelRoutingConfig, AiProviderMode } from '@garlic-claw/shared';
+import type { AiHostModelRoutingConfig, AiModelRouteTarget, ProviderProtocolDriver } from '@garlic-claw/shared';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
 import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
 import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
 const AI_PROVIDER_DIRECTORY = 'providers';
+const AI_DEFAULT_SELECTION_FILE = 'default-selection.json';
 const AI_HOST_MODEL_ROUTING_FILE = 'host-model-routing.json';
 const AI_VISION_FALLBACK_FILE = 'vision-fallback.json';
 const LEGACY_AI_SETTINGS_FILE_CANDIDATES = [
@@ -29,6 +30,7 @@ export function loadAiSettings(settingsPath: string): AiSettingsFile {
     migrateLegacyAiSettingsFile(settingsPath, empty);
     const providerFiles = readAiProviderStorageFiles(settingsPath);
     return {
+      defaultSelection: readDefaultSelection(settingsPath),
       hostModelRouting: readJsonFile(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), cloneRoutingConfig(empty.hostModelRouting)),
       models: providerFiles.flatMap((provider) => provider.persistedModels?.map(cloneStoredAiModelConfig) ?? []).sort(compareStoredModels),
       providers: providerFiles.map(({ persistedModels: _persistedModels, ...provider }) => cloneStoredProviderConfig(provider)).sort((left, right) => left.id.localeCompare(right.id)),
@@ -64,6 +66,7 @@ export function saveAiSettings(settingsPath: string, settings: AiSettingsFile): 
       'utf-8',
     );
   }
+  writeDefaultSelectionFile(settingsPath, settings.defaultSelection);
   fs.writeFileSync(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), JSON.stringify(cloneRoutingConfig(settings.hostModelRouting), null, 2), 'utf-8');
   fs.writeFileSync(path.join(settingsPath, AI_VISION_FALLBACK_FILE), JSON.stringify({ ...settings.visionFallback }, null, 2), 'utf-8');
 }
@@ -74,6 +77,10 @@ export function cloneRoutingConfig(config: AiHostModelRoutingConfig): AiHostMode
     ...(config.compressionModel ? { compressionModel: { ...config.compressionModel } } : {}),
     utilityModelRoles: Object.fromEntries(Object.entries(config.utilityModelRoles).map(([role, target]) => [role, target ? { ...target } : target])) as AiHostModelRoutingConfig['utilityModelRoles'],
   };
+}
+
+export function cloneDefaultSelection(selection: AiModelRouteTarget | null): AiModelRouteTarget | null {
+  return selection ? { ...selection } : null;
 }
 
 function readAiProviderDirectory(settingsPath: string): string {
@@ -108,6 +115,7 @@ function migrateLegacyAiSettingsFile(settingsPath: string, empty: AiSettingsFile
 function readLegacyAiSettingsFile(filePath: string, empty: AiSettingsFile): AiSettingsFile {
   const parsed = readJsonFile<Partial<AiSettingsFile>>(filePath, {});
   return {
+    defaultSelection: null,
     hostModelRouting: readLegacyHostModelRouting(parsed.hostModelRouting, empty.hostModelRouting),
     models: Array.isArray(parsed.models) ? parsed.models.flatMap(normalizeStoredAiModelConfig).sort(compareStoredModels) : [],
     providers: Array.isArray(parsed.providers) ? parsed.providers.flatMap(normalizeLegacyProviderConfig).sort((left, right) => left.id.localeCompare(right.id)) : [],
@@ -118,6 +126,7 @@ function readLegacyAiSettingsFile(filePath: string, empty: AiSettingsFile): AiSe
 function readStructuredAiSettings(settingsPath: string, empty: AiSettingsFile): AiSettingsFile {
   const providerFiles = readAiProviderStorageFiles(settingsPath);
   return {
+    defaultSelection: readDefaultSelection(settingsPath),
     hostModelRouting: readJsonFile(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), cloneRoutingConfig(empty.hostModelRouting)),
     models: providerFiles.flatMap((provider) => provider.persistedModels?.map(cloneStoredAiModelConfig) ?? []).sort(compareStoredModels),
     providers: providerFiles.map(({ persistedModels: _persistedModels, ...provider }) => cloneStoredProviderConfig(provider)).sort((left, right) => left.id.localeCompare(right.id)),
@@ -137,6 +146,7 @@ function mergeStructuredAiSettings(current: AiSettingsFile, legacy: AiSettingsFi
     ...legacy.models.filter((model) => !mergedModelKeys.has(`${model.providerId}::${model.id}`)).map(cloneStoredAiModelConfig),
   ].sort(compareStoredModels);
   return {
+    defaultSelection: current.defaultSelection ?? legacy.defaultSelection ?? null,
     hostModelRouting: isEmptyRoutingConfig(current.hostModelRouting) && !isEmptyRoutingConfig(legacy.hostModelRouting)
       ? cloneRoutingConfig(legacy.hostModelRouting)
       : cloneRoutingConfig(current.hostModelRouting),
@@ -172,16 +182,14 @@ function readAiProviderStorageFile(filePath: string): AiProviderStorageFile | nu
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Partial<AiProviderStorageFile>;
     const providerId = normalizeOptionalText(parsed.id) ?? decodeURIComponent(path.basename(filePath, '.json'));
     const name = normalizeOptionalText(parsed.name) ?? providerId;
-    const mode = typeof parsed.mode === 'string' ? parsed.mode as AiProviderMode : null;
-    const driver = normalizeOptionalText(parsed.driver);
-    if (!providerId || !name || !mode || !driver) { return null; }
+    const driver = normalizeProtocolDriver(parsed.driver);
+    if (!providerId || !name || !driver) { return null; }
     return {
       apiKey: normalizeOptionalText(parsed.apiKey),
       baseUrl: normalizeOptionalText(parsed.baseUrl),
       defaultModel: normalizeOptionalText(parsed.defaultModel),
       driver,
       id: providerId,
-      mode,
       models: Array.isArray(parsed.models)
         ? [...new Set(parsed.models.flatMap((entry) => {
           const value = normalizeOptionalText(entry);
@@ -201,16 +209,14 @@ function normalizeLegacyProviderConfig(input: unknown): StoredAiProviderConfig[]
   const record = input as Partial<StoredAiProviderConfig>;
   const providerId = normalizeOptionalText(record.id);
   const name = normalizeOptionalText(record.name) ?? providerId;
-  const mode = typeof record.mode === 'string' ? record.mode as AiProviderMode : null;
-  const driver = normalizeOptionalText(record.driver);
-  if (!providerId || !name || !mode || !driver) { return []; }
+  const driver = normalizeProtocolDriver(record.driver);
+  if (!providerId || !name || !driver) { return []; }
   return [{
     apiKey: normalizeOptionalText(record.apiKey),
     baseUrl: normalizeOptionalText(record.baseUrl),
     defaultModel: normalizeOptionalText(record.defaultModel),
     driver,
     id: providerId,
-    mode,
     models: Array.isArray(record.models)
       ? [...new Set(record.models.flatMap((entry) => {
         const value = normalizeOptionalText(entry);
@@ -251,6 +257,19 @@ function cloneStoredProviderConfig(provider: StoredAiProviderConfig): StoredAiPr
   return { ...provider, models: [...provider.models] };
 }
 
+function readDefaultSelection(settingsPath: string): AiModelRouteTarget | null {
+  return normalizeDefaultSelection(readJsonFile(path.join(settingsPath, AI_DEFAULT_SELECTION_FILE), null));
+}
+
+function writeDefaultSelectionFile(settingsPath: string, selection: AiModelRouteTarget | null): void {
+  const filePath = path.join(settingsPath, AI_DEFAULT_SELECTION_FILE);
+  if (!selection) {
+    fs.rmSync(filePath, { force: true });
+    return;
+  }
+  fs.writeFileSync(filePath, JSON.stringify(selection, null, 2), 'utf-8');
+}
+
 function cloneStoredAiModelConfig(model: StoredAiModelConfig): StoredAiModelConfig {
   return {
     ...model,
@@ -289,7 +308,7 @@ function compareStoredModels(left: StoredAiModelConfig, right: StoredAiModelConf
 }
 
 function createEmptySettings(): AiSettingsFile {
-  return { hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} }, models: [], providers: [], visionFallback: { enabled: false } };
+  return { defaultSelection: null, hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} }, models: [], providers: [], visionFallback: { enabled: false } };
 }
 
 function normalizeOptionalText(value: unknown): string | undefined {
@@ -308,4 +327,20 @@ function isDefaultVisionFallback(config: AiSettingsFile['visionFallback']): bool
     && !normalizeOptionalText(config.modelId)
     && !normalizeOptionalText(config.prompt)
     && config.maxDescriptionLength === undefined;
+}
+
+function normalizeDefaultSelection(value: unknown): AiModelRouteTarget | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as Partial<AiModelRouteTarget>;
+  const providerId = normalizeOptionalText(record.providerId);
+  const modelId = normalizeOptionalText(record.modelId);
+  return providerId && modelId ? { providerId, modelId } : null;
+}
+
+function normalizeProtocolDriver(value: unknown): ProviderProtocolDriver | null {
+  return value === 'openai' || value === 'anthropic' || value === 'gemini'
+    ? value
+    : null;
 }

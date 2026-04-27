@@ -751,7 +751,6 @@ function createService(): AiModelExecutionService {
     baseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-5.4',
     driver: 'openai',
-    mode: 'protocol',
     models: ['gpt-5.4'],
     name: 'OpenAI',
   });
@@ -760,7 +759,6 @@ function createService(): AiModelExecutionService {
     baseUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-3-7-sonnet',
     driver: 'anthropic',
-    mode: 'protocol',
     models: ['claude-3-7-sonnet'],
     name: 'Anthropic',
   });
@@ -769,7 +767,6 @@ function createService(): AiModelExecutionService {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-2.5-pro',
     driver: 'gemini',
-    mode: 'protocol',
     models: ['gemini-2.5-pro'],
     name: 'Google Gemini',
   });

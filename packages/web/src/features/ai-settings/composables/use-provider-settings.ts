@@ -288,7 +288,6 @@ export function useProviderSettings() {
         ? {
             ...provider,
             name: updatedProvider.name,
-            mode: updatedProvider.mode,
             driver: updatedProvider.driver,
             defaultModel: updatedProvider.defaultModel,
             baseUrl: updatedProvider.baseUrl,

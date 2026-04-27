@@ -100,6 +100,34 @@
 - 步骤 4 已完成
 - 步骤 5 已完成
 
+## 2026-04-27 provider 接入语义收口与新对话默认模型修复
+
+1. 收口 provider 公开语义
+  - 删除 `AiProviderMode`
+  - 前后端 provider API 只保留 `driver`
+  - 旧 `mode` 仅允许作为历史输入被忽略，不再继续写出
+2. 修默认模型选择
+  - 持久化“显式默认 provider/model”
+  - 设置页改默认模型后，新对话应直接命中该选择
+  - 删除默认 provider / 默认模型后，选择应自动回退
+3. 修 smoke 与前端表单
+  - provider 编辑弹窗移除“接入方式”下拉
+  - browser smoke / http smoke 改成新表单与新请求体
+4. fresh 验收
+  - `npm run build -w packages/shared`
+  - `npm run typecheck:server`
+  - `npm run typecheck -w packages/web`
+  - 定向 Jest / Vitest
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+- 步骤 4 已完成
+
 ## 2026-04-27 CRUD 覆盖补齐
 
 1. 更新计划文件

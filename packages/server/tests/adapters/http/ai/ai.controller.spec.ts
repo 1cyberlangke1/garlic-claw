@@ -79,7 +79,6 @@ describe('AiController', () => {
 
   it('forwards provider upsert requests to the management service', () => {
     const dto = {
-      mode: 'catalog',
       driver: 'openai',
       name: 'OpenAI',
       models: ['gpt-4o-mini'],

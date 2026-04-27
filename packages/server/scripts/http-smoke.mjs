@@ -638,7 +638,6 @@ async function runHttpFlow(apiBase, state, input) {
         baseUrl: input.fakeOpenAiUrl,
         defaultModel: state.modelId,
         driver: 'openai',
-        mode: 'protocol',
         models: [state.modelId, 'smoke-vision'],
         name: 'Smoke OpenAI',
       },
@@ -2819,7 +2818,6 @@ async function prepareProxyOpenAiProvider(apiBase, state, fakeOpenAiUrl) {
     baseUrl: fakeOpenAiUrl,
     defaultModel: state.modelId,
     driver: 'openai',
-    mode: 'protocol',
     models: [state.modelId, 'smoke-vision'],
     name: state.proxyOpenAiProviderBackup?.name ?? 'OpenAI',
   });
