@@ -129,8 +129,8 @@ async function main() {
   const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'http-smoke-'));
   const databasePath = cli.proxyOrigin ? null : path.join(tempDir, 'smoke.sqlite');
   const databaseUrl = databasePath ? buildRelativeSqliteUrl(databasePath) : null;
-  const port = cli.proxyOrigin ? null : await getFreePort();
-  const wsPort = cli.proxyOrigin ? null : await getFreePort();
+  let port = null;
+  let wsPort = null;
   const skillRoot = path.join(PROJECT_ROOT, 'config', 'skills', 'definitions', SKILL_DIR_NAME);
   const fakeOpenAi = await startFakeOpenAiServer();
   smokeWebFetchUrl = `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-webfetch/article`;
@@ -262,6 +262,8 @@ async function main() {
       });
 
       console.log('-> start backend');
+      port = await getFreePort();
+      wsPort = await getFreePort();
       backend = await startBackend(port, wsPort, databaseUrl, serverFiles, {
         runtimeApprovalMode: cli.runtimeApprovalMode,
       });

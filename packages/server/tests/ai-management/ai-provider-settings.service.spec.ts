@@ -62,6 +62,105 @@ describe('AiProviderSettingsService runtime config', () => {
     }
   });
 
+  it('migrates legacy ui-written providers from the old single-file storage into per-provider json files', () => {
+    const workspaceRoot = path.join(os.tmpdir(), `ai-provider-settings.legacy-${Date.now()}-${Math.random()}`);
+    const nestedServerRoot = path.join(workspaceRoot, 'packages', 'server');
+    const configRoot = path.join(workspaceRoot, 'config', 'ai');
+    const providerRoot = path.join(configRoot, 'providers');
+    const legacyFilePath = path.join(workspaceRoot, 'packages', 'server', 'tmp', 'ai-settings.server.json');
+    const originalCwd = process.cwd();
+    const originalJestWorkerId = process.env.JEST_WORKER_ID;
+    fs.mkdirSync(providerRoot, { recursive: true });
+    fs.mkdirSync(path.dirname(legacyFilePath), { recursive: true });
+    fs.mkdirSync(nestedServerRoot, { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'ai-config-legacy-test' }), 'utf-8');
+    fs.writeFileSync(path.join(providerRoot, 'openai.json'), JSON.stringify({
+      id: 'openai',
+      name: 'OpenAI',
+      mode: 'protocol',
+      driver: 'openai',
+      apiKey: 'current-openai-key',
+      baseUrl: 'https://api.openai.com/v1',
+      defaultModel: 'gpt-5.4',
+      models: ['gpt-5.4'],
+      persistedModels: [],
+    }, null, 2), 'utf-8');
+    fs.writeFileSync(legacyFilePath, JSON.stringify({
+      providers: [
+        {
+          id: 'openai',
+          name: 'OpenAI',
+          mode: 'protocol',
+          driver: 'openai',
+          apiKey: 'legacy-openai-key',
+          baseUrl: 'https://api.openai.com/v1',
+          defaultModel: 'gpt-5.4',
+          models: ['gpt-5.4'],
+        },
+        {
+          id: 'nvidia',
+          name: 'nvidia',
+          mode: 'protocol',
+          driver: 'openai',
+          apiKey: 'legacy-nvidia-key',
+          baseUrl: 'https://integrate.api.nvidia.com/v1',
+          defaultModel: 'openai/gpt-oss-20b',
+          models: ['openai/gpt-oss-20b'],
+        },
+      ],
+      models: [
+        {
+          capabilities: {
+            reasoning: false,
+            toolCall: true,
+            input: { text: true, image: false },
+            output: { text: true, image: false },
+          },
+          contextLength: 131072,
+          id: 'openai/gpt-oss-20b',
+          name: 'openai/gpt-oss-20b',
+          providerId: 'nvidia',
+          status: 'active',
+        },
+      ],
+      visionFallback: { enabled: false },
+      hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} },
+    }, null, 2), 'utf-8');
+
+    delete process.env[envKey];
+    delete process.env.JEST_WORKER_ID;
+    process.chdir(nestedServerRoot);
+
+    try {
+      const service = new AiProviderSettingsService();
+
+      expect(service.listProviders()).toEqual([
+        expect.objectContaining({ id: 'nvidia', name: 'nvidia' }),
+        expect.objectContaining({ id: 'openai', name: 'OpenAI' }),
+      ]);
+      expect(JSON.parse(fs.readFileSync(path.join(providerRoot, 'openai.json'), 'utf-8'))).toEqual(expect.objectContaining({
+        id: 'openai',
+        apiKey: 'current-openai-key',
+        baseUrl: 'https://api.openai.com/v1',
+      }));
+      expect(JSON.parse(fs.readFileSync(path.join(providerRoot, 'nvidia.json'), 'utf-8'))).toEqual(expect.objectContaining({
+        id: 'nvidia',
+        apiKey: 'legacy-nvidia-key',
+        baseUrl: 'https://integrate.api.nvidia.com/v1',
+      }));
+      expect(fs.existsSync(`${legacyFilePath}.migrated`)).toBe(true);
+      expect(fs.existsSync(legacyFilePath)).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+      if (originalJestWorkerId) {
+        process.env.JEST_WORKER_ID = originalJestWorkerId;
+      } else {
+        delete process.env.JEST_WORKER_ID;
+      }
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it('persists host model routing config into the shared ai settings file', () => {
     process.env[envKey] = tempSettingsPath;
 
@@ -124,5 +223,60 @@ describe('AiProviderSettingsService runtime config', () => {
       prompt: 'describe image',
       providerId: 'openai',
     });
+  });
+
+  it('archives a legacy single-file config even when structured settings already contain the same data', () => {
+    const workspaceRoot = path.join(os.tmpdir(), `ai-provider-settings.archive-${Date.now()}-${Math.random()}`);
+    const nestedServerRoot = path.join(workspaceRoot, 'packages', 'server');
+    const configRoot = path.join(workspaceRoot, 'config', 'ai');
+    const providerRoot = path.join(configRoot, 'providers');
+    const legacyFilePath = path.join(workspaceRoot, 'packages', 'server', 'tmp', 'ai-settings.server.json');
+    const originalCwd = process.cwd();
+    const originalJestWorkerId = process.env.JEST_WORKER_ID;
+    const providerPayload = {
+      id: 'openai',
+      name: 'OpenAI',
+      mode: 'protocol',
+      driver: 'openai',
+      apiKey: 'same-openai-key',
+      baseUrl: 'https://api.openai.com/v1',
+      defaultModel: 'gpt-5.4',
+      models: ['gpt-5.4'],
+      persistedModels: [],
+    };
+    fs.mkdirSync(providerRoot, { recursive: true });
+    fs.mkdirSync(path.dirname(legacyFilePath), { recursive: true });
+    fs.mkdirSync(nestedServerRoot, { recursive: true });
+    fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'ai-config-archive-test' }), 'utf-8');
+    fs.writeFileSync(path.join(providerRoot, 'openai.json'), JSON.stringify(providerPayload, null, 2), 'utf-8');
+    fs.writeFileSync(legacyFilePath, JSON.stringify({
+      providers: [{ ...providerPayload }],
+      models: [],
+      visionFallback: { enabled: false },
+      hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} },
+    }, null, 2), 'utf-8');
+
+    delete process.env[envKey];
+    delete process.env.JEST_WORKER_ID;
+    process.chdir(nestedServerRoot);
+
+    try {
+      const service = new AiProviderSettingsService();
+
+      expect(service.listProviders()).toEqual([
+        expect.objectContaining({ id: 'openai', name: 'OpenAI' }),
+      ]);
+      expect(fs.existsSync(`${legacyFilePath}.migrated`)).toBe(true);
+      expect(fs.existsSync(legacyFilePath)).toBe(false);
+      expect(JSON.parse(fs.readFileSync(path.join(providerRoot, 'openai.json'), 'utf-8'))).toEqual(providerPayload);
+    } finally {
+      process.chdir(originalCwd);
+      if (originalJestWorkerId) {
+        process.env.JEST_WORKER_ID = originalJestWorkerId;
+      } else {
+        delete process.env.JEST_WORKER_ID;
+      }
+      fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    }
   });
 });

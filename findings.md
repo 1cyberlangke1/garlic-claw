@@ -1,5 +1,24 @@
 # Findings
 
+## 2026-04-27 provider 回迁修复
+
+- 这次 provider 消失的真实问题是后端默认存储路径切换，不是前端直写文件：
+  - 前端只调用 `/api/ai/providers/*`
+  - 真正写盘发生在后端 `AiProviderSettingsService -> saveAiSettings(...)`
+- `2026-04-25` 配置目录改造后，旧单文件 `packages/server/tmp/ai-settings.server.json` 仍保留了用户此前在 UI 中新增的 provider
+- 新结构 `config/ai/providers/*.json` 已成为唯一正确目标格式，因此最小修复不是回退到单文件，而是做一次性拆分迁移
+- 迁移策略需要保守：
+  - 只补新目录里缺失的 provider
+  - 不覆盖已存在的同名 provider 文件
+  - 迁移完成后归档旧单文件，避免每次启动重复导入
+- 如果当前 structured 配置已经完全覆盖 legacy 内容，也应直接归档 legacy 文件：
+  - 否则每次启动都会重复扫描同一个旧文件
+  - 这类场景不需要保留旧单文件继续参与导入决策
+- 当前工作区已验证：
+  - 旧单文件中的 `ds2api`、`nvidia` 已拆到独立 provider JSON
+  - 定向 build 与 `ai-provider-settings.service.spec.ts` 已通过
+  - `smoke:http` 与 `browser-smoke` 已通过
+
 ## 2026-04-26 体积治理与 owner 收口
 
 - 体积下降最快的做法仍然是 owner 级重写，不是零散删行。

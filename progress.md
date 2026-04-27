@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-04-27 provider 回迁修复
+
+- 用户纠正后已收口事实：
+  - 前端没有直接写文件
+  - 真实写盘 owner 是后端 `AiProviderSettingsService -> saveAiSettings(...)`
+  - provider 消失是因为后端默认存储路径切换后，没有把旧单文件里的数据迁入 `config/ai/providers/*.json`
+- 已完成代码：
+  - `packages/server/src/ai-management/ai-management-settings.store.ts`
+    - 新增旧单文件到新目录结构的一次性迁移
+    - 迁移策略为“只补新目录缺失的 provider，不覆盖同名现存文件”
+    - 迁移成功后把旧单文件归档为 `.migrated`
+- 已完成定向 fresh：
+  - `packages/server`: `npm run build`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts`
+  - `packages/server`: `npm run smoke:http` -> `server HTTP smoke passed: 184 checks`
+  - `packages/web`: `node tests/smoke/browser-smoke.mjs` -> `browser UI smoke passed`
+- 已直接修复当前工作区数据：
+  - 新增 `config/ai/providers/ds2api.json`
+  - 新增 `config/ai/providers/nvidia.json`
+  - 归档 `packages/server/tmp/ai-settings.server.json` -> `packages/server/tmp/ai-settings.server.json.migrated`
+- 已补强：
+  - 新增断言：已有 `openai.json` 保留当前 `apiKey`，不会被 legacy 文件覆盖
+  - 调整迁移：当 structured 设置已与 legacy 等价时，也会归档 legacy 文件
+- 独立 judge：
+  - `PASS`
+  - 结论：写盘 owner 仍在后端；迁移目标仍是 `config/ai/providers/*.json`；迁移只补缺失 provider，不覆盖同名现存文件
+
 ## 2026-04-26 体积治理与 owner 收口
 
 - 当前累计净减：

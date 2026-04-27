@@ -1,5 +1,35 @@
 # Task Plan
 
+## 2026-04-27 provider 回迁修复
+
+### 当前阶段
+
+1. 定位 provider 消失来源
+   - 真实写盘 owner 在后端 `AiProviderSettingsService -> saveAiSettings(...)`
+   - 问题不是前端直写文件，而是后端默认路径从旧单文件切到 `config/ai/` 后没有迁移旧数据
+2. 修复目标
+   - 保持“每个 provider 一个 JSON 文件”
+   - 启动读取时执行一次性旧配置回迁
+   - 不覆盖新目录里已存在的同名 provider 文件
+3. fresh 验收
+   - `packages/server`: `npm run build`
+   - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts`
+4. judge 要求
+   - 明确 owner 仍是后端
+   - 明确迁移结果仍是 `config/ai/providers/*.json`
+   - 明确迁移只补缺失项，不覆盖同名现存文件
+5. 收口补强
+   - 增加断言：已有 `openai.json` 保留当前 `apiKey`，不被 legacy 单文件覆盖
+   - 调整迁移：当 structured 配置已与 legacy 等价时，也归档 legacy 文件，避免重复扫描
+6. 本轮 fresh
+   - `packages/server`: `npm run build`
+   - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts`
+   - `packages/server`: `npm run smoke:http`
+   - `packages/web`: `node tests/smoke/browser-smoke.mjs`
+7. 独立 judge
+   - 结果：`PASS`
+   - 结论：后端 owner、分文件目标、只补缺失 provider 三条均成立
+
 ## 2026-04-26 体积治理与 owner 收口
 
 ### 已执行

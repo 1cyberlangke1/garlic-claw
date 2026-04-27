@@ -25,6 +25,37 @@
   - 文档同步
 - 未通过 judge 的阶段不能标成 `[已完成]`。
 
+## 当前阶段计划
+
+- 当前无进行中阶段；`R10` 已收口，下一阶段待新计划指定。
+
+### R10 前端新增 provider 丢失回迁 `[已完成]`
+
+- 目标：
+  - 修复 `2026-04-25` 配置目录切换后，旧后端单文件 `packages/server/tmp/ai-settings.server.json` 中的 provider 没有迁入 `config/ai/providers/*.json`，导致前端历史新增 provider 消失的问题
+  - 保持边界不变：前端只调用后端接口；真正写盘仍只发生在后端；每个 provider 继续独立存为一个 JSON 文件
+- 代码变更：
+  - `packages/server/src/ai-management/ai-management-settings.store.ts`
+    - `loadAiSettings(...)` 新增一次性旧配置迁移
+    - 仅把“新目录缺失的 provider”从旧单文件拆入 `config/ai/providers/*.json`
+    - 迁移后把旧单文件归档为 `.migrated`，避免重复导入
+- fresh 验收：
+  - `packages/server`: `npm run build`
+  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts`
+  - `packages/server`: `npm run smoke:http`
+  - `packages/web`: `node tests/smoke/browser-smoke.mjs`
+- 当前工作区数据状态：
+  - 已恢复 `config/ai/providers/ds2api.json`
+  - 已恢复 `config/ai/providers/nvidia.json`
+  - 已归档 `packages/server/tmp/ai-settings.server.json.migrated`
+- judge：
+  - 要求：
+    - 确认真实写盘 owner 仍是后端，不是前端
+    - 确认迁移目标仍是 `config/ai/providers/*.json`
+    - 确认不会覆盖已存在的同名 provider 文件
+  - 独立 judge：`PASS`
+    - 结论：写盘 owner 仍在后端，迁移目标仍是 `config/ai/providers/*.json`，且同名 provider 不会被旧单文件覆盖
+
 ## OpenCode 对照
 
 | 能力 | OpenCode 源码 | 当前实际 owner | 状态 |

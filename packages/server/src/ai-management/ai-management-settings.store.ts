@@ -7,6 +7,10 @@ import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, Stored
 const AI_PROVIDER_DIRECTORY = 'providers';
 const AI_HOST_MODEL_ROUTING_FILE = 'host-model-routing.json';
 const AI_VISION_FALLBACK_FILE = 'vision-fallback.json';
+const LEGACY_AI_SETTINGS_FILE_CANDIDATES = [
+  path.join('packages', 'server', 'tmp', 'ai-settings.server.json'),
+  path.join('config', 'ai-settings.json'),
+] as const;
 
 export function resolveAiSettingsPath(): string {
   if (process.env.JEST_WORKER_ID) {
@@ -21,6 +25,7 @@ export function loadAiSettings(settingsPath: string): AiSettingsFile {
   const empty = createEmptySettings();
   try {
     fs.mkdirSync(readAiProviderDirectory(settingsPath), { recursive: true });
+    migrateLegacyAiSettingsFile(settingsPath, empty);
     const providerFiles = readAiProviderStorageFiles(settingsPath);
     return {
       hostModelRouting: readJsonFile(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), cloneRoutingConfig(empty.hostModelRouting)),
@@ -74,6 +79,86 @@ function readAiProviderDirectory(settingsPath: string): string {
   return path.join(settingsPath, AI_PROVIDER_DIRECTORY);
 }
 
+function migrateLegacyAiSettingsFile(settingsPath: string, empty: AiSettingsFile): void {
+  if (process.env.GARLIC_CLAW_AI_SETTINGS_PATH || process.env.JEST_WORKER_ID) {
+    return;
+  }
+  const projectRoot = new ProjectWorktreeRootService().resolveRoot(process.cwd());
+  const legacyFilePath = LEGACY_AI_SETTINGS_FILE_CANDIDATES
+    .map((candidate) => path.join(projectRoot, candidate))
+    .find((candidate) => fs.existsSync(candidate));
+  if (!legacyFilePath) {
+    return;
+  }
+  const legacySettings = readLegacyAiSettingsFile(legacyFilePath, empty);
+  if (legacySettings.providers.length === 0 && legacySettings.models.length === 0) {
+    return;
+  }
+  const currentSettings = readStructuredAiSettings(settingsPath, empty);
+  const mergedSettings = mergeStructuredAiSettings(currentSettings, legacySettings);
+  if (!didAiSettingsChange(currentSettings, mergedSettings)) {
+    archiveLegacyAiSettingsFile(legacyFilePath);
+    return;
+  }
+  saveAiSettings(settingsPath, mergedSettings);
+  archiveLegacyAiSettingsFile(legacyFilePath);
+}
+
+function readLegacyAiSettingsFile(filePath: string, empty: AiSettingsFile): AiSettingsFile {
+  const parsed = readJsonFile<Partial<AiSettingsFile>>(filePath, {});
+  return {
+    hostModelRouting: readLegacyHostModelRouting(parsed.hostModelRouting, empty.hostModelRouting),
+    models: Array.isArray(parsed.models) ? parsed.models.flatMap(normalizeStoredAiModelConfig).sort(compareStoredModels) : [],
+    providers: Array.isArray(parsed.providers) ? parsed.providers.flatMap(normalizeLegacyProviderConfig).sort((left, right) => left.id.localeCompare(right.id)) : [],
+    visionFallback: readLegacyVisionFallback(parsed.visionFallback, empty.visionFallback),
+  };
+}
+
+function readStructuredAiSettings(settingsPath: string, empty: AiSettingsFile): AiSettingsFile {
+  const providerFiles = readAiProviderStorageFiles(settingsPath);
+  return {
+    hostModelRouting: readJsonFile(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), cloneRoutingConfig(empty.hostModelRouting)),
+    models: providerFiles.flatMap((provider) => provider.persistedModels?.map(cloneStoredAiModelConfig) ?? []).sort(compareStoredModels),
+    providers: providerFiles.map(({ persistedModels: _persistedModels, ...provider }) => cloneStoredProviderConfig(provider)).sort((left, right) => left.id.localeCompare(right.id)),
+    visionFallback: readJsonFile(path.join(settingsPath, AI_VISION_FALLBACK_FILE), { ...empty.visionFallback }),
+  };
+}
+
+function mergeStructuredAiSettings(current: AiSettingsFile, legacy: AiSettingsFile): AiSettingsFile {
+  const currentProviderIds = new Set(current.providers.map((provider) => provider.id));
+  const mergedProviders = [
+    ...current.providers.map(cloneStoredProviderConfig),
+    ...legacy.providers.filter((provider) => !currentProviderIds.has(provider.id)).map(cloneStoredProviderConfig),
+  ].sort((left, right) => left.id.localeCompare(right.id));
+  const mergedModelKeys = new Set(current.models.map((model) => `${model.providerId}::${model.id}`));
+  const mergedModels = [
+    ...current.models.map(cloneStoredAiModelConfig),
+    ...legacy.models.filter((model) => !mergedModelKeys.has(`${model.providerId}::${model.id}`)).map(cloneStoredAiModelConfig),
+  ].sort(compareStoredModels);
+  return {
+    hostModelRouting: isEmptyRoutingConfig(current.hostModelRouting) && !isEmptyRoutingConfig(legacy.hostModelRouting)
+      ? cloneRoutingConfig(legacy.hostModelRouting)
+      : cloneRoutingConfig(current.hostModelRouting),
+    models: mergedModels,
+    providers: mergedProviders,
+    visionFallback: isDefaultVisionFallback(current.visionFallback) && !isDefaultVisionFallback(legacy.visionFallback)
+      ? { ...legacy.visionFallback }
+      : { ...current.visionFallback },
+  };
+}
+
+function didAiSettingsChange(current: AiSettingsFile, next: AiSettingsFile): boolean {
+  return JSON.stringify(current) !== JSON.stringify(next);
+}
+
+function archiveLegacyAiSettingsFile(filePath: string): void {
+  const archivedFilePath = `${filePath}.migrated`;
+  if (fs.existsSync(archivedFilePath)) {
+    fs.rmSync(archivedFilePath, { force: true });
+  }
+  fs.renameSync(filePath, archivedFilePath);
+}
+
 function readAiProviderStorageFiles(settingsPath: string): AiProviderStorageFile[] {
   return fs.readdirSync(readAiProviderDirectory(settingsPath), { withFileTypes: true })
     .filter((entry) => entry.isFile() && path.extname(entry.name).toLowerCase() === '.json')
@@ -108,6 +193,49 @@ function readAiProviderStorageFile(filePath: string): AiProviderStorageFile | nu
   } catch {
     return null;
   }
+}
+
+function normalizeLegacyProviderConfig(input: unknown): StoredAiProviderConfig[] {
+  if (typeof input !== 'object' || input === null) { return []; }
+  const record = input as Partial<StoredAiProviderConfig>;
+  const providerId = normalizeOptionalText(record.id);
+  const name = normalizeOptionalText(record.name) ?? providerId;
+  const mode = typeof record.mode === 'string' ? record.mode as AiProviderMode : null;
+  const driver = normalizeOptionalText(record.driver);
+  if (!providerId || !name || !mode || !driver) { return []; }
+  return [{
+    apiKey: normalizeOptionalText(record.apiKey),
+    baseUrl: normalizeOptionalText(record.baseUrl),
+    defaultModel: normalizeOptionalText(record.defaultModel),
+    driver,
+    id: providerId,
+    mode,
+    models: Array.isArray(record.models)
+      ? [...new Set(record.models.flatMap((entry) => {
+        const value = normalizeOptionalText(entry);
+        return value ? [value] : [];
+      }))]
+      : [],
+    name,
+  }];
+}
+
+function readLegacyHostModelRouting(value: unknown, fallback: AiHostModelRoutingConfig): AiHostModelRoutingConfig {
+  if (!value || typeof value !== 'object') {
+    return cloneRoutingConfig(fallback);
+  }
+  try {
+    return cloneRoutingConfig(value as AiHostModelRoutingConfig);
+  } catch {
+    return cloneRoutingConfig(fallback);
+  }
+}
+
+function readLegacyVisionFallback(value: unknown, fallback: AiSettingsFile['visionFallback']): AiSettingsFile['visionFallback'] {
+  if (!value || typeof value !== 'object') {
+    return { ...fallback };
+  }
+  return { ...(value as AiSettingsFile['visionFallback']) };
 }
 
 function readJsonFile<T>(filePath: string, fallback: T): T {
@@ -165,4 +293,18 @@ function createEmptySettings(): AiSettingsFile {
 
 function normalizeOptionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function isEmptyRoutingConfig(config: AiHostModelRoutingConfig): boolean {
+  return config.fallbackChatModels.length === 0
+    && Object.keys(config.utilityModelRoles).length === 0
+    && !config.compressionModel;
+}
+
+function isDefaultVisionFallback(config: AiSettingsFile['visionFallback']): boolean {
+  return config.enabled !== true
+    && !normalizeOptionalText(config.providerId)
+    && !normalizeOptionalText(config.modelId)
+    && !normalizeOptionalText(config.prompt)
+    && config.maxDescriptionLength === undefined;
 }
