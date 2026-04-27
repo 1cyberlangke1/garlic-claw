@@ -15,6 +15,7 @@
     "typecheck:server": "npm run typecheck -w packages/server",
     "test:server": "npm run build:server-runtime-deps && npm run test -w packages/server -- --runInBand",
     "smoke:server": "npm run build:server-runtime-deps && npm run smoke:http -w packages/server",
+    "smoke:server:real": "npm run build:server-runtime-deps && npm run smoke:http:real -w packages/server",
     "smoke:web-ui": "npm run smoke:browser -w packages/web",
     "build:web": "npm run build -w packages/web",
     "build:shared": "npm run build -w packages/shared",

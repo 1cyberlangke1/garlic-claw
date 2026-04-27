@@ -1,24 +1,70 @@
 # Progress
 
-## 2026-04-27 流错误稳定性与 smoke 修复
+## 2026-04-27 LLM 覆盖矩阵与 smoke 复用收口
 
-- 已确认用户现场故障链：
-  - 真实上游错误是 `Anthropic 401 invalid x-api-key`
-  - 后续 `NoOutputGeneratedError` 与后端退出属于流失败后的附带问题
-  - 前端 `vite proxy ECONNREFUSED/ECONNRESET` 是后端退出后的连带症状
-- 已有未提交修复：
-  - `AiModelExecutionService` 对 `finishReason / totalUsage` 做安全 promise 包装
-  - `ConversationTaskService` 对 `finishReason / usage` 再做防守式包装
-  - 已补 3 处回归测试，覆盖流失败后不崩进程、不泄漏 rejected promise
-- 当前正在做：
-  - 等待独立 judge 复核
-- 已完成：
-  - `TODO.md / task_plan.md / progress.md / findings.md` 已收口到当前流错误任务
-  - 复现 `smoke:server`，定位到 `normalizeStreamResult()` 用对象展开后丢失了 SDK 返回对象上的非枚举 `fullStream`
-  - 修复 `AiModelExecutionService.normalizeStreamResult()`，显式保留 `fullStream`
-  - `http-smoke.mjs` 的 SSE 断言已补充事件序列输出，后续失败更容易定位
-  - 新增回归测试：`AiModelExecutionService` 保证非枚举 `fullStream` 不丢失
-  - fresh 已通过：
-    - `packages/server`: `npm run build`
-    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+- 已把 `TODO.md / task_plan.md` 切换到当前任务：
+  - 目标改为“所有调用 LLM 的路径覆盖、fake/real smoke 复用、测试产物自动清理”
+  - 旧的 provider 修复阶段已压缩为摘要
+- 已确认当前真实能力边界：
+  - `nvidia` 与修正后的 `ds2api` 可用于真实文本 smoke
+  - 当前仓库内无已配置、可直接用于真实图片输入的 provider，因此 `vision fallback` 只能保证 fake 覆盖
+- 本轮已完成：
+  - `http-smoke.mjs` 已抽出 fake/real 共用的 provider、对话、删除、上下文压缩步骤
+  - 修复 fake smoke 中 `/compact` 断言，改为核对“命令短路但允许摘要模型请求”
+  - `ContextGovernanceService` 的压缩摘要保持 owner 级显式 transport 选择，不恢复全局重放回退
+  - fake smoke 已补 `RuntimeHostService` 的 `llm.generate-text / llm.generate` 端到端覆盖
+  - `ContextGovernanceService` 新单测已通过
+  - `nvidia` / `ds2api` 真实 smoke 均已 fresh 通过到 `testConnection / chat / title / context-compaction / delete`
+  - 真实 smoke 的 `/compact` 已改为“先两轮真实对话，再用 `keepRecentMessages: 2` 复用同一套 compaction 步骤”，避开 `nvidia` 在“只压单条用户历史”时返回 `Invalid JSON response`
+  - 已再次通过：
+    - `packages/server`: 定向 Jest 8 套件
     - root: `npm run smoke:server`
+    - root: `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=nvidia npm run smoke:server:real`
+    - root: `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=ds2api npm run smoke:server:real`
+    - root: `npm run typecheck:server`
+    - root: `npm run lint`
+- 当前剩余：
+  - 仅剩提交
+- 独立 judge 结果：
+  - `PASS`
+  - 未发现 fake/real 平行复制、清理缺失、假成功回退或 LLM owner 漏项
+
+## 2026-04-27 真实 provider 冒烟与默认 provider 行为修复
+
+- 已确认两处假成功：
+  - `AiManagementService.testConnection()` 直接返回 `ok: true`
+  - 现有 `smoke:server` 主要覆盖 fake provider，不代表真实厂商可用
+- 已确认一个默认行为问题：
+  - 未显式指定 provider 时，会按 provider 列表顺序回落
+  - 当前仓库中的占位 provider 配置可能误入默认路径
+- 当前正在做：
+  - 保留真实 smoke 路径，继续看本机 `ds2api` TLS 失败是否属于代码问题还是环境问题
+- 已完成：
+  - `TODO.md / task_plan.md / progress.md / findings.md` 已切到当前 provider 任务
+  - 默认 provider 选择已改为优先真实已配置 provider，不再优先占位 key provider
+  - `testConnection` 已改成真实联网调用，不再写死 `ok: true`
+  - `http-smoke.mjs` 已新增真实 provider 路径：
+    - 支持 `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID`
+    - 支持 root `npm run smoke:server:real`
+    - 从当前配置复制指定 provider 到临时 smoke 配置目录
+    - 真实验证 provider 详情、模型配置、真实 `testConnection`、真实对话 SSE
+  - 已通过：
+    - `packages/server`: `npm run build`
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts tests/ai-management/ai-management.service.spec.ts tests/ai/ai-model-execution.service.spec.ts`
+    - root: `npm run smoke:server`
+- 已执行真实 smoke：
+  - `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=ds2api npm run smoke:server:real`
+  - 当前在本机失败于真实 `testConnection`
+  - 失败信息已明确暴露为 TLS 建连失败，而不是假成功
+- 2026-04-27 本轮 fresh 验收补充结果：
+  - 已再次通过：
+    - `packages/server`: `npm run build`
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai-management/ai-provider-settings.service.spec.ts tests/ai-management/ai-management.service.spec.ts tests/ai/ai-model-execution.service.spec.ts`
+    - root: `npm run smoke:server`
+  - 已再次失败：
+    - root: `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=ds2api npm run smoke:server:real`
+  - 额外链路证据：
+    - Windows `node:https` 直连 `https://ds2api.cyberlangke.dpdns.org/v1/models` 报 `ECONNRESET`
+    - Windows `curl.exe -I https://ds2api.cyberlangke.dpdns.org/v1/models` 报 `schannel: failed to receive handshake`
+    - WSL `curl -Ik https://ds2api.cyberlangke.dpdns.org/v1/models` 报 `OpenSSL SSL_connect: SSL_ERROR_SYSCALL`
+    - WSL `openssl s_client -tls1_2/-tls1_3` 都显示 `unexpected eof while reading`，且 `no peer certificate available`

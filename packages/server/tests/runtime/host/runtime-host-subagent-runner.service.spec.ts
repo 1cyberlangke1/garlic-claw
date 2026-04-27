@@ -29,6 +29,7 @@ import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/hos
 import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 
 describe('RuntimeHostSubagentRunnerService', () => {
+  let conversationsPath: string;
   let storagePath: string;
   let sessionStoragePath: string;
 
@@ -36,8 +37,10 @@ describe('RuntimeHostSubagentRunnerService', () => {
     jest.clearAllMocks();
     storagePath = path.join(os.tmpdir(), `gc-server-runner-${Date.now()}-${Math.random()}.json`);
     sessionStoragePath = path.join(os.tmpdir(), `gc-server-runner-session-${Date.now()}-${Math.random()}.json`);
+    conversationsPath = path.join(os.tmpdir(), `gc-server-runner-conversations-${Date.now()}-${Math.random()}.json`);
     process.env.GARLIC_CLAW_SUBAGENTS_PATH = storagePath;
     process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH = sessionStoragePath;
+    process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationsPath;
     mockStreamText.mockReturnValue({
       finishReason: Promise.resolve('stop'),
       fullStream: (async function* () {
@@ -68,11 +71,11 @@ describe('RuntimeHostSubagentRunnerService', () => {
   afterEach(() => {
     delete process.env.GARLIC_CLAW_SUBAGENTS_PATH;
     delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
-    if (fs.existsSync(storagePath)) {
-      fs.unlinkSync(storagePath);
-    }
-    if (fs.existsSync(sessionStoragePath)) {
-      fs.unlinkSync(sessionStoragePath);
+    delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
+    for (const filePath of [storagePath, sessionStoragePath, conversationsPath]) {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
     }
   });
 

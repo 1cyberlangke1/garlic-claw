@@ -19,6 +19,7 @@ const REQUEST_TIMEOUT_MS = 15_000;
 const LOGIN_SECRET = process.env.GARLIC_CLAW_LOGIN_SECRET || 'smoke-login-secret';
 const API_PREFIX = '/api';
 const SKILL_DIR_NAME = '.smoke-http-flow';
+const SMOKE_IMAGE_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0p8AAAAASUVORK5CYII=';
 const {
   collectServerHttpRoutes,
   collectWebHttpRoutes,
@@ -132,9 +133,9 @@ async function main() {
   let port = null;
   let wsPort = null;
   const skillRoot = path.join(PROJECT_ROOT, 'config', 'skills', 'definitions', SKILL_DIR_NAME);
-  const fakeOpenAi = await startFakeOpenAiServer();
-  smokeWebFetchUrl = `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-webfetch/article`;
-  smokeBashTimeoutUrl = `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-bash-timeout`;
+  const fakeOpenAi = cli.realProviderId ? null : await startFakeOpenAiServer();
+  smokeWebFetchUrl = fakeOpenAi ? `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-webfetch/article` : '';
+  smokeBashTimeoutUrl = fakeOpenAi ? `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-bash-timeout` : '';
   const smokeSkillId = 'project/.smoke-http-flow';
   const mcpScriptPath = path.join(tempDir, 'working-mcp.cjs');
   const remotePluginScriptPath = path.join(tempDir, 'remote-route-plugin.cjs');
@@ -230,14 +231,20 @@ async function main() {
     await runStep('contracts.web-alignment', async () => {
       assertWebRoutesMatchServerRoutes(serverRoutes, webRoutes);
     });
-    await prepareProjectSkill(skillRoot);
-    await prepareCustomSubagentType(serverFiles.subagentPath);
-    await prepareWorkingMcpScript(mcpScriptPath);
-    await prepareRemoteRoutePluginScript(remotePluginScriptPath);
+    if (cli.realProviderId) {
+      await prepareRealProviderSmokeSettings(serverFiles.aiSettingsPath, cli.realProviderId);
+    } else {
+      await prepareProjectSkill(skillRoot);
+      await prepareCustomSubagentType(serverFiles.subagentPath);
+      await prepareWorkingMcpScript(mcpScriptPath);
+      await prepareRemoteRoutePluginScript(remotePluginScriptPath);
+    }
 
     if (cli.proxyOrigin) {
+      ensure(!cli.realProviderId, 'Real provider smoke does not support proxy mode');
       console.log(`-> use frontend proxy ${cli.proxyOrigin}`);
       apiBase = `${normalizeOrigin(cli.proxyOrigin)}${API_PREFIX}`;
+      ensure(fakeOpenAi, 'Expected fake OpenAI for proxy smoke');
       await prepareProxyOpenAiProvider(apiBase, state, fakeOpenAi.url);
     } else {
       console.log('-> build server');
@@ -278,24 +285,33 @@ async function main() {
       : await waitForBootstrapAdminLogin(apiBase);
     state.bootstrapTokens = state.adminTokens;
 
-    await runHttpFlow(apiBase, state, {
-      fakeOpenAi,
-      fakeOpenAiUrl: fakeOpenAi.url,
-      flowSuffix: state.userAlias,
-      mcpCommand: process.execPath,
-      mcpScriptPath,
-      personasPath: serverFiles.personasPath,
-      remotePluginServerUrl: cli.proxyOrigin ? 'ws://127.0.0.1:23331' : `ws://127.0.0.1:${wsPort}`,
-      remotePluginScriptPath,
-      runtimeApprovalMode: cli.runtimeApprovalMode,
-      runtimeWorkspacesPath: serverFiles.runtimeWorkspacesPath,
-      smokeSkillId,
-    });
-    await runStep('contracts.server-route-coverage', async () => {
-      assertAllServerRoutesCovered(serverRoutes);
-    });
+    if (cli.realProviderId) {
+      await runRealProviderHttpFlow(apiBase, state, {
+        realModelId: cli.realModelId,
+        realProviderId: cli.realProviderId,
+      });
+      console.log(`server real-provider smoke passed: ${getCompletedStepCount()} checks`);
+    } else {
+      ensure(fakeOpenAi, 'Expected fake OpenAI for default smoke flow');
+      await runHttpFlow(apiBase, state, {
+        fakeOpenAi,
+        fakeOpenAiUrl: fakeOpenAi.url,
+        flowSuffix: state.userAlias,
+        mcpCommand: process.execPath,
+        mcpScriptPath,
+        personasPath: serverFiles.personasPath,
+        remotePluginServerUrl: cli.proxyOrigin ? 'ws://127.0.0.1:23331' : `ws://127.0.0.1:${wsPort}`,
+        remotePluginScriptPath,
+        runtimeApprovalMode: cli.runtimeApprovalMode,
+        runtimeWorkspacesPath: serverFiles.runtimeWorkspacesPath,
+        smokeSkillId,
+      });
+      await runStep('contracts.server-route-coverage', async () => {
+        assertAllServerRoutesCovered(serverRoutes);
+      });
 
-    console.log(`server HTTP smoke passed: ${getCompletedStepCount()} checks`);
+      console.log(`server HTTP smoke passed: ${getCompletedStepCount()} checks`);
+    }
   } catch (error) {
     if (backend?.logs.length) {
       console.error('--- server logs ---');
@@ -310,11 +326,210 @@ async function main() {
         : Promise.resolve(),
       state.remotePluginHandle?.stop?.() ?? Promise.resolve(),
       backend?.stop?.() ?? Promise.resolve(),
-      fakeOpenAi.close(),
+      fakeOpenAi?.close?.() ?? Promise.resolve(),
       fsPromises.rm(skillRoot, { recursive: true, force: true }),
       fsPromises.rm(tempDir, { recursive: true, force: true }),
     ]);
   }
+}
+
+async function runSmokeProviderSelectionSteps(apiBase, state, input) {
+  if (input.listStepName) {
+    await runStep(input.listStepName, async () => {
+      const providers = await getJson(apiBase, '/ai/providers');
+      ensure(Array.isArray(providers) && providers.some((entry) => entry.id === input.providerId), `Expected providers list to include smoke provider "${input.providerId}"`);
+    });
+  }
+
+  await runStep(input.detailStepName, async () => {
+    const provider = await getJson(apiBase, `/ai/providers/${input.providerId}`);
+    state.providerId = provider.id;
+    state.modelId = input.modelId ?? provider.defaultModel ?? provider.models?.[0] ?? null;
+    ensure(typeof state.modelId === 'string' && state.modelId.length > 0, `Expected provider "${input.providerId}" to expose a testable model`);
+  });
+
+  await runStep(input.modelsStepName, async () => {
+    const models = await getJson(apiBase, `/ai/providers/${state.providerId}/models`);
+    ensure(Array.isArray(models) && models.some((entry) => entry.id === state.modelId), 'Expected provider model list to include selected model');
+  });
+}
+
+async function runSmokeConnectionCheck(apiBase, state, input) {
+  await runStep(input.stepName, async () => {
+    const result = await postJson(apiBase, `/ai/providers/${state.providerId}/test-connection`, {
+      body: {
+        modelId: state.modelId,
+      },
+      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+    });
+    ensure(result.ok === true, 'Expected provider connection test to succeed');
+    ensure(typeof result.text === 'string' && result.text.trim().length > 0, 'Expected provider connection test to return non-empty text');
+  });
+}
+
+async function runSmokeConversationCreate(apiBase, state, input) {
+  await runStep(input.stepName, async () => {
+    const conversation = await postJson(apiBase, '/chat/conversations', {
+      body: input.title === undefined ? {} : { title: input.title },
+      headers: input.headers(),
+    });
+    state.conversationId = conversation.id;
+    ensure(typeof state.conversationId === 'string', 'Expected smoke conversation id');
+  });
+}
+
+async function runSmokeTextChatRoundTrip(apiBase, state, input) {
+  return runStep(input.stepName, async () => {
+    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+      body: {
+        ...(input.content !== undefined ? { content: input.content } : {}),
+        model: state.modelId,
+        ...(input.parts ? { parts: input.parts } : {}),
+        provider: state.providerId,
+      },
+      headers: input.headers(),
+      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+    });
+    const startEvent = events.find((entry) => entry.type === 'message-start');
+    const finishEvent = events.find((entry) => entry.type === 'finish');
+    if (input.assistantMessageStateKey) {
+      state[input.assistantMessageStateKey] = startEvent?.assistantMessage?.id ?? null;
+      ensure(typeof state[input.assistantMessageStateKey] === 'string', `Expected ${input.stepName} assistant message id`);
+    }
+    if (input.userMessageStateKey) {
+      state[input.userMessageStateKey] = startEvent?.userMessage?.id ?? null;
+      ensure(typeof state[input.userMessageStateKey] === 'string', `Expected ${input.stepName} user message id`);
+    }
+    const responseText = input.expectedText ? assertCompletedSse(events, input.expectedText) : assertCompletedSse(events);
+    if (input.responseTextStateKey) {
+      state[input.responseTextStateKey] = responseText;
+    }
+    ensure(finishEvent?.status === 'completed', `Expected ${input.stepName} SSE to finish`);
+    if (input.expectDisplayOnly === true) {
+      ensure(startEvent?.assistantMessage?.role === 'display', `Expected ${input.stepName} assistant to persist as display`);
+      ensure(startEvent?.userMessage?.role === 'display', `Expected ${input.stepName} user to persist as display`);
+    }
+    return { events, finishEvent, responseText, startEvent };
+  });
+}
+
+async function runSmokeConversationDelete(apiBase, state, input) {
+  await runStep(input.stepName, async () => {
+    const result = await deleteJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: input.headers() });
+    ensure(typeof result?.message === 'string' && result.message.includes('deleted'), 'Expected smoke conversation delete to succeed');
+  });
+}
+
+async function runContextCompactionModelSmoke(apiBase, state, input) {
+  await runStep(input.configStepName, async () => {
+    const config = await putJson(apiBase, '/ai/context-governance-config', {
+      body: {
+        values: {
+          contextCompaction: {
+            enabled: true,
+            keepRecentMessages: input.keepRecentMessages ?? 1,
+            mode: 'manual',
+            strategy: 'summary',
+            summaryPrompt: '请把下面这段历史对话整理成可供后续继续回答的上下文摘要。',
+          },
+          conversationTitle: {
+            enabled: true,
+            maxMessages: 3,
+          },
+        },
+      },
+    });
+    ensure(config.values.contextCompaction.strategy === 'summary', 'Expected summary compaction strategy to persist');
+  });
+
+  input.beforeCommand?.();
+  const commandResult = await runSmokeTextChatRoundTrip(apiBase, state, {
+    assistantMessageStateKey: input.assistantMessageStateKey,
+    content: '/compact',
+    expectDisplayOnly: true,
+    headers: input.headers,
+    responseTextStateKey: input.responseTextStateKey,
+    stepName: input.commandStepName,
+    userMessageStateKey: input.userMessageStateKey,
+  });
+  ensure(commandResult.responseText.includes('已压缩上下文'), 'Expected /compact to report successful compaction');
+
+  if (input.verifyModelRequestStepName && input.verifyModelRequest) {
+    await runStep(input.verifyModelRequestStepName, async () => {
+      await input.verifyModelRequest();
+    });
+  }
+
+  await runStep(input.verifySummaryStepName, async () => {
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: input.headers() });
+    const summaryMessage = findContextCompactionSummaryMessage(conversation.messages);
+    ensure(summaryMessage, 'Expected conversation detail to include one context compaction summary message');
+    ensure(summaryMessage.model === state.modelId, 'Expected context compaction summary to record model id');
+    ensure(summaryMessage.provider === state.providerId, 'Expected context compaction summary to record provider id');
+    if (input.expectedSummaryText) {
+      ensure(summaryMessage.content === input.expectedSummaryText, 'Expected context compaction summary content to match fake model output');
+    } else {
+      ensure(typeof summaryMessage.content === 'string' && summaryMessage.content.trim().length > 0, 'Expected context compaction summary content to be non-empty');
+    }
+  });
+}
+
+async function runRealProviderHttpFlow(apiBase, state, input) {
+  const userHeaders = () => createBearerHeaders(readTokens(state.adminTokens).accessToken);
+
+  await runSmokeProviderSelectionSteps(apiBase, state, {
+    detailStepName: 'ai.provider.get.real',
+    listStepName: 'ai.providers.list.real',
+    modelId: input.realModelId,
+    modelsStepName: 'ai.models.list.real',
+    providerId: input.realProviderId,
+  });
+
+  await runSmokeConnectionCheck(apiBase, state, {
+    stepName: 'ai.test-connection.real',
+    timeoutMs: 60_000,
+  });
+
+  await runSmokeConversationCreate(apiBase, state, {
+    headers: userHeaders,
+    stepName: 'chat.conversation.create.real',
+  });
+
+  await runSmokeTextChatRoundTrip(apiBase, state, {
+    content: '请只用一句简短中文回复，证明真实 provider smoke 已连通。',
+    headers: userHeaders,
+    stepName: 'chat.messages.send.real',
+    timeoutMs: 90_000,
+  });
+
+  await runSmokeTextChatRoundTrip(apiBase, state, {
+    content: '请再用一句不同的简短中文回复，确认上下文压缩前已有两轮真实对话。',
+    headers: userHeaders,
+    stepName: 'chat.messages.send.real.second-round',
+    timeoutMs: 90_000,
+  });
+
+  await runStep('chat.conversation.title.generated.real', async () => {
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
+    ensure(typeof conversation.title === 'string' && conversation.title.trim().length > 0, 'Expected real smoke conversation title to be non-empty');
+    ensure(conversation.title !== 'New Chat', 'Expected real smoke conversation title to be generated by model');
+  });
+
+  await runContextCompactionModelSmoke(apiBase, state, {
+    assistantMessageStateKey: 'compactModelAssistantMessageId',
+    commandStepName: 'chat.messages.command.compact.real',
+    configStepName: 'ai.context-governance.put.summary.real',
+    headers: userHeaders,
+    keepRecentMessages: 2,
+    responseTextStateKey: 'compactModelAssistantText',
+    userMessageStateKey: 'compactModelUserMessageId',
+    verifySummaryStepName: 'chat.conversation.get.after-command.compact.real',
+  });
+
+  await runSmokeConversationDelete(apiBase, state, {
+    headers: userHeaders,
+    stepName: 'chat.conversation.delete.real',
+  });
 }
 
 async function runHttpFlow(apiBase, state, input) {
@@ -396,14 +611,12 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(providers.some((entry) => entry.id === state.providerId), 'Expected providers list to include smoke provider');
   });
 
-  await runStep('ai.provider.get', async () => {
-    const provider = await getJson(apiBase, `/ai/providers/${state.providerId}`);
-    ensure(provider.id === state.providerId, 'Expected provider detail to match smoke provider');
-  });
-
-  await runStep('ai.models.list', async () => {
-    const models = await getJson(apiBase, `/ai/providers/${state.providerId}/models`);
-    ensure(Array.isArray(models) && models.some((entry) => entry.id === state.modelId), 'Expected models list to include default model');
+  await runSmokeProviderSelectionSteps(apiBase, state, {
+    detailStepName: 'ai.provider.get',
+    listStepName: null,
+    modelId: state.modelId,
+    modelsStepName: 'ai.models.list',
+    providerId: state.providerId,
   });
 
   await runStep('ai.discover-models', async () => {
@@ -454,13 +667,8 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(model.capabilities.reasoning === true, 'Expected model capability update to persist');
   });
 
-  await runStep('ai.test-connection', async () => {
-    const result = await postJson(apiBase, `/ai/providers/${state.providerId}/test-connection`, {
-      body: {
-        modelId: state.modelId,
-      },
-    });
-    ensure(result.ok === true && result.modelId === state.modelId, 'Expected connection test to succeed');
+  await runSmokeConnectionCheck(apiBase, state, {
+    stepName: 'ai.test-connection',
   });
 
   await runStep('ai.vision-fallback.get', async () => {
@@ -479,6 +687,35 @@ async function runHttpFlow(apiBase, state, input) {
       },
     });
     ensure(config.enabled === true, 'Expected vision fallback update to persist');
+  });
+
+  const visionState = { conversationId: null, modelId: state.modelId, providerId: state.providerId };
+  input.fakeOpenAi.resetChatCompletions();
+  await runSmokeConversationCreate(apiBase, visionState, {
+    headers: userHeaders,
+    stepName: 'chat.vision.conversation.create',
+    title: 'Vision Smoke',
+  });
+  await runSmokeTextChatRoundTrip(apiBase, visionState, {
+    content: '请描述这张图片',
+    expectedText: '这是一张用于后端烟测的图片。',
+    headers: userHeaders,
+    parts: [
+      { text: '请描述这张图片', type: 'text' },
+      { image: SMOKE_IMAGE_DATA_URL, mimeType: 'image/png', type: 'image' },
+    ],
+    stepName: 'chat.messages.vision-fallback',
+  });
+  await runStep('chat.messages.vision-fallback.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    const matchingRequest = requests.find((entry) =>
+      containsImage(entry.body?.messages ?? [])
+      && readLatestUserText(entry.body?.messages).includes('请描述这张图片'));
+    ensure(matchingRequest, 'Expected vision fallback smoke message to reach fake OpenAI with image parts');
+  });
+  await runSmokeConversationDelete(apiBase, visionState, {
+    headers: userHeaders,
+    stepName: 'chat.vision.conversation.delete',
   });
 
   await runStep('ai.host-model-routing.get', async () => {
@@ -532,15 +769,10 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(events.items), 'Expected skill events payload');
   });
 
-  await runStep('chat.conversation.create', async () => {
-    const conversation = await postJson(apiBase, '/chat/conversations', {
-      body: {
-        title: 'Smoke Chat',
-      },
-      headers: userHeaders(),
-    });
-    state.conversationId = conversation.id;
-    ensure(typeof state.conversationId === 'string', 'Expected conversation id');
+  await runSmokeConversationCreate(apiBase, state, {
+    headers: userHeaders,
+    stepName: 'chat.conversation.create',
+    title: 'Smoke Chat',
   });
 
   if (usesYoloApproval) {
@@ -732,24 +964,15 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(persona.personaId === state.defaultPersonaId, 'Expected current persona to fall back to default after delete');
   });
 
-  await runStep('chat.messages.send', async () => {
-    input.fakeOpenAi.resetChatCompletions();
-    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
-      body: {
-        content: '烟测第一条消息',
-        model: state.modelId,
-        provider: state.providerId,
-      },
-      headers: userHeaders(),
-    });
-    const startEvent = events.find((entry) => entry.type === 'message-start');
-    const finishEvent = events.find((entry) => entry.type === 'finish');
-    state.firstAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
-    state.firstUserMessageId = startEvent?.userMessage?.id ?? null;
-    ensure(typeof state.firstAssistantMessageId === 'string', 'Expected message-start assistant id');
-    ensure(typeof state.firstUserMessageId === 'string', 'Expected message-start user id');
-    state.firstAssistantText = assertCompletedSse(events, '本地 smoke 回复: 烟测第一条消息');
-    ensure(finishEvent?.status === 'completed', 'Expected send message SSE to finish');
+  input.fakeOpenAi.resetChatCompletions();
+  await runSmokeTextChatRoundTrip(apiBase, state, {
+    assistantMessageStateKey: 'firstAssistantMessageId',
+    content: '烟测第一条消息',
+    expectedText: '本地 smoke 回复: 烟测第一条消息',
+    headers: userHeaders,
+    responseTextStateKey: 'firstAssistantText',
+    stepName: 'chat.messages.send',
+    userMessageStateKey: 'firstUserMessageId',
   });
 
   await runStep('chat.messages.send.denied-skill-tool', async () => {
@@ -767,27 +990,22 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(firstAssistant?.content === state.firstAssistantText, 'Expected first assistant message to persist generated content');
   });
 
-  await runStep('chat.messages.command', async () => {
-    input.fakeOpenAi.resetChatCompletions();
-    const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
-      body: {
-        content: '/compact',
-        model: state.modelId,
-        provider: state.providerId,
-      },
-      headers: userHeaders(),
-    });
-    const startEvent = events.find((entry) => entry.type === 'message-start');
-    const finishEvent = events.find((entry) => entry.type === 'finish');
-    state.commandAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
-    state.commandUserMessageId = startEvent?.userMessage?.id ?? null;
-    ensure(typeof state.commandAssistantMessageId === 'string', 'Expected command message-start assistant id');
-    ensure(typeof state.commandUserMessageId === 'string', 'Expected command message-start user id');
-    ensure(startEvent?.assistantMessage?.role === 'display', 'Expected slash command result to persist as display message');
-    ensure(startEvent?.userMessage?.role === 'display', 'Expected slash command input to persist as display message');
-    state.commandAssistantText = assertCompletedSse(events);
-    ensure(finishEvent?.status === 'completed', 'Expected slash command SSE to finish');
-    ensure(input.fakeOpenAi.readChatCompletions().length === 0, 'Expected slash command short-circuit to avoid model requests');
+  input.fakeOpenAi.resetChatCompletions();
+  await runSmokeTextChatRoundTrip(apiBase, state, {
+    assistantMessageStateKey: 'commandAssistantMessageId',
+    content: '/compact',
+    expectDisplayOnly: true,
+    headers: userHeaders,
+    responseTextStateKey: 'commandAssistantText',
+    stepName: 'chat.messages.command',
+    userMessageStateKey: 'commandUserMessageId',
+  });
+
+  await runStep('chat.messages.command.no-model', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions();
+    ensure(requests.length > 0, 'Expected slash command to trigger context compaction summary request');
+    ensure(requests.some((entry) => containsText(entry.body?.messages ?? [], '历史对话：')), 'Expected slash command to trigger a context compaction summary model request');
+    ensure(requests.every((entry) => !containsText(entry.body?.messages ?? [], '/compact')), 'Expected slash command display messages to stay out of model context');
   });
 
   await runStep('chat.conversation.get.after-command', async () => {
@@ -1775,6 +1993,24 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof version.version === 'string' && version.version.length > 0, 'Expected command catalog version payload');
   });
 
+  await runContextCompactionModelSmoke(apiBase, state, {
+    assistantMessageStateKey: 'compactModelAssistantMessageId',
+    beforeCommand: () => input.fakeOpenAi.resetChatCompletions(),
+    commandStepName: 'chat.messages.command.compact-with-summary',
+    configStepName: 'ai.context-governance.put.summary',
+    expectedSummaryText: 'Smoke 压缩摘要。',
+    headers: userHeaders,
+    responseTextStateKey: 'compactModelAssistantText',
+    userMessageStateKey: 'compactModelUserMessageId',
+    verifyModelRequest: async () => {
+      const requests = input.fakeOpenAi.readChatCompletions();
+      const summaryRequest = requests.find((entry) => containsText(entry.body?.messages ?? [], '历史对话：'));
+      ensure(summaryRequest, 'Expected summary compaction to issue one model request');
+    },
+    verifyModelRequestStepName: 'chat.messages.command.compact-with-summary.verify-model',
+    verifySummaryStepName: 'chat.conversation.get.after-command.compact-with-summary',
+  });
+
   await runStep('plugins.subagent-overview', async () => {
     const overview = await getJson(apiBase, '/subagents/overview');
     ensure(Array.isArray(overview.subagents), 'Expected subagent overview payload');
@@ -2054,6 +2290,40 @@ async function runHttpFlow(apiBase, state, input) {
     });
     ensure(result.method === 'DELETE', 'Expected plugin route DELETE response');
     ensure(result.query?.via === 'delete', 'Expected plugin route DELETE query echo');
+  });
+
+  await runStep('plugins.host.llm.generate-text', async () => {
+    const result = await postJson(apiBase, `/plugin-routes/${state.remotePluginId}/host/ops`, {
+      body: {
+        action: 'generate-text',
+        modelId: state.modelId,
+        prompt: '请用一句话说明 smoke host llm.generate-text 已执行。',
+        providerId: state.providerId,
+        transportMode: 'stream-collect',
+      },
+      headers: userHeaders(),
+    });
+    ensure(result.result?.providerId === state.providerId, 'Expected plugin host llm.generate-text to keep selected provider');
+    ensure(result.result?.modelId === state.modelId, 'Expected plugin host llm.generate-text to keep selected model');
+    ensure(result.result?.text === '本地 smoke 回复: 请用一句话说明 smoke host llm.generate-text 已执行。', 'Expected plugin host llm.generate-text result text');
+  });
+
+  await runStep('plugins.host.llm.generate', async () => {
+    const result = await postJson(apiBase, `/plugin-routes/${state.remotePluginId}/host/ops`, {
+      body: {
+        action: 'generate-message',
+        modelId: state.modelId,
+        prompt: '请用一句话说明 smoke host llm.generate 已执行。',
+        providerId: state.providerId,
+        transportMode: 'generate',
+      },
+      headers: userHeaders(),
+    });
+    ensure(result.result?.providerId === state.providerId, 'Expected plugin host llm.generate to keep selected provider');
+    ensure(result.result?.modelId === state.modelId, 'Expected plugin host llm.generate to keep selected model');
+    ensure(result.result?.text === '本地 smoke 回复: 请用一句话说明 smoke host llm.generate 已执行。', 'Expected plugin host llm.generate result text');
+    ensure(result.result?.message?.role === 'assistant', 'Expected plugin host llm.generate to return assistant message');
+    ensure(result.result?.message?.content === '本地 smoke 回复: 请用一句话说明 smoke host llm.generate 已执行。', 'Expected plugin host llm.generate assistant content');
   });
 
   await runStep('plugins.host.memory.create', async () => {
@@ -2438,9 +2708,12 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(result.success === true, 'Expected model delete response');
   });
 
-  await runStep('chat.conversation.delete', async () => {
-    const result = await deleteJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
-    ensure(result.message === 'Conversation deleted', 'Expected conversation deletion response');
+  await runSmokeConversationDelete(apiBase, state, {
+    headers: userHeaders,
+    stepName: 'chat.conversation.delete',
+  });
+
+  await runStep('chat.conversation.delete.workspace', async () => {
     ensure(fs.existsSync(readSessionWorkspaceRoot()) === false, 'Expected conversation deletion to remove runtime workspace');
   });
 
@@ -2572,7 +2845,7 @@ async function prepareRemoteRoutePluginScript(filePath) {
     "    name: 'Smoke IoT Light Plugin',",
     '    version: manifestVersion,',
     '    description: manifestDescription,',
-    "    permissions: ['memory:write', 'cron:write', 'conversation:write'],",
+    "    permissions: ['memory:write', 'cron:write', 'conversation:write', 'llm:generate'],",
     '    tools: [',
     '      {',
     "        name: 'light.getState',",
@@ -2632,6 +2905,34 @@ async function prepareRemoteRoutePluginScript(filePath) {
     '    });',
     '    return { status: 200, body: { memory } };',
     '  }',
+    "  if (action === 'generate-text') {",
+    '    const result = await context.host.generateText({',
+    "      prompt: typeof request.body.prompt === 'string' ? request.body.prompt : '请说明 smoke host llm.generate-text 已执行。',",
+    "      ...(typeof request.body.providerId === 'string' ? { providerId: request.body.providerId } : {}),",
+    "      ...(typeof request.body.modelId === 'string' ? { modelId: request.body.modelId } : {}),",
+    "      ...(typeof request.body.transportMode === 'string' ? { transportMode: request.body.transportMode } : {}),",
+    '    });',
+    '    return { status: 200, body: { result } };',
+    '  }',
+    "  if (action === 'generate-message') {",
+    '    const result = await context.host.generate({',
+    '      messages: [',
+    '        {',
+    "          role: 'user',",
+    '          content: [',
+    '            {',
+    "              type: 'text',",
+    "              text: typeof request.body.prompt === 'string' ? request.body.prompt : '请说明 smoke host llm.generate 已执行。',",
+    '            },',
+    '          ],',
+    '        },',
+    '      ],',
+    "      ...(typeof request.body.providerId === 'string' ? { providerId: request.body.providerId } : {}),",
+    "      ...(typeof request.body.modelId === 'string' ? { modelId: request.body.modelId } : {}),",
+    "      ...(typeof request.body.transportMode === 'string' ? { transportMode: request.body.transportMode } : {}),",
+    '    });',
+    '    return { status: 200, body: { result } };',
+    '  }',
     "  if (action === 'register-cron') {",
     '    const cron = await context.host.registerCron({',
     "      cron: '*/5 * * * *',",
@@ -2660,6 +2961,23 @@ async function prepareRemoteRoutePluginScript(filePath) {
     "process.on('SIGINT', shutdown);",
     "process.on('SIGTERM', shutdown);",
   ].join('\n'), 'utf8');
+}
+
+async function prepareRealProviderSmokeSettings(aiSettingsPath, providerId) {
+  const normalizedProviderId = normalizeOptionalText(providerId);
+  ensure(normalizedProviderId, 'Expected real provider id');
+  const sourceProviderPath = path.join(PROJECT_ROOT, 'config', 'ai', 'providers', `${encodeURIComponent(normalizedProviderId)}.json`);
+  ensure(fs.existsSync(sourceProviderPath), `Real smoke provider config not found: ${sourceProviderPath}`);
+  const targetProviderDirectory = path.join(aiSettingsPath, 'providers');
+  await fsPromises.mkdir(targetProviderDirectory, { recursive: true });
+  await fsPromises.copyFile(sourceProviderPath, path.join(targetProviderDirectory, `${encodeURIComponent(normalizedProviderId)}.json`));
+  await writeRealSmokeJsonDefaults(aiSettingsPath);
+}
+
+async function writeRealSmokeJsonDefaults(aiSettingsPath) {
+  await fsPromises.mkdir(aiSettingsPath, { recursive: true });
+  await fsPromises.writeFile(path.join(aiSettingsPath, 'host-model-routing.json'), JSON.stringify({ fallbackChatModels: [], utilityModelRoles: {} }, null, 2), 'utf8');
+  await fsPromises.writeFile(path.join(aiSettingsPath, 'vision-fallback.json'), JSON.stringify({ enabled: false }, null, 2), 'utf8');
 }
 
 async function runTypescriptBuild() {
@@ -2882,6 +3200,8 @@ async function writeHostModelRoutingConfig(apiBase, body) {
 function parseCliArgs(args) {
   const config = {
     proxyOrigin: null,
+    realModelId: normalizeOptionalText(process.env.GARLIC_CLAW_SMOKE_REAL_MODEL_ID),
+    realProviderId: normalizeOptionalText(process.env.GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID),
     runtimeApprovalMode: normalizeRuntimeApprovalMode(process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE),
   };
 
@@ -2895,7 +3215,26 @@ function parseCliArgs(args) {
     if (arg === '--runtime-approval-mode') {
       config.runtimeApprovalMode = normalizeRuntimeApprovalMode(args[index + 1]);
       index += 1;
+      continue;
     }
+    if (arg === '--real-provider-id') {
+      config.realProviderId = normalizeOptionalText(args[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg === '--real-model-id') {
+      config.realModelId = normalizeOptionalText(args[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg === '--real-provider-env') {
+      config.realProviderId = normalizeOptionalText(process.env.GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID);
+      config.realModelId = normalizeOptionalText(process.env.GARLIC_CLAW_SMOKE_REAL_MODEL_ID);
+    }
+  }
+
+  if (args.includes('--real-provider-env')) {
+    ensure(config.realProviderId, 'GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID is required for real provider smoke');
   }
 
   return config;
@@ -2911,6 +3250,10 @@ function normalizeRuntimeApprovalMode(value) {
 
 function normalizeOrigin(origin) {
   return origin.replace(/\/+$/, '');
+}
+
+function normalizeOptionalText(value) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
 async function waitForBootstrapAdminLogin(apiBase) {
@@ -3182,12 +3525,23 @@ function parseSerializedJsonValue(value) {
   }
 }
 
+function findContextCompactionSummaryMessage(messages) {
+  return Array.isArray(messages) ? messages.find((message) => {
+    const metadata = parseSerializedJsonValue(message?.metadataJson);
+    return Array.isArray(metadata?.annotations) && metadata.annotations.some((annotation) =>
+      annotation?.owner === 'conversation.context-governance'
+      && annotation?.type === 'context-compaction'
+      && annotation?.data?.role === 'summary');
+  }) : null;
+}
+
 let completedStepCount = 0;
 
 async function runStep(name, task) {
   console.log(`-> ${name}`);
-  await task();
+  const result = await task();
   completedStepCount += 1;
+  return result;
 }
 
 function readTokens(value) {
@@ -3601,7 +3955,10 @@ function resolveAssistantText(body) {
   if (containsText(messages, '你是一个对话标题生成器')) {
     return '烟测会话标题';
   }
-  if (containsImage(messages)) {
+  if (containsText(messages, '历史对话：')) {
+    return 'Smoke 压缩摘要。';
+  }
+  if (latestUserMessageContainsImage(messages)) {
     return '这是一张用于后端烟测的图片。';
   }
 
@@ -4225,6 +4582,18 @@ function containsImage(messages) {
   return messages.some((message) =>
     Array.isArray(message?.content)
     && message.content.some((part) => part?.type === 'image_url' || part?.type === 'input_image'));
+}
+
+function latestUserMessageContainsImage(messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'user') {
+      continue;
+    }
+    return Array.isArray(message?.content)
+      && message.content.some((part) => part?.type === 'image_url' || part?.type === 'input_image');
+  }
+  return false;
 }
 
 function findLatestUserText(messages) {

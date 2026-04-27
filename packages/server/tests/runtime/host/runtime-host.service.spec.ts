@@ -48,11 +48,18 @@ import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime
 
 const subagentStorePaths: string[] = [];
 const subagentSessionStorePaths: string[] = [];
+const conversationStorePaths: string[] = [];
 const runtimeWorkspaceRoots: string[] = [];
 let fixtureConversationId = 'conversation-1';
 const fixtureConversationTitle = 'Conversation conversation-1';
 
 describe('RuntimeHostService', () => {
+  beforeEach(() => {
+    const conversationStorePath = path.join(os.tmpdir(), `gc-server-host-conversation-${Date.now()}-${Math.random()}.json`);
+    process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationStorePath;
+    conversationStorePaths.push(conversationStorePath);
+  });
+
   afterEach(() => {
     while (subagentStorePaths.length > 0) {
       const nextPath = subagentStorePaths.pop();
@@ -66,6 +73,12 @@ describe('RuntimeHostService', () => {
         fs.unlinkSync(nextPath);
       }
     }
+    while (conversationStorePaths.length > 0) {
+      const nextPath = conversationStorePaths.pop();
+      if (nextPath && fs.existsSync(nextPath)) {
+        fs.unlinkSync(nextPath);
+      }
+    }
     while (runtimeWorkspaceRoots.length > 0) {
       const nextPath = runtimeWorkspaceRoots.pop();
       if (nextPath && fs.existsSync(nextPath)) {
@@ -75,6 +88,7 @@ describe('RuntimeHostService', () => {
     delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
     delete process.env.GARLIC_CLAW_SUBAGENTS_PATH;
     delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
+    delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
   });
 
   it('rejects unmigrated host methods', async () => {

@@ -4,6 +4,7 @@ import {
   type AiProviderSummary,
 } from '@garlic-claw/shared';
 import { BadGatewayException, BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import {
   buildAiProviderHeaders,
   createStoredAiModelConfig,
@@ -18,15 +19,16 @@ import type { StoredAiModelConfig, StoredAiProviderConfig } from './ai-managemen
 
 @Injectable()
 export class AiManagementService {
-  constructor(private readonly aiProviderSettingsService: AiProviderSettingsService) {}
+  constructor(private readonly aiProviderSettingsService: AiProviderSettingsService, private readonly aiModelExecutionService: AiModelExecutionService = new AiModelExecutionService(aiProviderSettingsService)) {}
 
   listProviderCatalog() { return this.aiProviderSettingsService.listProviderCatalog(); }
 
   listProviders() { return this.aiProviderSettingsService.listProviders(); }
 
   getDefaultProviderSelection(): { modelId: string | null; providerId: string | null; source: 'default' } {
-    const provider = this.listProviders()[0];
-    return !provider?.defaultModel ? { modelId: null, providerId: null, source: 'default' } : { modelId: provider.defaultModel, providerId: provider.id, source: 'default' };
+    const provider = this.aiProviderSettingsService.readPreferredProvider();
+    const modelId = provider?.defaultModel ?? provider?.models[0] ?? null;
+    return !provider || !modelId ? { modelId: null, providerId: null, source: 'default' } : { modelId, providerId: provider.id, source: 'default' };
   }
 
   getProviderSummary(providerId: string): AiProviderSummary {
@@ -147,12 +149,22 @@ export class AiManagementService {
     if (!resolvedModelId) {
       throw new BadRequestException(`Provider "${provider.id}" does not have any testable model`);
     }
-    return {
-      ok: true,
-      providerId: provider.id,
-      modelId: resolvedModelId,
-      text: 'OK',
-    };
+    try {
+      const response = await this.aiModelExecutionService.generateText({
+        messages: [{ content: '请只回复 OK', role: 'user' }],
+        modelId: resolvedModelId,
+        providerId: provider.id,
+        transportMode: 'stream-collect',
+      });
+      return {
+        ok: true,
+        providerId: provider.id,
+        modelId: resolvedModelId,
+        text: response.text,
+      };
+    } catch (error) {
+      throw new BadGatewayException(`Failed to connect to provider "${provider.id}" with model "${resolvedModelId}": ${describeProviderFailure(error)}`);
+    }
   }
 
   private updateProvider(providerId: string, mutate: (provider: StoredAiProviderConfig) => void): StoredAiProviderConfig {
@@ -189,4 +201,8 @@ function readDiscoveredModel(entry: unknown): DiscoveredAiModel | null {
 
 function toDiscoveredModel(modelId: string): DiscoveredAiModel {
   return { id: modelId, name: modelId };
+}
+
+function describeProviderFailure(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

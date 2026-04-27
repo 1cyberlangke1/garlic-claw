@@ -204,7 +204,10 @@ describe('AiManagementService', () => {
   });
 
   it('uses explicit, default or first model when testing provider connections', async () => {
-    const service = new AiManagementService(new AiProviderSettingsService());
+    const aiModelExecutionService = {
+      generateText: jest.fn().mockResolvedValue({ text: 'Generated response' }),
+    };
+    const service = new AiManagementService(new AiProviderSettingsService(), aiModelExecutionService as never);
     service.upsertProvider('anthropic-main', {
       apiKey: 'anthropic-key',
       driver: 'anthropic',
@@ -217,14 +220,24 @@ describe('AiManagementService', () => {
       ok: true,
       providerId: 'anthropic-main',
       modelId: 'claude-3-7-sonnet-20250219',
-      text: 'OK',
+      text: 'Generated response',
     });
     await expect(service.testConnection('anthropic-main')).resolves.toEqual({
       ok: true,
       providerId: 'anthropic-main',
       modelId: 'claude-3-5-sonnet-20241022',
-      text: 'OK',
+      text: 'Generated response',
     });
+    expect(aiModelExecutionService.generateText).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      modelId: 'claude-3-7-sonnet-20250219',
+      providerId: 'anthropic-main',
+      transportMode: 'stream-collect',
+    }));
+    expect(aiModelExecutionService.generateText).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      modelId: 'claude-3-5-sonnet-20241022',
+      providerId: 'anthropic-main',
+      transportMode: 'stream-collect',
+    }));
   });
 
   it('rejects connection tests when no model is available', async () => {
@@ -237,5 +250,56 @@ describe('AiManagementService', () => {
     });
 
     await expect(service.testConnection('empty')).rejects.toThrow(BadRequestException);
+  });
+
+  it('prefers a real configured provider over placeholder providers when choosing defaults', () => {
+    const service = new AiManagementService(new AiProviderSettingsService());
+    service.upsertProvider('anthropic', {
+      apiKey: 'YOUR_ANTHROPIC_API_KEY',
+      baseUrl: 'https://api.anthropic.com/v1',
+      defaultModel: 'claude-3-5-sonnet-20241022',
+      driver: 'anthropic',
+      mode: 'catalog',
+      models: ['claude-3-5-sonnet-20241022'],
+      name: 'Anthropic',
+    });
+    service.upsertProvider('ds2api', {
+      apiKey: 'sk-real-ds2api-key',
+      baseUrl: 'https://dsapi.cyberlangke.dpdns.org/v1',
+      defaultModel: 'deepseek-v4-flash',
+      driver: 'openai',
+      mode: 'protocol',
+      models: ['deepseek-v4-flash'],
+      name: 'ds2api',
+    });
+
+    expect(service.getDefaultProviderSelection()).toEqual({
+      modelId: 'deepseek-v4-flash',
+      providerId: 'ds2api',
+      source: 'default',
+    });
+  });
+
+  it('surfaces real provider connection failures instead of returning fake success', async () => {
+    const aiModelExecutionService = {
+      generateText: jest.fn().mockRejectedValue(new Error('Client network socket disconnected before secure TLS connection was established')),
+    };
+    const service = new AiManagementService(new AiProviderSettingsService(), aiModelExecutionService as never);
+    service.upsertProvider('ds2api', {
+      apiKey: 'sk-real-ds2api-key',
+      baseUrl: 'https://dsapi.cyberlangke.dpdns.org/v1',
+      defaultModel: 'deepseek-v4-flash',
+      driver: 'openai',
+      mode: 'protocol',
+      models: ['deepseek-v4-flash'],
+      name: 'ds2api',
+    });
+
+    await expect(service.testConnection('ds2api')).rejects.toThrow(BadGatewayException);
+    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
+      modelId: 'deepseek-v4-flash',
+      providerId: 'ds2api',
+      transportMode: 'stream-collect',
+    }));
   });
 });

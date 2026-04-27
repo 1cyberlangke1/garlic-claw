@@ -279,4 +279,37 @@ describe('AiProviderSettingsService runtime config', () => {
       fs.rmSync(workspaceRoot, { recursive: true, force: true });
     }
   });
+
+  it('marks placeholder api keys as unavailable and prefers real configured providers', () => {
+    process.env[envKey] = tempSettingsPath;
+
+    const service = new AiProviderSettingsService();
+    service.upsertProvider('anthropic', {
+      apiKey: 'YOUR_ANTHROPIC_API_KEY',
+      baseUrl: 'https://api.anthropic.com/v1',
+      defaultModel: 'claude-3-5-sonnet-20241022',
+      driver: 'anthropic',
+      mode: 'catalog',
+      models: ['claude-3-5-sonnet-20241022'],
+      name: 'Anthropic',
+    });
+    service.upsertProvider('ds2api', {
+      apiKey: 'sk-real-ds2api-key',
+      baseUrl: 'https://dsapi.cyberlangke.dpdns.org/v1',
+      defaultModel: 'deepseek-v4-flash',
+      driver: 'openai',
+      mode: 'protocol',
+      models: ['deepseek-v4-flash'],
+      name: 'ds2api',
+    });
+
+    expect(service.listProviders()).toEqual([
+      expect.objectContaining({ available: false, id: 'anthropic' }),
+      expect.objectContaining({ available: true, id: 'ds2api' }),
+    ]);
+    expect(service.readPreferredProvider()).toEqual(expect.objectContaining({
+      id: 'ds2api',
+      defaultModel: 'deepseek-v4-flash',
+    }));
+  });
 });

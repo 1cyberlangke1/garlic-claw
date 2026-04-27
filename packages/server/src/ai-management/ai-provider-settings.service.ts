@@ -7,6 +7,7 @@ import {
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   findAiProviderCatalogItem,
+  hasConfiguredProviderApiKey,
   isCatalogProviderMode,
   validateAiProviderInput,
 } from './ai-management-model-config';
@@ -45,8 +46,15 @@ export class AiProviderSettingsService {
       defaultModel: provider.defaultModel,
       baseUrl: provider.baseUrl,
       modelCount: provider.models.length,
-      available: Boolean(provider.apiKey),
+      available: hasConfiguredProviderApiKey(provider.apiKey),
     }));
+  }
+
+  readPreferredProvider(): StoredAiProviderConfig | null {
+    const preferredProvider = this.settings.providers.find((provider) => hasConfiguredProviderApiKey(provider.apiKey) && provider.models.length > 0)
+      ?? this.settings.providers.find((provider) => provider.models.length > 0)
+      ?? null;
+    return preferredProvider ? { ...preferredProvider, models: [...preferredProvider.models] } : null;
   }
 
   getHostModelRoutingConfig(): AiHostModelRoutingConfig {

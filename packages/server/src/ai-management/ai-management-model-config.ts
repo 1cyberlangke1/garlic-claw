@@ -14,6 +14,12 @@ const PROVIDER_PROTOCOL_DRIVERS: ProviderProtocolDriver[] = [
 ];
 
 const PROVIDER_PROTOCOL_DRIVER_SET = new Set<string>(PROVIDER_PROTOCOL_DRIVERS);
+const PROVIDER_API_KEY_PLACEHOLDER_PATTERNS = [
+  /^YOUR_/iu,
+  /^REPLACE_/iu,
+  /^CHANGE_ME\b/iu,
+  /^<.+>$/u,
+] as const;
 
 export const DEFAULT_AI_MODEL_CONTEXT_LENGTH = 128 * 1024;
 
@@ -143,4 +149,10 @@ export function isProviderProtocolDriver(
   driver: string,
 ): driver is ProviderProtocolDriver {
   return PROVIDER_PROTOCOL_DRIVER_SET.has(driver);
+}
+
+export function hasConfiguredProviderApiKey(apiKey: string | undefined): boolean {
+  const normalizedApiKey = typeof apiKey === 'string' ? apiKey.trim() : '';
+  return normalizedApiKey.length > 0
+    && !PROVIDER_API_KEY_PLACEHOLDER_PATTERNS.some((pattern) => pattern.test(normalizedApiKey));
 }

@@ -9,6 +9,7 @@
     "prisma:push": "prisma db push",
     "start": "node dist/src/main.js",
     "smoke:http": "node scripts/http-smoke.mjs",
+    "smoke:http:real": "node scripts/http-smoke.mjs --real-provider-env",
     "test": "jest --runInBand --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },

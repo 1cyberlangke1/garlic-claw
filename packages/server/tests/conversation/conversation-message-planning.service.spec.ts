@@ -23,6 +23,7 @@ describe('ConversationMessagePlanningService', () => {
   const toolRegistryService = { buildToolSet: jest.fn(), listAvailableTools: jest.fn() };
 
   let contextGovernanceConfigPath: string;
+  let conversationsPath: string;
   let conversationId: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
@@ -34,7 +35,12 @@ describe('ConversationMessagePlanningService', () => {
       os.tmpdir(),
       `context-governance-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
+    conversationsPath = path.join(
+      os.tmpdir(),
+      `conversation-message-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
     process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
+    process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationsPath;
     aiManagementService.getDefaultProviderSelection.mockReturnValue({ modelId: 'gpt-5.4', providerId: 'openai', source: 'default' });
     aiManagementService.getProvider.mockReturnValue({ defaultModel: 'gpt-5.4', id: 'openai', models: ['gpt-5.4'] });
     aiManagementService.getProviderModel.mockReturnValue({
@@ -77,12 +83,15 @@ describe('ConversationMessagePlanningService', () => {
 
   afterEach(() => {
     delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
-    try {
-      if (fs.existsSync(contextGovernanceConfigPath)) {
-        fs.unlinkSync(contextGovernanceConfigPath);
+    delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
+    for (const filePath of [contextGovernanceConfigPath, conversationsPath]) {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {
+        // 忽略临时配置文件清理失败，避免影响测试主语义。
       }
-    } catch {
-      // 忽略临时配置文件清理失败，避免影响测试主语义。
     }
   });
 

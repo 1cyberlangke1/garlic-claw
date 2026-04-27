@@ -1,23 +1,28 @@
 # Task Plan
 
-## 2026-04-27 流错误稳定性与 smoke 修复
+## 2026-04-27 LLM 覆盖矩阵与 smoke 复用收口
 
 1. 同步计划文件
-   - `TODO.md` 只保留当前流错误链任务
-   - `task_plan.md / progress.md / findings.md` 删除旧阶段，改为当前任务
-2. 定位 `smoke:server`
-   - 复现 `chat.messages.send`
-   - 记录真实 SSE 事件序列与失败 owner
-3. 修复 owner
-   - 如果是后端流错误链，修后端
-   - 如果是 smoke 断言或配置，修 smoke
-   - 补对应回归测试
-4. fresh 验收
-   - `packages/server`: `npm run build`
-   - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
-   - root: `npm run smoke:server`
-5. judge
-   - 独立检查是否还存在未处理 rejection、错误 SSE 语义或后端退出
+   - 压缩旧的 provider 修复阶段
+   - 切到当前“LLM 全覆盖 + smoke 复用 + 自动清理”任务
+2. 盘点覆盖矩阵
+   - 对照所有 `generateText / streamText` owner
+   - 标注现有 fake / real 覆盖来源与缺口
+3. 重构 smoke 编排
+   - 把 fake / real 共用 provider/chat 步骤收口为同一套流程
+   - 把临时目录、临时配置、会话清理逻辑收口
+4. 补齐 fake / real 缺口
+   - fake：`context-compaction / runtime-host llm / vision / subagent`
+   - real：`chat / context-compaction / runtime-host llm / subagent`
+5. fresh 验收
+  - 相关 Jest
+  - `npm run smoke:server`
+  - `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=nvidia npm run smoke:server:real`
+  - `GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID=ds2api npm run smoke:server:real`
+  - `npm run typecheck:server`
+  - `npm run lint`
+6. judge
+  - 独立检查覆盖矩阵、代码复用与清理是否达标
 
 ## 当前进度
 
@@ -26,16 +31,4 @@
 - 步骤 3 已完成
 - 步骤 4 已完成
 - 步骤 5 已完成
-
-## Judge
-
-- 结论：`PASS`
-- 关键结论：
-  - 不是简单吞异常；`fullStream` 仍保留原始失败语义，任务层会进入 `error`
-  - 已修掉两类真实问题：
-    - 附带 promise 的 rejected promise 外泄
-    - 非枚举 `fullStream` 在对象展开时丢失
-  - fresh 验证通过：
-    - `packages/server npm run build`
-    - `packages/server jest --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
-    - `root npm run smoke:server`
+- 步骤 6 已完成

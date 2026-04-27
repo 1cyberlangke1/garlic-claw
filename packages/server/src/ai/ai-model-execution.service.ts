@@ -107,9 +107,9 @@ export class AiModelExecutionService {
   }
 
   private resolveExecutionTarget(providerId: string | undefined, modelId: string | undefined): AiExecutionTarget {
-    const resolvedProviderId = providerId ?? this.aiProviderSettingsService.listProviders()[0]?.id;
-    if (!resolvedProviderId) {throw new Error('No provider configured');}
-    const provider = this.aiProviderSettingsService.getProvider(resolvedProviderId), resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
+    const preferredProvider = providerId ? this.aiProviderSettingsService.getProvider(providerId) : this.aiProviderSettingsService.readPreferredProvider();
+    if (!preferredProvider) {throw new Error('No provider configured');}
+    const provider = preferredProvider, resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
     if (!resolvedModelId) {throw new Error(`Provider "${provider.id}" does not have any configured model`);}
     if (!provider.apiKey) {throw new Error(`Provider "${provider.id}" is missing apiKey`);}
     if (!provider.baseUrl) {throw new Error(`Provider "${provider.id}" is missing baseUrl`);}

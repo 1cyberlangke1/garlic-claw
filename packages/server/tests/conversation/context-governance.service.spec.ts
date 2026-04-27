@@ -1,0 +1,253 @@
+import type { JsonObject } from '@garlic-claw/shared';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
+import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
+import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+
+type GenerateTextInput = {
+  allowFallbackChatModels?: boolean;
+  messages: Array<{ content: string; role: 'user' }>;
+  modelId?: string;
+  providerId?: string;
+  transportMode?: 'generate' | 'stream-collect';
+};
+
+describe('ContextGovernanceService', () => {
+  let contextGovernanceConfigPath: string;
+  let conversationsPath: string;
+  let conversationId: string;
+  let settingsService: ContextGovernanceSettingsService;
+  let conversationRecordService: RuntimeHostConversationRecordService;
+  let service: ContextGovernanceService;
+
+  const aiManagementService = {
+    getDefaultProviderSelection: jest.fn(),
+    getProvider: jest.fn(),
+    getProviderModel: jest.fn(),
+    listProviders: jest.fn(),
+  };
+  const aiModelExecutionService = {
+    generateText: jest.fn<Promise<{ modelId: string; providerId: string; text: string }>, [GenerateTextInput]>(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    contextGovernanceConfigPath = path.join(
+      os.tmpdir(),
+      `context-governance.service.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
+    conversationsPath = path.join(
+      os.tmpdir(),
+      `context-governance.service.conversations-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
+    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
+    process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationsPath;
+    aiManagementService.getDefaultProviderSelection.mockReturnValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      source: 'default',
+    });
+    aiManagementService.getProvider.mockReturnValue({
+      defaultModel: 'gpt-oss-20b',
+      id: 'nvidia',
+      models: ['gpt-oss-20b'],
+    });
+    aiManagementService.getProviderModel.mockReturnValue({
+      capabilities: {
+        input: { image: false, text: true },
+        output: { image: false, text: true },
+        reasoning: false,
+        toolCall: true,
+      },
+      contextLength: 1024,
+      id: 'gpt-oss-20b',
+      name: 'openai/gpt-oss-20b',
+      providerId: 'nvidia',
+      status: 'active',
+    });
+    aiManagementService.listProviders.mockReturnValue([{ id: 'nvidia' }]);
+    settingsService = new ContextGovernanceSettingsService();
+    conversationRecordService = new RuntimeHostConversationRecordService();
+    conversationId = (
+      conversationRecordService.createConversation({
+        title: 'New Chat',
+        userId: 'user-1',
+      }) as { id: string }
+    ).id;
+    service = new ContextGovernanceService(
+      aiManagementService as never,
+      aiModelExecutionService as never,
+      settingsService,
+      conversationRecordService,
+    );
+  });
+
+  afterEach(() => {
+    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
+    delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
+    for (const filePath of [contextGovernanceConfigPath, conversationsPath]) {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {
+        // 测试临时文件清理失败不应覆盖主断言。
+      }
+    }
+  });
+
+  it('generates a conversation title through the model execution owner', async () => {
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '帮我整理一下今天的代码评审结论'),
+      createHistoryMessage('message-2', 'assistant', '今天主要处理 provider smoke、subagent 和上下文压缩'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '代码评审结论',
+    });
+
+    await service.generateConversationTitleIfNeeded({
+      conversationId,
+      userId: 'user-1',
+    });
+
+    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
+      allowFallbackChatModels: true,
+      messages: [
+        expect.objectContaining({
+          role: 'user',
+        }),
+      ],
+      transportMode: 'stream-collect',
+    }));
+    expect(conversationRecordService.requireConversation(conversationId, 'user-1').title).toBe('代码评审结论');
+  });
+
+  it('compacts conversation history through the summary model when /compact is received', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        enabled: true,
+        keepRecentMessages: 1,
+        mode: 'manual',
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一条历史消息，说明 smoke 需要真实 provider。'),
+      createHistoryMessage('message-2', 'assistant', '第二条历史回复，说明默认 provider 不能落到占位 key。'),
+      createHistoryMessage('message-3', 'user', '第三条历史消息，说明 subagent 结果需要回写。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '压缩摘要：真实 provider、默认选择、subagent 回写。',
+    });
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(result).toEqual({
+      action: 'short-circuit',
+      assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
+      assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
+      allowFallbackChatModels: true,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      transportMode: 'generate',
+    }));
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string; id: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown>; owner?: string; type?: string }> }; role: string }>;
+    };
+    const summaryMessage = history.messages.find((message) => message.content === '压缩摘要：真实 provider、默认选择、subagent 回写。');
+    expect(summaryMessage?.role).toBe('display');
+    expect(summaryMessage?.metadata?.annotations?.some((annotation) =>
+      annotation.owner === 'conversation.context-governance'
+      && annotation.type === 'context-compaction'
+      && annotation.data?.role === 'summary')).toBe(true);
+  });
+
+  it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        allowAutoContinue: false,
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 1,
+        mode: 'auto',
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来触发自动压缩阈值。'.repeat(10)),
+      createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，用来确保压缩候选不为空。'.repeat(10)),
+      createHistoryMessage('message-3', 'user', '第三段消息保留给最近窗口。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '自动压缩摘要：保留最近窗口并折叠更早历史。',
+    });
+
+    await service.rewriteHistoryBeforeModel({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    const beforeModel = await service.applyBeforeModel({
+      conversationId,
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '第三段消息保留给最近窗口。', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+      userId: 'user-1',
+    });
+
+    expect(aiModelExecutionService.generateText).toHaveBeenCalledTimes(1);
+    expect(beforeModel).toEqual({
+      action: 'short-circuit',
+      assistantContent: '已完成上下文压缩，本轮不继续生成主回复。',
+      assistantParts: [{ text: '已完成上下文压缩，本轮不继续生成主回复。', type: 'text' }],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      reason: 'context-compaction:auto-stop',
+    });
+  });
+});
+
+function createHistoryMessage(
+  id: string,
+  role: 'assistant' | 'user',
+  content: string,
+): JsonObject {
+  return {
+    content,
+    createdAt: '2026-04-27T00:00:00.000Z',
+    id,
+    parts: [{ text: content, type: 'text' }],
+    role,
+    status: 'completed',
+    updatedAt: '2026-04-27T00:00:00.000Z',
+  };
+}
