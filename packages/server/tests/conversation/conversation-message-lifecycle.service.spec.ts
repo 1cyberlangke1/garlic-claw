@@ -8,7 +8,6 @@ import { ContextGovernanceSettingsService } from '../../src/conversation/context
 import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostConversationTodoService } from '../../src/runtime/host/runtime-host-conversation-todo.service';
-import { RuntimeHostUserContextService } from '../../src/runtime/host/runtime-host-user-context.service';
 import { ConversationMessageLifecycleService } from '../../src/conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
@@ -108,7 +107,6 @@ describe('ConversationMessageLifecycleService', () => {
         aiModelExecutionService as never,
         contextGovernanceSettingsService,
         runtimeHostConversationRecordService,
-        new RuntimeHostUserContextService(),
       ),
       runtimeHostConversationRecordService,
       personaService as never,

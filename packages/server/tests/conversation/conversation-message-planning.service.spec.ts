@@ -5,7 +5,6 @@ import { ConversationMessagePlanningService } from '../../src/conversation/conve
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostUserContextService } from '../../src/runtime/host/runtime-host-user-context.service';
 
 describe('ConversationMessagePlanningService', () => {
   const aiManagementService = {
@@ -59,11 +58,6 @@ describe('ConversationMessagePlanningService', () => {
     });
     runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
-    contextGovernanceSettingsService.updateConfig({
-      memoryContext: {
-        enabled: false,
-      },
-    });
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
       aiModelExecutionService as never,
@@ -73,7 +67,6 @@ describe('ConversationMessagePlanningService', () => {
         aiModelExecutionService as never,
         contextGovernanceSettingsService,
         runtimeHostConversationRecordService,
-        new RuntimeHostUserContextService(),
       ),
       runtimeHostConversationRecordService,
       personaService as never,

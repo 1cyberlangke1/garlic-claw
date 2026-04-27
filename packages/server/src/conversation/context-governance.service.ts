@@ -1,10 +1,7 @@
 import { uuidv7 } from 'uuidv7';
 import {
   buildConversationTitlePrompt,
-  clipContextText,
   normalizePositiveInteger,
-  readLatestUserTextFromMessages,
-  readMemorySearchResults,
   sanitizeConversationTitle,
   shouldGenerateConversationTitle,
 } from '@garlic-claw/plugin-sdk/authoring';
@@ -22,7 +19,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { AiManagementService } from '../ai-management/ai-management.service';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostUserContextService } from '../runtime/host/runtime-host-user-context.service';
 import { asJsonObject } from '../runtime/host/runtime-host-values';
 import { ContextGovernanceSettingsService } from './context-governance-settings.service';
 
@@ -66,7 +62,6 @@ export class ContextGovernanceService {
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly contextGovernanceSettingsService: ContextGovernanceSettingsService,
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
-    private readonly runtimeHostUserContextService: RuntimeHostUserContextService,
   ) {}
 
   getConfigSnapshot() {
@@ -102,7 +97,7 @@ export class ContextGovernanceService {
     }
     return {
       action: 'continue',
-      messages: await this.applyContextWindowStrategy({ conversationId: input.conversationId, messages: this.injectMemoryContext(input.messages, input.userId), modelId: input.modelId, providerId: input.providerId, userId: input.userId }),
+      messages: await this.applyContextWindowStrategy({ conversationId: input.conversationId, messages: input.messages, modelId: input.modelId, providerId: input.providerId, userId: input.userId }),
       modelId: input.modelId,
       providerId: input.providerId,
       systemPrompt: input.systemPrompt,
@@ -148,22 +143,6 @@ export class ContextGovernanceService {
 
   listCommandCatalogEntries(): Array<{ aliases: string[]; canonicalCommand: string; commandId: string; conflictTriggers: string[]; connected: boolean; defaultEnabled: boolean; description: string; kind: 'command'; path: string[]; pluginDisplayName: string; pluginId: string; runtimeKind: 'local'; source: 'manifest'; variants: string[] }> {
     return [{ aliases: ['/compress'], canonicalCommand: '/compact', commandId: 'internal.context-governance:/compact:command', conflictTriggers: [], connected: true, defaultEnabled: true, description: '手动触发当前会话的上下文压缩', kind: 'command', path: ['compact'], pluginDisplayName: '上下文治理', pluginId: 'internal.context-governance', runtimeKind: 'local', source: 'manifest', variants: ['/compact', '/compress'] }];
-  }
-
-  private injectMemoryContext(messages: ModelMessage[], userId?: string): ModelMessage[] {
-    const memoryConfig = this.contextGovernanceSettingsService.readRuntimeConfig().memoryContext;
-    if (!memoryConfig.enabled || !userId) {return messages;}
-    const latestUserText = readLatestUserTextFromMessages(messages.map(({ content, role }) => ({ content: Array.isArray(content) ? content : [{ text: content, type: 'text' as const }], role })));
-    if (!latestUserText) {return messages;}
-    const memories = readMemorySearchResults(this.runtimeHostUserContextService.searchMemoriesByUser(userId, latestUserText, memoryConfig.limit));
-    if (memories.length === 0) {return messages;}
-    const lines = memories.map((memory) => { const content = clipContextText(memory.content ?? ''); return content ? `- [${memory.category ?? 'general'}] ${content}` : ''; }).filter(Boolean);
-    if (lines.length === 0) {return messages;}
-    const promptBlock = `${memoryConfig.promptPrefix}：\n${lines.join('\n')}`;
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index]?.role === 'user') {return [...messages.slice(0, index), { content: promptBlock, role: 'assistant' }, messages[index], ...messages.slice(index + 1)];}
-    }
-    return messages;
   }
 
   private async applyContextWindowStrategy(input: {

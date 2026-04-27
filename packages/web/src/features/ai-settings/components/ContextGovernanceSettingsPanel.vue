@@ -4,7 +4,7 @@
       <div>
         <span class="panel-kicker">Context</span>
         <h2>上下文治理</h2>
-        <p>这里直接配置长期记忆注入、自动标题与上下文压缩/滑动窗口，不再通过 builtin plugin 间接设置。</p>
+        <p>这里直接配置自动标题与上下文压缩/滑动窗口；记忆已回到独立插件管理。</p>
       </div>
     </header>
 

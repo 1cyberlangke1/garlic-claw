@@ -3,15 +3,10 @@ import * as path from 'node:path';
 import {
   CONTEXT_COMPACTION_CONFIG_SCHEMA,
   CONVERSATION_TITLE_CONFIG_SCHEMA,
-  MEMORY_CONTEXT_CONFIG_SCHEMA,
-  MEMORY_CONTEXT_DEFAULT_LIMIT,
-  MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
   readContextCompactionConfig,
   readConversationTitleConfig,
-  readPromptBlockConfig,
   resolveContextCompactionRuntimeConfig,
   resolveConversationTitleRuntimeConfig,
-  resolvePromptBlockConfig,
 } from '@garlic-claw/plugin-sdk/authoring';
 import type { JsonObject, JsonValue, PluginConfigSchema, PluginConfigSnapshot } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
@@ -20,13 +15,12 @@ import { ProjectWorktreeRootService } from '../execution/project/project-worktre
 const CONTEXT_GOVERNANCE_CONFIG_FILE = 'context-governance.json';
 const MAX_CONFIG_INTEGER = 1_000_000;
 
-const CONTEXT_GOVERNANCE_SECTION_NAMES = ['memoryContext', 'conversationTitle', 'contextCompaction'] as const;
+const CONTEXT_GOVERNANCE_SECTION_NAMES = ['conversationTitle', 'contextCompaction'] as const;
 type ContextGovernanceSectionName = typeof CONTEXT_GOVERNANCE_SECTION_NAMES[number];
 
-export interface StoredContextGovernanceConfig { contextCompaction: ReturnType<typeof resolveContextCompactionRuntimeConfig>; conversationTitle: ReturnType<typeof resolveConversationTitleRuntimeConfig> & { enabled: boolean }; memoryContext: ReturnType<typeof resolvePromptBlockConfig> & { enabled: boolean }; }
+export interface StoredContextGovernanceConfig { contextCompaction: ReturnType<typeof resolveContextCompactionRuntimeConfig>; conversationTitle: ReturnType<typeof resolveConversationTitleRuntimeConfig> & { enabled: boolean }; }
 
 const CONTEXT_GOVERNANCE_CONFIG_SCHEMA: PluginConfigSchema = { type: 'object', items: {
-  memoryContext: { type: 'object', description: '在送模前按用户问题检索长期记忆并插入上下文。', collapsed: true, items: { enabled: { type: 'bool', description: '是否启用长期记忆上下文注入', defaultValue: true }, ...MEMORY_CONTEXT_CONFIG_SCHEMA.items } },
   conversationTitle: { type: 'object', description: '在默认标题会话完成首次回复后自动生成标题。', collapsed: true, items: { enabled: { type: 'bool', description: '是否启用自动标题生成', defaultValue: true }, ...CONVERSATION_TITLE_CONFIG_SCHEMA.items } },
   contextCompaction: { ...CONTEXT_COMPACTION_CONFIG_SCHEMA, description: '主对话上下文治理策略。', collapsed: true },
 } };
@@ -41,7 +35,6 @@ export class ContextGovernanceSettingsService {
   readStoredConfig(): JsonObject { return structuredClone(this.configValues); }
 
   readRuntimeConfig(): StoredContextGovernanceConfig {
-    const memoryValues = readNestedObject(this.configValues, 'memoryContext');
     const titleValues = readNestedObject(this.configValues, 'conversationTitle');
     const compactionValues = readNestedObject(this.configValues, 'contextCompaction');
     return {
@@ -49,13 +42,6 @@ export class ContextGovernanceSettingsService {
       conversationTitle: {
         enabled: readEnabled(titleValues),
         ...resolveConversationTitleRuntimeConfig(readConversationTitleConfig(titleValues)),
-      },
-      memoryContext: {
-        enabled: readEnabled(memoryValues),
-        ...resolvePromptBlockConfig(readPromptBlockConfig(memoryValues), {
-          limit: MEMORY_CONTEXT_DEFAULT_LIMIT,
-          promptPrefix: MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX,
-        }),
       },
     };
   }
@@ -100,7 +86,6 @@ function sanitizeContextGovernanceSection(sectionName: ContextGovernanceSectionN
     if (typeof values.enabled !== 'boolean') {throw new BadRequestException(`${sectionName}.enabled 必须是布尔值`);}
     next.enabled = values.enabled;
   }
-  if (sectionName === 'memoryContext') { writeOptionalInteger(next, values.limit, 'memoryContext.limit', 1); writeOptionalText(next, values.promptPrefix, 'memoryContext.promptPrefix'); }
   if (sectionName === 'conversationTitle') { writeOptionalText(next, values.defaultTitle, 'conversationTitle.defaultTitle'); writeOptionalInteger(next, values.maxMessages, 'conversationTitle.maxMessages', 1); }
   if (sectionName === 'contextCompaction') {
     writeOptionalTextOption(next, values.mode, 'contextCompaction.mode', ['auto', 'manual']);

@@ -256,7 +256,7 @@ describe('PluginBootstrapService', () => {
     });
   });
 
-  it('drops retired builtin plugin records during bootstrap', () => {
+  it('drops retired builtin plugin records and registers active memory builtins during bootstrap', () => {
     const persistence = new PluginPersistenceService();
     const service = new PluginBootstrapService(
       new PluginGovernanceService(),
@@ -280,8 +280,18 @@ describe('PluginBootstrapService', () => {
       pluginId: 'builtin.memory-context',
     });
 
-    expect(service.bootstrapBuiltins()).toEqual([]);
-    expect(service.listPlugins()).toEqual([]);
-    expect(service.canReloadBuiltin('builtin.memory-context')).toBe(false);
+    expect(service.bootstrapBuiltins()).toEqual([
+      'builtin.memory-context',
+      'builtin.memory-tools',
+    ]);
+    expect(service.listPlugins()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        pluginId: 'builtin.memory-context',
+      }),
+      expect.objectContaining({
+        pluginId: 'builtin.memory-tools',
+      }),
+    ]));
+    expect(service.canReloadBuiltin('builtin.memory-context')).toBe(true);
   });
 });

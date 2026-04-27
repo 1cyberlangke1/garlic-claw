@@ -1756,15 +1756,10 @@ async function runHttpFlow(apiBase, state, input) {
             enabled: true,
             maxMessages: 3,
           },
-          memoryContext: {
-            enabled: true,
-            limit: 6,
-            promptPrefix: 'Smoke Memory',
-          },
         },
       },
     });
-    ensure(config.values.memoryContext.limit === 6, 'Expected context governance config update to persist');
+    ensure(!('memoryContext' in config.values), 'Expected context governance config to exclude memory settings');
     ensure(config.values.contextCompaction.strategy === 'sliding', 'Expected context governance compaction strategy to persist');
   });
 
