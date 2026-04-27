@@ -637,6 +637,43 @@ describe('ConversationMessageLifecycleService', () => {
     expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
   })
 
+  it('keeps the conversation mainline alive when the provider stream fails after starting', async () => {
+    const streamFailure = new Error('invalid x-api-key')
+    const rejectingFinishReason = Promise.reject(streamFailure)
+    const rejectingUsage = Promise.reject(streamFailure)
+    rejectingFinishReason.catch(() => undefined)
+    rejectingUsage.catch(() => undefined)
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: rejectingFinishReason,
+      fullStream: (async function* () {
+        yield { text: '部分输出', type: 'text-delta' as const }
+        throw streamFailure
+      })(),
+      modelId: 'claude-3-5-sonnet-20241022',
+      providerId: 'anthropic',
+      usage: rejectingUsage,
+    })
+
+    const started = await startAndWait(service, conversationTaskService, {
+      content: '你好',
+      model: 'claude-3-5-sonnet-20241022',
+      provider: 'anthropic',
+    })
+
+    expect(readConversation(runtimeHostConversationRecordService).messages).toMatchObject([
+      { content: '你好', role: 'user', status: 'completed' },
+      {
+        content: '部分输出',
+        error: 'invalid x-api-key',
+        model: 'claude-3-5-sonnet-20241022',
+        provider: 'anthropic',
+        role: 'assistant',
+        status: 'error',
+      },
+    ])
+    expect(started.assistantMessage).toMatchObject({ role: 'assistant' })
+  })
+
   it('short-circuits the conversation mainline for internal context governance commands', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {

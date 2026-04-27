@@ -402,6 +402,54 @@ describe('ConversationTaskService', () => {
       status: 'completed',
     });
   });
+
+  it('marks the assistant message as error when stream consumption fails and does not leak rejected stream promises', async () => {
+    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const unhandledErrors: unknown[] = [];
+    const handleUnhandledRejection = (reason: unknown) => {
+      unhandledErrors.push(reason);
+    };
+    process.on('unhandledRejection', handleUnhandledRejection);
+
+    try {
+      service.startTask({
+        assistantMessageId: String(assistantMessage.id),
+        conversationId,
+        createStream: async () => {
+          const streamFailure = new Error('invalid x-api-key');
+          return {
+            modelId: 'claude-3-5-sonnet-20241022',
+            providerId: 'anthropic',
+            stream: {
+              finishReason: Promise.reject(streamFailure),
+              fullStream: (async function* () {
+                yield delta('部分输出');
+                throw streamFailure;
+              })(),
+              usage: Promise.reject(streamFailure),
+            },
+          };
+        },
+        modelId: 'claude-3-5-sonnet-20241022',
+        providerId: 'anthropic',
+      });
+
+      await service.waitForTask(String(assistantMessage.id));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+        content: '部分输出',
+        error: 'invalid x-api-key',
+        model: 'claude-3-5-sonnet-20241022',
+        provider: 'anthropic',
+        role: 'assistant',
+        status: 'error',
+      });
+      expect(unhandledErrors).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', handleUnhandledRejection);
+    }
+  });
 });
 
 function createAssistantMessage(runtimeHostConversationMessageService: RuntimeHostConversationMessageService) {

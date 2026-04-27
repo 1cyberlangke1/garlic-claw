@@ -1,33 +1,24 @@
 # Progress
 
-## 2026-04-27 记忆纯插件化
+## 2026-04-27 流错误稳定性与 smoke 修复
 
-- 已确认当前问题边界：
-  - builtin 自动加载入口仍在
-  - `builtin-plugin-registry.service.ts` 当前没有任何 definition
-  - 记忆注入现在仍在 `ContextGovernanceService.injectMemoryContext(...)`
-- 已确认最小修法：
-  - 只恢复 `builtin.memory-tools` 和 `builtin.memory-context`
-  - 只删除内部记忆注入 owner
-  - 不碰其他 builtin / 内部能力
+- 已确认用户现场故障链：
+  - 真实上游错误是 `Anthropic 401 invalid x-api-key`
+  - 后续 `NoOutputGeneratedError` 与后端退出属于流失败后的附带问题
+  - 前端 `vite proxy ECONNREFUSED/ECONNRESET` 是后端退出后的连带症状
+- 已有未提交修复：
+  - `AiModelExecutionService` 对 `finishReason / totalUsage` 做安全 promise 包装
+  - `ConversationTaskService` 对 `finishReason / usage` 再做防守式包装
+  - 已补 3 处回归测试，覆盖流失败后不崩进程、不泄漏 rejected promise
+- 当前正在做：
+  - 等待独立 judge 复核
 - 已完成：
-  - `TODO.md` 已删除旧完成阶段，只保留 `M1`
-  - `task_plan.md / progress.md / findings.md` 已同步缩到当前任务
-  - 新增 `packages/server/src/plugin/builtin/tools/builtin-memory-tools.plugin.ts`
-  - 新增 `packages/server/src/plugin/builtin/hooks/builtin-memory-context.plugin.ts`
-  - `builtin-plugin-registry.service.ts` 已恢复 memory builtin definitions
-  - `context-governance.service.ts` 已删除内部记忆注入
-  - `context-governance-settings.service.ts` 已删除 `memoryContext` section
-  - `ContextGovernanceSettingsPanel.vue` 已删除内部记忆配置表述
-  - `http-smoke.mjs` 已改到新边界，不再断言 `memoryContext`
-- 已完成 fresh：
-  - `packages/server`: `npm run build`
-  - `packages/web`: `npm run typecheck`
-  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/host/runtime-host.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/automation/automation.service.spec.ts tests/adapters/http/tool/tool.controller.spec.ts tests/conversation/conversation-message-planning.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
-  - `packages/web`: `npm run test:run -- tests/features/tools/composables/use-tool-management.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts`
-  - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/conversation/conversation-message-lifecycle.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
-  - root: `npm run smoke:server`
-  - root: `npm run smoke:web-ui`
-- 当前状态：
-  - fresh 已通过
-  - 独立 judge：`PASS`
+  - `TODO.md / task_plan.md / progress.md / findings.md` 已收口到当前流错误任务
+  - 复现 `smoke:server`，定位到 `normalizeStreamResult()` 用对象展开后丢失了 SDK 返回对象上的非枚举 `fullStream`
+  - 修复 `AiModelExecutionService.normalizeStreamResult()`，显式保留 `fullStream`
+  - `http-smoke.mjs` 的 SSE 断言已补充事件序列输出，后续失败更容易定位
+  - 新增回归测试：`AiModelExecutionService` 保证非枚举 `fullStream` 不丢失
+  - fresh 已通过：
+    - `packages/server`: `npm run build`
+    - `packages/server`: `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/ai/ai-model-execution.service.spec.ts tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - root: `npm run smoke:server`

@@ -102,19 +102,20 @@ export class ConversationTaskService {
 
     try {
       const streamSource = await input.createStream(task.abortController.signal);
+      const stream = normalizeConversationTaskStream(streamSource.stream);
       runtime.modelId = streamSource.modelId;
       runtime.providerId = streamSource.providerId;
       await this.writeTaskSnapshot(runtime, 'streaming');
       this.emit(task, { messageId: runtime.assistantMessageId, status: 'streaming', type: 'status' });
 
-      for await (const rawPart of streamSource.stream.fullStream) {
+      for await (const rawPart of stream.fullStream) {
         const events = readConversationTaskEvents(runtime.state, runtime.assistantMessageId, runtime.providerId, rawPart);
         if (events.length === 0) {continue;}
         await this.writeTaskSnapshot(runtime, 'streaming');
         this.emitAll(task, events);
       }
 
-      const usage = await readConversationTaskUsage(streamSource.stream.usage);
+      const usage = await readConversationTaskUsage(stream.usage);
       if (usage?.source === 'provider') {
         runtime.state.metadata = appendConversationModelUsageMetadata(runtime.state.metadata, {
           ...usage,
@@ -182,8 +183,24 @@ async function readConversationTaskOutcome(abortSignal: AbortSignal, resolver: S
   return { error: await resolver?.(error) ?? (error instanceof Error ? error.message : 'Conversation generation failed'), status: 'error' };
 }
 
+function normalizeConversationTaskStream(stream: ResolvedConversationTaskStreamSource['stream']): ResolvedConversationTaskStreamSource['stream'] {
+  return {
+    ...stream,
+    ...(Object.prototype.hasOwnProperty.call(stream, 'finishReason') ? { finishReason: readSafeTaskValue(stream.finishReason) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(stream, 'usage') ? { usage: readSafeTaskUsagePromise(stream.usage) } : {}),
+  };
+}
+
 async function readConversationTaskUsage(usage: Promise<AiModelUsage | undefined> | undefined): Promise<AiModelUsage | undefined> {
   try { return usage ? await usage : undefined; } catch { return undefined; }
+}
+
+function readSafeTaskValue<T>(value: PromiseLike<T> | T | undefined): Promise<T | undefined> | T | undefined {
+  return value === undefined ? undefined : Promise.resolve(value).catch(() => undefined);
+}
+
+function readSafeTaskUsagePromise<T>(value: PromiseLike<T> | T | undefined): Promise<T | undefined> | undefined {
+  return value === undefined ? undefined : Promise.resolve(value).catch(() => undefined);
 }
 
 function readConversationTaskMessageBody(

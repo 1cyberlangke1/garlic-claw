@@ -45,6 +45,11 @@ export interface AiModelExecutionStreamResult {
 
 type AiModelStreamRequest = AiModelExecutionRequest & { abortSignal?: AbortSignal; tools?: Record<string, Tool> };
 type AiSdkStreamTextResult = ReturnType<typeof streamText>;
+type NormalizedAiSdkStreamTextResult = {
+  finishReason?: Promise<unknown> | unknown;
+  fullStream: AsyncIterable<unknown>;
+  totalUsage?: Promise<unknown> | unknown;
+};
 type OpenAiCompatibleToolCallIdState = { generatedIds: Map<string, string>; streamId: string };
 type NormalizedOpenAiCompatibleToolCall = { changed: boolean; toolCall: Record<string, unknown> };
 
@@ -156,8 +161,8 @@ export class AiModelExecutionService {
     };
   }
 
-  private startTextStream(input: AiModelStreamRequest, target: AiExecutionTarget): AiSdkStreamTextResult {
-    return streamText({ ...this.buildExecutionInput(input, target), ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}), includeRawChunks: true, ...this.buildToolExecutionOptions(input.tools) } as Parameters<typeof streamText>[0]);
+  private startTextStream(input: AiModelStreamRequest, target: AiExecutionTarget): NormalizedAiSdkStreamTextResult {
+    return normalizeStreamResult(streamText({ ...this.buildExecutionInput(input, target), ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}), includeRawChunks: true, ...this.buildToolExecutionOptions(input.tools) } as Parameters<typeof streamText>[0]));
   }
 
   private createLanguageModel(target: AiExecutionTarget): LanguageModel {
@@ -249,6 +254,17 @@ function readProviderUsage(value: unknown): AiModelUsage | null {
 }
 
 function readProviderUsagePromise(value: unknown): Promise<AiModelUsage | undefined> | undefined { return value === undefined ? undefined : Promise.resolve(value).then((usage) => readProviderUsage(usage) ?? undefined).catch(() => undefined); }
+function normalizeStreamResult(result: AiSdkStreamTextResult): NormalizedAiSdkStreamTextResult {
+  return {
+    fullStream: result.fullStream,
+    ...(Object.prototype.hasOwnProperty.call(result, 'finishReason') ? { finishReason: readSafeAsyncValue(result.finishReason) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(result, 'totalUsage') ? { totalUsage: readSafeAsyncValue((result as unknown as { totalUsage?: unknown }).totalUsage) } : {}),
+  };
+}
+
+function readSafeAsyncValue<T>(value: PromiseLike<T> | T | undefined): Promise<T | undefined> | T | undefined {
+  return value === undefined ? undefined : Promise.resolve(value).catch(() => undefined);
+}
 
 function readTokenNumber(value: unknown): number | null { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null; }
 

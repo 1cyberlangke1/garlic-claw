@@ -3200,12 +3200,13 @@ function assertCompletedSse(events, expectedText) {
   const finishIndex = events.findIndex((entry) => entry.type === 'finish');
   const doneIndex = events.findIndex((entry) => entry.type === 'done');
   const deltas = events.filter((entry) => entry.type === 'text-delta').map((entry) => entry.text ?? '').join('');
+  const serializedEvents = JSON.stringify(events);
   ensure(startIndex >= 0, 'Expected SSE message-start event');
   ensure(finishIndex > startIndex, 'Expected SSE finish after message-start');
   ensure(doneIndex > finishIndex, 'Expected SSE [DONE] after finish');
-  ensure(deltas.length > 0, 'Expected SSE text-delta content');
+  ensure(deltas.length > 0, `Expected SSE text-delta content, events=${serializedEvents}`);
   if (typeof expectedText === 'string') {
-    ensure(deltas === expectedText, `Expected SSE text to equal "${expectedText}"`);
+    ensure(deltas === expectedText, `Expected SSE text to equal "${expectedText}", events=${serializedEvents}`);
   }
   return deltas;
 }

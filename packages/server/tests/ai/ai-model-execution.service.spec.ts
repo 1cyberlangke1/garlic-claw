@@ -492,6 +492,88 @@ describe('AiModelExecutionService', () => {
     }));
   });
 
+  it('normalizes rejected finishReason and totalUsage promises when a stream later fails', async () => {
+    const service = createService();
+    const streamFailure = new Error('invalid x-api-key');
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.reject(streamFailure),
+      fullStream: (async function* () {
+        throw streamFailure;
+      })(),
+      totalUsage: Promise.reject(streamFailure),
+    });
+
+    const streamed = service.streamText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'claude-3-5-sonnet-20241022',
+      providerId: 'anthropic',
+    });
+
+    await expect((async () => {
+      for await (const _part of streamed.fullStream) {
+        // noop
+      }
+    })()).rejects.toThrow('invalid x-api-key');
+    await expect(streamed.finishReason).resolves.toBeUndefined();
+    await expect(streamed.usage).resolves.toBeUndefined();
+  });
+
+  it('preserves fullStream when the ai sdk exposes it as a non-enumerable property', async () => {
+    const service = createService();
+    const rawStream = {
+      finishReason: Promise.resolve('stop'),
+      totalUsage: Promise.resolve({
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+      }),
+    } as {
+      finishReason: Promise<string>;
+      fullStream?: AsyncIterable<unknown>;
+      totalUsage: Promise<{ inputTokens: number; outputTokens: number; totalTokens: number }>;
+    };
+    Object.defineProperty(rawStream, 'fullStream', {
+      configurable: true,
+      enumerable: false,
+      value: (async function* () {
+        yield {
+          text: 'non-enumerable stream',
+          type: 'text-delta' as const,
+        };
+      })(),
+      writable: true,
+    });
+    mockStreamText.mockReturnValueOnce(rawStream as never);
+
+    const streamed = service.streamText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamed.fullStream) {
+      parts.push(part);
+    }
+
+    expect(parts).toEqual([
+      {
+        text: 'non-enumerable stream',
+        type: 'text-delta',
+      },
+    ]);
+  });
+
   it('enables multi-step tool loops for tool-enabled streams through the ai sdk stop condition', async () => {
     const service = createService();
 
