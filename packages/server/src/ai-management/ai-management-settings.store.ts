@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AiHostModelRoutingConfig, AiProviderMode } from '@garlic-claw/shared';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
+import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
 import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
 const AI_PROVIDER_DIRECTORY = 'providers';
@@ -15,7 +16,7 @@ const LEGACY_AI_SETTINGS_FILE_CANDIDATES = [
 export function resolveAiSettingsPath(): string {
   if (process.env.JEST_WORKER_ID) {
     return process.env.GARLIC_CLAW_AI_SETTINGS_PATH
-      ?? path.join(process.cwd(), 'tmp', `config-ai.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      ?? createServerTestArtifactPath({ prefix: 'config-ai.server.test', subdirectory: 'server' });
   }
   return process.env.GARLIC_CLAW_AI_SETTINGS_PATH
     ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', 'ai');

@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-27 runtime/workspace 路径收口与 tmp 清理
+
+- 已完成本轮路径收口：
+  - runtime 工作目录默认根改到仓库根 `workspace/runtime-workspaces`
+  - server 默认状态文件改到 `workspace/server-state`
+  - `packages/server/tmp` 不再作为运行态默认写入位置
+- 已完成本轮自动清理：
+  - 服务启动时会删除旧 `packages/server/tmp`
+  - Jest 临时产物已改到 `workspace/test-artifacts/server/process-<pid>`，并由 `globalSetup/globalTeardown` 清理
+  - `http-smoke` 结束后会删除自己的 `workspace/test-artifacts/http-smoke/*` 目录，并回收空父目录
+- 已完成仓库清理：
+  - 当前 `packages/server/tmp` 已删除
+  - `workspace/test-artifacts` fresh 验收后可回收为空
+- 本轮 fresh 验收已通过：
+  - `npm run typecheck:server`
+  - `node ../../node_modules/jest/bin/jest.js --runInBand --no-cache tests/runtime/server-workspace-paths.spec.ts tests/execution/runtime/runtime-session-environment.service.spec.ts tests/runtime/host/runtime-host-user-context.service.spec.ts tests/plugin/persistence/plugin-persistence.service.spec.ts tests/ai-management/ai-provider-settings.service.spec.ts tests/execution/mcp/mcp.service.spec.ts tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run smoke:server`
+
 ## 2026-04-27 CRUD 覆盖补齐
 
 - 已完成当前 CRUD 覆盖收口：

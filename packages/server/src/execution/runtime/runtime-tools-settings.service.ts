@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { JsonObject, JsonValue, PluginConfigSnapshot, PluginConfigSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
+import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
 import type { RuntimeCommandTextOutputOptions } from './runtime-command-output';
 
 const RUNTIME_TOOLS_CONFIG_FILE = 'runtime-tools.json';
@@ -147,7 +148,7 @@ function sanitizeRuntimeToolsConfig(values: JsonObject): JsonObject {
 function resolveRuntimeToolsConfigPath(): string {
   if (process.env.JEST_WORKER_ID) {
     return process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH
-      ?? path.join(process.cwd(), 'tmp', `config-runtime-tools.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+      ?? createServerTestArtifactPath({ extension: '.json', prefix: 'config-runtime-tools.server.test', subdirectory: 'server' });
   }
   return process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH
     ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', RUNTIME_TOOLS_CONFIG_FILE);

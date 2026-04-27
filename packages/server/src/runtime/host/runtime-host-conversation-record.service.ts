@@ -6,6 +6,7 @@ import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
@@ -188,8 +189,8 @@ function readConversationRecordValue(conversation: RuntimeConversationRecord, vi
 
 function resolveConversationStoragePath(): string {
   if (process.env.GARLIC_CLAW_CONVERSATIONS_PATH) {return process.env.GARLIC_CLAW_CONVERSATIONS_PATH;}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `conversations.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);}
-  return path.join(process.cwd(), 'tmp', 'conversations.server.json');
+  if (process.env.JEST_WORKER_ID) {return createServerTestArtifactPath({ extension: '.json', prefix: 'conversations.server.test', subdirectory: 'server' });}
+  return resolveServerStatePath('conversations.server.json');
 }
 
 function serializeConversationSession(session: RuntimeConversationSessionRecord | null): JsonValue { return session ? { ...(session.metadata ? { metadata: cloneJsonValue(session.metadata) } : {}), captureHistory: session.captureHistory, conversationId: session.conversationId, expiresAt: session.expiresAt, historyMessages: session.historyMessages.map((message) => cloneJsonValue(message)), lastMatchedAt: session.lastMatchedAt, pluginId: session.pluginId, startedAt: session.startedAt, timeoutMs: session.timeoutMs } : null; }

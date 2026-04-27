@@ -1,5 +1,21 @@
 # Findings
 
+## 2026-04-27 runtime/workspace 路径收口与 tmp 清理
+
+- 用户看到“tmp 下面是空的，但工具说写成功”的直接原因，不是工具没写出，而是默认 runtime workspace 根放在 `packages/server/tmp/runtime-workspaces/<conversationId>`。
+- 仅把默认路径改到 `workspace/` 还不够；如果不同时删掉 legacy 读取分支和旧 tmp 启动清理，仓库仍会继续保留旧垃圾。
+- `workspace/test-artifacts` 的自动清理不能挂在服务启动期：
+  - `smoke:http` 自己会把 SQLite 与脚本产物放进 `workspace/test-artifacts/http-smoke`
+  - 如果后端启动时直接清空整个 `test-artifacts`，会误删 smoke 当前正在使用的临时目录
+- Jest 的测试残留也不能只靠 `process.on('exit')`：
+  - 在当前仓库里，Jest 进程结束后仍会留下 `config-ai.server.test-* / plugins.server.test-*` 等目录
+  - 把清理挂到 Jest 自身的 `globalSetup/globalTeardown` 更可靠
+- 当前较稳的分层是：
+  - runtime 会话工作目录：`workspace/runtime-workspaces`
+  - server 持久状态：`workspace/server-state`
+  - Jest 临时产物：`workspace/test-artifacts/server/process-<pid>`
+  - smoke 临时产物：`workspace/test-artifacts/http-smoke/*`，由脚本 finally 删除
+
 ## 2026-04-27 CRUD 覆盖补齐
 
 - `AiController` 当前已覆盖：

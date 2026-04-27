@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, JsonObject, JsonValue, TriggerConfig, ToolSourceKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
 import { asJsonValue, cloneJsonValue, readJsonObject, readRequiredString } from '../../runtime/host/runtime-host-values';
 import { AutomationExecutionService } from './automation-execution.service';
 
@@ -222,7 +223,7 @@ function resolveAutomationStoragePath(): string {
     return process.env.GARLIC_CLAW_AUTOMATIONS_PATH;
   }
   if (process.env.JEST_WORKER_ID) {
-    return path.join(process.cwd(), 'tmp', `automations.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+    return createServerTestArtifactPath({ extension: '.json', prefix: 'automations.server.test', subdirectory: 'server' });
   }
-  return path.join(process.cwd(), 'tmp', 'automations.server.json');
+  return resolveServerStatePath('automations.server.json');
 }

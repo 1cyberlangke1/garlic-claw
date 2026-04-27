@@ -6,6 +6,7 @@ package-lock.json
 dist/
 packages/*/dist/
 packages/server/tmp/
+workspace/
 log/
 packages/*/node_modules/.cache/
 packages/web/node_modules/.vite/

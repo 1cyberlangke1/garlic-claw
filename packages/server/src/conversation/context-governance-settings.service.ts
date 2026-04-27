@@ -11,6 +11,7 @@ import {
 import type { JsonObject, JsonValue, PluginConfigSchema, PluginConfigSnapshot } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
+import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
 
 const CONTEXT_GOVERNANCE_CONFIG_FILE = 'context-governance.json';
 const MAX_CONFIG_INTEGER = 1_000_000;
@@ -50,7 +51,7 @@ export class ContextGovernanceSettingsService {
 function resolveContextGovernanceConfigPath(): string {
   return process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH
     ?? (process.env.JEST_WORKER_ID
-      ? path.join(process.cwd(), 'tmp', `config-context-governance.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`)
+      ? createServerTestArtifactPath({ extension: '.json', prefix: 'config-context-governance.server.test', subdirectory: 'server' })
       : path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', CONTEXT_GOVERNANCE_CONFIG_FILE));
 }
 

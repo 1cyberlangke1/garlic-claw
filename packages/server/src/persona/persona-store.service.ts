@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import type { PluginPersonaDetail, PluginPersonaDialogEntry } from '@garlic-claw/shared'
 import { Injectable } from '@nestjs/common'
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service'
+import { createServerTestArtifactPath } from '../runtime/server-workspace-paths'
 import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 
@@ -39,7 +40,7 @@ export class PersonaStoreService {
 
 function resolvePersonaStorageRoot(projectWorktreeRootService: ProjectWorktreeRootService): string {
   if (process.env.GARLIC_CLAW_PERSONAS_PATH) {return path.resolve(process.env.GARLIC_CLAW_PERSONAS_PATH)}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `config-personas.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`)}
+  if (process.env.JEST_WORKER_ID) {return createServerTestArtifactPath({ prefix: 'config-personas.server.test', subdirectory: 'server' })}
   return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'personas')
 }
 

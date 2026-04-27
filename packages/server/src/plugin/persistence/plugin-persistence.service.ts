@@ -21,6 +21,7 @@ import type {
 } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
 import { PLUGIN_STATUS } from '../plugin.constants';
 import { createPluginConfigSnapshot } from './plugin-read-model';
 
@@ -210,8 +211,8 @@ function loadPersistedPluginRecords(storagePath: string): RegisteredPluginRecord
 function resolvePluginStatePath(): string {
   return process.env.GARLIC_CLAW_PLUGIN_STATE_PATH
     ?? (process.env.JEST_WORKER_ID
-      ? path.join(process.cwd(), 'tmp', `plugins.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`)
-      : path.join(process.cwd(), 'tmp', 'plugins.server.json'));
+      ? createServerTestArtifactPath({ extension: '.json', prefix: 'plugins.server.test', subdirectory: 'server' })
+      : resolveServerStatePath('plugins.server.json'));
 }
 
 function toPluginScopeSettings(record: RegisteredPluginRecord): PluginScopeSettings {

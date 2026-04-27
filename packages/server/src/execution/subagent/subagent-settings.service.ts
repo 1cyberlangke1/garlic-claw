@@ -4,6 +4,7 @@ import type { JsonObject, JsonValue, PluginConfigSnapshot } from '@garlic-claw/s
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { SUBAGENT_CONFIG_SCHEMA, type PluginSubagentConfig } from '@garlic-claw/plugin-sdk/authoring';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
+import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
 
 const SUBAGENT_CONFIG_FILE = 'subagent.json';
 export const INTERNAL_SUBAGENT_SOURCE_ID = 'subagent';
@@ -43,7 +44,7 @@ export class SubagentSettingsService {
 function resolveSubagentConfigPath(): string {
   if (process.env.JEST_WORKER_ID) {
     return process.env.GARLIC_CLAW_SUBAGENT_CONFIG_PATH
-      ?? path.join(process.cwd(), 'tmp', `config-subagent.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+      ?? createServerTestArtifactPath({ extension: '.json', prefix: 'config-subagent.server.test', subdirectory: 'server' });
   }
   return process.env.GARLIC_CLAW_SUBAGENT_CONFIG_PATH
     ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', SUBAGENT_CONFIG_FILE);

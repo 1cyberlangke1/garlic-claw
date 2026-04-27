@@ -1,5 +1,25 @@
 # Task Plan
 
+## 2026-04-27 runtime/workspace 路径收口与 tmp 清理
+
+1. 新建统一路径 owner
+  - 区分 `runtime-workspaces / server-state / test-artifacts`
+  - 删除 `packages/server/tmp` 的 legacy 读取分支
+2. 补自动清理
+  - 服务启动时清理旧 `packages/server/tmp`
+  - Jest 通过 `globalSetup/globalTeardown` 清理 `workspace/test-artifacts/server`
+  - `http-smoke` 在脚本结束时清理自己的临时目录
+3. fresh 验收
+  - `npm run typecheck:server`
+  - 定向 Jest
+  - `npm run smoke:server`
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+
 ## 2026-04-27 LLM 覆盖矩阵与 smoke 复用收口
 
 1. 同步计划文件
@@ -31,7 +51,6 @@
 - 步骤 3 已完成
 - 步骤 4 已完成
 - 步骤 5 已完成
-- 步骤 6 已完成
 
 ## 2026-04-27 CRUD 覆盖补齐
 

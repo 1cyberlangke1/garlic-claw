@@ -5,6 +5,7 @@ import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillDetail, Sk
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import YAML from 'yaml';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
+import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
 
 interface SkillGovernanceFile { skills: Record<string, SkillGovernanceInfo>; }
@@ -60,7 +61,7 @@ export class SkillRegistryService {
 
 function resolveSkillGovernancePath(projectWorktreeRootService: ProjectWorktreeRootService): string {
   if (process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH) {return path.resolve(process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH);}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `config-skills-governance.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);}
+  if (process.env.JEST_WORKER_ID) {return createServerTestArtifactPath({ extension: '.json', prefix: 'config-skills-governance.server.test', subdirectory: 'server' });}
   return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'skills', 'governance.json');
 }
 

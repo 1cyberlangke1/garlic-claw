@@ -70,10 +70,10 @@ describe('RuntimeHostUserContextService', () => {
     ]);
   });
 
-  it('does not persist to the default tmp path during jest when no explicit path is configured', () => {
+  it('does not persist to the default workspace path during jest when no explicit path is configured', () => {
     delete process.env.GARLIC_CLAW_MEMORIES_PATH;
     process.env.JEST_WORKER_ID = '1';
-    const defaultStoragePath = path.join(runtimeRoot, 'tmp', 'memories.server.json');
+    const defaultStoragePath = path.join(runtimeRoot, 'workspace', 'server-state', 'memories.server.json');
 
     const service = new RuntimeHostUserContextService();
     service.saveMemory(

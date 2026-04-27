@@ -125,7 +125,7 @@ async function main() {
   const cli = parseCliArgs(process.argv.slice(2));
   const serverRoutes = collectServerHttpRoutes(PROJECT_ROOT);
   const webRoutes = collectWebHttpRoutes(PROJECT_ROOT);
-  const tempRoot = path.join(SERVER_DIR, 'tmp');
+  const tempRoot = path.join(PROJECT_ROOT, 'workspace', 'test-artifacts', 'http-smoke');
   await fsPromises.mkdir(tempRoot, { recursive: true });
   const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'http-smoke-'));
   const databasePath = cli.proxyOrigin ? null : path.join(tempDir, 'smoke.sqlite');
@@ -332,6 +332,24 @@ async function main() {
       fsPromises.rm(skillRoot, { recursive: true, force: true }),
       fsPromises.rm(tempDir, { recursive: true, force: true }),
     ]);
+    await removeEmptyDirectoryChain(tempRoot, path.join(PROJECT_ROOT, 'workspace'));
+  }
+}
+
+async function removeEmptyDirectoryChain(startPath, stopPath) {
+  let currentPath = path.resolve(startPath);
+  const resolvedStopPath = path.resolve(stopPath);
+  while (currentPath.startsWith(resolvedStopPath) && currentPath !== resolvedStopPath) {
+    try {
+      const entries = await fsPromises.readdir(currentPath);
+      if (entries.length > 0) {
+        return;
+      }
+      await fsPromises.rmdir(currentPath);
+      currentPath = path.dirname(currentPath);
+    } catch {
+      return;
+    }
   }
 }
 

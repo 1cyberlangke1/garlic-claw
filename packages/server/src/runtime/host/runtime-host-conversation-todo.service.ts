@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ConversationTodoItem, JsonValue } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { asJsonValue, cloneJsonValue } from './runtime-host-values';
 import { RuntimeHostConversationRecordService } from './runtime-host-conversation-record.service';
 
@@ -23,13 +24,10 @@ export class RuntimeHostConversationTodoService {
   constructor(
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
   ) {
-    const stored = this.readStoredTodos();
-    this.conversationTodos = stored.todos;
-    if (stored.migrated) {
+    const { migrated, todos } = this.readStoredTodos();
+    this.conversationTodos = todos;
+    if (migrated) {
       this.persistTodos();
-      if (stored.cleanupLegacy) {
-        cleanupLegacyConversationTodoPayload();
-      }
     }
   }
 
@@ -87,15 +85,11 @@ export class RuntimeHostConversationTodoService {
     );
   }
 
-  private readStoredTodos(): { cleanupLegacy: boolean; migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
+  private readStoredTodos(): { migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
     const direct = readConversationTodoStoragePayload(this.storagePath);
-    if (direct) {
-      return filterStoredTodos(this.runtimeHostConversationRecordService, direct, false);
-    }
-    const legacy = readConversationTodoStoragePayload(resolveLegacyConversationStoragePath());
-    return legacy
-      ? filterStoredTodos(this.runtimeHostConversationRecordService, legacy, true)
-      : { cleanupLegacy: false, migrated: false, todos: new Map() };
+    return direct
+      ? filterStoredTodos(this.runtimeHostConversationRecordService, direct)
+      : { migrated: false, todos: new Map() };
   }
 
   private emit(sessionId: string, todos: ConversationTodoItem[]): void {
@@ -115,20 +109,9 @@ function resolveConversationTodoStoragePath(): string {
     return process.env.GARLIC_CLAW_CONVERSATION_TODOS_PATH;
   }
   if (process.env.JEST_WORKER_ID) {
-    return path.join(
-      process.cwd(),
-      'tmp',
-      `conversation-todos.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
-    );
+    return createServerTestArtifactPath({ extension: '.json', prefix: 'conversation-todos.server.test', subdirectory: 'server' });
   }
-  return path.join(process.cwd(), 'tmp', 'conversation-todos.server.json');
-}
-
-function resolveLegacyConversationStoragePath(): string {
-  if (process.env.GARLIC_CLAW_CONVERSATIONS_PATH) {
-    return process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
-  }
-  return path.join(process.cwd(), 'tmp', 'conversations.server.json');
+  return resolveServerStatePath('conversation-todos.server.json');
 }
 
 function readConversationTodoStoragePayload(storagePath: string): Map<string, ConversationTodoItem[]> | null {
@@ -147,33 +130,10 @@ function readConversationTodoStoragePayload(storagePath: string): Map<string, Co
   }
 }
 
-function cleanupLegacyConversationTodoPayload(): void {
-  const storagePath = resolveLegacyConversationStoragePath();
-  try {
-    if (!fs.existsSync(storagePath)) {
-      return;
-    }
-    const payload = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as RuntimeConversationTodoStoragePayload & {
-      conversations?: Record<string, unknown>;
-    };
-    if (!payload.todos) {
-      return;
-    }
-    fs.writeFileSync(
-      storagePath,
-      JSON.stringify(payload.conversations ? { conversations: payload.conversations } : {}, null, 2),
-      'utf-8',
-    );
-  } catch {
-    // 迁移清理失败不影响当前 todo owner 可用性。
-  }
-}
-
 function filterStoredTodos(
   runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
   todos: Map<string, ConversationTodoItem[]>,
-  cleanupLegacy: boolean,
-): { cleanupLegacy: boolean; migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
+): { migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
   const filtered = new Map(
     [...todos.entries()].flatMap(([conversationId, items]) => {
       try {
@@ -185,8 +145,7 @@ function filterStoredTodos(
     }),
   );
   return {
-    cleanupLegacy,
-    migrated: cleanupLegacy || filtered.size !== todos.size,
+    migrated: filtered.size !== todos.size,
     todos: filtered,
   };
 }

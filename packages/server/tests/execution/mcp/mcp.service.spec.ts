@@ -6,6 +6,7 @@ import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-sto
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
 import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
+import { createServerTestArtifactPath } from '../../../src/runtime/server-workspace-paths';
 
 describe('McpService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';
@@ -50,7 +51,10 @@ describe('McpService', () => {
   });
 
   it('connects and calls a real stdio MCP server through the launcher', async () => {
-    const workspace = path.join(process.cwd(), 'tmp', `mcp-real-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const workspace = createServerTestArtifactPath({
+      prefix: 'mcp-real',
+      subdirectory: 'server',
+    });
     const scriptPath = path.join(workspace, 'working-mcp.cjs');
     fs.mkdirSync(workspace, { recursive: true });
     fs.writeFileSync(scriptPath, [

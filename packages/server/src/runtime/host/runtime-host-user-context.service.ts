@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
+import { resolveServerStatePath } from '../server-workspace-paths';
 import {
   asJsonValue,
   readKeywords,
@@ -129,7 +130,7 @@ function resolveRuntimeHostMemoryStoragePath(): string | null {
   if (process.env.JEST_WORKER_ID) {
     return null;
   }
-  return path.join(process.cwd(), 'tmp', 'memories.server.json');
+  return resolveServerStatePath('memories.server.json');
 }
 
 function isRuntimeMemoryRecord(value: unknown): value is RuntimeMemoryRecord {
