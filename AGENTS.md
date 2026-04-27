@@ -69,6 +69,15 @@
 - 该链接属于维护锚点，后续重构、格式化或清理时不能删除
 - 如依赖多个官方文档，优先贴主入口，再补最关键子页面
 - 新增或修改适配时，先确认链接仍然指向官方文档
+- 禁止写“占位可运行”或“伪成功”代码：
+  - `testConnection / discoverModels / health-check / smoke` 这类能力，若对外宣称在验证真实 provider，就必须实际发起对应网络请求
+  - 禁止用写死 `ok: true`、固定返回模型列表、假响应透传、未联网 mock 冒充真实连通性
+  - 若测试使用 fake provider / 本地 stub，名称与断言里必须明确标注“fake / mock / smoke-fixture”，不得把结果表述成真实厂商可用
+  - 真实 provider 失败时必须暴露真实错误，不得吞错后伪装成成功
+- 默认不预置第三方 provider 实例配置：
+  - 仓库可内置 provider catalog 与协议适配能力，但不默认生成需要用户 key 的第三方 provider 配置文件
+  - 第三方 provider 的实例配置只在用户显式添加后写入 `config/ai/providers/*.json`
+  - 不得靠默认 provider 排序、占位 key 或隐式 fallback 把请求偷偷打到用户未启用的第三方 provider
 
 ## 前后端约束
 
