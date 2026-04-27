@@ -20,6 +20,10 @@
     <p v-if="!provider" class="empty-state">从左侧选择 provider 后查看模型配置。</p>
 
     <template v-else>
+      <p v-if="currentDefaultLabel" class="status-text default-summary">
+        当前默认：{{ currentDefaultLabel }}
+      </p>
+
       <p v-if="connectionResult" class="status-text" :class="connectionResult.kind">
         {{ connectionResult.text }}
       </p>
@@ -59,14 +63,14 @@
               <p>{{ model.id }}</p>
             </div>
             <div class="summary-actions">
-              <span v-if="provider.defaultModel === model.id" class="default-badge">默认</span>
+              <span v-if="isCurrentDefaultModel(model.id)" class="default-badge">当前默认</span>
               <button
                 v-else
                 type="button"
                 class="ghost-button"
                 @click="$emit('set-default-model', model.id)"
               >
-                设为默认
+                设为当前默认
               </button>
               <button type="button" class="danger-button" @click="$emit('delete-model', model.id)">
                 删除
@@ -132,6 +136,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type {
+  AiDefaultProviderSelection,
   AiModelConfig,
   AiProviderConfig,
   AiProviderCatalogItem,
@@ -142,6 +147,7 @@ import { getProviderDriverLabel, getProviderKindLabel } from './provider-catalog
 
 const props = defineProps<{
   provider: AiProviderConfig | null
+  defaultSelection: AiDefaultProviderSelection
   catalog: AiProviderCatalogItem[]
   models: AiModelConfig[]
   discoveringModels: boolean
@@ -164,6 +170,13 @@ const emit = defineEmits<{
   (event: 'update-context-length', payload: { modelId: string; contextLength: number }): void
 }>()
 
+const currentDefaultLabel = computed(() => {
+  if (!props.defaultSelection.providerId || !props.defaultSelection.modelId) {
+    return ''
+  }
+  return `${props.defaultSelection.providerId} / ${props.defaultSelection.modelId}`
+})
+
 const newModelId = ref('')
 const newModelName = ref('')
 const searchKeyword = ref('')
@@ -181,6 +194,11 @@ const filteredModels = computed(() => {
     model.name.toLowerCase().includes(keyword),
   )
 })
+
+function isCurrentDefaultModel(modelId: string) {
+  return props.provider?.id === props.defaultSelection.providerId
+    && props.defaultSelection.modelId === modelId
+}
 const {
   currentPage,
   pageCount,
@@ -443,6 +461,10 @@ function saveContextLength(model: AiModelConfig) {
 
 .status-text.error {
   color: var(--danger);
+}
+
+.default-summary {
+  color: var(--accent);
 }
 
 .model-item {

@@ -41,6 +41,19 @@ export class AiManagementService {
     return !provider || !modelId ? { modelId: null, providerId: null, source: 'default' } : { modelId, providerId: provider.id, source: 'default' };
   }
 
+  setDefaultProviderSelection(providerId: string, modelId: string): AiDefaultProviderSelection {
+    this.getProviderModel(providerId, modelId);
+    this.updateProvider(providerId, (provider) => {
+      provider.defaultModel = modelId;
+    });
+    this.aiProviderSettingsService.writeDefaultSelection({ modelId, providerId });
+    return {
+      modelId,
+      providerId,
+      source: 'default',
+    };
+  }
+
   getProviderSummary(providerId: string): AiProviderSummary {
     const provider = this.listProviders().find((entry) => entry.id === providerId);
     if (provider) {return provider;}

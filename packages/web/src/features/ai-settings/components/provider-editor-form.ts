@@ -162,16 +162,22 @@ export function applyProviderDriverDefaults(
 export function buildProviderConfigPayload(
   form: Reactive<ProviderFormState>,
 ): AiProviderConfig {
+  const models = form.modelsText
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const explicitDefaultModel = form.defaultModel.trim()
+  const defaultModel = models.includes(explicitDefaultModel)
+    ? explicitDefaultModel
+    : models[0]
+
   return {
     id: form.id.trim(),
     name: form.name.trim(),
     driver: form.driver,
     apiKey: form.apiKey.trim() || undefined,
     baseUrl: form.baseUrl.trim() || undefined,
-    defaultModel: form.defaultModel.trim() || undefined,
-    models: form.modelsText
-      .split(/[\n,]/)
-      .map((item) => item.trim())
-      .filter(Boolean),
+    defaultModel: defaultModel || undefined,
+    models,
   }
 }

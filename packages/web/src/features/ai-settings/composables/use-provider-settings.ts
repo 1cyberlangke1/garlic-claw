@@ -1,5 +1,6 @@
 import { onMounted, ref } from 'vue'
 import type {
+  AiDefaultProviderSelection,
   AiHostModelRoutingConfig,
   AiModelConfig,
   AiProviderCatalogItem,
@@ -23,12 +24,12 @@ import {
   loadProviderSelectionData,
   saveHostModelRouting,
   saveProviderModelContextLength,
-  saveProviderDefaultModel,
   saveProviderModelCapabilities,
   saveProviderConfig,
   saveSubagentConfig as saveSubagentConfigRequest,
   saveRuntimeToolsConfig as saveRuntimeToolsConfigRequest,
   saveContextGovernanceConfig as saveContextGovernanceConfigRequest,
+  saveAiDefaultProviderSelection,
   saveVisionFallbackConfig,
   testProviderConnection as testProviderConnectionRequest,
   toErrorMessage,
@@ -59,6 +60,11 @@ export function useProviderSettings() {
   const discoveringModels = ref(false)
   const testingConnection = ref(false)
   const catalog = ref<AiProviderCatalogItem[]>([])
+  const defaultSelection = ref<AiDefaultProviderSelection>({
+    providerId: null,
+    modelId: null,
+    source: 'default',
+  })
   const providers = ref<AiProviderSummary[]>([])
   const selectedProviderId = ref<string | null>(null)
   const selectedProvider = ref<AiProviderConfig | null>(null)
@@ -93,6 +99,7 @@ export function useProviderSettings() {
     try {
       const baseData = await loadProviderSettingsBaseData()
       catalog.value = baseData.catalog
+      defaultSelection.value = baseData.defaultSelection
       providers.value = baseData.providers
       visionConfig.value = baseData.visionConfig
       hostModelRoutingConfig.value = baseData.hostModelRoutingConfig ?? {
@@ -278,21 +285,21 @@ export function useProviderSettings() {
     if (!selectedProvider.value) {
       return
     }
-    const updatedProvider = await saveProviderDefaultModel(
-      selectedProvider.value.id,
+    const providerId = selectedProvider.value.id
+    const updatedSelection = await saveAiDefaultProviderSelection(
+      providerId,
       modelId,
     )
-    selectedProvider.value = updatedProvider
+    defaultSelection.value = updatedSelection
+    selectedProvider.value = {
+      ...selectedProvider.value,
+      defaultModel: modelId,
+    }
     providers.value = providers.value.map((provider) =>
-      provider.id === updatedProvider.id
+      provider.id === providerId
         ? {
             ...provider,
-            name: updatedProvider.name,
-            driver: updatedProvider.driver,
-            defaultModel: updatedProvider.defaultModel,
-            baseUrl: updatedProvider.baseUrl,
-            modelCount: updatedProvider.models.length,
-            available: Boolean(updatedProvider.apiKey),
+            defaultModel: modelId,
           }
         : provider,
     )
@@ -470,6 +477,7 @@ export function useProviderSettings() {
     error,
     appError,
     catalog,
+    defaultSelection,
     providers,
     selectedProviderId,
     selectedProvider,

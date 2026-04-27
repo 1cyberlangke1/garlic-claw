@@ -24,6 +24,7 @@
         class="settings-provider-panel"
         :catalog="catalog"
         :connection-result="connectionResult"
+        :default-selection="defaultSelection"
         :discovering-models="discoveringModels"
         :models="selectedModels"
         :provider="selectedProvider"
@@ -142,6 +143,7 @@ const {
   testingConnection,
   error,
   catalog,
+  defaultSelection,
   providers,
   selectedProviderId,
   selectedProvider,

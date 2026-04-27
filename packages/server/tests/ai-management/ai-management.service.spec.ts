@@ -291,6 +291,33 @@ describe('AiManagementService', () => {
     });
   });
 
+  it('writes an explicit global default selection that new conversations can reuse', () => {
+    const service = new AiManagementService(new AiProviderSettingsService());
+    service.upsertProvider('ds2api', {
+      apiKey: 'sk-real-ds2api-key',
+      driver: 'openai',
+      models: ['deepseek-v4-flash'],
+      name: 'ds2api',
+    });
+    service.upsertProvider('nvidia', {
+      apiKey: 'nvapi-real-key',
+      driver: 'openai',
+      models: ['openai/gpt-oss-20b'],
+      name: 'nvidia',
+    });
+
+    expect(service.setDefaultProviderSelection('nvidia', 'openai/gpt-oss-20b')).toEqual({
+      modelId: 'openai/gpt-oss-20b',
+      providerId: 'nvidia',
+      source: 'default',
+    });
+    expect(service.getDefaultProviderSelection()).toEqual({
+      modelId: 'openai/gpt-oss-20b',
+      providerId: 'nvidia',
+      source: 'default',
+    });
+  });
+
   it('surfaces real provider connection failures instead of returning fake success', async () => {
     const aiModelExecutionService = {
       generateText: jest.fn().mockRejectedValue(new Error('Client network socket disconnected before secure TLS connection was established')),

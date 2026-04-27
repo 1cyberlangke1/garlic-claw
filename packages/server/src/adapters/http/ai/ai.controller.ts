@@ -31,6 +31,11 @@ export class AiController {
     return this.aiManagementService.getDefaultProviderSelection();
   }
 
+  @Put('default-selection')
+  setDefaultSelection(@Body() dto: { providerId: string; modelId: string }) {
+    return this.aiManagementService.setDefaultProviderSelection(dto.providerId, dto.modelId);
+  }
+
   @Get('providers/:providerId')
   getProvider(@Param('providerId') providerId: string) {
     return this.aiManagementService.getProvider(providerId);

@@ -3,7 +3,7 @@
     <div class="sidebar-header">
       <div>
         <h2>供应商</h2>
-        <p>管理可用供应商、默认模型和连接状态。</p>
+        <p>管理可用供应商、当前默认模型和连接状态。</p>
       </div>
       <div class="sidebar-actions">
         <button type="button" class="ghost-button" @click="$emit('refresh')">刷新</button>

@@ -1,4 +1,5 @@
 import type {
+  AiDefaultProviderSelection,
   AiHostModelRoutingConfig,
   AiProviderConnectionTestResult,
   AiModelConfig,
@@ -14,6 +15,7 @@ import {
   deleteAiModel,
   deleteAiProvider,
   discoverAiProviderModels,
+  getAiDefaultSelection,
   getAiProvider,
   getHostModelRoutingConfig,
   getContextGovernanceConfig,
@@ -23,7 +25,7 @@ import {
   listAiModels,
   listAiProviderCatalog,
   listAiProviders,
-  setAiProviderDefaultModel,
+  setAiDefaultSelection,
   testAiProviderConnection,
   updateAiModelCapabilities,
   updateHostModelRoutingConfig,
@@ -82,6 +84,7 @@ export interface ProviderConnectionResult {
  */
 export interface ProviderSettingsBaseData {
   catalog: AiProviderCatalogItem[]
+  defaultSelection: AiDefaultProviderSelection
   providers: AiProviderSummary[]
   visionConfig: VisionFallbackConfig
   hostModelRoutingConfig: AiHostModelRoutingConfig
@@ -103,8 +106,9 @@ export interface ProviderSettingsSelectionData {
  * @returns 官方目录、provider 列表和视觉配置
  */
 export async function loadProviderSettingsBaseData(): Promise<ProviderSettingsBaseData> {
-  const [catalog, providers, visionConfig, hostModelRoutingConfig, runtimeToolsConfigSnapshot, subagentConfigSnapshot, contextGovernanceConfigSnapshot] = await Promise.all([
+  const [catalog, defaultSelection, providers, visionConfig, hostModelRoutingConfig, runtimeToolsConfigSnapshot, subagentConfigSnapshot, contextGovernanceConfigSnapshot] = await Promise.all([
     listAiProviderCatalog(),
+    getAiDefaultSelection(),
     listAiProviders(),
     getVisionFallbackConfig(),
     getHostModelRoutingConfig(),
@@ -115,6 +119,7 @@ export async function loadProviderSettingsBaseData(): Promise<ProviderSettingsBa
 
   return {
     catalog,
+    defaultSelection,
     providers,
     visionConfig,
     hostModelRoutingConfig,
@@ -226,14 +231,11 @@ export function deleteProviderModel(providerId: string, modelId: string) {
   return deleteAiModel(providerId, modelId)
 }
 
-/**
- * 保存默认模型。
- * @param providerId provider ID
- * @param modelId 默认模型 ID
- * @returns 更新后的 provider 配置
- */
-export function saveProviderDefaultModel(providerId: string, modelId: string) {
-  return setAiProviderDefaultModel(providerId, modelId)
+export function saveAiDefaultProviderSelection(
+  providerId: string,
+  modelId: string,
+) {
+  return setAiDefaultSelection({ providerId, modelId })
 }
 
 export function saveRuntimeToolsConfig(

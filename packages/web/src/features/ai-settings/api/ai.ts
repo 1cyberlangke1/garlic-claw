@@ -25,6 +25,12 @@ export function getAiDefaultSelection() {
   return get<AiDefaultProviderSelection>('/ai/default-selection')
 }
 
+export function setAiDefaultSelection(
+  payload: Pick<AiDefaultProviderSelection, 'providerId' | 'modelId'>,
+) {
+  return put<AiDefaultProviderSelection>('/ai/default-selection', payload)
+}
+
 export function getAiProvider(providerId: string) {
   return get<AiProviderConfig>(`/ai/providers/${providerId}`)
 }

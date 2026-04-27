@@ -650,6 +650,18 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(providers.some((entry) => entry.id === state.providerId), 'Expected providers list to include smoke provider');
   });
 
+  await runStep('ai.default-selection.put', async () => {
+    const selection = await putJson(apiBase, '/ai/default-selection', {
+      body: {
+        providerId: state.providerId,
+        modelId: state.modelId,
+      },
+    });
+    ensure(selection?.providerId === state.providerId, 'Expected updated default selection to point at smoke provider');
+    ensure(selection?.modelId === state.modelId, 'Expected updated default selection to point at smoke model');
+    ensure(selection?.source === 'default', 'Expected updated default selection source to be default');
+  });
+
   await runStep('ai.default-selection.get', async () => {
     const selection = await getJson(apiBase, '/ai/default-selection');
     ensure(selection?.providerId === state.providerId, 'Expected default selection to point at smoke provider');

@@ -62,6 +62,11 @@ describe('AiProviderModelsPanel', () => {
     const wrapper = mount(AiProviderModelsPanel, {
       props: {
         provider: createProvider(),
+        defaultSelection: {
+          providerId: 'ds2api',
+          modelId: 'deepseek-chat',
+          source: 'default',
+        },
         catalog,
         models: [
           createModel('deepseek-chat'),
@@ -108,6 +113,11 @@ describe('AiProviderModelsPanel', () => {
     const wrapper = mount(AiProviderModelsPanel, {
       props: {
         provider: createProvider(),
+        defaultSelection: {
+          providerId: 'ds2api',
+          modelId: 'deepseek-chat',
+          source: 'default',
+        },
         catalog,
         models: [createModel('deepseek-chat')],
         discoveringModels: false,
@@ -141,6 +151,11 @@ describe('AiProviderModelsPanel', () => {
     const wrapper = mount(AiProviderModelsPanel, {
       props: {
         provider: createProvider(),
+        defaultSelection: {
+          providerId: 'ds2api',
+          modelId: 'deepseek-chat',
+          source: 'default',
+        },
         catalog,
         models: [createModel('deepseek-chat')],
         discoveringModels: false,
@@ -177,5 +192,38 @@ describe('AiProviderModelsPanel', () => {
 
     expect((wrapper.get('.context-length-field input').element as HTMLInputElement).value).toBe('65536')
     expect((wrapper.get('.context-length-row .ghost-button').element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('shows only the explicit global default badge', () => {
+    const wrapper = mount(AiProviderModelsPanel, {
+      props: {
+        provider: createProvider(),
+        defaultSelection: {
+          providerId: 'ds2api',
+          modelId: 'deepseek-reasoner',
+          source: 'default',
+        },
+        catalog,
+        models: [
+          createModel('deepseek-chat'),
+          createModel('deepseek-reasoner', true),
+        ],
+        discoveringModels: false,
+        testingConnection: false,
+        connectionResult: null,
+      },
+      global: {
+        stubs: {
+          AiModelCapabilityToggles: {
+            template: '<div class="capability-toggles-stub" />',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('当前默认：ds2api / deepseek-reasoner')
+    expect(wrapper.text()).toContain('当前默认')
+    expect(wrapper.text()).toContain('设为当前默认')
+    expect(wrapper.text()).not.toContain('设为默认')
   })
 })

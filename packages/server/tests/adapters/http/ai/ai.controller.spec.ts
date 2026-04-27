@@ -10,6 +10,7 @@ describe('AiController', () => {
     listModels: jest.fn(),
     listProviderCatalog: jest.fn(),
     listProviders: jest.fn(),
+    setDefaultProviderSelection: jest.fn(),
     setDefaultModel: jest.fn(),
     testConnection: jest.fn(),
     updateModelCapabilities: jest.fn(),
@@ -75,6 +76,26 @@ describe('AiController', () => {
       source: 'default',
     });
     expect(aiManagementService.getDefaultProviderSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates the persisted default provider selection through the management owner', () => {
+    const dto = {
+      providerId: 'nvidia',
+      modelId: 'openai/gpt-oss-20b',
+    };
+    aiManagementService.setDefaultProviderSelection.mockReturnValue({
+      ...dto,
+      source: 'default',
+    });
+
+    expect(controller.setDefaultSelection(dto)).toEqual({
+      ...dto,
+      source: 'default',
+    });
+    expect(aiManagementService.setDefaultProviderSelection).toHaveBeenCalledWith(
+      'nvidia',
+      'openai/gpt-oss-20b',
+    );
   });
 
   it('forwards provider upsert requests to the management service', () => {

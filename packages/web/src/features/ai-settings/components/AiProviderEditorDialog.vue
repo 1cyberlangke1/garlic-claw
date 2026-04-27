@@ -4,7 +4,7 @@
       <div class="dialog-header">
         <div>
           <h2>{{ title }}</h2>
-          <p>按接入方式填写供应商信息、默认模型和连接凭据。</p>
+          <p>按接入方式填写供应商信息、模型列表和连接凭据。</p>
         </div>
         <button
           type="button"
@@ -42,10 +42,6 @@
           <label class="field">
             <span>Base URL</span>
             <input v-model="form.baseUrl" placeholder="https://..." />
-          </label>
-          <label class="field">
-            <span>默认模型</span>
-            <input v-model="form.defaultModel" placeholder="gpt-4o-mini" />
           </label>
         </div>
 

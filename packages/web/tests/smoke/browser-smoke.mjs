@@ -326,7 +326,6 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     await dialog.getByPlaceholder('openai 或 my-company').fill(PROVIDER_ID);
     await dialog.getByPlaceholder('显示名称').fill(PROVIDER_NAME);
     await dialog.getByPlaceholder('https://...').fill(fakeOpenAiUrl);
-    await dialog.getByPlaceholder('gpt-4o-mini').fill(MODEL_ID);
     await dialog.getByPlaceholder('sk-...').fill('smoke-openai-key');
     await dialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(MODEL_ID);
 
@@ -404,7 +403,6 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.locator('[data-test="provider-dialog-overlay"]');
   await editDialog.waitFor({ state: 'visible' });
-  await editDialog.getByPlaceholder('gpt-4o-mini').fill(SHADOW_MODEL_ID);
   await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(SHADOW_MODEL_ID);
   const removeOriginalModelResponsePromise = page.waitForResponse(
     (response) =>
@@ -427,7 +425,6 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
 
   await page.getByRole('button', { name: '编辑' }).click();
   await editDialog.waitFor({ state: 'visible' });
-  await editDialog.getByPlaceholder('gpt-4o-mini').fill(MODEL_ID);
   await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill([MODEL_ID, SHADOW_MODEL_ID].join('\n'));
   const readdOriginalModelResponsePromise = page.waitForResponse(
     (response) =>
@@ -450,6 +447,25 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     const currentValue = await contextLengthInput.inputValue().catch(() => '');
     return currentValue === String(128 * 1024) ? true : null;
   }, '等待前端模型面板展示重新加入模型的默认上下文长度');
+
+  const setDefaultResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT'
+        && response.url().endsWith('/api/ai/default-selection'),
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+  await page.getByRole('button', { name: '设为当前默认' }).click();
+  const setDefaultResponse = await setDefaultResponsePromise;
+  assert.equal(setDefaultResponse.ok(), true, '设置当前默认模型请求失败');
+
+  await waitFor(async () => {
+    const selection = await requestJson('/ai/default-selection', {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => null);
+    return selection?.providerId === PROVIDER_ID && selection?.modelId === MODEL_ID
+      ? true
+      : null;
+  }, '等待当前默认模型持久化');
 }
 
 async function runChatFlow(page, accessToken) {
@@ -469,6 +485,10 @@ async function runChatFlow(page, accessToken) {
   await expectConversationSelected(page, conversation.id);
 
   const modelInput = page.locator('.quick-input');
+  await waitFor(async () => {
+    const value = await modelInput.inputValue().catch(() => '');
+    return value === `${PROVIDER_ID}/${MODEL_ID}` ? true : null;
+  }, '等待新对话继承当前默认模型');
   await modelInput.click();
   await modelInput.fill(`${PROVIDER_ID}/${MODEL_ID}`);
   await modelInput.press('Tab');
