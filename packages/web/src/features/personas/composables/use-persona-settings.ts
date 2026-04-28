@@ -43,7 +43,7 @@ export interface PersonaEditorDraft {
  * - persona 列表、详情、创建/编辑/删除、应用到当前对话
  * 预期行为:
  * - 页面只负责渲染
- * - persona 的读取、编辑与应用统一收口到此 composable
+ * - persona 的读取、编辑与应用集中到此 composable
  */
 export function usePersonaSettings() {
   const chat = useChatStore()

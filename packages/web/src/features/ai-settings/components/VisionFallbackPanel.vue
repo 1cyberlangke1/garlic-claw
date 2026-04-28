@@ -55,7 +55,7 @@
             </div>
 
             <div v-if="filteredModels.length === 0" class="model-picker-empty">
-              当前 provider 下没有匹配模型。
+              无匹配模型。
             </div>
             <div v-else class="model-option-list">
               <button
@@ -148,7 +148,7 @@ const emit = defineEmits<{
 }>()
 
 const defaultPromptPlaceholder =
-  '请简洁但完整地描述这张图片中的主体、场景、文字和重要细节，供另一个文本模型继续理解上下文。'
+  '请简洁但完整地描述这张图片中的主体、场景、文字和重要细节，给另一个文本模型继续理解上下文。'
 
 const form = reactive({
   enabled: false,

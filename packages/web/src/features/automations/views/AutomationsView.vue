@@ -66,7 +66,7 @@
         </select>
         <span class="hint">
           自动化会把消息写回选中的会话。
-          <template v-if="conversations.length === 0">当前没有可用会话，请先创建一个对话。</template>
+          <template v-if="conversations.length === 0">没有可用会话，请先创建对话</template>
         </span>
       </div>
       <button :disabled="!canCreate" @click="handleCreate">创建</button>

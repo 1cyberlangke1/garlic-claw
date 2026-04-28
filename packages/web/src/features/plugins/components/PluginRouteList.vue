@@ -9,7 +9,7 @@
     </header>
 
     <div v-if="routes.length === 0" class="route-empty">
-      当前插件没有声明 Web Route。
+      插件没有声明 Web Route。
     </div>
 
     <ul v-else class="route-list">
@@ -138,12 +138,10 @@ watch([selectedPath, selectedMethod], () => {
   clearResponseState()
 })
 
-/**
- * 调用当前选中的插件 Route，并把结果格式化到面板里。
- */
+/** 调用选中的 Route 并展示结果。 */
 async function runSelectedRoute() {
   if (!selectedPath.value) {
-    responseError.value = '当前没有可调用的 route'
+    responseError.value = '没有可调用的 route'
     responseText.value = ''
     responseStatus.value = null
     responseHeadersText.value = ''
@@ -176,9 +174,7 @@ async function runSelectedRoute() {
   }
 }
 
-/**
- * 清空 tester 当前展示的响应状态。
- */
+/** 清空响应状态。 */
 function clearResponseState() {
   responseError.value = null
   responseText.value = ''
@@ -186,33 +182,21 @@ function clearResponseState() {
   responseHeadersText.value = ''
 }
 
-/**
- * 将 Route 返回值统一格式化成可读文本。
- * @param value Route 返回值
- * @returns 文本化结果
- */
+/** 格式化 Route 返回值。 */
 function formatResponse(value: JsonValue): string {
   return typeof value === 'string'
     ? value
     : JSON.stringify(value, null, 2)
 }
 
-/**
- * 将响应头统一格式化成可读文本。
- * @param headers 响应头
- * @returns 文本化结果
- */
+/** 格式化响应头。 */
 function formatHeaders(headers: Record<string, string>): string {
   return Object.keys(headers).length === 0
     ? ''
     : JSON.stringify(headers, null, 2)
 }
 
-/**
- * 解析 tester 输入的 JSON body。
- * @param raw 原始输入文本
- * @returns 解析后的 JSON 值
- */
+/** 解析 JSON body 输入。 */
 function parseJsonRequestBody(raw: string): JsonValue | null {
   const trimmed = raw.trim()
   if (!trimmed) {

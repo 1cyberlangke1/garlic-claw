@@ -29,7 +29,7 @@
         <article class="overview-card warning">
           <span class="overview-label">skills 目录</span>
           <strong>{{ directoryCount }}</strong>
-          <p>当前宿主只从仓库根 `skills/` 目录扫描 skill，便于项目内共享与版本管理。</p>
+          <p>从仓库根 `skills/` 目录扫描 skill，方便共享与版本管理。</p>
         </article>
         <article class="overview-card warning">
           <span class="overview-label">已拒绝加载</span>
@@ -65,13 +65,13 @@
           :settings="selectedSkill.governance.eventLog"
           :saving="mutatingSkillId === selectedSkill.id"
           title="技能日志设置"
-          description="当前技能自己的事件日志会写到 log/skills/<skillId>/ 目录。"
+          description="此技能的事件日志会写入 log/skills/<skillId>/ 目录。"
           @save="handleSkillEventLogUpdate"
         />
         <EventLogPanel
           v-if="selectedSkill"
           title="技能事件日志"
-          description="查看技能最近的加载、拒绝与治理动作记录。"
+          description="查看技能最近的加载和拒绝记录。"
           :events="eventLogs"
           :loading="eventLoading"
           :query="eventQuery"

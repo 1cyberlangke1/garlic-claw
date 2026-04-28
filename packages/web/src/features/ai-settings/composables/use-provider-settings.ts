@@ -46,7 +46,7 @@ import {
  * - provider / model / vision fallback 所需的响应式状态和操作函数
  * 预期行为:
  * - 页面只负责渲染
- * - 所有数据拉取、选择与保存逻辑统一收口到此 composable
+ * - 所有数据拉取、选择与保存逻辑集中到此 composable
  */
 export function useProviderSettings() {
   const providerRequestState = useAsyncState(false)

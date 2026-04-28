@@ -9,7 +9,7 @@
     </header>
 
     <div v-if="jobs.length === 0" class="cron-empty">
-      当前插件没有 cron job。
+      插件没有 cron job。
     </div>
 
     <ul v-else class="cron-list">
@@ -57,11 +57,7 @@ defineEmits<{
   (event: 'delete', jobId: string): void
 }>()
 
-/**
- * 把时间字符串转成可读文本。
- * @param value ISO 时间字符串
- * @returns 展示文案
- */
+/** 格式化时间文本。 */
 function formatTime(value: string | null): string {
   if (!value) {
     return '暂无'
@@ -70,11 +66,7 @@ function formatTime(value: string | null): string {
   return new Date(value).toLocaleString()
 }
 
-/**
- * 生成 cron job 的更准确运行状态文案。
- * @param job cron job 摘要
- * @returns 状态文本
- */
+/** 生成 cron job 状态文案。 */
 function cronStatusLabel(job: PluginCronJobSummary): string {
   if (job.lastError) {
     return '失败'

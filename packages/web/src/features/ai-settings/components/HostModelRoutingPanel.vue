@@ -33,7 +33,7 @@
         </div>
 
         <div v-if="fallbackModels.length === 0" class="empty-state">
-          当前没有配置聊天回退模型。
+          没有配置回退模型。
         </div>
         <ul v-else class="fallback-list">
           <li

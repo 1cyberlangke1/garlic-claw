@@ -291,7 +291,7 @@ function matchesFilter(plugin: PluginInfo): boolean {
 /**
  * 判断插件是否匹配当前关键字搜索。
  * @param plugin 插件摘要
- * @param keyword 归一化关键字
+ * @param keyword 标准化关键字
  * @returns 是否匹配
  */
 function matchesKeyword(plugin: PluginInfo, keyword: string): boolean {

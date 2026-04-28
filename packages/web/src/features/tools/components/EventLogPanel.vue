@@ -63,10 +63,10 @@
 
     <div v-if="loading && events.length === 0" class="section-empty">加载中...</div>
     <div v-else-if="events.length === 0 && hasActiveQueryFilters" class="section-empty">
-      当前筛选下没有事件日志。
+      此筛选下没有事件日志。
     </div>
     <div v-else-if="events.length === 0" class="section-empty">
-      当前还没有事件日志。
+      还没有事件日志。
     </div>
     <div v-else class="event-list">
       <article v-for="event in events" :key="event.id" class="event-item">
@@ -113,7 +113,7 @@ const props = withDefaults(defineProps<{
   loadMoreButtonTestId?: string
 }>(), {
   title: '事件日志',
-  description: '查看最近的失败、治理动作与健康检查记录。',
+  description: '查看最近的事件记录。',
   refreshButtonTestId: 'event-refresh',
   limitSelectTestId: 'event-limit',
   levelFilterTestId: 'event-level-filter',

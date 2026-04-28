@@ -95,7 +95,7 @@ function readPersonaAvatarAlt(name?: string | null) {
         </div>
         <h2 v-else>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
         <p v-if="!currentPersona">
-          当前没有会话级人设信息，页面会回退展示默认人设。
+          无会话级人设
         </p>
         <p class="hero-hint">
           {{ hasCurrentConversation
@@ -240,7 +240,7 @@ function readPersonaAvatarAlt(name?: string | null) {
               </button>
             </div>
             <div v-if="editorDraft.beginDialogs.length === 0" class="section-state">
-              当前没有预置对话。
+              无预置对话。
             </div>
             <div v-else class="dialog-list">
               <div

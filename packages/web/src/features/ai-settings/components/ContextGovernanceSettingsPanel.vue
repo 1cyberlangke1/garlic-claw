@@ -3,7 +3,7 @@
     <header class="panel-header">
       <div>
         <span class="panel-kicker">Context</span>
-        <h2>上下文治理</h2>
+        <h2>上下文设置</h2>
         <p>配置自动标题、上下文压缩窗口与压缩专用模型。</p>
       </div>
     </header>

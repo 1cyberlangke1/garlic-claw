@@ -17,7 +17,7 @@ export interface ToolOverviewData {
 }
 
 /**
- * 拉取工具治理页需要的工具源与工具列表。
+ * 拉取工具管理页需要的工具源与工具列表。
  * @returns 工具总览数据
  */
 export function loadToolOverview(): Promise<ToolOverviewData> {
@@ -48,10 +48,10 @@ export function saveToolEnabled(toolId: string, enabled: boolean) {
 }
 
 /**
- * 执行工具源治理动作。
+ * 执行工具源管理操作。
  * @param kind 工具源类型
  * @param sourceId 工具源 ID
- * @param action 治理动作
+ * @param action 管理操作
  */
 export function runToolSourceActionRequest(
   kind: ToolSourceInfo['kind'],
@@ -62,7 +62,7 @@ export function runToolSourceActionRequest(
 }
 
 /**
- * 统一转换治理页错误文案。
+ * 统一转换管理页错误文案。
  * @param error 捕获到的异常
  * @param fallback 兜底文案
  * @returns 可展示错误文本

@@ -12,11 +12,11 @@ import {
 type ToolFilter = 'all' | 'enabled' | 'disabled' | 'attention'
 
 /**
- * 工具治理页的状态与行为收口。
+ * 工具管理页的状态与行为收口。
  * 输入:
  * - 无，由页面直接调用
  * 输出:
- * - 工具源、工具列表、筛选状态和治理动作函数
+ * - 工具源、工具列表、筛选状态和管理操作函数
  * 预期行为:
  * - 页面只负责渲染
  * - 所有统一工具治理请求集中到此 composable
@@ -160,7 +160,7 @@ export function createToolManagementModule() {
         buildSourceKey(source) === preferredSourceKey) ?? nextSources[0] ?? null
       selectedSourceKey.value = fallback ? buildSourceKey(fallback) : null
     } catch (caughtError) {
-      requestState.setError(caughtError, '加载工具治理数据失败')
+      requestState.setError(caughtError, '加载工具管理数据失败')
     } finally {
       loading.value = false
     }
@@ -212,7 +212,7 @@ export function createToolManagementModule() {
       notice.value = result.message
       await refreshAll(buildSourceKey(source))
     } catch (caughtError) {
-      requestState.setError(caughtError, '执行工具源治理动作失败')
+      requestState.setError(caughtError, '执行工具源管理操作失败')
     } finally {
       runningActionKey.value = null
     }

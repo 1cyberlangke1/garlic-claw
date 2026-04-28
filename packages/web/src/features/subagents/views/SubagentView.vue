@@ -5,7 +5,7 @@
         <div>
           <span class="hero-kicker">Subagent Sessions</span>
           <h1>Subagent</h1>
-          <p>统一查看同步与后台子代理、完成态结果、回写状态与当前上下文。</p>
+          <p>管理同步与后台子代理的回写状态和上下文。</p>
         </div>
         <div class="subagent-hero-side">
           <button
@@ -17,7 +17,7 @@
             <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
           </button>
           <div class="hero-note">
-            <span class="hero-note-label">当前子代理面</span>
+            <span class="hero-note-label">子代理面板</span>
             <strong>{{ heroHeadline }}</strong>
           <p>每个主会话会聚合成一个工作区，支持在 `main / agent*` 之间切换查看。</p>
           </div>
@@ -50,7 +50,7 @@
       </div>
 
       <div v-if="conversationWorkspaces.length === 0" class="sidebar-state">
-        当前还没有可查看的子代理会话。
+        没有可查看的子代理会话。
       </div>
       <template v-else>
         <div class="conversation-rail" data-test="conversation-rail">
@@ -88,7 +88,7 @@
           <template v-if="activeWindowKind === 'main'">
             <div class="workspace-summary-grid">
               <article class="workspace-summary-card">
-                <span class="overview-label">当前主会话</span>
+                <span class="overview-label">主会话</span>
                 <strong>{{ activeConversationLabel }}</strong>
                 <p>当前窗口下共有 {{ activeConversationSubagents.length }} 个子代理会话。</p>
               </article>
@@ -133,7 +133,7 @@
             <template v-else-if="activeSubagentDetail && activeSubagentSummary">
               <div class="detail-grid">
                 <article class="detail-card">
-                  <span class="overview-label">当前窗口</span>
+                  <span class="overview-label">窗口</span>
                   <strong>{{ activeWindow?.label }}</strong>
                   <p>{{ activeSubagentSummary.description || activeSubagentSummary.requestPreview }}</p>
                 </article>
@@ -145,7 +145,7 @@
                 <article class="detail-card">
                   <span class="overview-label">回写状态</span>
                   <strong>{{ writeBackLabel(activeSubagentSummary.writeBackStatus) }}</strong>
-                  <p>{{ activeSubagentSummary.writeBackError || '当前没有回写异常' }}</p>
+                  <p>{{ activeSubagentSummary.writeBackError || '无回写异常' }}</p>
                 </article>
                 <article class="detail-card">
                   <span class="overview-label">可见性</span>
@@ -189,7 +189,7 @@
                   {{ activeSubagentDetail.error }}
                 </p>
                 <pre v-else-if="activeSubagentDetail.result" class="detail-pre">{{ activeSubagentDetail.result.text }}</pre>
-                <p v-else class="muted-text">当前还没有结果输出。</p>
+                <p v-else class="muted-text">还没有结果输出。</p>
               </article>
             </template>
           </template>
@@ -236,7 +236,7 @@
 
       <div v-if="loading" class="sidebar-state">加载中...</div>
       <div v-else-if="pagedSubagents.length === 0" class="sidebar-state">
-        当前筛选下没有子代理。
+        此筛选下没有子代理。
       </div>
       <div v-else class="subagent-list">
         <article
@@ -276,7 +276,7 @@
                 class="ghost-button link-button"
                 to="/tools"
               >
-                打开工具治理
+                打开工具管理
               </RouterLink>
             </div>
           </div>
@@ -418,7 +418,7 @@ const overviewCards = computed(() => [
   {
     label: '运行中',
     value: String(runningSubagentCount.value),
-    note: runningSubagentCount.value > 0 ? '仍有子代理在排队或运行' : '当前没有活跃子代理',
+    note: runningSubagentCount.value > 0 ? '仍有子代理在排队或运行' : '没有活跃子代理',
     tone: runningSubagentCount.value > 0 ? 'warning' : 'neutral',
   },
   {
@@ -430,7 +430,7 @@ const overviewCards = computed(() => [
   {
     label: '失败子代理',
     value: String(errorSubagentCount.value),
-    note: errorSubagentCount.value > 0 ? '失败子代理需要回看请求和插件权限' : '当前没有失败子代理',
+    note: errorSubagentCount.value > 0 ? '失败子代理需要回看请求和插件权限' : '没有失败子代理',
     tone: errorSubagentCount.value > 0 ? 'warning' : 'neutral',
   },
 ])

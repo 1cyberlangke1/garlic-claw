@@ -30,7 +30,7 @@
       </label>
 
       <div v-if="filteredSources.length === 0" class="empty-state compact">
-        当前没有匹配的工具源。
+        没有匹配的工具源。
       </div>
       <div v-else class="source-list">
         <button
@@ -120,7 +120,7 @@
         </div>
 
         <div v-if="filteredTools.length === 0" class="empty-state compact">
-          当前 source 下没有匹配工具。
+          此 source 下没有匹配工具。
         </div>
         <div v-else class="tool-list">
           <article
@@ -192,7 +192,7 @@ const props = withDefaults(defineProps<{
   sourceId: null,
   showSourceList: true,
   emptyTitle: '暂无工具源',
-  emptyDescription: '当前分类下还没有可治理的工具源。',
+  emptyDescription: '此分类下还没有可管理的工具源。',
   sourcePlaceholder: '搜索 source',
 })
 
@@ -303,7 +303,7 @@ async function refresh() {
       ?? null
     selectedSourceId.value = nextSource?.id ?? null
   } catch (caughtError) {
-    error.value = toErrorMessage(caughtError, '加载工具治理数据失败')
+    error.value = toErrorMessage(caughtError, '加载工具管理数据失败')
   } finally {
     loading.value = false
   }

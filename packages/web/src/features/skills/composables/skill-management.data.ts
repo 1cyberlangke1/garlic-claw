@@ -24,9 +24,9 @@ export function refreshSkillCatalog(): Promise<SkillDetail[]> {
 }
 
 /**
- * 保存 skill 治理配置。
+ * 保存 skill 管理配置。
  * @param skillId skill ID
- * @param patch 局部治理配置
+ * @param patch 局部管理配置
  * @returns 更新后的 skill
  */
 export function saveSkillGovernance(

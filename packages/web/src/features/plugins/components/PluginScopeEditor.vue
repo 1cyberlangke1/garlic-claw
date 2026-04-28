@@ -2,8 +2,8 @@
   <section class="panel-section">
     <div class="section-header">
       <div>
-        <h3>会话作用域治理</h3>
-        <p>全局启用 / 停用已收进统一工具治理页的 Plugin source 开关，这里只编辑会话级覆盖。</p>
+        <h3>会话作用域</h3>
+        <p>全局启用/停用由工具管理页控制，这里只编辑会话级覆盖。</p>
       </div>
       <button
         type="button"
@@ -18,11 +18,11 @@
     </div>
 
     <p v-if="formError" class="section-error">{{ formError }}</p>
-    <p v-if="!scope" class="section-empty">当前还没有可编辑的作用域数据。</p>
+    <p v-if="!scope" class="section-empty">没有可编辑的作用域数据。</p>
 
     <template v-else>
       <article class="scope-default-card">
-        <strong>当前默认状态</strong>
+        <strong>默认状态</strong>
         <p>
           {{
             scope.defaultEnabled
@@ -30,7 +30,7 @@
               : '默认禁用，只会在被单独放行的会话里生效。'
           }}
         </p>
-        <p>需要切换默认状态时，请到统一工具治理页修改这个 Plugin source。</p>
+        <p>需要切换默认状态时，请在工具管理页修改。</p>
         <p v-if="!canDisable" class="section-error">
           {{ disableReason }}
         </p>
@@ -51,7 +51,7 @@
         </div>
 
         <div v-if="rows.length === 0" class="section-empty">
-          当前没有会话级覆盖，默认规则将直接生效。
+          没有会话级覆盖，默认规则将直接生效。
         </div>
 
         <div v-else class="scope-rows">
@@ -101,7 +101,7 @@ const formError = ref<string | null>(null)
 const canDisable = computed(() => props.plugin?.governance?.canDisable !== false)
 const disableReason = computed(() =>
   props.plugin?.governance?.disableReason?.trim()
-  || '当前插件属于受保护的系统本地插件，不能禁用。',
+  || '受保护的系统本地插件，不能禁用。',
 )
 
 watch(
@@ -118,9 +118,7 @@ watch(
   { immediate: true },
 )
 
-/**
- * 新增一个空的会话覆盖行。
- */
+/** 新增会话覆盖行。 */
 function addConversationRow() {
   formError.value = null
   rows.value.push({
@@ -129,18 +127,13 @@ function addConversationRow() {
   })
 }
 
-/**
- * 删除指定下标的会话覆盖行。
- * @param index 行下标
- */
+/** 删除会话覆盖行。 */
 function removeConversationRow(index: number) {
   formError.value = null
   rows.value.splice(index, 1)
 }
 
-/**
- * 把当前草稿提交为标准作用域对象。
- */
+/** 提交作用域草稿。 */
 function submit() {
   try {
     if (!canDisable.value && rows.value.some((row) => row.enabled === false)) {
@@ -154,11 +147,7 @@ function submit() {
   }
 }
 
-/**
- * 将当前行草稿收敛为标准作用域覆盖对象。
- * @param scopeRows 会话覆盖草稿
- * @returns 标准 conversations 映射
- */
+/** 构建作用域覆盖对象。 */
 function buildScopeConversations(
   scopeRows: ScopeRow[],
 ): PluginScopeSettings['conversations'] {

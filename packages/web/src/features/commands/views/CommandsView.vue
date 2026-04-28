@@ -3,9 +3,9 @@
     <section class="command-hero">
       <header class="command-hero-header">
         <div>
-          <span class="hero-kicker">Plugin Command Governance</span>
-          <h1>命令治理</h1>
-          <p>统一查看插件消息命令、冲突触发词和对应插件治理入口。</p>
+          <span class="hero-kicker">Command Management</span>
+          <h1>命令管理</h1>
+          <p>查看插件的消息命令和冲突触发词。</p>
         </div>
         <div class="command-hero-side">
           <button
@@ -17,9 +17,9 @@
             <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
           </button>
           <div class="hero-note">
-            <span class="hero-note-label">当前命令面</span>
+            <span class="hero-note-label">命令概览</span>
             <strong>{{ heroHeadline }}</strong>
-            <p>冲突先暴露，治理动作仍统一回到插件页，不再让命令问题散落在聊天主链里。</p>
+            <p>冲突在这里查看，到对应插件页处理。</p>
           </div>
         </div>
       </header>
@@ -80,7 +80,7 @@
 
         <div v-if="loading" class="sidebar-state">加载中...</div>
         <div v-else-if="pagedCommands.length === 0" class="sidebar-state">
-          当前筛选下没有命令记录。
+          无匹配命令
         </div>
         <div v-else class="command-list">
           <article
@@ -91,13 +91,13 @@
             <div class="command-card-top">
               <div>
                 <strong>{{ command.canonicalCommand }}</strong>
-                <p>{{ command.description || '当前命令没有额外描述。' }}</p>
+                <p>{{ command.description || '无描述' }}</p>
               </div>
               <RouterLink
                 class="ghost-button link-button"
                 :to="{ name: 'plugins', query: { plugin: command.pluginId } }"
               >
-                打开插件治理
+                管理插件
               </RouterLink>
             </div>
 
@@ -149,12 +149,12 @@
           <div>
             <span class="panel-kicker">Conflict Radar</span>
             <h2>冲突触发词</h2>
-            <p>同一触发词命中多个插件时，先在这里暴露，再回到对应插件治理页处理。</p>
+            <p>同一触发词命中多个插件时，在这里查看，到对应插件页处理。</p>
           </div>
         </div>
 
         <div v-if="conflicts.length === 0" class="sidebar-state">
-          当前没有发现命令冲突。
+          没有发现冲突
         </div>
         <div v-else class="conflict-list">
           <article
@@ -225,19 +225,19 @@ const overviewCards = computed(() => [
   {
     label: '命令总数',
     value: String(commandCount.value),
-    note: '来自插件 runtime manifest 或 hook filter 的统一目录',
+    note: '来自 manifest 或 hook filter',
     tone: 'accent',
   },
   {
     label: '冲突触发词',
     value: String(conflictCount.value),
-    note: conflictCount.value > 0 ? '同一 slash 触发词命中了多个插件' : '当前没有重叠触发词',
+    note: conflictCount.value > 0 ? '同一触发词命中了多个插件' : '无重叠触发词',
     tone: conflictCount.value > 0 ? 'warning' : 'neutral',
   },
   {
     label: '需关注命令',
     value: String(attentionCommandCount.value),
-    note: '优先关注冲突、受保护或离线插件命令',
+    note: '冲突、受保护或离线',
     tone: attentionCommandCount.value > 0 ? 'warning' : 'neutral',
   },
 ])

@@ -65,7 +65,7 @@ const props = withDefaults(defineProps<{
   showHeader: true,
   title: '配置',
   description: '按声明的配置元数据统一渲染。',
-  emptyText: '当前没有可编辑的配置元数据。',
+  emptyText: '无可编辑的配置。',
   saveButtonTitle: '保存配置',
 })
 

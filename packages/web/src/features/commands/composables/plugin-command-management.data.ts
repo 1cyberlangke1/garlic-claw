@@ -19,7 +19,7 @@ export function loadPluginCommandOverview(): Promise<PluginCommandOverviewData> 
 }
 
 /**
- * 统一转换命令治理页错误文案。
+ * 统一转换命令管理页错误文案。
  * @param error 捕获到的异常
  * @param fallback 兜底文案
  * @returns 可展示错误文本

@@ -4,15 +4,15 @@
       <header>
         <span class="hero-kicker">MCP Workspace</span>
         <h1>MCP 管理</h1>
-        <p>集中管理 MCP server 配置，并在同一页面治理对应工具源和工具列表。</p>
+        <p>管理 MCP server 配置和对应的工具。</p>
       </header>
     </section>
 
     <ToolGovernancePanel
       ref="toolGovernancePanel"
       source-kind="mcp"
-      title="MCP 工具治理"
-      description="这里展示所有 MCP server 的运行状态、治理动作和工具启用开关。"
+      title="MCP 工具管理"
+      description="展示所有 MCP server 的状态和工具开关。"
       empty-title="暂无 MCP 工具源"
       empty-description="先在下方添加 MCP server，保存后这里会出现对应工具源。"
       @update:selected-source-id="selectedSourceId = $event"
