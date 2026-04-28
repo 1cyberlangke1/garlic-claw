@@ -57,7 +57,7 @@ const router = createRouter({
         {
           path: 'subagents',
           name: 'subagents',
-          component: () => import('@/features/subagents/views/SubagentView.vue'),
+          redirect: { name: 'chat' },
         },
         {
           path: 'automations',

@@ -7,7 +7,6 @@ import userIdBold from '@iconify-icons/solar/user-id-bold'
 import widgetAddBold from '@iconify-icons/solar/widget-add-bold'
 import codeBold from '@iconify-icons/solar/code-bold'
 import keyboardBold from '@iconify-icons/solar/keyboard-bold'
-import cpuBold from '@iconify-icons/solar/cpu-bold'
 import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
 import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
 import widget6Bold from '@iconify-icons/solar/widget-6-bold'
@@ -77,7 +76,6 @@ const navItems: Array<{
     | 'mcp'
     | 'skills'
     | 'commands'
-    | 'subagents'
     | 'automations'
     | 'ai-settings'
   label: string
@@ -90,7 +88,6 @@ const navItems: Array<{
   { name: 'commands', label: '命令', icon: keyboardBold },
   { name: 'plugins', label: '插件', icon: widgetBold, divided: true },
   { name: 'mcp', label: 'MCP', icon: widgetAddBold },
-  { name: 'subagents', label: '后台代理', icon: cpuBold },
   { name: 'automations', label: '自动化', icon: cpuBoltBold, divided: true },
   { name: 'ai-settings', label: 'AI 设置', icon: codeBold },
 ]
