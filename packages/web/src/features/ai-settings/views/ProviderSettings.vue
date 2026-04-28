@@ -197,8 +197,8 @@
         v-if="activeSection === 'runtime-governance'"
         source-kind="internal"
         source-id="runtime-tools"
-        title="执行工具治理"
-        description="内部执行工具的启用状态一览。"
+        title="执行工具管理"
+        description="内部执行工具的启用状态。"
         :show-source-list="false"
         empty-title="暂无内部执行工具"
         empty-description="当前运行时未注册内部执行工具。"
@@ -208,8 +208,8 @@
         v-if="activeSection === 'subagent-governance'"
         source-kind="internal"
         source-id="subagent"
-        title="子代理治理"
-        description="内部子代理工具的启用状态一览。"
+        title="子代理管理"
+        description="内部子代理工具的启用状态。"
         :show-source-list="false"
         empty-title="暂无内部子代理工具"
         empty-description="当前运行时未注册内部子代理工具。"
@@ -265,13 +265,13 @@ const activeSection = ref('provider-models')
 
 const navItems: Array<{ id: string; label: string; icon: IconifyIcon; divided?: boolean }> = [
   { id: 'provider-models', label: '服务商 & 模型', icon: serverBold },
-  { id: 'vision', label: '视觉回退', icon: galleryBold, divided: true },
+  { id: 'vision', label: '视觉回退', icon: galleryBold },
   { id: 'routing', label: '模型回退链', icon: linkRoundBold },
   { id: 'runtime-tools', label: '执行工具', icon: codeBold, divided: true },
   { id: 'subagent', label: '子代理', icon: cpuBold },
-  { id: 'context', label: '上下文治理', icon: documentTextBold },
-  { id: 'runtime-governance', label: '执行工具治理', icon: shieldCheckBold, divided: true },
-  { id: 'subagent-governance', label: '子代理治理', icon: shieldBold },
+  { id: 'context', label: '上下文设置', icon: documentTextBold },
+  { id: 'runtime-governance', label: '执行工具管理', icon: shieldCheckBold, divided: true },
+  { id: 'subagent-governance', label: '子代理管理', icon: shieldBold },
 ]
 
 const {

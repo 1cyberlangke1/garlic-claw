@@ -82,17 +82,17 @@ const navItems: Array<{
     | 'ai-settings'
   label: string
   icon: IconifyIcon
-  section?: 'core' | 'admin'
+  divided?: boolean
 }> = [
-  { name: 'chat', label: '对话', icon: chatRoundLineBold, section: 'core' },
-  { name: 'plugins', label: '插件', icon: widgetBold, section: 'core' },
-  { name: 'persona-settings', label: '人设', icon: userIdBold, section: 'core' },
-  { name: 'mcp', label: 'MCP', icon: widgetAddBold, section: 'core' },
-  { name: 'skills', label: '技能', icon: magicStick3Bold, section: 'core' },
-  { name: 'commands', label: '命令', icon: keyboardBold, section: 'core' },
-  { name: 'subagents', label: '后台代理', icon: cpuBold, section: 'core' },
-  { name: 'automations', label: '自动化', icon: cpuBoltBold, section: 'admin' },
-  { name: 'ai-settings', label: 'AI 设置', icon: codeBold, section: 'admin' },
+  { name: 'chat', label: '对话', icon: chatRoundLineBold },
+  { name: 'persona-settings', label: '人设', icon: userIdBold },
+  { name: 'skills', label: '技能', icon: magicStick3Bold },
+  { name: 'commands', label: '命令', icon: keyboardBold },
+  { name: 'plugins', label: '插件', icon: widgetBold, divided: true },
+  { name: 'mcp', label: 'MCP', icon: widgetAddBold },
+  { name: 'subagents', label: '后台代理', icon: cpuBold },
+  { name: 'automations', label: '自动化', icon: cpuBoltBold, divided: true },
+  { name: 'ai-settings', label: 'AI 设置', icon: codeBold },
 ]
 
 const visibleNavItems = computed(() => navItems)
@@ -293,7 +293,7 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
             class="menu-item"
             :class="{
               active: route.name === item.name,
-              'menu-item--admin-start': item.section === 'admin',
+              'menu-item--divided': item.divided,
             }"
             :to="{ name: item.name }"
             :title="isCompact ? item.label : undefined"
@@ -444,11 +444,11 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   background-color: rgba(24, 160, 88, 0.1);
 }
 
-.menu-item--admin-start {
+.menu-item--divided {
   margin-top: 14px;
 }
 
-.menu-item--admin-start::before {
+.menu-item--divided::before {
   content: '';
   position: absolute;
   left: 16px;
