@@ -59,6 +59,14 @@
         </template>
       </div>
 
+      <div v-if="subagentTabs.length" class="chat-tabs">
+        <button class="chat-tab" :class="{ active: activeTab === 'main' }" @click="activeTab = 'main'">对话</button>
+        <button v-for="s in subagentTabs" :key="s.sessionId" class="chat-tab" :class="{ active: activeTab === s.sessionId }" @click="switchToSubagent(s.sessionId)">
+          <span class="tab-dot" :class="s.status" />
+          {{ s.description || s.subagentType || '子代理' }}
+        </button>
+      </div>
+
       <section class="chat-todo-panel">
         <div class="chat-todo-header">
           <h3>当前待办</h3>
@@ -132,8 +140,24 @@ import { isValidConversationRouteId } from '@/utils/uuid'
 
 const chat = useChatStore()
 const toolbarExpanded = ref(true)
+const activeTab = ref('main')
+const subagentTabs = ref<Array<{ sessionId: string; description?: string; subagentType?: string; status: string }>>([])
 const currentConversationPersona = ref<PluginPersonaCurrentInfo | null>(null)
 const currentConversationId = computed(() => chat.currentConversationId ?? null)
+
+watch(currentConversationId, async (id) => {
+  activeTab.value = 'main'
+  if (!id) { subagentTabs.value = []; return }
+  try {
+    const token = localStorage.getItem('accessToken')
+    const resp = await fetch(`/api/chat/conversations/${id}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (resp.ok) subagentTabs.value = await resp.json()
+  } catch { subagentTabs.value = [] }
+})
+
+function switchToSubagent(sessionId: string) {
+  activeTab.value = sessionId
+}
 let currentPersonaRequestId = 0
 const {
   inputText,
@@ -224,6 +248,15 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   gap: 16px;
   padding: 16px;
 }
+
+.chat-tabs { display:flex; gap:4px; padding:0 4px; overflow-x:auto; }
+.chat-tab { display:flex; align-items:center; gap:6px; padding:6px 14px; border:1px solid var(--shell-border, #334155); border-radius:8px 8px 0 0; border-bottom:none; background:transparent; color:var(--shell-text-secondary, #cbd5e1); font-size:13px; cursor:pointer; white-space:nowrap; font-family:inherit; transition:all .12s; }
+.chat-tab:hover { background:var(--shell-bg-hover, #334155); color:var(--shell-text, #f1f5f9); }
+.chat-tab.active { background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); border-color:var(--shell-active, #22c55e); }
+.tab-dot { width:7px; height:7px; border-radius:50%; }
+.tab-dot.queued, .tab-dot.running { background:#f59e0b; }
+.tab-dot.completed { background:var(--shell-active, #22c55e); }
+.tab-dot.error { background:#ef4444; }
 
 .chat-toolbar {
   padding: 16px;

@@ -8,6 +8,7 @@ import { RuntimeToolPermissionService } from '../../../execution/runtime/runtime
 import { RuntimeHostConversationMessageService } from '../../../runtime/host/runtime-host-conversation-message.service';
 import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostConversationTodoService } from '../../../runtime/host/runtime-host-conversation-todo.service';
+import { RuntimeHostSubagentStoreService } from '../../../runtime/host/runtime-host-subagent-store.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
   ConversationTodoItemDto,
@@ -33,6 +34,7 @@ export class ConversationController {
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
     private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
+    private readonly runtimeHostSubagentStoreService: RuntimeHostSubagentStoreService,
   ) {}
 
   private requireOwnedConversation(userId: string, id: string) {
@@ -136,6 +138,12 @@ export class ConversationController {
     this.requireOwnedConversation(userId, id);
     await this.conversationTaskService.stopTask(messageId);
     return this.runtimeHostConversationMessageService.updateMessage(id, messageId, toUpdateMessagePatch(dto), userId);
+  }
+
+  @Get('conversations/:id/subagents')
+  listConversationSubagents(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
+    this.requireOwnedConversation(userId, id);
+    return this.runtimeHostSubagentStoreService.listOverview().subagents.filter(s => s.conversationId === id);
   }
 
   @Delete('conversations/:id/messages/:messageId')
