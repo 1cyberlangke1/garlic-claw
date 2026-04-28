@@ -209,3 +209,33 @@
   - `npm run lint`
   - `npm run smoke:server`
   - `node config\\skills\\definitions\\weather-query\\scripts\\weather.js "广东中山"`
+
+## 2026-04-28 shell 工具名动态化与 PowerShell workdir 修复
+
+- 已开始本轮调查：
+  - 已重新读取 `task_plan.md / findings.md / progress.md`
+  - 已读取 `systematic-debugging` 与 `planning-with-files-zh` 约束
+  - 已确认 PowerShell 下 `workdir` 问题不是脚本文案，而是 runtime 路径归一化错误
+- 当前调查结论：
+  - `resolveRuntimeVisiblePath()` 不识别 `D:\\...` 这类 Windows 绝对路径
+  - shell 工具名当前仍固定由 `BashToolService.getToolName()` 返回 `bash`
+- 本轮已完成：
+  - 新增 `runtime-shell-tool-name.ts`，统一收口 shell 工具主名、alias 与 host 绝对 `workdir` 判定
+  - `native-shell / wsl-shell` 已支持直接接受 host 绝对 `workdir`，不再把 `D:\\...` 误拼成 `/D:\\...`
+  - runtime tool registry、tool call repair、runtime host 审批链路已按 backend 动态暴露 `bash / powershell`
+  - shell 工具输入报错已改成动态前缀，例如 `powershell.command`
+  - runtime shell 文本输出已支持动态结果标签：`<bash_result> / <powershell_result>`
+  - `http-smoke.mjs` 已把 shell 工具提示词、fake provider 触发条件、SSE 断言、超时错误断言与结果包装识别全部改成按 backend 派生
+  - `tool-registry.service.spec.ts` 中与 `native-shell` / `native-shell-alias` 直接相关的失败用例已改为按 backend 取真实工具名
+- 本轮 fresh 验收已通过：
+  - `npm run typecheck:server`
+  - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\execution\\runtime\\runtime-command-output.spec.ts tests\\execution\\tool\\tool-registry.service.spec.ts --testNamePattern "dispatches native bash tool execution through the runtime owner and persists workspace files|applies internal runtime-tools bash output config through the internal settings owner|exposes powershell as the shell tool name when native-shell is selected on Windows"`
+  - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\execution\\bash\\bash-tool.service.spec.ts tests\\execution\\runtime\\runtime-native-shell.service.spec.ts tests\\runtime\\host\\runtime-host-runtime-tool.service.spec.ts tests\\execution\\tool\\model-tool-call-name.spec.ts`
+  - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\execution\\tool\\tool-registry.service.spec.ts --testNamePattern "exposes powershell as the shell tool name when native-shell is selected on Windows|applies internal runtime-tools bash output config through the internal settings owner|routes internal runtime-tools bash execution through the configured shell backend|supports hot-switching internal runtime-tools bash execution to the platform-scoped secondary backend|surfaces powershell native network command hints in bash permission requests|surfaces powershell env destination expansion in copy-item permission requests|surfaces braced powershell env destination expansion in copy-item permission requests|surfaces powershell env destinations after filesystem provider prefixes in copy-item permission requests|does not surface single-quoted powershell env redirection as external write hints in bash permission requests|surfaces powershell env path expansion in set-content permission requests|surfaces braced powershell env path expansion in set-content permission requests|surfaces braced powershell env paths after filesystem provider prefixes in set-content permission requests|does not surface single-quoted powershell env destinations as external writes in copy-item permission requests|does not surface single-quoted braced powershell env paths as external writes in set-content permission requests|does not surface powershell local variable paths as external writes in set-content permission requests|does not surface braced powershell local variable paths as external writes in set-content permission requests|does not surface provider braced powershell local variable paths as external writes in set-content permission requests|surfaces powershell Join-Path command substitution destinations as external writes in copy-item permission requests|surfaces powershell Join-Path local variable destinations as external writes in copy-item permission requests|surfaces provider-prefixed powershell Join-Path command substitution destinations as external writes in copy-item permission requests|surfaces powershell Join-Path-assigned local variable destinations as external writes in copy-item permission requests|surfaces parenthesized powershell Join-Path destinations as external writes in copy-item permission requests|routes bash execution to the configured shell backend without changing tool contract|routes bash execution to the real native-shell backend|routes bash execution through a third shell backend kind without changing tool owner|surfaces powershell AST hints through native-shell alias permission requests|keeps powershell permission-chain hints when AST parsing fails|surfaces powershell local variable AST hints through native-shell alias permission requests|surfaces powershell simple subexpression local variable AST hints through native-shell alias permission requests"`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+- 额外记录：
+  - 初次整文件超时的根因已定位为测试自身残留句柄，不是生产代码慢
+  - 直接触发点是 `keeps bash workdir and timeout semantics stable through the native tool contract` 仍取 `toolSet?.bash`，导致本地 `slowServer` 在断言失败后未关闭
+  - 修复该用例后，完整 `tests\\execution\\tool\\tool-registry.service.spec.ts` 已 fresh 通过：
+    - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\execution\\tool\\tool-registry.service.spec.ts`

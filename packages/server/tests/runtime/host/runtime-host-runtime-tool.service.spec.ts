@@ -37,6 +37,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       withWriteFreshnessGuard: jest.fn(),
     };
     const runtimeSessionEnvironmentService = {
+      deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
       getDescriptor: jest.fn().mockReturnValue({ visibleRoot: '/' }),
     };
     const runtimeToolBackendService = {
@@ -165,6 +166,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       }),
     };
     const runtimeSessionEnvironmentService = {
+      deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
       getDescriptor: jest.fn().mockReturnValue({ visibleRoot: '/' }),
     };
     const runtimeToolBackendService = {
@@ -271,6 +273,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       }),
     };
     const runtimeSessionEnvironmentService = {
+      deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
       getDescriptor: jest.fn().mockReturnValue({ visibleRoot: '/' }),
     };
     const runtimeToolBackendService = {

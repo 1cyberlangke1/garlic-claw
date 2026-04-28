@@ -119,3 +119,30 @@
 - 因此脚本更稳的策略是：
   - 地点标签优先使用用户输入
   - 天气描述优先读取 `lang_zh-cn`，再回退 `lang_xx / weatherDesc`
+
+## 2026-04-28 shell 工具名动态化与 PowerShell workdir 修复
+
+- 当前 `native-shell` 下 `workdir` 失败的直接根因在 [runtime-visible-path.ts](/D:/Git_Repository/garlic-claw/packages/server/src/execution/runtime/runtime-visible-path.ts)：
+  - `resolveRuntimeVisiblePath()` 只把 `/` 开头当作绝对路径
+  - Windows 的 `D:\...` 会被当作相对路径，拼成 `/D:\...`
+- 随后 [runtime-native-shell.service.ts](/D:/Git_Repository/garlic-claw/packages/server/src/execution/runtime/runtime-native-shell.service.ts) 会把这个错误虚拟路径再映射到 session host path，于是抛出 `bash.workdir 不存在: /D:\...`
+- 当前 shell 工具名固定来自 [bash-tool.service.ts](/D:/Git_Repository/garlic-claw/packages/server/src/execution/bash/bash-tool.service.ts) 的 `getToolName(): "bash"`，即使 backend 已明确是 Windows PowerShell，也仍对外暴露 `bash`
+- 工具名固定 `bash` 的影响不只在展示层，还进入了：
+  - runtime tool overview
+  - `allowedToolNames` 过滤
+  - `executeRegisteredTool`
+  - 冒烟与 Jest 断言
+- 仅把 runtime 主链改成动态工具名还不够：
+  - `http-smoke.mjs` 的 fake provider 触发条件、SSE 断言、工具结果识别、超时错误文本都写死了 `bash`
+  - 所以即使真实服务已经改成对外暴露 `powershell`，smoke 仍会把正常行为误判成失败
+- shell 结果包装同样是一个隐藏耦合点：
+  - `renderRuntimeCommandTextOutput()` 之前固定输出 `<bash_result>`
+  - PowerShell backend 下如果继续输出 `<bash_result>`，模型侧和 smoke 侧都会看到“工具名变了，结果标签没变”的不一致
+- `tool-registry.service.spec.ts` 里还有一批 Windows / `native-shell(-alias)` 用例直接取 `toolSet?.bash`
+  - 这些用例不代表实现失败，而是测试本身还停留在旧 contract
+  - 用 backend 派生真实工具名后，这批用例可以恢复通过
+- `tool-registry.service.spec.ts` 整文件此前“超时不退出”的直接触发点是：
+  - `keeps bash workdir and timeout semantics stable through the native tool contract`
+  - 该用例会先启动本地 `slowServer`
+  - 当 `native-shell` 下仍去取 `toolSet?.bash` 时，断言会在 `slowServer.close()` 之前失败
+  - 结果是测试主体其实 10 秒内就跑完，但 Jest 会因为残留 HTTP server 句柄一直挂住

@@ -41,6 +41,18 @@ const visitedHttpRoutes = [];
 let smokeWebFetchUrl = '';
 let smokeBashTimeoutUrl = '';
 
+function readSmokeShellToolName() {
+  return usesNativePowerShellBackend() ? 'powershell' : 'bash';
+}
+
+function readSmokeShellResultTagName() {
+  return `${readSmokeShellToolName()}_result`;
+}
+
+function buildSmokeShellInstruction(instruction) {
+  return instruction.replaceAll('{shellToolName}', readSmokeShellToolName());
+}
+
 function readSmokeShellBackendKind() {
   return process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND || 'just-bash';
 }
@@ -1305,7 +1317,7 @@ async function runHttpFlow(apiBase, state, input) {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
-        content: '请使用 bash 工具生成多行输出，并确认最后两行内容。',
+        content: buildSmokeShellInstruction('请使用 {shellToolName} 工具生成多行输出，并确认最后两行内容。'),
         model: state.modelId,
         provider: state.providerId,
       },
@@ -1321,8 +1333,8 @@ async function runHttpFlow(apiBase, state, input) {
       usesYoloApproval ? 'skipped' : 'requested',
       'bash config loop SSE',
     );
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash config loop SSE to include native bash tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash config loop SSE to include native bash tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === readSmokeShellToolName()), 'Expected bash config loop SSE to include native shell tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === readSmokeShellToolName()), 'Expected bash config loop SSE to include native shell tool result');
     assertCompletedSse(events, '已读取 smoke workspace 文件。');
   });
 
@@ -1330,12 +1342,12 @@ async function runHttpFlow(apiBase, state, input) {
     const requests = input.fakeOpenAi.readChatCompletions();
     const firstRequest = requests.find((entry) =>
       requestHasToolList(entry.body)
-      && readLatestUserText(entry.body?.messages).includes('请使用 bash 工具生成多行输出'));
+      && readLatestUserText(entry.body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具生成多行输出')));
     ensure(firstRequest, 'Expected first bash config loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash config loop request to expose native bash tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
+    ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash config loop request to expose native shell tool');
+    const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash config loop to issue a follow-up request with bash tool results');
-    const bashToolContent = readLatestBashToolContent(toolResultRequest.body);
+    const bashToolContent = readLatestShellToolContent(toolResultRequest.body);
     ensure(typeof bashToolContent === 'string', 'Expected bash config loop follow-up request to include bash tool content');
     ensure(readBashStreamSection(bashToolContent, 'stdout') === 'line-3\nline-4', 'Expected bash config loop follow-up request to keep only the bounded stdout tail');
     ensure(!bashToolContent.includes('output truncated'), 'Expected bash config loop follow-up request to hide truncation details');
@@ -1363,7 +1375,7 @@ async function runHttpFlow(apiBase, state, input) {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
-        content: '请使用 bash 工具在 smoke workspace 中写入文件，并确认写入结果。',
+        content: buildSmokeShellInstruction('请使用 {shellToolName} 工具在 smoke workspace 中写入文件，并确认写入结果。'),
         model: state.modelId,
         provider: state.providerId,
       },
@@ -1384,8 +1396,8 @@ async function runHttpFlow(apiBase, state, input) {
       usesYoloApproval ? 'skipped' : 'requested',
       'bash write loop SSE',
     );
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash write loop SSE to include native bash tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash write loop SSE to include native bash tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === readSmokeShellToolName()), 'Expected bash write loop SSE to include native shell tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === readSmokeShellToolName()), 'Expected bash write loop SSE to include native shell tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash write loop SSE to finish');
   });
 
@@ -1393,12 +1405,12 @@ async function runHttpFlow(apiBase, state, input) {
     const requests = input.fakeOpenAi.readChatCompletions();
     const firstRequest = requests.find((entry) =>
       requestHasToolList(entry.body)
-      && readLatestUserText(entry.body?.messages).includes('请使用 bash 工具在 smoke workspace 中写入文件'));
+      && readLatestUserText(entry.body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具在 smoke workspace 中写入文件')));
     ensure(firstRequest, 'Expected first bash write loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash write loop request to expose native bash tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
+    ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash write loop request to expose native shell tool');
+    const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash write loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'smoke-workspace'), 'Expected bash write loop follow-up request to include rendered bash result');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'smoke-workspace'), 'Expected bash write loop follow-up request to include rendered shell result');
     ensure(fs.existsSync(path.join(readSessionWorkspaceRoot(), 'notes', 'runtime.txt')), 'Expected bash write loop to persist file in runtime workspace');
     ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'notes', 'runtime.txt')) === 'smoke-workspace\n', 'Expected persisted runtime workspace file content');
   });
@@ -1407,7 +1419,7 @@ async function runHttpFlow(apiBase, state, input) {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
-        content: '请使用 bash 工具读取刚才写入的 smoke workspace 文件，并确认读取结果。',
+        content: buildSmokeShellInstruction('请使用 {shellToolName} 工具读取刚才写入的 smoke workspace 文件，并确认读取结果。'),
         model: state.modelId,
         provider: state.providerId,
       },
@@ -1424,8 +1436,8 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof state.bashReadAssistantMessageId === 'string', 'Expected bash read loop to create assistant message');
     state.bashReadAssistantText = assertCompletedSse(events, '已读取 smoke workspace 文件。');
     await ensureRuntimePermissionExpectation(events, 'skipped', 'bash read loop SSE');
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash read loop SSE to include native bash tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash read loop SSE to include native bash tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === readSmokeShellToolName()), 'Expected bash read loop SSE to include native shell tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === readSmokeShellToolName()), 'Expected bash read loop SSE to include native shell tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash read loop SSE to finish');
   });
 
@@ -1433,27 +1445,27 @@ async function runHttpFlow(apiBase, state, input) {
     const requests = input.fakeOpenAi.readChatCompletions();
     const firstRequest = requests.find((entry) =>
       requestHasToolList(entry.body)
-      && readLatestUserText(entry.body?.messages).includes('请使用 bash 工具读取刚才写入的 smoke workspace 文件'));
+      && readLatestUserText(entry.body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具读取刚才写入的 smoke workspace 文件')));
     ensure(firstRequest, 'Expected first bash read loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash read loop request to expose native bash tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
+    ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash read loop request to expose native shell tool');
+    const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash read loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'smoke-workspace'), 'Expected bash read loop follow-up request to include rendered bash result');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'smoke-workspace'), 'Expected bash read loop follow-up request to include rendered shell result');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const bashAssistant = conversation.messages.find((entry) => entry.id === state.bashReadAssistantMessageId);
     const bashToolCalls = parseSerializedJsonValue(bashAssistant?.toolCalls);
     const bashToolResults = parseSerializedJsonValue(bashAssistant?.toolResults);
     ensure(bashAssistant?.content === state.bashReadAssistantText, 'Expected bash read loop assistant message to persist generated content');
-    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === 'bash'), 'Expected bash read loop assistant message to persist native bash tool call');
-    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === 'bash'), 'Expected bash read loop assistant message to persist native bash tool result');
+    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash read loop assistant message to persist native shell tool call');
+    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash read loop assistant message to persist native shell tool result');
   });
 
   await runStep('chat.messages.bash-workdir-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
-        content: '请使用 bash 工具在 nested 子目录中执行命令，并确认当前工作目录。',
+        content: buildSmokeShellInstruction('请使用 {shellToolName} 工具在 nested 子目录中执行命令，并确认当前工作目录。'),
         model: state.modelId,
         provider: state.providerId,
       },
@@ -1468,10 +1480,10 @@ async function runHttpFlow(apiBase, state, input) {
     const finishEvent = events.find((entry) => entry.type === 'finish');
     state.bashWorkdirAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashWorkdirAssistantMessageId === 'string', 'Expected bash workdir loop to create assistant message');
-    state.bashWorkdirAssistantText = assertCompletedSse(events, '已在指定 bash 工作目录中完成执行。');
+    state.bashWorkdirAssistantText = assertCompletedSse(events, `已在指定 ${readSmokeShellToolName()} 工作目录中完成执行。`);
     await ensureRuntimePermissionExpectation(events, 'skipped', 'bash workdir loop SSE');
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash workdir loop SSE to include native bash tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash workdir loop SSE to include native bash tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === readSmokeShellToolName()), 'Expected bash workdir loop SSE to include native shell tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === readSmokeShellToolName()), 'Expected bash workdir loop SSE to include native shell tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash workdir loop SSE to finish');
   });
 
@@ -1479,13 +1491,13 @@ async function runHttpFlow(apiBase, state, input) {
     const requests = input.fakeOpenAi.readChatCompletions();
     const firstRequest = requests.find((entry) =>
       requestHasToolList(entry.body)
-      && readLatestUserText(entry.body?.messages).includes('请使用 bash 工具在 nested 子目录中执行命令'));
+      && readLatestUserText(entry.body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具在 nested 子目录中执行命令')));
     ensure(firstRequest, 'Expected first bash workdir loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash workdir loop request to expose native bash tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
+    ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash workdir loop request to expose native shell tool');
+    const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash workdir loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'cwd: /nested'), 'Expected bash workdir loop follow-up request to include rendered cwd');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'from-workdir'), 'Expected bash workdir loop follow-up request to include rendered workdir output');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'cwd: /nested'), 'Expected bash workdir loop follow-up request to include rendered cwd');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'from-workdir'), 'Expected bash workdir loop follow-up request to include rendered workdir output');
     ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'nested', 'child.txt')) === 'from-workdir\n', 'Expected bash workdir loop to persist file under nested workdir');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
@@ -1493,15 +1505,15 @@ async function runHttpFlow(apiBase, state, input) {
     const bashToolCalls = parseSerializedJsonValue(bashAssistant?.toolCalls);
     const bashToolResults = parseSerializedJsonValue(bashAssistant?.toolResults);
     ensure(bashAssistant?.content === state.bashWorkdirAssistantText, 'Expected bash workdir loop assistant message to persist generated content');
-    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === 'bash'), 'Expected bash workdir loop assistant message to persist native bash tool call');
-    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === 'bash'), 'Expected bash workdir loop assistant message to persist native bash tool result');
+    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash workdir loop assistant message to persist native shell tool call');
+    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash workdir loop assistant message to persist native shell tool result');
   });
 
   await runStep('chat.messages.bash-timeout-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
-        content: '请使用很短超时触发 bash 超时，并说明已收到超时错误。',
+        content: buildSmokeShellInstruction('请使用很短超时触发 {shellToolName} 超时，并说明已收到超时错误。'),
         model: state.modelId,
         provider: state.providerId,
       },
@@ -1516,14 +1528,14 @@ async function runHttpFlow(apiBase, state, input) {
     const finishEvent = events.find((entry) => entry.type === 'finish');
     state.bashTimeoutAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashTimeoutAssistantMessageId === 'string', 'Expected bash timeout loop to create assistant message');
-    state.bashTimeoutAssistantText = assertCompletedSse(events, '已收到 bash 超时错误。');
+    state.bashTimeoutAssistantText = assertCompletedSse(events, `已收到 ${readSmokeShellToolName()} 超时错误。`);
     await ensureRuntimePermissionExpectation(
       events,
       usesYoloApproval ? 'skipped' : 'requested',
       'bash timeout loop SSE',
     );
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash timeout loop SSE to include native bash tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash timeout loop SSE to include native bash tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === readSmokeShellToolName()), 'Expected bash timeout loop SSE to include native shell tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === readSmokeShellToolName()), 'Expected bash timeout loop SSE to include native shell tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash timeout loop SSE to finish');
   });
 
@@ -1531,27 +1543,27 @@ async function runHttpFlow(apiBase, state, input) {
     const requests = input.fakeOpenAi.readChatCompletions();
     const firstRequest = requests.find((entry) =>
       requestHasToolList(entry.body)
-      && readLatestUserText(entry.body?.messages).includes('请使用很短超时触发 bash 超时'));
+      && readLatestUserText(entry.body?.messages).includes(buildSmokeShellInstruction('请使用很短超时触发 {shellToolName} 超时')));
     ensure(firstRequest, 'Expected first bash timeout loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash timeout loop request to expose native bash tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
+    ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash timeout loop request to expose native shell tool');
+    const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash timeout loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsInvalidToolResult(toolResultRequest.body, 'bash', 'bash 执行超时'), 'Expected bash timeout loop follow-up request to include invalid bash timeout result');
+    ensure(requestContainsInvalidToolResult(toolResultRequest.body, readSmokeShellToolName(), `${readSmokeShellToolName()} 执行超时`), 'Expected bash timeout loop follow-up request to include invalid bash timeout result');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const bashAssistant = conversation.messages.find((entry) => entry.id === state.bashTimeoutAssistantMessageId);
     const bashToolCalls = parseSerializedJsonValue(bashAssistant?.toolCalls);
     const bashToolResults = parseSerializedJsonValue(bashAssistant?.toolResults);
     ensure(bashAssistant?.content === state.bashTimeoutAssistantText, 'Expected bash timeout loop assistant message to persist generated content');
-    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === 'bash'), 'Expected bash timeout loop assistant message to persist native bash tool call');
-    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === 'bash'), 'Expected bash timeout loop assistant message to persist native bash tool result');
+    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash timeout loop assistant message to persist native shell tool call');
+    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash timeout loop assistant message to persist native shell tool result');
   });
 
   await runStep('chat.messages.bash-tar-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
       body: {
-        content: '请使用 bash 工具打包并还原一个 nested 目录树，并确认结果。',
+        content: buildSmokeShellInstruction('请使用 {shellToolName} 工具打包并还原一个 nested 目录树，并确认结果。'),
         model: state.modelId,
         provider: state.providerId,
       },
@@ -1566,10 +1578,10 @@ async function runHttpFlow(apiBase, state, input) {
     const finishEvent = events.find((entry) => entry.type === 'finish');
     state.bashTarAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.bashTarAssistantMessageId === 'string', 'Expected bash tar loop to create assistant message');
-    state.bashTarAssistantText = assertCompletedSse(events, '已完成 bash 打包与还原验证。');
+    state.bashTarAssistantText = assertCompletedSse(events, `已完成 ${readSmokeShellToolName()} 打包与还原验证。`);
     await ensureRuntimePermissionExpectation(events, 'skipped', 'bash tar loop SSE');
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'bash'), 'Expected bash tar loop SSE to include native bash tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'bash'), 'Expected bash tar loop SSE to include native bash tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === readSmokeShellToolName()), 'Expected bash tar loop SSE to include native shell tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === readSmokeShellToolName()), 'Expected bash tar loop SSE to include native shell tool result');
     ensure(finishEvent?.status === 'completed', 'Expected bash tar loop SSE to finish');
   });
 
@@ -1577,15 +1589,15 @@ async function runHttpFlow(apiBase, state, input) {
     const requests = input.fakeOpenAi.readChatCompletions();
     const firstRequest = requests.find((entry) =>
       requestHasToolList(entry.body)
-      && readLatestUserText(entry.body?.messages).includes('请使用 bash 工具打包并还原一个 nested 目录树'));
+      && readLatestUserText(entry.body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具打包并还原一个 nested 目录树')));
     ensure(firstRequest, 'Expected first bash tar loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'bash'), 'Expected bash tar loop request to expose native bash tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'bash'));
+    ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash tar loop request to expose native shell tool');
+    const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash tar loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'restored/tree/a/one.txt'), 'Expected bash tar loop follow-up request to include restored file list');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'restored/tree/b/two.txt'), 'Expected bash tar loop follow-up request to include nested restored file list');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'one'), 'Expected bash tar loop follow-up request to include first restored content');
-    ensure(requestContainsBashResult(toolResultRequest.body, 'two'), 'Expected bash tar loop follow-up request to include second restored content');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'restored/tree/a/one.txt'), 'Expected bash tar loop follow-up request to include restored file list');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'restored/tree/b/two.txt'), 'Expected bash tar loop follow-up request to include nested restored file list');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'one'), 'Expected bash tar loop follow-up request to include first restored content');
+    ensure(requestContainsShellResult(toolResultRequest.body, 'two'), 'Expected bash tar loop follow-up request to include second restored content');
     ensure(fs.existsSync(path.join(readSessionWorkspaceRoot(), 'bundle.tar')), 'Expected bash tar loop to persist archive file');
     ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'restored', 'tree', 'a', 'one.txt')) === 'one\n', 'Expected bash tar loop to restore first file');
     ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'restored', 'tree', 'b', 'two.txt')) === 'two\n', 'Expected bash tar loop to restore second file');
@@ -1595,8 +1607,8 @@ async function runHttpFlow(apiBase, state, input) {
     const bashToolCalls = parseSerializedJsonValue(bashAssistant?.toolCalls);
     const bashToolResults = parseSerializedJsonValue(bashAssistant?.toolResults);
     ensure(bashAssistant?.content === state.bashTarAssistantText, 'Expected bash tar loop assistant message to persist generated content');
-    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === 'bash'), 'Expected bash tar loop assistant message to persist native bash tool call');
-    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === 'bash'), 'Expected bash tar loop assistant message to persist native bash tool result');
+    ensure(Array.isArray(bashToolCalls) && bashToolCalls.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash tar loop assistant message to persist native shell tool call');
+    ensure(Array.isArray(bashToolResults) && bashToolResults.some((entry) => entry?.toolName === readSmokeShellToolName()), 'Expected bash tar loop assistant message to persist native shell tool result');
   });
 
   await runStep('chat.messages.read-loop', async () => {
@@ -4139,7 +4151,7 @@ function planSmokeChatResponse(body) {
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_bash_write_0',
-      toolName: 'bash',
+      toolName: readSmokeShellToolName(),
     };
   }
   if (shouldTriggerBashConfigTool(body)) {
@@ -4150,7 +4162,7 @@ function planSmokeChatResponse(body) {
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_bash_config_0',
-      toolName: 'bash',
+      toolName: readSmokeShellToolName(),
     };
   }
   if (shouldTriggerBashReadTool(body)) {
@@ -4161,7 +4173,7 @@ function planSmokeChatResponse(body) {
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_bash_read_0',
-      toolName: 'bash',
+      toolName: readSmokeShellToolName(),
     };
   }
   if (shouldTriggerBashWorkdirTool(body)) {
@@ -4173,19 +4185,19 @@ function planSmokeChatResponse(body) {
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_bash_workdir_0',
-      toolName: 'bash',
+      toolName: readSmokeShellToolName(),
     };
   }
   if (shouldTriggerBashTimeoutTool(body)) {
     return {
       arguments: {
         command: `curl -s ${smokeBashTimeoutUrl}`,
-        description: '触发 bash 超时',
+        description: `触发 ${readSmokeShellToolName()} 超时`,
         timeout: 50,
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_bash_timeout_0',
-      toolName: 'bash',
+      toolName: readSmokeShellToolName(),
     };
   }
   if (shouldTriggerBashTarTool(body)) {
@@ -4196,7 +4208,7 @@ function planSmokeChatResponse(body) {
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_bash_tar_0',
-      toolName: 'bash',
+      toolName: readSmokeShellToolName(),
     };
   }
   if (shouldTriggerReadTool(body)) {
@@ -4316,7 +4328,7 @@ function planSmokeChatResponse(body) {
       text: '已抓取 smoke 页面，并整理成 markdown。',
     };
   }
-  if (requestContainsToolResult(body, 'bash')) {
+  if (requestContainsShellToolResult(body)) {
     return {
       kind: 'text',
       text: readLatestUserText(body?.messages).includes('读取刚才写入的 smoke workspace 文件')
@@ -4324,11 +4336,11 @@ function planSmokeChatResponse(body) {
         : readLatestUserText(body?.messages).includes('生成多行输出')
           ? '已读取 smoke workspace 文件。'
         : readLatestUserText(body?.messages).includes('nested 子目录中执行命令')
-          ? '已在指定 bash 工作目录中完成执行。'
-          : readLatestUserText(body?.messages).includes('很短超时触发 bash 超时')
-            ? '已收到 bash 超时错误。'
+          ? `已在指定 ${readSmokeShellToolName()} 工作目录中完成执行。`
+          : readLatestUserText(body?.messages).includes(buildSmokeShellInstruction('很短超时触发 {shellToolName} 超时'))
+            ? `已收到 ${readSmokeShellToolName()} 超时错误。`
           : readLatestUserText(body?.messages).includes('打包并还原一个 nested 目录树')
-            ? '已完成 bash 打包与还原验证。'
+            ? `已完成 ${readSmokeShellToolName()} 打包与还原验证。`
             : '已写入 smoke workspace 文件。',
     };
   }
@@ -4403,39 +4415,39 @@ function shouldTriggerWebFetchTool(body) {
 }
 
 function shouldTriggerBashWriteTool(body) {
-  return requestIncludesToolName(body, 'bash')
-    && !requestContainsToolResult(body, 'bash')
-    && readLatestUserText(body?.messages).includes('请使用 bash 工具在 smoke workspace 中写入文件');
+  return requestIncludesToolName(body, readSmokeShellToolName())
+    && !requestContainsShellToolResult(body)
+    && readLatestUserText(body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具在 smoke workspace 中写入文件'));
 }
 
 function shouldTriggerBashConfigTool(body) {
-  return requestIncludesToolName(body, 'bash')
-    && !requestContainsToolResult(body, 'bash')
-    && readLatestUserText(body?.messages).includes('请使用 bash 工具生成多行输出');
+  return requestIncludesToolName(body, readSmokeShellToolName())
+    && !requestContainsShellToolResult(body)
+    && readLatestUserText(body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具生成多行输出'));
 }
 
 function shouldTriggerBashReadTool(body) {
-  return requestIncludesToolName(body, 'bash')
-    && !requestContainsToolResult(body, 'bash')
-    && readLatestUserText(body?.messages).includes('请使用 bash 工具读取刚才写入的 smoke workspace 文件');
+  return requestIncludesToolName(body, readSmokeShellToolName())
+    && !requestContainsShellToolResult(body)
+    && readLatestUserText(body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具读取刚才写入的 smoke workspace 文件'));
 }
 
 function shouldTriggerBashWorkdirTool(body) {
-  return requestIncludesToolName(body, 'bash')
-    && !requestContainsToolResult(body, 'bash')
-    && readLatestUserText(body?.messages).includes('请使用 bash 工具在 nested 子目录中执行命令');
+  return requestIncludesToolName(body, readSmokeShellToolName())
+    && !requestContainsShellToolResult(body)
+    && readLatestUserText(body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具在 nested 子目录中执行命令'));
 }
 
 function shouldTriggerBashTimeoutTool(body) {
-  return requestIncludesToolName(body, 'bash')
-    && !requestContainsToolResult(body, 'bash')
-    && readLatestUserText(body?.messages).includes('请使用很短超时触发 bash 超时');
+  return requestIncludesToolName(body, readSmokeShellToolName())
+    && !requestContainsShellToolResult(body)
+    && readLatestUserText(body?.messages).includes(buildSmokeShellInstruction('请使用很短超时触发 {shellToolName} 超时'));
 }
 
 function shouldTriggerBashTarTool(body) {
-  return requestIncludesToolName(body, 'bash')
-    && !requestContainsToolResult(body, 'bash')
-    && readLatestUserText(body?.messages).includes('请使用 bash 工具打包并还原一个 nested 目录树');
+  return requestIncludesToolName(body, readSmokeShellToolName())
+    && !requestContainsShellToolResult(body)
+    && readLatestUserText(body?.messages).includes(buildSmokeShellInstruction('请使用 {shellToolName} 工具打包并还原一个 nested 目录树'));
 }
 
 function shouldTriggerReadTool(body) {
@@ -4498,6 +4510,10 @@ function requestIncludesToolName(body, toolName) {
   return body.tools.some((entry) => entry?.function?.name === toolName);
 }
 
+function requestContainsShellToolResult(body) {
+  return requestContainsToolResult(body, readSmokeShellToolName());
+}
+
 function requestContainsToolResult(body, toolName) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.some((message) => {
@@ -4521,15 +4537,15 @@ function requestContainsToolResult(body, toolName) {
       ))
       || (toolName === 'todowrite' && (toolCallId === 'call_smoke_todo_0' || content.includes('<todo_result>')))
       || (toolName === 'webfetch' && (toolCallId === 'call_smoke_webfetch_0' || content.includes('<webfetch_result>')))
-      || (toolName === 'bash' && (
+      || ((toolName === 'bash' || toolName === 'powershell') && (
         toolCallId === 'call_smoke_bash_write_0'
         || toolCallId === 'call_smoke_bash_config_0'
         || toolCallId === 'call_smoke_bash_read_0'
         || toolCallId === 'call_smoke_bash_workdir_0'
         || toolCallId === 'call_smoke_bash_timeout_0'
         || toolCallId === 'call_smoke_bash_tar_0'
-        || content.includes('<bash_result>')
-        || (content.includes('<invalid_tool_result>') && content.includes('<tool>bash</tool>'))
+        || content.includes(`<${readSmokeShellResultTagName()}>`)
+        || (content.includes('<invalid_tool_result>') && content.includes(`<tool>${readSmokeShellToolName()}</tool>`))
       ))
       || (toolName === 'read' && (toolCallId === 'call_smoke_read_0' || content.includes('<read_result>')))
       || (toolName === 'glob' && (toolCallId === 'call_smoke_glob_0' || content.includes('<glob_result>')))
@@ -4631,19 +4647,19 @@ function readToolMessages(body) {
     .map((message) => readTextContent(message));
 }
 
-function requestContainsBashResult(body, contentFragment) {
+function requestContainsShellResult(body, contentFragment) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.some((message) =>
     message?.role === 'tool'
-    && readTextContent(message).includes('<bash_result>')
+    && readTextContent(message).includes(`<${readSmokeShellResultTagName()}>`)
     && readTextContent(message).includes(contentFragment));
 }
 
-function readLatestBashToolContent(body) {
+function readLatestShellToolContent(body) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   const bashToolMessage = [...messages].reverse().find((message) =>
     message?.role === 'tool'
-    && readTextContent(message).includes('<bash_result>'));
+    && readTextContent(message).includes(`<${readSmokeShellResultTagName()}>`));
   return bashToolMessage ? readTextContent(bashToolMessage) : null;
 }
 

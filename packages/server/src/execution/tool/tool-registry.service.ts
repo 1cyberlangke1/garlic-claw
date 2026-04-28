@@ -157,8 +157,13 @@ export class ToolRegistryService {
     if (input.sourceKind !== 'internal') {
       throw new BadRequestException(`暂不支持执行工具源 ${input.sourceKind}:${input.sourceId}`);
     }
+    const configuredShellBackend = this.runtimeToolsSettingsService.readConfiguredShellBackend();
+    const shellToolName = this.bashToolService.getToolName(configuredShellBackend);
+    const resolvedToolName = this.bashToolService.isToolName(input.toolName, configuredShellBackend)
+      ? shellToolName
+      : input.toolName;
     const definition = (await this.readInternalTools({ context: input.context }))
-      .find((entry) => entry.sourceId === input.sourceId && entry.callName === input.toolName);
+      .find((entry) => entry.sourceId === input.sourceId && entry.callName === resolvedToolName);
     if (!definition) {
       throw new NotFoundException(`Tool not found: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
     }
@@ -247,8 +252,10 @@ export class ToolRegistryService {
 
   private readInternalRuntimeToolInfos(): ToolInfo[] {
     const sourceId = this.runtimeToolsSettingsService.getSourceId();
+    const shellBackendKind = this.runtimeToolsSettingsService.readConfiguredShellBackend();
+    const shellToolName = this.bashToolService.getToolName(shellBackendKind);
     return [
-      createInternalToolInfo(sourceId, this.bashToolService.getToolName(), this.bashToolService.buildToolDescription(), this.bashToolService.getToolParameters()),
+      createInternalToolInfo(sourceId, shellToolName, this.bashToolService.buildToolDescription(), this.bashToolService.getToolParameters()),
       createInternalToolInfo(sourceId, this.readToolService.getToolName(), this.readToolService.buildToolDescription(), this.readToolService.getToolParameters()),
       createInternalToolInfo(sourceId, this.globToolService.getToolName(), this.globToolService.buildToolDescription(), this.globToolService.getToolParameters()),
       createInternalToolInfo(sourceId, this.grepToolService.getToolName(), this.grepToolService.buildToolDescription(), this.grepToolService.getToolParameters()),
@@ -266,10 +273,20 @@ export class ToolRegistryService {
 
   private async readInternalRuntimeTools(input: { allowedToolNames?: string[]; assistantMessageId?: string; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
     const sourceId = this.runtimeToolsSettingsService.getSourceId();
+    const configuredShellBackend = this.runtimeToolsSettingsService.readConfiguredShellBackend();
+    const shellToolName = this.bashToolService.getToolName(configuredShellBackend);
     const availableTools = this.readInternalRuntimeToolInfos()
       .filter((entry) => this.isToolEnabledForContext(entry, input.context))
-      .filter((entry) => !input.allowedToolNames || input.allowedToolNames.includes(entry.callName));
-    const configuredShellBackend = this.runtimeToolsSettingsService.readConfiguredShellBackend();
+      .filter((entry) => {
+        if (!input.allowedToolNames) {
+          return true;
+        }
+        if (entry.callName !== shellToolName) {
+          return input.allowedToolNames.includes(entry.callName);
+        }
+        return input.allowedToolNames.some((toolName) =>
+          this.bashToolService.isToolName(toolName, configuredShellBackend));
+      });
     const configuredFilesystemBackend = this.runtimeToolBackendService.getFilesystemBackendKind();
     const bashOutputOptions = this.runtimeToolsSettingsService.readBashOutputOptions();
     return availableTools.map((entry) => ({
@@ -285,9 +302,9 @@ export class ToolRegistryService {
       description: entry.description,
       execute: async (args) => {
         const assistantMessageId = input.assistantMessageId;
-        if (entry.callName === 'bash') {
+        if (entry.callName === shellToolName) {
           const runtimeInput = this.bashToolService.readInput(args, input.context.conversationId ?? undefined, configuredShellBackend);
-          await this.reviewRuntimeToolAccess(input, assistantMessageId, entry.callName, await this.bashToolService.readRuntimeAccess(runtimeInput));
+          await this.reviewRuntimeToolAccess(input, assistantMessageId, shellToolName, await this.bashToolService.readRuntimeAccess(runtimeInput));
           return this.bashToolService.execute(runtimeInput);
         }
         if (entry.callName === 'read') {
@@ -318,11 +335,14 @@ export class ToolRegistryService {
       sourceId,
       sourceKind: 'internal',
       wrapExecutionOutput: true,
-      ...(entry.callName === 'bash'
+      ...(entry.callName === shellToolName
         ? {
             toModelOutput: async ({ output }) => ({
               type: 'text',
-              value: renderRuntimeCommandTextOutput(output, bashOutputOptions),
+              value: renderRuntimeCommandTextOutput(output, {
+                ...bashOutputOptions,
+                resultTagName: `${shellToolName}_result`,
+              }),
             }),
           }
         : {

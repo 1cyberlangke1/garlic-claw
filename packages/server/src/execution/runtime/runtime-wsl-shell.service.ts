@@ -8,6 +8,10 @@ import type {
   RuntimeCommandRequest,
 } from './runtime-command.types';
 import { toRuntimeHostPath } from './runtime-host-path';
+import {
+  isRuntimeHostAbsoluteShellWorkdir,
+  readRuntimeShellToolName,
+} from './runtime-shell-tool-name';
 import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
 import { resolveRuntimeVisiblePath } from './runtime-visible-path';
 import {
@@ -36,13 +40,19 @@ export class RuntimeWslShellService implements RuntimeBackend {
       throw new Error('wsl-shell 只支持 Windows 宿主');
     }
     const session = await this.runtimeSessionEnvironmentService.getSessionEnvironment(input.sessionId);
-    const cwd = resolveRuntimeVisiblePath(
-      session.visibleRoot,
-      input.workdir,
-      `bash.workdir 必须位于 ${session.visibleRoot} 内`,
-    );
+    const toolName = readRuntimeShellToolName('wsl-shell');
+    const rawWorkdir = typeof input.workdir === 'string' ? input.workdir.trim() : '';
+    const cwd = isRuntimeHostAbsoluteShellWorkdir('wsl-shell', rawWorkdir)
+      ? path.resolve(rawWorkdir)
+      : resolveRuntimeVisiblePath(
+          session.visibleRoot,
+          input.workdir,
+          `${toolName}.workdir 必须位于 ${session.visibleRoot} 内`,
+        );
     const timeoutMs = readRuntimeWslShellTimeout(input.timeout);
-    const hostCwd = toRuntimeHostPath(session.sessionRoot, session.visibleRoot, cwd);
+    const hostCwd = isRuntimeHostAbsoluteShellWorkdir('wsl-shell', rawWorkdir)
+      ? path.resolve(rawWorkdir)
+      : toRuntimeHostPath(session.sessionRoot, session.visibleRoot, cwd);
     try {
       const result = await executeRuntimeWslShell({
         command: input.command,

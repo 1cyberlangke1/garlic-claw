@@ -45,6 +45,30 @@
 - 步骤 3 已完成
 - 步骤 4 已完成
 
+## 2026-04-28 shell 工具名动态化与 PowerShell workdir 修复
+
+1. 更新计划文件
+  - 记录当前 PowerShell backend 下 `workdir` 被错误解析成 `/D:\...`
+  - 记录当前 shell 工具名仍固定为 `bash`
+2. 根因调查
+  - 追踪 runtime shell `workdir` 的路径归一化链路
+  - 盘点 `bash` 工具名在注册、执行、测试与冒烟中的硬编码位置
+3. 实现修复
+  - 修 PowerShell / native-shell 下的绝对路径 `workdir` 解析
+  - 让 shell 工具名按 backend 动态暴露
+  - 保证现有 runtime 权限审查、结果展示与工具执行链路仍正常
+4. fresh 验收
+  - 相关 Jest
+  - `npm run typecheck:server`
+  - `npm run smoke:server`
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+- 步骤 4 已完成
+
 ## 2026-04-27 默认模型重启后恢复错误
 
 1. 更新计划文件

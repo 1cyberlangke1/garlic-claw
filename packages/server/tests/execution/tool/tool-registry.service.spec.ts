@@ -25,6 +25,7 @@ import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/run
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
 import type { RuntimeFilesystemBackend } from '../../../src/execution/runtime/runtime-filesystem-backend.types';
+import { readRuntimeShellToolName } from '../../../src/execution/runtime/runtime-shell-tool-name';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
 import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
@@ -207,6 +208,24 @@ describe('ToolRegistryService', () => {
       'write',
       'edit',
     ]));
+  });
+
+  it('exposes powershell as the shell tool name when native-shell is selected on Windows', async () => {
+    const { runtimeToolsSettingsService, service } = createFixture();
+    runtimeToolsSettingsService.updateConfig({
+      shellBackend: 'native-shell',
+    });
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['bash'],
+    });
+
+    expect(Object.keys(toolSet ?? {})).toContain(readRuntimeShellToolName('native-shell'));
   });
 
   it('updates source and tool enabled flags and dispatches plugin source actions', async () => {
@@ -463,6 +482,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell');
       const { conversationId, runtimeToolPermissionService, service, runtimeWorkspaceRoot } = createFixture();
 
       const toolSet = await service.buildToolSet({
@@ -474,7 +494,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const writeExecution = (bashTool as any).execute({
@@ -484,7 +504,7 @@ describe('ToolRegistryService', () => {
       const writeRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
       expect(writeRequest).toMatchObject({
         messageId: 'assistant-message-allow-1',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, writeRequest.id, 'once');
       const writeResult = await writeExecution;
@@ -496,7 +516,7 @@ describe('ToolRegistryService', () => {
       const readRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
       expect(readRequest).toMatchObject({
         messageId: 'assistant-message-allow-1',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, readRequest.id, 'once');
       const readResult = await readExecution;
@@ -516,7 +536,7 @@ describe('ToolRegistryService', () => {
       }));
       expect(modelOutput).toEqual(expect.objectContaining({
         type: 'text',
-        value: expect.stringContaining('<bash_result>'),
+        value: expect.stringContaining(`<${shellToolName}_result>`),
       }));
       expect((modelOutput as { value: string }).value).toContain('cwd: /');
       expect((modelOutput as { value: string }).value).not.toContain('backend:');
@@ -536,6 +556,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell');
       const { conversationId, runtimeToolPermissionService, runtimeToolsSettingsService, service } = createFixture();
       runtimeToolsSettingsService.updateConfig({
         shellBackend: 'native-shell',
@@ -554,7 +575,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -579,7 +600,7 @@ describe('ToolRegistryService', () => {
       expect((result as { stdout: string }).stdout).toContain('line-4');
       expect(modelOutput).toEqual(expect.objectContaining({
         type: 'text',
-        value: expect.stringContaining('<bash_result>'),
+        value: expect.stringContaining(`<${shellToolName}_result>`),
       }));
       expect((modelOutput as { value: string }).value).toContain('<stdout>\nline-3\nline-4\n</stdout>');
       expect((modelOutput as { value: string }).value).not.toContain('output truncated');
@@ -594,6 +615,7 @@ describe('ToolRegistryService', () => {
   });
 
   it('routes internal runtime-tools bash execution through the configured shell backend', async () => {
+    const shellToolName = readRuntimeShellToolName('native-shell');
     const { conversationId, runtimeToolPermissionService, runtimeToolsSettingsService, service } = createFixture();
     runtimeToolsSettingsService.updateConfig({
       shellBackend: 'native-shell',
@@ -608,7 +630,7 @@ describe('ToolRegistryService', () => {
       },
       allowedToolNames: ['bash'],
     });
-    const bashTool = toolSet?.bash;
+    const bashTool = toolSet?.[shellToolName];
     expect(bashTool).toBeDefined();
 
     const execution = (bashTool as any).execute({
@@ -619,7 +641,7 @@ describe('ToolRegistryService', () => {
     expect(request).toMatchObject({
       backendKind: 'native-shell',
       messageId: 'assistant-message-shell-config-1',
-      toolName: 'bash',
+      toolName: shellToolName,
     });
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
@@ -666,6 +688,7 @@ describe('ToolRegistryService', () => {
 
   it('supports hot-switching internal runtime-tools bash execution to the platform-scoped secondary backend', async () => {
     const secondaryShellBackendKind = process.platform === 'win32' ? 'wsl-shell' : 'native-shell';
+    const shellToolName = readRuntimeShellToolName(secondaryShellBackendKind);
     const runtimeBackends = process.platform === 'win32'
       ? (() => {
         const baseRuntimeBackends = createRealRuntimeBackendsForShellRouting(undefined, { includeWsl: false });
@@ -691,7 +714,7 @@ describe('ToolRegistryService', () => {
       },
       allowedToolNames: ['bash'],
     });
-    const bashTool = toolSet?.bash;
+    const bashTool = toolSet?.[shellToolName];
     expect(bashTool).toBeDefined();
 
     const execution = (bashTool as any).execute({
@@ -702,7 +725,7 @@ describe('ToolRegistryService', () => {
     expect(request).toMatchObject({
       backendKind: secondaryShellBackendKind,
       messageId: 'assistant-message-shell-config-alias-1',
-      toolName: 'bash',
+      toolName: shellToolName,
     });
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
@@ -4338,6 +4361,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -4350,7 +4374,7 @@ describe('ToolRegistryService', () => {
           userId: 'user-1',
         },
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -4373,14 +4397,14 @@ describe('ToolRegistryService', () => {
           description: '检查 bash Copy-Item Join-Path 本地变量 destination 外部写入提示',
         },
         summary: '检查 bash Copy-Item Join-Path 本地变量 destination 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\copied-local.txt、文件命令: copy-item、外部绝对路径: C:\\temp\\copied-local.txt',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         error: '用户拒绝了本次 runtime 权限请求',
         phase: 'execute',
         recovered: true,
-        tool: 'bash',
+        tool: shellToolName,
         type: 'invalid-tool-result',
       }));
     } finally {
@@ -4462,6 +4486,7 @@ describe('ToolRegistryService', () => {
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     process.env.GARLIC_CLAW_HINTS_TEST_ROOT = 'C:\\env-root';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -4474,7 +4499,7 @@ describe('ToolRegistryService', () => {
           userId: 'user-1',
         },
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -4497,14 +4522,14 @@ describe('ToolRegistryService', () => {
           description: '检查 bash Copy-Item Join-Path 赋值本地变量 destination 外部写入提示',
         },
         summary: '检查 bash Copy-Item Join-Path 赋值本地变量 destination 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\env-root\\nested\\copied-assigned-join-path.txt、文件命令: copy-item、外部绝对路径: C:\\env-root\\nested\\copied-assigned-join-path.txt',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         error: '用户拒绝了本次 runtime 权限请求',
         phase: 'execute',
         recovered: true,
-        tool: 'bash',
+        tool: shellToolName,
         type: 'invalid-tool-result',
       }));
     } finally {
@@ -4530,6 +4555,7 @@ describe('ToolRegistryService', () => {
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     process.env.GARLIC_CLAW_HINTS_TEST_ROOT = 'C:\\env-root';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -4542,7 +4568,7 @@ describe('ToolRegistryService', () => {
           userId: 'user-1',
         },
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -4565,14 +4591,14 @@ describe('ToolRegistryService', () => {
           description: '检查 bash Copy-Item parenthesized Join-Path destination 外部写入提示',
         },
         summary: '检查 bash Copy-Item parenthesized Join-Path destination 外部写入提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\env-root\\copied-parenthesized.txt、文件命令: copy-item、外部绝对路径: C:\\env-root\\copied-parenthesized.txt',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         error: '用户拒绝了本次 runtime 权限请求',
         phase: 'execute',
         recovered: true,
-        tool: 'bash',
+        tool: shellToolName,
         type: 'invalid-tool-result',
       }));
     } finally {
@@ -5541,6 +5567,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell');
       const { conversationId, runtimeToolPermissionService, runtimeWorkspaceRoot, service } = createFixture();
       const slowServer = http.createServer(async (_request: http.IncomingMessage, response: http.ServerResponse) => {
         await new Promise((resolve) => setTimeout(resolve, 1_000));
@@ -5560,7 +5587,7 @@ describe('ToolRegistryService', () => {
           userId: 'user-1',
         },
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
       fs.mkdirSync(path.join(runtimeWorkspaceRoot, conversationId, 'nested'), { recursive: true });
 
@@ -5572,7 +5599,7 @@ describe('ToolRegistryService', () => {
       const workdirRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
       expect(workdirRequest).toMatchObject({
         messageId: 'assistant-message-bash-runtime-1',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, workdirRequest.id, 'once');
       const workdirResult = await workdirExecution;
@@ -5596,14 +5623,14 @@ describe('ToolRegistryService', () => {
         const timeoutRequest = await waitForPendingRuntimeRequest(runtimeToolPermissionService, conversationId);
         expect(timeoutRequest).toMatchObject({
           messageId: 'assistant-message-bash-runtime-1',
-          toolName: 'bash',
+          toolName: shellToolName,
         });
         runtimeToolPermissionService.reply(conversationId, timeoutRequest.id, 'once');
         await expect(timeoutExecution).resolves.toEqual(expect.objectContaining({
-          error: 'bash 执行超时（>1 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。',
+          error: `${shellToolName} 执行超时（>1 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`,
           phase: 'execute',
           recovered: true,
-          tool: 'bash',
+          tool: shellToolName,
           type: 'invalid-tool-result',
         }));
       } finally {
@@ -5798,6 +5825,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         runtimeBackends: createRealRuntimeBackendsForShellRouting(),
       });
@@ -5810,7 +5838,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -5837,6 +5865,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -5849,7 +5878,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -5879,6 +5908,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -5891,7 +5921,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -5914,14 +5944,14 @@ describe('ToolRegistryService', () => {
           description: '验证 native-shell-alias AST 静态提示',
         },
         summary: '验证 native-shell-alias AST 静态提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\alias-note.txt、文件命令: set-content、外部绝对路径: C:\\temp\\alias-note.txt',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         error: '用户拒绝了本次 runtime 权限请求',
         phase: 'execute',
         recovered: true,
-        tool: 'bash',
+        tool: shellToolName,
         type: 'invalid-tool-result',
       }));
     } finally {
@@ -5986,6 +6016,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -5998,7 +6029,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -6021,14 +6052,14 @@ describe('ToolRegistryService', () => {
           description: '验证 powershell AST 失败权限链回退',
         },
         summary: '验证 powershell AST 失败权限链回退 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\copied-from-fallback.txt、文件命令: copy-item、外部绝对路径: C:\\temp\\copied-from-fallback.txt',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         error: '用户拒绝了本次 runtime 权限请求',
         phase: 'execute',
         recovered: true,
-        tool: 'bash',
+        tool: shellToolName,
         type: 'invalid-tool-result',
       }));
     } finally {
@@ -6047,6 +6078,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -6059,7 +6091,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -6082,14 +6114,14 @@ describe('ToolRegistryService', () => {
           description: '验证 native-shell-alias 本地变量 AST 静态提示',
         },
         summary: '验证 native-shell-alias 本地变量 AST 静态提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\note.txt、文件命令: set-content、外部绝对路径: C:\\temp\\note.txt',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         error: '用户拒绝了本次 runtime 权限请求',
         phase: 'execute',
         recovered: true,
-        tool: 'bash',
+        tool: shellToolName,
         type: 'invalid-tool-result',
       }));
     } finally {
@@ -6108,6 +6140,7 @@ describe('ToolRegistryService', () => {
     const originalShellBackend = process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND;
     process.env.GARLIC_CLAW_RUNTIME_SHELL_BACKEND = 'native-shell-alias';
     try {
+      const shellToolName = readRuntimeShellToolName('native-shell-alias');
       const { conversationId, runtimeToolPermissionService, service } = createFixture({
         aliasNativeShellKinds: ['native-shell-alias'],
       });
@@ -6120,7 +6153,7 @@ describe('ToolRegistryService', () => {
         },
         allowedToolNames: ['bash'],
       });
-      const bashTool = toolSet?.bash;
+      const bashTool = toolSet?.[shellToolName];
       expect(bashTool).toBeDefined();
 
       const execution = (bashTool as any).execute({
@@ -6143,14 +6176,14 @@ describe('ToolRegistryService', () => {
           description: '验证 native-shell-alias 简单子表达式 AST 静态提示',
         },
         summary: '验证 native-shell-alias 简单子表达式 AST 静态提示 (/)；静态提示: 写入命令涉及外部绝对路径: C:\\temp\\note.txt、文件命令: set-content、外部绝对路径: C:\\temp\\note.txt',
-        toolName: 'bash',
+        toolName: shellToolName,
       });
       runtimeToolPermissionService.reply(conversationId, pendingRequest.id, 'reject');
       await expect(execution).resolves.toEqual(expect.objectContaining({
         error: '用户拒绝了本次 runtime 权限请求',
         phase: 'execute',
         recovered: true,
-        tool: 'bash',
+        tool: shellToolName,
         type: 'invalid-tool-result',
       }));
     } finally {

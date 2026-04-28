@@ -18,7 +18,22 @@ export function resolveKnownModelToolCallName(
     return directName;
   }
   const sanitizedName = sanitizeModelToolCallName(directName);
-  return sanitizedName.length > 0 && knownToolNames.has(sanitizedName)
-    ? sanitizedName
-    : null;
+  if (sanitizedName.length > 0 && knownToolNames.has(sanitizedName)) {
+    return sanitizedName;
+  }
+  return resolveShellToolAlias(sanitizedName || directName, knownToolNames);
+}
+
+function resolveShellToolAlias(
+  toolName: string,
+  knownToolNames: Set<string>,
+): string | null {
+  const normalized = toolName.trim().toLowerCase();
+  if (normalized === 'bash' && knownToolNames.has('powershell')) {
+    return 'powershell';
+  }
+  if (normalized === 'powershell' && knownToolNames.has('bash')) {
+    return 'bash';
+  }
+  return null;
 }

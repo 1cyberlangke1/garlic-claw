@@ -16,6 +16,7 @@ interface RuntimeCommandRenderableResult {
 export interface RuntimeCommandTextOutputOptions {
   maxBytes?: number;
   maxLines?: number;
+  resultTagName?: string;
   showTruncationDetails?: boolean;
 }
 
@@ -28,6 +29,7 @@ interface RuntimeCommandRenderedStream {
 interface RuntimeCommandOutputLimits {
   maxBytes: number;
   maxLines: number;
+  resultTagName: string;
   showTruncationDetails: boolean;
 }
 
@@ -35,10 +37,11 @@ export function renderRuntimeCommandTextOutput(
   result: RuntimeCommandRenderableResult,
   options?: RuntimeCommandTextOutputOptions,
 ): string {
-  const stdout = renderRuntimeCommandStream(result.stdout, result.stdoutStats, normalizeRuntimeCommandOutputOptions(options));
-  const stderr = renderRuntimeCommandStream(result.stderr, result.stderrStats, normalizeRuntimeCommandOutputOptions(options));
+  const limits = normalizeRuntimeCommandOutputOptions(options);
+  const stdout = renderRuntimeCommandStream(result.stdout, result.stdoutStats, limits);
+  const stderr = renderRuntimeCommandStream(result.stderr, result.stderrStats, limits);
   return [
-    '<bash_result>',
+    `<${limits.resultTagName}>`,
     `cwd: ${result.cwd}`,
     `exit_code: ${result.exitCode}`,
     `status: ${result.exitCode === 0 ? 'success' : 'failed'}`,
@@ -52,7 +55,7 @@ export function renderRuntimeCommandTextOutput(
     '<stderr>',
     stderr.output,
     '</stderr>',
-    '</bash_result>',
+    `</${limits.resultTagName}>`,
   ].join('\n');
 }
 
@@ -60,8 +63,16 @@ function normalizeRuntimeCommandOutputOptions(options?: RuntimeCommandTextOutput
   return {
     maxBytes: normalizeRuntimeCommandOutputLimit(options?.maxBytes, DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_BYTES),
     maxLines: normalizeRuntimeCommandOutputLimit(options?.maxLines, DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_LINES),
+    resultTagName: normalizeRuntimeResultTagName(options?.resultTagName),
     showTruncationDetails: options?.showTruncationDetails ?? true,
   };
+}
+
+function normalizeRuntimeResultTagName(value: string | undefined): string {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return /^[A-Za-z][A-Za-z0-9_-]*$/u.test(normalized)
+    ? normalized
+    : 'bash_result';
 }
 
 function renderRuntimeCommandStream(

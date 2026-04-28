@@ -24,6 +24,7 @@ import { ReadToolService } from '../../execution/read/read-tool.service';
 import { RuntimeFileFreshnessService } from '../../execution/runtime/runtime-file-freshness.service';
 import { RuntimeFilesystemBackendService } from '../../execution/runtime/runtime-filesystem-backend.service';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
+import { readRuntimeShellToolName } from '../../execution/runtime/runtime-shell-tool-name';
 import { RuntimeToolBackendService } from '../../execution/runtime/runtime-tool-backend.service';
 import type { RuntimeToolAccessRequest } from '../../execution/runtime/runtime-tool-access';
 import { RuntimeToolPermissionService } from '../../execution/runtime/runtime-tool-permission.service';
@@ -57,8 +58,9 @@ export class RuntimeHostRuntimeToolService {
   async executeCommand(context: PluginCallContext, params: JsonObject): Promise<PluginRuntimeCommandResult> {
     const assistantMessageId = readRuntimeHostAssistantMessageId(context);
     const backendKind = readRuntimeHostBackendKind(params.backendKind) ?? this.runtimeToolsSettingsService.readConfiguredShellBackend();
-    const runtimeInput = this.bashToolService.readInput(params, readRuntimeHostSessionId(context, 'bash'), backendKind);
-    await this.reviewRuntimeToolAccess(context, assistantMessageId, 'bash', await this.bashToolService.readRuntimeAccess(runtimeInput));
+    const toolName = readRuntimeShellToolName(backendKind);
+    const runtimeInput = this.bashToolService.readInput(params, readRuntimeHostSessionId(context, toolName), backendKind);
+    await this.reviewRuntimeToolAccess(context, assistantMessageId, toolName, await this.bashToolService.readRuntimeAccess(runtimeInput));
     return this.bashToolService.execute(runtimeInput);
   }
 
@@ -225,7 +227,7 @@ export class RuntimeHostRuntimeToolService {
 
 function readRuntimeHostSessionId(
   context: PluginCallContext,
-  toolName: 'bash' | 'edit' | 'glob' | 'grep' | 'read' | 'write',
+  toolName: 'bash' | 'powershell' | 'edit' | 'glob' | 'grep' | 'read' | 'write',
 ): string {
   if (context.conversationId) {
     return context.conversationId;

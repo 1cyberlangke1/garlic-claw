@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { RuntimeBackend, RuntimeBackendDescriptor, RuntimeCommandBackendResult, RuntimeCommandRequest } from './runtime-command.types';
 import { RuntimeMountedWorkspaceFileSystem } from './runtime-mounted-workspace-file-system';
 import { readRuntimeJustBashOptions, readRuntimeJustBashTimeout } from './runtime-just-bash-options';
+import { readRuntimeShellToolName } from './runtime-shell-tool-name';
 import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
 import { resolveRuntimeVisiblePath } from './runtime-visible-path';
 
@@ -15,7 +16,8 @@ export class RuntimeJustBashService implements RuntimeBackend {
   getKind(): 'just-bash' { return 'just-bash'; }
 
   async executeCommand(input: RuntimeCommandRequest): Promise<RuntimeCommandBackendResult> {
-    const options = readRuntimeJustBashOptions(), session = await this.runtimeSessionEnvironmentService.getSessionEnvironment(input.sessionId), cwd = resolveRuntimeVisiblePath(session.visibleRoot, input.workdir, `bash.workdir 必须位于 ${session.visibleRoot} 内`), timeoutMs = readRuntimeJustBashTimeout(input.timeout);
+    const toolName = readRuntimeShellToolName('just-bash');
+    const options = readRuntimeJustBashOptions(), session = await this.runtimeSessionEnvironmentService.getSessionEnvironment(input.sessionId), cwd = resolveRuntimeVisiblePath(session.visibleRoot, input.workdir, `${toolName}.workdir 必须位于 ${session.visibleRoot} 内`), timeoutMs = readRuntimeJustBashTimeout(input.timeout);
     try {
       const result = await executeRuntimeBashWithTimeout(new Bash({ cwd: session.visibleRoot, fs: new RuntimeMountedWorkspaceFileSystem(session.sessionRoot, session.visibleRoot), network: { dangerouslyAllowFullInternetAccess: options.descriptor.capabilities.networkAccess } }), input.command, cwd, timeoutMs);
       return { backendKind: 'just-bash', cwd, exitCode: result.exitCode, sessionId: input.sessionId, stderr: result.stderr, stdout: result.stdout };

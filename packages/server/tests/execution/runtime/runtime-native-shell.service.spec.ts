@@ -101,7 +101,29 @@ describe('RuntimeNativeShellService', () => {
       command: buildNativePwdCommand(),
       sessionId: 'session-1',
       workdir: '/workspace',
-    })).rejects.toThrow('bash.workdir 不存在: /workspace');
+    })).rejects.toThrow(`${process.platform === 'win32' ? 'powershell' : 'bash'}.workdir 不存在: /workspace`);
+  });
+
+  it('accepts host absolute workdir for windows native-shell', async () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-native-shell-'));
+    const hostWorkdir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-native-host-workdir-'));
+    workspaceRoots.push(workspaceRoot, hostWorkdir);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
+
+    const service = new RuntimeNativeShellService(new RuntimeSessionEnvironmentService());
+    const result = await service.executeCommand({
+      command: buildNativePwdCommand(),
+      sessionId: 'session-1',
+      workdir: hostWorkdir,
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.cwd).toBe(hostWorkdir);
+    expect(normalizeNativeShellOutput(result.stdout)).toContain(hostWorkdir);
   });
 
   it('reads configurable timeout and network descriptor options', () => {
@@ -144,7 +166,7 @@ describe('RuntimeNativeShellService', () => {
         command: buildNativeSlowHttpCommand(address.port),
         sessionId: 'session-1',
         timeout: 50,
-      })).rejects.toThrow('bash 执行超时（>1 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。');
+      })).rejects.toThrow(`${process.platform === 'win32' ? 'powershell' : 'bash'} 执行超时（>1 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`);
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {

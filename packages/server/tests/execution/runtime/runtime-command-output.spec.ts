@@ -142,6 +142,29 @@ describe('renderRuntimeCommandTextOutput', () => {
     expect(output).toContain('<stdout>\nline-7\nline-8\n</stdout>');
   });
 
+  it('supports a custom result wrapper tag', () => {
+    const output = renderRuntimeCommandTextOutput({
+      cwd: '/tmp',
+      exitCode: 0,
+      stderr: '',
+      stderrStats: {
+        bytes: 0,
+        lines: 0,
+      },
+      stdout: 'done',
+      stdoutStats: {
+        bytes: 4,
+        lines: 1,
+      },
+    }, {
+      resultTagName: 'powershell_result',
+    });
+
+    expect(output).toContain('<powershell_result>');
+    expect(output).toContain('</powershell_result>');
+    expect(output).not.toContain('<bash_result>');
+  });
+
   it('marks successful stderr output as warnings instead of failures', () => {
     const output = renderRuntimeCommandTextOutput({
       cwd: '/tmp',

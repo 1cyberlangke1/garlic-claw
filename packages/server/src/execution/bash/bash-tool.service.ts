@@ -5,6 +5,7 @@ import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import type { RuntimeCommandResult } from '../runtime/runtime-command.types';
 import { renderRuntimeCommandTextOutput } from '../runtime/runtime-command-output';
 import { readRuntimeShellCommandHints, usesRuntimePowerShellSyntax } from '../runtime/runtime-shell-command-hints';
+import { isRuntimeShellToolAlias, readRuntimeShellToolAliases, readRuntimeShellToolName } from '../runtime/runtime-shell-tool-name';
 import { RuntimeCommandService } from '../runtime/runtime-command.service';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';
@@ -26,7 +27,22 @@ export class BashToolService {
     private readonly runtimeToolBackendService: RuntimeToolBackendService,
   ) {}
 
-  getToolName(): string { return 'bash'; }
+  getToolName(backendKind?: RuntimeBackendKind): string {
+    return readRuntimeShellToolName(
+      backendKind ?? this.runtimeToolBackendService.getShellBackendKind(),
+    );
+  }
+  getToolAliases(backendKind?: RuntimeBackendKind): string[] {
+    return readRuntimeShellToolAliases(
+      backendKind ?? this.runtimeToolBackendService.getShellBackendKind(),
+    );
+  }
+  isToolName(toolName: string, backendKind?: RuntimeBackendKind): boolean {
+    return isRuntimeShellToolAlias(
+      backendKind ?? this.runtimeToolBackendService.getShellBackendKind(),
+      toolName,
+    );
+  }
   getToolParameters(): Record<string, PluginParamSchema> { return BASH_TOOL_PARAMETERS; }
   async execute(input: BashToolInput): Promise<RuntimeCommandResult> {
     try {
@@ -38,6 +54,7 @@ export class BashToolService {
 
   buildToolDescription(): string {
     const backend = this.runtimeToolBackendService.getShellBackendDescriptor(), visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot, visibleRootDescription = visibleRoot === '/' ? '同一 session 下写入 backend 当前可见路径的文件，会在后续工具调用中继续可见。' : `同一 session 下写入 ${visibleRoot} 内的文件，会在后续工具调用中继续可见。`;
+    const toolName = this.getToolName(backend.kind);
     return [
       '在当前 session 的执行后端中执行命令。',
       usesRuntimePowerShellSyntax(backend.kind) ? '当前 shell backend 使用 PowerShell 语法。' : '当前 shell backend 使用 bash 语法。',
@@ -45,17 +62,18 @@ export class BashToolService {
       visibleRootDescription,
       '当前后端不会保留 shell 进程状态；不要依赖 cd、export、alias 或 shell function 在跨调用时继续存在。',
       '优先使用 workdir 指定目录，不要把 cd 写进命令里。',
-      '读取、搜索或编辑文件时优先使用 read / glob / grep / write / edit，不要用 bash 代替。',
+      `读取、搜索或编辑文件时优先使用 read / glob / grep / write / edit，不要用 ${toolName} 代替。`,
       readBashNetworkPolicyDescription(backend.permissionPolicy.networkAccess),
       visibleRoot === '/' ? 'workdir 必须位于当前 backend 可见路径内。' : `workdir 参数只能位于 ${visibleRoot} 内。`,
     ].join('\n');
   }
 
   readInput(args: Record<string, unknown>, sessionId?: string, backendKind?: RuntimeBackendKind): BashToolInput {
-    if (!sessionId) {throw new BadRequestException('bash 工具只能在 session 上下文中使用');}
+    const toolName = this.getToolName(backendKind);
+    if (!sessionId) {throw new BadRequestException(`${toolName} 工具只能在 session 上下文中使用`);}
     const description = typeof args.description === 'string' ? args.description.trim() : '', command = typeof args.command === 'string' ? args.command.trim() : '';
-    if (!description) {throw new BadRequestException('bash.description 不能为空');}
-    if (!command) {throw new BadRequestException('bash.command 不能为空');}
+    if (!description) {throw new BadRequestException(`${toolName}.description 不能为空`);}
+    if (!command) {throw new BadRequestException(`${toolName}.command 不能为空`);}
     const workdir = typeof args.workdir === 'string' && args.workdir.trim() ? args.workdir.trim() : undefined, timeout = typeof args.timeout === 'number' ? args.timeout : undefined;
     return { backendKind: backendKind ?? this.runtimeToolBackendService.getShellBackendKind(), command, description, sessionId, ...(timeout !== undefined ? { timeout } : {}), ...(workdir ? { workdir } : {}) };
   }
@@ -66,7 +84,12 @@ export class BashToolService {
     return { backendKind: input.backendKind, metadata, requiredOperations: ['command.execute', ...(commandHints.metadata?.usesNetworkCommand ? ['network.access' as const] : [])], role: 'shell', summary: [`${input.description} (${input.workdir ?? visibleRoot})`, ...(commandHints.summary ? [commandHints.summary] : [])].join('；') };
   }
 
-  toModelOutput: NonNullable<Tool['toModelOutput']> = ({ output }) => ({ type: 'text', value: renderRuntimeCommandTextOutput(output as RuntimeCommandResult) });
+  toModelOutput: NonNullable<Tool['toModelOutput']> = ({ output }) => ({
+    type: 'text',
+    value: renderRuntimeCommandTextOutput(output as RuntimeCommandResult, {
+      resultTagName: `${this.getToolName((output as RuntimeCommandResult).backendKind)}_result`,
+    }),
+  });
 }
 
 function readBashNetworkPolicyDescription(policy: 'allow' | 'ask' | 'deny'): string {
