@@ -17,13 +17,13 @@ import {
   readRuntimeWslShellOptions,
   readRuntimeWslShellTimeout,
 } from './runtime-wsl-shell-options';
-import { RuntimePersistentShellSessionService } from './runtime-persistent-shell-session.service';
+import { RuntimeOneShotShellService } from './runtime-one-shot-shell.service';
 
 @Injectable()
 export class RuntimeWslShellService implements RuntimeBackend {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
-    private readonly runtimePersistentShellSessionService: RuntimePersistentShellSessionService,
+    private readonly runtimeOneShotShellService: RuntimeOneShotShellService,
   ) {}
 
   getDescriptor(): RuntimeBackendDescriptor {
@@ -53,19 +53,15 @@ export class RuntimeWslShellService implements RuntimeBackend {
       ? normalizeWslHostWorkdir(rawWorkdir)
       : toRuntimeHostPath(session.sessionRoot, session.visibleRoot, cwd);
     try {
-      const result = await this.runtimePersistentShellSessionService.execute({
+      const result = await this.runtimeOneShotShellService.execute({
         backendKind: 'wsl-shell',
-        initialCwd: hostCwd,
-        initialVisibleCwd: cwd,
-        requestedHostCwd: rawWorkdir.length > 0 ? hostCwd : undefined,
-        sessionRoot: session.sessionRoot,
-        sessionId: input.sessionId,
-        shellCommand: input.command,
+        command: input.command,
+        cwd: hostCwd,
         timeoutMs,
       });
       return {
         backendKind: 'wsl-shell',
-        cwd: result.cwd,
+        cwd,
         exitCode: result.exitCode,
         sessionId: input.sessionId,
         stderr: result.stderr,
@@ -78,7 +74,7 @@ export class RuntimeWslShellService implements RuntimeBackend {
 }
 
 function normalizeRuntimeWslShellError(error: unknown, timeoutMs: number): Error {
-  if (error instanceof Error && error.message === 'runtime-persistent-shell-timeout') {
+  if (error instanceof Error && error.message === 'runtime-one-shot-shell-timeout') {
     return new Error(`bash 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`);
   }
   return error instanceof Error ? error : new Error('bash 执行失败');

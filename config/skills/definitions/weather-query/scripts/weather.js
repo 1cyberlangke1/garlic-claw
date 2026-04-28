@@ -146,12 +146,17 @@ function readLocationLabel(payload, fallbackLocation) {
   return uniqueParts.length > 0 ? uniqueParts.join(' ') : fallbackLocation;
 }
 
+const WEATHER_FALLBACK_ZH = new Map([
+  ['Patchy rain nearby', '局部阵雨'],
+  ['Thundery outbreaks in nearby', '附近有雷暴'],
+]);
+
 function readWeatherText(source) {
-  return (
+  const raw =
     readValue(source?.['lang_zh-cn']) ||
     readValue(source?.lang_xx) ||
-    readValue(source?.weatherDesc)
-  );
+    readValue(source?.weatherDesc);
+  return raw ? (WEATHER_FALLBACK_ZH.get(raw) || raw) : '';
 }
 
 function readHumidity(value) {

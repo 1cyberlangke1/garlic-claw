@@ -1,12 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { resolveServerRuntimeWorkspaceRoot } from '../../runtime/server-workspace-paths';
 import type {
   RuntimeSessionEnvironment,
   RuntimeSessionEnvironmentDescriptor,
 } from './runtime-session-environment.types';
-import { RuntimePersistentShellSessionService } from './runtime-persistent-shell-session.service';
 
 const VISIBLE_RUNTIME_ROOT = '/';
 
@@ -16,11 +15,6 @@ export class RuntimeSessionEnvironmentService {
     storageRoot: readRuntimeSessionStorageRoot(),
     visibleRoot: VISIBLE_RUNTIME_ROOT,
   };
-
-  constructor(
-    @Optional()
-    private readonly runtimePersistentShellSessionService?: RuntimePersistentShellSessionService,
-  ) {}
 
   getDescriptor(): RuntimeSessionEnvironmentDescriptor {
     return this.descriptor;
@@ -37,7 +31,6 @@ export class RuntimeSessionEnvironmentService {
   }
 
   async deleteSessionEnvironment(sessionId: string): Promise<void> {
-    await this.runtimePersistentShellSessionService?.disposeSession(sessionId);
     await fs.rm(this.resolveSessionRoot(sessionId), {
       force: true,
       recursive: true,
@@ -47,9 +40,6 @@ export class RuntimeSessionEnvironmentService {
   async deleteSessionEnvironmentIfEmpty(sessionId: string): Promise<void> {
     const sessionRoot = this.resolveSessionRoot(sessionId);
     try {
-      if (this.runtimePersistentShellSessionService?.hasActiveSession(sessionId)) {
-        return;
-      }
       const entries = await fs.readdir(sessionRoot);
       if (entries.length > 0) {
         return;

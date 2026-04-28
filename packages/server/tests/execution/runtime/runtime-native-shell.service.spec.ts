@@ -8,11 +8,10 @@ import {
   readRuntimeNativeShellTimeout,
 } from '../../../src/execution/runtime/runtime-native-shell-options';
 import { RuntimeNativeShellService } from '../../../src/execution/runtime/runtime-native-shell.service';
-import { RuntimePersistentShellSessionService } from '../../../src/execution/runtime/runtime-persistent-shell-session.service';
+import { RuntimeOneShotShellService } from '../../../src/execution/runtime/runtime-one-shot-shell.service';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 
 describe('RuntimeNativeShellService', () => {
-  const persistentShellServices: RuntimePersistentShellSessionService[] = [];
   const workspaceRoots: string[] = [];
   const originalEnvironment = {
     GARLIC_CLAW_RUNTIME_NATIVE_SHELL_DEFAULT_TIMEOUT_MS:
@@ -34,9 +33,6 @@ describe('RuntimeNativeShellService', () => {
         continue;
       }
       process.env[envKey] = envValue;
-    }
-    while (persistentShellServices.length > 0) {
-      await persistentShellServices.pop()?.onModuleDestroy();
     }
     while (workspaceRoots.length > 0) {
       const nextRoot = workspaceRoots.pop();
@@ -192,7 +188,26 @@ describe('RuntimeNativeShellService', () => {
     expect(() => readRuntimeNativeShellTimeout(undefined)).toThrow(BadRequestException);
   });
 
-  it('persists shell state between command executions', async () => {
+  it('returns stderr with non-zero exit code on syntax errors instead of timing out', async () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-native-shell-'));
+    workspaceRoots.push(workspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
+
+    const service = createRuntimeNativeShellService();
+    const result = await service.executeCommand({
+      command: 'Write-Output "before-error"; $(unclosed-subexpression',
+      sessionId: 'session-1',
+      timeout: 30000,
+    });
+
+    expect(result.stderr.length).toBeGreaterThan(0);
+    expect(result.exitCode).not.toBe(0);
+  });
+
+  it('does not persist shell state between command executions', async () => {
     const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-native-shell-'));
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
@@ -209,19 +224,18 @@ describe('RuntimeNativeShellService', () => {
 
     expect(first.exitCode).toBe(0);
     expect(second.exitCode).toBe(0);
-    expect(normalizeNativeShellOutput(second.stdout)).toContain('persisted-state');
-    expect(second.cwd).toBe('/nested');
+    // Shell state (env vars, cwd) should NOT persist between one-shot calls.
+    const secondOutput = normalizeNativeShellOutput(second.stdout);
+    expect(secondOutput).not.toContain('persisted-state');
+    expect(secondOutput).not.toContain('/nested');
   });
 
   function createRuntimeNativeShellService(): RuntimeNativeShellService {
-    const persistentShellSessionService = new RuntimePersistentShellSessionService();
-    persistentShellServices.push(persistentShellSessionService);
-    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService(
-      persistentShellSessionService,
-    );
+    const sessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const oneShotShellService = new RuntimeOneShotShellService();
     return new RuntimeNativeShellService(
-      runtimeSessionEnvironmentService,
-      persistentShellSessionService,
+      sessionEnvironmentService,
+      oneShotShellService,
     );
   }
 });

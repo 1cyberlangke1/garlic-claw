@@ -11,7 +11,7 @@ import {
   readRuntimeNativeShellOptions,
   readRuntimeNativeShellTimeout,
 } from './runtime-native-shell-options';
-import { RuntimePersistentShellSessionService } from './runtime-persistent-shell-session.service';
+import { RuntimeOneShotShellService } from './runtime-one-shot-shell.service';
 import { toRuntimeHostPath } from './runtime-host-path';
 import {
   isRuntimeHostAbsoluteShellWorkdir,
@@ -24,7 +24,7 @@ import { resolveRuntimeVisiblePath } from './runtime-visible-path';
 export class RuntimeNativeShellService implements RuntimeBackend {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
-    private readonly runtimePersistentShellSessionService: RuntimePersistentShellSessionService,
+    private readonly runtimeOneShotShellService: RuntimeOneShotShellService,
   ) {}
 
   getDescriptor(): RuntimeBackendDescriptor {
@@ -54,19 +54,15 @@ export class RuntimeNativeShellService implements RuntimeBackend {
     }
     const timeoutMs = readRuntimeNativeShellTimeout(input.timeout);
     try {
-      const result = await this.runtimePersistentShellSessionService.execute({
+      const result = await this.runtimeOneShotShellService.execute({
         backendKind: 'native-shell',
-        initialCwd: hostCwd,
-        initialVisibleCwd: cwd,
-        requestedHostCwd: rawWorkdir.length > 0 ? hostCwd : undefined,
-        sessionRoot: session.sessionRoot,
-        sessionId: input.sessionId,
-        shellCommand: input.command,
+        command: input.command,
+        cwd: hostCwd,
         timeoutMs,
       });
       return {
         backendKind: 'native-shell',
-        cwd: result.cwd,
+        cwd,
         exitCode: result.exitCode,
         sessionId: input.sessionId,
         stderr: result.stderr,
@@ -80,7 +76,7 @@ export class RuntimeNativeShellService implements RuntimeBackend {
 
 function normalizeRuntimeNativeShellError(error: unknown, timeoutMs: number): Error {
   const toolName = process.platform === 'win32' ? 'powershell' : 'bash';
-  if (error instanceof Error && error.message === 'runtime-persistent-shell-timeout') {
+  if (error instanceof Error && error.message === 'runtime-one-shot-shell-timeout') {
     return new Error(`${toolName} 执行超时（>${Math.ceil(timeoutMs / 1000)} 秒）。如果这条命令本应耗时更久，且不是在等待交互输入，请调大 timeout 后重试。`);
   }
   if (isRuntimeShellSpawnMissing(error)) {

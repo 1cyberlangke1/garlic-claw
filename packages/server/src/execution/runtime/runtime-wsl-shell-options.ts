@@ -22,7 +22,7 @@ export function readRuntimeWslShellOptions(): RuntimeWslShellOptions {
       capabilities: {
         networkAccess: networkEnabled,
         persistentFilesystem: true,
-        persistentShellState: true,
+        persistentShellState: false,
         shellExecution: true,
         workspaceRead: true,
         workspaceWrite: true,
@@ -31,7 +31,7 @@ export function readRuntimeWslShellOptions(): RuntimeWslShellOptions {
       permissionPolicy: {
         networkAccess: networkPolicy,
         persistentFilesystem: 'allow',
-        persistentShellState: 'allow',
+        persistentShellState: 'deny',
         shellExecution: 'ask',
         workspaceRead: 'allow',
         workspaceWrite: 'allow',

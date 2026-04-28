@@ -24,6 +24,36 @@
 - 步骤 3 已完成
 - 步骤 4 已完成
 
+## 2026-04-28 shell 持久会话解析错误误报超时
+
+1. 更新计划文件
+  - 记录用户反馈：当前 shell 工具并非 weather skill 故障，而是 `bash / powershell` 执行链本身存在假超时
+  - 明确本轮只处理 shell 持久会话对 PowerShell 语法错误的误报，不扩展其他功能
+2. 根因调查
+  - 复核 `native-shell` 持久会话的命令包装方式
+  - 复现 Windows PowerShell 下 `&&` / 解析错误为何被报成 timeout
+3. TDD 修复
+  - 先补失败测试，锁定“语法错误必须返回真实 stderr，而不是超时”
+  - 再修改持久 shell 包装，保证 marker 在解析失败场景仍能返回
+4. fresh 验收
+  - 相关 Jest
+  - `npm run typecheck:server`
+  - 必要时补跑 `npm run smoke:server`
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+- 步骤 4 已完成
+
+## 修复要点
+
+- `buildPersistentPowerShellEnvelope` 改用 Base64 + `Invoke-Expression` 执行用户命令，确保解析错误发生于运行时（可被 `try/catch` 捕获），maker 始终可达
+- `catch` 块改用 `[Console]::Error.WriteLine` 代替 `Write-Error`，避免 `$ErrorActionPreference = "Stop"` 时 Write-Error 自身抛出终止错误阻断 marker 输出
+- 强化 UTF-8 编码：补充 `$OutputEncoding`、使用完全限定类型名 `[System.Text.UTF8Encoding]`
+- 新增测试用例：验证语法错误返回 stderr + 非零 exitCode 而非超时，且持久会话仍可用
+
 ## 2026-04-27 runtime/workspace 路径收口与 tmp 清理
 
 1. 新建统一路径 owner
@@ -203,7 +233,7 @@
 
 1. 更新计划文件
   - 压缩上一轮已完成阶段
-  - 切到当前“CRUD 覆盖补齐”任务
+  - 切到当前”CRUD 覆盖补齐”任务
 2. 盘点缺口
   - 查 `AiController` 未覆盖的方法
   - 查 smoke 中删除后缺失的读回/列表校验
@@ -224,3 +254,34 @@
 - 步骤 3 已完成
 - 步骤 4 已完成
 - 步骤 5 已完成
+
+## 2026-04-28 shell 执行模型重构：持久会话 → 一次性模型（opencode 对齐）
+
+1. 更新计划文件
+  - 记录当前 `native-shell / wsl-shell` 使用持久 shell 会话模型的问题
+  - 明确目标：对齐 opencode 的一次性模型，移除 `RuntimePersistentShellSessionService`
+  - 约束：`just-bash` 只支持无状态，完全不变
+2. 根因调查（已完成）
+  - 盘点所有引用 `RuntimePersistentShellSessionService` 的文件
+  - 盘点 `persistentShellState` 在 capability/permission 描述符中的所有引用
+  - 确认 opencode 的一次性执行模式（`bash -c` / `powershell -Command`）
+3. 实现修复
+  - 创建 `RuntimeOneShotShellService`：每次命令 spawn 新进程，进程退出 = 输出边界，无 marker
+  - 重构 `RuntimeNativeShellService` / `RuntimeWslShellService` 使用新 one-shot 服务
+  - 简化 `RuntimeSessionEnvironmentService` 移除持久 shell 注入
+  - 更新 `RuntimeHostModule` DI 注册
+  - 更新 option 描述符：`persistentShellState: true → false`
+  - 更新 `bash-tool.service.ts` 描述文案
+  - 删除 `RuntimePersistentShellSessionService`（不保留兼容层）
+  - 更新测试
+4. fresh 验收
+  - `npm run typecheck:server`
+  - 定向 Jest：`runtime-one-shot-shell`, `runtime-native-shell`, `runtime-wsl-shell`, `runtime-session-environment`, `bash-tool`, `tool-registry`
+  - `npm run smoke:server`
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+- 步骤 4 已完成

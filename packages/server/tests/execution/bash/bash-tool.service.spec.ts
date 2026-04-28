@@ -126,12 +126,8 @@ describe('BashToolService', () => {
       } as never,
     );
 
-    expect(service.buildToolDescription()).toContain('当前后端会保留 shell 进程状态');
-    expect(service.buildToolDescription()).toContain(
-      process.platform === 'win32'
-        ? '当前后端会保留同一个 PowerShell 会话状态'
-        : '当前后端会保留同一个 bash 会话状态',
-    );
+    // persistentShellState is always false now; non-persistent text always shown.
+    expect(service.buildToolDescription()).toContain('当前后端不会保留 shell 进程状态');
   });
 
   it('treats native-shell aliases as the same shell syntax family', async () => {

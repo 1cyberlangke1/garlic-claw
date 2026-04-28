@@ -21,7 +21,7 @@ import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-co
 import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
 import { RuntimeNativeShellService } from '../../../src/execution/runtime/runtime-native-shell.service';
-import { RuntimePersistentShellSessionService } from '../../../src/execution/runtime/runtime-persistent-shell-session.service';
+import { RuntimeOneShotShellService } from '../../../src/execution/runtime/runtime-one-shot-shell.service';
 import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
@@ -63,7 +63,7 @@ import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runt
 import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.service';
 
 const runtimeWorkspaceRoots: string[] = [];
-const runtimePersistentShellServices: RuntimePersistentShellSessionService[] = [];
+const runtimeOneShotShellServices: RuntimeOneShotShellService[] = [];
 const originalRuntimeWorkspaceRoot = process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
 const originalRuntimeToolsConfigPath = process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
 const originalHintsTestRoot = process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
@@ -85,15 +85,16 @@ describe('ToolRegistryService', () => {
     } else {
       process.env.GARLIC_CLAW_HINTS_TEST_ROOT = originalHintsTestRoot;
     }
-    while (runtimePersistentShellServices.length > 0) {
-      await runtimePersistentShellServices.pop()?.onModuleDestroy();
-    }
     while (runtimeWorkspaceRoots.length > 0) {
       const nextRoot = runtimeWorkspaceRoots.pop();
       if (!nextRoot) {
         continue;
       }
-      fs.rmSync(nextRoot, { force: true, recursive: true });
+      try {
+        fs.rmSync(nextRoot, { force: true, recursive: true });
+      } catch {
+        // Windows 下进程退出后目录锁可能未立即释放，只做尽力清理。
+      }
     }
   });
 
@@ -7774,11 +7775,9 @@ function createFixture(options: {
     resolveSkillDirectory: jest.fn().mockReturnValue(path.resolve('config', 'skills', 'definitions', 'weather-query')),
   };
   const skillToolService = new SkillToolService(skillRegistryService as unknown as SkillRegistryService);
-  const runtimePersistentShellSessionService = new RuntimePersistentShellSessionService();
-  runtimePersistentShellServices.push(runtimePersistentShellSessionService);
-  const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService(
-    runtimePersistentShellSessionService,
-  );
+  const runtimeOneShotShellService = new RuntimeOneShotShellService();
+  runtimeOneShotShellServices.push(runtimeOneShotShellService);
+  const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
   const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
     runtimeSessionEnvironmentService,
   );
@@ -8031,20 +8030,20 @@ function createRealRuntimeBackendsForShellRouting(
     includeWsl?: boolean;
   } = {},
 ): RuntimeBackend[] {
-  const runtimePersistentShellSessionService = new RuntimePersistentShellSessionService();
-  runtimePersistentShellServices.push(runtimePersistentShellSessionService);
+  const runtimeOneShotShellService = new RuntimeOneShotShellService();
+  runtimeOneShotShellServices.push(runtimeOneShotShellService);
   const resolvedRuntimeSessionEnvironmentService = runtimeSessionEnvironmentService
-    ?? new RuntimeSessionEnvironmentService(runtimePersistentShellSessionService);
+    ?? new RuntimeSessionEnvironmentService();
   return [
     new RuntimeJustBashService(resolvedRuntimeSessionEnvironmentService),
     new RuntimeNativeShellService(
       resolvedRuntimeSessionEnvironmentService,
-      runtimePersistentShellSessionService,
+      runtimeOneShotShellService,
     ),
     ...(process.platform === 'win32' && (options.includeWsl ?? true)
       ? [new RuntimeWslShellService(
         resolvedRuntimeSessionEnvironmentService,
-        runtimePersistentShellSessionService,
+        runtimeOneShotShellService,
       )]
       : []),
   ];
