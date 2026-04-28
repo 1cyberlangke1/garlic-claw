@@ -48,7 +48,9 @@ export class BashToolService {
     try {
       return await this.runtimeCommandService.executeCommand(input);
     } finally {
-      await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(input.sessionId);
+      if (!this.runtimeToolBackendService.getShellBackendDescriptor(input.backendKind).capabilities.persistentShellState) {
+        await this.runtimeSessionEnvironmentService.deleteSessionEnvironmentIfEmpty(input.sessionId);
+      }
     }
   }
 
@@ -58,9 +60,17 @@ export class BashToolService {
     return [
       '在当前 session 的执行后端中执行命令。',
       usesRuntimePowerShellSyntax(backend.kind) ? '当前 shell backend 使用 PowerShell 语法。' : '当前 shell backend 使用 bash 语法。',
-      usesRuntimePowerShellSyntax(backend.kind) ? '如果后续命令依赖前序命令成功，不要使用 &&；请改用 PowerShell 条件写法，例如 cmd1; if ($?) { cmd2 }。' : '如果后续命令依赖前序命令成功，请把它们放进同一条命令，并用 && 串起来。',
+      usesRuntimePowerShellSyntax(backend.kind)
+        ? (backend.capabilities.persistentShellState
+          ? '当前后端会保留同一个 PowerShell 会话状态；如果前一条命令已经切换目录或设置变量，后续调用可以继续使用。'
+          : '如果后续命令依赖前序命令成功，不要使用 &&；请改用 PowerShell 条件写法，例如 cmd1; if ($?) { cmd2 }。')
+        : (backend.capabilities.persistentShellState
+          ? '当前后端会保留同一个 bash 会话状态；如果前一条命令已经切换目录或导出变量，后续调用可以继续使用。'
+          : '如果后续命令依赖前序命令成功，请把它们放进同一条命令，并用 && 串起来。'),
       visibleRootDescription,
-      '当前后端不会保留 shell 进程状态；不要依赖 cd、export、alias 或 shell function 在跨调用时继续存在。',
+      backend.capabilities.persistentShellState
+        ? '当前后端会保留 shell 进程状态；跨调用时可以继续使用之前的 cd、环境变量和 shell 变量。'
+        : '当前后端不会保留 shell 进程状态；不要依赖 cd、export、alias 或 shell function 在跨调用时继续存在。',
       '优先使用 workdir 指定目录，不要把 cd 写进命令里。',
       `读取、搜索或编辑文件时优先使用 read / glob / grep / write / edit，不要用 ${toolName} 代替。`,
       readBashNetworkPolicyDescription(backend.permissionPolicy.networkAccess),

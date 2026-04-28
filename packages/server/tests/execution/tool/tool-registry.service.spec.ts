@@ -21,6 +21,7 @@ import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-co
 import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
 import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
 import { RuntimeNativeShellService } from '../../../src/execution/runtime/runtime-native-shell.service';
+import { RuntimePersistentShellSessionService } from '../../../src/execution/runtime/runtime-persistent-shell-session.service';
 import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
 import type { RuntimeBackend } from '../../../src/execution/runtime/runtime-command.types';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
@@ -62,12 +63,13 @@ import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runt
 import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.service';
 
 const runtimeWorkspaceRoots: string[] = [];
+const runtimePersistentShellServices: RuntimePersistentShellSessionService[] = [];
 const originalRuntimeWorkspaceRoot = process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
 const originalRuntimeToolsConfigPath = process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
 const originalHintsTestRoot = process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
 
 describe('ToolRegistryService', () => {
-  afterEach(() => {
+  afterEach(async () => {
     if (originalRuntimeWorkspaceRoot === undefined) {
       delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
     } else {
@@ -82,6 +84,9 @@ describe('ToolRegistryService', () => {
       delete process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
     } else {
       process.env.GARLIC_CLAW_HINTS_TEST_ROOT = originalHintsTestRoot;
+    }
+    while (runtimePersistentShellServices.length > 0) {
+      await runtimePersistentShellServices.pop()?.onModuleDestroy();
     }
     while (runtimeWorkspaceRoots.length > 0) {
       const nextRoot = runtimeWorkspaceRoots.pop();
@@ -7769,7 +7774,11 @@ function createFixture(options: {
     resolveSkillDirectory: jest.fn().mockReturnValue(path.resolve('config', 'skills', 'definitions', 'weather-query')),
   };
   const skillToolService = new SkillToolService(skillRegistryService as unknown as SkillRegistryService);
-  const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+  const runtimePersistentShellSessionService = new RuntimePersistentShellSessionService();
+  runtimePersistentShellServices.push(runtimePersistentShellSessionService);
+  const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService(
+    runtimePersistentShellSessionService,
+  );
   const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
     runtimeSessionEnvironmentService,
   );
@@ -8017,16 +8026,26 @@ function createMockRuntimeBackend(kind: string): RuntimeBackend {
 }
 
 function createRealRuntimeBackendsForShellRouting(
-  runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService(),
+  runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
   options: {
     includeWsl?: boolean;
   } = {},
 ): RuntimeBackend[] {
+  const runtimePersistentShellSessionService = new RuntimePersistentShellSessionService();
+  runtimePersistentShellServices.push(runtimePersistentShellSessionService);
+  const resolvedRuntimeSessionEnvironmentService = runtimeSessionEnvironmentService
+    ?? new RuntimeSessionEnvironmentService(runtimePersistentShellSessionService);
   return [
-    new RuntimeJustBashService(runtimeSessionEnvironmentService),
-    new RuntimeNativeShellService(runtimeSessionEnvironmentService),
+    new RuntimeJustBashService(resolvedRuntimeSessionEnvironmentService),
+    new RuntimeNativeShellService(
+      resolvedRuntimeSessionEnvironmentService,
+      runtimePersistentShellSessionService,
+    ),
     ...(process.platform === 'win32' && (options.includeWsl ?? true)
-      ? [new RuntimeWslShellService(runtimeSessionEnvironmentService)]
+      ? [new RuntimeWslShellService(
+        resolvedRuntimeSessionEnvironmentService,
+        runtimePersistentShellSessionService,
+      )]
       : []),
   ];
 }

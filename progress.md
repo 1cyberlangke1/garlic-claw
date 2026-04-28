@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-04-28 shell backend 持久会话修复
+
+- 已完成本轮修复：
+  - `native-shell / wsl-shell` 已改成按 `sessionId` 复用的持久 shell 会话
+  - `just-bash` 保持单次无状态执行
+  - shell tool 描述、descriptor 能力与清理链路已同步
+- 已定位并修复两个真实缺陷：
+  - PowerShell 持久会话 marker 丢了首个制表符，导致成功命令被误判成 `exitCode=1`
+  - 每次 `executeCommand` 都把 `cwd` 重置回会话根，导致 `cd` 无法跨调用保持
+- 已补清理链路：
+  - 持久 shell 会话关闭改为可等待
+  - 对话删除会等待 runtime workspace 真正删除后再返回
+  - 超时分支不再过早把会话从 map 移除
+- 本轮 fresh 验收已通过：
+  - `npm run build -w packages/server`
+  - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\execution\\runtime\\runtime-native-shell.service.spec.ts`
+  - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\execution\\runtime\\runtime-session-environment.service.spec.ts tests\\execution\\bash\\bash-tool.service.spec.ts tests\\execution\\tool\\tool-registry.service.spec.ts`
+  - `npm run typecheck:server`
+  - `npm run smoke:server`
+- 额外记录：
+  - 已顺手补齐 legacy todo 迁移 fallback：
+    - 当独立 todo 存储文件不存在时，会从旧 conversations 存储里的 `todos` 字段迁移
+    - 迁移后会把旧 conversations 文件中的 `todos` 字段清掉
+  - 已通过：
+    - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\runtime\\host\\runtime-host-conversation-record.service.spec.ts --testNamePattern "drops legacy todos from conversation storage payload after reload"`
+    - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\runtime\\host\\runtime-host-conversation-todo.service.spec.ts tests\\execution\\todo\\todo-tool.service.spec.ts`
+
 ## 2026-04-27 runtime/workspace 路径收口与 tmp 清理
 
 - 已完成本轮路径收口：

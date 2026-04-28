@@ -33,7 +33,7 @@ describe('RuntimeHostConversationRecordService', () => {
     }
   });
 
-  it('creates, lists, persists and mutates conversation state', () => {
+  it('creates, lists, persists and mutates conversation state', async () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new RuntimeHostConversationRecordService();
     const created = service.createConversation({ title: 'New Chat' }) as { id: string };
@@ -120,7 +120,7 @@ describe('RuntimeHostConversationRecordService', () => {
       'just-bash:command.execute',
       'just-bash:network.access',
     ]);
-    expect(service.deleteConversation(conversationId)).toEqual({ message: 'Conversation deleted' });
+    await expect(service.deleteConversation(conversationId)).resolves.toEqual({ message: 'Conversation deleted' });
   });
 
   it('throws instead of auto-creating missing conversations on read paths', () => {
@@ -442,7 +442,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
     expect(fs.existsSync(path.join(sessionRoot, 'notes', 'runtime.txt'))).toBe(true);
 
-    expect(service.deleteConversation(conversationId)).toEqual({ message: 'Conversation deleted' });
+    await expect(service.deleteConversation(conversationId)).resolves.toEqual({ message: 'Conversation deleted' });
     expect(fs.existsSync(sessionRoot)).toBe(false);
   });
 

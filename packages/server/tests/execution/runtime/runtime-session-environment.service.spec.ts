@@ -40,8 +40,25 @@ describe('RuntimeSessionEnvironmentService', () => {
     });
     expect(fs.existsSync(environment.sessionRoot)).toBe(true);
 
-    service.deleteSessionEnvironment('session/a b');
+    await service.deleteSessionEnvironment('session/a b');
 
     expect(fs.existsSync(environment.sessionRoot)).toBe(false);
+  });
+
+  it('does not reclaim an empty session directory while a persistent shell session is still active', async () => {
+    const runtimeWorkspaceRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'gc-runtime-session-environment-'),
+    );
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+
+    const service = new RuntimeSessionEnvironmentService({
+      hasActiveSession: jest.fn().mockReturnValue(true),
+    } as never);
+    const environment = await service.getSessionEnvironment('session-active');
+
+    await service.deleteSessionEnvironmentIfEmpty('session-active');
+
+    expect(fs.existsSync(environment.sessionRoot)).toBe(true);
   });
 });

@@ -1,5 +1,29 @@
 # Task Plan
 
+## 2026-04-28 shell backend 持久会话修复
+
+1. 更新计划文件
+  - 记录当前 `native-shell / wsl-shell` 被错误实现为无状态单次进程
+  - 明确目标是“默认有状态，只有 `just-bash` 保持无状态”
+2. 根因调查
+  - 盘点 runtime shell backend 的 descriptor、执行 owner、tool prompt 与权限文案
+  - 对照 `other/opencode` 的 PTY 会话设计，确认需要补的最小会话能力
+3. 实现修复
+  - 为 `native-shell / wsl-shell` 引入按 session 复用的持久 shell 会话
+  - 同步 shell tool 描述、权限能力、结果输出与清理链路
+  - 保持 `just-bash` 继续走单次无状态执行
+4. fresh 验收
+  - 相关 Jest
+  - `npm run typecheck:server`
+  - `npm run smoke:server`
+
+## 当前进度
+
+- 步骤 1 已完成
+- 步骤 2 已完成
+- 步骤 3 已完成
+- 步骤 4 已完成
+
 ## 2026-04-27 runtime/workspace 路径收口与 tmp 清理
 
 1. 新建统一路径 owner

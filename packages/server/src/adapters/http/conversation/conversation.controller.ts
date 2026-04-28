@@ -65,10 +65,10 @@ export class ConversationController {
   getSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.runtimeHostConversationTodoService.readSessionTodo(id, userId); }
 
   @Delete('conversations/:id')
-  deleteConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
+  async deleteConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
     this.runtimeHostConversationTodoService.deleteSessionTodo(id);
-    return this.runtimeHostConversationRecordService.deleteConversation(id, userId);
+    return await this.runtimeHostConversationRecordService.deleteConversation(id, userId);
   }
 
   @Get('conversations/:id/services')

@@ -8,9 +8,11 @@ import {
   readRuntimeNativeShellTimeout,
 } from '../../../src/execution/runtime/runtime-native-shell-options';
 import { RuntimeNativeShellService } from '../../../src/execution/runtime/runtime-native-shell.service';
+import { RuntimePersistentShellSessionService } from '../../../src/execution/runtime/runtime-persistent-shell-session.service';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 
 describe('RuntimeNativeShellService', () => {
+  const persistentShellServices: RuntimePersistentShellSessionService[] = [];
   const workspaceRoots: string[] = [];
   const originalEnvironment = {
     GARLIC_CLAW_RUNTIME_NATIVE_SHELL_DEFAULT_TIMEOUT_MS:
@@ -25,13 +27,16 @@ describe('RuntimeNativeShellService', () => {
       process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH,
   } as const;
 
-  afterEach(() => {
+  afterEach(async () => {
     for (const [envKey, envValue] of Object.entries(originalEnvironment)) {
       if (envValue === undefined) {
         delete process.env[envKey];
         continue;
       }
       process.env[envKey] = envValue;
+    }
+    while (persistentShellServices.length > 0) {
+      await persistentShellServices.pop()?.onModuleDestroy();
     }
     while (workspaceRoots.length > 0) {
       const nextRoot = workspaceRoots.pop();
@@ -47,7 +52,7 @@ describe('RuntimeNativeShellService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeNativeShellService(new RuntimeSessionEnvironmentService());
+    const service = createRuntimeNativeShellService();
     const first = await service.executeCommand({
       command: buildNativeWriteAndReadCommand('logs/run.txt', 'persisted'),
       sessionId: 'session-1',
@@ -73,7 +78,7 @@ describe('RuntimeNativeShellService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeNativeShellService(new RuntimeSessionEnvironmentService());
+    const service = createRuntimeNativeShellService();
     await service.executeCommand({
       command: buildNativeMkdirCommand('nested'),
       sessionId: 'session-1',
@@ -95,7 +100,7 @@ describe('RuntimeNativeShellService', () => {
     workspaceRoots.push(workspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeNativeShellService(new RuntimeSessionEnvironmentService());
+    const service = createRuntimeNativeShellService();
 
     await expect(service.executeCommand({
       command: buildNativePwdCommand(),
@@ -114,7 +119,7 @@ describe('RuntimeNativeShellService', () => {
     workspaceRoots.push(workspaceRoot, hostWorkdir);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
 
-    const service = new RuntimeNativeShellService(new RuntimeSessionEnvironmentService());
+    const service = createRuntimeNativeShellService();
     const result = await service.executeCommand({
       command: buildNativePwdCommand(),
       sessionId: 'session-1',
@@ -161,7 +166,7 @@ describe('RuntimeNativeShellService', () => {
       if (!address || typeof address === 'string') {
         throw new Error('failed to allocate local slow test server port');
       }
-      const service = new RuntimeNativeShellService(new RuntimeSessionEnvironmentService());
+      const service = createRuntimeNativeShellService();
       await expect(service.executeCommand({
         command: buildNativeSlowHttpCommand(address.port),
         sessionId: 'session-1',
@@ -186,6 +191,39 @@ describe('RuntimeNativeShellService', () => {
 
     expect(() => readRuntimeNativeShellTimeout(undefined)).toThrow(BadRequestException);
   });
+
+  it('persists shell state between command executions', async () => {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-native-shell-'));
+    workspaceRoots.push(workspaceRoot);
+    process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = workspaceRoot;
+
+    const service = createRuntimeNativeShellService();
+    const first = await service.executeCommand({
+      command: buildNativePersistStateCommand(),
+      sessionId: 'session-1',
+    });
+    const second = await service.executeCommand({
+      command: buildNativeReadPersistedStateCommand(),
+      sessionId: 'session-1',
+    });
+
+    expect(first.exitCode).toBe(0);
+    expect(second.exitCode).toBe(0);
+    expect(normalizeNativeShellOutput(second.stdout)).toContain('persisted-state');
+    expect(second.cwd).toBe('/nested');
+  });
+
+  function createRuntimeNativeShellService(): RuntimeNativeShellService {
+    const persistentShellSessionService = new RuntimePersistentShellSessionService();
+    persistentShellServices.push(persistentShellSessionService);
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService(
+      persistentShellSessionService,
+    );
+    return new RuntimeNativeShellService(
+      runtimeSessionEnvironmentService,
+      persistentShellSessionService,
+    );
+  }
 });
 
 function buildNativeWriteAndReadCommand(filePath: string, content: string): string {
@@ -214,6 +252,31 @@ function buildNativeMkdirCommand(dirPath: string): string {
 
 function buildNativePwdCommand(): string {
   return process.platform === 'win32' ? '(Get-Location).Path' : 'pwd';
+}
+
+function buildNativePersistStateCommand(): string {
+  if (process.platform === 'win32') {
+    return [
+      'New-Item -ItemType Directory -Force -Path "nested" | Out-Null',
+      '$env:GC_RUNTIME_NATIVE_STATE = "persisted-state"',
+      'Set-Location -LiteralPath "nested"',
+      'Write-Output $env:GC_RUNTIME_NATIVE_STATE',
+      '(Get-Location).Path',
+    ].join('; ');
+  }
+  return [
+    'mkdir -p nested',
+    'export GC_RUNTIME_NATIVE_STATE="persisted-state"',
+    'cd nested',
+    'printf "%s\\n" "$GC_RUNTIME_NATIVE_STATE"',
+    'pwd',
+  ].join('\n');
+}
+
+function buildNativeReadPersistedStateCommand(): string {
+  return process.platform === 'win32'
+    ? 'Write-Output $env:GC_RUNTIME_NATIVE_STATE; (Get-Location).Path'
+    : 'printf "%s\\n" "$GC_RUNTIME_NATIVE_STATE"; pwd';
 }
 
 function buildNativeSlowHttpCommand(port: number): string {

@@ -1,5 +1,40 @@
 # Findings
 
+## 2026-04-28 shell backend 持久会话修复
+
+- 当前实现与用户要求不一致：
+  - `native-shell` 的 descriptor 仍写成 `persistentShellState: false` / `deny`
+  - `wsl-shell` 也是同样配置
+  - 结果是三个 backend 实际上都无状态，只有 `just-bash` 无状态这一例外并未成立
+- 当前直接根因不只在 descriptor，还在执行 owner：
+  - `RuntimeNativeShellService` 每次调用都 `spawn(..., '-Command', command)`
+  - `RuntimeWslShellService` 每次调用都 `spawn('wsl.exe', ['--cd', ..., 'bash', '-lc', input.command])`
+  - 这决定了 `cd`、shell 变量、导出环境都不会跨调用保存
+- `other/opencode` 的 PTY 实现已证明持久 shell 会话需要至少具备：
+  - 每个会话一个长期进程
+  - 输入写入与输出采集
+  - 显式 remove / finalizer 清理
+  - 会话列表或按 sessionId 索引的 owner
+- 当前还需要同步的外层 contract 不只生产代码：
+  - `bash-tool.service.ts` 的提示词仍默认“依赖前序命令时放进同一条命令”
+  - runtime 权限 descriptor 仍宣称不支持持久 shell state
+  - 相关 Jest 断言基于当前错误 contract，需要一起改
+- PowerShell 持久会话误报失败的直接根因已经确认：
+  - marker 输出字符串首个分隔符被写成了字母 `t`，不是制表符
+  - 结果 `consumeStdoutChunk()` 读到的退出码文本是 `t0`，`parseInt()` 失败后被回退成 `1`
+- 仅让会话复用进程还不够：
+  - 如果 `executeCommand()` 在未显式传 `workdir` 时仍把请求目录重算成会话根，持久 shell 的 `cd` 状态会被宿主层覆盖掉
+  - 所以“默认沿用当前 shell cwd，只有显式 `workdir` 才切目录”是必要 contract
+- Windows 清理链路的关键点在超时分支：
+  - 命令超时时如果先把会话从 map 移除，再杀进程，后续就没有 owner 能等待 `close`
+  - 这会在测试或对话删除时留下短暂未释放的目录句柄，表现为 `EPERM`
+- 对话删除路径不能只 fire-and-forget：
+  - `smoke:server` 明确要求删除对话后 runtime workspace 立即不存在
+  - 因此 `deleteConversation()` 必须等待 `deleteSessionEnvironment()` 完成，而不是后台异步回收
+- legacy todo 迁移的缺口也已确认：
+  - `RuntimeHostConversationTodoService` 只读独立 todo 存储文件时，旧 conversations 文件里的 `todos` 无法被迁移
+  - 正确行为应是：独立 todo 存储不存在时，回退读取 legacy `todos`，写入新 todo 存储，并把旧 conversations 文件里的 `todos` 字段清掉
+
 ## 2026-04-27 runtime/workspace 路径收口与 tmp 清理
 
 - 用户看到“tmp 下面是空的，但工具说写成功”的直接原因，不是工具没写出，而是默认 runtime workspace 根放在 `packages/server/tmp/runtime-workspaces/<conversationId>`。

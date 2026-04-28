@@ -12,6 +12,24 @@ export function toRuntimeHostPath(sessionRoot: string, virtualRoot: string, virt
   return resolved;
 }
 
+export function fromRuntimeHostPath(sessionRoot: string, virtualRoot: string, hostPath: string): string {
+  const normalizedSessionRoot = path.resolve(sessionRoot);
+  const resolvedHostPath = path.resolve(hostPath);
+  if (resolvedHostPath === normalizedSessionRoot) {
+    return virtualRoot;
+  }
+  if (!resolvedHostPath.startsWith(`${normalizedSessionRoot}${path.sep}`)) {
+    return resolvedHostPath;
+  }
+  const relativePath = path.relative(normalizedSessionRoot, resolvedHostPath)
+    .split(path.sep)
+    .filter((segment) => segment.length > 0)
+    .join('/');
+  return virtualRoot === '/'
+    ? `/${relativePath}`
+    : `${virtualRoot}/${relativePath}`;
+}
+
 function readRelativeRuntimePath(virtualRoot: string, virtualPath: string): string {
   if (virtualRoot === '/') {
     return virtualPath.replace(/^\/+/, '');

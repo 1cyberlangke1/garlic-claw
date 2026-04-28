@@ -22,7 +22,7 @@ export function readRuntimeNativeShellOptions(): RuntimeNativeShellOptions {
       capabilities: {
         networkAccess: networkEnabled,
         persistentFilesystem: true,
-        persistentShellState: false,
+        persistentShellState: true,
         shellExecution: true,
         workspaceRead: true,
         workspaceWrite: true,
@@ -31,7 +31,7 @@ export function readRuntimeNativeShellOptions(): RuntimeNativeShellOptions {
       permissionPolicy: {
         networkAccess: networkPolicy,
         persistentFilesystem: 'allow',
-        persistentShellState: 'deny',
+        persistentShellState: 'allow',
         shellExecution: 'ask',
         workspaceRead: 'allow',
         workspaceWrite: 'allow',

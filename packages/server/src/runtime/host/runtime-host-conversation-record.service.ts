@@ -43,10 +43,10 @@ export class RuntimeHostConversationRecordService {
     return overview;
   }
 
-  deleteConversation(conversationId: string, userId?: string): JsonValue {
+  async deleteConversation(conversationId: string, userId?: string): Promise<JsonValue> {
     this.requireConversation(conversationId, userId);
     this.conversations.delete(conversationId);
-    this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(conversationId);
+    await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(conversationId);
     this.persistConversations();
     return { message: 'Conversation deleted' };
   }
@@ -187,7 +187,7 @@ function readConversationRecordValue(conversation: RuntimeConversationRecord, vi
   return view === 'overview' ? counted : asJsonValue({ ...counted, messages: conversation.messages.map(serializeConversationMessage) });
 }
 
-function resolveConversationStoragePath(): string {
+export function resolveConversationStoragePath(): string {
   if (process.env.GARLIC_CLAW_CONVERSATIONS_PATH) {return process.env.GARLIC_CLAW_CONVERSATIONS_PATH;}
   if (process.env.JEST_WORKER_ID) {return createServerTestArtifactPath({ extension: '.json', prefix: 'conversations.server.test', subdirectory: 'server' });}
   return resolveServerStatePath('conversations.server.json');

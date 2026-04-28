@@ -96,6 +96,44 @@ describe('BashToolService', () => {
     );
   });
 
+  it('describes persistent shell state when the backend keeps one shell session alive', async () => {
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: true,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: process.platform === 'win32' ? 'native-shell' : 'mock-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'allow',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => process.platform === 'win32' ? 'native-shell' : 'mock-shell',
+      } as never,
+    );
+
+    expect(service.buildToolDescription()).toContain('当前后端会保留 shell 进程状态');
+    expect(service.buildToolDescription()).toContain(
+      process.platform === 'win32'
+        ? '当前后端会保留同一个 PowerShell 会话状态'
+        : '当前后端会保留同一个 bash 会话状态',
+    );
+  });
+
   it('treats native-shell aliases as the same shell syntax family', async () => {
     const service = new BashToolService(
       {} as never,

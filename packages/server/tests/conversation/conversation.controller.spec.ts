@@ -54,12 +54,12 @@ describe('ConversationController', () => {
     expect(source).toContain("@Param('messageId', routeUuidPipe) messageId: string");
   });
 
-  it('creates, lists, reads and deletes conversations through user-owned conversation APIs', () => {
+  it('creates, lists, reads and deletes conversations through user-owned conversation APIs', async () => {
     const overview = { _count: { messages: 0 }, createdAt: '2026-04-11T00:00:00.000Z', id: conversationId, title: 'New Chat', updatedAt: '2026-04-11T00:00:00.000Z' };
     runtimeHostConversationRecordService.createConversation.mockReturnValue(overview);
     runtimeHostConversationRecordService.listConversations.mockReturnValue([overview]);
     runtimeHostConversationRecordService.getConversation.mockReturnValue({ ...overview, messages: [] });
-    runtimeHostConversationRecordService.deleteConversation.mockReturnValue({ message: 'Conversation deleted' });
+    runtimeHostConversationRecordService.deleteConversation.mockResolvedValue({ message: 'Conversation deleted' });
 
     expect(controller.createConversation('user-1', { title: 'New Chat' } as never)).toEqual(overview);
     expect(runtimeHostConversationRecordService.createConversation).toHaveBeenCalledWith({ title: 'New Chat', userId: 'user-1' });
@@ -67,7 +67,7 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.listConversations).toHaveBeenCalledWith('user-1');
     expect(controller.getConversation('user-1', conversationId)).toEqual({ ...overview, messages: [] });
     expect(runtimeHostConversationRecordService.getConversation).toHaveBeenCalledWith(conversationId, 'user-1');
-    expect(controller.deleteConversation('user-1', conversationId)).toEqual({ message: 'Conversation deleted' });
+    await expect(controller.deleteConversation('user-1', conversationId)).resolves.toEqual({ message: 'Conversation deleted' });
     expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenCalledWith(conversationId);
     expect(runtimeHostConversationRecordService.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
