@@ -174,3 +174,38 @@
   - `npx vitest run tests/features/ai-settings/components/provider-editor-form.spec.ts tests/features/ai-settings/components/AiProviderSidebar.spec.ts tests/features/ai-settings/components/AiProviderModelsPanel.spec.ts tests/features/chat/modules/chat-model-selection.spec.ts tests/features/ai-settings/composables/use-provider-settings.spec.ts tests/components/ModelQuickInput.spec.ts`
   - `npm run smoke:server`
   - `npm run smoke:web-ui`
+
+## 2026-04-28 weather skill 默认入口收口
+
+- 已开始本轮 weather skill 收口：
+  - 已读取 `TODO.md / task_plan.md / findings.md / progress.md`
+  - 已确认当前 `weather-query` skill 仍把默认执行路径写成内联 `curl`
+  - 已确认当前 `weather.js` 只是最小 `fetch wttr.in` 脚本
+- 已补历史对照：
+  - 找到 skill 之前的天气入口提交 `1bda57f`
+  - 已确认更早还存在 `weather-server` MCP 配置与测试
+- 当前下一步：
+  - 修改 weather skill 为中性说明，默认引导到脚本
+  - 完善脚本与补对应测试
+- 本轮已完成：
+  - `weather-query` skill 已改成中性说明，不再默认引导到内联 `curl`
+  - skill 默认执行方式已改为：
+    - `workdir` 指向 skill `Base directory`
+    - 执行 `node scripts/weather.js "<地点>"`
+  - `weather.js` 已改成可直接 `node` 运行的 CommonJS 脚本
+  - 脚本已补：
+    - 参数校验
+    - 超时与 HTTP 错误透传
+    - JSON 解析校验
+    - 地点优先使用用户输入
+    - 描述优先读取 `lang_zh-cn`
+    - 当前天气 + 最近两天摘要的单行输出
+  - 已新增回归测试：
+    - `project-weather-skill.spec.ts`
+    - `weather-script.spec.ts`
+- 本轮 fresh 验收已通过：
+  - `node ..\\..\\node_modules\\jest\\bin\\jest.js --runInBand --no-cache tests\\execution\\skill\\project-weather-skill.spec.ts tests\\execution\\skill\\weather-script.spec.ts`
+  - `npm run typecheck:server`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `node config\\skills\\definitions\\weather-query\\scripts\\weather.js "广东中山"`

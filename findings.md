@@ -93,3 +93,29 @@
 - 工具名污染目前没有仓库内显式常量；更像模型把外层工具语法中的 channel 片段直接吐进了 `toolName`。这类问题应在 repair 阶段清洗，而不是只把报错喂回模型重试。
 - `webfetch` 当前只接受 `text/*`、`application/json`、`application/xml`、`application/xhtml+xml`。`wttr.in` 返回 `application/text` 时会被误拒绝。
 - Windows 侧 runtime shell 当前虽然提供 `just-bash / native-shell / wsl-shell` 三种 backend，但 runtime-tools 配置 schema 默认值仍是 `native-shell`；如果前端把默认值写回配置，就会把常见 bash 风格命令推向 PowerShell 语义。
+
+## 2026-04-28 weather skill 默认入口收口
+
+- 当前 `bash` 工具底层说明已经会按 backend 区分 PowerShell 与 bash，但 `config/skills/definitions/weather-query/SKILL.md` 仍把默认路径写成内联 `curl`，这会把高层心智重新拉回 shell 方言。
+- 当前 `weather-query/scripts/weather.js` 过于薄，只做最小 `fetch wttr.in`，缺少：
+  - 参数清洗
+  - URL 构造的统一处理
+  - 网络异常与非 2xx 的明确报错
+  - 空响应 / 多行响应的兜转为稳定单行输出
+- 历史上天气能力经历过两种独立 owner：
+  - `1bda57f feat(server): use direct weather and tavily tools for chat` 中的直连 HTTP 工具 `get_weather`
+  - 更早的 `weather-server` MCP 配置与测试，说明天气查询以前不是靠 skill 文案拼接命令
+- 旧的直连天气工具能力特征：
+  - 先按 provider 顺序尝试 AMap / QWeather
+  - 做 geocode 与天气查询分步调用
+  - 返回结构化 current / forecast 数据，而不是单纯一条 shell 结果
+- 本轮如果回到 skill + 脚本路径，至少要保证：
+  - 默认入口稳定，不依赖模型自行写 shell 方言
+  - 出错时给真实错误
+  - 输出足够简洁，便于模型直接转述
+- `wttr.in` 的 `format=j1&lang=zh-cn` 响应存在两个直接坑：
+  - `nearest_area` 会把“广东中山”写成 `Guangdong / Chungshankuchih`
+  - 英文字段 `weatherDesc` 仍可能是英文，但同一对象下常有 `lang_zh-cn`
+- 因此脚本更稳的策略是：
+  - 地点标签优先使用用户输入
+  - 天气描述优先读取 `lang_zh-cn`，再回退 `lang_xx / weatherDesc`
