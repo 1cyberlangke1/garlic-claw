@@ -93,6 +93,7 @@
       />
 
       <ChatMessageList
+        v-if="activeTab === 'main'"
         :assistant-persona="currentConversationPersona ? { avatar: currentConversationPersona.avatar, name: currentConversationPersona.name } : null"
         :context-window-preview="contextWindowPreview"
         :loading="chat.loading"
@@ -102,7 +103,31 @@
         @update-message="updateMessage"
       />
 
+      <div v-if="activeTab !== 'main' && subagentDetail" class="subagent-view">
+        <div class="subagent-bar">
+          <span class="subagent-status" :class="subagentDetail.status">{{ subagentDetail.status }}</span>
+          <span>{{ subagentDetail.description || subagentDetail.subagentType || '子代理' }}</span>
+        </div>
+        <div class="subagent-msgs">
+          <div v-for="(m, i) in subagentDetail.request.messages" :key="i" class="subagent-msg" :class="m.role">
+            <strong>{{ m.role }}</strong>
+            <pre>{{ typeof m.content === 'string' ? m.content : JSON.stringify(m.content, null, 2) }}</pre>
+          </div>
+          <div v-if="subagentDetail.result" class="subagent-msg assistant">
+            <strong>result</strong>
+            <pre>{{ subagentDetail.result.text }}</pre>
+            <div v-if="subagentDetail.result.toolCalls?.length" class="subagent-tools">
+              <div v-for="(tc, j) in subagentDetail.result.toolCalls" :key="j" class="subagent-tool">
+                <span class="subagent-tool-name">{{ tc.toolName }}</span>
+                <pre>{{ JSON.stringify(tc.args, null, 2) }}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <ChatComposer
+        v-if="activeTab === 'main'"
         v-model="inputText"
         :can-send="canSend"
         :command-suggestions="commandSuggestions"
@@ -155,8 +180,15 @@ watch(currentConversationId, async (id) => {
   } catch { subagentTabs.value = [] }
 })
 
-function switchToSubagent(sessionId: string) {
+const subagentDetail = ref<any>(null)
+async function switchToSubagent(sessionId: string) {
   activeTab.value = sessionId
+  subagentDetail.value = null
+  try {
+    const token = localStorage.getItem('accessToken')
+    const resp = await fetch(`/api/subagents/${sessionId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (resp.ok) subagentDetail.value = await resp.json()
+  } catch { subagentDetail.value = null }
 }
 let currentPersonaRequestId = 0
 const {
@@ -461,6 +493,22 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   color: var(--text-muted);
   font-size: 13px;
 }
+
+.subagent-view { display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
+.subagent-bar { display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--shell-bg-elevated); border-radius:6px; font-size:14px; color:var(--shell-text); }
+.subagent-status { font-size:11px; padding:1px 8px; border-radius:999px; text-transform:uppercase; }
+.subagent-status.queued,.subagent-status.running { background:rgba(245,158,11,.15); color:#f59e0b; }
+.subagent-status.completed { background:rgba(34,197,94,.1); color:#22c55e; }
+.subagent-status.error { background:rgba(239,68,68,.1); color:#ef4444; }
+.subagent-msgs { display:grid; gap:8px; }
+.subagent-msg { padding:10px 14px; border-radius:6px; background:var(--shell-bg-elevated); }
+.subagent-msg.user { border-left:2px solid #3b82f6; }
+.subagent-msg.assistant { border-left:2px solid #22c55e; }
+.subagent-msg strong { display:block; margin-bottom:4px; font-size:11px; color:var(--shell-text-tertiary); text-transform:uppercase; }
+.subagent-msg pre { margin:0; font-size:13px; color:var(--shell-text); white-space:pre-wrap; word-break:break-word; font-family:inherit; }
+.subagent-tools { display:grid; gap:6px; margin-top:8px; }
+.subagent-tool { padding:8px 12px; border-radius:4px; background:var(--shell-bg); }
+.subagent-tool-name { font-size:11px; color:var(--shell-active); font-weight:500; }
 
 .no-conversation {
   display: grid;
