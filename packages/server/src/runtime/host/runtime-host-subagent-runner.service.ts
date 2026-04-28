@@ -46,7 +46,8 @@ export class RuntimeHostSubagentRunnerService {
 
   async runSubagent(pluginId: string, context: PluginCallContext, params: JsonObject): Promise<JsonValue> {
     const completed = await this.executeStoredSubagent(this.createStoredSubagent({ context, params, pluginId, visibility: 'inline', writeBackTarget: null }).execution);
-    return asJsonValue({ ...completed.result, sessionId: completed.session.id, sessionMessageCount: completed.session.messages.length });
+    const inlineResult = { ...completed.result, sessionId: completed.session.id, sessionMessageCount: completed.session.messages.length };
+    return asJsonValue({ ...inlineResult, text: `<subagent_result>\n${inlineResult.text}\n</subagent_result>` });
   }
 
   async startSubagent(pluginId: string, pluginDisplayName: string | undefined, context: PluginCallContext, params: JsonObject): Promise<JsonValue> {

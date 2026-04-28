@@ -1,11 +1,17 @@
 # Task Plan
 
-## 2026-04-28 README 重写与中文修正
+## 子代理 + 工具对齐 opencode
 
-1. 压缩旧规划记录 ✅
-2. 重写 README.md — 修复 GPT 风格中文，改为自然流畅风格
-3. 检查自动化工具注册情况
-4. Git 提交
+### 已完成
+- 聊天页标签栏 + 子代理详情查看 ✅
+- 后端 API GET /chat/conversations/:id/subagents ✅
+- 移除独立子代理页面 ✅
+- create_automation 工具 ✅
 
-### 当前进度
-- 步骤 1 进行中
+### 待做
+- 子代理结果内嵌到聊天流（opencode `<task_result>` 风格）
+- 子代理支持 cancel（abort 监听）
+- 工具信息展示完善（去掉假健康检查）
+- 工具列表对齐 opencode
+
+### 当前：子代理结果内嵌

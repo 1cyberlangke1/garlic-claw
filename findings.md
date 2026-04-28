@@ -1,17 +1,13 @@
 # Findings
 
-## 2026-04-28 README 中文问题
+## opencode task vs Garlic Claw 子代理
 
-- README 全文充斥 GPT 风格中文：过度解释、绕圈说话、句式怪异
-- "本 README 面向使用者和本地操作者，优先回答" — 没人这样说话
-- "当前仓库已经收敛到一套真实运行路径" — 什么是"收敛"？
-- "不再通过环境变量配置 AI provider" — 不自然的否定句
-- "下面这些命令主要给开发者和维护者使用；普通使用者不需要每次手动跑全套检查" — 啰嗦
-- "其中 `openai` 协议接入会显式走 `/v1/chat/completions`，不会误落到 Responses API" — GPT 腔
-- "如果要补做与当前运行链更接近的验证" — "补做"、"运行链"
+- opencode: `task` 工具 → 创建新 session（带 parentID）→ 结果嵌入聊天流 → 支持 task_id 恢复 → abort 自动取消
+- Garlic Claw: `subagent` 工具 → 创建独立 DB record → 结果写入独立存储 → 前端管理页面展示"健康状态"（假的）
+- 核心差异：opencode 的 task 是 disposable session，Garlic Claw 的是 persisted governance object
 
-## 自动化工具
-
-- 前端有自动化页面（创建/开关/执行/日志），但 persona prompt 之前写的 `create_automation` 工具不存在
-- 用户反馈 "暂无自动化规则 似乎并没有提供给 AI 提供工具啊" — 当前 AI 无法创建自动化
-- 原因：`create_automation` 不在任何 plugin 的 tool 注册中
+## 假健康检查
+- `readPluginHealth()` 对本地插件只返回 `{ ok: plugin.connected }`（永远 true）
+- `failureCount` 是 0/1 不是累计值
+- `lastCheckedAt` 每次查询都是"现在"
+- 前端"健康状态健康""最后检查尚未检查""最近错误无"完全无意义
