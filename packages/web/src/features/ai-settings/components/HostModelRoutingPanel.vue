@@ -2,8 +2,8 @@
   <section class="panel-card">
     <div class="panel-header">
       <div>
-        <h2>Host Model Routing</h2>
-        <p>这里只保留主聊天失败后的回退链；插件自己的模型策略已迁到对应插件设置页。</p>
+        <h2>模型回退链</h2>
+        <p>主对话模型调用失败时，按此处顺序依次尝试备用模型。</p>
       </div>
     </div>
 

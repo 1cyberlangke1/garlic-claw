@@ -4,7 +4,7 @@
       <div class="dialog-header">
         <div>
           <h2>{{ title }}</h2>
-          <p>按接入方式填写供应商信息、模型列表和连接凭据。</p>
+          <p>填写服务商接入信息、模型与凭据。</p>
         </div>
         <button
           type="button"

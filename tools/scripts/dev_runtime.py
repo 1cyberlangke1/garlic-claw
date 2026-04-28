@@ -242,7 +242,7 @@ def createDevServices() -> dict[str, dict[str, Any]]:
         "backend_app": {
             "name": "后端应用",
             "cwd": SERVER_DIR,
-            "command": ["node", "--watch", "dist/src/main.js"],
+            "command": ["node", "dist/src/main.js"],
             "stdoutPath": str(SERVER_APP_STDOUT),
             "stderrPath": str(SERVER_APP_STDERR),
             "stdoutLabel": "",
@@ -600,6 +600,11 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
             result="(通过)",
             success=True,
         )
+
+        # TSC 打印 "Watching for file changes." 后，文件系统可能仍有延迟写入。
+        # 若此时立刻启动 node --watch，会因为残留的 dist/ 写入事件反复重启 NestJS，
+        # 导致端口始终无法稳定监听，waitForPort 超时。等待 5 秒让文件系统落盘完毕。
+        time.sleep(5)
 
         backendAppName = "backend_app"
         backendAppService = services[backendAppName]

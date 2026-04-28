@@ -3,8 +3,8 @@
     <header class="panel-header">
       <div>
         <span class="panel-kicker">Subagent</span>
-        <h2>子代理配置</h2>
-        <p>这里直接配置内部 `subagent / subagent_background` 工具，不再通过 builtin plugin 间接设置。</p>
+        <h2>子代理</h2>
+        <p>配置子代理与后台子代理工具。</p>
       </div>
     </header>
 

@@ -2,8 +2,8 @@
   <section class="panel-card">
     <div class="panel-header">
       <div>
-        <h2>Vision Fallback</h2>
-        <p>文本模型收到图片时，使用这里配置的视觉模型转述。</p>
+        <h2>视觉回退</h2>
+        <p>文本模型收到图片输入时，自动使用下方配置的视觉模型转述图片内容。</p>
       </div>
       <label class="toggle-row">
         <input v-model="form.enabled" type="checkbox" />

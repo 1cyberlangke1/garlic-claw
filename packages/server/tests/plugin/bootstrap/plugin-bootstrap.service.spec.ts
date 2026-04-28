@@ -281,13 +281,18 @@ describe('PluginBootstrapService', () => {
     });
 
     expect(service.bootstrapBuiltins()).toEqual([
+      'builtin.automation',
       'builtin.memory',
     ]);
     expect(service.listPlugins()).toEqual([
       expect.objectContaining({
+        pluginId: 'builtin.automation',
+      }),
+      expect.objectContaining({
         pluginId: 'builtin.memory',
       }),
     ]);
+    expect(service.canReloadBuiltin('builtin.automation')).toBe(true);
     expect(service.canReloadBuiltin('builtin.memory')).toBe(true);
   });
 });

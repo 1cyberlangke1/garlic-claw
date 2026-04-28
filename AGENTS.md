@@ -145,6 +145,7 @@ packages/: server(NestJS) | web(Vue) | shared | plugin-sdk | plugins
 - 服务端口：
   - 前端 `23333`
   - 后端 `23330`
+  - 插件 WS `23331`
 - 优先使用脚本入口：
 
 ```powershell

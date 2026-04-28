@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { BuiltinPluginDefinition } from './builtin-plugin-definition';
+import { BUILTIN_AUTOMATION_PLUGIN } from './builtin-automation.plugin';
 import { BUILTIN_MEMORY_PLUGIN } from './builtin-memory.plugin';
 
 const RETIRED_BUILTIN_PLUGIN_IDS = [
@@ -14,6 +15,7 @@ const RETIRED_BUILTIN_PLUGIN_IDS = [
 @Injectable()
 export class BuiltinPluginRegistryService {
   private readonly definitions: BuiltinPluginDefinition[] = [
+    BUILTIN_AUTOMATION_PLUGIN,
     BUILTIN_MEMORY_PLUGIN,
   ];
 

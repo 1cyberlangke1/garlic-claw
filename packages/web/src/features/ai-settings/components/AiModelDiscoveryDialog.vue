@@ -3,7 +3,7 @@
     <div class="dialog-card">
       <div class="dialog-header">
         <div>
-          <h2>拉取模型</h2>
+          <h2>发现模型</h2>
           <p>{{ title }}</p>
         </div>
         <button type="button" class="close-button" @click="$emit('close')">×</button>

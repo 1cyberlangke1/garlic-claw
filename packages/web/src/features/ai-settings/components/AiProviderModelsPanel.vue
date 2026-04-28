@@ -7,7 +7,7 @@
       </div>
       <div class="header-actions">
         <button type="button" class="ghost-button" :disabled="discoveringModels" @click="$emit('discover-models')">
-          {{ discoveringModels ? '拉取中...' : '拉取模型' }}
+          {{ discoveringModels ? '发现中...' : '发现模型' }}
         </button>
         <button type="button" class="ghost-button" :disabled="testingConnection" @click="$emit('test-connection')">
           {{ testingConnection ? '测试中...' : '测试连接' }}
@@ -17,7 +17,7 @@
       </div>
     </div>
 
-    <p v-if="!provider" class="empty-state">从左侧选择 provider 后查看模型配置。</p>
+    <p v-if="!provider" class="empty-state">请从左侧选择服务商。</p>
 
     <template v-else>
       <p v-if="currentDefaultLabel" class="status-text default-summary">

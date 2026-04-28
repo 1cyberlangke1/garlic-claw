@@ -4,7 +4,7 @@
       <div>
         <span class="panel-kicker">Context</span>
         <h2>上下文治理</h2>
-        <p>这里直接配置自动标题、上下文压缩/滑动窗口，以及压缩摘要专用模型。</p>
+        <p>配置自动标题、上下文压缩窗口与压缩专用模型。</p>
       </div>
     </header>
 
@@ -12,7 +12,7 @@
       <div class="model-card-header">
         <div>
           <h3>压缩模型</h3>
-          <p>为空时默认使用当前会话所选模型；设置后，摘要压缩会固定走这里选择的 provider/model。</p>
+          <p>留空则使用当前会话模型；设置后将固定使用此模型生成压缩摘要。</p>
         </div>
         <button
           type="button"

@@ -3,8 +3,8 @@
     <header class="panel-header">
       <div>
         <span class="panel-kicker">Runtime Tools</span>
-        <h2>执行工具配置</h2>
-        <p>这里直接配置内部 `bash / read / glob / grep / write / edit` 工具，不再通过插件页间接设置。</p>
+        <h2>执行工具</h2>
+        <p>配置 bash、read、glob、grep、write、edit 等执行工具。</p>
       </div>
     </header>
 
