@@ -2056,6 +2056,11 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(overview.subagents), 'Expected subagent overview payload');
   });
 
+  await runStep('chat.conversation-subagents', async () => {
+    const subagents = await getJson(apiBase, `/chat/conversations/${state.conversationId}/subagents`, { headers: userHeaders() });
+    ensure(Array.isArray(subagents), 'Expected conversation subagents list');
+  });
+
   await runStep('plugins.subagents.types', async () => {
     const subagentTypes = await getJson(apiBase, '/subagents/types');
     ensure(Array.isArray(subagentTypes), 'Expected subagent type list payload');
