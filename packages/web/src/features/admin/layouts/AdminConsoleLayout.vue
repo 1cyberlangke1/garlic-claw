@@ -72,6 +72,7 @@ const navItems: Array<{
   name:
     | 'chat'
     | 'plugins'
+    | 'tools'
     | 'persona-settings'
     | 'mcp'
     | 'skills'
@@ -86,6 +87,7 @@ const navItems: Array<{
   { name: 'persona-settings', label: '人设', icon: userIdBold },
   { name: 'skills', label: '技能', icon: magicStick3Bold },
   { name: 'commands', label: '命令', icon: keyboardBold },
+  { name: 'tools', label: '工具', icon: widgetBold },
   { name: 'plugins', label: '插件', icon: widgetBold, divided: true },
   { name: 'mcp', label: 'MCP', icon: widgetAddBold },
   { name: 'automations', label: '自动化', icon: cpuBoltBold, divided: true },

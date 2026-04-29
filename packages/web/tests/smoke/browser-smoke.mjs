@@ -108,6 +108,7 @@ async function main() {
     await verifySubagentsPage(page);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
     await verifyRuntimeToolsSettingsPage(page);
+    await verifyToolsPage(page);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
 
@@ -543,7 +544,8 @@ async function runChatFlow(page, accessToken) {
 async function verifyMcpPage(page) {
   await page.goto('/mcp', { waitUntil: 'networkidle' });
   await expectText(page, 'MCP 管理');
-  await expectText(page, 'MCP 工具管理');
+  await expectText(page, '工具启用/禁用统一在工具管理页');
+  await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'MCP 配置');
   const configPath = (await page.locator('.mcp-config-path').textContent())?.trim() ?? '';
   assert.ok(configPath.length > 0, 'MCP 配置区未展示配置路径');
@@ -611,6 +613,8 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
     await page.waitForLoadState('networkidle');
   }
 
+  await expectText(page, '工具管理入口');
+  await expectText(page, '打开工具管理');
   return remotePluginHandle
 }
 
@@ -626,9 +630,17 @@ async function verifyRuntimeToolsSettingsPage(page) {
     await expectText(page, '收起高级配置');
     await expectText(page, 'bash 输出');
   }
-  await page.getByRole('button', { name: '执行工具管理' }).click();
-  await page.getByRole('heading', { name: '执行工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
-  await expectText(page, '内部工具源');
+  await expectText(page, '工具启用状态');
+  await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifyToolsPage(page) {
+  await page.goto(`/tools?kind=plugin&source=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'networkidle' });
+  await expectText(page, '工具管理');
+  await expectText(page, '执行工具管理');
+  await expectText(page, '子代理工具管理');
+  await expectText(page, 'MCP 工具管理');
+  await expectText(page, '插件工具管理');
 }
 
 async function verifySubagentsPage(page) {

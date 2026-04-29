@@ -37,7 +37,8 @@ const router = createRouter({
         },
         {
           path: 'tools',
-          redirect: { name: 'mcp' },
+          name: 'tools',
+          component: () => import('@/features/tools/views/ToolsView.vue'),
         },
         {
           path: 'mcp',

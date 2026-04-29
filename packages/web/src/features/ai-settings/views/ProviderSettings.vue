@@ -174,47 +174,43 @@
         @save="saveHostModelRoutingConfig"
       />
 
-      <RuntimeToolsSettingsPanel
-        v-if="activeSection === 'runtime-tools'"
-        :snapshot="runtimeToolsConfigSnapshot"
-        :saving="savingRuntimeToolsConfig"
-        @save="saveRuntimeToolsConfig"
-      />
+      <section v-if="activeSection === 'runtime-tools'" class="settings-stack">
+        <RuntimeToolsSettingsPanel
+          :snapshot="runtimeToolsConfigSnapshot"
+          :saving="savingRuntimeToolsConfig"
+          @save="saveRuntimeToolsConfig"
+        />
 
-      <SubagentSettingsPanel
-        v-if="activeSection === 'subagent'"
-        :snapshot="subagentConfigSnapshot"
-        :saving="savingSubagentConfig"
-        @save="saveSubagentConfig"
-      />
+        <article class="tool-management-hint">
+          <div>
+            <h3>工具启用状态</h3>
+            <p>执行工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
+          </div>
+          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=runtime-tools">打开工具管理</a>
+        </article>
+      </section>
+
+      <section v-if="activeSection === 'subagent'" class="settings-stack">
+        <SubagentSettingsPanel
+          :snapshot="subagentConfigSnapshot"
+          :saving="savingSubagentConfig"
+          @save="saveSubagentConfig"
+        />
+
+        <article class="tool-management-hint">
+          <div>
+            <h3>子代理工具状态</h3>
+            <p>子代理工具的启用/禁用已统一移到工具管理页，这里只保留运行参数配置。</p>
+          </div>
+          <a class="btn-ghost tool-management-link" href="/tools?kind=internal&source=subagent">打开工具管理</a>
+        </article>
+      </section>
 
       <ContextGovernanceSettingsPanel
         v-if="activeSection === 'context'"
         :snapshot="contextGovernanceConfigSnapshot"
         :saving="savingContextGovernanceConfig"
         @save="saveContextGovernanceConfig"
-      />
-
-      <ToolGovernancePanel
-        v-if="activeSection === 'runtime-governance'"
-        source-kind="internal"
-        source-id="runtime-tools"
-        title="执行工具管理"
-        description="内部执行工具的启用状态。"
-        :show-source-list="false"
-        empty-title="暂无内部执行工具"
-        empty-description="当前运行时未注册内部执行工具。"
-      />
-
-      <ToolGovernancePanel
-        v-if="activeSection === 'subagent-governance'"
-        source-kind="internal"
-        source-id="subagent"
-        title="子代理管理"
-        description="内部子代理工具的启用状态。"
-        :show-source-list="false"
-        empty-title="暂无内部子代理工具"
-        empty-description="当前运行时未注册内部子代理工具。"
       />
     </main>
 
@@ -249,8 +245,6 @@ import linkRoundBold from '@iconify-icons/solar/link-round-bold'
 import codeBold from '@iconify-icons/solar/code-bold'
 import cpuBold from '@iconify-icons/solar/cpu-bold'
 import documentTextBold from '@iconify-icons/solar/document-text-bold'
-import shieldCheckBold from '@iconify-icons/solar/shield-check-bold'
-import shieldBold from '@iconify-icons/solar/shield-bold'
 
 import AiModelDiscoveryDialog from '@/features/ai-settings/components/AiModelDiscoveryDialog.vue'
 import AiProviderEditorDialog from '@/features/ai-settings/components/AiProviderEditorDialog.vue'
@@ -259,7 +253,6 @@ import HostModelRoutingPanel from '@/features/ai-settings/components/HostModelRo
 import RuntimeToolsSettingsPanel from '@/features/ai-settings/components/RuntimeToolsSettingsPanel.vue'
 import SubagentSettingsPanel from '@/features/ai-settings/components/SubagentSettingsPanel.vue'
 import VisionFallbackPanel from '@/features/ai-settings/components/VisionFallbackPanel.vue'
-import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
 import { getProviderDriverLabel } from '@/features/ai-settings/components/provider-catalog'
 import { useProviderSettings } from '@/features/ai-settings/composables/use-provider-settings'
 
@@ -272,8 +265,6 @@ const navItems: Array<{ id: string; label: string; icon: IconifyIcon; divided?: 
   { id: 'runtime-tools', label: '执行工具', icon: codeBold, divided: true },
   { id: 'subagent', label: '子代理', icon: cpuBold },
   { id: 'context', label: '上下文设置', icon: documentTextBold },
-  { id: 'runtime-governance', label: '执行工具管理', icon: shieldCheckBold, divided: true },
-  { id: 'subagent-governance', label: '子代理管理', icon: shieldBold },
 ]
 
 const {
@@ -489,6 +480,39 @@ function saveCtx(model: AiModelConfig) {
   min-width: 0;
   overflow-y: auto;
   padding: 20px 24px;
+}
+
+.settings-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.tool-management-hint {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid var(--shell-border, #334155);
+  border-radius: 12px;
+  background: var(--shell-bg-elevated, #1e293b);
+}
+
+.tool-management-hint h3,
+.tool-management-hint p {
+  margin: 0;
+}
+
+.tool-management-hint p {
+  color: var(--shell-text-tertiary, #94a3b8);
+  font-size: 13px;
+}
+
+.tool-management-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -721,6 +745,7 @@ function saveCtx(model: AiModelConfig) {
   .provider-column { border-right: none; border-bottom: 1px solid var(--shell-border, #334155); padding: 0 0 12px; }
   .model-column { padding: 12px 0 0; }
   .ai-settings-content { padding: 16px; }
+  .tool-management-hint { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .ai-settings-layout { flex-direction: column; }

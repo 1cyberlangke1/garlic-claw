@@ -82,16 +82,15 @@
             description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
             @save="saveEventLog"
           />
-          <ToolGovernancePanel
-            class="detail-span"
-            :source-id="selectedPlugin.name"
-            source-kind="plugin"
-            title="插件工具管理"
-            description="插件声明的宿主工具可在此控制启用状态。"
-            :show-source-list="false"
-            empty-title="插件没有工具源"
-            empty-description="这个插件目前没有暴露宿主工具，或尚未连上运行时。"
-          />
+          <article class="detail-span tool-management-entry">
+            <div class="tool-management-entry-copy">
+              <h3>工具管理入口</h3>
+              <p>插件工具启用/禁用已统一移到工具管理页。当前页继续处理配置、作用域、日志和远程接入。</p>
+            </div>
+            <a class="tool-management-entry-link" :href="selectedPluginToolManagementHref">
+              打开工具管理
+            </a>
+          </article>
           <PluginEventLog
             class="detail-span"
             :events="eventLogs"
@@ -166,7 +165,6 @@ import {
   pluginUsesHostLlm,
 } from '@/features/plugins/composables/plugin-management.helpers'
 import { usePluginManagement } from '@/features/plugins/composables/use-plugin-management'
-import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
 
 const route = useRoute()
 const preferredPluginName = computed(() => {
@@ -243,6 +241,14 @@ const selectedPluginActions = computed(() =>
 const selectedPluginUsesLlm = computed(() =>
   selectedPlugin.value ? pluginUsesHostLlm(selectedPlugin.value) : false,
 )
+const selectedPluginToolManagementHref = computed(() => {
+  const params = new URLSearchParams({ kind: 'plugin' })
+  if (selectedPlugin.value?.name) {
+    params.set('source', selectedPlugin.value.name)
+  }
+
+  return `/tools?${params.toString()}`
+})
 const selectedCronJobs = computed(() =>
   cronJobs.value.length > 0 ? cronJobs.value : selectedPlugin.value?.crons ?? [],
 )

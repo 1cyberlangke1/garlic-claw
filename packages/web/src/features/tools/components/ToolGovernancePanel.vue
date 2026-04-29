@@ -50,8 +50,8 @@
     <div v-if="selectedSource" class="governance-layout">
       <article class="panel-card">
         <div class="panel-card-header">
-          <div>
-            <span class="panel-kicker">Source</span>
+        <div>
+            <span class="panel-kicker">工具源</span>
             <h3>{{ selectedSource.label }}</h3>
             <p>{{ sourceKindLabel(selectedSource.kind) }} · {{ selectedSource.id }}</p>
           </div>
@@ -100,7 +100,7 @@
       <article class="panel-card">
         <div class="panel-card-header">
           <div>
-            <span class="panel-kicker">Tools</span>
+            <span class="panel-kicker">工具</span>
             <h3>工具列表</h3>
             <p>按 source 查看并覆盖单个工具的启用状态。</p>
           </div>
@@ -188,7 +188,7 @@ const props = withDefaults(defineProps<{
   emptyDescription?: string
   sourcePlaceholder?: string
 }>(), {
-  kicker: 'Tool Governance',
+  kicker: '工具管理',
   sourceId: null,
   showSourceList: true,
   emptyTitle: '暂无工具源',

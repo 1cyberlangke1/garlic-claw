@@ -105,7 +105,7 @@ describe('PluginScopeEditor', () => {
 
     expect(wrapper.find('[data-test="scope-enable-button"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="scope-disable-button"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('统一工具治理页')
+    expect(wrapper.text()).toContain('工具管理页')
   })
 
   it('hides disable conversation options for protected builtin plugins', async () => {

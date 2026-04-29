@@ -4,38 +4,24 @@
       <header>
         <span class="hero-kicker">MCP Workspace</span>
         <h1>MCP 管理</h1>
-        <p>管理 MCP server 配置和对应的工具。</p>
+        <p>这里维护 MCP server 配置；工具启用/禁用统一在工具管理页处理。</p>
       </header>
     </section>
 
-    <ToolGovernancePanel
-      ref="toolGovernancePanel"
-      source-kind="mcp"
-      title="MCP 工具管理"
-      description="展示所有 MCP server 的状态和工具开关。"
-      empty-title="暂无 MCP 工具源"
-      empty-description="先在下方添加 MCP server，保存后这里会出现对应工具源。"
-      @update:selected-source-id="selectedSourceId = $event"
-    />
+    <section class="mcp-management-entry">
+      <div>
+        <h2>工具管理入口</h2>
+        <p>工具启用/禁用统一在工具管理页，这里只保留 MCP server 配置和日志能力。</p>
+      </div>
+      <a class="ghost-link" href="/tools?kind=mcp">打开工具管理</a>
+    </section>
 
-    <McpConfigPanel
-      :preferred-server-name="selectedSourceId"
-      @changed="refreshToolGovernance"
-    />
+    <McpConfigPanel />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
-import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
-
-const toolGovernancePanel = ref<InstanceType<typeof ToolGovernancePanel> | null>(null)
-const selectedSourceId = ref<string | null>(null)
-
-function refreshToolGovernance() {
-  void toolGovernancePanel.value?.refresh()
-}
 </script>
 
 <style scoped>
@@ -52,19 +38,49 @@ function refreshToolGovernance() {
   background: rgba(11, 21, 35, 0.72);
 }
 
+.mcp-management-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(11, 21, 35, 0.72);
+}
+
 .hero-kicker,
-.mcp-hero p {
+.mcp-hero p,
+.mcp-management-entry p {
   color: var(--text-muted);
 }
 
 .mcp-hero h1,
-.mcp-hero p {
+.mcp-hero p,
+.mcp-management-entry h2,
+.mcp-management-entry p {
   margin: 0;
+}
+
+.ghost-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  text-decoration: none;
 }
 
 @media (max-width: 720px) {
   .mcp-page {
     padding: 1rem;
+  }
+
+  .mcp-management-entry {
+    grid-template-columns: 1fr;
   }
 }
 </style>

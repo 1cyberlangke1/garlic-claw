@@ -180,7 +180,6 @@ describe('PluginsView', () => {
           SchemaConfigForm: { template: '<div />' },
           PluginLlmPreferencePanel: { template: '<div>插件模型策略</div>' },
           PluginScopeEditor: { template: '<div />' },
-          ToolGovernancePanel: { template: '<div>插件工具治理</div>' },
           PluginEventLog: { template: '<div />' },
           PluginStoragePanel: {
             props: ['prefix'],
@@ -216,9 +215,10 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可定时执行任务')
     expect(wrapper.text()).toContain('可暴露宿主内 JSON Route')
     expect(wrapper.text()).toContain('插件模型策略')
-    expect(wrapper.text()).toContain('插件工具治理')
+    expect(wrapper.text()).toContain('插件工具启用/禁用已统一移到工具管理页')
+    expect(wrapper.text()).toContain('打开工具管理')
     expect(wrapper.text()).toContain('最后检查')
-    expect(wrapper.text()).toContain('并发占用')
+    expect(wrapper.text()).toContain('并发')
     expect(wrapper.text()).toContain('2 / 6')
   })
 
@@ -233,7 +233,6 @@ describe('PluginsView', () => {
           SchemaConfigForm: { template: '<div />' },
           PluginLlmPreferencePanel: { template: '<div>插件模型策略</div>' },
           PluginScopeEditor: { template: '<div />' },
-          ToolGovernancePanel: { template: '<div>插件工具治理</div>' },
           PluginEventLog: { template: '<div />' },
           PluginStoragePanel: {
             props: ['prefix'],
