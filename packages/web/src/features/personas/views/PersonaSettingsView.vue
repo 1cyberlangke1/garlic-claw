@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
@@ -47,6 +48,25 @@ const listModeOptions = [
   { label: '禁用', value: 'none' },
   { label: '指定列表', value: 'selected' },
 ] as const
+
+const avatarInput = ref<HTMLInputElement | null>(null)
+const uploadingAvatar = ref(false)
+
+function triggerAvatarUpload() { avatarInput.value?.click() }
+
+async function handleAvatarUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !selectedPersona.value) return
+  uploadingAvatar.value = true
+  try {
+    const token = localStorage.getItem('accessToken')
+    const form = new FormData()
+    form.append('file', file)
+    await fetch(`/api/personas/${selectedPersona.value.id}/avatar`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form })
+    await refreshAll()
+  } finally { uploadingAvatar.value = false; input.value = '' }
+}
 
 function readPersonaAvatarLabel(name?: string | null) {
   const normalized = name?.trim()
@@ -154,10 +174,12 @@ function readPersonaAvatarAlt(name?: string | null) {
       <section class="persona-detail-card">
         <div class="section-header">
           <div class="persona-heading">
-            <div v-if="editorMode === 'edit' && selectedPersona" class="persona-avatar persona-avatar-medium" data-persona-avatar="selected-detail">
+            <div v-if="editorMode === 'edit' && selectedPersona" class="persona-avatar persona-avatar-medium" data-persona-avatar="selected-detail" style="cursor:pointer;position:relative" @click="triggerAvatarUpload">
               <img v-if="selectedPersona.avatar" :src="selectedPersona.avatar" :alt="readPersonaAvatarAlt(selectedPersona.name)" class="persona-avatar-image" />
               <span v-else>{{ readPersonaAvatarLabel(selectedPersona.name) }}</span>
+              <span class="avatar-upload-hint">点击上传</span>
             </div>
+            <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
             <div class="persona-heading-copy">
               <span class="section-kicker">{{ editorMode === 'create' ? '新建人设' : '编辑人设' }}</span>
               <h2>{{ editorMode === 'create' ? '新建人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
@@ -500,6 +522,20 @@ function readPersonaAvatarAlt(name?: string | null) {
   object-fit: cover;
   display: block;
 }
+
+.avatar-upload-hint {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,.6);
+  color: #fff;
+  font-size: 10px;
+  text-align: center;
+  padding: 2px 0;
+  border-radius: 0 0 6px 6px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.persona-avatar:hover .avatar-upload-hint { opacity: 1; }
 
 .page-error {
   margin: 0;
