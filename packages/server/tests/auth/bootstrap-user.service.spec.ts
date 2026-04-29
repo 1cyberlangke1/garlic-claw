@@ -1,4 +1,4 @@
-import { BootstrapAdminService } from '../../src/auth/bootstrap-admin.service';
+import { BootstrapUserService } from '../../src/auth/bootstrap-user.service';
 import { SINGLE_USER_EMAIL, SINGLE_USER_ID, SINGLE_USER_USERNAME } from '../../src/auth/single-user-auth';
 import { getPrismaClient } from '../../src/infrastructure/prisma/prisma-client';
 
@@ -6,7 +6,7 @@ jest.mock('../../src/infrastructure/prisma/prisma-client', () => ({
   getPrismaClient: jest.fn(),
 }));
 
-describe('BootstrapAdminService', () => {
+describe('BootstrapUserService', () => {
   const prisma = {
     user: {
       deleteMany: jest.fn(),
@@ -23,7 +23,7 @@ describe('BootstrapAdminService', () => {
     prisma.user.deleteMany.mockResolvedValue({ count: 2 });
     prisma.user.upsert.mockResolvedValue({ id: SINGLE_USER_ID });
 
-    await new BootstrapAdminService().ensureSingleUserOnStartup();
+    await new BootstrapUserService().ensureSingleUserOnStartup();
 
     expect(prisma.user.deleteMany).toHaveBeenCalledWith({
       where: { id: { not: SINGLE_USER_ID } },
@@ -48,7 +48,7 @@ describe('BootstrapAdminService', () => {
     prisma.user.deleteMany.mockResolvedValue({ count: 0 });
     prisma.user.upsert.mockResolvedValue({ id: SINGLE_USER_ID });
 
-    await new BootstrapAdminService().ensureSingleUserOnStartup();
+    await new BootstrapUserService().ensureSingleUserOnStartup();
 
     expect(prisma.user.deleteMany).toHaveBeenCalled();
     expect(prisma.user.upsert).toHaveBeenCalled();
@@ -56,7 +56,7 @@ describe('BootstrapAdminService', () => {
 
   it('runs startup warmup only once across repeated calls', async () => {
     let resolveWarmup!: () => void;
-    const service = new BootstrapAdminService();
+    const service = new BootstrapUserService();
     const warmupPromise = new Promise<void>((resolve) => {
       resolveWarmup = resolve;
     });

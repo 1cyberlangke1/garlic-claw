@@ -62,7 +62,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
           type: 'tool-result',
         };
         yield {
-          text: 'Done',
+          text: '<subagent_result>\nDone\n</subagent_result>',
           type: 'text-delta',
         };
       })(),
@@ -170,7 +170,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       providerId: 'openai',
       sessionId: expect.any(String),
       sessionMessageCount: 2,
-      text: 'Done',
+      text: '<subagent_result>\nDone\n</subagent_result>',
       toolCalls: [
         {
           input: {
@@ -259,7 +259,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
             }
           : {
               action: 'mutate',
-              text: 'Hooked result',
+              text: '<subagent_result>\nHooked result\n</subagent_result>',
             }),
       listPlugins: () => pluginBootstrapService.listPlugins(),
     };
@@ -289,14 +289,14 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
 
     expect(hookedResult).toMatchObject({
-      text: 'Hooked result',
+      text: '<subagent_result>\nHooked result\n</subagent_result>',
     });
 
     expect(runtimeKernelService.invokeHook).toHaveBeenCalledTimes(2);
     expect(runtimeKernelService.invokeHook.mock.calls[1][0].hookName).toBe('subagent:after-run');
     await expect(runtimeKernelService.invokeHook.mock.results[1].value).resolves.toEqual({
       action: 'mutate',
-      text: 'Hooked result',
+      text: '<subagent_result>\nHooked result\n</subagent_result>',
     });
     expect(mockStreamText).toHaveBeenCalledWith(expect.objectContaining({
       messages: [
@@ -1082,7 +1082,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
             }
           : {
               action: 'mutate',
-              text: 'Builtin hooked result',
+              text: '<subagent_result>\nBuiltin hooked result\n</subagent_result>',
             }),
       listPlugins: () => pluginBootstrapService.listPlugins(),
     };
@@ -1112,7 +1112,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
 
     expect(result).toMatchObject({
-      text: 'Builtin hooked result',
+      text: '<subagent_result>\nBuiltin hooked result\n</subagent_result>',
     });
     expect(runtimeKernelService.invokeHook).toHaveBeenCalledTimes(2);
     expect(runtimeKernelService.invokeHook.mock.calls[0][0]).toMatchObject({
@@ -1187,7 +1187,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      text: '继续完成回复',
+      text: expect.stringContaining('继续完成回复'),
       toolResults: [
         {
           output: {
