@@ -45,6 +45,7 @@ model Conversation {
   id              String    @id
   title           String    @default("新对话")
   userId          String    @map("user_id")
+  parentId        String?   @map("parent_id")
   activePersonaId String?   @map("active_persona_id")
   hostServicesJson String?  @map("host_services_json")
   skillsJson      String?   @map("skills_json")
