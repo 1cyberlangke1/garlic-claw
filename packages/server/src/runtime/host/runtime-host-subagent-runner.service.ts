@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue, PluginCallContext, PluginLlmMessage, PluginMessageTargetInfo, PluginSubagentDetail, PluginSubagentExecutionResult, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSummary, SubagentAfterRunHookResult, SubagentBeforeRunHookResult } from '@garlic-claw/shared';
-import { BadRequestException, Inject, Injectable, forwardRef } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Optional, forwardRef } from '@nestjs/common';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
 import { ProjectSubagentTypeRegistryService } from '../../execution/project/project-subagent-type-registry.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
@@ -25,12 +25,12 @@ export class RuntimeHostSubagentRunnerService {
   constructor(
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
     @Inject(forwardRef(() => ToolRegistryService)) private readonly toolRegistryService: ToolRegistryService,
     @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
     private readonly runtimeHostSubagentStoreService: RuntimeHostSubagentStoreService,
     private readonly runtimeHostSubagentSessionStoreService: RuntimeHostSubagentSessionStoreService,
     private readonly projectSubagentTypeRegistryService: ProjectSubagentTypeRegistryService,
+    @Optional() private readonly runtimeHostConversationRecordService?: RuntimeHostConversationRecordService,
   ) {}
 
   resumePendingSubagents(pluginId?: string): void { for (const subagent of this.runtimeHostSubagentStoreService.listPendingSubagents(pluginId)) { this.scheduleSubagentExecution(subagent.id); } }
@@ -95,7 +95,7 @@ export class RuntimeHostSubagentRunnerService {
       writeBackTarget: input.writeBackTarget,
     });
     // 创建子对话（ID 对齐 sessionId），让聊天页标签栏能发现并写消息
-    if (input.context.conversationId) {
+    if (input.context.conversationId && this.runtimeHostConversationRecordService) {
       this.runtimeHostConversationRecordService.createConversation({
         id: invocation.session.id,
         title: invocation.request.description || '子代理',
@@ -135,13 +135,13 @@ export class RuntimeHostSubagentRunnerService {
     const target = this.runtimeHostSubagentStoreService.readSubagent(input.subagentId, input.pluginId).removedAt ? null : input.writeBackTarget;
     try {
       // 创建 streaming 消息，随执行逐步更新
-      const childMsgId = await this.createChildConversationStreamingMessage(input.sessionId).catch(() => null);
+      const childMsgId = this.runtimeHostConversationRecordService ? await this.createChildConversationStreamingMessage(input.sessionId).catch(() => null) : null;
       const result = await this.executeSubagent({
         context: input.context, pluginId: input.pluginId, request: input.request,
         onTextDelta: childMsgId ? (text) => this.updateChildConversationMessage(input.sessionId, childMsgId, text).catch(() => {}) : undefined,
       });
       // 最终写入完整结果
-      await this.finalizeChildConversationMessage(input.sessionId, childMsgId, result.text).catch(() => {});
+      if (childMsgId) await this.finalizeChildConversationMessage(input.sessionId, childMsgId, result.text).catch(() => {});
       const session = this.runtimeHostSubagentSessionStoreService.appendAssistantMessage(input.pluginId, input.sessionId, result);
       const writeBack = await this.writeBackMessageIfNeeded(input.context, target, input.writeBackConversationRevision, { content: `<subagent_result>\n${result.text}\n</subagent_result>`, failureMessage: '后台子代理结果回写失败', model: result.modelId, provider: result.providerId });
       this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { result, session, status: 'completed', writeBack }));
