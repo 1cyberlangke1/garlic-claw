@@ -19,7 +19,6 @@ describe('server api contract freeze', () => {
       'GET /api/chat/conversations/:id',
       'GET /api/chat/conversations/:id/context-window',
       'GET /api/chat/conversations/:id/runtime-permissions/pending',
-      'GET /api/chat/conversations/:id/services',
       'GET /api/chat/conversations/:id/subagents',
       'GET /api/chat/sessions/:id/todo',
       'PATCH /api/chat/conversations/:id/messages/:messageId',
@@ -28,7 +27,6 @@ describe('server api contract freeze', () => {
       'POST /api/chat/conversations/:id/messages/:messageId/retry',
       'POST /api/chat/conversations/:id/messages/:messageId/stop',
       'POST /api/chat/conversations/:id/runtime-permissions/:requestId/reply',
-      'PUT /api/chat/conversations/:id/services',
       'PUT /api/chat/sessions/:id/todo',
     ]);
   });

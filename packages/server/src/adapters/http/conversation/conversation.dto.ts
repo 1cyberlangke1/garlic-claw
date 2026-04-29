@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -83,20 +82,6 @@ export class RetryMessageDto {
   @IsOptional()
   @MinLength(1)
   model?: string;
-}
-
-export class UpdateConversationHostServicesDto {
-  @IsBoolean()
-  @IsOptional()
-  sessionEnabled?: boolean;
-
-  @IsBoolean()
-  @IsOptional()
-  llmEnabled?: boolean;
-
-  @IsBoolean()
-  @IsOptional()
-  ttsEnabled?: boolean;
 }
 
 export class ConversationTodoItemDto {

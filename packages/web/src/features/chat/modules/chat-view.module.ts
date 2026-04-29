@@ -3,17 +3,13 @@ import type {
   AiModelCapabilities,
   ChatMessagePart,
   ChatMessageMetadata,
-  ConversationHostServices,
   RuntimePermissionDecision,
-  UpdateConversationHostServicesPayload,
 } from '@garlic-claw/shared'
 import {
   loadModelCapabilities,
   loadVisionFallbackEnabled,
 } from '@/features/chat/composables/chat-view.data'
 
-const loadConversationHostServices = async (_id?: string) => ({ sessionEnabled: true, llmEnabled: true, ttsEnabled: true } as const)
-const saveConversationHostServices = async (_id?: string, _patch?: Record<string, unknown>) => ({ sessionEnabled: true, llmEnabled: true, ttsEnabled: true } as const)
 import type { useChatStore } from '@/features/chat/store/chat'
 import {
   formatBytes,
@@ -23,8 +19,6 @@ import {
   prepareChatImageUpload,
   measureDataUrlBytes,
 } from '@/utils/chat-image-upload'
-import { getErrorMessage } from '@/utils/error'
-import { isValidConversationRouteId } from '@/utils/uuid'
 import { useChatCommandCatalog } from '@/features/chat/composables/use-chat-command-catalog'
 
 /**
@@ -59,13 +53,10 @@ export interface UploadNotice {
 export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   const inputText = ref('')
   const pendingImages = ref<PendingImage[]>([])
-  const compacting = ref(false)
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
-  const conversationHostServices = ref<ConversationHostServices | null>(null)
   const uploadProcessingNotices = ref<UploadNotice[]>([])
   const visionFallbackEnabled = ref(false)
   let capabilityRequestId = 0
-  let conversationHostServicesRequestId = 0
   const imageFallbackNotice = computed<UploadNotice[]>(() => {
     if (
       pendingImages.value.length === 0 ||
@@ -100,37 +91,15 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
 
     return null
   })
-  const conversationSendDisabledReason = computed(() => {
-    if (!chat.currentConversationId) {
-      return null
-    }
-
-    if (conversationHostServices.value?.sessionEnabled === false) {
-      return '当前会话宿主服务已停用'
-    }
-
-    if (conversationHostServices.value?.llmEnabled === false) {
-      return '当前会话已关闭 LLM 自动回复'
-    }
-
-    return null
-  })
-  const canBypassLlmDisabledReason = computed(() =>
-    conversationSendDisabledReason.value === '当前会话已关闭 LLM 自动回复'
-    && matchesRegisteredChatCommand(inputText.value, pendingImages.value.length),
-  )
+  const conversationSendDisabledReason = computed(() => null)
   const canSend = computed(() =>
-    Boolean(inputText.value.trim() || pendingImages.value.length > 0) &&
-    (
-      !conversationSendDisabledReason.value
-      || canBypassLlmDisabledReason.value
-    ),
+    Boolean(inputText.value.trim() || pendingImages.value.length > 0),
   )
   const retryActionLabel = computed(() =>
     chat.retryableMessageId ? '重试' : lastMessageRole.value === 'user' ? '发送' : '重试',
   )
   const canTriggerRetryAction = computed(() => {
-    if (chat.streaming || conversationSendDisabledReason.value) {
+    if (chat.streaming) {
       return false
     }
 
@@ -149,20 +118,12 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   const {
     commandSuggestions,
     applyCommandSuggestion,
-    resolveMatchedCommand,
   } = useChatCommandCatalog(inputText)
 
   watch(
     () => [chat.selectedProvider, chat.selectedModel],
     async ([provider, model]) => {
       await refreshSelectedCapabilities(provider, model)
-    },
-    { immediate: true },
-  )
-  watch(
-    () => chat.currentConversationId,
-    async (conversationId) => {
-      await refreshConversationHostServices(conversationId)
     },
     { immediate: true },
   )
@@ -187,12 +148,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    */
   async function send() {
     const text = inputText.value.trim()
-    if (
-      conversationSendDisabledReason.value
-      && !canBypassLlmDisabledReason.value
-    ) {
-      return
-    }
 
     if (!selectedCapabilities.value && chat.selectedProvider && chat.selectedModel) {
       await refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
@@ -343,10 +298,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    * @param messageId assistant 消息 ID
    */
   async function retryMessage(messageId: string) {
-    if (conversationSendDisabledReason.value) {
-      return
-    }
-
     await chat.retryMessage(messageId)
   }
 
@@ -361,7 +312,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    * - 按钮位置固定，不再因为有无可重试消息频繁跳布局
    */
   async function triggerRetryAction() {
-    if (chat.streaming || conversationSendDisabledReason.value) {
+    if (chat.streaming) {
       return
     }
 
@@ -407,123 +358,18 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     visionFallbackEnabled.value = await loadVisionFallbackEnabled()
   }
 
-  /**
-   * 读取当前会话的宿主服务开关。
-   * @param conversationId 当前会话 ID
-   */
-  async function refreshConversationHostServices(
-    conversationId: string | null = chat.currentConversationId,
-  ) {
-    const requestId = ++conversationHostServicesRequestId
-    if (!conversationId || !isValidConversationRouteId(conversationId)) {
-      conversationHostServices.value = null
-      return
-    }
-
-    const services = await loadConversationHostServices(conversationId)
-    if (
-      requestId !== conversationHostServicesRequestId ||
-      chat.currentConversationId !== conversationId
-    ) {
-      return
-    }
-
-    conversationHostServices.value = services
-  }
-
-  /**
-   * 更新当前会话的 LLM 自动回复开关。
-   * @param enabled 是否启用
-   */
-  async function setConversationLlmEnabled(enabled: boolean) {
-    await updateConversationHostServices({
-      llmEnabled: enabled,
-    })
-  }
-
-  /**
-   * 更新当前会话的宿主总开关。
-   * @param enabled 是否启用
-   */
-  async function setConversationSessionEnabled(enabled: boolean) {
-    await updateConversationHostServices({
-      sessionEnabled: enabled,
-    })
-  }
-
-  /**
-   * 更新当前会话的宿主服务开关，并在必要时停止当前流。
-   * @param patch 局部更新
-   */
-  async function updateConversationHostServices(
-    patch: UpdateConversationHostServicesPayload,
-  ) {
-    const conversationId = chat.currentConversationId
-    if (!conversationId) {
-      return
-    }
-
-    conversationHostServices.value = await saveConversationHostServices(
-      conversationId,
-      patch,
-    )
-
-    if (
-      chat.streaming &&
-      (conversationHostServices.value.sessionEnabled === false ||
-        conversationHostServices.value.llmEnabled === false)
-    ) {
-      await chat.stopStreaming()
-    }
-  }
-
-  async function compactConversationContext(commandText?: string) {
-    if (!chat.currentConversationId || compacting.value || chat.streaming) {
-      return
-    }
-    compacting.value = true
-    try {
-      await chat.sendMessage({
-        content: commandText ?? '/compact',
-        parts: [
-          {
-            text: commandText ?? '/compact',
-            type: 'text',
-          },
-        ],
-        provider: chat.selectedProvider,
-        model: chat.selectedModel,
-      })
-    } catch (error) {
-      throw new Error(getErrorMessage(error, '执行上下文压缩失败'), {
-        cause: error,
-      })
-    } finally {
-      compacting.value = false
-    }
-  }
-
-  function matchesRegisteredChatCommand(
-    text: string,
-    pendingImageCount: number,
-  ): boolean {
-    return pendingImageCount === 0 && Boolean(resolveMatchedCommand(text))
-  }
-
   async function replyRuntimePermission(requestId: string, decision: RuntimePermissionDecision) {
     await chat.replyRuntimePermission(requestId, decision)
   }
 
   return {
     inputText,
-    compacting,
     pendingImages,
     commandSuggestions,
     displayedMessages,
     contextWindowPreview,
     pendingRuntimePermissions,
     selectedCapabilities,
-    conversationHostServices,
     conversationSendDisabledReason,
     uploadNotices,
     canSend,
@@ -538,9 +384,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     deleteMessage,
     retryMessage,
     triggerRetryAction,
-    setConversationLlmEnabled,
-    setConversationSessionEnabled,
-    compactConversationContext,
     replyRuntimePermission,
     applyCommandSuggestion,
   }

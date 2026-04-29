@@ -16,7 +16,6 @@ import {
   RetryMessageDto,
   SendMessageDto,
   UpdateConversationTodoDto,
-  UpdateConversationHostServicesDto,
   UpdateMessageDto,
 } from './conversation.dto';
 

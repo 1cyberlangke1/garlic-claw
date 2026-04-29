@@ -56,16 +56,6 @@ describe('RuntimeHostConversationRecordService', () => {
         updatedAt: expect.any(String),
       },
     ]);
-    expect(service.readConversationHostServices(conversationId)).toEqual({
-      llmEnabled: true,
-      sessionEnabled: true,
-      ttsEnabled: true,
-    });
-    expect(service.writeConversationHostServices(conversationId, { ttsEnabled: false })).toEqual({
-      llmEnabled: true,
-      sessionEnabled: true,
-      ttsEnabled: false,
-    });
     expect(service.readRuntimePermissionApprovals(conversationId)).toEqual([]);
     expect(service.rememberRuntimePermissionApproval(conversationId, 'just-bash:command.execute')).toEqual([
       'just-bash:command.execute',
@@ -129,7 +119,6 @@ describe('RuntimeHostConversationRecordService', () => {
 
     expect(() => service.requireConversation('missing')).toThrow(NotFoundException);
     expect(() => service.getConversation('missing')).toThrow(NotFoundException);
-    expect(() => service.readConversationHostServices('missing')).toThrow(NotFoundException);
   });
 
   it('throws ForbiddenException when reading another user conversation', () => {
@@ -453,7 +442,7 @@ describe('RuntimeHostConversationRecordService', () => {
       conversations: {
         [legacyConversationId]: {
           createdAt: '2026-04-10T00:00:00.000Z',
-          hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
+
           id: legacyConversationId,
           messages: [],
           revision: `${legacyConversationId}:seed:0`,
@@ -492,7 +481,7 @@ describe('RuntimeHostConversationRecordService', () => {
       conversations: {
         'conversation-legacy': {
           createdAt: '2026-04-10T00:00:00.000Z',
-          hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
+
           id: 'conversation-legacy',
           messages: [],
           revision: 'conversation-legacy:seed:0',
@@ -518,7 +507,7 @@ describe('RuntimeHostConversationRecordService', () => {
       conversations: {
         'conversation-legacy': {
           createdAt: '2026-04-10T00:00:00.000Z',
-          hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
+
           id: 'conversation-legacy',
           messages: [],
           revision: 'conversation-legacy:seed:0',
@@ -529,7 +518,7 @@ describe('RuntimeHostConversationRecordService', () => {
         },
         '0196f0d8-4d30-7b0a-9f4f-20f6db0ad250': {
           createdAt: '2026-04-10T00:00:00.000Z',
-          hostServices: { llmEnabled: true, sessionEnabled: true, ttsEnabled: true },
+
           id: '0196f0d8-4d30-7b0a-9f4f-20f6db0ad250',
           messages: [{
             content: 'legacy message',

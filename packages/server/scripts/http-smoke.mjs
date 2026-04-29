@@ -888,23 +888,6 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof preview.maxWindowTokens === 'number', 'Expected context window preview to include maxWindowTokens');
   });
 
-  await runStep('chat.services.get', async () => {
-    const services = await getJson(apiBase, `/chat/conversations/${state.conversationId}/services`, { headers: userHeaders() });
-    ensure(typeof services.llmEnabled === 'boolean', 'Expected conversation services payload');
-  });
-
-  await runStep('chat.services.put', async () => {
-    const services = await putJson(apiBase, `/chat/conversations/${state.conversationId}/services`, {
-      body: {
-        llmEnabled: true,
-        sessionEnabled: true,
-        ttsEnabled: false,
-      },
-      headers: userHeaders(),
-    });
-    ensure(services.ttsEnabled === false, 'Expected conversation services update to persist');
-  });
-
   await runStep('chat.todo.get.initial', async () => {
     const todos = await getJson(apiBase, `/chat/sessions/${state.conversationId}/todo`, { headers: userHeaders() });
     ensure(Array.isArray(todos), 'Expected session todo payload to be an array');

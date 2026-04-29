@@ -12,7 +12,6 @@ import type {
   ChatMessageStatus,
   Conversation,
   ConversationDetail,
-  ConversationHostServices,
   ConversationTodoItem,
   DiscoveredAiModel,
   Message,
@@ -200,12 +199,6 @@ const conversationDetail: ConversationDetail = {
   messages: [message],
 }
 
-const conversationHostServices: ConversationHostServices = {
-  sessionEnabled: true,
-  llmEnabled: true,
-  ttsEnabled: true,
-}
-
 const sendPayload: SendMessagePayload = {
   content: 'hello',
   parts: [chatPart],
@@ -284,7 +277,6 @@ void [
   pluginInfo,
   pluginStorageEntry,
   conversationDetail,
-  conversationHostServices,
   sendPayload,
   updatePayload,
   retryPayload,

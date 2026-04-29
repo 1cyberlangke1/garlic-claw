@@ -17,9 +17,7 @@ describe('ConversationController', () => {
     deleteConversation: jest.fn(),
     getConversation: jest.fn(),
     listConversations: jest.fn(),
-    readConversationHostServices: jest.fn(),
     requireConversation: jest.fn(),
-    writeConversationHostServices: jest.fn(),
   };
   let controller: ConversationController;
 
@@ -101,16 +99,6 @@ describe('ConversationController', () => {
       providerId: 'openai',
       userId: 'user-1',
     });
-  });
-
-  it('reads and updates conversation services through owned conversation APIs', () => {
-    runtimeHostConversationRecordService.readConversationHostServices.mockReturnValue({ llmEnabled: false, sessionEnabled: true, ttsEnabled: true });
-    runtimeHostConversationRecordService.writeConversationHostServices.mockReturnValue({ llmEnabled: true, sessionEnabled: true, ttsEnabled: false });
-
-    expect(controller.getConversationHostServices('user-1', conversationId)).toEqual({ llmEnabled: false, sessionEnabled: true, ttsEnabled: true });
-    expect(runtimeHostConversationRecordService.readConversationHostServices).toHaveBeenCalledWith(conversationId, 'user-1');
-    expect(controller.updateConversationHostServices('user-1', conversationId, { ttsEnabled: false } as never)).toEqual({ llmEnabled: true, sessionEnabled: true, ttsEnabled: false });
-    expect(runtimeHostConversationRecordService.writeConversationHostServices).toHaveBeenCalledWith(conversationId, { ttsEnabled: false }, 'user-1');
   });
 
   it('reads and updates session todo through owned conversation APIs', () => {

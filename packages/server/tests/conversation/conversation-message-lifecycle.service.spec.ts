@@ -359,14 +359,6 @@ describe('ConversationMessageLifecycleService', () => {
     });
   });
 
-  it('blocks generation when conversation host services disable session or llm', async () => {
-    runtimeHostConversationRecordService.writeConversationHostServices(conversationId, { llmEnabled: false, sessionEnabled: false });
-
-    await expect(
-      service.startMessageGeneration(conversationId, { content: '你好' }, 'user-1'),
-    ).rejects.toThrow('当前会话宿主服务已停用');
-  });
-
   it('blocks starting a second active assistant generation', async () => {
     runtimeHostConversationMessageService.createMessage(conversationId, {
       content: '',
@@ -729,36 +721,6 @@ describe('ConversationMessageLifecycleService', () => {
     ]);
     expect(started.userMessage).toMatchObject({ role: 'display' });
     expect(started.assistantMessage).toMatchObject({ role: 'display' });
-  });
-
-  it('still allows internal context governance commands when llm auto reply is turned off', async () => {
-    runtimeHostConversationRecordService.writeConversationHostServices(conversationId, {
-      llmEnabled: false,
-      sessionEnabled: true,
-    });
-    contextGovernanceSettingsService.updateConfig({
-      contextCompaction: {
-        keepRecentMessages: 1,
-        strategy: 'summary',
-      },
-    });
-    runtimeHostConversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('history-1', 'user', '第一条历史消息'),
-      createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
-      createHistoryMessage('history-3', 'user', '第三条历史追问'),
-    ]);
-
-    await expect(
-      startAndWait(service, conversationTaskService, { content: '/compress' }, 'user-1'),
-    ).resolves.toMatchObject({
-      assistantMessage: expect.objectContaining({
-        role: 'display',
-      }),
-      userMessage: expect.objectContaining({
-        role: 'display',
-      }),
-    });
-    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });
 
   it('does not downgrade unknown slash text to display messages', async () => {
