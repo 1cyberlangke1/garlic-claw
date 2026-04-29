@@ -4,6 +4,7 @@ import type { ChatMessageMetadata, ChatMessagePart, ConversationHostServices, Js
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
+import { getPrismaClient } from '../../infrastructure/prisma/prisma-client';
 import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
@@ -38,6 +39,7 @@ export class RuntimeHostConversationRecordService {
     const conversation: RuntimeConversationRecord = { createdAt: timestamp, hostServices: { ...DEFAULT_HOST_SERVICES }, id: conversationId, messages: [], revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title?.trim() || 'New Chat', updatedAt: timestamp, userId: input.userId ?? SINGLE_USER_ID };
     this.conversations.set(conversation.id, conversation);
     this.persistConversations();
+    syncConversationToDb(conversation);
     const overview = readConversationRecordValue(conversation, 'overview') as JsonObject;
     void this.broadcastConversationCreated(overview, conversation.userId);
     return overview;
@@ -46,6 +48,7 @@ export class RuntimeHostConversationRecordService {
   async deleteConversation(conversationId: string, userId?: string): Promise<JsonValue> {
     this.requireConversation(conversationId, userId);
     this.conversations.delete(conversationId);
+    void deleteConversationFromDb(conversationId);
     await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(conversationId);
     this.persistConversations();
     return { message: 'Conversation deleted' };
@@ -327,4 +330,16 @@ function isPersistedConversationMessageValid(message: JsonObject): boolean {
 
 function isUuidV7Text(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function syncConversationToDb(c: RuntimeConversationRecord): void {
+  getPrismaClient().conversation.upsert({
+    create: { id: c.id, title: c.title, userId: c.userId, parentId: null },
+    update: { title: c.title },
+    where: { id: c.id },
+  }).then(() => {}, () => {});
+}
+
+async function deleteConversationFromDb(id: string): Promise<void> {
+  try { await getPrismaClient().conversation.delete({ where: { id } }); } catch { /* ok */ }
 }
