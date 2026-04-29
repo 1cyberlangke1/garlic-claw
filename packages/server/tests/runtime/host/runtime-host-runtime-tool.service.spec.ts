@@ -189,6 +189,25 @@ describe('RuntimeHostRuntimeToolService', () => {
           workspaceWrite: 'allow',
         },
       }),
+      getShellBackendDescriptor: jest.fn().mockReturnValue({
+        capabilities: {
+          networkAccess: true,
+          persistentFilesystem: true,
+          persistentShellState: false,
+          shellExecution: true,
+          workspaceRead: true,
+          workspaceWrite: true,
+        },
+        kind: 'mock-shell',
+        permissionPolicy: {
+          networkAccess: 'ask',
+          persistentFilesystem: 'allow',
+          persistentShellState: 'deny',
+          shellExecution: 'ask',
+          workspaceRead: 'allow',
+          workspaceWrite: 'allow',
+        },
+      }),
       getShellBackendKind: jest.fn().mockReturnValue('mock-shell'),
     };
     const runtimeToolPermissionService = {
@@ -278,6 +297,25 @@ describe('RuntimeHostRuntimeToolService', () => {
     };
     const runtimeToolBackendService = {
       getBackendDescriptor: jest.fn().mockReturnValue({
+        capabilities: {
+          networkAccess: true,
+          persistentFilesystem: true,
+          persistentShellState: false,
+          shellExecution: true,
+          workspaceRead: true,
+          workspaceWrite: true,
+        },
+        kind: 'native-shell',
+        permissionPolicy: {
+          networkAccess: 'ask',
+          persistentFilesystem: 'allow',
+          persistentShellState: 'deny',
+          shellExecution: 'ask',
+          workspaceRead: 'allow',
+          workspaceWrite: 'allow',
+        },
+      }),
+      getShellBackendDescriptor: jest.fn().mockReturnValue({
         capabilities: {
           networkAccess: true,
           persistentFilesystem: true,

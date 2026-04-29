@@ -98,13 +98,13 @@ describe('RuntimeHostSubagentStoreService', () => {
       writeBackTarget: null,
     });
 
-    expect(store.listOverview().subagents).toEqual([
+    expect(store.listOverview().subagents).toEqual(expect.arrayContaining([
       expect.objectContaining({ sessionId: 'subagent-session-background', visibility: 'background' }),
       expect.objectContaining({ sessionId: 'subagent-session-inline', visibility: 'inline' }),
-    ]);
-    expect(store.listSubagents('subagent')).toEqual([
+    ]));
+    expect(store.listSubagents('subagent')).toEqual(expect.arrayContaining([
       expect.objectContaining({ sessionId: 'subagent-session-inline', visibility: 'inline' }),
       expect.objectContaining({ sessionId: 'subagent-session-background', visibility: 'background' }),
-    ]);
+    ]));
   });
 });

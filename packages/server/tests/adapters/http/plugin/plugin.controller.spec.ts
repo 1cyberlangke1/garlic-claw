@@ -156,15 +156,6 @@ describe('PluginController', () => {
         displayName: 'Memory',
         eventLog: {},
         governance: { canDisable: true },
-        health: {
-          consecutiveFailures: 0,
-          failureCount: 0,
-          lastCheckedAt: null,
-          lastError: null,
-          lastErrorAt: null,
-          lastSuccessAt: null,
-          status: 'healthy',
-        },
         id: 'builtin.memory',
         lastSeenAt: null,
         manifest: {
@@ -192,15 +183,6 @@ describe('PluginController', () => {
         displayName: 'Remote Echo',
         eventLog: {},
         governance: { canDisable: true },
-        health: {
-          consecutiveFailures: 0,
-          failureCount: 0,
-          lastCheckedAt: null,
-          lastError: null,
-          lastErrorAt: null,
-          lastSuccessAt: null,
-          status: 'offline',
-        },
         id: 'remote.echo',
         lastSeenAt: null,
         manifest: {

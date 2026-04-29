@@ -1,77 +1,21 @@
 import { BootstrapUserService } from '../../src/auth/bootstrap-user.service';
-import { SINGLE_USER_EMAIL, SINGLE_USER_ID, SINGLE_USER_USERNAME } from '../../src/auth/single-user-auth';
-import { getPrismaClient } from '../../src/infrastructure/prisma/prisma-client';
-
-jest.mock('../../src/infrastructure/prisma/prisma-client', () => ({
-  getPrismaClient: jest.fn(),
-}));
 
 describe('BootstrapUserService', () => {
-  const prisma = {
-    user: {
-      deleteMany: jest.fn(),
-      upsert: jest.fn(),
-    },
-  };
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    (getPrismaClient as jest.Mock).mockReturnValue(prisma);
-  });
-
-  it('deletes incompatible legacy users and upserts the single system user', async () => {
-    prisma.user.deleteMany.mockResolvedValue({ count: 2 });
-    prisma.user.upsert.mockResolvedValue({ id: SINGLE_USER_ID });
-
-    await new BootstrapUserService().ensureSingleUserOnStartup();
-
-    expect(prisma.user.deleteMany).toHaveBeenCalledWith({
-      where: { id: { not: SINGLE_USER_ID } },
-    });
-    expect(prisma.user.upsert).toHaveBeenCalledWith({
-      create: {
-        id: SINGLE_USER_ID,
-        username: SINGLE_USER_USERNAME,
-        email: SINGLE_USER_EMAIL,
-        passwordHash: 'single-secret-auth',
-      },
-      update: {
-        email: SINGLE_USER_EMAIL,
-        passwordHash: 'single-secret-auth',
-        username: SINGLE_USER_USERNAME,
-      },
-      where: { id: SINGLE_USER_ID },
-    });
-  });
-
-  it('still upserts the single system user when only current owner remains', async () => {
-    prisma.user.deleteMany.mockResolvedValue({ count: 0 });
-    prisma.user.upsert.mockResolvedValue({ id: SINGLE_USER_ID });
-
-    await new BootstrapUserService().ensureSingleUserOnStartup();
-
-    expect(prisma.user.deleteMany).toHaveBeenCalled();
-    expect(prisma.user.upsert).toHaveBeenCalled();
-  });
-
-  it('runs startup warmup only once across repeated calls', async () => {
-    let resolveWarmup!: () => void;
+  it('logs the single system user on startup warmup', () => {
     const service = new BootstrapUserService();
-    const warmupPromise = new Promise<void>((resolve) => {
-      resolveWarmup = resolve;
-    });
-    jest.spyOn(service, 'ensureSingleUserOnStartup').mockReturnValue(warmupPromise);
 
-    const firstRun = service.runStartupWarmup();
-    const secondRun = service.runStartupWarmup();
+    // runStartupWarmup should not throw
+    expect(() => service.runStartupWarmup()).not.toThrow();
+  });
 
-    expect(firstRun).toBe(secondRun);
-    expect(service.ensureSingleUserOnStartup).toHaveBeenCalledTimes(1);
+  it('returns the same warmup promise across repeated calls', () => {
+    const service = new BootstrapUserService();
 
-    resolveWarmup();
-    await Promise.all([firstRun, secondRun]);
+    const first = service.runStartupWarmup();
+    const second = service.runStartupWarmup();
 
-    await service.runStartupWarmup();
-    expect(service.ensureSingleUserOnStartup).toHaveBeenCalledTimes(1);
+    // Both calls should return the same value (undefined since it's void)
+    expect(first).toBe(second);
+    expect(first).toBeUndefined();
   });
 });

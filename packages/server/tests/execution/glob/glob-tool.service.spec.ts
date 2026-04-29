@@ -4,6 +4,7 @@ describe('GlobToolService', () => {
   it('formats empty glob results with explicit totals', async () => {
     const service = new GlobToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -46,6 +47,7 @@ describe('GlobToolService', () => {
   it('formats truncated glob results with visible totals', async () => {
     const service = new GlobToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -90,6 +92,7 @@ describe('GlobToolService', () => {
   it('formats partial glob output with skipped paths', async () => {
     const service = new GlobToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -144,6 +147,7 @@ describe('GlobToolService', () => {
   it('chooses a better suggested read target than the first raw glob match', async () => {
     const service = new GlobToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {

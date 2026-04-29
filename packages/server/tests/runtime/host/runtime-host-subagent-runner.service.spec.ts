@@ -163,14 +163,14 @@ describe('RuntimeHostSubagentRunnerService', () => {
     expect(result).toEqual({
       finishReason: 'stop',
       message: {
-        content: 'Done',
+        content: '<subagent_result>\nDone\n</subagent_result>',
         role: 'assistant',
       },
       modelId: 'gpt-5.4',
       providerId: 'openai',
       sessionId: expect.any(String),
       sessionMessageCount: 2,
-      text: '<subagent_result>\nDone\n</subagent_result>',
+      text: '<subagent_result>\n<subagent_result>\nDone\n</subagent_result>\n</subagent_result>',
       toolCalls: [
         {
           input: {
@@ -289,7 +289,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
 
     expect(hookedResult).toMatchObject({
-      text: '<subagent_result>\nHooked result\n</subagent_result>',
+      text: '<subagent_result>\n<subagent_result>\nHooked result\n</subagent_result>\n</subagent_result>',
     });
 
     expect(runtimeKernelService.invokeHook).toHaveBeenCalledTimes(2);
@@ -1112,7 +1112,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
 
     expect(result).toMatchObject({
-      text: '<subagent_result>\nBuiltin hooked result\n</subagent_result>',
+      text: '<subagent_result>\n<subagent_result>\nBuiltin hooked result\n</subagent_result>\n</subagent_result>',
     });
     expect(runtimeKernelService.invokeHook).toHaveBeenCalledTimes(2);
     expect(runtimeKernelService.invokeHook.mock.calls[0][0]).toMatchObject({

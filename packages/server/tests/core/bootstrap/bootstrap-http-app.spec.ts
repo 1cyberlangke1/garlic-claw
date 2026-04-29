@@ -21,7 +21,7 @@ describe('bootstrapHttpApp', () => {
         if (token?.name === 'PluginBootstrapService') {
           return { bootstrapBuiltins: jest.fn() };
         }
-        if (token?.name === 'BootstrapAdminService') {
+        if (token?.name === 'BootstrapUserService') {
           return { runStartupWarmup: jest.fn() };
         }
         throw new Error(`unexpected token: ${token?.name ?? 'unknown'}`);

@@ -440,7 +440,7 @@ describe('RuntimeHostService', () => {
       providerId: 'openai',
       sessionId: expect.any(String),
       sessionMessageCount: 2,
-      text: 'Generated: 请帮我总结当前对话',
+      text: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
       toolCalls: [],
       toolResults: [],
       usage: {
@@ -516,7 +516,7 @@ describe('RuntimeHostService', () => {
       conversationId: fixtureConversationId,
     })).resolves.toEqual([
       expect.objectContaining({
-        content: 'Generated: 请帮我总结当前对话',
+        content: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
         id: expect.any(String),
       }),
     ]);

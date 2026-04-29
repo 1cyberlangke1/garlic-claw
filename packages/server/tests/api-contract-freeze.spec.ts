@@ -20,6 +20,7 @@ describe('server api contract freeze', () => {
       'GET /api/chat/conversations/:id/context-window',
       'GET /api/chat/conversations/:id/runtime-permissions/pending',
       'GET /api/chat/conversations/:id/services',
+      'GET /api/chat/conversations/:id/subagents',
       'GET /api/chat/sessions/:id/todo',
       'PATCH /api/chat/conversations/:id/messages/:messageId',
       'POST /api/chat/conversations',

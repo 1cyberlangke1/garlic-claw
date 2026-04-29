@@ -39,7 +39,11 @@ describe('RuntimeNativeShellService', () => {
       if (!nextRoot) {
         continue;
       }
-      fs.rmSync(nextRoot, { force: true, recursive: true });
+      try {
+        fs.rmSync(nextRoot, { force: true, recursive: true });
+      } catch {
+        // Windows may hold file locks on temp directories; ignore cleanup failures
+      }
     }
   });
 
