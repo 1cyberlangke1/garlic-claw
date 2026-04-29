@@ -435,6 +435,56 @@ describe('RuntimeHostConversationRecordService', () => {
     expect(fs.existsSync(sessionRoot)).toBe(false);
   });
 
+  it('persists plugin conversation sessions across service reloads', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'Session Chat', userId: 'user-1' }) as { id: string }).id;
+
+    expect(service.startConversationSession('builtin.memory', {
+      conversationId,
+      source: 'chat-hook',
+      userId: 'user-1',
+    }, {
+      captureHistory: true,
+      metadata: {
+        flow: 'memory',
+      },
+      timeoutMs: 60_000,
+    })).toEqual({
+      captureHistory: true,
+      conversationId,
+      expiresAt: expect.any(String),
+      historyMessages: [],
+      lastMatchedAt: null,
+      metadata: {
+        flow: 'memory',
+      },
+      pluginId: 'builtin.memory',
+      startedAt: expect.any(String),
+      timeoutMs: 60_000,
+    });
+
+    const reloaded = new RuntimeHostConversationRecordService();
+
+    expect(reloaded.getConversationSession('builtin.memory', {
+      conversationId,
+      source: 'chat-hook',
+      userId: 'user-1',
+    })).toEqual({
+      captureHistory: true,
+      conversationId,
+      expiresAt: expect.any(String),
+      historyMessages: [],
+      lastMatchedAt: null,
+      metadata: {
+        flow: 'memory',
+      },
+      pluginId: 'builtin.memory',
+      startedAt: expect.any(String),
+      timeoutMs: 60_000,
+    });
+  });
+
   it('drops legacy todos from conversation storage payload after reload', () => {
     process.env[conversationsEnvKey] = storagePath;
     const legacyConversationId = '019dc88c-1a11-7806-a2ff-9f4ab8d4fb47';

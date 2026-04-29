@@ -13,13 +13,13 @@ import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readP
 
 export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; id: string; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
-interface RuntimeConversationStoragePayload { conversations?: Record<string, RuntimeConversationRecord>; }
+interface RuntimeConversationStoragePayload { conversations?: Record<string, RuntimeConversationRecord>; pluginConversationSessions?: Record<string, RuntimeConversationSessionRecord>; }
 type RuntimeConversationRecordView = 'detail' | 'history' | 'overview' | 'summary';
 const CONVERSATION_HISTORY_STATUSES = new Set(['pending', 'streaming', 'completed', 'stopped', 'error']);
 
 @Injectable()
 export class RuntimeHostConversationRecordService {
-  private readonly conversationSessions = new Map<string, RuntimeConversationSessionRecord>();
+  private readonly conversationSessions: Map<string, RuntimeConversationSessionRecord>;
   private readonly storagePath = resolveConversationStoragePath();
   private readonly conversations: Map<string, RuntimeConversationRecord>;
 
@@ -28,6 +28,7 @@ export class RuntimeHostConversationRecordService {
     @Optional() private readonly runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
   ) {
     const stored = this.readStoredConversations();
+    this.conversationSessions = stored.sessions;
     this.conversations = stored.records;
     if (stored.migrated) {this.persistConversations();}
   }
@@ -45,6 +46,7 @@ export class RuntimeHostConversationRecordService {
   async deleteConversation(conversationId: string, userId?: string): Promise<JsonValue> {
     this.requireConversation(conversationId, userId);
     this.conversations.delete(conversationId);
+    this.removeConversationSessions(conversationId);
     await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(conversationId);
     this.persistConversations();
     return { message: 'Conversation deleted' };
@@ -55,9 +57,13 @@ export class RuntimeHostConversationRecordService {
   listConversations(userId?: string): JsonValue { return [...this.conversations.values()].filter((conversation) => !userId || conversation.userId === userId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((conversation) => readConversationRecordValue(conversation, 'overview')); }
 
   listChildConversations(parentId: string): JsonValue { return [...this.conversations.values()].filter(c => c.parentId === parentId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map(c => readConversationRecordValue(c, 'overview')); }
-  listPluginConversationSessions(pluginId: string): JsonValue { return [...this.conversationSessions.values()].filter((session) => session.pluginId === pluginId).sort((left, right) => left.startedAt.localeCompare(right.startedAt)).map(serializeConversationSession); }
+  listPluginConversationSessions(pluginId: string): JsonValue { this.pruneExpiredConversationSessions(); return [...this.conversationSessions.values()].filter((session) => session.pluginId === pluginId).sort((left, right) => left.startedAt.localeCompare(right.startedAt)).map(serializeConversationSession); }
   readConversationRevision(conversationId: string): string | null { return this.conversations.get(conversationId)?.revision ?? null; }
-  finishPluginConversationSession(pluginId: string, conversationId: string): boolean { return this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId)); }
+  finishPluginConversationSession(pluginId: string, conversationId: string): boolean {
+    const deleted = this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId));
+    if (deleted) {this.persistConversations();}
+    return deleted;
+  }
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'summary'); }
   readRuntimePermissionApprovals(conversationId: string, userId?: string): string[] { return [...(this.requireConversation(conversationId, userId).runtimePermissionApprovals ?? [])]; }
   readConversationHistory(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'history'); }
@@ -134,27 +140,70 @@ export class RuntimeHostConversationRecordService {
     if (!session) {return null;}
     if (Date.parse(session.expiresAt) > Date.now()) {return session;}
     this.conversationSessions.delete(key);
+    this.persistConversations();
     return null;
   }
 
-  private saveConversationSession(session: RuntimeConversationSessionRecord): JsonValue { this.conversationSessions.set(readConversationSessionKey(session.pluginId, session.conversationId), session); return serializeConversationSession(session); }
+  private saveConversationSession(session: RuntimeConversationSessionRecord): JsonValue {
+    this.conversationSessions.set(readConversationSessionKey(session.pluginId, session.conversationId), cloneJsonValue(session) as RuntimeConversationSessionRecord);
+    this.persistConversations();
+    return serializeConversationSession(session);
+  }
 
   private readSessionTimeoutMs(params: JsonObject): number { const timeoutMs = readPositiveInteger(params, 'timeoutMs'); if (timeoutMs) {return timeoutMs;} throw new BadRequestException('timeoutMs must be a positive integer'); }
 
   private persistConversations(): void {
     fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-    fs.writeFileSync(this.storagePath, JSON.stringify({ conversations: Object.fromEntries([...this.conversations.entries()].map(([id, record]) => [id, cloneJsonValue(record)])) }, null, 2), 'utf-8');
+    const payload: RuntimeConversationStoragePayload = {
+      conversations: Object.fromEntries([...this.conversations.entries()].map(([id, record]) => [id, cloneJsonValue(record)])),
+    };
+    if (this.conversationSessions.size > 0) {
+      payload.pluginConversationSessions = Object.fromEntries([...this.conversationSessions.entries()].map(([key, session]) => [key, cloneJsonValue(session)]));
+    }
+    fs.writeFileSync(this.storagePath, JSON.stringify(payload, null, 2), 'utf-8');
   }
 
-  private readStoredConversations(): { migrated: boolean; records: Map<string, RuntimeConversationRecord> } {
+  private readStoredConversations(): {
+    migrated: boolean;
+    records: Map<string, RuntimeConversationRecord>;
+    sessions: Map<string, RuntimeConversationSessionRecord>;
+  } {
     try {
       fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-      if (!fs.existsSync(this.storagePath)) {return { migrated: false, records: new Map() };}
+      if (!fs.existsSync(this.storagePath)) {return { migrated: false, records: new Map(), sessions: new Map() };}
       const payload = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as RuntimeConversationStoragePayload;
       const entries = Object.entries(payload.conversations ?? {});
       const records = new Map(entries.flatMap(([id, record]) => isPersistedConversationRecordValid(id, record) ? [[id, cloneJsonValue(record)]] : []));
-      return { migrated: records.size !== entries.length, records };
-    } catch { return { migrated: false, records: new Map() }; }
+      const sessionEntries = Object.entries(payload.pluginConversationSessions ?? {});
+      const sessions = new Map(sessionEntries.flatMap(([key, session]) => isPersistedConversationSessionRecordValid(key, session) ? [[key, cloneJsonValue(session)]] : []));
+      const activeSessions = new Map([...sessions.entries()].filter(([, session]) => Date.parse(session.expiresAt) > Date.now()));
+      return {
+        migrated: records.size !== entries.length || sessions.size !== sessionEntries.length || activeSessions.size !== sessions.size,
+        records,
+        sessions: activeSessions,
+      };
+    } catch {
+      return { migrated: false, records: new Map(), sessions: new Map() };
+    }
+  }
+
+  private pruneExpiredConversationSessions(): void {
+    let changed = false;
+    for (const [key, session] of this.conversationSessions.entries()) {
+      if (Date.parse(session.expiresAt) <= Date.now()) {
+        this.conversationSessions.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) {this.persistConversations();}
+  }
+
+  private removeConversationSessions(conversationId: string): void {
+    for (const [key, session] of this.conversationSessions.entries()) {
+      if (session.conversationId === conversationId) {
+        this.conversationSessions.delete(key);
+      }
+    }
   }
 
   private async broadcastConversationCreated(conversation: JsonObject, userId: string): Promise<void> {
@@ -316,6 +365,19 @@ function isPersistedConversationRecordValid(id: string, record: RuntimeConversat
 
 function isPersistedConversationMessageValid(message: JsonObject): boolean {
   return typeof message.id === 'string' && isUuidV7Text(message.id);
+}
+
+function isPersistedConversationSessionRecordValid(key: string, session: RuntimeConversationSessionRecord): boolean {
+  return key === readConversationSessionKey(session.pluginId, session.conversationId)
+    && typeof session.pluginId === 'string'
+    && typeof session.conversationId === 'string'
+    && typeof session.startedAt === 'string'
+    && typeof session.expiresAt === 'string'
+    && typeof session.timeoutMs === 'number'
+    && typeof session.captureHistory === 'boolean'
+    && (session.lastMatchedAt === null || typeof session.lastMatchedAt === 'string')
+    && Array.isArray(session.historyMessages)
+    && session.historyMessages.every((message) => typeof message === 'object' && message !== null && !Array.isArray(message));
 }
 
 function isUuidV7Text(value: string): boolean {
