@@ -61,9 +61,8 @@
 
       <div v-if="subagentTabs.length" class="chat-tabs">
         <button class="chat-tab" :class="{ active: activeTab === 'main' }" @click="activeTab = 'main'">对话</button>
-        <button v-for="s in subagentTabs" :key="s.sessionId" class="chat-tab" :class="{ active: activeTab === s.sessionId }" @click="switchToSubagent(s.sessionId)">
-          <span class="tab-dot" :class="s.status" />
-          {{ s.description || s.subagentType || '子代理' }}
+        <button v-for="s in subagentTabs" :key="s.id" class="chat-tab" :class="{ active: activeTab === s.id }" @click="switchToSubagent(s.id)">
+          {{ s.title || '子代理' }}
         </button>
       </div>
 
@@ -93,7 +92,6 @@
       />
 
       <ChatMessageList
-        v-if="activeTab === 'main'"
         :assistant-persona="currentConversationPersona ? { avatar: currentConversationPersona.avatar, name: currentConversationPersona.name } : null"
         :context-window-preview="contextWindowPreview"
         :loading="chat.loading"
@@ -103,31 +101,8 @@
         @update-message="updateMessage"
       />
 
-      <div v-if="activeTab !== 'main' && subagentDetail" class="subagent-view">
-        <div class="subagent-bar">
-          <span class="subagent-status" :class="subagentDetail.status">{{ subagentDetail.status }}</span>
-          <span>{{ subagentDetail.description || subagentDetail.subagentType || '子代理' }}</span>
-        </div>
-        <div class="subagent-msgs">
-          <div v-for="(m, i) in subagentDetail.request.messages" :key="i" class="subagent-msg" :class="m.role">
-            <strong>{{ m.role }}</strong>
-            <pre>{{ typeof m.content === 'string' ? m.content : JSON.stringify(m.content, null, 2) }}</pre>
-          </div>
-          <div v-if="subagentDetail.result" class="subagent-msg assistant">
-            <strong>result</strong>
-            <pre>{{ subagentDetail.result.text }}</pre>
-            <div v-if="subagentDetail.result.toolCalls?.length" class="subagent-tools">
-              <div v-for="(tc, j) in subagentDetail.result.toolCalls" :key="j" class="subagent-tool">
-                <span class="subagent-tool-name">{{ tc.toolName }}</span>
-                <pre>{{ JSON.stringify(tc.args, null, 2) }}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <ChatComposer
-        v-if="activeTab === 'main'"
         v-model="inputText"
         :can-send="canSend"
         :command-suggestions="commandSuggestions"
@@ -166,7 +141,7 @@ import { isValidConversationRouteId } from '@/utils/uuid'
 const chat = useChatStore()
 const toolbarExpanded = ref(true)
 const activeTab = ref('main')
-const subagentTabs = ref<Array<{ sessionId: string; description?: string; subagentType?: string; status: string }>>([])
+const subagentTabs = ref<Array<{ id: string; title: string }>>([])
 const currentConversationPersona = ref<PluginPersonaCurrentInfo | null>(null)
 const currentConversationId = computed(() => chat.currentConversationId ?? null)
 
@@ -180,15 +155,9 @@ watch(currentConversationId, async (id) => {
   } catch { subagentTabs.value = [] }
 })
 
-const subagentDetail = ref<any>(null)
-async function switchToSubagent(sessionId: string) {
+function switchToSubagent(sessionId: string) {
   activeTab.value = sessionId
-  subagentDetail.value = null
-  try {
-    const token = localStorage.getItem('accessToken')
-    const resp = await fetch(`/api/subagents/${sessionId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-    if (resp.ok) subagentDetail.value = await resp.json()
-  } catch { subagentDetail.value = null }
+  chat.currentConversationId = sessionId
 }
 let currentPersonaRequestId = 0
 const {
@@ -285,11 +254,6 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 .chat-tab { display:flex; align-items:center; gap:6px; padding:6px 14px; border:1px solid var(--shell-border, #334155); border-radius:8px 8px 0 0; border-bottom:none; background:transparent; color:var(--shell-text-secondary, #cbd5e1); font-size:13px; cursor:pointer; white-space:nowrap; font-family:inherit; transition:all .12s; }
 .chat-tab:hover { background:var(--shell-bg-hover, #334155); color:var(--shell-text, #f1f5f9); }
 .chat-tab.active { background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); border-color:var(--shell-active, #22c55e); }
-.tab-dot { width:7px; height:7px; border-radius:50%; }
-.tab-dot.queued, .tab-dot.running { background:#f59e0b; }
-.tab-dot.completed { background:var(--shell-active, #22c55e); }
-.tab-dot.error { background:#ef4444; }
-
 .chat-toolbar {
   padding: 16px;
   border: 1px solid var(--border);

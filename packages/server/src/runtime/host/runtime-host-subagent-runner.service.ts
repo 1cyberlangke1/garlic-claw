@@ -5,6 +5,7 @@ import { ProjectSubagentTypeRegistryService } from '../../execution/project/proj
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../kernel/runtime-plugin-hook-governance';
 import { RuntimeHostConversationMessageService } from './runtime-host-conversation-message.service';
+import { RuntimeHostConversationRecordService } from './runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { asJsonValue, cloneJsonValue, readAssistantStreamPart, readJsonObject, readJsonStringRecord, readOptionalString, readPluginLlmMessages, readPositiveInteger } from './runtime-host-values';
 import { RuntimeHostSubagentSessionStoreService, type RuntimeSubagentSessionRecord } from './runtime-host-subagent-session-store.service';
@@ -24,6 +25,7 @@ export class RuntimeHostSubagentRunnerService {
   constructor(
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
+    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
     @Inject(forwardRef(() => ToolRegistryService)) private readonly toolRegistryService: ToolRegistryService,
     @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
     private readonly runtimeHostSubagentStoreService: RuntimeHostSubagentStoreService,
@@ -92,6 +94,14 @@ export class RuntimeHostSubagentRunnerService {
       visibility: input.visibility,
       writeBackTarget: input.writeBackTarget,
     });
+    // 创建子对话，让聊天页标签栏能发现
+    if (input.context.conversationId) {
+      this.runtimeHostConversationRecordService.createConversation({
+        title: invocation.request.description || '子代理',
+        userId: input.context.userId,
+        parentId: input.context.conversationId,
+      });
+    }
     return { execution: readStoredSubagentExecutionInput(subagent, invocation.session), subagent };
   }
 
