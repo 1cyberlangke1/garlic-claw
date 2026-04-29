@@ -58,7 +58,7 @@ defineEmits<{
 }>()
 
 /** 格式化时间文本。 */
-function formatTime(value: string | null): string {
+function formatTime(value: string | null | undefined): string {
   if (!value) {
     return '暂无'
   }

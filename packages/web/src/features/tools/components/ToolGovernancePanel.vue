@@ -396,7 +396,7 @@ function healthText(health: ToolSourceInfo['health'] | ToolInfo['health']): stri
   }
 }
 
-function formatTime(value: string | null): string {
+function formatTime(value: string | null | undefined): string {
   if (!value) {
     return '尚未检查'
   }

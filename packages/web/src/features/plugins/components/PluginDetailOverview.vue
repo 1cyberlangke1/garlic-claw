@@ -166,7 +166,7 @@ defineEmits<{
  * @param value 时间字符串
  * @returns 展示文案
  */
-function formatTime(value: string | null): string {
+function formatTime(value: string | null | undefined): string {
   if (!value) {
     return '无'
   }

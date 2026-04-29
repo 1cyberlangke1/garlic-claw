@@ -79,7 +79,7 @@ defineEmits<{
  * @param value ISO 时间或 null
  * @returns 页面展示用文本
  */
-function formatTime(value: string | null): string {
+function formatTime(value: string | null | undefined): string {
   if (!value) {
     return '暂无'
   }
