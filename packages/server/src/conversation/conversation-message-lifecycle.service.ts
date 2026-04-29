@@ -46,7 +46,6 @@ export class ConversationMessageLifecycleService {
 
   async startMessageGeneration(conversationId: string, dto: SendMessagePayload, userId?: string) {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
-    assertConversationSessionEnabled(conversation);
     if (conversation.messages.some(isActiveAssistantMessage)) {
       throw new BadRequestException('当前仍有回复在生成中，请先停止或等待完成');
     }
@@ -60,9 +59,6 @@ export class ConversationMessageLifecycleService {
       providerId: dto.provider ?? DEFAULT_PROVIDER_ID,
       userId: conversation.userId,
     });
-    if (received.action !== 'short-circuit') {
-      assertConversationLlmEnabled(conversation);
-    }
     const commandDisplayOnly = received.action === 'short-circuit'
       && isDisplayOnlyCommandMessage(received.content, received.parts);
     const userMessage = await this.runtimeHostConversationMessageService.createMessageWithHooks(conversationId, {
@@ -181,13 +177,6 @@ function isActiveAssistantMessage(message: Record<string, unknown>): boolean {
   return message.role === 'assistant' && (message.status === 'pending' || message.status === 'streaming');
 }
 
-function assertConversationSessionEnabled(conversation: { hostServices: { sessionEnabled?: boolean } }): void {
-  if (!conversation.hostServices.sessionEnabled) {throw new BadRequestException('当前会话宿主服务已停用');}
-}
-
-function assertConversationLlmEnabled(conversation: { hostServices: { llmEnabled?: boolean } }): void {
-  if (!conversation.hostServices.llmEnabled) {throw new BadRequestException('当前会话已关闭 LLM 自动回复');}
-}
 
 function isDisplayOnlyCommandMessage(content: string, parts: ChatMessagePart[]): boolean {
   const normalized = content.trim();
