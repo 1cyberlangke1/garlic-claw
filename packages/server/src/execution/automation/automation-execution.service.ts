@@ -35,7 +35,7 @@ export class AutomationExecutionService {
 }
 
 function createAutomationRunPlan(automation: RuntimeAutomationRecord): AutomationRunPlan {
-  const conversationId = readAutomationConversationId(automation.actions);
+  const conversationId = automation.executionConversationId ?? readAutomationConversationId(automation.actions);
   return {
     actions: automation.actions.map((action) => cloneJsonValue(action)),
     automation: toAutomationInfo(automation),

@@ -4,25 +4,35 @@ import * as path from 'node:path';
 import { SINGLE_USER_ID } from '../../src/auth/single-user-auth';
 import { AutomationExecutionService } from '../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../src/execution/automation/automation.service';
+import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
+import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
 
 describe('AutomationService', () => {
   const envKey = 'GARLIC_CLAW_AUTOMATIONS_PATH';
+  const conversationEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   let service: AutomationService;
   let storagePath: string;
+  let conversationStoragePath: string;
 
   beforeEach(() => {
     jest.useFakeTimers();
     storagePath = path.join(os.tmpdir(), `automation.service.spec-${Date.now()}-${Math.random()}.json`);
+    conversationStoragePath = path.join(os.tmpdir(), `automation.service.conversations-${Date.now()}-${Math.random()}.json`);
     process.env[envKey] = storagePath;
+    process.env[conversationEnvKey] = conversationStoragePath;
     service = createService();
   });
 
   afterEach(() => {
     jest.useRealTimers();
     delete process.env[envKey];
+    delete process.env[conversationEnvKey];
     try {
       if (fs.existsSync(storagePath)) {
         fs.unlinkSync(storagePath);
+      }
+      if (fs.existsSync(conversationStoragePath)) {
+        fs.unlinkSync(conversationStoragePath);
       }
     } catch {
       // 忽略临时文件清理失败，避免影响测试语义。
@@ -541,6 +551,56 @@ describe('AutomationService', () => {
     });
   });
 
+  it('creates dedicated cron child conversations for ai_message automations and trims old history', async () => {
+    const { conversationMessageService, conversationRecordService } = createConversationServices();
+    const parentConversation = conversationRecordService.createConversation({
+      title: '自动化父会话',
+      userId: 'user-1',
+    }) as { id: string };
+    service = createService({
+      conversationMessageService,
+      conversationRecordService,
+    });
+
+    service.create('user-1', {
+      actions: [
+        {
+          type: 'ai_message',
+          message: '定时整理日报',
+          target: {
+            type: 'conversation',
+            id: parentConversation.id,
+            conversationMode: 'cron_child',
+            maxHistoryConversations: 2,
+          },
+        },
+      ],
+      name: '日报自动化',
+      trigger: { type: 'cron', cron: '10s' },
+    });
+
+    await jest.advanceTimersByTimeAsync(10000);
+    await jest.advanceTimersByTimeAsync(10000);
+    await jest.advanceTimersByTimeAsync(10000);
+
+    const childConversations = conversationRecordService.listChildConversations(parentConversation.id) as Array<{ id: string }>;
+    expect(childConversations).toHaveLength(2);
+
+    const newestIds = childConversations.map((item) => item.id);
+    const parentDetail = conversationRecordService.getConversation(parentConversation.id, 'user-1') as { messages: unknown[] };
+    expect(parentDetail.messages).toHaveLength(0);
+
+    for (const childConversationId of newestIds) {
+      const childDetail = conversationRecordService.getConversation(childConversationId, 'user-1') as { messages: Array<{ content: string | null }> };
+      expect(childDetail.messages).toHaveLength(1);
+      expect(childDetail.messages[0]?.content).toBe('定时整理日报');
+    }
+
+    const automation = service.getById('user-1', 'automation-1') as { cronRunConversationIds?: string[]; logs?: unknown[] };
+    expect(automation.cronRunConversationIds).toBeUndefined();
+    expect(automation.logs).toHaveLength(3);
+  });
+
   it('persists automations and keeps sequence after restart', async () => {
     service.create(SINGLE_USER_ID, {
       actions: [],
@@ -632,7 +692,8 @@ describe('AutomationService', () => {
 });
 
 function createService(input?: {
-  conversationMessageService?: { sendMessage: (...args: unknown[]) => Promise<unknown> };
+  conversationMessageService?: Pick<RuntimeHostConversationMessageService, 'sendMessage'>;
+  conversationRecordService?: RuntimeHostConversationRecordService;
   runtimeHostPluginDispatchService?: {
     executeTool: (...args: unknown[]) => Promise<unknown>;
     invokeHook: (...args: unknown[]) => Promise<unknown>;
@@ -660,5 +721,18 @@ function createService(input?: {
   );
   return new AutomationService(
     automationExecutionService,
+    input?.conversationRecordService,
   );
+}
+
+function createConversationServices(): {
+  conversationMessageService: RuntimeHostConversationMessageService;
+  conversationRecordService: RuntimeHostConversationRecordService;
+} {
+  const conversationRecordService = new RuntimeHostConversationRecordService();
+  const conversationMessageService = new RuntimeHostConversationMessageService(conversationRecordService);
+  return {
+    conversationMessageService,
+    conversationRecordService,
+  };
 }

@@ -9,6 +9,10 @@ export interface AutomationActionTargetRef {
   type: 'conversation';
   /** 目标 ID。 */
   id: string;
+  /** 会话写入模式。 */
+  conversationMode?: 'existing' | 'cron_child';
+  /** `cron_child` 模式下最多保留多少历史会话。 */
+  maxHistoryConversations?: number;
 }
 
 /**

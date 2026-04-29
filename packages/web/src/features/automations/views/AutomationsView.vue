@@ -54,8 +54,14 @@
           rows="3"
           placeholder="例如：咖啡已经煮好了，记得趁热喝。"
         />
+        <template v-if="form.triggerType === 'cron'">
+          <select v-model="form.targetConversationMode" style="margin-top: 0.4rem">
+            <option value="cron_child">自动创建 cron 会话</option>
+            <option value="existing">写入已有会话</option>
+          </select>
+        </template>
         <select v-model="form.targetConversationId" style="margin-top: 0.4rem">
-          <option disabled value="">请选择目标会话</option>
+          <option disabled value="">{{ form.triggerType === 'cron' && form.targetConversationMode === 'cron_child' ? '请选择父会话' : '请选择目标会话' }}</option>
           <option
             v-for="conversation in conversations"
             :key="conversation.id"
@@ -64,8 +70,23 @@
             {{ conversation.title }}
           </option>
         </select>
+        <div v-if="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child'" class="field nested-field">
+          <label>历史会话保留数量</label>
+          <input
+            v-model.number="form.maxHistoryConversations"
+            type="number"
+            min="1"
+            step="1"
+            placeholder="例如：10"
+          />
+        </div>
         <span class="hint">
-          自动化会把消息写回选中的会话。
+          <template v-if="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child'">
+            每次 cron 触发都会在选中的父会话下新建一个子会话，并只保留最近设定数量的历史。
+          </template>
+          <template v-else>
+            自动化会把消息写回选中的会话。
+          </template>
           <template v-if="conversations.length === 0">没有可用会话，请先创建对话</template>
         </span>
       </div>
@@ -195,6 +216,10 @@ const {
 }
 .create-form .field {
   margin-bottom: 0.8rem;
+}
+.create-form .nested-field {
+  margin-top: 0.8rem;
+  margin-bottom: 0;
 }
 .create-form label {
   display: block;
