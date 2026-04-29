@@ -14,7 +14,7 @@ import { RuntimeHostSubagentStoreService, type RuntimeSubagentRecord } from './r
 type ResolvedSubagentType = ReturnType<ProjectSubagentTypeRegistryService['getType']>;
 type RuntimeSubagentRequestEnvelopeSource = Partial<Pick<PluginSubagentRequest, 'description' | 'subagentType' | 'providerId' | 'modelId' | 'system' | 'toolNames' | 'variant' | 'providerOptions' | 'headers' | 'maxOutputTokens'>>;
 interface ResolvedSubagentInvocation { request: PluginSubagentRequest; requestPreview: string; resolvedSubagentType: ResolvedSubagentType; reusedSession: boolean; session: RuntimeSubagentSessionRecord; }
-interface StoredSubagentExecutionInput { context: PluginCallContext; pluginId: string; request: PluginSubagentRequest; sessionId: string; subagentId: string; writeBackConversationRevision?: string; writeBackTarget: PluginMessageTargetInfo | null; }
+interface StoredSubagentExecutionInput { childConversationId: string | null; context: PluginCallContext; pluginId: string; request: PluginSubagentRequest; sessionId: string; subagentId: string; writeBackConversationRevision?: string; writeBackTarget: PluginMessageTargetInfo | null; }
 interface SubagentSessionWriteInput { context: PluginCallContext; messages: PluginLlmMessage[]; pluginDisplayName?: string; pluginId: string; request: RuntimeSubagentRequestEnvelopeSource; resolvedSubagentTypeName?: string; session?: RuntimeSubagentSessionRecord | null; subagentId?: string; }
 interface SubagentWriteBackResult { error: string | null; messageId: string | null; status: 'failed' | 'sent' | 'skipped'; }
 
@@ -94,15 +94,6 @@ export class RuntimeHostSubagentRunnerService {
       visibility: input.visibility,
       writeBackTarget: input.writeBackTarget,
     });
-    // 创建子对话（ID 对齐 sessionId），让聊天页标签栏能发现并写消息
-    if (input.context.conversationId && this.runtimeHostConversationRecordService) {
-      this.runtimeHostConversationRecordService.createConversation({
-        id: invocation.session.id,
-        title: invocation.request.description || '子代理',
-        userId: input.context.userId,
-        parentId: input.context.conversationId,
-      });
-    }
     return { execution: readStoredSubagentExecutionInput(subagent, invocation.session), subagent };
   }
 
@@ -114,7 +105,12 @@ export class RuntimeHostSubagentRunnerService {
   }
 
   private restoreStoredSubagentExecution(subagentId: string): StoredSubagentExecutionInput {
-    const subagent = this.runtimeHostSubagentStoreService.readSubagent(subagentId), session = this.runtimeHostSubagentSessionStoreService.readStoredSession(subagent.pluginId, subagent.sessionId);
+    const subagent = this.runtimeHostSubagentStoreService.readSubagent(subagentId);
+    const session = this.ensureChildConversationSession(
+      this.runtimeHostSubagentSessionStoreService.readStoredSession(subagent.pluginId, subagent.sessionId),
+      subagent.context,
+      subagent.description ?? subagent.request.description,
+    );
     if (subagent.sessionId !== session.id || subagent.sessionMessageCount !== session.messages.length || subagent.sessionUpdatedAt !== session.updatedAt) {
       this.runtimeHostSubagentStoreService.updateSubagent(subagent.pluginId, subagentId, (currentSubagent) => { writeSubagentSessionSnapshot(currentSubagent, session); });
     }
@@ -135,13 +131,16 @@ export class RuntimeHostSubagentRunnerService {
     const target = this.runtimeHostSubagentStoreService.readSubagent(input.subagentId, input.pluginId).removedAt ? null : input.writeBackTarget;
     try {
       // 创建 streaming 消息，随执行逐步更新
-      const childMsgId = this.runtimeHostConversationRecordService ? await this.createChildConversationStreamingMessage(input.sessionId).catch(() => null) : null;
+      const childConversationId = input.childConversationId;
+      const childMsgId = childConversationId ? await this.createChildConversationStreamingMessage(childConversationId).catch(() => null) : null;
       const result = await this.executeSubagent({
         context: input.context, pluginId: input.pluginId, request: input.request,
-        onTextDelta: childMsgId ? (text) => this.updateChildConversationMessage(input.sessionId, childMsgId, text).catch(() => {}) : undefined,
+        onTextDelta: childMsgId && childConversationId ? (text) => this.updateChildConversationMessage(childConversationId, childMsgId, text).catch(() => {}) : undefined,
       });
       // 最终写入完整结果
-      if (childMsgId) await this.finalizeChildConversationMessage(input.sessionId, childMsgId, result.text).catch(() => {});
+      if (childMsgId && childConversationId) {
+        await this.finalizeChildConversationMessage(childConversationId, childMsgId, result.text).catch(() => {});
+      }
       const session = this.runtimeHostSubagentSessionStoreService.appendAssistantMessage(input.pluginId, input.sessionId, result);
       const writeBack = await this.writeBackMessageIfNeeded(input.context, target, input.writeBackConversationRevision, { content: `<subagent_result>\n${result.text}\n</subagent_result>`, failureMessage: '后台子代理结果回写失败', model: result.modelId, provider: result.providerId });
       this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { result, session, status: 'completed', writeBack }));
@@ -183,7 +182,7 @@ export class RuntimeHostSubagentRunnerService {
   private persistSubagentSession(input: SubagentSessionWriteInput): RuntimeSubagentSessionRecord {
     const requestEnvelope = copySubagentRequestEnvelope(input.request);
     if (!input.session) {
-      return this.runtimeHostSubagentSessionStoreService.createSession({
+      return this.ensureChildConversationSession(this.runtimeHostSubagentSessionStoreService.createSession({
         context: input.context,
         ...requestEnvelope,
         messages: input.messages,
@@ -191,12 +190,33 @@ export class RuntimeHostSubagentRunnerService {
         pluginId: input.pluginId,
         ...(input.resolvedSubagentTypeName ? { subagentTypeName: input.resolvedSubagentTypeName } : {}),
         ...(input.subagentId ? { subagentId: input.subagentId } : {}),
-      });
+      }), input.context, input.request.description);
     }
-    return this.runtimeHostSubagentSessionStoreService.updateSession(input.pluginId, input.session.id, (mutableSession) => {
+    return this.ensureChildConversationSession(this.runtimeHostSubagentSessionStoreService.updateSession(input.pluginId, input.session.id, (mutableSession) => {
       mutableSession.messages = cloneJsonValue(input.messages);
       delete mutableSession.description; delete mutableSession.subagentType; delete mutableSession.subagentTypeName;
       Object.assign(mutableSession, requestEnvelope, input.resolvedSubagentTypeName ? { subagentTypeName: input.resolvedSubagentTypeName } : {});
+    }), input.context, input.request.description);
+  }
+
+  private ensureChildConversationSession(
+    session: RuntimeSubagentSessionRecord,
+    context: PluginCallContext,
+    description?: string,
+  ): RuntimeSubagentSessionRecord {
+    if (!context.conversationId || !this.runtimeHostConversationRecordService) {
+      return session;
+    }
+    if (typeof session.childConversationId === 'string' && session.childConversationId.trim().length > 0) {
+      return session;
+    }
+    const childConversation = this.runtimeHostConversationRecordService.createConversation({
+      title: description || session.description || '子代理',
+      userId: context.userId,
+      parentId: context.conversationId,
+    }) as { id: string };
+    return this.runtimeHostSubagentSessionStoreService.updateSession(session.pluginId, session.id, (mutableSession) => {
+      mutableSession.childConversationId = childConversation.id;
     });
   }
 
@@ -231,7 +251,9 @@ export class RuntimeHostSubagentRunnerService {
   }
 
   private async finalizeChildConversationMessage(conversationId: string, messageId: string | null, text: string): Promise<void> {
-    if (!messageId) return;
+    if (!messageId) {
+      return;
+    }
     try {
       this.runtimeHostConversationMessageService.writeMessage(conversationId, messageId, { content: text, status: 'completed' });
     } catch { /* best-effort */ }
@@ -305,7 +327,7 @@ function readSubagentRequest(params: JsonObject, options?: { allowMissingMessage
     ...(providerOptions ? { providerOptions } : {}),
     ...(headers ? { headers } : {}),
     ...(typeof params.maxOutputTokens === 'number' ? { maxOutputTokens: params.maxOutputTokens } : {}),
-    messages: hasMessages || !options?.allowMissingMessages ? readPluginLlmMessages(params.messages, 'subagent request requires non-empty messages') : [],
+    messages: hasMessages || !options?.allowMissingMessages ? readPluginLlmMessages(params.messages, 'subagent request requires non-empty messages', undefined, 'subagent') : [],
   };
 }
 
@@ -396,7 +418,7 @@ function writeSubagentSessionSnapshot(subagent: RuntimeSubagentRecord, session: 
 }
 
 function readStoredSubagentExecutionInput(subagent: Pick<RuntimeSubagentRecord, 'context' | 'id' | 'pluginId' | 'writeBackConversationRevision' | 'writeBackTarget'>, session: RuntimeSubagentSessionRecord): StoredSubagentExecutionInput {
-  return { context: subagent.context, pluginId: subagent.pluginId, request: { ...copySubagentRequestEnvelope(session), messages: cloneJsonValue(session.messages) as PluginSubagentRequest['messages'] }, sessionId: session.id, subagentId: subagent.id, ...(subagent.writeBackConversationRevision ? { writeBackConversationRevision: subagent.writeBackConversationRevision } : {}), writeBackTarget: subagent.writeBackTarget ?? null };
+  return { childConversationId: session.childConversationId ?? null, context: subagent.context, pluginId: subagent.pluginId, request: { ...copySubagentRequestEnvelope(session), messages: cloneJsonValue(session.messages) as PluginSubagentRequest['messages'] }, sessionId: session.id, subagentId: subagent.id, ...(subagent.writeBackConversationRevision ? { writeBackConversationRevision: subagent.writeBackConversationRevision } : {}), writeBackTarget: subagent.writeBackTarget ?? null };
 }
 
 function readRemovedSubagentMessage(subagent: PluginSubagentDetail): string {

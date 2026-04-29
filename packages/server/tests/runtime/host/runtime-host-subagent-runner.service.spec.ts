@@ -801,6 +801,136 @@ describe('RuntimeHostSubagentRunnerService', () => {
     }));
   });
 
+  it('creates a dedicated child conversation for subagent sessions instead of reusing the session id', async () => {
+    const conversationRecordService = new RuntimeHostConversationRecordService();
+    const conversationId = (conversationRecordService.createConversation({
+      title: 'Main conversation',
+      userId: 'user-1',
+    }) as { id: string }).id;
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(conversationRecordService),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+      conversationRecordService,
+    );
+
+    const summary = await runner.startSubagent('builtin.memory', 'Memory', {
+      conversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      description: '切到子窗口继续整理上下文',
+      messages: [
+        {
+          content: '整理当前上下文窗口',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+
+    const sessionId = (summary as { sessionId: string }).sessionId;
+    const session = sessionStore.getSession('builtin.memory', sessionId) as {
+      childConversationId?: string;
+    };
+
+    expect(session.childConversationId).toEqual(expect.any(String));
+    expect(session.childConversationId).not.toBe(sessionId);
+    expect(session.childConversationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu,
+    );
+    expect(conversationRecordService.requireConversation(session.childConversationId!, 'user-1')).toMatchObject({
+      id: session.childConversationId,
+      parentId: conversationId,
+      title: '切到子窗口继续整理上下文',
+    });
+    expect(conversationRecordService.listChildConversations(conversationId)).toEqual([
+      expect.objectContaining({
+        id: session.childConversationId,
+        title: '切到子窗口继续整理上下文',
+      }),
+    ]);
+  });
+
+  it('reuses the persisted child conversation when continuing the same subagent session', async () => {
+    const conversationRecordService = new RuntimeHostConversationRecordService();
+    const conversationId = (conversationRecordService.createConversation({
+      title: 'Main conversation',
+      userId: 'user-1',
+    }) as { id: string }).id;
+    const sessionStore = new RuntimeHostSubagentSessionStoreService();
+    const runner = new RuntimeHostSubagentRunnerService(
+      createAiModelExecutionService(),
+      new RuntimeHostConversationMessageService(conversationRecordService),
+      {
+        buildToolSet: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      {
+        invokeHook: jest.fn(),
+        listPlugins: jest.fn().mockReturnValue([]),
+      } as never,
+      new RuntimeHostSubagentStoreService(),
+      sessionStore,
+      new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+      conversationRecordService,
+    );
+
+    const summary = await runner.startSubagent('builtin.memory', 'Memory', {
+      conversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      description: '第一次创建子窗口',
+      messages: [
+        {
+          content: '第一次上下文',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+    const sessionId = (summary as { sessionId: string }).sessionId;
+    const firstChildConversationId = (sessionStore.getSession('builtin.memory', sessionId) as {
+      childConversationId?: string;
+    }).childConversationId;
+
+    await runner.runSubagent('builtin.memory', {
+      conversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [
+        {
+          content: '继续这个子窗口',
+          role: 'user',
+        },
+      ],
+      sessionId,
+    });
+
+    const continuedSession = sessionStore.getSession('builtin.memory', sessionId) as {
+      childConversationId?: string;
+    };
+    expect(continuedSession.childConversationId).toBe(firstChildConversationId);
+    expect(conversationRecordService.listChildConversations(conversationId)).toEqual([
+      expect.objectContaining({
+        id: firstChildConversationId,
+      }),
+    ]);
+  });
+
   it('creates a new background task record when an existing session resumes', async () => {
     const subagentStore = new RuntimeHostSubagentStoreService();
     const sessionStore = new RuntimeHostSubagentSessionStoreService();

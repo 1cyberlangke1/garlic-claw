@@ -9,6 +9,7 @@ export interface RuntimeSubagentSessionRecord {
   id: string;
   pluginId: string;
   pluginDisplayName?: string;
+  childConversationId?: string;
   description?: string;
   subagentType?: string;
   subagentTypeName?: string;
@@ -44,6 +45,7 @@ export class RuntimeHostSubagentSessionStoreService {
 
   createSession(input: {
     context: PluginCallContext;
+    childConversationId?: string;
     description?: string;
     messages: PluginLlmMessage[];
     modelId?: string;
@@ -147,6 +149,7 @@ function readSessionStorage(storagePath: string): { sessionSequence: number; ses
 
 function readSessionFields(input: {
   context: PluginCallContext;
+  childConversationId?: string;
   description?: string;
   modelId?: string;
   pluginDisplayName?: string;
@@ -162,6 +165,7 @@ function readSessionFields(input: {
   maxOutputTokens?: number;
 }): Partial<RuntimeSubagentSessionRecord> {
   return {
+    ...(input.childConversationId ? { childConversationId: input.childConversationId } : {}),
     ...(input.context.conversationId ? { conversationId: input.context.conversationId } : {}),
     ...(input.context.userId ? { userId: input.context.userId } : {}),
     ...(input.description ? { description: input.description } : {}),
@@ -179,4 +183,10 @@ function readSessionFields(input: {
     ...(typeof input.maxOutputTokens === 'number' ? { maxOutputTokens: input.maxOutputTokens } : {}),
   };
 }
-function normalizeSessionRecord(session: RuntimeSubagentSessionRecord): RuntimeSubagentSessionRecord { return { ...session, ...(typeof session.removedAt === 'string' && session.removedAt.trim().length > 0 ? { removedAt: session.removedAt } : {}) }; }
+function normalizeSessionRecord(session: RuntimeSubagentSessionRecord): RuntimeSubagentSessionRecord {
+  return {
+    ...session,
+    ...(typeof session.childConversationId === 'string' && session.childConversationId.trim().length > 0 ? { childConversationId: session.childConversationId } : {}),
+    ...(typeof session.removedAt === 'string' && session.removedAt.trim().length > 0 ? { removedAt: session.removedAt } : {}),
+  };
+}

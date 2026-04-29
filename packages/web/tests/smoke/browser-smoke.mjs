@@ -542,7 +542,7 @@ async function runChatFlow(page, accessToken) {
 async function verifyMcpPage(page) {
   await page.goto('/mcp', { waitUntil: 'networkidle' });
   await expectText(page, 'MCP 管理');
-  await expectText(page, 'MCP 工具治理');
+  await expectText(page, 'MCP 工具管理');
   await expectText(page, 'MCP 配置');
   const configPath = (await page.locator('.mcp-config-path').textContent())?.trim() ?? '';
   assert.ok(configPath.length > 0, 'MCP 配置区未展示配置路径');
@@ -572,7 +572,7 @@ async function verifySkillsPage(page) {
 
 async function verifyCommandsPage(page) {
   await page.goto('/commands', { waitUntil: 'networkidle' });
-  await expectText(page, '命令治理');
+  await expectText(page, '命令管理');
   await expectText(page, '冲突触发词');
   await expectText(page, '命令目录');
   await page.getByPlaceholder('搜索插件、命令、别名或说明').waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -616,22 +616,25 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
 async function verifyRuntimeToolsSettingsPage(page) {
   await page.goto('/ai', { waitUntil: 'networkidle' });
   await page.getByRole('heading', { name: 'AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
-  await page.getByRole('heading', { name: '执行工具配置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
-  await page.getByRole('heading', { name: '执行工具治理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.getByRole('button', { exact: true, name: '执行工具' }).click();
+  await page.getByRole('heading', { name: '执行工具' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'bash 执行后端');
-  await expectText(page, '内部工具源');
   const collapsedToggle = page.locator('button.collapsed-toggle').first();
   if (await collapsedToggle.count() > 0) {
     await collapsedToggle.click();
     await expectText(page, '收起高级配置');
-    await expectText(page, 'bash 输出治理');
+    await expectText(page, 'bash 输出');
   }
+  await page.getByRole('button', { name: '执行工具管理' }).click();
+  await page.getByRole('heading', { name: '执行工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await expectText(page, '内部工具源');
 }
 
 async function verifySubagentsPage(page) {
   await page.goto('/subagents', { waitUntil: 'networkidle' });
-  await expectText(page, 'Subagent');
-  await expectText(page, '子代理账本');
+  await page.waitForURL(/\/$/, { timeout: REQUEST_TIMEOUT_MS });
+  await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await expectText(page, 'Garlic Claw');
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {

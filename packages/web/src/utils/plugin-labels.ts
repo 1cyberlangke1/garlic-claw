@@ -11,7 +11,9 @@ export function healthLabel(health: PluginHealthSnapshot | null | undefined): st
 }
 
 export function formatPluginTime(value: string | null | undefined): string {
-  if (!value) return '未检查'
+  if (!value) {
+    return '未检查'
+  }
   return new Date(value).toLocaleString()
 }
 

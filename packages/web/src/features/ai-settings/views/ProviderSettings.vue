@@ -4,7 +4,7 @@
       <div class="sider-inner">
         <header class="sider-title">
           <Icon class="sider-title-icon" :icon="codeBold" />
-          <span class="sider-title-text">AI 设置</span>
+          <h1 class="sider-title-text">AI 设置</h1>
         </header>
 
         <nav class="sider-menu">
@@ -129,6 +129,7 @@
                     <span class="cap-field">
                       上下文
                       <input
+                        :data-test="`context-length-input-${m.id}`"
                         class="field-input field-input-sm"
                         type="number"
                         :value="ctxDrafts[m.id] ?? m.contextLength"
@@ -137,6 +138,7 @@
                       />
                     </span>
                     <button
+                      :data-test="`context-length-save-${m.id}`"
                       type="button"
                       class="btn-ghost btn-sm"
                       :disabled="!canSaveCtx(m)"
@@ -146,7 +148,7 @@
                 </div>
                 <div class="model-actions">
                   <span v-if="isDefaultModel(m.id)" class="default-chip">默认</span>
-                  <button v-else type="button" class="btn-ghost btn-sm" @click="setDefaultModel(m.id)">设为默认</button>
+                  <button v-else type="button" class="btn-ghost btn-sm" @click="setDefaultModel(m.id)">设为当前默认</button>
                   <button type="button" class="btn-danger btn-sm" @click="deleteModel(m.id)">删除</button>
                 </div>
               </div>

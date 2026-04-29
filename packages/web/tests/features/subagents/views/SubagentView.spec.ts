@@ -359,7 +359,7 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
 }))
 
 describe('SubagentView', () => {
-  it('renders workspace tabs, subagent context and governance link', () => {
+  it('renders workspace tabs, subagent context and tool management link', () => {
     removeSubagentSession.mockReset()
     const wrapper = mount(SubagentView, {
       global: {
@@ -387,7 +387,7 @@ describe('SubagentView', () => {
     expect(wrapper.text()).toContain('同步')
     expect(wrapper.text()).toContain('回写等待中')
     expect(wrapper.text()).toContain('查看上下文')
-    expect(wrapper.text()).toContain('打开工具治理')
+    expect(wrapper.text()).toContain('打开工具管理')
     expect(wrapper.text()).toContain('移除')
     expect(wrapper.get('[data-test="window-strip"]').classes()).toContain('window-strip')
     expect(SubagentViewSource).toContain('.window-strip')

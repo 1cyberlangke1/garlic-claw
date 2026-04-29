@@ -1,8 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { CurrentUser, JwtAuthGuard } from '../../../auth/http-auth';
 import { PersonaService } from '../../../persona/persona.service';
 import { ActivateConversationPersonaDto } from './dto/activate-conversation-persona.dto';
@@ -48,7 +46,9 @@ export class PersonaController {
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadPersonaAvatar(@Param('personaId') personaId: string, @UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new Error('No file uploaded');
+    if (!file) {
+      throw new Error('No file uploaded');
+    }
     this.personaService.savePersonaAvatar(personaId, file.buffer, file.mimetype);
     return { ok: true };
   }

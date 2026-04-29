@@ -99,8 +99,12 @@ export class RuntimeGatewayConnectionLifecycleService {
 
   async probePluginHealth(pluginId: string, timeoutMs?: number): Promise<{ ok: boolean }> {
     const connectionId = this.connectionByPluginId.get(pluginId), connection = connectionId ? this.connections.get(connectionId) : null;
-    if (!connectionId || !connection?.authenticated) return { ok: false };
-    if (!this.connectionHealthProbe) throw new Error('插件健康探针未注册，无法对远程插件执行健康检查');
+    if (!connectionId || !connection?.authenticated) {
+      return { ok: false };
+    }
+    if (!this.connectionHealthProbe) {
+      throw new Error('插件健康探针未注册，无法对远程插件执行健康检查');
+    }
     return this.connectionHealthProbe({ connectionId, timeoutMs });
   }
 

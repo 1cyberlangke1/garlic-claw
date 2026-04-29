@@ -34,9 +34,20 @@
       </div>
 
       <div v-if="subagentTabs.length" class="chat-tabs">
-        <button class="chat-tab" :class="{ active: activeTab === 'main' }" @click="activeTab = 'main'">对话</button>
+        <button class="chat-tab" :class="{ active: activeTab === 'main' }" @click="switchToMainConversation">对话</button>
         <button v-for="s in subagentTabs" :key="s.id" class="chat-tab" :class="{ active: activeTab === s.id }" @click="switchToSubagent(s.id)">
           {{ s.title || '子代理' }}
+        </button>
+      </div>
+
+      <div class="chat-actions">
+        <button
+          type="button"
+          class="chat-action-button"
+          :disabled="chat.streaming"
+          @click="triggerContextCompaction"
+        >
+          压缩上下文
         </button>
       </div>
 
@@ -116,22 +127,51 @@ const chat = useChatStore()
 const toolbarExpanded = ref(true)
 const activeTab = ref('main')
 const subagentTabs = ref<Array<{ id: string; title: string }>>([])
+const workspaceConversationId = ref<string | null>(null)
 const currentConversationPersona = ref<PluginPersonaCurrentInfo | null>(null)
 const currentConversationId = computed(() => chat.currentConversationId ?? null)
 
 watch(currentConversationId, async (id) => {
+  if (!id) {
+    activeTab.value = 'main'
+    workspaceConversationId.value = null
+    subagentTabs.value = []
+    return
+  }
+  if (id === workspaceConversationId.value) {
+    activeTab.value = 'main'
+    return
+  }
+  if (subagentTabs.value.some((tab) => tab.id === id)) {
+    activeTab.value = id
+    return
+  }
   activeTab.value = 'main'
-  if (!id) { subagentTabs.value = []; return }
+  workspaceConversationId.value = id
+  subagentTabs.value = []
   try {
     const token = localStorage.getItem('accessToken')
     const resp = await fetch(`/api/chat/conversations/${id}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-    if (resp.ok) subagentTabs.value = await resp.json()
+    if (resp.ok && workspaceConversationId.value === id) {
+      subagentTabs.value = await resp.json()
+    }
   } catch { subagentTabs.value = [] }
+}, {
+  immediate: true,
 })
 
-function switchToSubagent(sessionId: string) {
-  activeTab.value = sessionId
-  chat.currentConversationId = sessionId
+function switchToMainConversation() {
+  const conversationId = workspaceConversationId.value
+  activeTab.value = 'main'
+  if (!conversationId) {
+    return
+  }
+  void chat.selectConversation(conversationId)
+}
+
+function switchToSubagent(conversationId: string) {
+  activeTab.value = conversationId
+  void chat.selectConversation(conversationId)
 }
 let currentPersonaRequestId = 0
 const {
@@ -154,6 +194,14 @@ const {
   replyRuntimePermission,
   applyCommandSuggestion,
 } = useChatView(chat)
+
+async function triggerContextCompaction() {
+  if (chat.streaming) {
+    return
+  }
+  inputText.value = '/compact'
+  await send()
+}
 
 watch(
   currentConversationId,
@@ -223,6 +271,10 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 .chat-tab { display:flex; align-items:center; gap:6px; padding:6px 14px; border:1px solid var(--shell-border, #334155); border-radius:8px 8px 0 0; border-bottom:none; background:transparent; color:var(--shell-text-secondary, #cbd5e1); font-size:13px; cursor:pointer; white-space:nowrap; font-family:inherit; transition:all .12s; }
 .chat-tab:hover { background:var(--shell-bg-hover, #334155); color:var(--shell-text, #f1f5f9); }
 .chat-tab.active { background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); border-color:var(--shell-active, #22c55e); }
+.chat-actions { display:flex; justify-content:flex-end; padding:0 4px; }
+.chat-action-button { border:1px solid var(--shell-border, #334155); border-radius:999px; background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); cursor:pointer; font-size:13px; padding:8px 14px; transition:all .12s; }
+.chat-action-button:hover:not(:disabled) { border-color:var(--shell-active, #22c55e); color:var(--shell-active, #22c55e); }
+.chat-action-button:disabled { cursor:not-allowed; opacity:.55; }
 .chat-toolbar {
   padding: 12px 16px;
   border: 1px solid var(--border);

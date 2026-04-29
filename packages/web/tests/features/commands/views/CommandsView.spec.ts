@@ -103,7 +103,7 @@ vi.mock('@/features/commands/composables/use-plugin-command-management', () => (
 }))
 
 describe('CommandsView', () => {
-  it('renders command governance overview, conflicts, and plugin deep-links', () => {
+  it('renders command management overview, conflicts, and plugin deep-links', () => {
     const wrapper = mount(CommandsView, {
       global: {
         stubs: {
@@ -115,10 +115,10 @@ describe('CommandsView', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('命令治理')
+    expect(wrapper.text()).toContain('命令管理')
     expect(wrapper.text()).toContain('/sys reload')
     expect(wrapper.text()).toContain('冲突触发词')
     expect(wrapper.text()).toContain('核心工具')
-    expect(wrapper.text()).toContain('打开插件治理')
+    expect(wrapper.text()).toContain('管理插件')
   })
 })

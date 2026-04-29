@@ -34,8 +34,9 @@ export class PersonaStoreService {
     const personaRoot = path.join(this.storageRoot, readPersonaFolderName(personaId));
     const ext = mimetypeToExtension(mimetype);
     for (const entry of fs.readdirSync(personaRoot, { withFileTypes: true })) {
-      if (entry.isFile() && path.basename(entry.name, path.extname(entry.name)).toLowerCase() === AVATAR_BASENAME)
+      if (entry.isFile() && path.basename(entry.name, path.extname(entry.name)).toLowerCase() === AVATAR_BASENAME) {
         fs.unlinkSync(path.join(personaRoot, entry.name));
+      }
     }
     const avatarPath = path.join(personaRoot, `${AVATAR_BASENAME}${ext}`);
     fs.writeFileSync(avatarPath, buffer);

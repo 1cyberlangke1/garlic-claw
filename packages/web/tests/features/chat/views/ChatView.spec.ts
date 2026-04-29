@@ -1,10 +1,15 @@
 import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatView from '@/features/chat/views/ChatView.vue'
 
 const applyCommandSuggestion = vi.fn()
 const replyRuntimePermission = vi.fn()
+const selectConversation = vi.fn()
+const mockFetch = vi.fn()
+const send = vi.fn()
+
+vi.stubGlobal('fetch', mockFetch)
 
 vi.mock('@/features/chat/store/chat', () => ({
   useChatStore: () => ({
@@ -21,6 +26,7 @@ vi.mock('@/features/chat/store/chat', () => ({
     ],
     loading: false,
     streaming: false,
+    selectConversation,
     stopStreaming: vi.fn(),
   }),
 }))
@@ -62,7 +68,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     canTriggerRetryAction: ref(false),
     retryActionLabel: ref('发送'),
     handleModelChange: vi.fn(),
-    send: vi.fn(),
+    send,
     handleFileChange: vi.fn(),
     removeImage: vi.fn(),
     updateMessage: vi.fn(),
@@ -84,6 +90,18 @@ vi.mock('@/features/personas/composables/persona-settings.data', () => ({
 }))
 
 describe('ChatView', () => {
+  beforeEach(() => {
+    applyCommandSuggestion.mockReset()
+    replyRuntimePermission.mockReset()
+    selectConversation.mockReset()
+    mockFetch.mockReset()
+    send.mockReset()
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue([]),
+    })
+  })
+
   it('passes the current persona avatar into the message list', async () => {
     const wrapper = mount(ChatView, {
       global: {
@@ -107,7 +125,6 @@ describe('ChatView', () => {
   })
 
   it('passes command suggestions and selection events into the composer', async () => {
-    applyCommandSuggestion.mockReset()
     const wrapper = mount(ChatView, {
       global: {
         stubs: {
@@ -156,7 +173,6 @@ describe('ChatView', () => {
   })
 
   it('passes pending runtime permission requests into the approval panel', async () => {
-    replyRuntimePermission.mockReset()
     const wrapper = mount(ChatView, {
       global: {
         stubs: {
@@ -182,5 +198,64 @@ describe('ChatView', () => {
     await wrapper.find('.permission-panel').trigger('click')
 
     expect(replyRuntimePermission).toHaveBeenCalledWith('permission-1', 'always')
+  })
+
+  it('switches subagent tabs through chat.selectConversation instead of mutating the current id directly', async () => {
+    const childConversationId = '019dd900-1234-7abc-8def-1234567890ab'
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue([
+        {
+          id: childConversationId,
+          title: '子代理窗口',
+          createdAt: '2026-04-29T00:00:00.000Z',
+          updatedAt: '2026-04-29T00:00:00.000Z',
+          _count: { messages: 1 },
+        },
+      ]),
+    })
+
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    const tabs = wrapper.findAll('.chat-tab')
+    expect(tabs).toHaveLength(2)
+
+    await tabs[1].trigger('click')
+
+    expect(selectConversation).toHaveBeenCalledWith(childConversationId)
+  })
+
+  it('sends /compact when clicking the context compaction action', async () => {
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('.chat-action-button').trigger('click')
+
+    expect(send).toHaveBeenCalledTimes(1)
   })
 })
