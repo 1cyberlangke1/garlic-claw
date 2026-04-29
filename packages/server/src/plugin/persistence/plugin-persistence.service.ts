@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { getPrismaClient } from '../../infrastructure/prisma/prisma-client';
 import type {
   EventLogSettings,
   JsonObject,
@@ -71,9 +70,7 @@ export class PluginPersistenceService {
   }
 
   setConnectionState(pluginId: string, connected: boolean): RegisteredPluginRecord {
-    const record = this.updatePlugin(pluginId, (r, timestamp) => ({ ...r, connected, status: connected ? PLUGIN_STATUS.ONLINE : PLUGIN_STATUS.OFFLINE, updatedAt: timestamp }));
-    syncPluginToDb(record).catch(() => {});
-    return record;
+    return this.updatePlugin(pluginId, (r, timestamp) => ({ ...r, connected, status: connected ? PLUGIN_STATUS.ONLINE : PLUGIN_STATUS.OFFLINE, updatedAt: timestamp }));
   }
 
   deletePlugin(pluginId: string): RegisteredPluginRecord {
@@ -81,7 +78,6 @@ export class PluginPersistenceService {
     if (record.connected) { throw new BadRequestException(`Plugin ${record.pluginId} is still connected`); }
     this.records.delete(pluginId);
     this.persistRecords();
-    deletePluginFromDb(pluginId).catch(() => {});
     return cloneRegisteredPluginRecord(record);
   }
 
@@ -155,7 +151,6 @@ export class PluginPersistenceService {
     const nextRecord = cloneRegisteredPluginRecord(record);
     this.records.set(nextRecord.pluginId, nextRecord);
     this.persistRecords();
-    syncPluginToDb(nextRecord).catch(() => {});
     return cloneRegisteredPluginRecord(nextRecord);
   }
 
@@ -273,38 +268,4 @@ function assertOptionValue(allowedOptions: Set<string>, value: JsonValue, scope:
   if (allowedOptions.size > 0 && (typeof value !== 'string' || !allowedOptions.has(value))) {
     throw new BadRequestException(`配置字段 ${scope.length > 0 ? scope.join('.') : 'config'} 必须命中声明的 options`);
   }
-}
-
-async function syncPluginToDb(record: RegisteredPluginRecord): Promise<void> {
-  try {
-    const prisma = getPrismaClient();
-    await prisma.plugin.upsert({
-      create: {
-        id: record.pluginId, name: record.pluginId,
-        displayName: record.manifest.name,
-        runtimeKind: record.manifest.runtime ?? 'remote',
-        description: record.manifest.description,
-        status: record.status,
-        manifestJson: JSON.stringify(record.manifest),
-        version: record.manifest.version,
-        defaultEnabled: record.defaultEnabled,
-        lastSeenAt: record.lastSeenAt ? new Date(record.lastSeenAt) : null,
-      },
-      update: {
-        displayName: record.manifest.name,
-        runtimeKind: record.manifest.runtime ?? 'remote',
-        description: record.manifest.description,
-        status: record.status,
-        manifestJson: JSON.stringify(record.manifest),
-        version: record.manifest.version,
-        defaultEnabled: record.defaultEnabled,
-        lastSeenAt: record.lastSeenAt ? new Date(record.lastSeenAt) : null,
-      },
-      where: { name: record.pluginId },
-    });
-  } catch { /* best-effort */ }
-}
-
-async function deletePluginFromDb(pluginId: string): Promise<void> {
-  try { await getPrismaClient().plugin.delete({ where: { name: pluginId } }); } catch { /* best-effort */ }
 }

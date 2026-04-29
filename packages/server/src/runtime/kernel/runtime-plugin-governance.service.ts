@@ -1,6 +1,5 @@
 import type { PluginActionName, PluginHealthSnapshot, PluginHealthStatus } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { getPrismaClient } from '../../infrastructure/prisma/prisma-client';
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../gateway/runtime-gateway-connection-lifecycle.service';
@@ -28,9 +27,7 @@ export class RuntimePluginGovernanceService {
   async readPluginHealthSnapshot(pluginId: string): Promise<PluginHealthSnapshot> {
     const plugin = this.pluginBootstrapService.getPlugin(pluginId);
     const ok = (await readPluginHealth(plugin, pluginId, this.runtimeGatewayConnectionLifecycleService)).ok;
-    const snapshot = createPluginHealthSnapshot(plugin, ok, this.failureCounts);
-    await syncPluginHealthToDb(plugin, snapshot);
-    return snapshot;
+    return createPluginHealthSnapshot(plugin, ok, this.failureCounts);
   }
 
   listPlugins(): RegisteredPluginRecord[] { return this.pluginBootstrapService.listPlugins().sort((left, right) => left.pluginId.localeCompare(right.pluginId)); }
@@ -105,37 +102,6 @@ function createPluginHealthSnapshot(
     lastSuccessAt: ok ? plugin.lastSeenAt : plugin.lastSeenAt,
     status,
   };
-}
-
-async function syncPluginHealthToDb(plugin: RegisteredPluginRecord, snapshot: PluginHealthSnapshot): Promise<void> {
-  try {
-    const prisma = getPrismaClient();
-    await prisma.plugin.upsert({
-      create: {
-        id: plugin.pluginId,
-        name: plugin.pluginId,
-        displayName: plugin.manifest.name,
-        runtimeKind: plugin.manifest.runtime ?? 'remote',
-        healthStatus: snapshot.status,
-        failureCount: snapshot.failureCount,
-        consecutiveFailures: snapshot.consecutiveFailures,
-        lastError: snapshot.lastError,
-        lastErrorAt: snapshot.lastErrorAt ? new Date(snapshot.lastErrorAt) : null,
-        lastSuccessAt: snapshot.lastSuccessAt ? new Date(snapshot.lastSuccessAt) : null,
-        lastCheckedAt: snapshot.lastCheckedAt ? new Date(snapshot.lastCheckedAt) : null,
-      },
-      update: {
-        healthStatus: snapshot.status,
-        failureCount: snapshot.failureCount,
-        consecutiveFailures: snapshot.consecutiveFailures,
-        lastError: snapshot.lastError,
-        lastErrorAt: snapshot.lastErrorAt ? new Date(snapshot.lastErrorAt) : null,
-        lastSuccessAt: snapshot.lastSuccessAt ? new Date(snapshot.lastSuccessAt) : null,
-        lastCheckedAt: snapshot.lastCheckedAt ? new Date(snapshot.lastCheckedAt) : null,
-      },
-      where: { name: plugin.pluginId },
-    });
-  } catch { /* DB write is best-effort, don't block health check */ }
 }
 
 function readPluginHealthStatus(

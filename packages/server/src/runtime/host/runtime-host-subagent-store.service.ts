@@ -2,7 +2,6 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { PluginCallContext, PluginSubagentDetail, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSummary } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { getPrismaClient } from '../../infrastructure/prisma/prisma-client';
 import { resolveServerStatePath } from '../server-workspace-paths';
 import { cloneJsonValue } from './runtime-host-values';
 
@@ -92,7 +91,6 @@ export class RuntimeHostSubagentStoreService {
     records.push(subagent);
     this.subagents.set(input.pluginId, records);
     this.saveSubagents();
-    syncSubagentToDb(subagent);
     return copySubagentRecord(subagent);
   }
 
@@ -173,32 +171,4 @@ function normalizeSubagentRecord(subagent: RuntimeSubagentRecord): RuntimeSubage
     sessionUpdatedAt: typeof subagent.sessionUpdatedAt === 'string' && subagent.sessionUpdatedAt.trim().length > 0 ? subagent.sessionUpdatedAt : subagent.requestedAt,
     visibility: subagent.visibility === 'inline' ? 'inline' : 'background',
   };
-}
-
-async function syncSubagentToDb(subagent: RuntimeSubagentRecord): Promise<void> {
-  try {
-    const prisma = getPrismaClient();
-    await prisma.pluginSubagent.create({ data: {
-      id: subagent.id,
-      pluginId: subagent.pluginId,
-      pluginDisplayName: subagent.pluginDisplayName,
-      runtimeKind: subagent.runtimeKind ?? 'local',
-      userId: subagent.userId,
-      conversationId: subagent.conversationId,
-      status: subagent.status,
-      requestJson: JSON.stringify(subagent.request),
-      contextJson: JSON.stringify(subagent.context),
-      resultJson: subagent.result ? JSON.stringify(subagent.result) : null,
-      error: subagent.error,
-      providerId: subagent.providerId,
-      modelId: subagent.modelId,
-      writeBackTargetJson: subagent.writeBackTarget ? JSON.stringify(subagent.writeBackTarget) : null,
-      writeBackStatus: subagent.writeBackStatus,
-      writeBackError: subagent.writeBackError,
-      writeBackMessageId: subagent.writeBackMessageId,
-      requestedAt: new Date(subagent.requestedAt),
-      startedAt: subagent.startedAt ? new Date(subagent.startedAt) : null,
-      finishedAt: subagent.finishedAt ? new Date(subagent.finishedAt) : null,
-    } });
-  } catch { /* DB write is best-effort */ }
 }
