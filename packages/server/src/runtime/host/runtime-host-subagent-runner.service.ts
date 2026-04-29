@@ -134,11 +134,16 @@ export class RuntimeHostSubagentRunnerService {
     this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { status: 'running' }));
     const target = this.runtimeHostSubagentStoreService.readSubagent(input.subagentId, input.pluginId).removedAt ? null : input.writeBackTarget;
     try {
-      const result = await this.executeSubagent({ context: input.context, pluginId: input.pluginId, request: input.request });
+      // 创建 streaming 消息，随执行逐步更新
+      const childMsgId = await this.createChildConversationStreamingMessage(input.sessionId).catch(() => null);
+      const result = await this.executeSubagent({
+        context: input.context, pluginId: input.pluginId, request: input.request,
+        onTextDelta: childMsgId ? (text) => this.updateChildConversationMessage(input.sessionId, childMsgId, text).catch(() => {}) : undefined,
+      });
+      // 最终写入完整结果
+      await this.finalizeChildConversationMessage(input.sessionId, childMsgId, result.text).catch(() => {});
       const session = this.runtimeHostSubagentSessionStoreService.appendAssistantMessage(input.pluginId, input.sessionId, result);
       const writeBack = await this.writeBackMessageIfNeeded(input.context, target, input.writeBackConversationRevision, { content: `<subagent_result>\n${result.text}\n</subagent_result>`, failureMessage: '后台子代理结果回写失败', model: result.modelId, provider: result.providerId });
-      // 把结果写入子对话，让聊天页能看到
-      await this.appendResultToChildConversation(input.sessionId, result.text).catch(() => {});
       this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { result, session, status: 'completed', writeBack }));
       return { result, session };
     } catch (error) {
@@ -212,14 +217,27 @@ export class RuntimeHostSubagentRunnerService {
     }
   }
 
-  private async appendResultToChildConversation(conversationId: string, text: string): Promise<void> {
+  private async createChildConversationStreamingMessage(conversationId: string): Promise<string | null> {
     try {
-      const cid = conversationId;
-      await this.runtimeHostConversationMessageService.createMessageWithHooks(cid, { content: text, role: 'assistant', status: 'completed' });
-    } catch { /* best-effort: child conversation message append */ }
+      const result = await this.runtimeHostConversationMessageService.createMessageWithHooks(conversationId, { content: '', role: 'assistant', status: 'pending' });
+      return typeof (result as Record<string, unknown>)?.id === 'string' ? (result as Record<string, unknown>).id as string : null;
+    } catch { return null; }
   }
 
-  private async executeSubagent(input: { context: PluginCallContext; pluginId: string; request: PluginSubagentRequest }): Promise<PluginSubagentExecutionResult> {
+  private async updateChildConversationMessage(conversationId: string, messageId: string, text: string): Promise<void> {
+    try {
+      this.runtimeHostConversationMessageService.writeMessage(conversationId, messageId, { content: text + '…' });
+    } catch { /* best-effort streaming update */ }
+  }
+
+  private async finalizeChildConversationMessage(conversationId: string, messageId: string | null, text: string): Promise<void> {
+    if (!messageId) return;
+    try {
+      this.runtimeHostConversationMessageService.writeMessage(conversationId, messageId, { content: text, status: 'completed' });
+    } catch { /* best-effort */ }
+  }
+
+  private async executeSubagent(input: { context: PluginCallContext; pluginId: string; request: PluginSubagentRequest; onTextDelta?: (text: string) => void }): Promise<PluginSubagentExecutionResult> {
     const beforeHooks = await runDispatchableHookChain<PluginSubagentRequest, SubagentBeforeRunHookResult, PluginSubagentExecutionResult>({
       applyResponse: (request, response) => readSubagentBeforeRunResponse(request, response),
       hookName: 'subagent:before-run',
@@ -242,11 +260,12 @@ export class RuntimeHostSubagentRunnerService {
       tools: await this.toolRegistryService.buildToolSet({ allowedToolNames: request.toolNames, context: input.context, excludedPluginId: input.pluginId }),
       variant: request.variant,
     });
+    const result = await collectSubagentRunResult({ finishReason: stream.finishReason, fullStream: stream.fullStream, modelId: stream.modelId, providerId: stream.providerId, onTextDelta: input.onTextDelta });
     return applyMutatingDispatchableHooks({
       applyMutation: (nextResult, response) => applySubagentAfterRunMutation(nextResult, response as unknown as Extract<SubagentAfterRunHookResult, { action: 'mutate' }>),
       hookName: 'subagent:after-run',
       kernel: this.runtimeHostPluginDispatchService,
-      payload: await collectSubagentRunResult({ finishReason: stream.finishReason, fullStream: stream.fullStream, modelId: stream.modelId, providerId: stream.providerId }),
+      payload: result,
       mapPayload: (nextResult) => asJsonValue({ context: input.context, pluginId: input.pluginId, request, result: nextResult }) as JsonObject,
       readContext: () => input.context,
       excludedPluginId: input.pluginId,
@@ -346,13 +365,13 @@ function readSubagentBeforeRunResponse(request: PluginSubagentRequest, response:
   };
 }
 
-async function collectSubagentRunResult(input: { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string }): Promise<PluginSubagentExecutionResult> {
+async function collectSubagentRunResult(input: { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; modelId: string; providerId: string; onTextDelta?: (text: string) => void }): Promise<PluginSubagentExecutionResult> {
   let text = '';
   const toolCalls: PluginSubagentExecutionResult['toolCalls'] = [], toolResults: PluginSubagentExecutionResult['toolResults'] = [];
   for await (const rawPart of input.fullStream) {
     const part = readAssistantStreamPart(rawPart);
     if (!part) { continue; }
-    if (part.type === 'text-delta') { text += part.text; continue; }
+    if (part.type === 'text-delta') { text += part.text; input.onTextDelta?.(text); continue; }
     const payload = { toolCallId: part.toolCallId, toolName: part.toolName };
     if (part.type === 'tool-call') {
       toolCalls.push({ ...payload, input: asJsonValue(part.input) });
