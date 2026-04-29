@@ -4,6 +4,7 @@ describe('GrepToolService', () => {
   it('formats empty grep results with an explicit next step', async () => {
     const service = new GrepToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -48,6 +49,7 @@ describe('GrepToolService', () => {
   it('formats partial search output for the model', async () => {
     const service = new GrepToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -116,6 +118,7 @@ describe('GrepToolService', () => {
   it('formats truncated grep results with visible totals', async () => {
     const service = new GrepToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -175,6 +178,7 @@ describe('GrepToolService', () => {
   it('chooses a better suggested read target than the first raw grep match', async () => {
     const service = new GrepToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -245,6 +249,7 @@ describe('GrepToolService', () => {
   it('omits include guidance from grep truncation summary when include is not provided', async () => {
     const service = new GrepToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
