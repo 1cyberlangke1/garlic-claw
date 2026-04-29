@@ -74,51 +74,62 @@ export const SUBAGENT_CONFIG_SCHEMA = {
 export const SUBAGENT_TOOL_DEFINITIONS = [
   {
     name: "subagent",
-    description: "将当前任务委托给宿主子代理做同步处理并返回结果",
+    description: "启动一个子代理处理复杂任务。传入 sessionId 可恢复已有子代理的上下文继续执行。结果用 <subagent_result> 包裹。",
     parameters: {
       prompt: {
         type: "string",
-        description: "要交给子代理处理的提示词",
+        description: "交给子代理的完整任务描述",
         required: true,
       },
       description: {
         type: "string",
-        description: "可选。为这次子代理任务提供简短描述，便于在任务列表中识别",
+        description: "简短描述，用于在标签页中识别",
       },
       subagentType: {
         type: "string",
-        description: "可选。为本次子代理调用指定类型 ID",
+        description: "指定子代理类型 ID",
       },
       sessionId: {
         type: "string",
-        description: "可选。传入已有子代理 session ID 时，会沿用该 session 的既有上下文继续执行",
+        description: "传入已有的子代理 session ID 可恢复上下文继续执行",
       },
     },
   },
   {
     name: "subagent_background",
-    description: "将当前任务委托给宿主子代理后台执行，并可在完成后回写当前会话",
+    description: "后台启动子代理，完成后自动回写结果到当前会话。传入 sessionId 可恢复已有子代理。",
     parameters: {
       prompt: {
         type: "string",
-        description: "要交给后台子代理处理的提示词",
+        description: "交给后台子代理的完整任务描述",
         required: true,
       },
       description: {
         type: "string",
-        description: "可选。为后台子代理任务提供简短描述，便于在任务列表中识别",
+        description: "简短描述，用于在标签页中识别",
       },
       subagentType: {
         type: "string",
-        description: "可选。为本次后台子代理调用指定类型 ID",
+        description: "指定子代理类型 ID",
       },
       sessionId: {
         type: "string",
-        description: "可选。传入已有子代理 session ID 时，会在同一 session 上继续执行，并生成新的后台执行记录",
+        description: "传入已有的子代理 session ID 可恢复上下文继续执行",
       },
       writeBack: {
         type: "boolean",
-        description: "完成后是否回写到当前会话；默认在存在会话上下文时开启",
+        description: "完成后是否回写到当前会话",
+      },
+    },
+  },
+  {
+    name: "cancel_subagent",
+    description: "取消指定的子代理会话。传入 sessionId，会停止正在运行或排队的子代理。",
+    parameters: {
+      sessionId: {
+        type: "string",
+        description: "要取消的子代理 session ID",
+        required: true,
       },
     },
   },

@@ -125,7 +125,7 @@ export class RuntimeHostSubagentRunnerService {
     try {
       const result = await this.executeSubagent({ context: input.context, pluginId: input.pluginId, request: input.request });
       const session = this.runtimeHostSubagentSessionStoreService.appendAssistantMessage(input.pluginId, input.sessionId, result);
-      const writeBack = await this.writeBackMessageIfNeeded(input.context, target, input.writeBackConversationRevision, { content: result.text, failureMessage: '后台子代理结果回写失败', model: result.modelId, provider: result.providerId });
+      const writeBack = await this.writeBackMessageIfNeeded(input.context, target, input.writeBackConversationRevision, { content: `<subagent_result>\n${result.text}\n</subagent_result>`, failureMessage: '后台子代理结果回写失败', model: result.modelId, provider: result.providerId });
       this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { result, session, status: 'completed', writeBack }));
       return { result, session };
     } catch (error) {

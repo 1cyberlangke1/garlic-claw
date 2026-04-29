@@ -36,17 +36,6 @@ export class SubagentToolService {
       sourceLabel,
       toolId: `internal:${sourceId}:${tool.name}`,
     }));
-    tools.push({
-      callName: 'cancel_subagent',
-      description: '取消指定的子代理会话',
-      enabled: true,
-      name: 'cancel_subagent',
-      parameters: { sessionId: { type: 'string', description: '要取消的子代理 session ID', required: true } } as Record<string, PluginParamSchema>,
-      sourceId,
-      sourceKind: 'internal' as const,
-      sourceLabel,
-      toolId: `internal:${sourceId}:cancel_subagent`,
-    });
     return tools;
   }
 
@@ -64,26 +53,10 @@ export class SubagentToolService {
     const description = readOptionalText(args.description);
     const sessionId = readOptionalText(args.sessionId);
     const subagentType = readOptionalText(args.subagentType);
-    const params = toolName === 'subagent'
-      ? buildSubagentRunParams({
-        config,
-        prompt,
-        ...(description ? { description } : {}),
-        ...(sessionId ? { sessionId } : {}),
-        ...(subagentType ? { subagentType } : {}),
-      })
-      : buildSubagentStartParams({
-        config,
-        prompt,
-        shouldWriteBack: readWriteBackFlag(args.writeBack, Boolean(context.conversationId)),
-        conversationId: context.conversationId ?? undefined,
-        ...(description ? { description } : {}),
-        ...(sessionId ? { sessionId } : {}),
-        ...(subagentType ? { subagentType } : {}),
-      });
+    const base = { config, prompt, ...(description ? { description } : {}), ...(sessionId ? { sessionId } : {}), ...(subagentType ? { subagentType } : {}) };
     return toolName === 'subagent'
-      ? this.runtimeHostSubagentRunnerService.runSubagent(this.getSourceId(), context, params as unknown as JsonObject)
-      : this.runtimeHostSubagentRunnerService.startSubagent(this.getSourceId(), this.getSourceLabel(), context, params as unknown as JsonObject);
+      ? this.runtimeHostSubagentRunnerService.runSubagent(this.getSourceId(), context, buildSubagentRunParams(base) as unknown as JsonObject)
+      : this.runtimeHostSubagentRunnerService.startSubagent(this.getSourceId(), this.getSourceLabel(), context, buildSubagentStartParams({ ...base, shouldWriteBack: readWriteBackFlag(args.writeBack, Boolean(context.conversationId)), conversationId: context.conversationId ?? undefined }) as unknown as JsonObject);
   }
 }
 
