@@ -213,24 +213,24 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 <style scoped>
 .chat-view {
   height: 100%;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 16px;
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
 }
 
-.chat-tabs { display:flex; gap:4px; padding:0 4px; overflow-x:auto; }
+.chat-tabs { display:flex; gap:4px; padding:0 4px; overflow-x:auto; flex-shrink:0; }
 .chat-tab { display:flex; align-items:center; gap:6px; padding:6px 14px; border:1px solid var(--shell-border, #334155); border-radius:8px 8px 0 0; border-bottom:none; background:transparent; color:var(--shell-text-secondary, #cbd5e1); font-size:13px; cursor:pointer; white-space:nowrap; font-family:inherit; transition:all .12s; }
 .chat-tab:hover { background:var(--shell-bg-hover, #334155); color:var(--shell-text, #f1f5f9); }
 .chat-tab.active { background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); border-color:var(--shell-active, #22c55e); }
 .chat-toolbar {
-  padding: 16px;
+  padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--header-gradient);
-  box-shadow: var(--shadow-sm), 0 0 15px rgba(103, 199, 207, 0.1);
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
+  flex-shrink: 0;
 }
 
 .toolbar-header {
@@ -347,6 +347,9 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   padding: 14px 16px;
   display: grid;
   gap: 10px;
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .chat-todo-header {
@@ -426,6 +429,8 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   color: var(--text-muted);
   font-size: 13px;
 }
+
+.chat-view > :deep(.messages) { flex: 1; min-height: 0; overflow-y: auto; }
 
 .subagent-view { display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
 .subagent-bar { display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--shell-bg-elevated); border-radius:6px; font-size:14px; color:var(--shell-text); }
