@@ -8,6 +8,7 @@ describe('ReadToolService', () => {
     };
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -53,6 +54,7 @@ describe('ReadToolService', () => {
   it('formats byte-limited file reads with explicit continuation hints', async () => {
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -104,6 +106,7 @@ describe('ReadToolService', () => {
   it('formats image reads as non-text assets', async () => {
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -144,6 +147,7 @@ describe('ReadToolService', () => {
   it('formats binary reads as non-text assets with a next-step hint', async () => {
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -184,6 +188,7 @@ describe('ReadToolService', () => {
   it('formats pdf reads as non-text assets', async () => {
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -236,6 +241,7 @@ describe('ReadToolService', () => {
     };
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/' }),
       } as never,
       {
@@ -349,6 +355,7 @@ describe('ReadToolService', () => {
     });
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/workspace' }),
       } as never,
       {
@@ -411,6 +418,7 @@ describe('ReadToolService', () => {
     };
     const service = new ReadToolService(
       {
+        deleteSessionEnvironmentIfEmpty: jest.fn().mockResolvedValue(undefined),
         getDescriptor: () => ({ visibleRoot: '/workspace' }),
       } as never,
       {
