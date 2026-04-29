@@ -215,8 +215,6 @@ def createBuildSteps() -> list[tuple[str, list[str]]]:
     return [
         ("构建 shared", ["npm", "run", "build", "-w", "packages/shared"]),
         ("构建 plugin-sdk", ["npm", "run", "build", "-w", "packages/plugin-sdk"]),
-        ("生成 Prisma Client", ["npm", "run", "prisma:generate", "-w", "packages/server"]),
-        ("同步开发数据库", ["npm", "run", "prisma:push", "-w", "packages/server"]),
         ("构建 server", ["npm", "run", "build", "-w", "packages/server"]),
     ]
 
@@ -413,7 +411,6 @@ def 执行启动前预检() -> bool:
     requiredPaths = [
         ("检查 package-lock.json", ROOT / "package-lock.json"),
         ("检查 server tsconfig.build.json", SERVER_DIR / "tsconfig.build.json"),
-        ("检查 Prisma schema", SERVER_DIR / "prisma" / "schema.prisma"),
         ("检查 web vite.config.ts", WEB_DIR / "vite.config.ts"),
     ]
     for label, path in requiredPaths:

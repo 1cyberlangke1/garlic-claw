@@ -10,9 +10,9 @@
   "scripts": {
     "dev:server": "npm run build:server-runtime-deps && npm run dev -w packages/server",
     "dev:web": "npm run dev -w packages/web",
-    "build:server-runtime-deps": "npm run build:shared && npm run build -w packages/plugin-sdk && npm run prisma:generate -w packages/server",
     "build:server": "npm run build:server-runtime-deps && npm run build -w packages/server",
     "typecheck:server": "npm run typecheck -w packages/server",
+    "build:server-runtime-deps": "npm run build:shared && npm run build -w packages/plugin-sdk",
     "test:server": "npm run build:server-runtime-deps && npm run test -w packages/server -- --runInBand",
     "smoke:server": "npm run build:server-runtime-deps && npm run smoke:http -w packages/server",
     "smoke:server:real": "npm run build:server-runtime-deps && npm run smoke:http:real -w packages/server",
