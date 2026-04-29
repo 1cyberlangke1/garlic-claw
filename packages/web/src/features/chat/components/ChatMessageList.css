@@ -64,6 +64,32 @@
   max-width: min(760px, calc(100% - 72px));
 }
 
+.display-command {
+  justify-content: flex-end;
+}
+
+.display-command .message-role {
+  order: 2;
+}
+
+.display-command .message-main {
+  order: 1;
+  margin-left: auto;
+  align-items: flex-end;
+}
+
+.display-result {
+  justify-content: flex-start;
+}
+
+.display-result .message-role {
+  order: 1;
+}
+
+.display-result .message-main {
+  order: 2;
+}
+
 .message-role {
   flex: 0 0 auto;
   width: 44px;
