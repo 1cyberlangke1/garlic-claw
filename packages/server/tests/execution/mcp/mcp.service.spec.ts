@@ -172,7 +172,6 @@ describe('McpService', () => {
   it('disconnects runtime state and rejects tool calls when a source is disabled online', async () => {
     const weather = createServer('weather');
     const client = { callTool: jest.fn(), close: jest.fn() };
-    const disconnectSpy = jest.spyOn(service as any, 'disconnectServer').mockResolvedValue(undefined);
 
     await service.saveServer(weather);
     (service as any).clients.set('weather', client);
@@ -192,7 +191,7 @@ describe('McpService', () => {
 
     await service.setServerEnabled('weather', false);
 
-    expect(disconnectSpy).toHaveBeenCalledWith('weather');
+    expect(client.close).toHaveBeenCalledTimes(1);
     expect(service.getToolingSnapshot()).toEqual({
       statuses: [expect.objectContaining({ name: 'weather', enabled: false, connected: false, health: 'unknown' })],
       tools: [],
@@ -207,6 +206,59 @@ describe('McpService', () => {
     await service.onModuleDestroy();
 
     expect(disconnectAllSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a real probe when executing health-check governance action', async () => {
+    const weather = createServer('weather');
+    const staleClient = { callTool: jest.fn(), close: jest.fn() };
+    const freshClient = { callTool: jest.fn(), close: jest.fn() };
+    await service.saveServer(weather);
+    (service as any).clients.set('weather', staleClient);
+    (service as any).serverRecords.set('weather', {
+      status: {
+        name: 'weather',
+        connected: false,
+        enabled: true,
+        health: 'error',
+        lastError: 'stale',
+        lastCheckedAt: '2026-04-03T10:00:00.000Z',
+      },
+      tools: [],
+    });
+    const connectSpy = jest.spyOn(service as any, 'connectClientSession').mockResolvedValue({
+      client: freshClient,
+      tools: [{ serverName: 'weather', name: 'get_forecast', description: 'Get forecast', inputSchema: { type: 'object' } }],
+    });
+
+    await expect(service.runGovernanceAction('weather', 'health-check')).resolves.toEqual({
+      accepted: true,
+      action: 'health-check',
+      sourceId: 'weather',
+      sourceKind: 'mcp',
+      message: 'MCP source health check passed',
+    });
+    expect(connectSpy).toHaveBeenCalledWith({
+      config: weather,
+      name: 'weather',
+    });
+    expect(staleClient.close).toHaveBeenCalledTimes(1);
+    expect(service.getToolingSnapshot()).toEqual({
+      statuses: [
+        expect.objectContaining({
+          name: 'weather',
+          connected: true,
+          health: 'healthy',
+          lastError: null,
+          lastCheckedAt: expect.any(String),
+        }),
+      ],
+      tools: [
+        expect.objectContaining({
+          serverName: 'weather',
+          name: 'get_forecast',
+        }),
+      ],
+    });
   });
 
   it('routes stdio MCP servers through the local launcher process', () => {

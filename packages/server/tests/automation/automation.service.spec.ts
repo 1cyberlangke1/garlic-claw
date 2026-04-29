@@ -517,6 +517,30 @@ describe('AutomationService', () => {
     });
   });
 
+  it('supports standard cron expressions for scheduled automations', async () => {
+    const runtimeHostPluginDispatchService = {
+      executeTool: jest.fn().mockResolvedValue({ saved: true }),
+      invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
+      listPlugins: jest.fn().mockReturnValue([]),
+    };
+    service = createService({ runtimeHostPluginDispatchService });
+
+    service.create('user-1', {
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: 'cron 表达式执行' } }],
+      name: 'cron 表达式自动化',
+      trigger: { type: 'cron', cron: '*/1 * * * * *' },
+    });
+
+    await jest.advanceTimersByTimeAsync(1000);
+
+    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
+      pluginId: 'builtin.memory',
+      toolName: 'save_memory',
+      params: { content: 'cron 表达式执行' },
+      context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
+    });
+  });
+
   it('persists automations and keeps sequence after restart', async () => {
     service.create(SINGLE_USER_ID, {
       actions: [],

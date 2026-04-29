@@ -46,7 +46,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   async listServerEvents(name: string, query: EventLogQuery = {}): Promise<EventLogListResult> { this.requireServerConfig(name.trim()); return this.runtimeEventLogService.listLogs('mcp', name.trim(), query); }
 
   async runGovernanceAction(sourceId: string, action: 'health-check' | 'reconnect' | 'reload'): Promise<ToolSourceActionResult> {
-    if (action === 'health-check') {return this.readHealthCheckResult(sourceId);}
+    if (action === 'health-check') {return this.runHealthCheck(sourceId);}
     await this.reloadServer(sourceId);
     const message = `MCP source ${action}ed`;
     this.recordServerEvent(sourceId, { level: 'info', message, type: `governance:${action}` });
@@ -78,16 +78,16 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     const client = this.clients.get(input.serverName);
     if (!client) {
       const message = `MCP 服务器 "${input.serverName}" 未连接`;
-      this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastError: message });
+      this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastCheckedAt: new Date().toISOString(), lastError: message });
       throw new Error(message);
     }
     try {
       const result = await this.callClientTool({ arguments: input.arguments as JsonObject, client, serverName: input.serverName, toolName: input.toolName });
-      this.updateServerStatus(input.serverName, { connected: true, health: 'healthy', lastError: null });
+      this.updateServerStatus(input.serverName, { connected: true, health: 'healthy', lastCheckedAt: new Date().toISOString(), lastError: null });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastError: message });
+      this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastCheckedAt: new Date().toISOString(), lastError: message });
       this.recordServerEvent(input.serverName, { level: 'error', message, metadata: { toolName: input.toolName }, type: 'tool:error' });
       throw error;
     }
@@ -107,17 +107,20 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   }
 
   async disconnectServer(name: string): Promise<void> {
-    const client = this.clients.get(name);
-    if (client) {try { await client.close(); } catch { void client; }}
-    this.clients.delete(name);
+    await this.closeClient(name);
     this.updateServerStatus(name, { connected: false, health: 'unknown', lastError: null });
   }
 
   async disconnectAllClients(): Promise<void> { for (const name of [...this.clients.keys()]) {await this.disconnectServer(name);} }
 
   private requireServerConfig(name: string): McpServerConfig { const server = this.mcpConfigStoreService.getServer(name); if (!server) {throw new NotFoundException(`MCP server not found: ${name}`);} return server; }
-  private async syncServerRecord(name: string, config: McpServerConfig, enabled = true): Promise<void> { this.serverRecords.set(name, createMcpRecord(name, { enabled }, [])); await this.disconnectServer(name); if (enabled) {await this.connectMcpServer(name, config);} }
+  private async syncServerRecord(name: string, config: McpServerConfig, enabled = true): Promise<void> { this.serverRecords.set(name, createMcpRecord(name, { enabled }, [])); await this.closeClient(name); this.updateServerStatus(name, { connected: false, health: 'unknown', lastError: null }); if (enabled) {await this.connectMcpServer(name, config);} }
   private updateServerStatus(name: string, patch: Partial<McpServerStatus>): void { const record = this.serverRecords.get(name); if (record) {record.status = { ...record.status, ...patch };} }
+  private async closeClient(name: string): Promise<void> {
+    const client = this.clients.get(name);
+    if (client) {try { await client.close(); } catch { void client; }}
+    this.clients.delete(name);
+  }
 
   private async connectClientSession(input: { name: string; config: McpServerConfig }): Promise<{ client: McpClientSession; tools: McpToolDescriptor[] }> {
     let lastError: Error | null = null;
@@ -144,12 +147,30 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     return { command: process.execPath, args: [resolveMcpStdioLauncherPath(), config.command, ...config.args], env: Object.fromEntries([...Object.entries(process.env).flatMap(([key, value]) => value === undefined ? [] : [[key, value]]), ...Object.entries(config.env ?? {}).map(([key, value]) => [key, value.startsWith('${') && value.endsWith('}') ? this.configService.get<string>(value.slice(2, -1)) || '' : value])]) };
   }
 
-  private readHealthCheckResult(sourceId: string): ToolSourceActionResult {
+  private async runHealthCheck(sourceId: string): Promise<ToolSourceActionResult> {
     const status = this.serverRecords.get(sourceId)?.status;
     if (!status) {throw new NotFoundException(`MCP source not found: ${sourceId}`);}
-    const message = status.connected && status.health === 'healthy' ? 'MCP source health check passed' : status.lastError ? `MCP source health check failed: ${status.lastError}` : 'MCP source health check failed';
-    this.recordServerEvent(sourceId, { level: status.connected && status.health === 'healthy' ? 'info' : 'warn', message, type: 'governance:health-check' });
-    return { accepted: true, action: 'health-check', sourceId, sourceKind: 'mcp', message };
+    const config = this.requireServerConfig(sourceId);
+    const checkedAt = new Date().toISOString();
+    try {
+      const connected = await this.connectClientSession({ config, name: sourceId });
+      if (status.enabled) {
+        await this.closeClient(sourceId);
+        this.clients.set(sourceId, connected.client);
+        this.serverRecords.set(sourceId, createMcpRecord(sourceId, { connected: true, enabled: true, health: 'healthy', lastCheckedAt: checkedAt, lastError: null }, connected.tools));
+      } else {
+        try { await connected.client.close(); } catch { void connected; }
+        this.serverRecords.set(sourceId, createMcpRecord(sourceId, { connected: false, enabled: false, health: 'healthy', lastCheckedAt: checkedAt, lastError: null }, connected.tools));
+      }
+      const message = 'MCP source health check passed';
+      this.recordServerEvent(sourceId, { level: 'info', message, metadata: { toolCount: connected.tools.length }, type: 'governance:health-check' });
+      return { accepted: true, action: 'health-check', sourceId, sourceKind: 'mcp', message };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.updateServerStatus(sourceId, { connected: false, health: 'error', lastCheckedAt: checkedAt, lastError: message });
+      this.recordServerEvent(sourceId, { level: 'warn', message: `MCP source health check failed: ${message}`, type: 'governance:health-check' });
+      return { accepted: true, action: 'health-check', sourceId, sourceKind: 'mcp', message: `MCP source health check failed: ${message}` };
+    }
   }
 
   private recordServerEvent(name: string, input: { level: 'error' | 'info' | 'warn'; message: string; metadata?: JsonObject; type: string }, config?: McpServerConfig): void {

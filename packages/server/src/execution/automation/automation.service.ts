@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, JsonObject, JsonValue, TriggerConfig, ToolSourceKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { CronExpressionParser } from 'cron-parser';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
 import { asJsonValue, cloneJsonValue, readJsonObject, readRequiredString } from '../../runtime/host/runtime-host-values';
@@ -28,7 +29,7 @@ export type AutomationRunContext = { automationId: string; source: 'automation';
 @Injectable()
 export class AutomationService implements OnModuleDestroy, OnModuleInit {
   private readonly automations = new Map<string, RuntimeAutomationRecord[]>();
-  private readonly cronJobs = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly cronJobs = new Map<string, ReturnType<typeof setTimeout>>();
   private automationSequence = 0;
   private readonly logger = new Logger(AutomationService.name);
   private readonly storagePath = resolveAutomationStoragePath();
@@ -41,7 +42,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
   }
 
   onModuleInit(): void { for (const automation of readAllAutomations(this.automations)) {if (automation.enabled) {this.syncCronJob(automation.id, automation.trigger, true);}} }
-  onModuleDestroy(): void { for (const timer of this.cronJobs.values()) {clearInterval(timer);} this.cronJobs.clear(); }
+  onModuleDestroy(): void { for (const timer of this.cronJobs.values()) {clearTimeout(timer);} this.cronJobs.clear(); }
 
   create(userId: string, params: JsonObject): JsonValue {
     const record = createAutomationRecord(userId, params, ++this.automationSequence);
@@ -105,23 +106,37 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
 
   private syncCronJob(automationId: string, trigger: TriggerConfig, enabled: boolean): boolean {
     if (!enabled || trigger.type !== 'cron' || !trigger.cron) { this.removeCronJob(automationId); return false; }
-    const intervalMs = readCronInterval(trigger.cron);
     this.removeCronJob(automationId);
-    if (!intervalMs) { this.logger.warn(`自动化 ${automationId} 的 cron 表达式无效：${trigger.cron}`); return false; }
-    this.cronJobs.set(automationId, setInterval(() => {
-      const automation = readAllAutomations(this.automations).find((record) => record.id === automationId);
-      if (automation) {
-        void this.runRecord(automation).catch((error: Error) => { this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${error.message}`); });
-      }
-    }, intervalMs));
-    this.logger.log(`已为自动化 ${automationId} 计划 cron：每 ${trigger.cron}`);
+    const nextDelay = readCronNextDelay(trigger.cron, new Date());
+    if (nextDelay === null) { this.logger.warn(`自动化 ${automationId} 的 cron 表达式无效：${trigger.cron}`); return false; }
+    const timer = setTimeout(() => {
+      void this.runCronAutomation(automationId).catch((error: Error) => {
+        this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${error.message}`);
+      });
+    }, nextDelay);
+    timer.unref?.();
+    this.cronJobs.set(automationId, timer);
+    this.logger.log(`已为自动化 ${automationId} 计划 cron：${trigger.cron}`);
     return true;
   }
 
   private removeCronJob(automationId: string): void {
     const timer = this.cronJobs.get(automationId);
-    if (timer) { clearInterval(timer); }
+    if (timer) { clearTimeout(timer); }
     this.cronJobs.delete(automationId);
+  }
+
+  private async runCronAutomation(automationId: string): Promise<void> {
+    const automation = readAllAutomations(this.automations).find((record) => record.id === automationId);
+    if (!automation || !automation.enabled || automation.trigger.type !== 'cron' || !automation.trigger.cron) {
+      this.removeCronJob(automationId);
+      return;
+    }
+    try {
+      await this.runRecord(automation);
+    } finally {
+      this.syncCronJob(automationId, automation.trigger, automation.enabled);
+    }
   }
 }
 
@@ -208,12 +223,25 @@ function readAutomationToolSourceKind(value: unknown): ToolSourceKind | null {
     : null;
 }
 
-function readCronInterval(expr: string): number | null {
+function readCronNextDelay(expr: string, currentDate: Date): number | null {
+  const intervalMs = readIntervalCronDelay(expr);
+  if (intervalMs !== null) {
+    return intervalMs;
+  }
+  try {
+    const nextDate = CronExpressionParser.parse(expr, { currentDate }).next().toDate();
+    return Math.max(nextDate.getTime() - currentDate.getTime(), 1);
+  } catch {
+    return null;
+  }
+}
+
+function readIntervalCronDelay(expr: string): number | null {
   const match = expr.trim().match(/^(\d+)\s*(s|m|h)$/i);
   if (!match) { return null; }
   const value = parseInt(match[1], 10);
   const unit = match[2].toLowerCase();
-  if (unit === 's') { return value >= 10 ? value * 1000 : null; }
+  if (unit === 's') { return value * 1000; }
   const unitMs = unit === 'm' ? 60 * 1000 : unit === 'h' ? 60 * 60 * 1000 : null;
   return unitMs ? value * unitMs : null;
 }
