@@ -30,32 +30,6 @@
             <span v-if="selectedCapabilities.toolCall" class="capability-chip">工具</span>
             <span v-if="selectedCapabilities.input.image" class="capability-chip">支持图片</span>
           </div>
-          <div class="service-row">
-            <span class="service-label">会话服务</span>
-            <button
-              class="service-toggle"
-              type="button"
-              @click="setConversationSessionEnabled(conversationHostServices?.sessionEnabled === false)"
-            >
-              {{ conversationHostServices?.sessionEnabled === false ? '插件服务: 关' : '插件服务: 开' }}
-            </button>
-            <button
-              class="service-toggle"
-              type="button"
-              :disabled="conversationHostServices?.sessionEnabled === false"
-              @click="setConversationLlmEnabled(conversationHostServices?.llmEnabled === false)"
-            >
-              {{ conversationHostServices?.llmEnabled === false ? 'AI 回复: 关' : 'AI 回复: 开' }}
-            </button>
-            <button
-              class="service-toggle"
-              type="button"
-              :disabled="chat.streaming || compacting"
-              @click="compactConversationContext()"
-            >
-              {{ compacting ? '压缩中...' : '压缩上下文' }}
-            </button>
-          </div>
         </template>
       </div>
 
@@ -163,13 +137,11 @@ let currentPersonaRequestId = 0
 const {
   inputText,
   pendingImages,
-  compacting,
   commandSuggestions,
   displayedMessages,
   contextWindowPreview,
   pendingRuntimePermissions,
   selectedCapabilities,
-  conversationHostServices,
   uploadNotices,
   canSend,
   handleModelChange,
@@ -179,9 +151,6 @@ const {
   updateMessage,
   deleteMessage,
   retryMessage,
-  setConversationLlmEnabled,
-  setConversationSessionEnabled,
-  compactConversationContext,
   replyRuntimePermission,
   applyCommandSuggestion,
 } = useChatView(chat)
