@@ -140,8 +140,6 @@ async function main() {
   const tempRoot = path.join(PROJECT_ROOT, 'workspace', 'test-artifacts', 'http-smoke');
   await fsPromises.mkdir(tempRoot, { recursive: true });
   const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'http-smoke-'));
-  const databasePath = cli.proxyOrigin ? null : path.join(tempDir, 'smoke.sqlite');
-  const databaseUrl = databasePath ? buildRelativeSqliteUrl(databasePath) : null;
   let port = null;
   let wsPort = null;
   const skillRoot = path.join(PROJECT_ROOT, 'config', 'skills', 'definitions', SKILL_DIR_NAME);
@@ -265,27 +263,10 @@ async function main() {
       await runTypescriptBuild();
       await verifyRequiredBuildArtifacts();
 
-      console.log('-> prisma db push');
-      await runCommand(process.execPath, [
-        resolvePrismaCliEntry(),
-        'db',
-        'push',
-        '--skip-generate',
-        '--schema',
-        'prisma/schema.prisma',
-      ], {
-        cwd: SERVER_DIR,
-        env: {
-          ...process.env,
-          DATABASE_URL: databaseUrl,
-        },
-        label: 'prisma db push',
-      });
-
       console.log('-> start backend');
       port = await getFreePort();
       wsPort = await getFreePort();
-      backend = await startBackend(port, wsPort, databaseUrl, serverFiles, {
+      backend = await startBackend(port, wsPort, serverFiles, {
         runtimeApprovalMode: cli.runtimeApprovalMode,
       });
       apiBase = `http://127.0.0.1:${port}${API_PREFIX}`;
@@ -3107,13 +3088,12 @@ async function loginDevelopmentAdmin(apiBase) {
   return payload;
 }
 
-async function startBackend(port, wsPort, databaseUrl, files, options = {}) {
+async function startBackend(port, wsPort, files, options = {}) {
   const logs = [];
   const child = spawn(process.execPath, ['dist/src/main.js'], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
-      DATABASE_URL: databaseUrl,
       GARLIC_CLAW_AI_SETTINGS_PATH: files.aiSettingsPath,
       GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH: files.contextGovernanceConfigPath,
       GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
@@ -3695,10 +3675,6 @@ function recordVisitedRoute(method, routePath) {
   });
 }
 
-function resolvePrismaCliEntry() {
-  return resolveNodeCliEntry('prisma', 'build', 'index.js');
-}
-
 function resolveTscCliEntry() {
   return resolveNodeCliEntry('typescript', 'bin', 'tsc');
 }
@@ -3731,11 +3707,6 @@ async function runCommand(command, args, options) {
     });
     child.once('error', reject);
   });
-}
-
-function buildRelativeSqliteUrl(databasePath) {
-  const relativePath = path.relative(SERVER_DIR, databasePath).replace(/\\/g, '/');
-  return `file:${relativePath.startsWith('.') ? relativePath : `./${relativePath}`}`;
 }
 
 async function getFreePort() {
