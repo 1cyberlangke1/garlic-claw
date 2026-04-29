@@ -30,6 +30,18 @@ export class PersonaStoreService {
   read(personaId: string): StoredPersonaRecord | null { return clonePersonaRecord(this.personas.find((persona) => persona.id === personaId)) }
   readAvatarPath(personaId: string): string | null { return readPersonaAvatarFilePath(path.join(this.storageRoot, readPersonaFolderName(personaId))) }
 
+  writeAvatar(personaId: string, buffer: Buffer, mimetype: string): string {
+    const personaRoot = path.join(this.storageRoot, readPersonaFolderName(personaId));
+    const ext = mimetypeToExtension(mimetype);
+    for (const entry of fs.readdirSync(personaRoot, { withFileTypes: true })) {
+      if (entry.isFile() && path.basename(entry.name, path.extname(entry.name)).toLowerCase() === AVATAR_BASENAME)
+        fs.unlinkSync(path.join(personaRoot, entry.name));
+    }
+    const avatarPath = path.join(personaRoot, `${AVATAR_BASENAME}${ext}`);
+    fs.writeFileSync(avatarPath, buffer);
+    return avatarPath;
+  }
+
   replaceAll(personas: StoredPersonaRecord[]): StoredPersonaRecord[] {
     const nextPersonas = personas.map((persona) => structuredClone(persona))
     persistPersonaStore(this.storageRoot, this.personas, nextPersonas)
@@ -212,4 +224,9 @@ function normalizeOptionalText(value: unknown): string | undefined {
 
 function normalizeRequiredText(value: unknown, fallback: string): string {
   return normalizeOptionalText(value) ?? fallback
+}
+
+function mimetypeToExtension(mimetype: string): string {
+  const map: Record<string, string> = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif', 'image/bmp': '.bmp', 'image/svg+xml': '.svg', 'image/avif': '.avif', 'image/tiff': '.tiff' };
+  return map[mimetype] ?? '.png';
 }

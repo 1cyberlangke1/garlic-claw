@@ -79,6 +79,11 @@ export class PersonaService {
     throw new NotFoundException(`Persona avatar not found: ${personaId}`)
   }
 
+  savePersonaAvatar(personaId: string, buffer: Buffer, mimetype: string): void {
+    this.requirePersona(personaId);
+    this.personaStoreService.writeAvatar(personaId, buffer, mimetype);
+  }
+
   private listStoredPersonas(): StoredPersonaRecord[] { return this.personaStoreService.list() }
 
   private persistPersonas(personas: StoredPersonaRecord[], preferredDefaultPersonaId?: string): StoredPersonaRecord[] {

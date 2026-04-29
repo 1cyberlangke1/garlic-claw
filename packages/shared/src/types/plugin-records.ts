@@ -128,6 +128,7 @@ export interface PluginPersonaUpsertInput {
   id: string;
   name: string;
   prompt: string;
+  avatar?: string | null;
   description?: string;
   beginDialogs?: PluginPersonaDialogEntry[];
   toolNames?: string[] | null;
@@ -138,6 +139,7 @@ export interface PluginPersonaUpsertInput {
 export interface PluginPersonaUpdateInput {
   name?: string;
   prompt?: string;
+  avatar?: string | null;
   description?: string;
   beginDialogs?: PluginPersonaDialogEntry[];
   toolNames?: string[] | null;
