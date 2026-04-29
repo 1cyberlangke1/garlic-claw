@@ -1,11 +1,10 @@
-import { delete as del, get, patch, post, put, requestRaw } from "@/api/http";
+import { delete as del, get, patch, post, requestRaw } from "@/api/http";
 import { toAppError } from "@/utils/error";
 
 import type {
   Conversation,
   ConversationContextWindowPreview,
   ConversationDetail,
-  ConversationHostServices,
   RuntimePermissionDecision,
   RuntimePermissionReplyResult,
   RuntimePermissionRequest,
@@ -14,7 +13,6 @@ import type {
   RetryMessagePayload,
   SSEEvent,
   SendMessagePayload,
-  UpdateConversationHostServicesPayload,
   UpdateMessagePayload,
 } from "@garlic-claw/shared";
 
@@ -74,22 +72,6 @@ export function replyRuntimePermission(
 
 export function deleteConversation(id: string) {
   return del<{ message: string }>(`/chat/conversations/${id}`);
-}
-
-export function getConversationHostServices(conversationId: string) {
-  return get<ConversationHostServices>(
-    `/chat/conversations/${conversationId}/services`,
-  );
-}
-
-export function updateConversationHostServices(
-  conversationId: string,
-  payload: UpdateConversationHostServicesPayload,
-) {
-  return put<ConversationHostServices>(
-    `/chat/conversations/${conversationId}/services`,
-    payload,
-  );
 }
 
 export function updateConversationMessage(

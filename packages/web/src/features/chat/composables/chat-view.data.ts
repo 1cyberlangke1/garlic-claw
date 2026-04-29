@@ -1,22 +1,8 @@
-import type {
-  AiModelCapabilities,
-  ConversationHostServices,
-  UpdateConversationHostServicesPayload,
-} from '@garlic-claw/shared'
+import type { AiModelCapabilities } from '@garlic-claw/shared'
 import {
   getVisionFallbackConfig,
   listAiModels,
 } from '@/features/ai-settings/api/ai'
-import {
-  getConversationHostServices,
-  updateConversationHostServices,
-} from '@/features/chat/api/chat'
-
-const DEFAULT_HOST_SERVICES: ConversationHostServices = {
-  sessionEnabled: true,
-  llmEnabled: true,
-  ttsEnabled: true,
-}
 
 /**
  * 读取当前选中模型的能力。
@@ -46,30 +32,3 @@ export async function loadVisionFallbackEnabled(): Promise<boolean> {
   }
 }
 
-/**
- * 读取当前会话的宿主服务开关。
- * @param conversationId 会话 ID
- * @returns 当前会话的宿主服务开关
- */
-export async function loadConversationHostServices(
-  conversationId: string,
-): Promise<ConversationHostServices> {
-  try {
-    return await getConversationHostServices(conversationId)
-  } catch {
-    return DEFAULT_HOST_SERVICES
-  }
-}
-
-/**
- * 保存当前会话的宿主服务开关。
- * @param conversationId 会话 ID
- * @param patch 待保存的局部状态
- * @returns 保存后的完整宿主服务状态
- */
-export function saveConversationHostServices(
-  conversationId: string,
-  patch: UpdateConversationHostServicesPayload,
-): Promise<ConversationHostServices> {
-  return updateConversationHostServices(conversationId, patch)
-}

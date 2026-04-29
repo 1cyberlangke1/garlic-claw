@@ -8,11 +8,12 @@ import type {
   UpdateConversationHostServicesPayload,
 } from '@garlic-claw/shared'
 import {
-  loadConversationHostServices,
   loadModelCapabilities,
   loadVisionFallbackEnabled,
-  saveConversationHostServices,
 } from '@/features/chat/composables/chat-view.data'
+
+const loadConversationHostServices = async (_id?: string) => ({ sessionEnabled: true, llmEnabled: true, ttsEnabled: true } as const)
+const saveConversationHostServices = async (_id?: string, _patch?: Record<string, unknown>) => ({ sessionEnabled: true, llmEnabled: true, ttsEnabled: true } as const)
 import type { useChatStore } from '@/features/chat/store/chat'
 import {
   formatBytes,
