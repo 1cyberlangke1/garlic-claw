@@ -5,7 +5,7 @@ import { RuntimeHostSubagentRunnerService } from '../../runtime/host/runtime-hos
 import { INTERNAL_SUBAGENT_SOURCE_ID, SubagentSettingsService } from './subagent-settings.service';
 
 const INTERNAL_SUBAGENT_SOURCE_LABEL = 'Subagent';
-const SUBAGENT_TOOL_NAMES = new Set(['subagent', 'subagent_background']);
+const SUBAGENT_TOOL_NAMES = new Set(['subagent', 'subagent_background', 'cancel_subagent']);
 
 @Injectable()
 export class SubagentToolService {
@@ -23,7 +23,9 @@ export class SubagentToolService {
   }
 
   getToolInfos(): ToolInfo[] {
-    return SUBAGENT_TOOL_DEFINITIONS.map((tool) => ({
+    const sourceId = this.getSourceId();
+    const sourceLabel = this.getSourceLabel();
+    const tools: ToolInfo[] = SUBAGENT_TOOL_DEFINITIONS.map((tool) => ({
       callName: tool.name,
       description: tool.description,
       enabled: true,
@@ -32,16 +34,36 @@ export class SubagentToolService {
       lastError: null,
       name: tool.name,
       parameters: tool.parameters as Record<string, PluginParamSchema>,
-      sourceId: this.getSourceId(),
-      sourceKind: 'internal',
-      sourceLabel: this.getSourceLabel(),
-      toolId: `internal:${this.getSourceId()}:${tool.name}`,
+      sourceId,
+      sourceKind: 'internal' as const,
+      sourceLabel,
+      toolId: `internal:${sourceId}:${tool.name}`,
     }));
+    tools.push({
+      callName: 'cancel_subagent',
+      description: '取消指定的子代理会话',
+      enabled: true,
+      health: 'healthy' as const,
+      lastCheckedAt: null,
+      lastError: null,
+      name: 'cancel_subagent',
+      parameters: { sessionId: { type: 'string', description: '要取消的子代理 session ID', required: true } } as Record<string, PluginParamSchema>,
+      sourceId,
+      sourceKind: 'internal' as const,
+      sourceLabel,
+      toolId: `internal:${sourceId}:cancel_subagent`,
+    });
+    return tools;
   }
 
   async executeTool(toolName: string, args: Record<string, unknown>, context: PluginCallContext) {
     if (!SUBAGENT_TOOL_NAMES.has(toolName)) {
       throw new NotFoundException(`Internal subagent tool not found: ${toolName}`);
+    }
+    if (toolName === 'cancel_subagent') {
+      const sid = readRequiredPrompt(args.sessionId, toolName);
+      const removed = await this.runtimeHostSubagentRunnerService.removeSubagentSession(sid);
+      return { cancelled: removed, sessionId: sid };
     }
     const config = this.subagentSettingsService.readSubagentConfig();
     const prompt = readRequiredPrompt(args.prompt, toolName);
