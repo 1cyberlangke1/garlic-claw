@@ -36,6 +36,8 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     pendingImages: ref([]),
     displayedMessages: ref([]),
     contextWindowPreview: ref(null),
+    queuedSendCount: ref(0),
+    queuedSendPreviewEntries: ref([]),
     commandSuggestions: ref([
       {
         commandId: 'internal.context-governance:/compact:command',
@@ -75,6 +77,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     retryMessage: vi.fn(),
     triggerRetryAction: vi.fn(),
     replyRuntimePermission,
+    popQueuedSendTailToInput: vi.fn(),
     applyCommandSuggestion,
   }),
 }))

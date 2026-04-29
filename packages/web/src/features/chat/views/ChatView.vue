@@ -81,10 +81,13 @@
         :can-send="canSend"
         :command-suggestions="commandSuggestions"
         :pending-images="pendingImages"
+        :queued-send-count="queuedSendCount"
+        :queued-send-preview-entries="queuedSendPreviewEntries"
         :streaming="chat.streaming"
         :upload-notices="uploadNotices"
         @apply-command-suggestion="applyCommandSuggestion"
         @file-change="handleFileChange"
+        @pop-queued-send="popQueuedSendTailToInput"
         @remove-image="removeImage"
         @send="send"
         @stop="chat.stopStreaming()"
@@ -170,6 +173,8 @@ const {
   displayedMessages,
   contextWindowPreview,
   pendingRuntimePermissions,
+  queuedSendCount,
+  queuedSendPreviewEntries,
   selectedCapabilities,
   uploadNotices,
   canSend,
@@ -181,6 +186,7 @@ const {
   deleteMessage,
   retryMessage,
   replyRuntimePermission,
+  popQueuedSendTailToInput,
   applyCommandSuggestion,
 } = useChatView(chat)
 

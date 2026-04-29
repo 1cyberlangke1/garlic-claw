@@ -51,7 +51,23 @@ export interface UploadNotice {
  * - 上传预算、模型能力读取与发送逻辑统一收口
  */
 export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
-  const inputText = ref('')
+  const draftTextByConversationId = ref<Record<string, string>>({})
+  const inputText = computed({
+    get() {
+      const conversationId = chat.currentConversationId
+      return conversationId ? draftTextByConversationId.value[conversationId] ?? '' : ''
+    },
+    set(value: string) {
+      const conversationId = chat.currentConversationId
+      if (!conversationId) {
+        return
+      }
+      draftTextByConversationId.value = {
+        ...draftTextByConversationId.value,
+        [conversationId]: value,
+      }
+    },
+  })
   const pendingImages = ref<PendingImage[]>([])
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
   const uploadProcessingNotices = ref<UploadNotice[]>([])
@@ -81,6 +97,8 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   const displayedMessages = computed(() => chat.messages)
   const contextWindowPreview = computed(() => chat.contextWindowPreview)
   const pendingRuntimePermissions = computed(() => chat.pendingRuntimePermissions)
+  const queuedSendCount = computed(() => chat.queuedSendCount)
+  const queuedSendPreviewEntries = computed(() => chat.queuedSendPreviewEntries)
   const lastMessageRole = computed(() => {
     for (let index = displayedMessages.value.length - 1; index >= 0; index -= 1) {
       const message = displayedMessages.value[index]
@@ -362,6 +380,15 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     await chat.replyRuntimePermission(requestId, decision)
   }
 
+  function popQueuedSendTailToInput() {
+    const popped = chat.popQueuedSendRequestTail()
+    if (!popped) {
+      return
+    }
+    inputText.value = readQueuedDraftText(popped)
+    pendingImages.value = readQueuedDraftImages(popped.parts)
+  }
+
   return {
     inputText,
     pendingImages,
@@ -369,6 +396,8 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     displayedMessages,
     contextWindowPreview,
     pendingRuntimePermissions,
+    queuedSendCount,
+    queuedSendPreviewEntries,
     selectedCapabilities,
     conversationSendDisabledReason,
     uploadNotices,
@@ -385,6 +414,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     retryMessage,
     triggerRetryAction,
     replyRuntimePermission,
+    popQueuedSendTailToInput,
     applyCommandSuggestion,
   }
 }
@@ -398,4 +428,33 @@ function getPendingImageBudgetBytes(images: PendingImage[] = []): number {
     (total, image) => total + measureDataUrlBytes(image.image),
     0,
   )
+}
+
+function readQueuedDraftText(input: { content?: string; parts?: ChatMessagePart[] }): string {
+  const content = input.content?.trim()
+  if (content) {
+    return content
+  }
+  if (!input.parts?.length) {
+    return ''
+  }
+  return input.parts
+    .filter((part): part is Extract<ChatMessagePart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
+function readQueuedDraftImages(parts: ChatMessagePart[] | undefined): PendingImage[] {
+  if (!parts?.length) {
+    return []
+  }
+  return parts
+    .filter((part): part is Extract<ChatMessagePart, { type: 'image' }> => part.type === 'image')
+    .map((part, index) => ({
+      id: `queued-image-${index}-${part.image.slice(0, 24)}`,
+      image: part.image,
+      mimeType: part.mimeType,
+      name: `队列图片 ${index + 1}`,
+    }))
 }

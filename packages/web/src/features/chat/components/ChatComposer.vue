@@ -20,6 +20,23 @@
       </div>
     </div>
 
+    <div v-if="queuedSendCount > 0" class="queued-sends">
+      <div class="queued-sends-header">
+        <span class="queued-sends-title">待发送队列</span>
+        <span class="queued-sends-count">{{ queuedSendCount }}</span>
+      </div>
+      <div class="queued-sends-list">
+        <span
+          v-for="entry in queuedSendPreviewEntries"
+          :key="entry.id"
+          class="queued-send-chip"
+        >
+          {{ entry.preview }}
+        </span>
+      </div>
+      <p class="queued-sends-hint">按 Alt+↑ 取回最后一条到输入框</p>
+    </div>
+
     <div class="composer">
       <div class="composer-input-wrap">
         <textarea
@@ -89,12 +106,15 @@ import plainBold from '@iconify-icons/solar/plain-bold'
 import stopBold from '@iconify-icons/solar/stop-bold'
 import type { PendingImage, UploadNotice } from '@/features/chat/composables/use-chat-view'
 import type { ChatCommandSuggestion } from '@/features/chat/composables/use-chat-command-catalog'
+import type { QueuedChatSendPreviewEntry } from '@/features/chat/modules/chat-store.module'
 
 const props = defineProps<{
   modelValue: string
   pendingImages: PendingImage[]
   uploadNotices: UploadNotice[]
   commandSuggestions: ChatCommandSuggestion[]
+  queuedSendCount: number
+  queuedSendPreviewEntries: QueuedChatSendPreviewEntry[]
   canSend: boolean
   streaming: boolean
 }>()
@@ -103,6 +123,8 @@ const {
   pendingImages,
   uploadNotices,
   commandSuggestions,
+  queuedSendCount,
+  queuedSendPreviewEntries,
   canSend,
   streaming,
 } = toRefs(props)
@@ -112,6 +134,7 @@ const emit = defineEmits<{
   (event: 'file-change', value: Event): void
   (event: 'remove-image', index: number): void
   (event: 'apply-command-suggestion', value: string): void
+  (event: 'pop-queued-send'): void
   (event: 'send'): void
   (event: 'stop'): void
 }>()
@@ -175,6 +198,17 @@ function handleBlur() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  if (
+    event.key === 'ArrowUp' &&
+    event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  ) {
+    event.preventDefault()
+    emit('pop-queued-send')
+    return
+  }
+
   if (showCommandSuggestions.value) {
     if (event.key === 'ArrowDown') {
       event.preventDefault()
@@ -261,6 +295,63 @@ function selectCommandSuggestion(trigger: string) {
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 14px;
+}
+
+.queued-sends {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(11, 21, 35, 0.72);
+}
+
+.queued-sends-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.queued-sends-title {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.queued-sends-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(103, 199, 207, 0.16);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.queued-sends-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.queued-send-chip {
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.queued-sends-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .pending-image {

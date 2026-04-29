@@ -321,6 +321,58 @@ describe('createChatStoreModule', () => {
     expect(store.queuedSendCount.value).toBe(0)
   })
 
+  it('keeps queued messages isolated per conversation and pops only the current conversation tail', async () => {
+    const store = createChatStoreModule()
+    store.streaming.value = true
+
+    store.currentConversationId.value = 'conversation-1'
+    await store.sendMessage({
+      content: '会话一-第一条',
+    })
+    await store.sendMessage({
+      content: '会话一-第二条',
+    })
+
+    store.currentConversationId.value = 'conversation-2'
+    await store.sendMessage({
+      content: '会话二-第一条',
+    })
+
+    expect(store.queuedSendCount.value).toBe(1)
+    expect(store.queuedSendPreviewEntries.value).toEqual([
+      expect.objectContaining({
+        preview: '会话二-第一条',
+      }),
+    ])
+
+    const poppedSecondConversation = store.popQueuedSendRequestTail()
+    expect(poppedSecondConversation).toEqual(
+      expect.objectContaining({
+        content: '会话二-第一条',
+      }),
+    )
+    expect(store.queuedSendCount.value).toBe(0)
+
+    store.currentConversationId.value = 'conversation-1'
+    expect(store.queuedSendCount.value).toBe(2)
+    expect(store.queuedSendPreviewEntries.value).toEqual([
+      expect.objectContaining({
+        preview: '会话一-第二条',
+      }),
+      expect.objectContaining({
+        preview: '会话一-第一条',
+      }),
+    ])
+
+    const poppedFirstConversation = store.popQueuedSendRequestTail()
+    expect(poppedFirstConversation).toEqual(
+      expect.objectContaining({
+        content: '会话一-第二条',
+      }),
+    )
+    expect(store.queuedSendCount.value).toBe(1)
+  })
+
   it('refreshes conversation-related state after a streamed retry finishes', async () => {
     vi.mocked(chatConversationData.loadConversationList).mockResolvedValue([
       {

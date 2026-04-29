@@ -49,8 +49,14 @@ import type {
 import { isValidConversationRouteId } from "@/utils/uuid";
 
 interface QueuedChatSendRequest {
+  id: string;
   conversationId: string;
   input: ChatSendInput;
+}
+
+export interface QueuedChatSendPreviewEntry {
+  id: string;
+  preview: string;
 }
 
 export function createChatStoreModule() {
@@ -67,7 +73,7 @@ export function createChatStoreModule() {
   const recoveryTimer = ref<number | null>(null);
   const selectedProvider = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
-  const queuedSendRequests = shallowRef<QueuedChatSendRequest[]>([]);
+  const queuedSendRequestsByConversation = shallowRef<Record<string, QueuedChatSendRequest[]>>({});
   const streamState = {
     currentConversationId,
     contextWindowPreview,
@@ -91,8 +97,23 @@ export function createChatStoreModule() {
   const retryableMessageId = computed(() =>
     getRetryableMessageId(messages.value),
   );
-  const queuedSendCount = computed(() => queuedSendRequests.value.length);
+  const currentQueuedSendRequests = computed(() =>
+    currentConversationId.value
+      ? queuedSendRequestsByConversation.value[currentConversationId.value] ?? []
+      : [],
+  );
+  const queuedSendCount = computed(() => currentQueuedSendRequests.value.length);
+  const queuedSendPreviewEntries = computed<QueuedChatSendPreviewEntry[]>(() =>
+    currentQueuedSendRequests.value
+      .slice(-3)
+      .reverse()
+      .map((entry) => ({
+        id: entry.id,
+        preview: createQueuedSendPreview(entry.input),
+      })),
+  );
   let drainingQueuedSendRequests = false;
+  let queuedSendSequence = 0;
 
   function createPendingRuntimePermissionEntry(
     entry: RuntimePermissionRequest,
@@ -280,8 +301,11 @@ export function createChatStoreModule() {
     ) {
       clearCurrentConversationState();
     }
-    queuedSendRequests.value = queuedSendRequests.value.filter((entry) =>
-      nextConversations.some((conversation) => conversation.id === entry.conversationId),
+    const validConversationIds = new Set(nextConversations.map((conversation) => conversation.id));
+    queuedSendRequestsByConversation.value = Object.fromEntries(
+      Object.entries(queuedSendRequestsByConversation.value).filter(([conversationId]) =>
+        validConversationIds.has(conversationId),
+      ),
     );
   }
 
@@ -344,9 +368,7 @@ export function createChatStoreModule() {
       replaceMessages([]);
       syncChatStreamingState(streamState);
     }
-    queuedSendRequests.value = queuedSendRequests.value.filter(
-      (entry) => entry.conversationId !== id,
-    );
+    deleteQueuedSendRequests(id);
   }
 
   function setModelSelection(selection: {
@@ -375,18 +397,30 @@ export function createChatStoreModule() {
       return;
     }
 
-    queuedSendRequests.value = [
-      ...queuedSendRequests.value,
-      {
-        conversationId,
-        input: {
-          ...input,
-          model: input.model ?? selectedModel.value,
-          provider: input.provider ?? selectedProvider.value,
-        },
+    appendQueuedSendRequest(conversationId, {
+      conversationId,
+      id: `queued-send-${++queuedSendSequence}`,
+      input: {
+        ...input,
+        model: input.model ?? selectedModel.value,
+        provider: input.provider ?? selectedProvider.value,
       },
-    ];
+    });
     await drainQueuedSendRequests();
+  }
+
+  function popQueuedSendRequestTail() {
+    const conversationId = currentConversationId.value;
+    if (!conversationId) {
+      return null;
+    }
+    const requests = readQueuedSendRequests(conversationId);
+    const popped = requests.at(-1) ?? null;
+    if (!popped) {
+      return null;
+    }
+    writeQueuedSendRequests(conversationId, requests.slice(0, -1));
+    return popped.input;
   }
 
   async function retryMessage(messageId: string) {
@@ -591,14 +625,16 @@ export function createChatStoreModule() {
     drainingQueuedSendRequests = true;
     try {
       while (!streaming.value) {
-        const nextRequest = queuedSendRequests.value[0];
+        const conversationId = currentConversationId.value;
+        if (!conversationId) {
+          return;
+        }
+        const nextQueuedRequests = readQueuedSendRequests(conversationId);
+        const nextRequest = nextQueuedRequests[0];
         if (!nextRequest) {
           return;
         }
-        if (nextRequest.conversationId !== currentConversationId.value) {
-          return;
-        }
-        queuedSendRequests.value = queuedSendRequests.value.slice(1);
+        writeQueuedSendRequests(conversationId, nextQueuedRequests.slice(1));
         await dispatchSendMessage(streamState, nextRequest.input, {
           loadConversationDetail: loadConversationWindowSnapshot,
           refreshConversationSummary: () =>
@@ -623,6 +659,7 @@ export function createChatStoreModule() {
     streaming,
     currentStreamingMessageId,
     queuedSendCount,
+    queuedSendPreviewEntries,
     retryableMessageId,
     selectedProvider,
     selectedModel,
@@ -633,6 +670,7 @@ export function createChatStoreModule() {
     setModelSelection,
     ensureModelSelection,
     sendMessage,
+    popQueuedSendRequestTail,
     retryMessage,
     updateMessage,
     deleteMessage,
@@ -652,6 +690,68 @@ export function createChatStoreModule() {
       status: "stopped",
     }));
   }
+
+  function appendQueuedSendRequest(conversationId: string, request: QueuedChatSendRequest) {
+    writeQueuedSendRequests(conversationId, [
+      ...readQueuedSendRequests(conversationId),
+      request,
+    ]);
+  }
+
+  function deleteQueuedSendRequests(conversationId: string) {
+    const nextQueuedByConversation = { ...queuedSendRequestsByConversation.value };
+    delete nextQueuedByConversation[conversationId];
+    queuedSendRequestsByConversation.value = nextQueuedByConversation;
+  }
+
+  function readQueuedSendRequests(conversationId: string): QueuedChatSendRequest[] {
+    return queuedSendRequestsByConversation.value[conversationId] ?? [];
+  }
+
+  function writeQueuedSendRequests(conversationId: string, requests: QueuedChatSendRequest[]) {
+    if (requests.length === 0) {
+      deleteQueuedSendRequests(conversationId);
+      return;
+    }
+    queuedSendRequestsByConversation.value = {
+      ...queuedSendRequestsByConversation.value,
+      [conversationId]: requests,
+    };
+  }
+}
+
+function createQueuedSendPreview(input: ChatSendInput): string {
+  const text = (input.content ?? "").trim() || readQueuedSendTextFromParts(input.parts);
+  const imageCount = countQueuedSendImages(input.parts);
+  if (text && imageCount > 0) {
+    return `${truncateQueuedSendText(text, 24)} + ${imageCount}图`;
+  }
+  if (text) {
+    return truncateQueuedSendText(text, 28);
+  }
+  if (imageCount > 0) {
+    return `${imageCount} 张图片`;
+  }
+  return "空消息";
+}
+
+function readQueuedSendTextFromParts(parts: ChatMessagePart[] | undefined): string {
+  if (!parts?.length) {
+    return "";
+  }
+  return parts
+    .filter((part): part is Extract<ChatMessagePart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function countQueuedSendImages(parts: ChatMessagePart[] | undefined): number {
+  return parts?.filter((part) => part.type === "image").length ?? 0;
+}
+
+function truncateQueuedSendText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
 }
 
 function shouldResendEditedTerminalUserMessage(

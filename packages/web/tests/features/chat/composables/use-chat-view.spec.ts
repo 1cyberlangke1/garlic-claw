@@ -1,4 +1,4 @@
-import { defineComponent, nextTick, reactive } from 'vue'
+import { defineComponent, nextTick, reactive, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as chatViewData from '@/features/chat/composables/chat-view.data'
@@ -69,10 +69,13 @@ function createChatStub(overrides: Partial<Record<string, unknown>> = {}) {
     currentConversationId: 'conversation-1' as string | null,
     selectedProvider: 'demo-provider' as string | null,
     selectedModel: 'text-only-model' as string | null,
+    queuedSendCount: ref(0),
+    queuedSendPreviewEntries: ref([]),
     setModelSelection(selection: { provider: string | null; model: string | null }) {
       this.selectedProvider = selection.provider
       this.selectedModel = selection.model
     },
+    popQueuedSendRequestTail: vi.fn().mockReturnValue(null),
     sendMessage: vi.fn(),
     updateMessage: vi.fn(),
     deleteMessage: vi.fn(),
@@ -217,6 +220,32 @@ describe('useChatView', () => {
     await nextTick()
 
     expect(state.canSend.value).toBe(true)
+  })
+
+  it('keeps text drafts isolated between conversations', async () => {
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    state.inputText.value = '会话一草稿'
+    chat.currentConversationId = 'conversation-2'
+    await nextTick()
+
+    expect(state.inputText.value).toBe('')
+
+    state.inputText.value = '会话二草稿'
+    chat.currentConversationId = 'conversation-1'
+    await nextTick()
+
+    expect(state.inputText.value).toBe('会话一草稿')
   })
 
   it('computes retry label from the last non-display message', async () => {
