@@ -108,7 +108,7 @@ async function main() {
     await verifySubagentsPage(page);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
     await verifyRuntimeToolsSettingsPage(page);
-    await verifyToolsPage(page);
+    await verifyToolsPage(page, accessToken);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
 
@@ -634,13 +634,41 @@ async function verifyRuntimeToolsSettingsPage(page) {
   await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
-async function verifyToolsPage(page) {
-  await page.goto(`/tools?kind=plugin&source=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'networkidle' });
+async function verifyToolsPage(page, accessToken) {
+  const overview = await requestJson('/tools/overview', {
+    headers: createAuthHeaders(accessToken),
+  });
+  const visibleSectionTitles = new Set(
+    (overview.sources ?? [])
+      .filter((source) => Number(source.totalTools ?? 0) > 0)
+      .map((source) => {
+        if (source.kind === 'internal' && source.id === 'runtime-tools') {
+          return '执行工具管理';
+        }
+        if (source.kind === 'internal' && source.id === 'subagent') {
+          return '子代理工具管理';
+        }
+        if (source.kind === 'mcp') {
+          return 'MCP 工具管理';
+        }
+        if (source.kind === 'plugin') {
+          return '插件工具管理';
+        }
+        return null;
+      })
+      .filter(Boolean),
+  );
+
+  await page.goto('/tools', { waitUntil: 'networkidle' });
   await expectText(page, '工具管理');
-  await expectText(page, '执行工具管理');
-  await expectText(page, '子代理工具管理');
-  await expectText(page, 'MCP 工具管理');
-  await expectText(page, '插件工具管理');
+  await assertToolsSectionVisibility(page, '执行工具管理', visibleSectionTitles.has('执行工具管理'));
+  await assertToolsSectionVisibility(page, '子代理工具管理', visibleSectionTitles.has('子代理工具管理'));
+  await assertToolsSectionVisibility(page, 'MCP 工具管理', visibleSectionTitles.has('MCP 工具管理'));
+  await assertToolsSectionVisibility(page, '插件工具管理', visibleSectionTitles.has('插件工具管理'));
+
+  if (visibleSectionTitles.size === 0) {
+    await expectText(page, '当前还没有可管理的实际工具');
+  }
 }
 
 async function verifySubagentsPage(page) {
@@ -840,6 +868,17 @@ async function readAccessToken(page) {
 
 async function expectText(page, text) {
   await page.getByText(text, { exact: false }).first().waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function assertToolsSectionVisibility(page, title, shouldExist) {
+  const matches = page.getByText(title, { exact: true });
+  if (shouldExist) {
+    await matches.first().waitFor({ timeout: REQUEST_TIMEOUT_MS });
+    return;
+  }
+
+  await delay(200);
+  assert.equal(await matches.count(), 0, `工具页不应展示 ${title}`);
 }
 
 async function expectConversationSelected(page, conversationId) {

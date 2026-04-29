@@ -17,8 +17,11 @@
       </div>
     </section>
 
-    <section class="tools-grid">
+    <p v-if="error" class="page-banner error">{{ error }}</p>
+
+    <section v-if="visibleSections.length > 0" class="tools-grid">
       <ToolGovernancePanel
+        v-if="hasRuntimeTools"
         source-kind="internal"
         source-id="runtime-tools"
         title="执行工具管理"
@@ -29,6 +32,7 @@
       />
 
       <ToolGovernancePanel
+        v-if="hasSubagentTools"
         source-kind="internal"
         source-id="subagent"
         title="子代理工具管理"
@@ -39,6 +43,7 @@
       />
 
       <ToolGovernancePanel
+        v-if="hasMcpTools"
         source-kind="mcp"
         :source-id="preferredMcpSourceId"
         title="MCP 工具管理"
@@ -49,6 +54,7 @@
       />
 
       <ToolGovernancePanel
+        v-if="hasPluginTools"
         source-kind="plugin"
         :source-id="preferredPluginSourceId"
         title="插件工具管理"
@@ -58,15 +64,25 @@
         empty-description="插件接入并注册工具后，会在这里统一出现。"
       />
     </section>
+
+    <section v-else-if="!loading" class="empty-state">
+      <h2>当前还没有可管理的实际工具</h2>
+      <p>只有已经接入并实际注册了工具的执行源，才会出现在这个页面。</p>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import type { ToolSourceInfo } from '@garlic-claw/shared'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
+import { loadToolOverview, toErrorMessage } from '@/features/tools/composables/tool-management.data'
 
 const route = useRoute()
+const loading = ref(false)
+const error = ref<string | null>(null)
+const sources = ref<ToolSourceInfo[]>([])
 
 const focusedSourceKind = computed(() =>
   typeof route.query.kind === 'string' ? route.query.kind : null,
@@ -85,6 +101,52 @@ const preferredMcpSourceId = computed(() =>
 const preferredPluginSourceId = computed(() =>
   focusedSourceKind.value === 'plugin' ? focusedSourceId.value : null,
 )
+const visibleSources = computed(() =>
+  sources.value.filter((source) => source.totalTools > 0),
+)
+const hasRuntimeTools = computed(() =>
+  hasSource('internal', 'runtime-tools'),
+)
+const hasSubagentTools = computed(() =>
+  hasSource('internal', 'subagent'),
+)
+const hasMcpTools = computed(() =>
+  hasSource('mcp', preferredMcpSourceId.value),
+)
+const hasPluginTools = computed(() =>
+  hasSource('plugin', preferredPluginSourceId.value),
+)
+const visibleSections = computed(() => [
+  hasRuntimeTools.value,
+  hasSubagentTools.value,
+  hasMcpTools.value,
+  hasPluginTools.value,
+].filter(Boolean))
+
+onMounted(() => {
+  void refresh()
+})
+
+async function refresh() {
+  loading.value = true
+  error.value = null
+  try {
+    const overview = await loadToolOverview()
+    sources.value = overview.sources
+  } catch (caughtError) {
+    error.value = toErrorMessage(caughtError, '加载工具管理总览失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
+  if (sourceId) {
+    return visibleSources.value.some((source) => source.kind === kind && source.id === sourceId)
+  }
+
+  return visibleSources.value.some((source) => source.kind === kind)
+}
 </script>
 
 <style scoped>
@@ -97,6 +159,29 @@ const preferredPluginSourceId = computed(() =>
 .tools-page {
   min-height: 100%;
   padding: 1.5rem 2rem;
+}
+
+.page-banner,
+.empty-state {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: rgba(11, 21, 35, 0.72);
+}
+
+.page-banner.error,
+.empty-state p {
+  color: var(--text-muted);
+}
+
+.empty-state {
+  display: grid;
+  gap: 8px;
+}
+
+.empty-state h2,
+.empty-state p {
+  margin: 0;
 }
 
 .tools-hero {
