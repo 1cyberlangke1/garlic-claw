@@ -33,8 +33,8 @@ export class RuntimeHostConversationRecordService {
     if (stored.migrated) {this.persistConversations();}
   }
 
-  createConversation(input: { title?: string; userId?: string; parentId?: string }): JsonValue {
-    const timestamp = new Date().toISOString(), conversationId = uuidv7();
+  createConversation(input: { id?: string; title?: string; userId?: string; parentId?: string }): JsonValue {
+    const timestamp = new Date().toISOString(), conversationId = input.id ?? uuidv7();
     const conversation: RuntimeConversationRecord = { createdAt: timestamp, hostServices: { ...DEFAULT_HOST_SERVICES }, id: conversationId, messages: [], ...(input.parentId ? { parentId: input.parentId } : {}), revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title?.trim() || 'New Chat', updatedAt: timestamp, userId: input.userId ?? SINGLE_USER_ID };
     this.conversations.set(conversation.id, conversation);
     this.persistConversations();

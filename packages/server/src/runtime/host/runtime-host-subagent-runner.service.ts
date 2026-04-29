@@ -94,9 +94,10 @@ export class RuntimeHostSubagentRunnerService {
       visibility: input.visibility,
       writeBackTarget: input.writeBackTarget,
     });
-    // 创建子对话，让聊天页标签栏能发现
+    // 创建子对话（ID 对齐 sessionId），让聊天页标签栏能发现并写消息
     if (input.context.conversationId) {
       this.runtimeHostConversationRecordService.createConversation({
+        id: invocation.session.id,
         title: invocation.request.description || '子代理',
         userId: input.context.userId,
         parentId: input.context.conversationId,
@@ -136,6 +137,8 @@ export class RuntimeHostSubagentRunnerService {
       const result = await this.executeSubagent({ context: input.context, pluginId: input.pluginId, request: input.request });
       const session = this.runtimeHostSubagentSessionStoreService.appendAssistantMessage(input.pluginId, input.sessionId, result);
       const writeBack = await this.writeBackMessageIfNeeded(input.context, target, input.writeBackConversationRevision, { content: `<subagent_result>\n${result.text}\n</subagent_result>`, failureMessage: '后台子代理结果回写失败', model: result.modelId, provider: result.providerId });
+      // 把结果写入子对话，让聊天页能看到
+      await this.appendResultToChildConversation(input.sessionId, result.text).catch(() => {});
       this.runtimeHostSubagentStoreService.updateSubagent(input.pluginId, input.subagentId, (subagent, now) => writeStoredSubagentExecutionState(subagent, now, { result, session, status: 'completed', writeBack }));
       return { result, session };
     } catch (error) {
@@ -207,6 +210,13 @@ export class RuntimeHostSubagentRunnerService {
     } catch (error) {
       return { error: error instanceof Error ? error.message : payload.failureMessage, messageId: null, status: 'failed' };
     }
+  }
+
+  private async appendResultToChildConversation(conversationId: string, text: string): Promise<void> {
+    try {
+      const cid = conversationId;
+      await this.runtimeHostConversationMessageService.createMessageWithHooks(cid, { content: text, role: 'assistant', status: 'completed' });
+    } catch { /* best-effort: child conversation message append */ }
   }
 
   private async executeSubagent(input: { context: PluginCallContext; pluginId: string; request: PluginSubagentRequest }): Promise<PluginSubagentExecutionResult> {
