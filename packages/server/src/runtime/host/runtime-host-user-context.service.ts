@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
+import { getPrismaClient } from '../../infrastructure/prisma/prisma-client';
 import { resolveServerStatePath } from '../server-workspace-paths';
 import {
   asJsonValue,
@@ -45,6 +46,7 @@ export class RuntimeHostUserContextService {
     this.memories.length = 0;
     this.memories.push(...nextMemories);
     this.saveMemories();
+    deleteMemoryFromDb(memoryId).catch(() => {});
     return { count: deleted };
   }
 
@@ -67,6 +69,7 @@ export class RuntimeHostUserContextService {
     };
     this.memories.push(record);
     this.saveMemories();
+    syncMemoryToDb(record);
     return asJsonValue(record);
   }
 
@@ -143,4 +146,12 @@ function isRuntimeMemoryRecord(value: unknown): value is RuntimeMemoryRecord {
     && Array.isArray((value as RuntimeMemoryRecord).keywords)
     && (value as RuntimeMemoryRecord).keywords.every((keyword) => typeof keyword === 'string')
     && typeof (value as RuntimeMemoryRecord).userId === 'string';
+}
+
+function syncMemoryToDb(m: RuntimeMemoryRecord): void {
+  getPrismaClient().memory.create({ data: { id: m.id, userId: m.userId, content: m.content, category: m.category, keywords: m.keywords?.join(',') ?? null } }).then(() => {}, () => {});
+}
+
+async function deleteMemoryFromDb(id: string): Promise<void> {
+  try { await getPrismaClient().memory.delete({ where: { id } }); } catch { /* ok */ }
 }
