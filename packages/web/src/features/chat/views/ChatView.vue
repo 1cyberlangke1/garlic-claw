@@ -37,7 +37,7 @@
               type="button"
               @click="setConversationSessionEnabled(conversationHostServices?.sessionEnabled === false)"
             >
-              {{ conversationHostServices?.sessionEnabled === false ? '已停用会话宿主' : '已开启会话宿主' }}
+              {{ conversationHostServices?.sessionEnabled === false ? '插件服务: 关' : '插件服务: 开' }}
             </button>
             <button
               class="service-toggle"
@@ -45,7 +45,7 @@
               :disabled="conversationHostServices?.sessionEnabled === false"
               @click="setConversationLlmEnabled(conversationHostServices?.llmEnabled === false)"
             >
-              {{ conversationHostServices?.llmEnabled === false ? '已关闭 LLM 回复' : '已开启 LLM 回复' }}
+              {{ conversationHostServices?.llmEnabled === false ? 'AI 回复: 关' : 'AI 回复: 开' }}
             </button>
             <button
               class="service-toggle"
