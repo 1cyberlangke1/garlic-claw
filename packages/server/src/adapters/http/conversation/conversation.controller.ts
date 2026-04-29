@@ -71,12 +71,6 @@ export class ConversationController {
     return await this.runtimeHostConversationRecordService.deleteConversation(id, userId);
   }
 
-  @Get('conversations/:id/services')
-  getConversationHostServices(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) { return this.runtimeHostConversationRecordService.readConversationHostServices(id, userId); }
-
-  @Put('conversations/:id/services')
-  updateConversationHostServices(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Body() dto: UpdateConversationHostServicesDto) { return this.runtimeHostConversationRecordService.writeConversationHostServices(id, dto, userId); }
-
   @Put('sessions/:id/todo')
   updateSessionTodo(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Body() dto: UpdateConversationTodoDto) { return this.runtimeHostConversationTodoService.replaceSessionTodo(id, dto.todos as ConversationTodoItemDto[], userId); }
 
