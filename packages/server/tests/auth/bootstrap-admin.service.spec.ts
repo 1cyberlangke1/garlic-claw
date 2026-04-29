@@ -34,12 +34,10 @@ describe('BootstrapAdminService', () => {
         username: SINGLE_USER_USERNAME,
         email: SINGLE_USER_EMAIL,
         passwordHash: 'single-secret-auth',
-        role: 'local',
       },
       update: {
         email: SINGLE_USER_EMAIL,
         passwordHash: 'single-secret-auth',
-        role: 'local',
         username: SINGLE_USER_USERNAME,
       },
       where: { id: SINGLE_USER_ID },

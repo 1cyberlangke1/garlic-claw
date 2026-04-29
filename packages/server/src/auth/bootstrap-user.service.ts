@@ -21,8 +21,8 @@ export class BootstrapUserService {
     const prisma = getPrismaClient();
     await prisma.user.deleteMany({ where: { id: { not: SINGLE_USER_ID } } });
     await prisma.user.upsert({
-      create: { id: SINGLE_USER_ID, username: SINGLE_USER_USERNAME, email: SINGLE_USER_EMAIL, passwordHash: 'single-secret-auth', role: 'user' },
-      update: { email: SINGLE_USER_EMAIL, passwordHash: 'single-secret-auth', role: 'user', username: SINGLE_USER_USERNAME },
+      create: { id: SINGLE_USER_ID, username: SINGLE_USER_USERNAME, email: SINGLE_USER_EMAIL, passwordHash: 'single-secret-auth' },
+      update: { email: SINGLE_USER_EMAIL, passwordHash: 'single-secret-auth', username: SINGLE_USER_USERNAME },
       where: { id: SINGLE_USER_ID },
     });
     this.logger.log(`用户已就绪: ${SINGLE_USER_USERNAME}`);
