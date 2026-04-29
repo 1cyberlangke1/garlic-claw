@@ -276,7 +276,7 @@ function readConversationHistoryAnnotations(value: unknown, index: number): NonN
   });
 }
 
-function readConversationHistoryLabel(index: number): string { return `messages[${index}]`; }
+function readConversationHistoryLabel(index: number): string { return `history.messages[${index}]`; }
 
 function readConversationHistoryString(value: unknown, label: string, options?: { allowNull?: boolean; required?: boolean; trim?: boolean }): string | null {
   if (value === undefined || value === null) { if (options?.required) {throw new BadRequestException(`${label} is required`);} return null; }

@@ -190,7 +190,7 @@ function readRuntimeHostLlmRequest(input: {
     ...(typeof input.params.maxOutputTokens === 'number' ? { maxOutputTokens: input.params.maxOutputTokens } : {}),
     messages: input.method === 'llm.generate-text'
       ? [{ content: readRequiredString(input.params, 'prompt'), role: 'user' }]
-      : readPluginLlmMessages(input.params.messages, 'llm.generate messages must be a non-empty array', (message) => new Error(message)),
+      : readPluginLlmMessages(input.params.messages, 'llm.generate messages must be a non-empty array', (message) => new Error(message), 'llm.generate'),
     ...(modelId ? { modelId } : {}),
     ...(providerOptions ? { providerOptions } : {}),
     ...(providerId ? { providerId } : {}),
