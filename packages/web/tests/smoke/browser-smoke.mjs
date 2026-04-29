@@ -523,7 +523,8 @@ async function runChatFlow(page, accessToken) {
     request.method() === 'POST'
     && request.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
   );
-  await page.getByRole('button', { name: '压缩上下文' }).click();
+  await composer.fill('/compact');
+  await page.locator('.send-button').click();
   await compactRequest;
   await waitFor(async () => {
     const detail = await getConversationDetail(accessToken, conversation.id);

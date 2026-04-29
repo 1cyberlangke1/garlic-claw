@@ -40,17 +40,6 @@
         </button>
       </div>
 
-      <div class="chat-actions">
-        <button
-          type="button"
-          class="chat-action-button"
-          :disabled="chat.streaming"
-          @click="triggerContextCompaction"
-        >
-          压缩上下文
-        </button>
-      </div>
-
       <section class="chat-todo-panel">
         <div class="chat-todo-header">
           <h3>当前待办</h3>
@@ -195,14 +184,6 @@ const {
   applyCommandSuggestion,
 } = useChatView(chat)
 
-async function triggerContextCompaction() {
-  if (chat.streaming) {
-    return
-  }
-  inputText.value = '/compact'
-  await send()
-}
-
 watch(
   currentConversationId,
   (conversationId) => {
@@ -271,10 +252,6 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 .chat-tab { display:flex; align-items:center; gap:6px; padding:6px 14px; border:1px solid var(--shell-border, #334155); border-radius:8px 8px 0 0; border-bottom:none; background:transparent; color:var(--shell-text-secondary, #cbd5e1); font-size:13px; cursor:pointer; white-space:nowrap; font-family:inherit; transition:all .12s; }
 .chat-tab:hover { background:var(--shell-bg-hover, #334155); color:var(--shell-text, #f1f5f9); }
 .chat-tab.active { background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); border-color:var(--shell-active, #22c55e); }
-.chat-actions { display:flex; justify-content:flex-end; padding:0 4px; }
-.chat-action-button { border:1px solid var(--shell-border, #334155); border-radius:999px; background:var(--shell-bg-elevated, #1e293b); color:var(--shell-text, #f1f5f9); cursor:pointer; font-size:13px; padding:8px 14px; transition:all .12s; }
-.chat-action-button:hover:not(:disabled) { border-color:var(--shell-active, #22c55e); color:var(--shell-active, #22c55e); }
-.chat-action-button:disabled { cursor:not-allowed; opacity:.55; }
 .chat-toolbar {
   padding: 12px 16px;
   border: 1px solid var(--border);

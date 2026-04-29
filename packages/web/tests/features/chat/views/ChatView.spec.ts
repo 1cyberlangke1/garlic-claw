@@ -7,7 +7,6 @@ const applyCommandSuggestion = vi.fn()
 const replyRuntimePermission = vi.fn()
 const selectConversation = vi.fn()
 const mockFetch = vi.fn()
-const send = vi.fn()
 
 vi.stubGlobal('fetch', mockFetch)
 
@@ -68,7 +67,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
     canTriggerRetryAction: ref(false),
     retryActionLabel: ref('发送'),
     handleModelChange: vi.fn(),
-    send,
+    send: vi.fn(),
     handleFileChange: vi.fn(),
     removeImage: vi.fn(),
     updateMessage: vi.fn(),
@@ -95,7 +94,6 @@ describe('ChatView', () => {
     replyRuntimePermission.mockReset()
     selectConversation.mockReset()
     mockFetch.mockReset()
-    send.mockReset()
     mockFetch.mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue([]),
@@ -236,26 +234,5 @@ describe('ChatView', () => {
     await tabs[1].trigger('click')
 
     expect(selectConversation).toHaveBeenCalledWith(childConversationId)
-  })
-
-  it('sends /compact when clicking the context compaction action', async () => {
-    const wrapper = mount(ChatView, {
-      global: {
-        stubs: {
-          ChatMessageList: { template: '<div class="chat-message-list" />' },
-          ChatComposer: { template: '<div class="chat-composer" />' },
-          ModelQuickInput: { template: '<div class="model-quick-input" />' },
-          RouterLink: {
-            props: ['to'],
-            template: '<a><slot /></a>',
-          },
-        },
-      },
-    })
-    await flushPromises()
-
-    await wrapper.get('.chat-action-button').trigger('click')
-
-    expect(send).toHaveBeenCalledTimes(1)
   })
 })
