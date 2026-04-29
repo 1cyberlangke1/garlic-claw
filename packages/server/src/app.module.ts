@@ -15,7 +15,7 @@ import { SkillController } from './adapters/http/skill/skill.controller';
 import { SubagentController } from './adapters/http/subagent/subagent.controller';
 import { ToolController } from './adapters/http/tool/tool.controller';
 import { AuthService } from './auth/auth.service';
-import { BootstrapAdminService } from './auth/bootstrap-admin.service';
+import { BootstrapUserService } from './auth/bootstrap-user.service';
 import { JwtAuthGuard } from './auth/http-auth';
 import { RequestAuthService } from './auth/request-auth.service';
 import { PluginGatewayWsModule } from './adapters/ws/plugin-gateway/plugin-gateway.module';
@@ -47,7 +47,7 @@ import { ServerWorkspaceLifecycleService } from './runtime/server-workspace-life
   controllers: [AiController, AuthController, AutomationController, CommandCatalogController, ConversationController, HealthController, McpController, MemoryController, PersonaController, PluginController, SkillController, SubagentController, ToolController],
   providers: [
     AuthService,
-    BootstrapAdminService,
+    BootstrapUserService,
     ContextCommandCatalogService,
     ContextGovernanceService,
     ContextGovernanceSettingsService,

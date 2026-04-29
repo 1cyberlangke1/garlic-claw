@@ -1,7 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../app.module';
-import { BootstrapAdminService } from '../../auth/bootstrap-admin.service';
+import { BootstrapUserService } from '../../auth/bootstrap-user.service';
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
 
 const DEFAULT_GLOBAL_PREFIX = 'api';
@@ -23,7 +23,7 @@ export async function bootstrapHttpApp(): Promise<void> {
   app.get(PluginBootstrapService).bootstrapBuiltins();
 
   await app.listen(port);
-  void app.get(BootstrapAdminService).runStartupWarmup();
+  void app.get(BootstrapUserService).runStartupWarmup();
 }
 
 export function readHttpServerConfig(env: NodeJS.ProcessEnv = process.env): {
