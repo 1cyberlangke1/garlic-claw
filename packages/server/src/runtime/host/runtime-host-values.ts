@@ -32,12 +32,13 @@ export function readJsonStringRecord(value: unknown, invalidMessage: string): Re
 
 export function readPluginLlmMessages(value: unknown, emptyMessage: string, createError: (message: string) => Error = (message) => new BadRequestException(message)): PluginLlmMessage[] {
   if (!Array.isArray(value) || value.length === 0) { throw createError(emptyMessage); }
-  return value.map((message, index) => {
+  return value.flatMap((message, index) => {
+    if (message === null || message === undefined) { return []; }
     const record = readJsonObject(message);
     if (!record) { throw createError(`messages[${index}] must be an object`); }
     if (!PLUGIN_LLM_MESSAGE_ROLES.has(String(record.role))) { throw createError(`messages[${index}].role is invalid`); }
     if (typeof record.content !== 'string' && !Array.isArray(record.content)) { throw createError(`messages[${index}].content is invalid`); }
-    return cloneJsonValue({ content: record.content, role: record.role }) as PluginLlmMessage;
+    return [cloneJsonValue({ content: record.content, role: record.role }) as PluginLlmMessage];
   });
 }
 
