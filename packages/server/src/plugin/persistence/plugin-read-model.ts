@@ -18,7 +18,6 @@ export function buildPluginInfo(record: RegisteredPluginRecord, supportedActions
     ...(record.manifest.description ? { description: record.manifest.description } : {}),
     displayName: record.manifest.name,
     governance: record.governance,
-    health: { status: record.connected ? 'healthy' : 'offline', failureCount: 0, consecutiveFailures: 0, lastError: null, lastErrorAt: null, lastSuccessAt: record.lastSeenAt, lastCheckedAt: record.lastSeenAt },
     id: record.pluginId,
     lastSeenAt: record.lastSeenAt,
     manifest: record.manifest,

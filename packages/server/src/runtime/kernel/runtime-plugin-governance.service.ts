@@ -14,18 +14,20 @@ const REMOTE_PLUGIN_ACTION_MESSAGES = {
 
 @Injectable()
 export class RuntimePluginGovernanceService {
+  private readonly failureCounts = new Map<string, { consecutive: number; total: number }>();
+
   constructor(
     private readonly pluginBootstrapService: PluginBootstrapService,
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
   ) {}
 
-  checkPluginHealth(pluginId: string): { ok: boolean } { return readPluginHealth(this.pluginBootstrapService.getPlugin(pluginId), pluginId, this.runtimeGatewayConnectionLifecycleService); }
-  readPluginHealthSnapshot(pluginId: string): PluginHealthSnapshot {
+  async checkPluginHealth(pluginId: string): Promise<{ ok: boolean }> {
+    return readPluginHealth(this.pluginBootstrapService.getPlugin(pluginId), pluginId, this.runtimeGatewayConnectionLifecycleService);
+  }
+  async readPluginHealthSnapshot(pluginId: string): Promise<PluginHealthSnapshot> {
     const plugin = this.pluginBootstrapService.getPlugin(pluginId);
-    return createPluginHealthSnapshot(
-      plugin,
-      readPluginHealth(plugin, pluginId, this.runtimeGatewayConnectionLifecycleService).ok,
-    );
+    const ok = (await readPluginHealth(plugin, pluginId, this.runtimeGatewayConnectionLifecycleService)).ok;
+    return createPluginHealthSnapshot(plugin, ok, this.failureCounts);
   }
 
   listPlugins(): RegisteredPluginRecord[] { return this.pluginBootstrapService.listPlugins().sort((left, right) => left.pluginId.localeCompare(right.pluginId)); }
@@ -45,7 +47,7 @@ export class RuntimePluginGovernanceService {
     if (input.action === 'health-check') {
       const health = plugin.manifest.runtime === 'remote'
         ? await this.runtimeGatewayConnectionLifecycleService.probePluginHealth(input.pluginId)
-        : readPluginHealth(plugin, input.pluginId, this.runtimeGatewayConnectionLifecycleService);
+        : await readPluginHealth(plugin, input.pluginId, this.runtimeGatewayConnectionLifecycleService);
       return createAcceptedActionResult(input.pluginId, input.action, health.ok ? '插件健康检查通过' : '插件健康检查失败');
     }
     if (input.action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadBuiltin(input.pluginId)) {
@@ -64,26 +66,36 @@ function createAcceptedActionResult(pluginId: string, action: PluginActionName, 
   return { accepted: true, action, pluginId, message };
 }
 
-function readPluginHealth(
+async function readPluginHealth(
   plugin: RegisteredPluginRecord,
   pluginId: string,
   runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
-): { ok: boolean } {
+): Promise<{ ok: boolean }> {
   return plugin.manifest.runtime === 'remote'
-    ? runtimeGatewayConnectionLifecycleService.checkPluginHealth(pluginId)
+    ? runtimeGatewayConnectionLifecycleService.probePluginHealth(pluginId)
     : { ok: plugin.connected };
 }
 
 function createPluginHealthSnapshot(
   plugin: RegisteredPluginRecord,
   ok: boolean,
+  failureCounts: Map<string, { consecutive: number; total: number }>,
 ): PluginHealthSnapshot {
   const checkedAt = new Date().toISOString();
   const status = readPluginHealthStatus(plugin, ok);
+  const prev = failureCounts.get(plugin.pluginId) ?? { consecutive: 0, total: 0 };
+
+  if (status === 'error') {
+    prev.consecutive += 1;
+    prev.total += 1;
+  } else {
+    prev.consecutive = 0;
+  }
+  failureCounts.set(plugin.pluginId, prev);
 
   return {
-    consecutiveFailures: status === 'error' ? 1 : 0,
-    failureCount: status === 'error' ? 1 : 0,
+    consecutiveFailures: prev.consecutive,
+    failureCount: prev.total,
     lastCheckedAt: checkedAt,
     lastError: status === 'error' ? '插件健康检查失败' : null,
     lastErrorAt: status === 'error' ? checkedAt : null,
