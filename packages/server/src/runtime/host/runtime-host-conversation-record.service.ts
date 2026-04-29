@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ChatMessageMetadata, ChatMessagePart, ConversationHostServices, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
+import type { ChatMessageMetadata, ChatMessagePart, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
@@ -11,11 +11,10 @@ import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-gov
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
 
-export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; hostServices: ConversationHostServices; id: string; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; title: string; updatedAt: string; userId: string; }
+export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; id: string; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
 interface RuntimeConversationStoragePayload { conversations?: Record<string, RuntimeConversationRecord>; }
 type RuntimeConversationRecordView = 'detail' | 'history' | 'overview' | 'summary';
-const DEFAULT_HOST_SERVICES: ConversationHostServices = { llmEnabled: true, sessionEnabled: true, ttsEnabled: true };
 const CONVERSATION_HISTORY_STATUSES = new Set(['pending', 'streaming', 'completed', 'stopped', 'error']);
 
 @Injectable()
@@ -35,7 +34,7 @@ export class RuntimeHostConversationRecordService {
 
   createConversation(input: { id?: string; title?: string; userId?: string; parentId?: string }): JsonValue {
     const timestamp = new Date().toISOString(), conversationId = input.id ?? uuidv7();
-    const conversation: RuntimeConversationRecord = { createdAt: timestamp, hostServices: { ...DEFAULT_HOST_SERVICES }, id: conversationId, messages: [], ...(input.parentId ? { parentId: input.parentId } : {}), revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title?.trim() || 'New Chat', updatedAt: timestamp, userId: input.userId ?? SINGLE_USER_ID };
+    const conversation: RuntimeConversationRecord = { createdAt: timestamp, id: conversationId, messages: [], ...(input.parentId ? { parentId: input.parentId } : {}), revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title?.trim() || 'New Chat', updatedAt: timestamp, userId: input.userId ?? SINGLE_USER_ID };
     this.conversations.set(conversation.id, conversation);
     this.persistConversations();
     const overview = readConversationRecordValue(conversation, 'overview') as JsonObject;
@@ -57,7 +56,6 @@ export class RuntimeHostConversationRecordService {
 
   listChildConversations(parentId: string): JsonValue { return [...this.conversations.values()].filter(c => c.parentId === parentId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map(c => readConversationRecordValue(c, 'overview')); }
   listPluginConversationSessions(pluginId: string): JsonValue { return [...this.conversationSessions.values()].filter((session) => session.pluginId === pluginId).sort((left, right) => left.startedAt.localeCompare(right.startedAt)).map(serializeConversationSession); }
-  readConversationHostServices(conversationId: string, userId?: string): JsonValue { return asJsonValue(this.requireConversation(conversationId, userId).hostServices); }
   readConversationRevision(conversationId: string): string | null { return this.conversations.get(conversationId)?.revision ?? null; }
   finishPluginConversationSession(pluginId: string, conversationId: string): boolean { return this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId)); }
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'summary'); }
@@ -111,13 +109,6 @@ export class RuntimeHostConversationRecordService {
     if (!conversation) {throw new NotFoundException(`Conversation not found: ${conversationId}`);}
     if (userId && conversation.userId !== userId) {throw new ForbiddenException('Not your conversation');}
     return conversation;
-  }
-
-  writeConversationHostServices(conversationId: string, patch: Partial<ConversationHostServices>, userId?: string): JsonValue {
-    return asJsonValue(this.updateConversationRecord(conversationId, userId, (conversation) => {
-      conversation.hostServices = { ...conversation.hostServices, ...(typeof patch.sessionEnabled === 'boolean' ? { sessionEnabled: patch.sessionEnabled } : {}), ...(typeof patch.llmEnabled === 'boolean' ? { llmEnabled: patch.llmEnabled } : {}), ...(typeof patch.ttsEnabled === 'boolean' ? { ttsEnabled: patch.ttsEnabled } : {}) };
-      return conversation.hostServices;
-    }));
   }
 
   writeConversationTitle(conversationId: string, title: string, userId?: string): JsonValue { return readConversationRecordValue(this.updateConversationRecord(conversationId, userId, (conversation) => { conversation.title = title; return conversation; }), 'summary'); }
