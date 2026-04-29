@@ -37,6 +37,7 @@ import { TodoToolService } from '../../execution/todo/todo-tool.service';
 import { WebFetchService } from '../../execution/webfetch/webfetch-service';
 import { WebFetchToolService } from '../../execution/webfetch/webfetch-tool.service';
 import { WriteToolService } from '../../execution/write/write-tool.service';
+import { ToolManagementSettingsService } from '../../execution/tool/tool-management-settings.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { PersonaService } from '../../persona/persona.service';
 import { PluginModule } from '../../plugin/plugin.module';
@@ -103,6 +104,7 @@ import { RuntimeEventLogService } from '../log/runtime-event-log.service';
     RuntimeToolBackendService,
     RuntimeToolPermissionService,
     RuntimeToolsSettingsService,
+    ToolManagementSettingsService,
     SubagentSettingsService,
     SubagentToolService,
     RuntimeWslShellService,
@@ -128,7 +130,7 @@ import { RuntimeEventLogService } from '../log/runtime-event-log.service';
     WriteToolService,
     ToolRegistryService,
   ],
-  exports: [AiModelExecutionService, AiManagementService, AiProviderSettingsService, AiVisionService, AutomationService, BashToolService, EditToolService, GlobToolService, GrepToolService, InvalidToolService, McpService, PersonaService, ProjectWorktreeSearchOverlayService, RuntimeCommandService, RuntimeCommandCaptureService, RuntimeBackendRoutingService, RuntimeEventLogService, RuntimeFileFreshnessService, RuntimeFilesystemBackendService, RuntimeFilesystemPostWriteService, RuntimeHostConversationMessageService, RuntimeHostConversationRecordService, RuntimeHostConversationTodoService, RuntimeHostFilesystemBackendService, RuntimeHostKnowledgeService, RuntimeHostPluginDispatchService, RuntimeHostPluginRuntimeService, RuntimeHostRuntimeToolService, RuntimeHostSubagentStoreService, RuntimeHostSubagentRunnerService, RuntimeHostSubagentSessionStoreService, RuntimeHostService, RuntimeHostUserContextService, RuntimeJustBashService, RuntimeNativeShellService, RuntimeOneShotShellService, RuntimeSessionEnvironmentService, RuntimeToolBackendService, RuntimeToolPermissionService, RuntimeToolsSettingsService, SubagentSettingsService, SubagentToolService, RuntimeWslShellService, ReadToolService, SkillToolService, TodoToolService, ToolRegistryService, WebFetchService, WebFetchToolService, WriteToolService],
+  exports: [AiModelExecutionService, AiManagementService, AiProviderSettingsService, AiVisionService, AutomationService, BashToolService, EditToolService, GlobToolService, GrepToolService, InvalidToolService, McpService, PersonaService, ProjectWorktreeSearchOverlayService, RuntimeCommandService, RuntimeCommandCaptureService, RuntimeBackendRoutingService, RuntimeEventLogService, RuntimeFileFreshnessService, RuntimeFilesystemBackendService, RuntimeFilesystemPostWriteService, RuntimeHostConversationMessageService, RuntimeHostConversationRecordService, RuntimeHostConversationTodoService, RuntimeHostFilesystemBackendService, RuntimeHostKnowledgeService, RuntimeHostPluginDispatchService, RuntimeHostPluginRuntimeService, RuntimeHostRuntimeToolService, RuntimeHostSubagentStoreService, RuntimeHostSubagentRunnerService, RuntimeHostSubagentSessionStoreService, RuntimeHostService, RuntimeHostUserContextService, RuntimeJustBashService, RuntimeNativeShellService, RuntimeOneShotShellService, RuntimeSessionEnvironmentService, RuntimeToolBackendService, RuntimeToolPermissionService, RuntimeToolsSettingsService, ToolManagementSettingsService, SubagentSettingsService, SubagentToolService, RuntimeWslShellService, ReadToolService, SkillToolService, TodoToolService, ToolRegistryService, WebFetchService, WebFetchToolService, WriteToolService],
 })
 export class RuntimeHostModule implements OnModuleInit {
   constructor(private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService) {}

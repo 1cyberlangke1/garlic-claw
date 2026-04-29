@@ -314,6 +314,38 @@ describe('RuntimePluginGovernanceService', () => {
     expect(runtimeGatewayConnectionLifecycleService.probePluginHealth).toHaveBeenCalledWith('remote.echo');
   });
 
+  it('keeps the previous lastSuccessAt when a later remote health check fails', async () => {
+    const fixture = createService();
+    const { runtimeGatewayConnectionLifecycleService, service } = fixture;
+
+    seedRemotePlugin(fixture);
+    runtimeGatewayConnectionLifecycleService.registerRemotePlugin({
+      connectionId: 'conn-1',
+      fallback: {
+        id: 'remote.echo',
+        name: 'Remote Echo',
+        runtime: 'remote',
+      },
+      manifest: {
+        permissions: [],
+        tools: [],
+        version: '1.0.0',
+      } as never,
+      remoteEnvironment: 'api',
+    });
+    runtimeGatewayConnectionLifecycleService.probePluginHealth = jest.fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false });
+
+    const first = await service.readPluginHealthSnapshot('remote.echo');
+    const second = await service.readPluginHealthSnapshot('remote.echo');
+
+    expect(first.status).toBe('healthy');
+    expect(first.lastSuccessAt).toEqual(expect.any(String));
+    expect(second.status).toBe('offline');
+    expect(second.lastSuccessAt).toBe(first.lastSuccessAt);
+  });
+
   it('refreshes remote metadata cache after the plugin reconnects with a changed manifest', async () => {
     const fixture = createService();
     const { pluginBootstrapService, runtimeGatewayConnectionLifecycleService, service } = fixture;

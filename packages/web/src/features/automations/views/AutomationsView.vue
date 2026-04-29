@@ -24,7 +24,7 @@
       <div v-if="form.triggerType === 'cron'" class="field">
         <label>执行间隔</label>
         <input v-model="form.cronInterval" placeholder="例如: 5m, 1h, 30s" />
-        <span class="hint">支持格式: 30s / 5m / 1h</span>
+        <span class="hint">支持标准 cron 表达式，也兼容 30s / 5m / 1h</span>
       </div>
       <div v-if="form.triggerType === 'event'" class="field">
         <label>事件名称</label>

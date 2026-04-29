@@ -236,7 +236,7 @@ const selectedSource = computed<ToolSourceInfo | null>(() => {
   return exact ?? filteredSources.value[0] ?? null
 })
 const selectedSourceActions = computed<PluginActionName[]>(() =>
-  selectedSource.value?.supportedActions ?? ['health-check'],
+  selectedSource.value?.supportedActions ?? [],
 )
 const filteredTools = computed(() => {
   if (!selectedSource.value) {
@@ -380,6 +380,8 @@ function actionLabel(action: PluginActionName): string {
       return '重载'
     case 'reconnect':
       return '重连'
+    case 'refresh-metadata':
+      return '刷新元数据'
     default:
       return '健康检查'
   }

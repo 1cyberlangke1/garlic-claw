@@ -22,6 +22,7 @@ import { McpService } from '../mcp/mcp.service';
 import { SkillToolService } from '../skill/skill-tool.service';
 import { SubagentToolService } from '../subagent/subagent-tool.service';
 import { TodoToolService } from '../todo/todo-tool.service';
+import { ToolManagementSettingsService } from './tool-management-settings.service';
 import { WebFetchToolService } from '../webfetch/webfetch-tool.service';
 import { WriteToolService } from '../write/write-tool.service';
 
@@ -40,9 +41,6 @@ interface ExecutableToolDefinition {
 
 @Injectable()
 export class ToolRegistryService {
-  private readonly sourceEnabledOverrides = new Map<string, boolean>();
-  private readonly toolEnabledOverrides = new Map<string, boolean>();
-
   constructor(
     private readonly bashToolService: BashToolService,
     private readonly editToolService: EditToolService,
@@ -54,6 +52,7 @@ export class ToolRegistryService {
     private readonly runtimeToolBackendService: RuntimeToolBackendService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
     private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
+    private readonly toolManagementSettingsService: ToolManagementSettingsService,
     @Inject(forwardRef(() => SubagentToolService)) private readonly subagentToolService: SubagentToolService,
     private readonly todoToolService: TodoToolService,
     private readonly webFetchToolService: WebFetchToolService,
@@ -98,17 +97,17 @@ export class ToolRegistryService {
     }
     if (kind === 'internal') {
       readToolSource(await this.listOverview(), kind, sourceId);
-      this.sourceEnabledOverrides.set(`${kind}:${sourceId}`, enabled);
+      this.toolManagementSettingsService.writeSourceEnabledOverride(`${kind}:${sourceId}`, enabled);
       return readToolSource(await this.listOverview(), kind, sourceId);
     }
     readToolSource(await this.listOverview(), kind, sourceId);
-    this.sourceEnabledOverrides.set(`${kind}:${sourceId}`, enabled);
+    this.toolManagementSettingsService.writeSourceEnabledOverride(`${kind}:${sourceId}`, enabled);
     return readToolSource(await this.listOverview(), kind, sourceId);
   }
 
   async setToolEnabled(toolId: string, enabled: boolean): Promise<ToolInfo> {
     readTool(await this.listOverview(), toolId);
-    this.toolEnabledOverrides.set(toolId, enabled);
+    this.toolManagementSettingsService.writeToolEnabledOverride(toolId, enabled);
     return readTool(await this.listOverview(), toolId);
   }
 
@@ -216,9 +215,25 @@ export class ToolRegistryService {
 
   private buildPluginSources(): Array<{ source: ToolSourceInfo; tools: ToolInfo[] }> {
     return this.runtimePluginGovernanceService.listPlugins().filter((plugin) => plugin.connected && plugin.manifest.tools.length > 0).map((plugin) => {
-      const sourceEnabled = this.sourceEnabledOverrides.get(`plugin:${plugin.pluginId}`) ?? plugin.defaultEnabled;
-      const source: ToolSourceInfo = { kind: 'plugin', id: plugin.pluginId, label: plugin.manifest.name, enabled: sourceEnabled, health: plugin.connected ? 'healthy' : 'unknown', lastError: null, lastCheckedAt: plugin.lastSeenAt, totalTools: plugin.manifest.tools.length, enabledTools: 0, pluginId: plugin.pluginId, runtimeKind: plugin.manifest.runtime, supportedActions: this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId) as PluginActionName[] };
-      const tools = plugin.manifest.tools.map((tool) => createPluginToolInfo(plugin, source, tool, this.toolEnabledOverrides.get(`plugin:${plugin.pluginId}:${tool.name}`) ?? sourceEnabled));
+      const sourceEnabled = this.toolManagementSettingsService.readSourceEnabledOverride(`plugin:${plugin.pluginId}`) ?? plugin.defaultEnabled;
+      const healthSnapshot = this.runtimePluginGovernanceService.readStoredPluginHealthSnapshot(plugin.pluginId);
+      const source: ToolSourceInfo = {
+        kind: 'plugin',
+        id: plugin.pluginId,
+        label: plugin.manifest.name,
+        enabled: sourceEnabled,
+        ...(healthSnapshot ? {
+          health: readToolHealthStatus(healthSnapshot.status),
+          lastCheckedAt: healthSnapshot.lastCheckedAt,
+          lastError: healthSnapshot.lastError,
+        } : {}),
+        totalTools: plugin.manifest.tools.length,
+        enabledTools: 0,
+        pluginId: plugin.pluginId,
+        runtimeKind: plugin.manifest.runtime,
+        supportedActions: this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId) as PluginActionName[],
+      };
+      const tools = plugin.manifest.tools.map((tool) => createPluginToolInfo(plugin, source, tool, this.toolManagementSettingsService.readToolEnabledOverride(`plugin:${plugin.pluginId}:${tool.name}`) ?? sourceEnabled));
       source.enabledTools = tools.filter((tool) => tool.enabled).length;
       return { source, tools };
     });
@@ -227,19 +242,19 @@ export class ToolRegistryService {
   private isToolEnabledForContext(tool: ToolInfo, context: PluginCallContext): boolean {
     if (tool.sourceKind === 'mcp' || tool.sourceKind === 'skill') {return tool.enabled;}
     if (tool.sourceKind === 'internal') {
-      const sourceEnabled = this.sourceEnabledOverrides.get(`internal:${tool.sourceId}`) ?? true;
-      return sourceEnabled && (this.toolEnabledOverrides.get(tool.toolId) ?? true);
+      const sourceEnabled = this.toolManagementSettingsService.readSourceEnabledOverride(`internal:${tool.sourceId}`) ?? true;
+      return sourceEnabled && (this.toolManagementSettingsService.readToolEnabledOverride(tool.toolId) ?? true);
     }
     const plugin = this.runtimePluginGovernanceService.listPlugins().find((entry) => entry.pluginId === tool.pluginId);
     if (!plugin) {return false;}
-    const sourceEnabled = this.sourceEnabledOverrides.get(`plugin:${plugin.pluginId}`) ?? isPluginEnabledForContext({ conversations: { ...(plugin.conversationScopes ?? {}) }, defaultEnabled: plugin.defaultEnabled }, context);
-    return sourceEnabled && (this.toolEnabledOverrides.get(tool.toolId) ?? true);
+    const sourceEnabled = this.toolManagementSettingsService.readSourceEnabledOverride(`plugin:${plugin.pluginId}`) ?? isPluginEnabledForContext({ conversations: { ...(plugin.conversationScopes ?? {}) }, defaultEnabled: plugin.defaultEnabled }, context);
+    return sourceEnabled && (this.toolManagementSettingsService.readToolEnabledOverride(tool.toolId) ?? true);
   }
 
   private buildInternalSources(): Array<{ source: ToolSourceInfo; tools: ToolInfo[] }> {
     const entries = [
-      createInternalSourceEntry(this.runtimeToolsSettingsService.getSourceId(), 'Runtime Tools', this.readInternalRuntimeToolInfos(), this.sourceEnabledOverrides, this.toolEnabledOverrides),
-      createInternalSourceEntry(this.subagentToolService.getSourceId(), this.subagentToolService.getSourceLabel(), this.subagentToolService.getToolInfos(), this.sourceEnabledOverrides, this.toolEnabledOverrides),
+      createInternalSourceEntry(this.runtimeToolsSettingsService.getSourceId(), 'Runtime Tools', this.readInternalRuntimeToolInfos(), this.toolManagementSettingsService),
+      createInternalSourceEntry(this.subagentToolService.getSourceId(), this.subagentToolService.getSourceLabel(), this.subagentToolService.getToolInfos(), this.toolManagementSettingsService),
     ].filter((entry): entry is { source: ToolSourceInfo; tools: ToolInfo[] } => entry !== null);
     return entries.map((entry) => ({
       ...entry,
@@ -476,13 +491,12 @@ function createInternalSourceEntry(
   sourceId: string,
   label: string,
   tools: ToolInfo[],
-  sourceEnabledOverrides: Map<string, boolean>,
-  toolEnabledOverrides: Map<string, boolean>,
+  toolManagementSettingsService: ToolManagementSettingsService,
 ): { source: ToolSourceInfo; tools: ToolInfo[] } | null {
   if (tools.length === 0) {
     return null;
   }
-  const sourceEnabled = sourceEnabledOverrides.get(`internal:${sourceId}`) ?? true;
+  const sourceEnabled = toolManagementSettingsService.readSourceEnabledOverride(`internal:${sourceId}`) ?? true;
   return {
     source: {
       enabled: sourceEnabled,
@@ -495,7 +509,7 @@ function createInternalSourceEntry(
     },
     tools: tools.map((tool) => ({
       ...tool,
-      enabled: sourceEnabled && (toolEnabledOverrides.get(tool.toolId) ?? true),
+      enabled: sourceEnabled && (toolManagementSettingsService.readToolEnabledOverride(tool.toolId) ?? true),
     })),
   };
 }
@@ -537,3 +551,12 @@ function readToolExecutionErrorMessage(error: unknown): string {
 
 function readInvalidToolPhase(value: unknown): 'execute' | 'resolve' | 'validate' { return value === 'resolve' || value === 'validate' || value === 'execute' ? value : 'execute'; }
 function isPluginToolOutput(value: unknown): value is PluginToolOutput { return !!value && typeof value === 'object' && !Array.isArray(value) && (((value as Record<string, unknown>).kind === 'tool:text' && typeof (value as Record<string, unknown>).value === 'string') || (value as Record<string, unknown>).kind === 'tool:json'); }
+function readToolHealthStatus(status: 'degraded' | 'error' | 'healthy' | 'offline' | 'unknown'): ToolSourceInfo['health'] {
+  if (status === 'healthy') {
+    return 'healthy';
+  }
+  if (status === 'error' || status === 'degraded') {
+    return 'error';
+  }
+  return 'unknown';
+}

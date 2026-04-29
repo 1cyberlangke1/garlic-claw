@@ -92,6 +92,10 @@
               <button type="button" class="btn-primary" :disabled="!newModelId.trim()" @click="handleAddModel">添加</button>
             </div>
 
+            <p class="msg-muted capability-note">
+              推理 / 工具 / 图片为能力标记：用于展示模型特征，并给图片候选筛选等流程提供提示。
+            </p>
+
             <div class="column-toolbar" v-if="selectedModels.length > 0">
               <input
                 v-model="modelSearch"
@@ -565,6 +569,9 @@ function saveCtx(model: AiModelConfig) {
 .toolbar-count {
   font-size: 12px;
   color: var(--shell-text-tertiary, #94a3b8);
+}
+.capability-note {
+  margin: 0 0 12px;
 }
 .default-badge {
   padding: 2px 8px;

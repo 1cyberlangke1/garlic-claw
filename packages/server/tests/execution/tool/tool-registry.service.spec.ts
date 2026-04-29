@@ -35,6 +35,7 @@ import { RuntimeWslShellService } from '../../../src/execution/runtime/runtime-w
 import { SkillRegistryService } from '../../../src/execution/skill/skill-registry.service';
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 import { SubagentSettingsService } from '../../../src/execution/subagent/subagent-settings.service';
+import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
 import { SubagentToolService } from '../../../src/execution/subagent/subagent-tool.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
 import { WebFetchToolService } from '../../../src/execution/webfetch/webfetch-tool.service';
@@ -66,6 +67,7 @@ const runtimeWorkspaceRoots: string[] = [];
 const runtimeOneShotShellServices: RuntimeOneShotShellService[] = [];
 const originalRuntimeWorkspaceRoot = process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
 const originalRuntimeToolsConfigPath = process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
+const originalToolManagementConfigPath = process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH;
 const originalHintsTestRoot = process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
 
 describe('ToolRegistryService', () => {
@@ -79,6 +81,11 @@ describe('ToolRegistryService', () => {
       delete process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
     } else {
       process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = originalRuntimeToolsConfigPath;
+    }
+    if (originalToolManagementConfigPath === undefined) {
+      delete process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH;
+    } else {
+      process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH = originalToolManagementConfigPath;
     }
     if (originalHintsTestRoot === undefined) {
       delete process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
@@ -271,6 +278,52 @@ describe('ToolRegistryService', () => {
     await expect(
       service.runSourceAction('plugin', 'builtin.memory', 'reload'),
     ).rejects.toThrow('工具源 plugin:builtin.memory 不支持治理动作 reload');
+  });
+
+  it('persists source and tool enabled overrides across service reload', async () => {
+    const fixture = createFixture();
+
+    await fixture.service.setSourceEnabled('plugin', 'builtin.memory', false);
+    await fixture.service.setToolEnabled('plugin:builtin.memory:save_memory', false);
+
+    const reloaded = createFixture({ runtimeWorkspaceRoot: fixture.runtimeWorkspaceRoot });
+    const overview = await reloaded.service.listOverview();
+    const source = overview.sources.find((entry) => entry.kind === 'plugin' && entry.id === 'builtin.memory');
+    const tool = overview.tools.find((entry) => entry.toolId === 'plugin:builtin.memory:save_memory');
+
+    expect(source?.enabled).toBe(false);
+    expect(tool?.enabled).toBe(false);
+  });
+
+  it('does not fabricate plugin health before any health snapshot exists', async () => {
+    const { service } = createFixture();
+
+    const overview = await service.listOverview();
+    const source = overview.sources.find((entry) => entry.kind === 'plugin' && entry.id === 'builtin.memory');
+
+    expect(source).toEqual(expect.objectContaining({
+      id: 'builtin.memory',
+      kind: 'plugin',
+    }));
+    expect(source?.health).toBeUndefined();
+    expect(source?.lastCheckedAt).toBeUndefined();
+    expect(source?.lastError).toBeUndefined();
+  });
+
+  it('uses stored plugin health snapshot in tool overview after a real check', async () => {
+    const { runtimePluginGovernanceService, service } = createFixture();
+
+    await runtimePluginGovernanceService.readPluginHealthSnapshot('builtin.memory');
+
+    const overview = await service.listOverview();
+    const source = overview.sources.find((entry) => entry.kind === 'plugin' && entry.id === 'builtin.memory');
+
+    expect(source).toEqual(expect.objectContaining({
+      health: 'healthy',
+      id: 'builtin.memory',
+      kind: 'plugin',
+    }));
+    expect(source?.lastCheckedAt).toEqual(expect.any(String));
   });
 
   it('updates MCP source enabled flags and dispatches MCP source actions', async () => {
@@ -7638,15 +7691,19 @@ describe('ToolRegistryService', () => {
 });
 
 function createFixture(options: {
+  runtimeWorkspaceRoot?: string;
   aliasHostFilesystemKinds?: string[];
   aliasNativeShellKinds?: string[];
   runtimeBackends?: RuntimeBackend[];
   runtimeFilesystemBackends?: RuntimeFilesystemBackend[];
 } = {}) {
-  const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-tool-registry-runtime-'));
+  const runtimeWorkspaceRoot = options.runtimeWorkspaceRoot ?? fs.mkdtempSync(path.join(os.tmpdir(), 'gc-tool-registry-runtime-'));
   process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
   process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'runtime-tools.json');
-  runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+  process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'tool-management.json');
+  if (!options.runtimeWorkspaceRoot) {
+    runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+  }
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),
     new PluginPersistenceService(),
@@ -7880,6 +7937,7 @@ function createFixture(options: {
     runtimeFileFreshnessService,
   );
   const runtimeToolsSettingsService = new RuntimeToolsSettingsService();
+  const toolManagementSettingsService = new ToolManagementSettingsService();
   const subagentSettingsService = new SubagentSettingsService();
   const subagentToolService = new SubagentToolService(
     runtimeHostSubagentRunnerService,
@@ -7949,6 +8007,7 @@ function createFixture(options: {
     skillRegistryService,
     runtimeToolPermissionService,
     runtimeToolsSettingsService,
+    toolManagementSettingsService,
     runtimeWorkspaceRoot,
     webFetchService,
     service: new ToolRegistryService(
@@ -7962,6 +8021,7 @@ function createFixture(options: {
       runtimeToolBackendService,
       runtimeToolPermissionService,
       runtimeToolsSettingsService,
+      toolManagementSettingsService,
       subagentToolService,
       todoToolService,
       webFetchToolService,
