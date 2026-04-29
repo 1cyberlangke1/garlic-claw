@@ -952,7 +952,9 @@ async function runHttpFlow(apiBase, state, input) {
     const formData = new FormData();
     const blob = new Blob(['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#181"/></svg>'], { type: 'image/svg+xml' });
     formData.append('file', blob, 'avatar.svg');
-    const resp = await fetch(`${apiBase}/personas/${state.managedPersonaId}/avatar`, { method: 'POST', headers: userHeaders(), body: formData });
+    const url = `/personas/${state.managedPersonaId}/avatar`;
+    recordHttpVisit({ method: 'POST', url });
+    const resp = await fetch(`${apiBase}${url}`, { method: 'POST', headers: userHeaders(), body: formData });
     ensure(resp.ok, `Expected avatar upload to succeed, got ${resp.status}`);
   });
 
