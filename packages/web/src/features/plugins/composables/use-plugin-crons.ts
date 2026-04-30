@@ -29,7 +29,7 @@ export function usePluginCrons(options: UsePluginCronsOptions) {
     if (!options.selectedPlugin.value) {
       return
     }
-    if (!window.confirm(`确认删除 cron job ${jobId} 吗？`)) {
+    if (!window.confirm(`确认删除定时任务 ${jobId} 吗？`)) {
       return
     }
 
@@ -39,10 +39,10 @@ export function usePluginCrons(options: UsePluginCronsOptions) {
     options.notice.value = null
     try {
       await deletePluginCronJob(pluginName, jobId)
-      options.notice.value = 'Cron job 已删除'
+      options.notice.value = '定时任务已删除'
       await options.refreshSelectedDetails(pluginName)
     } catch (caughtError) {
-      options.error.value = toErrorMessage(caughtError, '删除 cron job 失败')
+      options.error.value = toErrorMessage(caughtError, '删除定时任务失败')
     } finally {
       deletingCronJobId.value = null
     }

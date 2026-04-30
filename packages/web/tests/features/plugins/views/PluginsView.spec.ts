@@ -213,7 +213,7 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可观察模型等待态')
     expect(wrapper.text()).toContain('可消费并改写模型结果')
     expect(wrapper.text()).toContain('可定时执行任务')
-    expect(wrapper.text()).toContain('可暴露宿主内 JSON Route')
+    expect(wrapper.text()).toContain('可暴露宿主内 JSON 路由')
     expect(wrapper.text()).toContain('插件模型策略')
     expect(wrapper.text()).toContain('插件工具启用/禁用已统一移到工具管理页')
     expect(wrapper.text()).toContain('打开工具管理')

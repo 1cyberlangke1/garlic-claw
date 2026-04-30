@@ -30,7 +30,7 @@ export class AiProviderSettingsService {
     if (provider) {
       return provider;
     }
-    throw new NotFoundException(`Provider "${providerId}" not found`);
+    throw new NotFoundException(`未找到 provider "${providerId}"`);
   }
 
   listProviderCatalog(): AiProviderCatalogItem[] {

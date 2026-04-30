@@ -57,7 +57,7 @@ export class AiManagementService {
   getProviderSummary(providerId: string): AiProviderSummary {
     const provider = this.listProviders().find((entry) => entry.id === providerId);
     if (provider) {return provider;}
-    throw new NotFoundException(`Provider "${providerId}" not found`);
+    throw new NotFoundException(`未找到 provider "${providerId}"`);
   }
 
   getProviderModelSummary(providerId: string, modelId: string) {
@@ -95,7 +95,7 @@ export class AiManagementService {
 
   getProviderModel(providerId: string, modelId: string): AiModelConfig {
     const provider = this.getProvider(providerId);
-    if (!provider.models.includes(modelId)) {throw new NotFoundException(`Model "${modelId}" is not configured for provider "${providerId}"`);}
+    if (!provider.models.includes(modelId)) {throw new NotFoundException(`provider "${providerId}" 未配置模型 "${modelId}"`);}
     const stored = this.aiProviderSettingsService.readPersistedModel(providerId, modelId);
     if (stored) {
       return this.buildResolvedModelConfig(provider, stored);
@@ -112,7 +112,7 @@ export class AiManagementService {
     input: { name?: string; capabilities?: ModelCapabilitiesUpdate; contextLength?: number } = {},
   ): AiModelConfig {
     if (input.contextLength !== undefined && (!Number.isInteger(input.contextLength) || input.contextLength <= 0)) {
-      throw new BadRequestException('contextLength must be a positive integer');
+      throw new BadRequestException('contextLength 必须是正整数');
     }
     this.updateProvider(providerId, (provider) => {
       if (!provider.models.includes(modelId)) {provider.models.push(modelId);}
@@ -173,7 +173,7 @@ export class AiManagementService {
         signal: AbortSignal.timeout(10_000),
       });
       if (!response.ok) {
-        throw new BadGatewayException(`Failed to discover models for provider "${provider.id}" (${response.status})`);
+        throw new BadGatewayException(`获取 provider "${provider.id}" 的模型列表失败 (${response.status})`);
       }
       const payload = await response.json() as Record<string, unknown>;
       const models = Array.isArray(payload.data) ? payload.data : Array.isArray(payload.models) ? payload.models : [];
@@ -181,7 +181,7 @@ export class AiManagementService {
       return discovered.length > 0 ? discovered : fallbackModels;
     } catch (error) {
       if (error instanceof BadGatewayException) {throw error;}
-      throw new BadGatewayException(`Failed to discover models for provider "${provider.id}": ${String(error)}`);
+      throw new BadGatewayException(`获取 provider "${provider.id}" 的模型列表失败: ${String(error)}`);
     }
   }
 
@@ -189,7 +189,7 @@ export class AiManagementService {
     const provider = this.getProvider(providerId);
     const resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
     if (!resolvedModelId) {
-      throw new BadRequestException(`Provider "${provider.id}" does not have any testable model`);
+      throw new BadRequestException(`provider "${provider.id}" 没有可测试的模型`);
     }
     try {
       const response = await this.aiModelExecutionService.generateText({
@@ -205,7 +205,7 @@ export class AiManagementService {
         text: response.text,
       };
     } catch (error) {
-      throw new BadGatewayException(`Failed to connect to provider "${provider.id}" with model "${resolvedModelId}": ${describeProviderFailure(error)}`);
+      throw new BadGatewayException(`连接 provider "${provider.id}" 的模型 "${resolvedModelId}" 失败: ${describeProviderFailure(error)}`);
     }
   }
 

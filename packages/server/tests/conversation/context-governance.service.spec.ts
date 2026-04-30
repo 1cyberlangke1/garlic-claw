@@ -81,7 +81,7 @@ describe('ContextGovernanceService', () => {
     conversationRecordService = new RuntimeHostConversationRecordService();
     conversationId = (
       conversationRecordService.createConversation({
-        title: 'New Chat',
+        title: '新的对话',
         userId: 'user-1',
       }) as { id: string }
     ).id;

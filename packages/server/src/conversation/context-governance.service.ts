@@ -231,7 +231,7 @@ export class ContextGovernanceService {
 
   private readContextWindowTarget(providerId?: string, modelId?: string): ContextWindowTarget {
     const resolvedProviderId = providerId ?? this.aiManagementService.getDefaultProviderSelection().providerId ?? this.aiManagementService.listProviders()[0]?.id ?? null;
-    if (!resolvedProviderId) {throw new NotFoundException('当前没有可用的大模型供应商');}
+    if (!resolvedProviderId) {throw new NotFoundException('当前没有可用的 AI 供应商');}
     const provider = this.aiManagementService.getProvider(resolvedProviderId);
     const resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0] ?? null;
     if (!resolvedModelId) {throw new NotFoundException(`Provider "${resolvedProviderId}" 没有可用模型`);}

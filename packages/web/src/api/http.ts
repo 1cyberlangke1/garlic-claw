@@ -393,7 +393,7 @@ function handleUnauthorizedFailure() {
     window.location.href = "/login";
   }
 
-  return new AuthError("Unauthorized", {
+  return new AuthError("未授权", {
     status: 401,
     code: "UNAUTHORIZED",
   });

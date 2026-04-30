@@ -35,9 +35,9 @@ export function readPluginLlmMessages(value: unknown, emptyMessage: string, crea
   return value.flatMap((message, index) => {
     if (message === null || message === undefined) { return []; }
     const record = readJsonObject(message);
-    if (!record) { throw createError(`${label}: messages[${index}] must be an object`); }
-    if (!PLUGIN_LLM_MESSAGE_ROLES.has(String(record.role))) { throw createError(`${label}: messages[${index}].role is invalid`); }
-    if (typeof record.content !== 'string' && !Array.isArray(record.content)) { throw createError(`${label}: messages[${index}].content is invalid`); }
+    if (!record) { throw createError(`${label}: messages[${index}] 必须是对象`); }
+    if (!PLUGIN_LLM_MESSAGE_ROLES.has(String(record.role))) { throw createError(`${label}: messages[${index}].role 不合法`); }
+    if (typeof record.content !== 'string' && !Array.isArray(record.content)) { throw createError(`${label}: messages[${index}].content 不合法`); }
     return [cloneJsonValue({ content: record.content, role: record.role }) as PluginLlmMessage];
   });
 }
@@ -72,15 +72,15 @@ export function readAssistantResponseCustomBlocks(responseBody: unknown): Assist
 
 export function readMessageTarget(value: unknown): { id: string; type: 'conversation' } | null {
   if (!isRecord(value)) { return null; }
-  if (value.type !== 'conversation') { throw new BadRequestException('message.send target.type currently only supports conversation'); }
-  if (typeof value.id !== 'string' || value.id.trim().length === 0) { throw new BadRequestException('message.send target.id is required'); }
+  if (value.type !== 'conversation') { throw new BadRequestException('message.send target.type 目前只支持 conversation'); }
+  if (typeof value.id !== 'string' || value.id.trim().length === 0) { throw new BadRequestException('message.send target.id 不能为空'); }
   return { id: value.id.trim(), type: 'conversation' };
 }
 
 export function readOptionalBoolean(params: JsonObject, key: string): boolean | null {
   const value = params[key];
   if (value === undefined) { return null; }
-  if (typeof value !== 'boolean') { throw new BadRequestException(`${key} must be boolean`); }
+  if (typeof value !== 'boolean') { throw new BadRequestException(`${key} 必须是布尔值`); }
   return value;
 }
 
@@ -92,38 +92,38 @@ export function readOptionalString(params: JsonObject, key: string): string | nu
 export function readPositiveInteger(params: JsonObject, key: string): number | null {
   const value = params[key];
   if (value === undefined) { return null; }
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) { throw new BadRequestException(`${key} must be a positive integer`); }
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) { throw new BadRequestException(`${key} 必须是正整数`); }
   return value;
 }
 
 export function readRequiredJsonValue(params: JsonObject, key: string): JsonValue {
   const value = readJsonValue(params[key]);
-  if (value === null) { throw new BadRequestException(`${key} must be valid JSON data`); }
+  if (value === null) { throw new BadRequestException(`${key} 必须是合法 JSON 数据`); }
   return value;
 }
 
 export function readRequiredString(params: JsonObject, key: string): string {
   const value = readOptionalString(params, key);
   if (value) { return value; }
-  throw new BadRequestException(`${key} is required`);
+  throw new BadRequestException(`${key} 不能为空`);
 }
 
 export function readScope(params: JsonObject): RuntimeHostScope {
   const scope = readOptionalString(params, 'scope') ?? 'plugin';
   if (scope === 'conversation' || scope === 'plugin' || scope === 'user') { return scope; }
-  throw new BadRequestException('scope must be plugin, conversation or user');
+  throw new BadRequestException('scope 只能是 plugin、conversation 或 user');
 }
 
 export function readScopedKey(params: JsonObject): string {
   const key = readRequiredString(params, 'key');
-  if (key.startsWith(SCOPED_STORE_PREFIX)) { throw new BadRequestException(`key cannot start with reserved prefix ${SCOPED_STORE_PREFIX}`); }
+  if (key.startsWith(SCOPED_STORE_PREFIX)) { throw new BadRequestException(`key 不能以保留前缀 ${SCOPED_STORE_PREFIX} 开头`); }
   return key;
 }
 
 export function requireContextField(context: PluginCallContext, field: 'conversationId' | 'userId'): string {
   const value = context[field];
   if (value) { return value; }
-  throw new BadRequestException(`Host API requires ${field} in call context`);
+  throw new BadRequestException(`Host API 调用上下文缺少 ${field}`);
 }
 
 function isJsonArray(value: unknown): value is JsonValue[] { return Array.isArray(value) && value.every((entry) => isJsonValue(entry)); }

@@ -2,14 +2,14 @@
   <section class="cron-card">
     <header class="cron-header">
       <div>
-        <h3>Cron Jobs</h3>
+        <h3>定时任务</h3>
         <p>插件通过统一协议声明或动态注册的定时任务。</p>
       </div>
       <span class="cron-count">{{ jobs.length }} 个</span>
     </header>
 
     <div v-if="jobs.length === 0" class="cron-empty">
-      插件没有 cron job。
+      插件没有定时任务。
     </div>
 
     <ul v-else class="cron-list">
@@ -17,7 +17,7 @@
         <div class="cron-topline">
           <strong>{{ job.name }}</strong>
           <div class="cron-meta">
-            <span class="cron-source">{{ job.source }}</span>
+            <span class="cron-source">{{ cronSourceLabel(job.source) }}</span>
             <span class="cron-pill">{{ job.cron }}</span>
             <button
               v-if="job.source === 'host'"
@@ -76,6 +76,11 @@ function cronStatusLabel(job: PluginCronJobSummary): string {
   }
 
   return '未运行'
+}
+
+/** 生成人类可读的定时任务来源标签。 */
+function cronSourceLabel(source: PluginCronJobSummary['source']): string {
+  return source === 'host' ? '宿主' : '清单'
 }
 </script>
 

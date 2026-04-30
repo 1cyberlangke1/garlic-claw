@@ -2,12 +2,12 @@
   <section class="generic-list-view">
     <header class="list-toolbar">
       <label class="keyword-field">
-        <span class="field-label">Search</span>
+        <span class="field-label">搜索</span>
         <input
           v-model="keyword"
           type="text"
           class="keyword-input"
-          placeholder="Search by keyword"
+          placeholder="按关键词搜索"
         >
       </label>
 
@@ -22,7 +22,7 @@
             :value="filterValues[filter.key] ?? ''"
             @change="onFilterChange(filter.key, $event)"
           >
-            <option value="">All</option>
+            <option value="">全部</option>
             <option
               v-for="option in filter.options"
               :key="option.value"
@@ -37,10 +37,10 @@
 
     <div class="list-summary">
       <span>
-        {{ filteredItems.length }} / {{ items.length }} items
+        {{ filteredItems.length }} / {{ items.length }} 项
       </span>
       <span v-if="filteredItems.length > 0">
-        Page {{ currentPage }} / {{ pageCount }}
+        第 {{ currentPage }} / {{ pageCount }} 页
         · {{ rangeStart }}-{{ rangeEnd }}
       </span>
     </div>
@@ -94,7 +94,7 @@
         <tbody v-else>
           <tr>
             <td :colspan="Math.max(columns.length, 1)" class="empty-cell">
-              No items found.
+              未找到符合条件的内容。
             </td>
           </tr>
         </tbody>
@@ -108,7 +108,7 @@
         :disabled="!canGoPrevPage"
         @click="goPrevPage"
       >
-        Prev
+        上一页
       </button>
       <button
         type="button"
@@ -116,7 +116,7 @@
         :disabled="!canGoNextPage"
         @click="goNextPage"
       >
-        Next
+        下一页
       </button>
     </footer>
   </section>

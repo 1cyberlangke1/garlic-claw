@@ -14,7 +14,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const expectedSecret = readLoginSecret(this.configService);
     if (dto.secret.trim() !== expectedSecret) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('访问密钥无效');
     }
 
     return {

@@ -83,21 +83,21 @@
     </template>
 
     <div v-else class="no-conversation">
-      <p>👈 选择一个对话或创建新对话</p>
+      <p>⬅ 选择一个对话或创建新对话</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { PluginPersonaCurrentInfo } from '@garlic-claw/shared'
-import { useChatView } from '@/features/chat/composables/use-chat-view'
 import ChatComposer from '@/features/chat/components/ChatComposer.vue'
 import ChatMessageList from '@/features/chat/components/ChatMessageList.vue'
 import ChatRuntimePermissionPanel from '@/features/chat/components/ChatRuntimePermissionPanel.vue'
-import { loadCurrentPersona } from '@/features/personas/composables/persona-settings.data'
+import { useChatView } from '@/features/chat/composables/use-chat-view'
 import { useChatStore } from '@/features/chat/store/chat'
+import { loadCurrentPersona } from '@/features/personas/composables/persona-settings.data'
 import { isValidConversationRouteId } from '@/utils/uuid'
+import type { PluginPersonaCurrentInfo } from '@garlic-claw/shared'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const chat = useChatStore()
 const activeTab = ref('main')

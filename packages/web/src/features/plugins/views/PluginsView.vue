@@ -493,7 +493,7 @@ function pluginHighlights(plugin: PluginInfo): string[] {
     pushHighlight('可定时执行任务')
   }
   if ((plugin.manifest.routes?.length ?? 0) > 0) {
-    pushHighlight('可暴露宿主内 JSON Route')
+    pushHighlight('可暴露宿主内 JSON 路由')
   }
 
   return [...highlights]
