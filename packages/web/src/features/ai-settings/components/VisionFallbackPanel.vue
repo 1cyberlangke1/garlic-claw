@@ -295,7 +295,7 @@ function parseMaxDescriptionLength(value: string): number | undefined {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: rgba(14, 24, 38, 0.85);
+  background: var(--surface-panel);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.08);
@@ -362,7 +362,7 @@ function parseMaxDescriptionLength(value: string): number | undefined {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -372,7 +372,7 @@ function parseMaxDescriptionLength(value: string): number | undefined {
 .field textarea:focus,
 .field input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.24);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .model-picker {
@@ -403,7 +403,7 @@ function parseMaxDescriptionLength(value: string): number | undefined {
   border: 1px dashed var(--border);
   border-radius: 12px;
   color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.15);
+  background: color-mix(in srgb, var(--surface-overlay) 70%, transparent);
 }
 
 .model-option-list {
@@ -421,7 +421,7 @@ function parseMaxDescriptionLength(value: string): number | undefined {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(11, 21, 35, 0.7);
+  background: var(--surface-panel-soft);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -430,13 +430,13 @@ function parseMaxDescriptionLength(value: string): number | undefined {
 }
 
 .model-option:hover {
-  background: rgba(11, 21, 35, 0.85);
+  background: var(--surface-panel-hover);
   border-color: var(--border-hover);
 }
 
 .model-option.selected {
   border-color: var(--accent);
-  background: rgba(103, 199, 207, 0.14);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .model-option strong,

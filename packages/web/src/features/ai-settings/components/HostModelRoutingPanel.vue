@@ -192,7 +192,7 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: rgba(14, 24, 38, 0.85);
+  background: var(--surface-panel);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.08);
@@ -244,7 +244,7 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   color: var(--text);
 }
 
@@ -253,7 +253,7 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(11, 21, 35, 0.72);
+  background: var(--surface-panel-soft);
 }
 
 .fallback-item {

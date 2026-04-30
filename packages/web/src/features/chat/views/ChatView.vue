@@ -285,7 +285,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   align-self: stretch;
   border: 1px solid rgba(103, 199, 207, 0.2);
   border-radius: 8px;
-  background: rgba(10, 19, 24, 0.38);
+  background: var(--surface-panel-hover-soft);
   color: var(--accent);
   display: inline-flex;
   align-items: center;
@@ -313,7 +313,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 }
 
 .chat-toolbar.collapsed .toolbar-toggle {
-  background: rgba(10, 19, 24, 0.62);
+  background: var(--surface-panel-hover);
   border-color: rgba(103, 199, 207, 0.28);
   color: var(--accent-hover);
 }
@@ -328,7 +328,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 .capability-chip {
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(89, 207, 155, 0.14);
+  background: var(--surface-success-soft);
   color: var(--success);
   font-size: 12px;
   font-weight: 500;
@@ -350,20 +350,20 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 .service-chip {
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(76, 189, 255, 0.12);
+  background: var(--surface-info-soft);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
 }
 
 .service-chip.disabled {
-  background: rgba(255, 107, 107, 0.12);
+  background: var(--surface-danger-soft);
   color: var(--danger);
 }
 
 .service-toggle {
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(10, 19, 24, 0.45);
+  background: var(--surface-overlay);
   color: var(--text);
   border-radius: 999px;
   padding: 6px 12px;
@@ -378,7 +378,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
 .chat-todo-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: rgba(8, 15, 19, 0.78);
+  background: var(--surface-panel-muted-strong);
   padding: 14px 16px;
   display: grid;
   gap: 10px;
@@ -406,7 +406,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(76, 189, 255, 0.12);
+  background: var(--surface-info-soft);
   color: var(--accent);
   font-size: 12px;
   font-weight: 700;
@@ -425,7 +425,7 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-subtle);
 }
 
 .chat-todo-item.status-completed,

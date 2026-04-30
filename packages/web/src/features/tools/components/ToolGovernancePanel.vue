@@ -452,7 +452,7 @@ defineExpose({
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: rgba(11, 21, 35, 0.72);
+  background: var(--surface-panel-soft);
 }
 
 .panel-header {
@@ -496,7 +496,7 @@ defineExpose({
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(7, 16, 27, 0.82);
+  background: var(--surface-panel-muted-strong);
 }
 
 .source-item {
@@ -526,7 +526,7 @@ defineExpose({
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(7, 16, 27, 0.9);
+  background: var(--surface-panel-soft-strong);
   color: var(--text);
 }
 

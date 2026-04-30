@@ -652,7 +652,7 @@ select {
   display: grid;
   place-items: center;
   padding: 2rem;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--surface-overlay);
   z-index: 1000;
 }
 

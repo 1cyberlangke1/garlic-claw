@@ -447,17 +447,13 @@ function readPersonaAvatarAlt(name?: string | null) {
   gap: 14px;
   padding: 18px;
   border-radius: 20px;
-  background:
-    linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(10, 17, 29, 0.96)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  background: var(--surface-card-gradient);
   border: 1px solid var(--border, rgba(133, 163, 199, 0.16));
   min-width: 0;
 }
 
 .hero-card {
-  background:
-    linear-gradient(135deg, rgba(11, 99, 181, 0.12), rgba(39, 174, 96, 0.08)),
-    linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(10, 17, 29, 0.96));
+  background: var(--surface-hero-gradient);
 }
 
 .hero-kicker,
@@ -470,7 +466,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 
 .hero-kicker,
 .section-kicker {
-  color: #0b63b5;
+  color: var(--accent);
 }
 
 .persona-source,
@@ -481,8 +477,8 @@ function readPersonaAvatarAlt(name?: string | null) {
   min-height: 24px;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(11, 99, 181, 0.12);
-  color: #0b63b5;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
   font-size: 0.8rem;
 }
 
@@ -494,9 +490,9 @@ function readPersonaAvatarAlt(name?: string | null) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(11, 99, 181, 0.22);
-  background: rgba(11, 99, 181, 0.12);
-  color: #9fd4ff;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: color-mix(in srgb, var(--accent) 72%, white 28%);
   font-weight: 700;
   flex: 0 0 auto;
 }
@@ -526,7 +522,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 .avatar-upload-hint {
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  background: rgba(0,0,0,.6);
+  background: var(--surface-overlay-strong);
   color: #fff;
   font-size: 10px;
   text-align: center;
@@ -573,13 +569,22 @@ function readPersonaAvatarAlt(name?: string | null) {
   padding: 14px;
   border-radius: 16px;
   border: 1px solid var(--border, rgba(133, 163, 199, 0.16));
-  background: rgba(18, 32, 51, 0.82);
+  background: var(--surface-panel-muted-strong);
+  color: var(--text);
   text-align: left;
 }
 
+.persona-list-item strong {
+  color: var(--text);
+}
+
+.persona-list-item code {
+  color: var(--text-muted);
+}
+
 .persona-list-item.active {
-  border-color: rgba(11, 99, 181, 0.42);
-  box-shadow: 0 0 0 1px rgba(11, 99, 181, 0.16);
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .persona-list-row {
@@ -612,7 +617,7 @@ function readPersonaAvatarAlt(name?: string | null) {
   width: 100%;
   border-radius: 14px;
   border: 1px solid var(--border, rgba(133, 163, 199, 0.18));
-  background: rgba(13, 23, 38, 0.94);
+  background: var(--surface-panel-soft-strong);
   color: var(--text);
   padding: 12px 14px;
 }

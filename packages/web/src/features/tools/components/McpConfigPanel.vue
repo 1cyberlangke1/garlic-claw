@@ -433,8 +433,14 @@ function envCount(env: Record<string, string>): number {
   padding: 0.9rem 0.95rem;
   border: 1px solid rgba(133, 163, 199, 0.14);
   border-radius: 16px;
-  background: rgba(12, 22, 36, 0.78);
+  background: var(--surface-panel-muted-strong);
+  color: var(--text);
   text-align: left;
+}
+
+.mcp-server-item strong,
+.mcp-server-item span {
+  color: var(--text);
 }
 
 .mcp-server-item small {
@@ -470,7 +476,7 @@ function envCount(env: Record<string, string>): number {
   padding: 1rem;
   border: 1px solid rgba(133, 163, 199, 0.14);
   border-radius: 18px;
-  background: rgba(12, 22, 36, 0.52);
+  background: var(--surface-panel-muted);
 }
 
 .mcp-env-row {
@@ -489,14 +495,14 @@ function envCount(env: Record<string, string>): number {
   padding: 0.7rem;
   border: 1px solid rgba(133, 163, 199, 0.14);
   border-radius: 12px;
-  background: rgba(9, 17, 29, 0.42);
+  background: var(--surface-panel-hover-soft);
   align-items: center;
 }
 
 .mcp-env-inputs input {
   grid-column: 1;
   border-radius: 8px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   padding: 0.65rem 0.82rem;
 }
 

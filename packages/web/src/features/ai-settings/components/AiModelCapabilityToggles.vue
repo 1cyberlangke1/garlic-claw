@@ -143,11 +143,11 @@ function toggleImageOutput() {
   display: grid;
   gap: 12px;
   padding: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   border-radius: 18px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)),
-    rgba(9, 11, 18, 0.4);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-subtle) 100%, transparent), transparent),
+    color-mix(in srgb, var(--surface-panel-hover-faint) 90%, transparent);
 }
 
 .section-header {
@@ -166,7 +166,7 @@ function toggleImageOutput() {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.46);
+  color: color-mix(in srgb, var(--text-muted) 90%, transparent);
 }
 
 .section-header h4 {
@@ -192,9 +192,9 @@ function toggleImageOutput() {
   gap: 6px;
   min-width: 0;
   padding: 14px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-subtle);
   cursor: pointer;
   transition:
     transform 0.16s ease,
@@ -235,7 +235,7 @@ function toggleImageOutput() {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
 }
 
 .state-pill {
@@ -245,7 +245,7 @@ function toggleImageOutput() {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-subtle-strong);
   color: var(--text);
 }
 

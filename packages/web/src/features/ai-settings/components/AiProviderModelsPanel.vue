@@ -298,7 +298,7 @@ function saveContextLength(model: AiModelConfig) {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: rgba(14, 24, 38, 0.85);
+  background: var(--surface-panel);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.08);
@@ -386,7 +386,7 @@ function saveContextLength(model: AiModelConfig) {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -394,7 +394,7 @@ function saveContextLength(model: AiModelConfig) {
 
 .context-length-field input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.24);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .context-length-hint {
@@ -407,7 +407,7 @@ function saveContextLength(model: AiModelConfig) {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -415,7 +415,7 @@ function saveContextLength(model: AiModelConfig) {
 
 .toolbar-row input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.24);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .toolbar-summary {
@@ -429,7 +429,7 @@ function saveContextLength(model: AiModelConfig) {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -437,7 +437,7 @@ function saveContextLength(model: AiModelConfig) {
 
 .add-row input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.24);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .model-list {
@@ -471,14 +471,14 @@ function saveContextLength(model: AiModelConfig) {
   padding: 16px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(11, 21, 35, 0.7);
+  background: var(--surface-panel-soft);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   min-width: 0;
 }
 
 .model-item:hover {
-  background: rgba(11, 21, 35, 0.85);
+  background: var(--surface-panel-hover);
   border-color: var(--border-hover);
 }
 
@@ -517,7 +517,7 @@ function saveContextLength(model: AiModelConfig) {
 
 .danger-button {
   border: 1px solid rgba(224, 85, 85, 0.32);
-  background: rgba(224, 85, 85, 0.14);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
   color: var(--danger);
   cursor: pointer;
 }

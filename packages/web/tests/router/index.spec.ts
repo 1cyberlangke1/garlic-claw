@@ -48,6 +48,6 @@ describe('router', () => {
 
     await router.push('/tools')
 
-    expect(router.currentRoute.value.name).toBe('mcp')
+    expect(router.currentRoute.value.name).toBe('tools')
   })
 })

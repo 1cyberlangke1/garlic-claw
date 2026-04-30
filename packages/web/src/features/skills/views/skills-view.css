@@ -16,6 +16,7 @@
 .skills-page {
   flex-direction: column;
   min-height: 0;
+  padding: 1.5rem 2rem;
 }
 
 .skills-page .skill-hero,
@@ -282,5 +283,11 @@
   .skills-page .governance-actions,
   .skills-page .asset-header {
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .skills-page {
+    padding: 1rem;
   }
 }

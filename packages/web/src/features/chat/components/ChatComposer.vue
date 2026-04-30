@@ -302,7 +302,7 @@ function selectCommandSuggestion(trigger: string) {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(11, 21, 35, 0.72);
+  background: var(--surface-panel-soft);
 }
 
 .queued-sends-header {
@@ -325,7 +325,7 @@ function selectCommandSuggestion(trigger: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(103, 199, 207, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
   font-size: 12px;
   font-weight: 700;
@@ -342,7 +342,7 @@ function selectCommandSuggestion(trigger: string) {
   max-width: 100%;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--surface-subtle-strong);
   color: var(--text);
   font-size: 12px;
   line-height: 1.4;
@@ -397,7 +397,7 @@ function selectCommandSuggestion(trigger: string) {
   padding: 16px 18px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -407,7 +407,7 @@ function selectCommandSuggestion(trigger: string) {
 
 .composer-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.24);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .composer-button {
@@ -431,7 +431,7 @@ function selectCommandSuggestion(trigger: string) {
 }
 
 .upload-button {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-subtle);
   color: var(--text);
 }
 
@@ -450,7 +450,7 @@ function selectCommandSuggestion(trigger: string) {
 }
 
 .stop-button {
-  background: rgba(226, 74, 74, 0.16);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
   border-color: rgba(226, 74, 74, 0.3);
   color: #ffb0b0;
 }
@@ -465,7 +465,7 @@ function selectCommandSuggestion(trigger: string) {
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: rgba(14, 24, 38, 0.96);
+  background: var(--surface-panel-strong);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 12px 28px rgba(1, 6, 15, 0.24), 0 0 15px rgba(103, 199, 207, 0.08);
@@ -489,7 +489,7 @@ function selectCommandSuggestion(trigger: string) {
 
 .command-suggestion-item:hover,
 .command-suggestion-item.selected {
-  background: rgba(103, 199, 207, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .command-trigger {
@@ -515,13 +515,13 @@ function selectCommandSuggestion(trigger: string) {
   justify-self: end;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(68, 204, 136, 0.14);
+  background: var(--surface-success-soft);
   color: var(--success);
   font-size: 11px;
 }
 
 .command-status.offline {
-  background: rgba(255, 107, 107, 0.14);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
   color: var(--danger);
 }
 

@@ -38,7 +38,7 @@ const emit = defineEmits<{
   padding: 3px;
   border-radius: 10px;
   border: 1px solid rgba(133, 163, 199, 0.14);
-  background: rgba(9, 17, 29, 0.38);
+  background: var(--surface-panel-hover-soft);
 }
 
 .segmented-option {
@@ -57,7 +57,7 @@ const emit = defineEmits<{
 
 .segmented-option.active {
   background: rgba(103, 199, 207, 0.14);
-  color: #d8f6f3;
+  color: var(--accent);
   border-color: rgba(103, 199, 207, 0.22);
 }
 </style>

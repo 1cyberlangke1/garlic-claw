@@ -16,6 +16,7 @@ import chatRoundLineBold from '@iconify-icons/solar/chat-round-line-bold'
 import logout3Bold from '@iconify-icons/solar/logout-3-bold'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from '@/components/header/ThemeToggle.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -271,93 +272,120 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
 
 <template>
   <div class="admin-shell">
-    <aside
-      class="admin-nav"
-      :class="{
-        'is-compact': isCompact,
-        'is-hidden': isHidden,
-      }"
-      :style="{ width: `${currentSiderWidth}px` }"
-    >
-      <div class="sider-inner">
-        <header class="sider-title">
-          <Icon class="sider-title-icon" :icon="widget6Bold" />
-          <span class="sider-title-text">控制台</span>
-        </header>
+    <header class="admin-topbar">
+      <div class="topbar-left">
+        <span class="topbar-brand">🦞🧄 Garlic Claw</span>
+      </div>
+      <div class="topbar-right">
+        <ThemeToggle />
+      </div>
+    </header>
 
-        <nav class="sider-menu" aria-label="后台导航">
-          <RouterLink
-            v-for="item in visibleNavItems"
-            :key="item.name"
-            class="menu-item"
-            :class="{
-              active: route.name === item.name,
-              'menu-item--divided': item.divided,
-            }"
-            :to="{ name: item.name }"
-            :title="isCompact ? item.label : undefined"
-          >
-            <Icon class="menu-icon" :icon="item.icon" aria-hidden="true" />
-            <span class="menu-label">{{ item.label }}</span>
-          </RouterLink>
-        </nav>
+    <div class="admin-body">
+      <aside
+        class="admin-nav"
+        :class="{
+          'is-compact': isCompact,
+          'is-hidden': isHidden,
+        }"
+        :style="{ width: `${currentSiderWidth}px` }"
+      >
+        <div class="sider-inner">
+          <header class="sider-title">
+            <Icon class="sider-title-icon" :icon="widget6Bold" />
+            <span class="sider-title-text">控制台</span>
+          </header>
 
-        <div class="sider-meta">
-          <div class="sider-user">
-            <span class="sider-user-label">当前模式</span>
-            <strong>单用户控制台</strong>
-            <small>本机持久登录态</small>
+          <nav class="sider-menu" aria-label="后台导航">
+            <RouterLink
+              v-for="item in visibleNavItems"
+              :key="item.name"
+              class="menu-item"
+              :class="{
+                active: route.name === item.name,
+                'menu-item--divided': item.divided,
+              }"
+              :to="{ name: item.name }"
+              :title="isCompact ? item.label : undefined"
+            >
+              <Icon class="menu-icon" :icon="item.icon" aria-hidden="true" />
+              <span class="menu-label">{{ item.label }}</span>
+            </RouterLink>
+          </nav>
+
+          <div class="sider-meta">
+            <div class="sider-user">
+              <span class="sider-user-label">当前模式</span>
+              <strong>单用户控制台</strong>
+              <small>本机持久登录态</small>
+            </div>
+
+            <div class="sider-actions">
+              <button type="button" class="sider-action-link" @click="handleLogout">
+                <Icon class="sider-action-icon" :icon="logout3Bold" aria-hidden="true" />
+                退出登录
+              </button>
+            </div>
           </div>
 
-          <div class="sider-actions">
-            <button type="button" class="sider-action-link" @click="handleLogout">
-              <Icon class="sider-action-icon" :icon="logout3Bold" aria-hidden="true" />
-              退出登录
+          <div
+            class="sider-footer"
+            :style="isHidden ? { bottom: `calc(${handleBottom}px + var(--app-safe-area-bottom, 0px))` } : undefined"
+          >
+            <button
+              type="button"
+              class="sider-trigger"
+              :class="{ 'is-dragging': isDragging }"
+              :aria-label="triggerText"
+              @click="onHandleClick"
+              @mousedown="onHandleStart"
+              @touchstart="onHandleStart"
+            >
+              <Icon class="trigger-icon" :icon="triggerIcon" aria-hidden="true" />
+              <span class="sider-trigger-text">{{ triggerText }}</span>
             </button>
           </div>
         </div>
+      </aside>
 
-        <div
-          class="sider-footer"
-          :style="isHidden ? { bottom: `calc(${handleBottom}px + var(--app-safe-area-bottom, 0px))` } : undefined"
-        >
-          <button
-            type="button"
-            class="sider-trigger"
-            :class="{ 'is-dragging': isDragging }"
-            :aria-label="triggerText"
-            @click="onHandleClick"
-            @mousedown="onHandleStart"
-            @touchstart="onHandleStart"
-          >
-            <Icon class="trigger-icon" :icon="triggerIcon" aria-hidden="true" />
-            <span class="sider-trigger-text">{{ triggerText }}</span>
-          </button>
-        </div>
-      </div>
-    </aside>
-
-    <main class="admin-content">
-      <RouterView />
-    </main>
+      <main class="admin-content">
+        <RouterView />
+      </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .admin-shell {
-  --shell-bg: #0f172a;
-  --shell-bg-elevated: #1e293b;
-  --shell-bg-hover: #334155;
-  --shell-text: #f1f5f9;
-  --shell-text-secondary: #cbd5e1;
-  --shell-text-tertiary: #94a3b8;
-  --shell-border: #334155;
-  --shell-border-light: #475569;
-  --shell-active: #18a058;
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
   background: var(--shell-bg);
+}
+
+.admin-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 16px;
+  background: var(--shell-bg-elevated);
+  border-bottom: 1px solid var(--shell-border);
+  z-index: 100;
+}
+
+.topbar-brand {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--shell-text);
+}
+
+.admin-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
 }
 
 .admin-nav {
