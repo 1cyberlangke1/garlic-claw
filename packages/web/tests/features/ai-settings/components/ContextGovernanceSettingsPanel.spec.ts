@@ -1,6 +1,6 @@
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ContextGovernanceSettingsPanel from '@/features/ai-settings/components/ContextGovernanceSettingsPanel.vue'
 
 const SchemaConfigFormStub = defineComponent({
@@ -20,8 +20,8 @@ const SchemaConfigFormStub = defineComponent({
       default: null,
     },
   },
-  emits: ['save'],
-  template: '<button data-test="schema-save" @click="$emit(\'save\', snapshot?.values ?? {})">save</button>',
+  emits: ['draft-change'],
+  template: '<button data-test="schema-save" @click="$emit(\'draft-change\', snapshot?.values ?? {})">save</button>',
 })
 
 const ModelQuickInputStub = defineComponent({
@@ -53,6 +53,14 @@ const ModelQuickInputStub = defineComponent({
 })
 
 describe('ContextGovernanceSettingsPanel', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('merges the selected compression model into the saved context governance config', async () => {
     const wrapper = mount(ContextGovernanceSettingsPanel, {
       props: {
@@ -88,6 +96,7 @@ describe('ContextGovernanceSettingsPanel', () => {
 
     await wrapper.get('[data-test="model-change"]').trigger('click')
     await wrapper.get('[data-test="schema-save"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(500)
 
     expect(wrapper.emitted('save')).toEqual([
       [
@@ -143,6 +152,7 @@ describe('ContextGovernanceSettingsPanel', () => {
 
     await wrapper.get('.clear-button').trigger('click')
     await wrapper.get('[data-test="schema-save"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(500)
 
     expect(wrapper.emitted('save')).toEqual([
       [

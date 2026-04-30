@@ -370,35 +370,16 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
   const currentContextLengthValue = Number(await contextLengthInput.inputValue());
   const targetContextLength = currentContextLengthValue === 65536 ? 65537 : 65536;
-  const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
-  let contextLengthSaveResponsePromise = null;
-  await waitFor(async () => {
-    await contextLengthInput.click({ clickCount: 3 });
-    await page.keyboard.press('Control+A').catch(() => {});
-    await page.keyboard.type(String(targetContextLength), { delay: 20 });
-    await contextLengthInput.press('Tab');
-    const enabled = await saveButton.evaluate((button) => {
-      if (!(button instanceof HTMLButtonElement) || button.disabled) {
-        return false;
-      }
-      return true;
-    });
-    if (!enabled) {
-      return null;
-    }
-    contextLengthSaveResponsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST'
-        && response.url().endsWith(`/api/ai/providers/${PROVIDER_ID}/models/${MODEL_ID}`),
-      { timeout: REQUEST_TIMEOUT_MS },
-    );
-    await saveButton.evaluate((button) => {
-      if (button instanceof HTMLButtonElement && !button.disabled) {
-        button.click();
-      }
-    });
-    return true;
-  }, '等待上下文长度保存按钮可用');
+  const contextLengthSaveResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST'
+      && response.url().endsWith(`/api/ai/providers/${PROVIDER_ID}/models/${MODEL_ID}`),
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+  await contextLengthInput.click({ clickCount: 3 });
+  await page.keyboard.press('Control+A').catch(() => {});
+  await page.keyboard.type(String(targetContextLength), { delay: 20 });
+  await contextLengthInput.press('Tab');
   await contextLengthSaveResponsePromise;
 
   await waitFor(async () => {

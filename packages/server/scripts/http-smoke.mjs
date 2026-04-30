@@ -480,7 +480,6 @@ async function runContextCompactionModelSmoke(apiBase, state, input) {
           contextCompaction: {
             enabled: true,
             keepRecentMessages: input.keepRecentMessages ?? 1,
-            mode: 'manual',
             strategy: 'summary',
             summaryPrompt: '请把下面这段历史对话整理成可供后续继续回答的上下文摘要。',
           },
@@ -898,7 +897,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(preview.includedMessageIds), 'Expected context window preview to include includedMessageIds');
     ensure(Array.isArray(preview.excludedMessageIds), 'Expected context window preview to include excludedMessageIds');
     ensure(typeof preview.frontendMessageWindowSize === 'number', 'Expected context window preview to include frontendMessageWindowSize');
-    ensure(typeof preview.maxWindowTokens === 'number', 'Expected context window preview to include maxWindowTokens');
+    ensure(typeof preview.contextLength === 'number', 'Expected context window preview to include contextLength');
   });
 
   await runStep('chat.todo.get.initial', async () => {

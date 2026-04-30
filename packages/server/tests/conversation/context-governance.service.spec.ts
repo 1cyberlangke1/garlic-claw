@@ -140,7 +140,6 @@ describe('ContextGovernanceService', () => {
       contextCompaction: {
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'manual',
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
@@ -215,7 +214,6 @@ describe('ContextGovernanceService', () => {
         compressionThreshold: 1,
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'auto',
         reservedTokens: 1,
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
@@ -271,7 +269,6 @@ describe('ContextGovernanceService', () => {
         },
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'manual',
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
@@ -327,7 +324,6 @@ describe('ContextGovernanceService', () => {
       contextCompaction: {
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'manual',
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },

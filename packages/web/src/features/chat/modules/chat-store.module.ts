@@ -48,6 +48,8 @@ import type {
 } from "@/features/chat/store/chat-store.types";
 import { isValidConversationRouteId } from "@/utils/uuid";
 
+let removeGlobalInternalConfigChangedListener: (() => void) | null = null;
+
 interface QueuedChatSendRequest {
   id: string;
   conversationId: string;
@@ -92,6 +94,7 @@ export function createChatStoreModule() {
   let conversationContextWindowRequestId = 0;
   let conversationRuntimePermissionRequestId = 0;
   let conversationTodoRequestId = 0;
+  let pendingContextWindowRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
   const retryableMessageId = computed(() =>
@@ -178,23 +181,34 @@ export function createChatStoreModule() {
       return;
     }
     const event = rawEvent as CustomEvent<InternalConfigChangedDetail>;
-    if (event.detail.scope !== "context-governance") {
+    if (
+      event.detail.scope !== "context-governance" &&
+      event.detail.scope !== "provider-models"
+    ) {
       return;
     }
     if (!currentConversationId.value || streaming.value) {
       return;
     }
-    void tryLoadConversationContextWindow(currentConversationId.value);
+    scheduleContextWindowRefresh(currentConversationId.value);
   }
 
   if (typeof window !== "undefined") {
+    removeGlobalInternalConfigChangedListener?.();
     window.addEventListener(INTERNAL_CONFIG_CHANGED_EVENT, handleInternalConfigChanged);
+    removeGlobalInternalConfigChangedListener = () => {
+      window.removeEventListener(
+        INTERNAL_CONFIG_CHANGED_EVENT,
+        handleInternalConfigChanged,
+      );
+      if (removeGlobalInternalConfigChangedListener) {
+        removeGlobalInternalConfigChangedListener = null;
+      }
+    };
     if (getCurrentScope()) {
       onScopeDispose(() => {
-        window.removeEventListener(
-          INTERNAL_CONFIG_CHANGED_EVENT,
-          handleInternalConfigChanged,
-        );
+        clearPendingContextWindowRefreshTimer();
+        removeGlobalInternalConfigChangedListener?.();
       });
     }
   }
@@ -205,6 +219,25 @@ export function createChatStoreModule() {
     conversationContextWindowRequestId += 1;
     conversationRuntimePermissionRequestId += 1;
     conversationTodoRequestId += 1;
+  }
+
+  function scheduleContextWindowRefresh(conversationId: string) {
+    clearPendingContextWindowRefreshTimer();
+    pendingContextWindowRefreshTimer = setTimeout(() => {
+      pendingContextWindowRefreshTimer = null;
+      if (currentConversationId.value !== conversationId || streaming.value) {
+        return;
+      }
+      void tryLoadConversationContextWindow(conversationId);
+    }, 300);
+  }
+
+  function clearPendingContextWindowRefreshTimer() {
+    if (!pendingContextWindowRefreshTimer) {
+      return;
+    }
+    clearTimeout(pendingContextWindowRefreshTimer);
+    pendingContextWindowRefreshTimer = null;
   }
 
   async function refreshConversationSummary(

@@ -7,7 +7,6 @@
     "conversationTitleDefaultTitle": "New Chat",
     "conversationTitleMaxMessages": 4,
     "providerRouterDefaultShortCircuitReply": "本轮请求已由 provider-router 直接处理。",
-    "contextCompactionMode": "auto",
     "contextCompactionStrategy": "summary",
     "contextCompactionCompressionThreshold": 72,
     "contextCompactionKeepRecentMessages": 6,
@@ -68,30 +67,12 @@
     "items": {
       "enabled": {
         "type": "bool",
-        "description": "是否启用上下文压缩插件",
+        "description": "启用上下文自动管理",
         "defaultValue": true
-      },
-      "mode": {
-        "type": "string",
-        "description": "摘要模式的触发方式。manual 只允许手动触发，auto 会在进入模型前按预算自动触发。",
-        "defaultValue": "auto",
-        "condition": {
-          "strategy": "summary"
-        },
-        "options": [
-          {
-            "value": "auto",
-            "label": "自动"
-          },
-          {
-            "value": "manual",
-            "label": "仅手动"
-          }
-        ]
       },
       "strategy": {
         "type": "string",
-        "description": "上下文治理策略。summary 会生成摘要并写回历史，sliding 只在送模时保留最近窗口。",
+        "description": "上下文自动管理策略。摘要压缩和滑动窗口都会自动管理上下文，只是处理方式不同。",
         "defaultValue": "summary",
         "options": [
           {
@@ -106,7 +87,7 @@
       },
       "compressionThreshold": {
         "type": "int",
-        "description": "摘要压缩的自动触发阈值，表示预计输入 token 达到可用上下文窗口百分之多少时开始压缩。",
+        "description": "摘要压缩的自动触发阈值，表示预计输入 token 达到当前可用送模预算百分之多少时开始自动压缩。",
         "condition": {
           "strategy": "summary"
         },
@@ -124,12 +105,12 @@
       },
       "reservedTokens": {
         "type": "int",
-        "description": "为当前回复与工具链预留的 token 数",
+        "description": "为当前回复与工具链预留的 token 数，只影响内部送模预算和自动压缩判断，不影响聊天页顶部显示的总上下文长度。",
         "defaultValue": 12000
       },
       "slidingWindowUsagePercent": {
         "type": "int",
-        "description": "滑动窗口模式下，最多允许历史消息占用可用上下文窗口的百分比。",
+        "description": "滑动窗口模式下，历史消息最多允许占用当前可用送模预算的百分比。",
         "condition": {
           "strategy": "sliding"
         },
@@ -156,8 +137,7 @@
         "type": "bool",
         "description": "自动压缩完成后是否继续当前主回复。关闭后本轮只整理历史，不继续回复。",
         "condition": {
-          "strategy": "summary",
-          "mode": "auto"
+          "strategy": "summary"
         },
         "defaultValue": true
       }

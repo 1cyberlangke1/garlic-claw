@@ -12,6 +12,7 @@ describe('ConversationController', () => {
   const runtimeToolPermissionService = { listPendingRequests: jest.fn(), reply: jest.fn() };
   const runtimeHostConversationMessageService = { deleteMessage: jest.fn(), updateMessage: jest.fn() };
   const runtimeHostConversationTodoService = { deleteSessionTodo: jest.fn(), readSessionTodo: jest.fn(), replaceSessionTodo: jest.fn() };
+  const runtimeHostSubagentRunnerService = { interruptSubagent: jest.fn(), sendInputSubagent: jest.fn(), waitSubagent: jest.fn() };
   const runtimeHostConversationRecordService = {
     createConversation: jest.fn(),
     deleteConversation: jest.fn(),
@@ -23,6 +24,14 @@ describe('ConversationController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'main',
+      messages: [],
+      title: 'New Chat',
+      updatedAt: '2026-04-11T00:00:00.000Z',
+    });
     controller = new ConversationController(
       conversationMessagePlanningService as never,
       conversationMessageLifecycleService as never,
@@ -31,6 +40,7 @@ describe('ConversationController', () => {
       runtimeHostConversationMessageService as never,
       runtimeHostConversationRecordService as never,
       runtimeHostConversationTodoService as never,
+      runtimeHostSubagentRunnerService as never,
     );
   });
 
@@ -79,13 +89,13 @@ describe('ConversationController', () => {
 
   it('reads conversation context window through owned conversation APIs', async () => {
     const preview = {
+      contextLength: 256,
       enabled: true,
       estimatedTokens: 120,
       excludedMessageIds: ['message-1'],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['message-2', 'message-3'],
       keepRecentMessages: 2,
-      maxWindowTokens: 256,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding' as const,
     };

@@ -111,12 +111,12 @@ describe('ConversationMessagePlanningService', () => {
     ]);
 
     await expect(service.getContextWindowPreview({ conversationId, modelId: 'gpt-5.4', providerId: 'openai', userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
+      contextLength: 512,
       enabled: true,
       excludedMessageIds: ['history-1'],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-2', 'history-3'],
       keepRecentMessages: 1,
-      maxWindowTokens: 128,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));
@@ -180,12 +180,12 @@ describe('ConversationMessagePlanningService', () => {
     ]);
 
     await expect(service.getContextWindowPreview({ conversationId, userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
+      contextLength: 512,
       enabled: true,
       excludedMessageIds: ['history-1', 'history-2'],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['summary-1', 'history-3'],
       keepRecentMessages: 2,
-      maxWindowTokens: 256,
       slidingWindowUsagePercent: 50,
       strategy: 'summary',
     }));
@@ -205,13 +205,13 @@ describe('ConversationMessagePlanningService', () => {
     ]);
 
     await expect(service.getContextWindowPreview({ conversationId, userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
+      contextLength: 512,
       enabled: false,
       estimatedTokens: 12,
       excludedMessageIds: [],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-1', 'history-2'],
       keepRecentMessages: 6,
-      maxWindowTokens: 128,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));

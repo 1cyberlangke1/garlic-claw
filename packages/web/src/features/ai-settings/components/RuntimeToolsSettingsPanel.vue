@@ -9,9 +9,11 @@
     </header>
 
     <SchemaConfigForm
+      auto-save
       :snapshot="snapshot"
       :saving="saving"
       :show-header="false"
+      :show-save-button="false"
       @save="emit('save', $event)"
     />
   </section>

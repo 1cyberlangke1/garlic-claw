@@ -98,7 +98,7 @@ export class ContextGovernanceService {
 
   async rewriteHistoryBeforeModel(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
-    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary' || runtimeConfig.mode !== 'auto') {return;}
+    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return;}
     const result = await this.runContextCompaction({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, trigger: 'prepare-model', userId: input.userId });
     if (result.compacted && !runtimeConfig.allowAutoContinue) {this.autoStopConversationIds.add(input.conversationId);}
   }
@@ -144,13 +144,14 @@ export class ContextGovernanceService {
     const history = readConversationHistorySnapshot(this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId));
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
     const windowTarget = this.readContextWindowTarget(input.providerId, input.modelId);
-    const maxWindowTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.strategy === 'sliding' ? runtimeConfig.slidingWindowUsagePercent : 100);
+    const contextLength = windowTarget.contextLength;
+    const windowBudgetTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.strategy === 'sliding' ? runtimeConfig.slidingWindowUsagePercent : 100);
     if (!runtimeConfig.enabled) {
       const includedMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage);
       const preview = this.previewHistoryMessages(input.conversationId, includedMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
-      return createContextWindowPreview(runtimeConfig, { enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), maxWindowTokens, strategy: runtimeConfig.strategy });
+      return createContextWindowPreview(runtimeConfig, { contextLength, enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), strategy: runtimeConfig.strategy });
     }
-    return runtimeConfig.strategy === 'sliding' ? this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, windowTarget.modelId, windowTarget.providerId, input.userId) : this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, windowTarget.modelId, windowTarget.providerId, input.userId);
+    return runtimeConfig.strategy === 'sliding' ? this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, windowBudgetTokens, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId) : this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId);
   }
 
   listCommandCatalogEntries(): Array<{ aliases: string[]; canonicalCommand: string; commandId: string; conflictTriggers: string[]; connected: boolean; defaultEnabled: boolean; description: string; kind: 'command'; path: string[]; pluginDisplayName: string; pluginId: string; runtimeKind: 'local'; source: 'manifest'; variants: string[] }> {
@@ -288,24 +289,25 @@ export class ContextGovernanceService {
     conversationId: string,
     historyMessages: PluginConversationHistoryMessage[],
     runtimeConfig: ReturnType<ContextGovernanceSettingsService['readRuntimeConfig']>['contextCompaction'],
-    maxWindowTokens: number,
+    windowBudgetTokens: number,
+    contextLength: number,
     modelId: string,
     providerId: string,
     userId?: string,
   ): ConversationContextWindowPreview {
     const candidates = readContextWindowCompactedHistory(historyMessages).filter((entry): entry is ContextWindowCandidateMessage => entry.modelMessage !== null);
-    const { preview, selected } = selectMessagesForWindow(candidates, runtimeConfig.keepRecentMessages, maxWindowTokens, (selectedEntries) => (
+    const { preview, selected } = selectMessagesForWindow(candidates, runtimeConfig.keepRecentMessages, windowBudgetTokens, (selectedEntries) => (
       this.previewHistoryMessages(conversationId, selectedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId)
     ));
     const includedMessageIds = selected.map((entry) => entry.id);
-    return createContextWindowPreview(runtimeConfig, { enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: candidates.map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, maxWindowTokens, strategy: 'sliding' });
+    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: candidates.map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, strategy: 'sliding' });
   }
 
   private readSummaryContextWindowPreview(
     conversationId: string,
     historyMessages: PluginConversationHistoryMessage[],
     runtimeConfig: ReturnType<ContextGovernanceSettingsService['readRuntimeConfig']>['contextCompaction'],
-    maxWindowTokens: number,
+    contextLength: number,
     modelId: string,
     providerId: string,
     userId?: string,
@@ -313,7 +315,7 @@ export class ContextGovernanceService {
     const entries = readContextWindowCompactedHistory(historyMessages);
     const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null);
     const includedMessageIds = includedEntries.map((entry) => entry.id);
-    return createContextWindowPreview(runtimeConfig, { enabled: true, estimatedTokens: this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId).estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, maxWindowTokens, strategy: runtimeConfig.strategy });
+    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId).estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, strategy: runtimeConfig.strategy });
 }
 
   private async executeContextCompactionCommand(input: {
@@ -349,7 +351,7 @@ export class ContextGovernanceService {
 
 function createContextWindowPreview(
   runtimeConfig: ReturnType<ContextGovernanceSettingsService['readRuntimeConfig']>['contextCompaction'],
-  input: Pick<ConversationContextWindowPreview, 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'maxWindowTokens' | 'strategy'> & { excludedMessageIds?: string[] },
+  input: Pick<ConversationContextWindowPreview, 'contextLength' | 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'strategy'> & { excludedMessageIds?: string[] },
 ): ConversationContextWindowPreview {
   return {
     ...input,

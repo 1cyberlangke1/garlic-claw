@@ -339,6 +339,7 @@ export function useProviderSettings() {
       payload.contextLength,
     )
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitInternalConfigChanged({ scope: 'provider-models' })
   }
 
   /**

@@ -7,12 +7,10 @@ import {
   sanitizeOptionalText,
 } from "./common-helpers";
 
-export type PluginContextCompactionMode = "auto" | "manual";
 export type PluginContextCompactionStrategy = "sliding" | "summary";
 
 export interface PluginContextCompactionConfig {
   enabled?: boolean;
-  mode?: PluginContextCompactionMode;
   strategy?: PluginContextCompactionStrategy;
   compressionThreshold?: number;
   keepRecentMessages?: number;
@@ -24,8 +22,6 @@ export interface PluginContextCompactionConfig {
   allowAutoContinue?: boolean;
 }
 
-export const CONTEXT_COMPACTION_DEFAULT_MODE =
-  authoringConfigData.defaults.contextCompactionMode as PluginContextCompactionMode;
 export const CONTEXT_COMPACTION_DEFAULT_STRATEGY =
   authoringConfigData.defaults
     .contextCompactionStrategy as PluginContextCompactionStrategy;
@@ -52,16 +48,11 @@ export function readContextCompactionConfig(
   value: JsonValue,
 ): PluginContextCompactionConfig {
   const object = readJsonObjectValue(value);
-  const mode =
-    object?.mode === "auto" || object?.mode === "manual"
-      ? object.mode
-      : undefined;
   const strategy =
     object?.strategy === "summary" || object?.strategy === "sliding"
       ? object.strategy
       : undefined;
   return {
-    ...(mode ? { mode } : {}),
     ...(strategy ? { strategy } : {}),
     ...pickOptionalStringFields(object, ["summaryPrompt"] as const),
     ...pickOptionalNumberFields(object, [
@@ -85,7 +76,6 @@ export function resolveContextCompactionRuntimeConfig(
   config: PluginContextCompactionConfig,
 ): {
   enabled: boolean;
-  mode: PluginContextCompactionMode;
   strategy: PluginContextCompactionStrategy;
   compressionThreshold: number;
   keepRecentMessages: number;
@@ -121,7 +111,6 @@ export function resolveContextCompactionRuntimeConfig(
       20,
       400,
     ),
-    mode: config.mode === "manual" ? "manual" : CONTEXT_COMPACTION_DEFAULT_MODE,
     reservedTokens: normalizeIntegerInRange(
       config.reservedTokens,
       CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS,

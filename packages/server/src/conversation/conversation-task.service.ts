@@ -116,7 +116,7 @@ export class ConversationTaskService {
       }
 
       const usage = await readConversationTaskUsage(stream.usage);
-      if (usage?.source === 'provider') {
+      if (usage) {
         runtime.state.metadata = appendConversationModelUsageMetadata(runtime.state.metadata, {
           ...usage,
           modelId: runtime.modelId,

@@ -43,13 +43,13 @@ describe('createChatStoreModule', () => {
     vi.mocked(chatConversationData.deleteConversationMessageRecord).mockReset()
     vi.mocked(chatConversationData.deleteConversationRecord).mockReset()
     vi.mocked(chatConversationData.loadConversationContextWindowRecord).mockReset().mockResolvedValue({
+      contextLength: 256,
       enabled: true,
       estimatedTokens: 80,
       excludedMessageIds: [],
       frontendMessageWindowSize: 200,
       includedMessageIds: [],
       keepRecentMessages: 6,
-      maxWindowTokens: 256,
       slidingWindowUsagePercent: 50,
       strategy: 'summary',
     })
@@ -297,6 +297,20 @@ describe('createChatStoreModule', () => {
     store.currentConversationId.value = 'conversation-1'
     store.currentStreamingMessageId.value = 'assistant-1'
     store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正在生成中的回复',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
 
     await store.sendMessage({
       content: '停止后发送',
@@ -1188,13 +1202,13 @@ describe('createChatStoreModule', () => {
     ])
     vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([])
     vi.mocked(chatConversationData.loadConversationContextWindowRecord).mockResolvedValue({
+      contextLength: 256,
       enabled: true,
       estimatedTokens: 80,
       excludedMessageIds: ['message-2'],
       frontendMessageWindowSize: 2,
       includedMessageIds: ['message-3'],
       keepRecentMessages: 1,
-      maxWindowTokens: 256,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     })
@@ -1217,7 +1231,7 @@ describe('createChatStoreModule', () => {
     expect(chatConversationData.loadConversationMessages).toHaveBeenCalledTimes(1)
   })
 
-  it('refreshes the current conversation window when context compaction config changes', async () => {
+  it('refreshes the current conversation window when relevant AI config changes', async () => {
     vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
       createChatMessage('message-1', '第一条'),
     ])
@@ -1231,7 +1245,12 @@ describe('createChatStoreModule', () => {
         scope: 'context-governance',
       },
     }))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 350))
 
     expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
       'conversation-1',
@@ -1240,6 +1259,7 @@ describe('createChatStoreModule', () => {
         providerId: null,
       },
     )
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledTimes(1)
     expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
   })
 

@@ -6,6 +6,7 @@
         <p>{{ description }}</p>
       </div>
       <button
+        v-if="showSaveButton"
         type="button"
         class="ghost-button save-button"
         :title="saveButtonTitle"
@@ -37,7 +38,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import type {
   AiProviderSummary,
   JsonObject,
@@ -61,8 +62,14 @@ const props = withDefaults(defineProps<{
   description?: string
   emptyText?: string
   saveButtonTitle?: string
+  autoSave?: boolean
+  autoSaveDelayMs?: number
+  showSaveButton?: boolean
 }>(), {
+  autoSave: false,
+  autoSaveDelayMs: 500,
   showHeader: true,
+  showSaveButton: true,
   title: '配置',
   description: '按声明的配置元数据统一渲染。',
   emptyText: '无可编辑的配置。',
@@ -71,6 +78,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (event: 'save', values: PluginConfigSnapshot['values']): void
+  (event: 'draft-change', values: PluginConfigSnapshot['values']): void
 }>()
 
 const draft = ref<JsonObject>({})
@@ -91,15 +99,52 @@ const hasSchema = computed(() => !!rootSchema.value)
 const headerClass = computed(() =>
   props.showHeader ? 'section-header' : 'section-actions',
 )
+const committedDraftSignature = ref('{}')
+const draftChangeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 watch(
   () => props.snapshot,
   (snapshot) => {
     formError.value = null
     draft.value = resolveDraftValues(snapshot)
+    committedDraftSignature.value = JSON.stringify(draft.value)
   },
   { immediate: true },
 )
+
+watch(
+  draft,
+  () => {
+    const resolvedDraft = readResolvedDraftValues()
+    emit('draft-change', resolvedDraft)
+    if (!props.autoSave || !hasSchema.value) {
+      return
+    }
+    const nextSignature = JSON.stringify(resolvedDraft)
+    if (nextSignature === committedDraftSignature.value) {
+      clearDraftChangeTimer()
+      return
+    }
+    scheduleAutoSave()
+  },
+  { deep: true },
+)
+
+watch(
+  () => props.saving,
+  (saving) => {
+    if (!saving && props.autoSave && hasSchema.value) {
+      const nextSignature = JSON.stringify(readResolvedDraftValues())
+      if (nextSignature !== committedDraftSignature.value) {
+        scheduleAutoSave(0)
+      }
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  clearDraftChangeTimer()
+})
 
 watch(
   rootSchema,
@@ -137,11 +182,32 @@ function applyDraft(nextValue: JsonValue | undefined) {
 
 function submit() {
   try {
-    emit('save', rootSchema.value ? copyJsonObject(resolveConfigObjectValue(rootSchema.value, draft.value)) : {})
+    const values = readResolvedDraftValues()
+    committedDraftSignature.value = JSON.stringify(values)
+    emit('save', values)
     formError.value = null
   } catch (error) {
     formError.value = error instanceof Error ? error.message : '配置格式无效'
   }
+}
+
+function scheduleAutoSave(delayMs = props.autoSaveDelayMs) {
+  clearDraftChangeTimer()
+  draftChangeTimer.value = setTimeout(() => {
+    draftChangeTimer.value = null
+    if (props.saving || !props.autoSave || !hasSchema.value) {
+      return
+    }
+    submit()
+  }, delayMs)
+}
+
+function clearDraftChangeTimer() {
+  if (!draftChangeTimer.value) {
+    return
+  }
+  clearTimeout(draftChangeTimer.value)
+  draftChangeTimer.value = null
 }
 
 function resolveDraftValues(snapshot: PluginConfigSnapshot | null): JsonObject {
@@ -160,6 +226,10 @@ function resolveConfigObjectValue(
   currentValue: JsonObject | undefined,
 ): JsonObject {
   return (resolveConfigNodeValue(schema, currentValue) ?? {}) as JsonObject
+}
+
+function readResolvedDraftValues(): JsonObject {
+  return rootSchema.value ? copyJsonObject(resolveConfigObjectValue(rootSchema.value, draft.value)) : {}
 }
 
 function resolveConfigNodeValue(

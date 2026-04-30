@@ -2,7 +2,7 @@ import type { AiModelUsage, JsonObject, PluginLlmMessage, PluginLlmTransportMode
 import { Injectable } from '@nestjs/common';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import { generateText, isLoopFinished, streamText, type LanguageModel, type ModelMessage, type Tool } from 'ai';
+import { generateText, isLoopFinished, streamText, type LanguageModel, type LanguageModelUsage, type ModelMessage, type Tool } from 'ai';
 import { createRequire } from 'node:module';
 import { uuidv7 } from 'uuidv7';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
@@ -73,7 +73,7 @@ export class AiModelExecutionService {
         fullStream: result.fullStream,
         modelId: target.modelId,
         providerId: target.provider.id,
-        usage: readProviderUsagePromise(result.totalUsage),
+        usage: readSdkUsagePromise(result.totalUsage),
       };
     });
   }
@@ -242,7 +242,7 @@ function buildExecutionMessageContent(content: PluginLlmMessage['content']): str
 function buildProviderOptions(input: AiModelExecutionRequest): JsonObject | undefined { return input.variant ? { ...(input.providerOptions ?? {}), variant: input.variant } : input.providerOptions; }
 
 function readModelUsage(value: unknown, input: AiModelExecutionRequest, text: string): AiModelUsage {
-  const providerUsage = readProviderUsage(value);
+  const providerUsage = normalizeSdkUsage(value);
   if (providerUsage) {return providerUsage;}
   const inputTokens = estimateTokenCount([input.system ?? '', ...input.messages.map((message) => readMessageText(message.content))].join('\n'));
   const outputTokens = estimateTokenCount(text);
@@ -251,17 +251,31 @@ function readModelUsage(value: unknown, input: AiModelExecutionRequest, text: st
 
 function readExecutionError(error: unknown, fallback: string): Error { return error instanceof Error ? error : new Error(fallback); }
 
-function readProviderUsage(value: unknown): AiModelUsage | null {
+function normalizeSdkUsage(value: unknown): AiModelUsage | null {
   if (!isRecord(value)) {return null;}
-  const totalTokens = readTokenNumber(value.totalTokens);
-  let inputTokens = readTokenNumber(value.inputTokens);
-  let outputTokens = readTokenNumber(value.outputTokens);
+  const usage = value as Partial<LanguageModelUsage>;
+  const cachedInputTokens = readTokenNumber(
+    usage.cachedInputTokens
+      ?? usage.inputTokenDetails?.cacheReadTokens,
+  );
+  const totalTokens = readTokenNumber(usage.totalTokens);
+  let inputTokens = readTokenNumber(usage.inputTokens);
+  let outputTokens = readTokenNumber(usage.outputTokens);
   if (totalTokens !== null && inputTokens !== null && outputTokens === null) {outputTokens = Math.max(totalTokens - inputTokens, 0);}
   if (totalTokens !== null && outputTokens !== null && inputTokens === null) {inputTokens = Math.max(totalTokens - outputTokens, 0);}
-  return inputTokens === null || outputTokens === null ? null : { inputTokens, outputTokens, source: 'provider', totalTokens: totalTokens ?? inputTokens + outputTokens };
+  if (inputTokens === null || outputTokens === null) {
+    return null;
+  }
+  return {
+    ...(cachedInputTokens === null ? {} : { cachedInputTokens }),
+    inputTokens,
+    outputTokens,
+    source: 'provider',
+    totalTokens: totalTokens ?? inputTokens + outputTokens,
+  };
 }
 
-function readProviderUsagePromise(value: unknown): Promise<AiModelUsage | undefined> | undefined { return value === undefined ? undefined : Promise.resolve(value).then((usage) => readProviderUsage(usage) ?? undefined).catch(() => undefined); }
+function readSdkUsagePromise(value: unknown): Promise<AiModelUsage | undefined> | undefined { return value === undefined ? undefined : Promise.resolve(value).then((usage) => normalizeSdkUsage(usage) ?? undefined).catch(() => undefined); }
 function normalizeStreamResult(result: AiSdkStreamTextResult): NormalizedAiSdkStreamTextResult {
   return {
     fullStream: result.fullStream,
