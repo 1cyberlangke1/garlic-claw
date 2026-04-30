@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
+import { BusinessError } from '@/utils/error'
 import {
   abortChatStream,
   discardPendingMessageUpdates,
@@ -76,6 +77,28 @@ describe('dispatchSendMessage', () => {
     )
     expect(state.streamController.value).toBeNull()
     expect(state.streaming.value).toBe(false)
+  })
+
+  it('does not mark the optimistic assistant as failed when the local stream observer aborts', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockRejectedValue(
+      new BusinessError('请求已取消', {
+        code: 'ABORTED',
+      }),
+    )
+    const state = createState()
+
+    await dispatchSendMessage(state, {
+      content: 'hello',
+    })
+
+    expect(state.messages.value).toHaveLength(2)
+    expect(state.messages.value[1]).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        status: 'pending',
+        error: null,
+      }),
+    )
   })
 
   it('refreshes summary during streaming and refreshes full state after stream completion', async () => {
@@ -238,6 +261,34 @@ describe('dispatchSendMessage', () => {
       permissionStateChanged: false,
       summaryRefreshed: true,
     })
+  })
+
+  it('does not mark the retried assistant as failed when the local stream observer aborts', async () => {
+    vi.mocked(chatConversationData.retryConversationMessage).mockRejectedValue(
+      new BusinessError('请求已取消', {
+        code: 'ABORTED',
+      }),
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+
+    await dispatchRetryMessage(state, 'assistant-1')
+
+    expect(state.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'pending',
+        error: null,
+      }),
+    ])
   })
 
   it('does not fail a successful send when the final conversation refresh fails', async () => {

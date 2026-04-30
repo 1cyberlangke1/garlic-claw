@@ -520,21 +520,18 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
     ) {
       return null;
     }
-    return await page.locator('.send-button').count() > 0 ? true : null;
+    return await composer.isEnabled() ? true : null;
   }, '等待聊天恢复空闲');
 
   await composer.fill('/compact');
   await page.locator('.send-button').click();
   await waitFor(async () => {
     const detail = await getConversationDetail(accessToken, conversation.id);
-    const commandMessage = detail.messages.find((message) => message.content === '/compact');
-    const resultMessage = detail.messages.find((message) =>
-      message.role === 'display' && message.content !== '/compact',
-    );
-    return commandMessage?.role === 'display' && resultMessage?.role === 'display'
+    const resultMessage = detail.messages.find((message) => hasDisplayMessageVariant(message, 'result'));
+    return resultMessage
       ? true
       : null;
-  }, '等待 /compact 以 display 消息写入会话历史');
+  }, '等待 /compact 的命令结果写入会话历史');
 
   await composer.fill(SUBAGENT_TRIGGER);
   await page.locator('.send-button').click();
@@ -1009,6 +1006,33 @@ async function waitFor(task, label) {
     await delay(300);
   }
   throw new Error(`${label}超时`);
+}
+
+function hasDisplayMessageVariant(message, variant) {
+  const metadata = readMessageMetadata(message);
+  if (!metadata || !Array.isArray(metadata.annotations)) {
+    return false;
+  }
+  return metadata.annotations.some((annotation) =>
+    annotation?.type === 'display-message'
+    && annotation?.owner === 'conversation.display-message'
+    && annotation?.data?.variant === variant,
+  );
+}
+
+function readMessageMetadata(message) {
+  if (message?.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata)) {
+    return message.metadata;
+  }
+  if (typeof message?.metadataJson !== 'string' || message.metadataJson.length === 0) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(message.metadataJson);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 async function waitForHttpReady(url) {

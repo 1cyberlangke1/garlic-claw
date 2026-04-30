@@ -46,9 +46,11 @@ type ContextCompactionRunResult = { afterPreview?: PluginConversationHistoryPrev
 type ContextWindowTarget = { contextLength: number; modelId: string; providerId: string };
 type ContextCompactionModelTarget = { modelId: string; providerId: string };
 type ContextGovernanceMessageReceivedInput = { content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string };
+export type DeferredInternalCommandResolution = { assistantContent: string; assistantParts: ChatMessagePart[]; modelId: string; providerId: string; reason: string };
+export type DeferredInternalCommandAction = { commandId: string; execute: (input: { assistantMessageId: string; conversationId: string; userId?: string; userMessageId: string }) => Promise<DeferredInternalCommandResolution> };
 type ContextGovernanceMessageReceivedResult =
   | { action: 'continue' }
-  | { action: 'short-circuit'; assistantContent: string; assistantParts: ChatMessagePart[]; modelId: string; providerId: string; reason: string };
+  | { action: 'deferred-short-circuit'; deferred: DeferredInternalCommandAction; modelId: string; providerId: string; reason: string };
 type ContextGovernanceBeforeModelInput = { conversationId: string; messages: ModelMessage[]; modelId: string; providerId: string; systemPrompt: string; userId?: string };
 type ContextGovernanceBeforeModelResult =
   | { action: 'continue'; messages: ModelMessage[]; modelId: string; providerId: string; systemPrompt: string }
@@ -76,13 +78,22 @@ export class ContextGovernanceService {
   async applyMessageReceived(input: ContextGovernanceMessageReceivedInput): Promise<ContextGovernanceMessageReceivedResult> {
     const commandInput = readContextCompactionCommandInput(input.content, input.parts);
     if (!commandInput) {return { action: 'continue' };}
-    const result = commandInput.hasUnexpectedArgs ? null : await this.runContextCompaction({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, trigger: 'manual', userId: input.userId });
-    const assistantContent = commandInput.hasUnexpectedArgs
-      ? '上下文压缩命令不接受额外参数。\n可用命令：/compact 或 /compress'
-      : !result ? '本次未执行上下文压缩。'
-        : result.compacted ? (result.coveredMessageCount ? `已压缩上下文，覆盖 ${result.coveredMessageCount} 条历史消息。` : '已完成上下文压缩。')
-          : (CONTEXT_COMPACTION_REASON_LABELS[result.reason ?? ''] ?? '本次未执行上下文压缩。');
-    return { action: 'short-circuit', assistantContent, assistantParts: [{ text: assistantContent, type: 'text' }], modelId: CONTEXT_COMPACTION_COMMAND_MODEL, providerId: CONTEXT_COMPACTION_COMMAND_PROVIDER, reason: 'context-compaction:command' };
+    return {
+      action: 'deferred-short-circuit',
+      deferred: {
+        commandId: 'internal.context-governance:/compact:command',
+        execute: async () => this.executeContextCompactionCommand({
+          commandInput,
+          conversationId: input.conversationId,
+          modelId: input.modelId,
+          providerId: input.providerId,
+          userId: input.userId,
+        }),
+      },
+      modelId: CONTEXT_COMPACTION_COMMAND_MODEL,
+      providerId: CONTEXT_COMPACTION_COMMAND_PROVIDER,
+      reason: 'context-compaction:command',
+    };
   }
 
   async rewriteHistoryBeforeModel(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
@@ -184,8 +195,8 @@ export class ContextGovernanceService {
     const thresholdTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.compressionThreshold);
     const beforePreview = this.previewHistoryMessages(input.conversationId, beforeState.modelMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
     if (input.trigger === 'prepare-model' && beforePreview.estimatedTokens < thresholdTokens) {return { beforePreview, compacted: false, reason: 'threshold-not-reached', thresholdTokens };}
-    const keepRecentMessages = Math.min(runtimeConfig.keepRecentMessages, beforeState.visibleMessages.length);
-    const candidateMessages = beforeState.visibleMessages.slice(0, Math.max(0, beforeState.visibleMessages.length - keepRecentMessages));
+    const keepRecentMessages = Math.min(runtimeConfig.keepRecentMessages, beforeState.modelMessages.length);
+    const candidateMessages = beforeState.modelMessages.slice(0, Math.max(0, beforeState.modelMessages.length - keepRecentMessages));
     const summarySource = buildSummarySource(candidateMessages);
     if (!candidateMessages.length || !summarySource) {return { beforePreview, compacted: false, reason: 'not-enough-history' };}
     const summaryText = (await this.aiModelExecutionService.generateText({
@@ -200,9 +211,9 @@ export class ContextGovernanceService {
     const summaryMessageId = `context-compaction:${uuidv7()}`;
     const createdAt = new Date().toISOString();
     const coveredMessageIds = new Set(candidateMessages.map((message) => message.id));
-    const summaryIndex = beforeState.messageStates.reduce((lastCoveredIndex, { message }, index) => coveredMessageIds.has(message.id) ? index + 1 : lastCoveredIndex, -1);
-    if (summaryIndex < 0) {return { beforePreview, compacted: false, reason: 'invalid-history' };}
-    const predictedMessages = applyContextCompaction({ compactionId, coveredMessageIds, createdAt, historyMessages: history.messages, markerVisible: runtimeConfig.showCoveredMarker, summaryIndex, summaryMessageId, summaryText });
+    const lastCoveredIndex = beforeState.messageStates.reduce((coveredIndex, { message }, index) => coveredMessageIds.has(message.id) ? index : coveredIndex, -1);
+    if (lastCoveredIndex < 0) {return { beforePreview, compacted: false, reason: 'invalid-history' };}
+    const predictedMessages = applyContextCompaction({ compactionId, coveredMessageIds, createdAt, historyMessages: history.messages, markerVisible: runtimeConfig.showCoveredMarker, summaryMessageId, summaryText });
     const afterState = readContextCompactionHistoryState(predictedMessages, omitTrailingPendingAssistant);
     const afterPreview = this.previewHistoryMessages(input.conversationId, afterState.modelMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
     const nextMessages = finalizeContextCompactionMessages({ afterPreview, beforePreview, compactionId, coveredCount: coveredMessageIds.size, createdAt, messages: predictedMessages, modelId: compactionModelTarget.modelId, providerId: compactionModelTarget.providerId, showCoveredMarker: runtimeConfig.showCoveredMarker, summaryMessageId, trigger: input.trigger });
@@ -303,6 +314,36 @@ export class ContextGovernanceService {
     const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null);
     const includedMessageIds = includedEntries.map((entry) => entry.id);
     return createContextWindowPreview(runtimeConfig, { enabled: true, estimatedTokens: this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId).estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, maxWindowTokens, strategy: runtimeConfig.strategy });
+}
+
+  private async executeContextCompactionCommand(input: {
+    commandInput: { hasUnexpectedArgs: boolean };
+    conversationId: string;
+    modelId: string;
+    providerId: string;
+    userId?: string;
+  }): Promise<DeferredInternalCommandResolution> {
+    const result = input.commandInput.hasUnexpectedArgs
+      ? null
+      : await this.runContextCompaction({
+          conversationId: input.conversationId,
+          modelId: input.modelId,
+          providerId: input.providerId,
+          trigger: 'manual',
+          userId: input.userId,
+        });
+    const assistantContent = input.commandInput.hasUnexpectedArgs
+      ? '上下文压缩命令不接受额外参数。\n可用命令：/compact 或 /compress'
+      : !result ? '本次未执行上下文压缩。'
+        : result.compacted ? (result.coveredMessageCount ? `已压缩上下文，覆盖 ${result.coveredMessageCount} 条历史消息。` : '已完成上下文压缩。')
+          : (CONTEXT_COMPACTION_REASON_LABELS[result.reason ?? ''] ?? '本次未执行上下文压缩。');
+    return {
+      assistantContent,
+      assistantParts: [{ text: assistantContent, type: 'text' }],
+      modelId: CONTEXT_COMPACTION_COMMAND_MODEL,
+      providerId: CONTEXT_COMPACTION_COMMAND_PROVIDER,
+      reason: 'context-compaction:command',
+    };
   }
 }
 
@@ -376,8 +417,9 @@ function readConversationHistorySnapshot(value: unknown): { messages: PluginConv
 
 function readContextCompactionHistoryState(messages: PluginConversationHistoryMessage[], omitTrailingPendingAssistant = false): ContextCompactionHistoryState {
   const messageStates = messages.map((message) => ({ message, ...readContextCompactionAnnotationState(message) }));
+  const orderedStates = orderContextCompactionStates(messageStates);
   const activeSummaryIds = new Set(messageStates.flatMap(({ summaryId }) => summaryId ? [summaryId] : []));
-  const visibleStates = messageStates.filter(({ covered }) => !covered.some(({ compactionId }) => activeSummaryIds.has(compactionId)));
+  const visibleStates = orderedStates.filter(({ covered }) => !covered.some(({ compactionId }) => activeSummaryIds.has(compactionId)));
   const lastVisibleState = visibleStates.at(-1);
   const settledStates = omitTrailingPendingAssistant && lastVisibleState && isTransientPendingAssistant(lastVisibleState.message) ? visibleStates.slice(0, -1) : visibleStates;
   return { messageStates, modelMessages: settledStates.flatMap(({ message, summaryId }) => message.role === 'display' ? (summaryId ? [{ ...message, role: 'assistant' as const }] : []) : (isConversationHistoryModelMessage(message) ? [message] : [])), visibleMessages: settledStates.map(({ message }) => message) };
@@ -389,13 +431,11 @@ function applyContextCompaction(input: {
   createdAt: string;
   historyMessages: PluginConversationHistoryMessage[];
   markerVisible: boolean;
-  summaryIndex: number;
   summaryMessageId: string;
   summaryText: string;
 }): PluginConversationHistoryMessage[] {
   const nextMessages = input.historyMessages.map((message) => input.coveredMessageIds.has(message.id) ? writeContextCompactionCoveredAnnotation(message, { compactionId: input.compactionId, coveredAt: input.createdAt, markerVisible: input.markerVisible, role: 'covered', summaryMessageId: input.summaryMessageId }) : message);
-  nextMessages.splice(input.summaryIndex, 0, { content: input.summaryText, createdAt: input.createdAt, id: input.summaryMessageId, metadata: { annotations: [createContextCompactionAnnotation({ compactionId: input.compactionId, role: 'summary' })] }, model: null, parts: [{ text: input.summaryText, type: 'text' }], provider: null, role: 'display', status: 'completed', updatedAt: input.createdAt });
-  return nextMessages;
+  return [...nextMessages, { content: input.summaryText, createdAt: input.createdAt, id: input.summaryMessageId, metadata: { annotations: [createContextCompactionAnnotation({ compactionId: input.compactionId, role: 'summary' })] }, model: null, parts: [{ text: input.summaryText, type: 'text' }], provider: null, role: 'display', status: 'completed', updatedAt: input.createdAt }];
 }
 
 function finalizeContextCompactionMessages(input: {
@@ -470,9 +510,46 @@ function isTransientPendingAssistant(message: PluginConversationHistoryMessage):
 
 function readContextWindowCompactedHistory(messages: PluginConversationHistoryMessage[]): ContextWindowEntry[] {
   const entries = messages.map((message) => ({ coveredCompactionIds: readCoveredCompactionIds(message), id: message.id, summaryCompactionId: readSummaryCompactionId(message), modelMessage: isConversationHistoryModelMessage(message) ? message : readSummaryCompactionId(message) ? { ...message, role: 'assistant' } : null }));
+  const orderedEntries = orderContextWindowEntries(entries);
   const activeSummaryIds = new Set(entries.flatMap(({ summaryCompactionId }) => summaryCompactionId ? [summaryCompactionId] : []));
-  const visibleIds = new Set(omitTrailingPendingAssistant(messages.filter((_, index) => !entries[index].coveredCompactionIds.some((compactionId) => activeSummaryIds.has(compactionId)))).map(({ id }) => id));
+  const visibleIds = new Set(omitTrailingPendingContextEntries(orderedEntries.filter((entry) => !entry.coveredCompactionIds.some((compactionId) => activeSummaryIds.has(compactionId)))).map(({ id }) => id));
   return entries.map(({ coveredCompactionIds, id, modelMessage, summaryCompactionId }) => ({ candidate: modelMessage !== null || summaryCompactionId !== null, hidden: coveredCompactionIds.some((compactionId) => activeSummaryIds.has(compactionId)) || !visibleIds.has(id), id, modelMessage: visibleIds.has(id) ? modelMessage : null }));
+}
+
+function orderContextCompactionStates(states: ContextCompactionMessageState[]): ContextCompactionMessageState[] {
+  const orderMap = buildContextCompactionLogicalOrder(
+    states.map((state) => ({
+      coveredCompactionIds: state.covered.map(({ compactionId }) => compactionId),
+      id: state.message.id,
+      summaryCompactionId: state.summaryId,
+    })),
+  );
+  return [...states].sort((left, right) => (
+    (orderMap.get(left.message.id) ?? 0) - (orderMap.get(right.message.id) ?? 0)
+  ));
+}
+
+function orderContextWindowEntries<T extends { coveredCompactionIds: string[]; id: string; summaryCompactionId: string | null }>(entries: T[]): T[] {
+  const orderMap = buildContextCompactionLogicalOrder(entries);
+  return [...entries].sort((left, right) => (
+    (orderMap.get(left.id) ?? 0) - (orderMap.get(right.id) ?? 0)
+  ));
+}
+
+function buildContextCompactionLogicalOrder<T extends { coveredCompactionIds: string[]; id: string; summaryCompactionId: string | null }>(entries: T[]): Map<string, number> {
+  const lastCoveredIndexBySummaryId = new Map<string, number>();
+  entries.forEach((entry, index) => {
+    entry.coveredCompactionIds.forEach((compactionId) => lastCoveredIndexBySummaryId.set(compactionId, index));
+  });
+  return new Map(entries.map((entry, index) => {
+    if (entry.summaryCompactionId) {
+      const logicalAnchor = lastCoveredIndexBySummaryId.get(entry.summaryCompactionId);
+      if (typeof logicalAnchor === 'number') {
+        return [entry.id, logicalAnchor + 0.5];
+      }
+    }
+    return [entry.id, index];
+  }));
 }
 
 function isConversationHistoryModelMessage(message: PluginConversationHistoryMessage): boolean {
@@ -484,6 +561,13 @@ function omitTrailingPendingAssistant<T extends { role: string; status?: string 
   return lastMessage && lastMessage.role === 'assistant' && lastMessage.status === 'pending'
     ? messages.slice(0, -1)
     : messages;
+}
+
+function omitTrailingPendingContextEntries<T extends { id: string; modelMessage: PluginConversationHistoryMessage | null }>(entries: T[]): T[] {
+  const lastEntry = entries.at(-1);
+  return lastEntry?.modelMessage && isTransientPendingAssistant(lastEntry.modelMessage)
+    ? entries.slice(0, -1)
+    : entries;
 }
 
 function sanitizeContextWindowPreviewMessages(messages: PluginConversationHistoryMessage[]): PluginConversationHistoryMessage[] {

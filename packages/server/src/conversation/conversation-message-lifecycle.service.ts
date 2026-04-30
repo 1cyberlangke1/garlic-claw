@@ -7,6 +7,7 @@ import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-p
 import { PersonaService } from '../persona/persona.service';
 import { ConversationTaskService } from './conversation-task.service';
 import { ConversationMessagePlanningService, createShortCircuitStream, type ConversationResponseSource } from './conversation-message-planning.service';
+import type { DeferredInternalCommandAction } from './context-governance.service';
 
 @Injectable()
 // Keep lifecycle orchestration and hook mutation together to avoid recreating the removed single-consumer hook owner.
@@ -59,7 +60,7 @@ export class ConversationMessageLifecycleService {
       providerId: dto.provider ?? DEFAULT_PROVIDER_ID,
       userId: conversation.userId,
     });
-    const commandDisplayOnly = received.action === 'short-circuit'
+    const commandDisplayOnly = received.action !== 'continue'
       && isDisplayOnlyCommandMessage(received.content, received.parts);
     const userMessage = await this.runtimeHostConversationMessageService.createMessageWithHooks(conversationId, {
       content: received.content,
@@ -83,7 +84,12 @@ export class ConversationMessageLifecycleService {
           shortCircuitContent: received.assistantContent,
           shortCircuitParts: received.assistantParts,
         }
-      : {};
+      : received.action === 'deferred-short-circuit'
+        ? {
+            deferredShortCircuit: received.deferred,
+            userMessageId: readMessageId(userMessage),
+          }
+        : {};
 
     this.startConversationTask({
       activePersonaId: conversation.activePersonaId,
@@ -112,7 +118,7 @@ export class ConversationMessageLifecycleService {
     return { message: 'Generation stopped' };
   }
 
-  private startConversationTask(input: { activePersonaId?: string; conversationId: string; messageId: string; modelId: string; providerId: string; shortCircuitContent?: string; shortCircuitParts?: ChatMessagePart[]; userId?: string }): void {
+  private startConversationTask(input: { activePersonaId?: string; conversationId: string; deferredShortCircuit?: DeferredInternalCommandAction; messageId: string; modelId: string; providerId: string; shortCircuitContent?: string; shortCircuitParts?: ChatMessagePart[]; userId?: string; userMessageId?: string }): void {
     let responseSource: ConversationResponseSource = 'model';
     let shortCircuitParts: ChatMessagePart[] | null = null;
     let customErrorMessage: string | null = null;
@@ -138,6 +144,21 @@ export class ConversationMessageLifecycleService {
             modelId: input.modelId,
             providerId: input.providerId,
             stream: createShortCircuitStream(input.shortCircuitContent),
+          };
+        }
+        if (input.deferredShortCircuit && input.userMessageId) {
+          responseSource = 'short-circuit';
+          const resolved = await input.deferredShortCircuit.execute({
+            assistantMessageId: input.messageId,
+            conversationId: input.conversationId,
+            userId: input.userId,
+            userMessageId: input.userMessageId,
+          });
+          shortCircuitParts = resolved.assistantParts;
+          return {
+            modelId: resolved.modelId,
+            providerId: resolved.providerId,
+            stream: createShortCircuitStream(resolved.assistantContent),
           };
         }
         const { responseSource: nextSource, shortCircuitParts: nextParts, ...streamSource } = await this.conversationMessagePlanningService.createStreamPlan({

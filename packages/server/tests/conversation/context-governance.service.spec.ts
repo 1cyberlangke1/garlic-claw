@@ -165,8 +165,26 @@ describe('ContextGovernanceService', () => {
       userId: 'user-1',
     });
 
-    expect(result).toEqual({
-      action: 'short-circuit',
+    expect(result).toEqual(expect.objectContaining({
+      action: 'deferred-short-circuit',
+      deferred: expect.objectContaining({
+        commandId: 'internal.context-governance:/compact:command',
+        execute: expect.any(Function),
+      }),
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    }));
+    if (result.action !== 'deferred-short-circuit') {
+      throw new Error(`unexpected action: ${result.action}`);
+    }
+    const resolution = await result.deferred.execute({
+      assistantMessageId: 'assistant-1',
+      conversationId,
+      userId: 'user-1',
+      userMessageId: 'user-1',
+    });
+    expect(resolution).toEqual({
       assistantContent: '已压缩上下文，覆盖 2 条历史消息。',
       assistantParts: [{ text: '已压缩上下文，覆盖 2 条历史消息。', type: 'text' }],
       modelId: 'context-compaction-command',
@@ -269,13 +287,23 @@ describe('ContextGovernanceService', () => {
       text: '压缩摘要：改用独立压缩模型。',
     });
 
-    await service.applyMessageReceived({
+    const result = await service.applyMessageReceived({
       content: '/compact',
       conversationId,
       modelId: 'gpt-oss-20b',
       parts: [{ text: '/compact', type: 'text' }],
       providerId: 'nvidia',
       userId: 'user-1',
+    });
+    expect(result.action).toBe('deferred-short-circuit');
+    if (result.action !== 'deferred-short-circuit') {
+      throw new Error(`unexpected action: ${result.action}`);
+    }
+    await result.deferred.execute({
+      assistantMessageId: 'assistant-1',
+      conversationId,
+      userId: 'user-1',
+      userMessageId: 'user-1',
     });
 
     expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
@@ -368,7 +396,18 @@ describe('ContextGovernanceService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      action: 'short-circuit',
+      action: 'deferred-short-circuit',
+      reason: 'context-compaction:command',
+    }));
+    if (result.action !== 'deferred-short-circuit') {
+      throw new Error(`unexpected action: ${result.action}`);
+    }
+    await expect(result.deferred.execute({
+      assistantMessageId: 'assistant-1',
+      conversationId,
+      userId: 'user-1',
+      userMessageId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
       assistantContent: '已压缩上下文，覆盖 4 条历史消息。',
       reason: 'context-compaction:command',
     }));

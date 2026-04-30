@@ -8,7 +8,7 @@ import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-ho
 import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-plugin-dispatch.service';
 import { asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/runtime-host-values';
 import { AiVisionService } from '../vision/ai-vision.service';
-import { ContextGovernanceService } from './context-governance.service';
+import { ContextGovernanceService, type DeferredInternalCommandAction } from './context-governance.service';
 import type { CompletedConversationTaskResult, ResolvedConversationTaskStreamSource } from './conversation-task.service';
 
 type ModelMessage = { content: string | ChatMessagePart[]; role: 'assistant' | 'system' | 'user' };
@@ -20,6 +20,7 @@ export type ConversationResponseSource = 'model' | 'short-circuit';
 export type ConversationStreamPlan = ResolvedConversationTaskStreamSource & { responseSource: ConversationResponseSource; shortCircuitParts: ChatMessagePart[] | null };
 export type MessageReceivedPlanningResult =
   | { action: 'continue'; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }
+  | { action: 'deferred-short-circuit'; content: string; conversationId: string; deferred: DeferredInternalCommandAction; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }
   | { action: 'short-circuit'; assistantContent: string; assistantParts: ChatMessagePart[]; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string };
 
 @Injectable()
@@ -36,7 +37,18 @@ export class ConversationMessagePlanningService {
 
   async applyMessageReceived(input: { activePersonaId?: string; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }): Promise<MessageReceivedPlanningResult> {
     const internalResult = await this.contextGovernanceService.applyMessageReceived({ content: input.content, conversationId: input.conversationId, modelId: input.modelId, parts: input.parts, providerId: input.providerId, userId: input.userId });
-    if (internalResult.action === 'short-circuit') {return { action: 'short-circuit', assistantContent: internalResult.assistantContent, assistantParts: internalResult.assistantParts, content: input.content, conversationId: input.conversationId, modelId: input.modelId, parts: input.parts, providerId: input.providerId, ...(input.userId ? { userId: input.userId } : {}) };}
+    if (internalResult.action === 'deferred-short-circuit') {
+      return {
+        action: 'deferred-short-circuit',
+        content: input.content,
+        conversationId: input.conversationId,
+        deferred: internalResult.deferred,
+        modelId: input.modelId,
+        parts: input.parts,
+        providerId: input.providerId,
+        ...(input.userId ? { userId: input.userId } : {}),
+      };
+    }
     const result = await runDispatchableHookChain<typeof input, Record<string, unknown>, MessageReceivedPlanningResult>({
       applyResponse: readMessageReceivedHookResponse,
       hookName: 'message:received',

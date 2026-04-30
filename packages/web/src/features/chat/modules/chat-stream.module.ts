@@ -31,6 +31,7 @@ import {
   replaceMessage,
 } from "@/features/chat/store/chat-store.runtime";
 import type { ChatMessage } from "@/features/chat/store/chat-store.types";
+import { isAbortedAppError } from "@/utils/error";
 
 export interface ChatStreamState {
   currentConversationId: Ref<string | null>;
@@ -321,7 +322,7 @@ export async function dispatchSendMessage(
         ? error
         : new Error(typeof error === "string" ? error : "Unknown error");
     if (
-      requestError.name !== "AbortError" &&
+      !isAbortedAppError(requestError) &&
       state.currentConversationId.value === requestConversationId
     ) {
       syncMessageList(
@@ -440,7 +441,7 @@ export async function dispatchRetryMessage(
         ? error
         : new Error(typeof error === "string" ? error : "Unknown error");
     if (
-      requestError.name !== "AbortError" &&
+      !isAbortedAppError(requestError) &&
       state.currentConversationId.value === requestConversationId
     ) {
       syncMessageList(

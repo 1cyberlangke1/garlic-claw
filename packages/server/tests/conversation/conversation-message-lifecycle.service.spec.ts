@@ -680,10 +680,11 @@ describe('ConversationMessageLifecycleService', () => {
     ]);
 
     const started = await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
-    const tailMessages = readConversation(runtimeHostConversationRecordService).messages.slice(-2);
+    const displayMessages = readConversation(runtimeHostConversationRecordService).messages
+      .filter((message) => message.role === 'display');
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
-    expect(tailMessages).toMatchObject([
+    expect(displayMessages).toMatchObject([
       {
         content: '/compact',
         metadataJson: JSON.stringify({
@@ -718,9 +719,97 @@ describe('ConversationMessageLifecycleService', () => {
         role: 'display',
         status: 'completed',
       },
+      {
+        content: '压缩后的历史摘要',
+        role: 'display',
+        status: 'completed',
+      },
     ]);
     expect(started.userMessage).toMatchObject({ role: 'display' });
     expect(started.assistantMessage).toMatchObject({ role: 'display' });
+  });
+
+  it('renders compaction summary after the command result in display chronology', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        keepRecentMessages: 1,
+        strategy: 'summary',
+      },
+    });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '第一条历史消息'),
+      createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
+      createHistoryMessage('history-3', 'user', '第三条历史追问'),
+    ]);
+
+    await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
+
+    const displayMessages = readConversation(runtimeHostConversationRecordService).messages
+      .filter((message) => message.role === 'display');
+
+    expect(displayMessages.map((message) => message.content)).toEqual([
+      '/compact',
+      '已压缩上下文，覆盖 2 条历史消息。',
+      '压缩后的历史摘要',
+    ]);
+  });
+
+  it('keeps earlier internal command display messages out of later compaction coverage', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        keepRecentMessages: 1,
+        strategy: 'summary',
+      },
+    });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '第一条历史消息'),
+      createHistoryMessage('history-2', 'assistant', '第二条历史回复'),
+      createHistoryMessage('history-3', 'user', '第三条历史追问'),
+    ]);
+
+    await startAndWait(service, conversationTaskService, { content: '/compact' }, 'user-1');
+    await startAndWait(service, conversationTaskService, { content: '/compress' }, 'user-1');
+
+    const displayMessages = readConversation(runtimeHostConversationRecordService).messages
+      .filter((message) => message.role === 'display');
+    const commandAndResultMessages = displayMessages.filter(isDisplayCommandOrResultMessage);
+
+    expect(commandAndResultMessages.map((message) => message.content)).toEqual([
+      '/compact',
+      expect.stringMatching(/^已/),
+      '/compress',
+      expect.stringMatching(/^已/),
+    ]);
+    expect(commandAndResultMessages[0]).not.toEqual(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          annotations: expect.arrayContaining([
+            expect.objectContaining({
+              data: expect.objectContaining({
+                role: 'covered',
+              }),
+              owner: 'conversation.context-governance',
+              type: 'context-compaction',
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(commandAndResultMessages[1]).not.toEqual(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          annotations: expect.arrayContaining([
+            expect.objectContaining({
+              data: expect.objectContaining({
+                role: 'covered',
+              }),
+              owner: 'conversation.context-governance',
+              type: 'context-compaction',
+            }),
+          ]),
+        }),
+      }),
+    );
   });
 
   it('does not downgrade unknown slash text to display messages', async () => {
@@ -829,4 +918,37 @@ function createHistoryMessage(id: string, role: 'assistant' | 'user', content: s
     status: 'completed',
     updatedAt: '2026-04-25T00:00:00.000Z',
   };
+}
+
+function isDisplayCommandOrResultMessage(message: Record<string, unknown>) {
+  const annotations = readMessageAnnotations(message);
+  return annotations.some((annotation) => (
+      annotation?.type === 'display-message'
+      && annotation?.owner === 'conversation.display-message'
+      && isRecord(annotation?.data)
+      && (annotation.data.variant === 'command' || annotation.data.variant === 'result')
+    ));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readMessageAnnotations(message: Record<string, unknown>): Array<Record<string, unknown>> {
+  const metadataJson = message.metadataJson;
+  if (typeof metadataJson === 'string') {
+    try {
+      const parsed = JSON.parse(metadataJson) as unknown;
+      if (isRecord(parsed) && Array.isArray(parsed.annotations)) {
+        return parsed.annotations.filter(isRecord);
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  const metadata = isRecord(message.metadata) ? message.metadata : null;
+  return Array.isArray(metadata?.annotations)
+    ? metadata.annotations.filter(isRecord)
+    : [];
 }
