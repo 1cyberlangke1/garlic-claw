@@ -265,11 +265,6 @@ html.light body::before {
   mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.2), transparent 72%);
 }
 
-html.light input:not(.el-input__inner):not(.el-textarea__inner):not(.el-select__input),
-html.light textarea:not(.el-textarea__inner) {
-  background: rgba(255, 255, 255, 0.85);
-}
-
 /* 添加全局网格背景图案 */
 body::before {
   content: '';
@@ -318,29 +313,26 @@ button:not(.el-button):disabled {
   cursor: not-allowed;
 }
 
-input:not(.el-input__inner):not(.el-textarea__inner):not(.el-select__input),
-textarea:not(.el-textarea__inner) {
-  width: 100%;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: rgba(11, 21, 35, 0.9);
-  color: var(--text);
-  padding: 0.65rem 0.82rem;
-  font-size: 0.92rem;
-  font-family: inherit;
-  outline: none;
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast);
+/* 保护 Element Plus 内部真实 input / textarea，避免被其它通用样式误伤。 */
+.el-input input,
+.el-select input,
+.el-textarea textarea,
+.el-input-number input {
+  width: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  box-shadow: none;
 }
-input:not(.el-input__inner):not(.el-textarea__inner):not(.el-select__input):focus,
-textarea:not(.el-textarea__inner):focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring), 0 0 15px rgba(103, 199, 207, 0.15);
-}
-input:not(.el-input__inner):not(.el-textarea__inner):not(.el-select__input)::placeholder,
-textarea:not(.el-textarea__inner)::placeholder {
-  color: var(--text-muted);
+
+.el-input input:focus,
+.el-select input:focus,
+.el-textarea textarea:focus,
+.el-input-number input:focus {
+  border: none;
+  box-shadow: none;
 }
 
 /* Auth Pages */

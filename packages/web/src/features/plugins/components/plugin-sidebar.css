@@ -72,6 +72,10 @@
   gap: 10px;
 }
 
+.sidebar-tools :deep(.el-input) {
+  width: 100%;
+}
+
 .sidebar-system-hint {
   display: flex;
   align-items: center;

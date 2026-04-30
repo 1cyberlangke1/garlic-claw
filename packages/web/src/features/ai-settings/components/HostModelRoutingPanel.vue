@@ -233,14 +233,9 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
   flex-wrap: wrap;
 }
 
-.field select {
+.field :deep(.el-select) {
   width: 100%;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  color: var(--text);
 }
 
 .empty-state,

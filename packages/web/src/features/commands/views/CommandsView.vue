@@ -345,7 +345,8 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   margin: 1rem 0 0.75rem;
 }
 
-.panel-controls input {
+.panel-controls :deep(.el-input),
+.panel-controls :deep(.el-select) {
   flex: 1 1 240px;
 }
 

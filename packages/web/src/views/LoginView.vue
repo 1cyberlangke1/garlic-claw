@@ -72,3 +72,10 @@ async function handleDevLogin() {
   }
 }
 </script>
+
+<style scoped>
+.auth-card :deep(.el-button) {
+  margin-left: 0;
+  padding: 1.25em 0.7em;
+}
+</style>

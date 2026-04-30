@@ -87,11 +87,11 @@
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
-import refreshBold from '@iconify-icons/solar/refresh-bold'
-import { computed, ref, watch } from 'vue'
-import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import type { EventLogQuery, EventLogRecord } from '@garlic-claw/shared'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import { Icon } from '@iconify/vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
+import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -223,6 +223,11 @@ function buildQuery(): EventLogQuery {
 .control-field {
   display: grid;
   gap: 6px;
+}
+
+.control-field :deep(.el-input),
+.control-field :deep(.el-select) {
+  width: 100%;
 }
 
 .control-field span {

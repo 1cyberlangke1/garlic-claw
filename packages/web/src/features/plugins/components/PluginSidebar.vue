@@ -84,10 +84,9 @@
       {{ hasActiveFilter ? '当前筛选下没有匹配插件。' : '当前还没有可管理的插件。' }}
     </div>
     <div v-else class="plugin-list">
-      <button
+      <ElButton
         v-for="plugin in pagedPlugins"
         :key="plugin.name"
-        type="button"
         class="plugin-item"
         :class="{ active: plugin.name === selectedPluginName }"
         @click="$emit('select', plugin.name)"
@@ -120,7 +119,7 @@
         <div class="plugin-item-footer">
           <span>{{ pluginSurfaceSummary(plugin) }}</span>
         </div>
-      </button>
+      </ElButton>
     </div>
 
     <div v-if="!loading && orderedPlugins.length > 0" class="sidebar-pagination">

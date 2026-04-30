@@ -509,16 +509,11 @@ defineExpose({
   align-items: start;
 }
 
-.tool-controls input,
-.tool-controls select,
-.field input,
-.field select {
+.tool-controls :deep(.el-input),
+.tool-controls :deep(.el-select),
+.field :deep(.el-input),
+.field :deep(.el-select) {
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  color: var(--text);
 }
 
 .tool-list {

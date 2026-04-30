@@ -53,24 +53,22 @@
       </div>
       <template v-else>
         <div class="conversation-rail" data-test="conversation-rail">
-          <button
+          <ElButton
             v-for="workspace in conversationWorkspaces"
             :key="workspace.id"
-            type="button"
             class="conversation-chip"
             :class="{ active: workspace.id === activeConversationId }"
             @click="selectConversation(workspace.id)"
           >
             <span>{{ workspace.label }}</span>
             <strong>{{ workspace.subagents.length }}</strong>
-          </button>
+          </ElButton>
         </div>
 
         <div class="window-strip" data-test="window-strip">
-          <button
+          <ElButton
             v-for="windowItem in activeWorkspaceWindows"
             :key="windowItem.id"
-            type="button"
             class="window-tab"
             :class="[
               { active: windowItem.id === activeWindowId },
@@ -80,7 +78,7 @@
           >
             <span>{{ windowItem.label }}</span>
             <strong v-if="windowItem.kind === 'subagent'">{{ statusLabel(windowItem.status) }}</strong>
-          </button>
+          </ElButton>
         </div>
 
         <div class="workspace-stage">
@@ -104,10 +102,9 @@
             </div>
 
             <div class="workspace-agent-list">
-              <button
+              <ElButton
                 v-for="subagent in activeConversationSubagents"
                 :key="subagent.conversationId"
-                type="button"
                 class="workspace-agent-card"
                 :class="subagent.status"
                 @click="selectWindow(subagent.conversationId)"
@@ -122,7 +119,7 @@
                   <span v-if="subagent.providerId" class="meta-chip">{{ subagent.providerId }}</span>
                   <span v-if="subagent.modelId" class="meta-chip">{{ subagent.modelId }}</span>
                 </div>
-              </button>
+              </ElButton>
             </div>
           </template>
 
@@ -619,7 +616,8 @@ function readSubagentDisplayLabel(subagent: PluginSubagentSummary) {
   margin: 1rem 0 0.75rem;
 }
 
-.panel-controls input {
+.panel-controls :deep(.el-input),
+.panel-controls :deep(.el-select) {
   flex: 1 1 240px;
 }
 

@@ -499,11 +499,8 @@ function envCount(env: Record<string, string>): number {
   align-items: center;
 }
 
-.mcp-env-inputs input {
+.mcp-env-inputs :deep(.el-input) {
   grid-column: 1;
-  border-radius: 8px;
-  background: var(--surface-panel-soft-strong);
-  padding: 0.65rem 0.82rem;
 }
 
 .mcp-env-inputs button {

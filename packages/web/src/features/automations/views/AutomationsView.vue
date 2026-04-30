@@ -2,103 +2,116 @@
   <div class="automations-view">
     <div class="automations-header">
       <h1><Icon :icon="cpuBoltBold" class="hero-icon" aria-hidden="true" />自动化</h1>
-      <ElButton @click="showCreate = !showCreate">
-        {{ showCreate ? '取消' : '+ 新建自动化' }}
-      </ElButton>
+      <ElButton @click="openCreateDialog">+ 新建自动化</ElButton>
     </div>
 
-    <!-- 创建表单 -->
-    <div v-if="showCreate" class="create-form">
-      <div class="field">
-        <label>名称</label>
-        <ElInput v-model="form.name" placeholder="例如：每5分钟检查系统信息" />
-      </div>
-      <div class="field">
-        <label>触发方式</label>
-        <ElSelect v-model="form.triggerType">
-          <ElOption label="定时执行" value="cron" />
-          <ElOption label="手动触发" value="manual" />
-          <ElOption label="事件触发" value="event" />
-        </ElSelect>
-      </div>
-      <div v-if="form.triggerType === 'cron'" class="field">
-        <label>执行间隔</label>
-        <ElInput v-model="form.cronInterval" placeholder="例如: 5m, 1h, 30s" />
-        <span class="hint">支持标准 cron 表达式，也兼容 30s / 5m / 1h</span>
-      </div>
-      <div v-if="form.triggerType === 'event'" class="field">
-        <label>事件名称</label>
-        <ElInput v-model="form.eventName" placeholder="例如: coffee.ready" />
-        <span class="hint">当插件或宿主发出同名自动化事件时执行</span>
-      </div>
-      <div class="field">
-        <label>动作类型</label>
-        <ElSelect v-model="form.actionType">
-          <ElOption label="设备命令" value="device_command" />
-          <ElOption label="发送消息" value="ai_message" />
-        </ElSelect>
-      </div>
-      <div v-if="form.actionType === 'device_command'" class="field">
-        <label>动作：设备命令</label>
-        <ElInput v-model="form.plugin" placeholder="插件名称 (如 pc-NOTEBOOK)" />
-        <ElInput
-          v-model="form.capability"
-          placeholder="能力名称 (如 get_pc_info)"
-          class="field-gap-top"
-        />
-      </div>
-      <div v-else class="field">
-        <label>动作：发送消息</label>
-        <ElInput
-          v-model="form.message"
-          type="textarea"
-          :rows="3"
-          placeholder="例如：咖啡已经煮好了，记得趁热喝。"
-        />
-        <template v-if="form.triggerType === 'cron'">
-          <ElSelect v-model="form.targetConversationMode" class="field-gap-top">
-            <ElOption label="自动创建 cron 会话" value="cron_child" />
-            <ElOption label="写入已有会话" value="existing" />
+    <!-- 创建/编辑弹窗 -->
+    <ElDialog
+      :model-value="dialogVisible"
+      :title="editingAutomation ? '编辑自动化' : '新建自动化'"
+      width="560px"
+      top="8vh"
+      :close-on-click-modal="false"
+      destroy-on-close
+      @close="closeDialog"
+    >
+      <div class="dialog-body">
+        <div class="field">
+          <label>名称</label>
+          <ElInput v-model="form.name" placeholder="例如：每5分钟检查系统信息" />
+        </div>
+        <div class="field">
+          <label>触发方式</label>
+          <ElSelect v-model="form.triggerType">
+            <ElOption label="定时执行" value="cron" />
+            <ElOption label="手动触发" value="manual" />
+            <ElOption label="事件触发" value="event" />
           </ElSelect>
-        </template>
-        <ElSelect v-model="form.targetConversationId" class="field-gap-top">
-          <ElOption
-            disabled
-            value=""
-            :label="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child' ? '请选择父会话' : '请选择目标会话'"
-          />
-          <ElOption
-            v-for="conversation in conversations"
-            :key="conversation.id"
-            :label="conversation.title"
-            :value="conversation.id"
-          />
-        </ElSelect>
-        <div v-if="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child'" class="field nested-field">
-          <label>历史会话保留数量</label>
-          <ElInputNumber
-            v-model.number="form.maxHistoryConversations"
-            :min="1"
-            :step="1"
-            controls-position="right"
+        </div>
+        <div v-if="form.triggerType === 'cron'" class="field">
+          <label>执行间隔</label>
+          <ElInput v-model="form.cronInterval" placeholder="例如: 5m, 1h, 30s" />
+          <span class="hint">支持标准 cron 表达式，也兼容 30s / 5m / 1h</span>
+        </div>
+        <div v-if="form.triggerType === 'event'" class="field">
+          <label>事件名称</label>
+          <ElInput v-model="form.eventName" placeholder="例如: coffee.ready" />
+          <span class="hint">当插件或宿主发出同名自动化事件时执行</span>
+        </div>
+        <div class="field">
+          <label>动作类型</label>
+          <ElSelect v-model="form.actionType">
+            <ElOption label="设备命令" value="device_command" />
+            <ElOption label="发送消息" value="ai_message" />
+          </ElSelect>
+        </div>
+        <div v-if="form.actionType === 'device_command'" class="field">
+          <label>动作：设备命令</label>
+          <ElInput v-model="form.plugin" placeholder="插件名称 (如 pc-NOTEBOOK)" />
+          <ElInput
+            v-model="form.capability"
+            placeholder="能力名称 (如 get_pc_info)"
+            class="field-gap-top"
           />
         </div>
-        <span class="hint">
-          <template v-if="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child'">
-            每次 cron 触发都会在选中的父会话下新建一个子会话，并只保留最近设定数量的历史。
+        <div v-else class="field">
+          <label>动作：发送消息</label>
+          <ElInput
+            v-model="form.message"
+            type="textarea"
+            :rows="3"
+            placeholder="例如：咖啡已经煮好了，记得趁热喝。"
+          />
+          <template v-if="form.triggerType === 'cron'">
+            <ElSelect v-model="form.targetConversationMode" class="field-gap-top">
+              <ElOption label="自动创建 cron 会话" value="cron_child" />
+              <ElOption label="写入已有会话" value="existing" />
+            </ElSelect>
           </template>
-          <template v-else>
-            自动化会把消息写回选中的会话。
-          </template>
-          <template v-if="conversations.length === 0">没有可用会话，请先创建对话</template>
-        </span>
+          <ElSelect v-model="form.targetConversationId" class="field-gap-top">
+            <ElOption
+              disabled
+              value=""
+              :label="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child' ? '请选择父会话' : '请选择目标会话'"
+            />
+            <ElOption
+              v-for="conversation in conversations"
+              :key="conversation.id"
+              :label="conversation.title"
+              :value="conversation.id"
+            />
+          </ElSelect>
+          <div v-if="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child'" class="field nested-field">
+            <label>历史会话保留数量</label>
+            <ElInputNumber
+              v-model.number="form.maxHistoryConversations"
+              :min="1"
+              :step="1"
+              controls-position="right"
+            />
+          </div>
+          <span class="hint">
+            <template v-if="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child'">
+              每次 cron 触发都会在选中的父会话下新建一个子会话，并只保留最近设定数量的历史。
+            </template>
+            <template v-else>
+              自动化会把消息写回选中的会话。
+            </template>
+            <template v-if="conversations.length === 0">没有可用会话，请先创建对话</template>
+          </span>
+        </div>
       </div>
-      <ElButton type="primary" :disabled="!canCreate" @click="handleCreate">创建</ElButton>
-    </div>
+      <template #footer>
+        <ElButton @click="closeDialog">取消</ElButton>
+        <ElButton type="primary" :disabled="!canCreate" @click="handleSave">
+          {{ editingAutomation ? '保存' : '创建' }}
+        </ElButton>
+      </template>
+    </ElDialog>
 
     <div v-if="loading" class="loading">加载中...</div>
 
-    <div v-else-if="automations.length === 0 && !showCreate" class="empty">
+    <div v-else-if="automations.length === 0" class="empty">
       <p>暂无自动化规则</p>
       <p class="hint">可以通过上方按钮创建，或在对话中让 AI 帮你创建</p>
     </div>
@@ -136,36 +149,21 @@
           :style="getCardStyle(auto.id)"
           @click="handleCardClick(auto)"
         >
-          <!-- 头部 -->
+          <!-- 头部：名称 + 手动运行 -->
           <div class="card-header">
-            <div class="header-left">
-              <h3 class="card-title">{{ auto.name }}</h3>
-              <span class="status-badge" :class="auto.enabled ? 'enabled' : 'disabled'">
-                {{ auto.enabled ? '运行中' : '已停用' }}
-              </span>
-            </div>
+            <h3 class="card-title">{{ auto.name }}</h3>
             <ElButton
               size="small"
-              :type="auto.enabled ? '' : 'success'"
               plain
               @click.stop="handleRun(auto.id)"
               :disabled="!auto.enabled"
             >
-              ▶ 运行
+              手动运行
             </ElButton>
           </div>
 
-          <!-- 详情 -->
-          <div class="card-detail">
-            <span class="trigger-badge">
-              {{
-                auto.trigger.type === 'cron'
-                  ? `⏰ 每 ${auto.trigger.cron}`
-                  : auto.trigger.type === 'event'
-                    ? `⚡ 事件 ${auto.trigger.event}`
-                    : '🔘 手动'
-              }}
-            </span>
+          <!-- 动作标签 -->
+          <div v-if="auto.actions.length > 0" class="card-detail">
             <span class="actions-list">
               <span v-for="(action, i) in auto.actions" :key="i" class="action-tag">
                 {{ describeAction(action) }}
@@ -173,8 +171,20 @@
             </span>
           </div>
 
-          <!-- 底部信息 -->
+          <!-- 底部：执行间隔 + 上次运行 -->
           <div class="card-footer">
+            <span class="trigger-interval">
+              <Icon :icon="clockCircleBold" class="interval-icon" />
+              <template v-if="auto.trigger.type === 'cron'">
+                每 {{ auto.trigger.cron }}
+              </template>
+              <template v-else-if="auto.trigger.type === 'event'">
+                事件 {{ auto.trigger.event }}
+              </template>
+              <template v-else>
+                手动触发
+              </template>
+            </span>
             <span v-if="auto.lastRunAt" class="last-run">
               上次运行: {{ formatTime(auto.lastRunAt) }}
             </span>
@@ -196,13 +206,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
+import clockCircleBold from '@iconify-icons/solar/clock-circle-bold'
 import closeCircleBold from '@iconify-icons/solar/close-circle-bold'
 import checkCircleBold from '@iconify-icons/solar/check-circle-bold'
 import trashBold from '@iconify-icons/solar/trash-bin-trash-bold'
-import { ElButton, ElInput, ElInputNumber, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElInputNumber, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import { useAutomations } from '@/features/automations/composables/use-automations'
 import type { AutomationInfo } from '@garlic-claw/shared'
 
@@ -210,7 +221,6 @@ const {
   automations,
   conversations,
   loading,
-  showCreate,
   form,
   canCreate,
   handleCreate,
@@ -221,6 +231,53 @@ const {
   formatTime,
   truncate,
 } = useAutomations()
+
+// 弹窗状态
+const dialogVisible = ref(false)
+const editingAutomation = ref<AutomationInfo | null>(null)
+
+function openCreateDialog() {
+  editingAutomation.value = null
+  form.value.name = ''
+  form.value.triggerType = 'cron'
+  form.value.cronInterval = '5m'
+  form.value.eventName = ''
+  form.value.actionType = 'device_command'
+  form.value.plugin = ''
+  form.value.capability = ''
+  form.value.message = ''
+  form.value.targetConversationId = conversations.value[0]?.id ?? ''
+  form.value.targetConversationMode = 'cron_child'
+  form.value.maxHistoryConversations = 10
+  dialogVisible.value = true
+}
+
+function openEditDialog(auto: AutomationInfo) {
+  editingAutomation.value = auto
+  form.value.name = auto.name
+  form.value.triggerType = auto.trigger.type
+  form.value.cronInterval = auto.trigger.cron ?? '5m'
+  form.value.eventName = auto.trigger.event ?? ''
+  form.value.actionType = auto.actions[0]?.type ?? 'device_command'
+  form.value.plugin = auto.actions[0]?.plugin ?? ''
+  form.value.capability = auto.actions[0]?.capability ?? ''
+  form.value.message = auto.actions[0]?.message ?? ''
+  form.value.targetConversationId = auto.actions[0]?.target?.id ?? ''
+  form.value.targetConversationMode = auto.actions[0]?.target?.conversationMode ?? 'existing'
+  form.value.maxHistoryConversations = auto.actions[0]?.target?.maxHistoryConversations ?? 10
+  dialogVisible.value = true
+}
+
+function closeDialog() {
+  dialogVisible.value = false
+  editingAutomation.value = null
+}
+
+async function handleSave() {
+  // 编辑模式暂不支持后端更新，仅创建可用
+  await handleCreate()
+  dialogVisible.value = false
+}
 
 // 滑动状态
 const swipeState = reactive<Record<string, {
@@ -271,7 +328,6 @@ function onTouchMove(e: Event, id: string) {
   const deltaX = clientX - state.startX
   const deltaY = clientY - state.startY
 
-  // 垂直滑动优先时忽略
   if (Math.abs(deltaY) > Math.abs(deltaX)) return
 
   if (Math.abs(deltaX) > 5) {
@@ -306,14 +362,12 @@ function onTouchEnd(id: string) {
     return
   }
 
-  // 右滑 → 启用/停用
   if (state.offset > SWIPE_THRESHOLD) {
     handleToggle(id)
     state.offset = 0
     return
   }
 
-  // 左滑 → 删除
   if (state.offset < -SWIPE_THRESHOLD) {
     const name = auto.name || '未命名自动化'
     ElMessageBox.confirm(
@@ -333,6 +387,7 @@ function onTouchEnd(id: string) {
 function handleCardClick(auto: AutomationInfo) {
   const state = swipeState[auto.id]
   if (state?.hasMoved) return
+  openEditDialog(auto)
 }
 
 function getCardStyle(id: string) {
@@ -395,23 +450,12 @@ function getRightActionStyle(id: string) {
   margin-top: 0.5rem;
 }
 
-/* 创建表单 */
-.create-form {
-  background: var(--surface-panel);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  padding: 1.2rem;
-  border-radius: var(--radius);
-  margin-bottom: 1.5rem;
-  border: 1px solid var(--border);
-  box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.08);
-}
-
-.create-form .field {
+/* 弹窗表单 */
+.dialog-body .field {
   margin-bottom: 0.8rem;
 }
 
-.create-form .nested-field {
+.dialog-body .nested-field {
   margin-top: 0.8rem;
   margin-bottom: 0;
 }
@@ -420,14 +464,14 @@ function getRightActionStyle(id: string) {
   margin-top: 0.4rem;
 }
 
-.create-form label {
+.dialog-body label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
   margin-bottom: 0.3rem;
 }
 
-.create-form .hint {
+.dialog-body .hint {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin-top: 0.2rem;
@@ -488,7 +532,6 @@ function getRightActionStyle(id: string) {
   background: var(--surface-panel);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border-left: 3px solid var(--success);
   border-radius: 12px;
   padding: 12px 16px;
   border: 1px solid var(--border);
@@ -519,14 +562,6 @@ function getRightActionStyle(id: string) {
   gap: 8px;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
 .card-title {
   font-size: 15px;
   font-weight: 600;
@@ -534,39 +569,13 @@ function getRightActionStyle(id: string) {
   text-overflow: ellipsis;
   white-space: nowrap;
   margin: 0;
+  flex: 1;
+  min-width: 0;
 }
 
-.status-badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.status-badge.enabled {
-  background: var(--surface-success-soft);
-  color: var(--success);
-}
-
-.status-badge.disabled {
-  background: var(--surface-panel-muted);
-  color: var(--text-muted);
-}
-
-/* 详情 */
+/* 动作标签 */
 .card-detail {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   margin-top: 8px;
-  flex-wrap: wrap;
-}
-
-.trigger-badge {
-  font-size: 12px;
-  color: var(--accent);
-  flex-shrink: 0;
 }
 
 .actions-list {
@@ -584,17 +593,33 @@ function getRightActionStyle(id: string) {
   color: var(--text-muted);
 }
 
-/* 底部 */
+/* 底部：执行间隔 + 上次运行 */
 .card-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-top: 10px;
+}
+
+.trigger-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.interval-icon {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .last-run {
   font-size: 12px;
   color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .last-run.never {
@@ -656,9 +681,13 @@ function getRightActionStyle(id: string) {
     align-items: flex-start;
   }
 
-  .card-detail {
+  .card-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .last-run {
+    margin-left: 0;
   }
 }
 </style>

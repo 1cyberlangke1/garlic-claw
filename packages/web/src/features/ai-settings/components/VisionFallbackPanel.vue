@@ -340,25 +340,12 @@ function submit() {
   color: var(--text-muted);
 }
 
-.field select,
-.field textarea,
-.field input {
+.field :deep(.el-input),
+.field :deep(.el-select),
+.field :deep(.el-textarea),
+.field :deep(.el-input-number) {
   width: 100%;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-}
-
-.field select:focus,
-.field textarea:focus,
-.field input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .model-picker {

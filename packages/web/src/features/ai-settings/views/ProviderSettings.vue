@@ -6,17 +6,16 @@
     <div class="ai-settings-shell">
       <aside class="ai-settings-sidebar">
         <nav class="sider-menu">
-          <button
+          <ElButton
             v-for="item in navItems"
             :key="item.id"
-            type="button"
             class="menu-item"
             :class="{ active: activeSection === item.id, 'menu-item--divided': item.divided }"
             @click="activeSection = item.id"
           >
             <Icon class="menu-icon" :icon="item.icon" aria-hidden="true" />
             <span class="menu-label">{{ item.label }}</span>
-          </button>
+          </ElButton>
         </nav>
     </aside>
 
@@ -38,10 +37,9 @@
           <p v-else-if="filteredProviders.length === 0" class="msg-muted">暂无服务商</p>
 
           <div v-else class="provider-list">
-            <button
+            <ElButton
               v-for="p in filteredProviders"
               :key="p.id"
-              type="button"
               class="provider-row"
               :class="{ active: p.id === selectedProviderId }"
               @click="selectProvider(p.id)"
@@ -54,7 +52,7 @@
                 <span>{{ p.modelCount }} 个模型</span>
                 <span class="status-dot" :class="p.available ? 'ok' : 'warn'" />
               </div>
-            </button>
+            </ElButton>
           </div>
         </div>
 
@@ -789,24 +787,6 @@ function saveCtx(model: AiModelConfig) {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   box-shadow: none !important;
-}
-
-/* ── 表单控件背景 ── */
-.ai-settings-content input[type="text"],
-.ai-settings-content input[type="number"],
-.ai-settings-content input[type="search"],
-.ai-settings-content textarea,
-.ai-settings-content select,
-.ai-settings-content .sidebar-tools input,
-.ai-settings-content .field input,
-.ai-settings-content .field select,
-.ai-settings-content .field textarea,
-.ai-settings-content .context-length-field input,
-.ai-settings-content .toolbar-row input,
-.ai-settings-content .add-row input {
-  background: var(--shell-bg, #0f172a) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
 
 /* ── 内部元素 ── */

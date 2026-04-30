@@ -36,10 +36,9 @@
         当前筛选下没有匹配的 provider。
       </div>
       <div v-else class="provider-list">
-        <button
+        <ElButton
           v-for="provider in pagedProviders"
           :key="provider.id"
-          type="button"
           class="provider-item"
           :class="{ active: provider.id === selectedProviderId }"
           @click="$emit('select', provider.id)"
@@ -58,7 +57,7 @@
               {{ provider.available ? '可用' : '缺少凭据' }}
             </span>
           </div>
-        </button>
+        </ElButton>
       </div>
 
       <div v-if="filteredProviders.length > 0" class="pager-actions">

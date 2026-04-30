@@ -256,13 +256,8 @@ function buildScopeConversations(
   gap: 10px;
 }
 
-.scope-row select {
+.scope-row :deep(.el-select) {
   width: 100%;
-  background: var(--bg-input);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.6em 0.8em;
 }
 
 @media (max-width: 720px) {
