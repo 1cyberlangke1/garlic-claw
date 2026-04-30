@@ -1,4 +1,5 @@
 import { ref, shallowRef, type ComputedRef, type Ref } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import type { PluginCronJobSummary, PluginInfo } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
 import {
@@ -29,7 +30,18 @@ export function usePluginCrons(options: UsePluginCronsOptions) {
     if (!options.selectedPlugin.value) {
       return
     }
-    if (!window.confirm(`确认删除定时任务 ${jobId} 吗？`)) {
+    try {
+      await ElMessageBox.confirm(
+        `确认删除定时任务 ${jobId} 吗？`,
+        '删除定时任务',
+        {
+          type: 'warning',
+          confirmButtonText: '确认删除',
+          cancelButtonText: '取消',
+          autofocus: false,
+        },
+      )
+    } catch {
       return
     }
 

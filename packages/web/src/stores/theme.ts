@@ -40,7 +40,9 @@ export const useThemeStore = defineStore('theme', () => {
     const dark = followSystem.value ? getSystemDark() : isDark.value
     if (dark) {
       document.documentElement.classList.remove('light')
+      document.documentElement.classList.add('dark')
     } else {
+      document.documentElement.classList.remove('dark')
       document.documentElement.classList.add('light')
     }
   }

@@ -1,84 +1,99 @@
 <template>
-  <div v-if="visible" class="dialog-overlay" data-test="provider-dialog-overlay">
-    <div class="dialog-card">
+  <ElDialog
+    :model-value="visible"
+    width="760px"
+    top="8vh"
+    :teleported="false"
+    :show-close="false"
+    :close-on-click-modal="false"
+    destroy-on-close
+    class="provider-editor-dialog"
+    @close="$emit('close')"
+  >
+    <template #header>
       <div class="dialog-header">
         <div>
           <h2>{{ title }}</h2>
           <p>填写服务商接入信息、模型与凭据。</p>
         </div>
-        <button
-          type="button"
+        <ElButton
+          text
           class="close-button"
           data-test="provider-dialog-close"
           @click="$emit('close')"
         >
           ×
-        </button>
+        </ElButton>
       </div>
+    </template>
 
-      <div class="dialog-body">
+    <div data-test="provider-dialog-overlay" class="dialog-body">
+      <label class="field">
+        <span>驱动</span>
+        <ElSelect v-model="form.driver" @change="applyDriverDefaults">
+          <ElOption
+            v-for="option in driverOptions"
+            :key="option.id"
+            :label="option.label"
+            :value="option.id"
+          />
+        </ElSelect>
+        <small class="field-hint">{{ driverHint }}</small>
+      </label>
+
+      <div class="field-grid">
         <label class="field">
-          <span>驱动</span>
-          <select v-model="form.driver" @change="applyDriverDefaults">
-            <option v-for="option in driverOptions" :key="option.id" :value="option.id">
-              {{ option.label }}
-            </option>
-          </select>
-          <small class="field-hint">{{ driverHint }}</small>
+          <span>Provider ID</span>
+          <ElInput v-model="form.id" placeholder="openai 或 my-company" />
         </label>
-
-        <div class="field-grid">
-          <label class="field">
-            <span>Provider ID</span>
-            <input v-model="form.id" placeholder="openai 或 my-company" />
-          </label>
-          <label class="field">
-            <span>名称</span>
-            <input v-model="form.name" placeholder="显示名称" />
-          </label>
-        </div>
-
-        <div class="field-grid">
-          <label class="field">
-            <span>Base URL</span>
-            <input v-model="form.baseUrl" placeholder="https://..." />
-          </label>
-        </div>
-
         <label class="field">
-          <span>API Key</span>
-          <input v-model="form.apiKey" placeholder="sk-..." />
-        </label>
-
-        <label class="field">
-          <span>模型列表</span>
-          <textarea
-            v-model="form.modelsText"
-            placeholder="每行一个模型 ID，或用逗号分隔"
-            rows="4"
-          ></textarea>
+          <span>名称</span>
+          <ElInput v-model="form.name" placeholder="显示名称" />
         </label>
       </div>
 
+      <div class="field-grid">
+        <label class="field">
+          <span>Base URL</span>
+          <ElInput v-model="form.baseUrl" placeholder="https://..." />
+        </label>
+      </div>
+
+      <label class="field">
+        <span>API Key</span>
+        <ElInput v-model="form.apiKey" placeholder="sk-..." show-password />
+      </label>
+
+      <label class="field">
+        <span>模型列表</span>
+        <ElInput
+          v-model="form.modelsText"
+          type="textarea"
+          placeholder="每行一个模型 ID，或用逗号分隔"
+          :rows="4"
+        />
+      </label>
+    </div>
+
+    <template #footer>
       <div class="dialog-footer">
-        <button
-          type="button"
-          class="ghost-button"
+        <ElButton
           data-test="provider-dialog-cancel"
           @click="$emit('close')"
         >
           取消
-        </button>
-        <button type="button" class="primary-button" :disabled="!canSave" @click="submit">
+        </ElButton>
+        <ElButton type="primary" :disabled="!canSave" @click="submit">
           保存
-        </button>
+        </ElButton>
       </div>
-    </div>
-  </div>
+    </template>
+  </ElDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { ElButton, ElDialog, ElInput, ElOption, ElSelect } from 'element-plus'
 import type { AiProviderCatalogItem, AiProviderConfig } from '@garlic-claw/shared'
 import {
   applyProviderDriverDefaults,
@@ -134,25 +149,22 @@ function submit() {
 </script>
 
 <style scoped>
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 40;
+:deep(.provider-editor-dialog .el-dialog) {
+  max-width: calc(100vw - 32px);
+  border-radius: 20px;
 }
 
-.dialog-card {
-  width: min(760px, calc(100vw - 32px));
-  max-height: min(760px, calc(100vh - 32px));
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  min-width: 0;
+:deep(.provider-editor-dialog .el-dialog__header) {
+  margin-right: 0;
+  padding: 20px 20px 0;
+}
+
+:deep(.provider-editor-dialog .el-dialog__body) {
+  padding: 0;
+}
+
+:deep(.provider-editor-dialog .el-dialog__footer) {
+  padding: 0 20px 20px;
 }
 
 .dialog-header,
@@ -160,13 +172,11 @@ function submit() {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 20px;
   flex-wrap: wrap;
 }
 
 .dialog-header {
   align-items: start;
-  border-bottom: 1px solid var(--border);
 }
 
 .dialog-header > div {
@@ -215,49 +225,30 @@ function submit() {
   color: var(--text-muted);
 }
 
-.field input,
-.field select,
-.field textarea {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-input);
-  color: var(--text);
-}
-
 .dialog-footer {
   justify-content: end;
+  padding-top: 20px;
   border-top: 1px solid var(--border);
 }
 
-.close-button,
-.primary-button,
-.ghost-button {
-  padding: 8px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.close-button,
-.ghost-button {
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-}
-
-.primary-button {
-  border: none;
-  background: var(--accent);
-  color: #fff;
+.close-button {
+  align-self: start;
+  padding: 4px;
+  font-size: 20px;
+  line-height: 1;
 }
 
 @media (max-width: 720px) {
-  .dialog-header,
-  .dialog-footer,
-  .dialog-body {
-    padding: 16px;
+  :deep(.provider-editor-dialog .el-dialog__header) {
+    padding: 16px 16px 0;
+  }
+
+  :deep(.provider-editor-dialog .el-dialog__body) {
+    padding: 0;
+  }
+
+  :deep(.provider-editor-dialog .el-dialog__footer) {
+    padding: 0 16px 16px;
   }
 
   .field-grid {

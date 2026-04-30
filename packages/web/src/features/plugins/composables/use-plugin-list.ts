@@ -1,4 +1,5 @@
 import { computed, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import type {
   PluginActionName,
   PluginConversationSessionInfo,
@@ -139,7 +140,18 @@ export function usePluginList(options: UsePluginListOptions) {
     if (!selectedPlugin.value) {
       return
     }
-    if (!window.confirm(`确认结束会话等待态 ${conversationId} 吗？`)) {
+    try {
+      await ElMessageBox.confirm(
+        `确认结束会话等待态 ${conversationId} 吗？`,
+        '结束会话等待态',
+        {
+          type: 'warning',
+          confirmButtonText: '确认结束',
+          cancelButtonText: '取消',
+          autofocus: false,
+        },
+      )
+    } catch {
       return
     }
 
@@ -183,7 +195,18 @@ export function usePluginList(options: UsePluginListOptions) {
     if (!selectedPlugin.value || !canDeleteSelected.value) {
       return
     }
-    if (!window.confirm(`确认删除插件记录 ${selectedPlugin.value.name} 吗？`)) {
+    try {
+      await ElMessageBox.confirm(
+        `确认删除插件记录 ${selectedPlugin.value.name} 吗？`,
+        '删除插件记录',
+        {
+          type: 'warning',
+          confirmButtonText: '确认删除',
+          cancelButtonText: '取消',
+          autofocus: false,
+        },
+      )
+    } catch {
       return
     }
 

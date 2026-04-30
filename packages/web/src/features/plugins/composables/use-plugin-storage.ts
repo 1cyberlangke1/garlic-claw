@@ -1,4 +1,5 @@
 import { ref, shallowRef, type ComputedRef, type Ref } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import type { PluginInfo, PluginStorageEntry } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
 import {
@@ -75,7 +76,18 @@ export function usePluginStorage(options: UsePluginStorageOptions) {
     if (!options.selectedPlugin.value) {
       return
     }
-    if (!window.confirm(`确认删除插件 KV ${key} 吗？`)) {
+    try {
+      await ElMessageBox.confirm(
+        `确认删除插件 KV ${key} 吗？`,
+        '删除插件 KV',
+        {
+          type: 'warning',
+          confirmButtonText: '确认删除',
+          cancelButtonText: '取消',
+          autofocus: false,
+        },
+      )
+    } catch {
       return
     }
 

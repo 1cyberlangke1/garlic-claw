@@ -1,96 +1,101 @@
 <template>
-  <div v-if="visible" class="dialog-overlay" @click.self="$emit('close')">
-    <div class="dialog-card">
+  <ElDialog
+    :model-value="visible"
+    width="760px"
+    top="8vh"
+    :teleported="false"
+    destroy-on-close
+    class="model-discovery-dialog"
+    @close="$emit('close')"
+  >
+    <template #header>
       <div class="dialog-header">
         <div>
           <h2>发现模型</h2>
           <p>{{ title }}</p>
         </div>
-        <button type="button" class="close-button" @click="$emit('close')">×</button>
+        <ElButton text class="close-button" @click="$emit('close')">×</ElButton>
       </div>
+    </template>
 
-      <div class="dialog-body">
-        <label class="field">
-          <span>搜索模型</span>
-          <input
-            v-model="query"
-            data-test="model-discovery-search"
-            placeholder="输入模型 ID 或名称筛选"
-          />
-        </label>
+    <div class="dialog-body">
+      <label class="field">
+        <span>搜索模型</span>
+        <ElInput
+          v-model="query"
+          data-test="model-discovery-search"
+          placeholder="输入模型 ID 或名称筛选"
+        />
+      </label>
 
-        <p class="summary-text">
-          共 {{ filteredModels.length }} 个候选模型，已选择 {{ selectedModelIds.length }} 个。
-        </p>
+      <p class="summary-text">
+        共 {{ filteredModels.length }} 个候选模型，已选择 {{ selectedModelIds.length }} 个。
+      </p>
 
-        <div v-if="filteredModels.length > 0" class="pager-row">
-          <span class="pager-copy">
-            第 {{ currentPage }} / {{ pageCount }} 页
-            <span class="pager-divider">·</span>
-            显示 {{ rangeStart }}-{{ rangeEnd }} 项
-          </span>
-          <div class="pager-actions">
-            <button
-              type="button"
-              class="ghost-button"
-              data-test="model-discovery-prev-page"
-              :disabled="!canGoPrev"
-              @click="goPrevPage"
-            >
-              上一页
-            </button>
-            <button
-              type="button"
-              class="ghost-button"
-              data-test="model-discovery-next-page"
-              :disabled="!canGoNext"
-              @click="goNextPage"
-            >
-              下一页
-            </button>
-          </div>
-        </div>
-
-        <div v-if="filteredModels.length === 0" class="empty-state">
-          没有匹配的模型。
-        </div>
-
-        <div v-else class="model-list">
-          <label
-            v-for="model in pagedModels"
-            :key="model.id"
-            class="model-row"
+      <div v-if="filteredModels.length > 0" class="pager-row">
+        <span class="pager-copy">
+          第 {{ currentPage }} / {{ pageCount }} 页
+          <span class="pager-divider">·</span>
+          显示 {{ rangeStart }}-{{ rangeEnd }} 项
+        </span>
+        <div class="pager-actions">
+          <ElButton
+            data-test="model-discovery-prev-page"
+            :disabled="!canGoPrev"
+            @click="goPrevPage"
           >
-            <input
-              :checked="selectedModelIds.includes(model.id)"
-              type="checkbox"
-              @change="toggleModel(model.id)"
-            />
-            <div class="model-copy">
-              <strong>{{ model.name }}</strong>
-              <span>{{ model.id }}</span>
-            </div>
-          </label>
+            上一页
+          </ElButton>
+          <ElButton
+            data-test="model-discovery-next-page"
+            :disabled="!canGoNext"
+            @click="goNextPage"
+          >
+            下一页
+          </ElButton>
         </div>
       </div>
 
+      <div v-if="filteredModels.length === 0" class="empty-state">
+        没有匹配的模型。
+      </div>
+
+      <div v-else class="model-list">
+        <label
+          v-for="model in pagedModels"
+          :key="model.id"
+          class="model-row"
+        >
+          <ElCheckbox
+            :model-value="selectedModelIds.includes(model.id)"
+            @change="toggleModel(model.id)"
+          />
+          <div class="model-copy">
+            <strong>{{ model.name }}</strong>
+            <span>{{ model.id }}</span>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <template #footer>
       <div class="dialog-footer">
-        <button type="button" class="ghost-button" @click="$emit('close')">取消</button>
-        <button
-          type="button"
-          class="primary-button"
+        <ElButton @click="$emit('close')">取消</ElButton>
+        <ElButton
+          type="primary"
           :disabled="selectedModelIds.length === 0 || loading"
           @click="submit"
         >
           添加所选模型
-        </button>
+        </ElButton>
       </div>
-    </div>
-  </div>
+    </template>
+  </ElDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElCheckbox, ElDialog, ElInput } from 'element-plus'
 import type { DiscoveredAiModel } from '@garlic-claw/shared'
 import { usePagination } from '@/composables/use-pagination'
 
@@ -165,25 +170,22 @@ function submit() {
 </script>
 
 <style scoped>
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.55);
-  z-index: 50;
+:deep(.model-discovery-dialog .el-dialog) {
+  max-width: calc(100vw - 32px);
+  border-radius: 20px;
 }
 
-.dialog-card {
-  width: min(760px, 100%);
-  max-height: min(680px, calc(100vh - 32px));
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  min-width: 0;
+:deep(.model-discovery-dialog .el-dialog__header) {
+  margin-right: 0;
+  padding: 20px 20px 0;
+}
+
+:deep(.model-discovery-dialog .el-dialog__body) {
+  padding: 0;
+}
+
+:deep(.model-discovery-dialog .el-dialog__footer) {
+  padding: 0 20px 20px;
 }
 
 .dialog-header,
@@ -191,13 +193,11 @@ function submit() {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 20px;
   flex-wrap: wrap;
 }
 
 .dialog-header {
   align-items: start;
-  border-bottom: 1px solid var(--border);
 }
 
 .dialog-header > div {
@@ -239,16 +239,6 @@ function submit() {
   color: var(--text-muted);
 }
 
-.field input {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-input);
-  color: var(--text);
-}
-
 .summary-text {
   margin: 0;
 }
@@ -287,7 +277,7 @@ function submit() {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 12px;
-  align-items: start;
+  align-items: center;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -314,38 +304,28 @@ function submit() {
 
 .dialog-footer {
   justify-content: end;
+  padding-top: 20px;
   border-top: 1px solid var(--border);
 }
 
-.close-button,
-.primary-button,
-.ghost-button {
-  padding: 8px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.close-button,
-.ghost-button {
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-}
-
-.primary-button {
-  border: none;
-  background: var(--accent);
-  color: #fff;
+.close-button {
+  align-self: start;
+  padding: 4px;
+  font-size: 20px;
+  line-height: 1;
 }
 
 @media (max-width: 720px) {
-  .dialog-header,
-  .dialog-footer {
-    padding: 16px;
+  :deep(.model-discovery-dialog .el-dialog__header) {
+    padding: 16px 16px 0;
   }
 
-  .dialog-body {
-    padding: 16px;
+  :deep(.model-discovery-dialog .el-dialog__body) {
+    padding: 0;
+  }
+
+  :deep(.model-discovery-dialog .el-dialog__footer) {
+    padding: 0 16px 16px;
   }
 
   .dialog-footer {
