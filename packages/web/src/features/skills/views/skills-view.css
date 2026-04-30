@@ -43,6 +43,11 @@
   justify-content: space-between;
 }
 
+.skills-page .hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
+}
+
 .skills-page .hero-kicker,
 .skills-page .panel-kicker,
 .skills-page .overview-label {

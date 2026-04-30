@@ -3,8 +3,7 @@
     <aside class="ai-settings-sidebar">
       <div class="sider-inner">
         <header class="sider-title">
-          <Icon class="sider-title-icon" :icon="codeBold" />
-          <h1 class="sider-title-text">AI 设置</h1>
+          <h1 class="sider-title-text"><Icon class="hero-icon" :icon="codeBold" aria-hidden="true" />AI 设置</h1>
         </header>
 
         <nav class="sider-menu">
@@ -443,7 +442,10 @@ function saveCtx(model: AiModelConfig) {
   font-weight: 600;
   white-space: nowrap;
 }
-.sider-title-icon { min-width: 20px; font-size: 20px; }
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
+}
 .sider-menu { flex: 1; overflow-y: auto; padding: 0 8px; }
 .sider-menu::-webkit-scrollbar { display: none; }
 

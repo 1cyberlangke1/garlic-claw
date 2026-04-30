@@ -2,9 +2,7 @@
   <div class="mcp-page">
     <section class="mcp-hero">
       <header>
-        <span class="hero-kicker">MCP Workspace</span>
-        <h1>MCP 管理</h1>
-        <p>这里维护 MCP server 配置；工具启用/禁用统一在工具管理页处理。</p>
+        <h1><Icon :icon="widgetAddBold" class="hero-icon" aria-hidden="true" />MCP 管理</h1>
       </header>
     </section>
 
@@ -21,6 +19,8 @@
 </template>
 
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
+import widgetAddBold from '@iconify-icons/solar/widget-add-bold'
 import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
 </script>
 
@@ -47,6 +47,11 @@ import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--surface-panel-soft);
+}
+
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
 
 .hero-kicker,

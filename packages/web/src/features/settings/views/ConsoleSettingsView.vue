@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
+import settingsBold from '@iconify-icons/solar/settings-bold'
 import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
 import { useThemeStore } from '@/stores/theme'
 
@@ -30,9 +32,7 @@ function handleToggleDarkMode() {
   <div class="console-settings-page">
     <header class="settings-page-header">
       <div class="settings-hero">
-        <span class="settings-kicker">Console Preferences</span>
-        <h1>控制台设置</h1>
-        <p>这里放置只影响前端控制台体验的本地设置，不会写入后端配置。</p>
+        <h1><Icon :icon="settingsBold" class="hero-icon" aria-hidden="true" />控制台设置</h1>
       </div>
     </header>
 
@@ -131,6 +131,11 @@ function handleToggleDarkMode() {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
 
 .settings-hero h1,

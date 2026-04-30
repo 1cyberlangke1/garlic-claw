@@ -2,9 +2,7 @@
   <section class="hero-shell">
     <header class="page-header">
       <div class="hero-copy">
-        <span class="hero-kicker">Plugin Control Surface</span>
-        <h1>插件管理</h1>
-        <p>管理本地与远程插件的配置、作用域和健康状态。</p>
+        <h1><Icon :icon="widgetBold" class="hero-icon" aria-hidden="true" />插件管理</h1>
       </div>
       <div class="hero-side">
         <button type="button" class="hero-action" title="刷新全部" @click="$emit('refresh')">
@@ -36,6 +34,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import widgetBold from '@iconify-icons/solar/widget-5-bold'
 
 defineProps<{
   headline: string
@@ -85,6 +84,11 @@ defineEmits<{
 .hero-side {
   position: relative;
   z-index: 1;
+}
+
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
 
 .hero-copy {

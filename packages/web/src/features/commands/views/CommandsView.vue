@@ -2,11 +2,7 @@
   <div class="plugins-page commands-page">
     <section class="command-hero">
       <header class="command-hero-header">
-        <div>
-          <span class="hero-kicker">Command Management</span>
-          <h1>命令管理</h1>
-          <p>查看插件的消息命令和冲突触发词。</p>
-        </div>
+        <h1><Icon :icon="keyboardBold" class="hero-icon" aria-hidden="true" />命令管理</h1>
         <div class="command-hero-side">
           <button
             type="button"
@@ -186,6 +182,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import { usePluginCommandManagement } from '../composables/use-plugin-command-management'
 
@@ -310,6 +307,11 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
 
 .hero-kicker,

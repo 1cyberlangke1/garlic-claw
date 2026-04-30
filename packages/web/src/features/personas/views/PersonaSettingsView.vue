@@ -4,6 +4,7 @@ import { Icon } from '@iconify/vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBinTrashBold from '@iconify-icons/solar/trash-bin-trash-bold'
+import userIdBold from '@iconify-icons/solar/user-id-bold'
 import { usePersonaSettings } from '../composables/use-persona-settings'
 
 const {
@@ -81,10 +82,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 <template>
   <div class="persona-page">
     <header class="page-header">
-      <div>
-        <h1>人设管理</h1>
-        <p>人设现在是独立资源，服务端会统一消费 prompt、begin dialogs、skills、tools 和错误文案。</p>
-      </div>
+      <h1><Icon :icon="userIdBold" class="page-header-icon" aria-hidden="true" />人设管理</h1>
       <div class="header-actions">
         <button type="button" class="ghost-button refresh-button" :disabled="loading" title="刷新" @click="refreshAll">
           <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
@@ -377,6 +375,11 @@ function readPersonaAvatarAlt(name?: string | null) {
   display: grid;
   gap: 6px;
   min-width: 0;
+}
+
+.page-header-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
 
 .page-header h1,

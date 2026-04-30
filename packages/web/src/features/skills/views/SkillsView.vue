@@ -2,11 +2,7 @@
   <div class="skills-page">
     <section class="skill-hero">
       <header class="skill-hero-header">
-        <div>
-          <span class="hero-kicker">Skill Catalog</span>
-          <h1>技能目录</h1>
-          <p>管理宿主可发现的 `SKILL.md` 目录，以及原生 `skill` 工具允许暴露给模型的加载策略。</p>
-        </div>
+        <h1><Icon :icon="magicStick3Bold" class="hero-icon" aria-hidden="true" />技能目录</h1>
         <div class="hero-actions">
           <button
             type="button"
@@ -88,6 +84,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
 import type { SkillLoadPolicy } from '@garlic-claw/shared'
 import SkillDetailPanel from '@/features/skills/components/SkillDetailPanel.vue'
 import SkillsList from '@/features/skills/components/SkillsList.vue'
