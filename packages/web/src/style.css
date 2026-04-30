@@ -34,6 +34,30 @@
   --header-gradient: linear-gradient(135deg, rgba(103, 199, 207, 0.12), rgba(103, 199, 207, 0.05));
 }
 
+/* Light theme overrides */
+html.light {
+  --bg-card: rgba(255, 255, 255, 0.92);
+  --bg-input: rgba(248, 250, 252, 0.95);
+  --bg-sidebar: rgba(248, 250, 252, 0.98);
+  --bg-glass: rgba(255, 255, 255, 0.9);
+  --bg-glass-light: rgba(248, 250, 252, 0.95);
+
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --accent: #0891b2;
+  --accent-hover: #0e7490;
+  --accent-light: rgba(8, 145, 178, 0.12);
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #d97706;
+  --border: rgba(148, 163, 184, 0.25);
+  --border-hover: rgba(148, 163, 184, 0.4);
+  --border-glow: rgba(8, 145, 178, 0.15);
+  --shadow: 0 24px 56px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 12px 28px rgba(0, 0, 0, 0.06);
+  --header-gradient: linear-gradient(135deg, rgba(8, 145, 178, 0.08), rgba(8, 145, 178, 0.03));
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -51,6 +75,25 @@ html, body, #app {
   color: var(--text);
   line-height: 1.6;
   position: relative;
+}
+
+html.light html, html.light body, html.light #app {
+  background:
+    radial-gradient(circle at top right, rgba(8, 145, 178, 0.1), transparent 32%),
+    radial-gradient(circle at bottom left, rgba(217, 119, 6, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fafc, #f1f5f9));
+}
+
+html.light body::before {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.2), transparent 72%);
+}
+
+html.light input,
+html.light textarea {
+  background: rgba(255, 255, 255, 0.85);
 }
 
 /* 添加全局网格背景图案 */

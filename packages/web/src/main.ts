@@ -2,6 +2,7 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
 import { addRequestErrorListener } from '@/api/http'
+import { useThemeStore } from '@/stores/theme'
 import { useUiStore } from '@/stores/ui'
 
 import App from './App.vue'
@@ -10,6 +11,7 @@ import './style.css'
 
 const pinia = createPinia()
 const uiStore = useUiStore(pinia)
+const themeStore = useThemeStore(pinia)
 
 if (typeof window !== 'undefined') {
   const silenceRequestErrors = () => {
@@ -50,6 +52,8 @@ function shouldSilenceRequestErrorLogs() {
     __GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__?: boolean
   }).__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ === true
 }
+
+themeStore.initTheme()
 
 const app = createApp(App)
 app.use(pinia)
