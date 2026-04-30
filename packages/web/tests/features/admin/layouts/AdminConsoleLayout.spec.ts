@@ -93,7 +93,7 @@ describe('AdminConsoleLayout', () => {
     window.dispatchEvent(new MouseEvent('mouseup'))
     await nextTick()
 
-    expect(wrapper.get('.admin-nav').attributes('style')).toContain('width: 320px;')
-    expect(localStorage.getItem('garlic-claw:admin-sider-width')).toBe('320')
+    expect(wrapper.get('.admin-nav').attributes('style')).toContain('width: 300px;')
+    expect(localStorage.getItem('garlic-claw:admin-sider-width')).toBe('300')
   })
 })

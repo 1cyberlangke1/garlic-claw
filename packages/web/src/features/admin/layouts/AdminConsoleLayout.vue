@@ -9,6 +9,7 @@ import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
 import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import logout3Bold from '@iconify-icons/solar/logout-3-bold'
 import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
+import tuning2Bold from '@iconify-icons/solar/tuning-2-bold'
 import userIdBold from '@iconify-icons/solar/user-id-bold'
 import widgetBold from '@iconify-icons/solar/widget-5-bold'
 import widget6Bold from '@iconify-icons/solar/widget-6-bold'
@@ -141,7 +142,7 @@ const navItems: Array<{
   { name: 'persona-settings', label: '人设', icon: userIdBold },
   { name: 'skills', label: '技能', icon: magicStick3Bold },
   { name: 'commands', label: '命令', icon: keyboardBold },
-  { name: 'tools', label: '工具', icon: widgetBold },
+  { name: 'tools', label: '工具', icon: tuning2Bold },
   { name: 'plugins', label: '插件', icon: widgetBold, divided: true },
   { name: 'mcp', label: 'MCP', icon: widgetAddBold },
   { name: 'automations', label: '自动化', icon: cpuBoltBold, divided: true },
