@@ -166,7 +166,7 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 20px;
-  background: rgba(11, 21, 35, 0.72);
+  background: var(--surface-panel-soft);
 }
 
 .page-banner.error,
@@ -191,7 +191,7 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 20px;
-  background: rgba(11, 21, 35, 0.72);
+  background: var(--surface-panel-soft);
 }
 
 .hero-copy {

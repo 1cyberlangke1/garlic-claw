@@ -66,9 +66,7 @@ defineEmits<{
   padding: 1.35rem 1.45rem;
   border: 1px solid var(--border);
   border-radius: 24px;
-  background:
-    linear-gradient(140deg, rgba(20, 34, 54, 0.98), rgba(10, 18, 31, 0.94)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+  background: var(--surface-hero-gradient);
   box-shadow: 0 24px 56px rgba(1, 6, 15, 0.32);
   backdrop-filter: blur(18px);
   overflow: hidden;
@@ -103,7 +101,7 @@ defineEmits<{
 }
 
 .hero-kicker {
-  color: #93dfe0;
+  color: var(--accent);
 }
 
 .page-header h1 {
@@ -155,11 +153,11 @@ defineEmits<{
   padding: 1rem 1.05rem;
   border-radius: 18px;
   border: 1px solid rgba(133, 163, 199, 0.16);
-  background: rgba(9, 17, 29, 0.46);
+  background: var(--surface-panel-hover-soft);
 }
 
 .hero-note-label {
-  color: #f0c676;
+  color: var(--warning);
 }
 
 .hero-note strong {
@@ -180,9 +178,7 @@ defineEmits<{
   padding: 1.05rem 1.1rem;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(10, 17, 29, 0.96)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  background: var(--surface-card-gradient);
   box-shadow: 0 24px 56px rgba(1, 6, 15, 0.28);
   backdrop-filter: blur(18px);
 }

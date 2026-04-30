@@ -73,9 +73,7 @@ async function newChat() {
   flex-direction: column;
   height: 100%;
   border-right: 1px solid var(--border);
-  background:
-    linear-gradient(180deg, rgba(9, 15, 24, 0.98), rgba(9, 15, 24, 0.9)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  background: var(--surface-sidebar-gradient);
   backdrop-filter: blur(var(--glass-blur));
 }
 
@@ -123,7 +121,7 @@ async function newChat() {
   align-items: center;
   gap: 0.6rem;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-subtle);
   color: var(--text);
   padding: 0.7rem 0.85rem;
 }

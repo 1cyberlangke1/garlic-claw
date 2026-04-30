@@ -227,7 +227,7 @@ defineExpose({
   border: 1px solid var(--border);
   border-radius: 12px;
   font-size: 14px;
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -236,7 +236,7 @@ defineExpose({
 .quick-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.24);
+  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .quick-input:disabled {
@@ -253,7 +253,7 @@ defineExpose({
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: rgba(14, 24, 38, 0.95);
+  background: var(--surface-panel-strong);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.1);
@@ -281,7 +281,7 @@ defineExpose({
 .provider-badge {
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(124, 106, 246, 0.14);
+  background: var(--surface-brand-soft);
   color: var(--accent);
   font-size: 12px;
 }
@@ -296,7 +296,7 @@ defineExpose({
 .capability-tag {
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(68, 204, 136, 0.14);
+  background: var(--surface-success-soft);
   color: var(--success);
   font-size: 11px;
 }

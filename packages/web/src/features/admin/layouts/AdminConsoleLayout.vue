@@ -357,15 +357,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
 
 <style scoped>
 .admin-shell {
-  --shell-bg: #0f172a;
-  --shell-bg-elevated: #1e293b;
-  --shell-bg-hover: #334155;
-  --shell-text: #f1f5f9;
-  --shell-text-secondary: #cbd5e1;
-  --shell-text-tertiary: #94a3b8;
-  --shell-border: #334155;
-  --shell-border-light: #475569;
-  --shell-active: #18a058;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -761,18 +752,5 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   .menu-item {
     min-height: 48px;
   }
-}
-
-/* Light mode sidebar overrides */
-:global(html.light) .admin-shell {
-  --shell-bg: #f8fafc;
-  --shell-bg-elevated: #ffffff;
-  --shell-bg-hover: #f1f5f9;
-  --shell-text: #0f172a;
-  --shell-text-secondary: #475569;
-  --shell-text-tertiary: #94a3b8;
-  --shell-border: #e2e8f0;
-  --shell-border-light: #cbd5e1;
-  --shell-active: #0891b2;
 }
 </style>

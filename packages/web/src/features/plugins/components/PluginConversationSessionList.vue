@@ -155,7 +155,7 @@ function formatMetadata(metadata: JsonValue): string {
   padding: 0.95rem;
   border-radius: 12px;
   border: 1px solid rgba(133, 163, 199, 0.14);
-  background: rgba(12, 22, 36, 0.78);
+  background: var(--surface-panel-muted-strong);
 }
 
 .session-topline {
@@ -192,8 +192,8 @@ function formatMetadata(metadata: JsonValue): string {
 
 .session-pill {
   border: 1px solid rgba(133, 163, 199, 0.14);
-  background: rgba(18, 32, 51, 0.82);
-  color: #c7d6eb;
+  background: var(--surface-panel-muted-strong);
+  color: var(--text);
 }
 
 .session-action {
@@ -228,7 +228,7 @@ function formatMetadata(metadata: JsonValue): string {
 }
 
 .history-role {
-  color: #93dfe0;
+  color: var(--accent);
   text-transform: uppercase;
   font-size: 0.76rem;
 }
@@ -238,8 +238,8 @@ function formatMetadata(metadata: JsonValue): string {
   padding: 0.8rem;
   border-radius: 10px;
   border: 1px solid rgba(133, 163, 199, 0.12);
-  background: rgba(8, 13, 22, 0.52);
-  color: #d8e4f6;
+  background: var(--surface-panel-muted);
+  color: var(--text);
   font-size: 0.8rem;
   overflow-x: auto;
 }

@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { describe, expect, it, vi } from 'vitest'
 import AdminConsoleLayout from '@/features/admin/layouts/AdminConsoleLayout.vue'
 
@@ -28,6 +29,7 @@ describe('AdminConsoleLayout', () => {
   it('renders the unified single-user navigation without the api key entry', () => {
     const wrapper = mount(AdminConsoleLayout, {
       global: {
+        plugins: [createPinia()],
         stubs: {
           RouterLink: {
             props: ['to'],

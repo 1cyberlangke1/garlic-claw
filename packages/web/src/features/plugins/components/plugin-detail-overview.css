@@ -8,9 +8,7 @@
 .tag-group,
 .error-card {
   border: 1px solid var(--border);
-  background:
-    linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(10, 17, 29, 0.96)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  background: var(--surface-card-gradient);
   box-shadow: 0 24px 56px rgba(1, 6, 15, 0.28);
   backdrop-filter: blur(18px);
 }
@@ -36,7 +34,7 @@
 }
 
 .detail-kicker {
-  color: #93dfe0;
+  color: var(--accent);
 }
 
 .detail-header h2 {
@@ -55,8 +53,8 @@
   padding: 0.28rem 0.55rem;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: rgba(8, 13, 22, 0.52);
-  color: #c1d0e6;
+  background: var(--surface-panel-muted);
+  color: var(--text);
   font-size: 0.78rem;
   font-family: 'JetBrains Mono', monospace;
   overflow-wrap: anywhere;
@@ -80,8 +78,8 @@
 
 .detail-badge.runtime,
 .detail-badge.neutral {
-  background: rgba(12, 22, 36, 0.72);
-  color: #c7d6eb;
+  background: var(--surface-panel-soft);
+  color: var(--text);
   border-color: rgba(133, 163, 199, 0.16);
 }
 
@@ -119,7 +117,7 @@
 }
 
 .ghost-button {
-  background: rgba(9, 17, 29, 0.42);
+  background: var(--surface-panel-hover-soft);
   border: 1px solid var(--border);
   color: var(--text);
   backdrop-filter: blur(12px);
@@ -127,7 +125,7 @@
 }
 
 .ghost-button:hover:not(:disabled) {
-  background: rgba(18, 32, 50, 0.82);
+  background: var(--surface-panel-muted-strong);
   border-color: rgba(133, 163, 199, 0.24);
 }
 
@@ -159,7 +157,7 @@
 }
 
 .summary-foot {
-  color: #c0d0e7;
+  color: var(--text);
   font-size: 0.78rem;
 }
 
@@ -205,7 +203,7 @@
   padding: 0.22rem 0.5rem;
   border-radius: 6px;
   border: 1px solid rgba(133, 163, 199, 0.14);
-  background: rgba(18, 32, 51, 0.82);
+  background: var(--surface-panel-muted-strong);
   font-size: 0.8rem;
 }
 

@@ -102,6 +102,6 @@ describe('PluginEventLog', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('当前筛选下没有事件日志。')
+    expect(wrapper.text()).toContain('此筛选下没有事件日志。')
   })
 })

@@ -35,7 +35,7 @@ import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: rgba(11, 21, 35, 0.72);
+  background: var(--surface-panel-soft);
 }
 
 .mcp-management-entry {
@@ -46,7 +46,7 @@ import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  background: rgba(11, 21, 35, 0.72);
+  background: var(--surface-panel-soft);
 }
 
 .hero-kicker,

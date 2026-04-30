@@ -104,7 +104,7 @@ function formatOperationLabel(value: ChatPendingRuntimePermission['operations'][
   border-radius: var(--radius);
   background:
     linear-gradient(135deg, rgba(255, 196, 87, 0.12), rgba(255, 122, 69, 0.08)),
-    rgba(8, 15, 19, 0.82);
+    var(--surface-panel-muted-strong);
   padding: 14px 16px;
   display: grid;
   gap: 12px;
@@ -146,7 +146,7 @@ function formatOperationLabel(value: ChatPendingRuntimePermission['operations'][
   padding: 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-subtle);
 }
 
 .permission-main {
@@ -192,7 +192,7 @@ function formatOperationLabel(value: ChatPendingRuntimePermission['operations'][
   margin: 0;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--surface-code);
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
@@ -207,7 +207,7 @@ function formatOperationLabel(value: ChatPendingRuntimePermission['operations'][
 
 .permission-action {
   border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(10, 19, 24, 0.45);
+  background: var(--surface-overlay);
   color: var(--text);
   border-radius: 999px;
   padding: 6px 12px;

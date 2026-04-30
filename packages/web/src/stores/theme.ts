@@ -6,19 +6,27 @@ type ThemeValue = 'dark' | 'light' | 'system'
 const STORAGE_KEY = 'garlic-claw:theme'
 
 function readStoredTheme(): ThemeValue {
-  if (typeof window === 'undefined') return 'dark'
+  if (typeof window === 'undefined') {
+    return 'dark'
+  }
   const stored = window.localStorage.getItem(STORAGE_KEY)
-  if (stored === 'light' || stored === 'dark' || stored === 'system') return stored
+  if (stored === 'light' || stored === 'dark' || stored === 'system') {
+    return stored
+  }
   return 'dark'
 }
 
 function writeStoredTheme(value: ThemeValue) {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined') {
+    return
+  }
   window.localStorage.setItem(STORAGE_KEY, value)
 }
 
 function getSystemDark(): boolean {
-  if (typeof window === 'undefined') return true
+  if (typeof window === 'undefined') {
+    return true
+  }
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
@@ -45,13 +53,17 @@ export const useThemeStore = defineStore('theme', () => {
     }
   }
 
-  function handleSystemChange(e: MediaQueryListEvent) {
-    if (!followSystem.value) return
+  function handleSystemChange(_event: MediaQueryListEvent) {
+    if (!followSystem.value) {
+      return
+    }
     applyTheme()
   }
 
   function listenToSystemTheme() {
-    if (typeof window === 'undefined') return
+    if (typeof window === 'undefined') {
+      return
+    }
     systemMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
     systemMediaQuery.addEventListener('change', handleSystemChange)
   }
