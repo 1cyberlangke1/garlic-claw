@@ -449,6 +449,30 @@ async function runSmokeConversationDeleteVerification(apiBase, state, input) {
 }
 
 async function runContextCompactionModelSmoke(apiBase, state, input) {
+  const originalConversationId = state.conversationId;
+  let isolatedConversationId = null;
+  if (input.isolateConversation) {
+    await runStep(`${input.commandStepName}.conversation.create`, async () => {
+      const conversation = await postJson(apiBase, '/chat/conversations', {
+        body: { title: 'Context Compaction Smoke' },
+        headers: input.headers(),
+      });
+      isolatedConversationId = conversation.id;
+      ensure(typeof isolatedConversationId === 'string' && isolatedConversationId.length > 0, 'Expected isolated context compaction conversation id');
+      state.conversationId = isolatedConversationId;
+    });
+    await runSmokeTextChatRoundTrip(apiBase, state, {
+      content: '第一轮压缩预热消息，记录技能与工具 smoke。',
+      headers: input.headers,
+      stepName: `${input.commandStepName}.prefill.first`,
+    });
+    await runSmokeTextChatRoundTrip(apiBase, state, {
+      content: '第二轮压缩预热消息，记录子代理与上下文摘要 smoke。',
+      headers: input.headers,
+      stepName: `${input.commandStepName}.prefill.second`,
+    });
+  }
+
   await runStep(input.configStepName, async () => {
     const config = await putJson(apiBase, '/ai/context-governance-config', {
       body: {
@@ -500,6 +524,14 @@ async function runContextCompactionModelSmoke(apiBase, state, input) {
       ensure(typeof summaryMessage.content === 'string' && summaryMessage.content.trim().length > 0, 'Expected context compaction summary content to be non-empty');
     }
   });
+
+  if (isolatedConversationId) {
+    await runStep(`${input.commandStepName}.conversation.delete`, async () => {
+      const result = await deleteJson(apiBase, `/chat/conversations/${isolatedConversationId}`, { headers: input.headers() });
+      ensure(typeof result?.message === 'string' && result.message.includes('deleted'), 'Expected isolated context compaction conversation delete to succeed');
+    });
+    state.conversationId = originalConversationId;
+  }
 }
 
 async function runRealProviderHttpFlow(apiBase, state, input) {
@@ -1149,8 +1181,10 @@ async function runHttpFlow(apiBase, state, input) {
     state.subagentLoopAssistantMessageId = startEvent?.assistantMessage?.id ?? null;
     ensure(typeof state.subagentLoopAssistantMessageId === 'string', 'Expected subagent loop to create assistant message');
     state.subagentLoopAssistantText = assertCompletedSse(events, '子代理已完成：Smoke HTTP Flow 用于后端烟测。');
-    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'subagent'), 'Expected subagent loop SSE to include subagent tool call');
-    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'subagent'), 'Expected subagent loop SSE to include subagent tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'spawn_subagent'), 'Expected subagent loop SSE to include spawn_subagent tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'spawn_subagent'), 'Expected subagent loop SSE to include spawn_subagent tool result');
+    ensure(events.some((entry) => entry.type === 'tool-call' && entry.toolName === 'wait_subagent'), 'Expected subagent loop SSE to include wait_subagent tool call');
+    ensure(events.some((entry) => entry.type === 'tool-result' && entry.toolName === 'wait_subagent'), 'Expected subagent loop SSE to include wait_subagent tool result');
     ensure(finishEvent?.status === 'completed', 'Expected subagent loop SSE to finish');
   });
 
@@ -1160,21 +1194,26 @@ async function runHttpFlow(apiBase, state, input) {
       requestHasToolList(entry.body)
       && readLatestUserText(entry.body?.messages).includes('请使用 subagent 工具委派一个探索任务'));
     ensure(firstRequest, 'Expected first subagent loop request to reach fake OpenAI');
-    ensure(requestIncludesToolName(firstRequest.body, 'subagent'), 'Expected subagent loop request to expose subagent tool');
-    const toolResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'subagent'));
-    ensure(toolResultRequest, 'Expected subagent loop to issue a follow-up request with subagent tool results');
-    ensure(requestContainsSubagentResult(toolResultRequest.body, 'Smoke HTTP Flow 用于后端烟测。'), 'Expected subagent loop follow-up request to include rendered subagent result');
-    ensure(requestContainsSubagentSessionId(toolResultRequest.body), 'Expected subagent loop follow-up request to include session_id');
-    ensure(!JSON.stringify(toolResultRequest.body).includes('provider:'), 'Expected subagent loop follow-up request not to leak provider details');
-    ensure(!JSON.stringify(toolResultRequest.body).includes('model:'), 'Expected subagent loop follow-up request not to leak model details');
+    ensure(requestIncludesToolName(firstRequest.body, 'spawn_subagent'), 'Expected subagent loop request to expose spawn_subagent');
+    ensure(requestIncludesToolName(firstRequest.body, 'wait_subagent'), 'Expected subagent loop request to expose wait_subagent');
+    const spawnResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'spawn_subagent'));
+    ensure(spawnResultRequest, 'Expected subagent loop to issue a follow-up request with spawn_subagent results');
+    ensure(requestContainsSubagentSessionId(spawnResultRequest.body), 'Expected spawn_subagent follow-up request to include conversation id');
+    const waitResultRequest = requests.find((entry) => requestContainsToolResult(entry.body, 'wait_subagent'));
+    ensure(waitResultRequest, 'Expected subagent loop to issue a follow-up request with wait_subagent results');
+    ensure(requestContainsSubagentResult(waitResultRequest.body, 'Smoke HTTP Flow 用于后端烟测。'), 'Expected wait_subagent follow-up request to include rendered subagent result');
+    ensure(!JSON.stringify(waitResultRequest.body).includes('provider:'), 'Expected wait_subagent follow-up request not to leak provider details');
+    ensure(!JSON.stringify(waitResultRequest.body).includes('model:'), 'Expected wait_subagent follow-up request not to leak model details');
 
     const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: userHeaders() });
     const subagentAssistant = conversation.messages.find((entry) => entry.id === state.subagentLoopAssistantMessageId);
     const subagentToolCalls = parseSerializedJsonValue(subagentAssistant?.toolCalls);
     const subagentToolResults = parseSerializedJsonValue(subagentAssistant?.toolResults);
     ensure(subagentAssistant?.content === state.subagentLoopAssistantText, 'Expected subagent loop assistant message to persist generated content');
-    ensure(Array.isArray(subagentToolCalls) && subagentToolCalls.some((entry) => entry?.toolName === 'subagent'), 'Expected subagent loop assistant message to persist subagent tool call');
-    ensure(Array.isArray(subagentToolResults) && subagentToolResults.some((entry) => entry?.toolName === 'subagent'), 'Expected subagent loop assistant message to persist subagent tool result');
+    ensure(Array.isArray(subagentToolCalls) && subagentToolCalls.some((entry) => entry?.toolName === 'spawn_subagent'), 'Expected subagent loop assistant message to persist spawn_subagent tool call');
+    ensure(Array.isArray(subagentToolCalls) && subagentToolCalls.some((entry) => entry?.toolName === 'wait_subagent'), 'Expected subagent loop assistant message to persist wait_subagent tool call');
+    ensure(Array.isArray(subagentToolResults) && subagentToolResults.some((entry) => entry?.toolName === 'spawn_subagent'), 'Expected subagent loop assistant message to persist spawn_subagent tool result');
+    ensure(Array.isArray(subagentToolResults) && subagentToolResults.some((entry) => entry?.toolName === 'wait_subagent'), 'Expected subagent loop assistant message to persist wait_subagent tool result');
   });
 
   await runStep('chat.messages.todo-loop', async () => {
@@ -2042,6 +2081,7 @@ async function runHttpFlow(apiBase, state, input) {
     configStepName: 'ai.context-governance.put.summary',
     expectedSummaryText: 'Smoke 压缩摘要。',
     headers: userHeaders,
+    isolateConversation: true,
     responseTextStateKey: 'compactModelAssistantText',
     userMessageStateKey: 'compactModelUserMessageId',
     verifyModelRequest: async () => {
@@ -2637,7 +2677,7 @@ async function runHttpFlow(apiBase, state, input) {
             type: 'ai_message',
           },
           {
-            capability: 'subagent_background',
+            capability: 'spawn_subagent',
             params: {
               description: '自动化烟测任务',
               prompt: '请输出 smoke automation task',
@@ -2700,8 +2740,8 @@ async function runHttpFlow(apiBase, state, input) {
       headers: userHeaders(),
     });
     const taskAction = result.results.find((entry) => entry.sourceKind === 'internal' && entry.sourceId === 'subagent');
-    state.automationSubagentSessionId = taskAction?.result?.sessionId ?? null;
-    ensure(typeof state.automationSubagentSessionId === 'string', 'Expected automation run to create subagent session');
+    state.automationSubagentSessionId = taskAction?.result?.conversationId ?? null;
+    ensure(typeof state.automationSubagentSessionId === 'string', 'Expected automation run to create subagent conversation');
     ensure(result.status === 'success', 'Expected automation run to succeed');
   });
 
@@ -2713,46 +2753,36 @@ async function runHttpFlow(apiBase, state, input) {
 
   await runStep('plugins.subagent-overview.with-subagent', async () => {
     const overview = await getJson(apiBase, '/subagents/overview');
-    const subagent = overview.subagents.find((entry) => entry.sessionId === state.automationSubagentSessionId);
-    ensure(subagent, 'Expected subagent overview to include automation-created session projection');
+    const subagent = overview.subagents.find((entry) => entry.conversationId === state.automationSubagentSessionId);
+    ensure(subagent, 'Expected subagent overview to include automation-created conversation projection');
     ensure(subagent.description === '自动化烟测任务', 'Expected subagent overview to expose persisted subagent description');
     ensure(subagent.requestPreview === '请输出 smoke automation task', 'Expected subagent overview to keep prompt preview separate from description');
-    ensure(typeof subagent.sessionId === 'string' && subagent.sessionId.length > 0, 'Expected subagent overview to expose session id');
-    ensure(typeof subagent.sessionMessageCount === 'number' && subagent.sessionMessageCount >= 1, 'Expected subagent overview to expose session message count');
+    ensure(typeof subagent.conversationId === 'string' && subagent.conversationId.length > 0, 'Expected subagent overview to expose conversation id');
+    ensure(typeof subagent.messageCount === 'number' && subagent.messageCount >= 1, 'Expected subagent overview to expose message count');
   });
 
   await runStep('plugins.subagent-detail.success', async () => {
     const subagent = await waitForSubagentTaskCompletion(apiBase, state.automationSubagentSessionId);
-    ensure(subagent.sessionId === state.automationSubagentSessionId, 'Expected subagent session detail to load');
+    ensure(subagent.conversationId === state.automationSubagentSessionId, 'Expected subagent conversation detail to load');
     ensure(subagent.description === '自动化烟测任务', 'Expected subagent detail to expose persisted description');
     ensure(subagent.pluginId === 'subagent', 'Expected subagent detail source id');
     ensure(subagent.requestPreview === '请输出 smoke automation task', 'Expected subagent detail to keep prompt preview separate from description');
-    ensure(typeof subagent.sessionId === 'string' && subagent.sessionId.length > 0, 'Expected subagent detail to expose session id');
-    ensure(typeof subagent.sessionMessageCount === 'number' && subagent.sessionMessageCount >= 2, 'Expected subagent detail to expose updated session message count');
+    ensure(typeof subagent.conversationId === 'string' && subagent.conversationId.length > 0, 'Expected subagent detail to expose conversation id');
+    ensure(typeof subagent.messageCount === 'number' && subagent.messageCount >= 2, 'Expected subagent detail to expose updated message count');
     ensure(subagent.status === 'completed', 'Expected subagent detail status to be completed');
     ensure(typeof subagent.result?.text === 'string' && subagent.result.text.length > 0, 'Expected subagent detail result text');
   });
 
   await runStep('plugins.subagent-delete.success', async () => {
-    const deleted = await deleteJson(apiBase, `/subagents/${state.automationSubagentSessionId}`);
-    ensure(deleted === true, 'Expected subagent session deletion to succeed');
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
-      const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, {
-        headers: userHeaders(),
-      });
-      if (conversation.messages.some((message) => message.content === '子代理「自动化烟测任务」已被手动移除，后续结果不会再回写到主会话。')) {
-        return;
-      }
-      await delay(250);
-    }
-    throw new Error('Timed out waiting for manual subagent removal notice');
+    const closed = await postJson(apiBase, `/subagents/${state.automationSubagentSessionId}/close`);
+    ensure(closed.conversationId === state.automationSubagentSessionId, 'Expected close_subagent route to return the same conversation id');
+    ensure(closed.status === 'closed', 'Expected close_subagent route to mark the subagent closed');
+    ensure(typeof closed.closedAt === 'string' && closed.closedAt.length > 0, 'Expected close_subagent route to expose closedAt');
   });
 
   await runStep('plugins.subagent-detail.after-delete', async () => {
-    await getJson(apiBase, `/subagents/${state.automationSubagentSessionId}`, {
-      expectedStatus: 404,
-    });
+    const subagent = await getJson(apiBase, `/subagents/${state.automationSubagentSessionId}`);
+    ensure(subagent.status === 'closed', 'Expected closed subagent detail to remain queryable');
   });
 
   await runStep('automations.logs', async () => {
@@ -3399,21 +3429,21 @@ function readPluginHealthOk(health) {
   return health?.status === 'healthy';
 }
 
-async function waitForSubagentTaskCompletion(apiBase, sessionId) {
+async function waitForSubagentTaskCompletion(apiBase, conversationId) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
-    const subagent = await getJson(apiBase, `/subagents/${sessionId}`);
+    const subagent = await getJson(apiBase, `/subagents/${conversationId}`);
     if (subagent?.status === 'completed') {
       return subagent;
     }
     if (subagent?.status === 'error') {
-      throw new Error(`Subagent session ${sessionId} failed: ${subagent.error ?? 'unknown error'}`);
+      throw new Error(`Subagent conversation ${conversationId} failed: ${subagent.error ?? 'unknown error'}`);
     }
     await delay(250);
   }
 
-  throw new Error(`Timed out waiting for subagent session ${sessionId} to complete`);
+  throw new Error(`Timed out waiting for subagent conversation ${conversationId} to complete`);
 }
 
 async function startRemoteRoutePlugin(scriptPath, remoteConnection, variant = 'base') {
@@ -4063,7 +4093,7 @@ function planSmokeChatResponse(body) {
       toolName: 'skill',
     };
   }
-  if (shouldTriggerSubagentTool(body)) {
+  if (shouldTriggerSpawnSubagentTool(body)) {
     return {
       arguments: {
         description: '探索 smoke 技能',
@@ -4072,7 +4102,17 @@ function planSmokeChatResponse(body) {
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_subagent_0',
-      toolName: 'subagent',
+      toolName: 'spawn_subagent',
+    };
+  }
+  if (shouldTriggerWaitSubagentTool(body)) {
+    return {
+      arguments: {
+        conversationId: readLatestSubagentConversationId(body),
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_smoke_subagent_wait_0',
+      toolName: 'wait_subagent',
     };
   }
   if (shouldTriggerTodoTool(body)) {
@@ -4279,7 +4319,7 @@ function planSmokeChatResponse(body) {
       text: '已加载技能 smoke-http-flow，可继续执行 Smoke HTTP Flow。',
     };
   }
-  if (requestContainsToolResult(body, 'subagent')) {
+  if (requestContainsToolResult(body, 'wait_subagent')) {
     return {
       kind: 'text',
       text: '子代理已完成：Smoke HTTP Flow 用于后端烟测。',
@@ -4365,9 +4405,16 @@ function shouldTriggerSkillTool(body) {
     && readLatestUserText(body?.messages).includes('请加载 smoke-http-flow 技能');
 }
 
-function shouldTriggerSubagentTool(body) {
-  return requestIncludesToolName(body, 'subagent')
-    && !requestContainsToolResult(body, 'subagent')
+function shouldTriggerSpawnSubagentTool(body) {
+  return requestIncludesToolName(body, 'spawn_subagent')
+    && !requestContainsToolResult(body, 'spawn_subagent')
+    && readLatestUserText(body?.messages).includes('请使用 subagent 工具委派一个探索任务');
+}
+
+function shouldTriggerWaitSubagentTool(body) {
+  return requestIncludesToolName(body, 'wait_subagent')
+    && requestContainsToolResult(body, 'spawn_subagent')
+    && !requestContainsToolResult(body, 'wait_subagent')
     && readLatestUserText(body?.messages).includes('请使用 subagent 工具委派一个探索任务');
 }
 
@@ -4499,11 +4546,8 @@ function requestContainsToolResult(body, toolName) {
         : '';
     const content = readTextContent(message);
     return (toolName === 'skill' && (toolCallId === 'call_smoke_skill_0' || content.includes('<skill_content name="smoke-http-flow">')))
-      || (toolName === 'subagent' && (
-        toolCallId === 'call_smoke_subagent_0'
-        || content.includes('<subagent_result')
-        || content.includes('"sessionId"')
-      ))
+      || (toolName === 'spawn_subagent' && toolCallId === 'call_smoke_subagent_0')
+      || (toolName === 'wait_subagent' && toolCallId === 'call_smoke_subagent_wait_0')
       || (toolName === 'todowrite' && (toolCallId === 'call_smoke_todo_0' || content.includes('<todo_result>')))
       || (toolName === 'webfetch' && (toolCallId === 'call_smoke_webfetch_0' || content.includes('<webfetch_result>')))
       || ((toolName === 'bash' || toolName === 'powershell') && (
@@ -4547,8 +4591,28 @@ function requestContainsSubagentSessionId(body) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   return messages.some((message) =>
     message?.role === 'tool'
-    && (readTextContent(message).includes('session_id: ') || readTextContent(message).includes('"sessionId"'))
+    && (readTextContent(message).includes('conversation_id: ') || readTextContent(message).includes('"conversationId"'))
     && isRenderedSubagentToolContent(readTextContent(message)));
+}
+
+function readLatestSubagentConversationId(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'tool') {
+      continue;
+    }
+    const content = readTextContent(message);
+    const jsonMatch = content.match(/"conversationId"\s*:\s*"([^"]+)"/);
+    if (jsonMatch?.[1]) {
+      return jsonMatch[1];
+    }
+    const textMatch = content.match(/conversation_id:\s*([0-9a-f-]+)/i);
+    if (textMatch?.[1]) {
+      return textMatch[1];
+    }
+  }
+  throw new Error('Expected spawn_subagent result to expose conversation id');
 }
 
 function requestContainsTodoResult(body, todoContent) {
@@ -4642,7 +4706,7 @@ function readNormalizedFileContent(filePath) {
 }
 
 function isRenderedSubagentToolContent(content) {
-  return content.includes('<subagent_result') || content.includes('"sessionId"');
+  return content.includes('<subagent_result') || content.includes('"conversationId"');
 }
 
 function requestContainsInvalidToolResult(body, toolName, errorFragment) {

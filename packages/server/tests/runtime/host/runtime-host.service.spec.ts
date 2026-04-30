@@ -41,13 +41,9 @@ import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runt
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
 import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
-import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 
-const subagentStorePaths: string[] = [];
-const subagentSessionStorePaths: string[] = [];
 const conversationStorePaths: string[] = [];
 const runtimeWorkspaceRoots: string[] = [];
 let fixtureConversationId = 'conversation-1';
@@ -61,18 +57,6 @@ describe('RuntimeHostService', () => {
   });
 
   afterEach(() => {
-    while (subagentStorePaths.length > 0) {
-      const nextPath = subagentStorePaths.pop();
-      if (nextPath && fs.existsSync(nextPath)) {
-        fs.unlinkSync(nextPath);
-      }
-    }
-    while (subagentSessionStorePaths.length > 0) {
-      const nextPath = subagentSessionStorePaths.pop();
-      if (nextPath && fs.existsSync(nextPath)) {
-        fs.unlinkSync(nextPath);
-      }
-    }
     while (conversationStorePaths.length > 0) {
       const nextPath = conversationStorePaths.pop();
       if (nextPath && fs.existsSync(nextPath)) {
@@ -86,8 +70,6 @@ describe('RuntimeHostService', () => {
       }
     }
     delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
-    delete process.env.GARLIC_CLAW_SUBAGENTS_PATH;
-    delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
     delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
   });
 
@@ -414,56 +396,14 @@ describe('RuntimeHostService', () => {
     });
   });
 
-  it('runs subagent requests and tracks inline and background subagents', async () => {
+  it('spawns、等待并继续输入子代理会话', async () => {
     jest.useFakeTimers();
     const { service } = createFixture({
       permissions: ['conversation:read', 'conversation:write', 'subagent:run'],
     });
 
-    const inlineRun = await memoryPluginCall(service, 'subagent.run', {
-      messages: [
-        {
-          content: '请帮我总结当前对话',
-          role: 'user',
-        },
-      ],
-      modelId: 'gpt-5.2',
-      providerId: 'openai',
-    }, { userId: 'user-1', conversationId: fixtureConversationId });
-    expect(inlineRun).toEqual({
-      finishReason: 'stop',
-      message: {
-        content: 'Generated: 请帮我总结当前对话',
-        role: 'assistant',
-      },
-      modelId: 'gpt-5.2',
-      providerId: 'openai',
-      sessionId: expect.any(String),
-      sessionMessageCount: 2,
-      text: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
-      toolCalls: [],
-      toolResults: [],
-      usage: {
-        inputTokens: 7,
-        outputTokens: 18,
-        source: 'provider',
-        totalTokens: 25,
-      },
-    });
-    await expect(memoryPluginCall(service, 'subagent.list', {}, {
-      userId: 'user-1',
-      conversationId: fixtureConversationId,
-    })).resolves.toEqual([
-      expect.objectContaining({
-        sessionId: (inlineRun as { sessionId: string }).sessionId,
-        status: 'completed',
-        visibility: 'inline',
-      }),
-    ]);
-    await memoryPluginCall(service, 'conversation.title.set', {
-      title: fixtureConversationTitle,
-    }, { userId: 'user-1', conversationId: fixtureConversationId });
-    const started = await memoryPluginCall(service, 'subagent.start', {
+    const spawned = await memoryPluginCall(service, 'subagent.spawn', {
+      description: '当前对话总结',
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -479,34 +419,64 @@ describe('RuntimeHostService', () => {
         },
       },
     }, { userId: 'user-1', conversationId: fixtureConversationId });
-    expect(started).toMatchObject({
-      sessionId: expect.any(String),
+    expect(spawned).toMatchObject({
+      conversationId: expect.any(String),
+      description: '当前对话总结',
+      messageCount: 2,
+      parentConversationId: fixtureConversationId,
       pluginDisplayName: 'Memory',
       status: 'queued',
       writeBackStatus: 'pending',
     });
     await jest.runAllTimersAsync();
+    const loaded = await memoryPluginCall(service, 'subagent.wait', {
+      conversationId: (spawned as { conversationId: string }).conversationId,
+      timeoutMs: 50,
+    }, { userId: 'user-1', conversationId: fixtureConversationId });
+    expect(loaded).toMatchObject({
+      conversationId: (spawned as { conversationId: string }).conversationId,
+      messageCount: 2,
+      result: {
+        text: 'Generated: 请帮我总结当前对话',
+      },
+      status: 'completed',
+      writeBackMessageId: expect.any(String),
+      writeBackStatus: 'sent',
+    });
     await expect(memoryPluginCall(service, 'subagent.list', {}, {
       userId: 'user-1',
       conversationId: fixtureConversationId,
     })).resolves.toEqual([
       expect.objectContaining({
-        sessionId: (inlineRun as { sessionId: string }).sessionId,
+        conversationId: (spawned as { conversationId: string }).conversationId,
         status: 'completed',
-        visibility: 'inline',
-      }),
-      expect.objectContaining({
-        sessionId: (started as { sessionId: string }).sessionId,
-        status: 'completed',
-        visibility: 'background',
       }),
     ]);
+
+    const continued = await memoryPluginCall(service, 'subagent.send-input', {
+      conversationId: (spawned as { conversationId: string }).conversationId,
+      description: '继续补充总结',
+      messages: [
+        {
+          content: '再补充一句结论',
+          role: 'user',
+        },
+      ],
+    }, { userId: 'user-1', conversationId: fixtureConversationId });
+    expect(continued).toMatchObject({
+      conversationId: (spawned as { conversationId: string }).conversationId,
+      description: '继续补充总结',
+      status: 'queued',
+    });
+    await jest.runAllTimersAsync();
     await expect(memoryPluginCall(service, 'subagent.get', {
-      sessionId: (started as { sessionId: string }).sessionId,
+      conversationId: (spawned as { conversationId: string }).conversationId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
-      sessionId: (started as { sessionId: string }).sessionId,
+      conversationId: (spawned as { conversationId: string }).conversationId,
+      description: '继续补充总结',
+      messageCount: 4,
       result: {
-        text: 'Generated: 请帮我总结当前对话',
+        text: 'Generated: 再补充一句结论',
       },
       status: 'completed',
       writeBackMessageId: expect.any(String),
@@ -514,12 +484,16 @@ describe('RuntimeHostService', () => {
     await expect(memoryPluginCall(service, 'conversation.messages.list', {}, {
       userId: 'user-1',
       conversationId: fixtureConversationId,
-    })).resolves.toEqual([
+    })).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({
         content: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
         id: expect.any(String),
       }),
-    ]);
+      expect.objectContaining({
+        content: '<subagent_result>\nGenerated: 再补充一句结论\n</subagent_result>',
+        id: expect.any(String),
+      }),
+    ]));
     jest.useRealTimers();
   });
 
@@ -535,7 +509,7 @@ describe('RuntimeHostService', () => {
     runtimeHostConversationMessageService.sendMessage = jest.fn(() => {
       throw new Error('message.send failed');
     });
-    const started = await memoryPluginCall(service, 'subagent.start', {
+    const started = await memoryPluginCall(service, 'subagent.spawn', {
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -557,7 +531,7 @@ describe('RuntimeHostService', () => {
     });
     await jest.runAllTimersAsync();
     await expect(memoryPluginCall(service, 'subagent.get', {
-      sessionId: (started as { sessionId: string }).sessionId,
+      conversationId: (started as { conversationId: string }).conversationId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       status: 'completed',
       writeBackError: 'message.send failed',
@@ -567,7 +541,7 @@ describe('RuntimeHostService', () => {
     (runtimeHostSubagentRunnerService as any).executeSubagent = async () => {
       throw new Error('subagent failed');
     };
-    const failed = await memoryPluginCall(service, 'subagent.start', {
+    const failed = await memoryPluginCall(service, 'subagent.spawn', {
       messages: [
         {
           content: '再次总结',
@@ -578,12 +552,12 @@ describe('RuntimeHostService', () => {
       providerId: 'openai',
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(failed).toMatchObject({
-      sessionId: expect.any(String),
+      conversationId: expect.any(String),
       status: 'queued',
     });
     await jest.runAllTimersAsync();
     await expect(memoryPluginCall(service, 'subagent.get', {
-      sessionId: (failed as { sessionId: string }).sessionId,
+      conversationId: (failed as { conversationId: string }).conversationId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       error: 'subagent failed',
       status: 'error',
@@ -1034,12 +1008,6 @@ describe('RuntimeHostService', () => {
 function createFixture(input?: {
   permissions?: string[];
 }) {
-  const subagentStorePath = path.join(os.tmpdir(), `gc-server-host-subagent-${Date.now()}-${Math.random()}.json`);
-  const subagentSessionPath = path.join(os.tmpdir(), `gc-server-host-subagent-session-${Date.now()}-${Math.random()}.json`);
-  process.env.GARLIC_CLAW_SUBAGENTS_PATH = subagentStorePath;
-  process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH = subagentSessionPath;
-  subagentStorePaths.push(subagentStorePath);
-  subagentSessionStorePaths.push(subagentSessionPath);
   const pluginPersistenceService = new PluginPersistenceService();
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),
@@ -1090,8 +1058,9 @@ function createFixture(input?: {
         : { customBlockOrigin: 'ai-sdk.response-body' as const }),
     })),
   };
-  const readStubLlmText = (request: { messages: Array<{ content: unknown }> }) => {
-    const content = request.messages[0]?.content;
+  const readStubLlmText = (request: { messages: Array<{ content: unknown; role?: string }> }) => {
+    const userMessage = [...request.messages].reverse().find((message) => message.role === 'user');
+    const content = userMessage?.content ?? request.messages[0]?.content;
     if (typeof content === 'string') {
       return content;
     }
@@ -1118,9 +1087,8 @@ function createFixture(input?: {
     {
       invokeHook: jest.fn(),
     } as never,
-    new RuntimeHostSubagentStoreService(),
-    new RuntimeHostSubagentSessionStoreService(),
     new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    runtimeHostConversationRecordService,
   );
   (runtimeHostSubagentRunnerService as any).executeSubagent = async ({ request }: any) => ({
     finishReason: 'stop',

@@ -1,10 +1,15 @@
 import type {
   PluginSubagentExecutionResult,
+  PluginSubagentCloseParams,
   PluginSubagentRequest,
-  PluginSubagentRunParams,
+  PluginSubagentInterruptParams,
+  PluginSubagentSendInputParams,
   PluginSubagentStatus,
+  PluginSubagentSpawnParams,
+  PluginSubagentWaitParams,
   PluginSubagentWriteBackStatus,
 } from './plugin-ai';
+import type { ConversationSubagentState } from './chat';
 import type { PluginMessageTargetInfo, PluginMessageTargetRef } from './plugin-chat';
 import type { PluginCallContext, PluginRuntimeKind } from './plugin-core';
 
@@ -18,15 +23,16 @@ export interface PluginSubagentTypeSummary {
   description?: string;
 }
 
-export interface PluginSubagentStartParams extends PluginSubagentRunParams {
+export interface PluginSubagentSpawnWithWriteBackParams extends PluginSubagentSpawnParams {
   writeBack?: PluginSubagentWriteBack | null;
 }
 
 export interface PluginSubagentSummary {
-  sessionId: string;
-  sessionMessageCount: number;
-  sessionUpdatedAt: string;
-  visibility: 'background' | 'inline';
+  conversationId: string;
+  parentConversationId?: string;
+  title: string;
+  messageCount: number;
+  updatedAt: string;
   description?: string;
   subagentType?: string;
   subagentTypeName?: string;
@@ -46,7 +52,7 @@ export interface PluginSubagentSummary {
   requestedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
-  conversationId?: string;
+  closedAt: string | null;
   userId?: string;
 }
 
@@ -59,3 +65,12 @@ export interface PluginSubagentDetail extends PluginSubagentSummary {
 export interface PluginSubagentOverview {
   subagents: PluginSubagentSummary[];
 }
+
+export type PluginSubagentConversationState = ConversationSubagentState;
+export type {
+  PluginSubagentSpawnParams,
+  PluginSubagentWaitParams,
+  PluginSubagentSendInputParams,
+  PluginSubagentInterruptParams,
+  PluginSubagentCloseParams,
+};

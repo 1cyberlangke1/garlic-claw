@@ -5,7 +5,7 @@
         <div>
           <span class="hero-kicker">Subagent Sessions</span>
           <h1>Subagent</h1>
-          <p>管理同步与后台子代理的回写状态和上下文。</p>
+          <p>管理子代理 runtime 的状态、上下文与关闭动作。</p>
         </div>
         <div class="subagent-hero-side">
           <button
@@ -19,7 +19,7 @@
           <div class="hero-note">
             <span class="hero-note-label">子代理面板</span>
             <strong>{{ heroHeadline }}</strong>
-          <p>每个主会话会聚合成一个工作区，支持在 `main / agent*` 之间切换查看。</p>
+          <p>每个主会话会聚合成一个工作区，支持在 `main / 命名子代理` 之间切换查看。</p>
           </div>
         </div>
       </header>
@@ -45,7 +45,7 @@
         <div>
           <span class="panel-kicker">Workspace Windows</span>
           <h2>会话窗口</h2>
-          <p>按主会话聚合同步与后台子代理，并在 `main / agent*` 之间查看上下文。</p>
+          <p>按主会话聚合同步与后台子代理，并在 `main / 命名子代理` 之间查看上下文。</p>
         </div>
       </div>
 
@@ -106,20 +106,20 @@
 
             <div class="workspace-agent-list">
               <button
-                v-for="(subagent, index) in activeConversationSubagents"
-                :key="subagent.sessionId"
+                v-for="subagent in activeConversationSubagents"
+                :key="subagent.conversationId"
                 type="button"
                 class="workspace-agent-card"
                 :class="subagent.status"
-                @click="selectWindow(subagent.sessionId)"
+                @click="selectWindow(subagent.conversationId)"
               >
                 <div class="workspace-agent-header">
-                  <strong>agent{{ index + 1 }}</strong>
+                  <strong>{{ readSubagentDisplayLabel(subagent) }}</strong>
                   <span class="status-pill" :class="subagent.status">{{ statusLabel(subagent.status) }}</span>
                 </div>
                 <p>{{ subagent.description || subagent.requestPreview }}</p>
                 <div class="meta-row">
-                  <span class="meta-chip">会话 {{ subagent.sessionMessageCount }} 条</span>
+                  <span class="meta-chip">消息 {{ subagent.messageCount }} 条</span>
                   <span v-if="subagent.providerId" class="meta-chip">{{ subagent.providerId }}</span>
                   <span v-if="subagent.modelId" class="meta-chip">{{ subagent.modelId }}</span>
                 </div>
@@ -148,9 +148,9 @@
                   <p>{{ activeSubagentSummary.writeBackError || '无回写异常' }}</p>
                 </article>
                 <article class="detail-card">
-                  <span class="overview-label">可见性</span>
-                  <strong>{{ visibilityLabel(activeSubagentSummary.visibility) }}</strong>
-                  <p>{{ activeSubagentSummary.visibility === 'background' ? '会保留在后台队列与回写链路里。' : '当前由同步 subagent 工具直接返回结果。' }}</p>
+                  <span class="overview-label">运行方式</span>
+                  <strong>会话级 runtime</strong>
+                  <p>子代理直接作为真实会话存在，并支持继续输入、等待、中断与关闭。</p>
                 </article>
               </div>
 
@@ -202,7 +202,7 @@
         <div>
           <span class="panel-kicker">Subagent Overview</span>
           <h2>子代理账本</h2>
-          <p>按发起方、模型和状态查看同步与后台子代理，不再让结果只停留在运行时内存里。</p>
+          <p>按发起方、模型和状态查看子代理 runtime，不再依赖独立账本文件。</p>
         </div>
         <button
           type="button"
@@ -241,19 +241,19 @@
       <div v-else class="subagent-list">
         <article
           v-for="subagent in pagedSubagents"
-          :key="subagent.sessionId"
+          :key="subagent.conversationId"
           class="subagent-card"
         >
           <div class="subagent-card-top">
             <div>
               <div class="subagent-title-row">
-                <strong>{{ subagent.description || subagent.pluginDisplayName || subagent.pluginId }}</strong>
+                <strong>{{ readSubagentDisplayLabel(subagent) }}</strong>
                 <span class="status-pill" :class="subagent.status">{{ statusLabel(subagent.status) }}</span>
               </div>
-              <p v-if="subagent.description" class="detail-line muted-text">
+              <p class="detail-line muted-text">
                 发起方: {{ subagent.pluginDisplayName || subagent.pluginId }}
               </p>
-              <p>{{ subagent.requestPreview }}</p>
+              <p>{{ subagent.description || subagent.requestPreview }}</p>
             </div>
             <div class="subagent-card-actions">
               <button
@@ -267,10 +267,10 @@
                 type="button"
                 class="ghost-button danger-button"
                 data-test="remove-subagent-button"
-                :disabled="removingSessionId === subagent.sessionId"
-                @click="removeSubagentSession(subagent.sessionId)"
+                :disabled="closingConversationId === subagent.conversationId"
+                @click="closeSubagentConversation(subagent.conversationId)"
               >
-                {{ removingSessionId === subagent.sessionId ? '移除中...' : '移除' }}
+                {{ closingConversationId === subagent.conversationId ? '关闭中...' : '关闭' }}
               </button>
               <RouterLink
                 class="ghost-button link-button"
@@ -283,11 +283,10 @@
 
           <div class="meta-row">
             <span class="meta-chip">{{ subagent.runtimeKind === 'local' ? '本地' : '远程' }}</span>
-            <span class="meta-chip">{{ visibilityLabel(subagent.visibility) }}</span>
             <span v-if="subagent.subagentTypeName || subagent.subagentType" class="meta-chip">
               {{ subagent.subagentTypeName || subagent.subagentType }}
             </span>
-            <span class="meta-chip">会话 {{ subagent.sessionMessageCount }} 条</span>
+            <span class="meta-chip">消息 {{ subagent.messageCount }} 条</span>
             <span v-if="subagent.providerId" class="meta-chip">{{ subagent.providerId }}</span>
             <span v-if="subagent.modelId" class="meta-chip">{{ subagent.modelId }}</span>
             <span class="meta-chip writeback-chip" :class="subagent.writeBackStatus">
@@ -309,8 +308,9 @@
           </p>
           <p class="detail-line muted-text">
             请求时间: {{ formatTime(subagent.requestedAt) }}
-            <span> · 会话更新于 {{ formatTime(subagent.sessionUpdatedAt) }}</span>
+            <span> · 会话更新于 {{ formatTime(subagent.updatedAt) }}</span>
             <span v-if="subagent.finishedAt"> · 完成于 {{ formatTime(subagent.finishedAt) }}</span>
+            <span v-if="subagent.closedAt"> · 关闭于 {{ formatTime(subagent.closedAt) }}</span>
           </p>
         </article>
       </div>
@@ -358,7 +358,7 @@ const {
   activeWindowKind,
   activeWorkspaceWindows,
   activeSubagentDetail,
-  removingSessionId,
+  closingConversationId,
   searchKeyword,
   filter,
   pagedSubagents,
@@ -375,7 +375,7 @@ const {
   errorSubagentCount,
   writeBackAttentionCount,
   refreshAll,
-  removeSubagentSession,
+  closeSubagentConversation,
   selectConversation,
   selectWindow,
   subagentCount,
@@ -444,12 +444,12 @@ const filterOptions = [
 ]
 
 function openSubagentWindow(subagent: PluginSubagentSummary) {
-  const conversationId = subagent.conversationId?.trim() || '__global__'
+  const conversationId = subagent.parentConversationId?.trim() || '__global__'
   selectConversation(conversationId)
-  selectWindow(subagent.sessionId)
+  selectWindow(subagent.conversationId)
 }
 
-function statusLabel(status: 'queued' | 'running' | 'completed' | 'error') {
+function statusLabel(status: 'closed' | 'completed' | 'error' | 'interrupted' | 'queued' | 'running') {
   switch (status) {
     case 'queued':
       return '排队中'
@@ -457,6 +457,10 @@ function statusLabel(status: 'queued' | 'running' | 'completed' | 'error') {
       return '运行中'
     case 'completed':
       return '已完成'
+    case 'interrupted':
+      return '已中断'
+    case 'closed':
+      return '已关闭'
     default:
       return '失败'
   }
@@ -473,10 +477,6 @@ function writeBackLabel(status: 'pending' | 'sent' | 'failed' | 'skipped') {
     default:
       return '未回写'
   }
-}
-
-function visibilityLabel(visibility: 'background' | 'inline') {
-  return visibility === 'background' ? '后台' : '同步'
 }
 
 function formatTime(iso: string) {
@@ -500,6 +500,10 @@ function formatMessagePart(part: ChatMessagePart) {
     default:
       return '[unknown-part]'
   }
+}
+
+function readSubagentDisplayLabel(subagent: PluginSubagentSummary) {
+  return subagent.title.trim() || subagent.description || subagent.pluginDisplayName || subagent.pluginId
 }
 </script>
 

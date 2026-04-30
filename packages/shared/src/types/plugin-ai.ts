@@ -55,9 +55,9 @@ export interface PluginLlmGenerateTextResult {
   usage?: AiModelUsage;
 }
 
-/** 插件侧统一 Subagent 运行请求。 */
-export interface PluginSubagentRunParams {
-  sessionId?: string;
+/** 插件侧统一 Subagent 启动请求。 */
+export interface PluginSubagentSpawnParams {
+  name?: string;
   description?: string;
   maxConversationSubagents?: number;
   subagentType?: string;
@@ -77,7 +77,9 @@ export type PluginSubagentStatus =
   | 'queued'
   | 'running'
   | 'completed'
-  | 'error';
+  | 'error'
+  | 'interrupted'
+  | 'closed';
 
 /** 后台子代理回写状态。 */
 export type PluginSubagentWriteBackStatus =
@@ -114,14 +116,41 @@ export interface PluginSubagentExecutionResult {
   toolResults: PluginSubagentToolResult[];
 }
 
-/** 插件侧统一 Subagent 运行结果。 */
-export interface PluginSubagentRunResult extends PluginSubagentExecutionResult {
-  sessionId: string;
-  sessionMessageCount: number;
+/** 插件侧统一 Subagent 等待参数。 */
+export interface PluginSubagentWaitParams {
+  conversationId: string;
+  timeoutMs?: number;
+}
+
+/** 插件侧统一 Subagent 继续输入参数。 */
+export interface PluginSubagentSendInputParams {
+  conversationId: string;
+  name?: string;
+  description?: string;
+  providerId?: string;
+  modelId?: string;
+  system?: string;
+  messages: PluginLlmMessage[];
+  toolNames?: string[];
+  variant?: string;
+  providerOptions?: JsonObject;
+  headers?: Record<string, string>;
+  maxOutputTokens?: number;
+}
+
+/** 插件侧统一 Subagent 中断参数。 */
+export interface PluginSubagentInterruptParams {
+  conversationId: string;
+}
+
+/** 插件侧统一 Subagent 关闭参数。 */
+export interface PluginSubagentCloseParams {
+  conversationId: string;
 }
 
 /** 子代理运行时可改写的请求快照。 */
 export interface PluginSubagentRequest {
+  name?: string;
   description?: string;
   subagentType?: string;
   providerId?: string;

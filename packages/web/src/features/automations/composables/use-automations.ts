@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, shallowRef, ref } from 'vue'
 import type {
   ActionConfig,
   TriggerConfig,
@@ -43,7 +43,7 @@ interface AutomationFormState {
  */
 export function useAutomations() {
   const automations = ref<AutomationInfo[]>([])
-  const conversations = ref<Conversation[]>([])
+  const conversations = shallowRef<Conversation[]>([])
   const requestState = useAsyncState(true)
   const loading = requestState.loading
   const error = requestState.error
@@ -156,7 +156,7 @@ export function useAutomations() {
     handleToggle,
     handleRun,
     handleDelete,
-    describeAction,
+    describeAction: (action: ActionConfig) => describeAction(action, conversations.value),
     formatTime,
     truncate,
   }

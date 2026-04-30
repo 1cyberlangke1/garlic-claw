@@ -1,11 +1,11 @@
-import { buildSubagentRunParams, buildSubagentStartParams, SUBAGENT_TOOL_DEFINITIONS } from '@garlic-claw/plugin-sdk/authoring';
+import { buildSubagentCloseParams, buildSubagentSendInputParams, buildSubagentSpawnParams, buildSubagentWaitParams, SUBAGENT_TOOL_DEFINITIONS } from '@garlic-claw/plugin-sdk/authoring';
 import type { JsonObject, PluginCallContext, PluginParamSchema, ToolInfo } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { RuntimeHostSubagentRunnerService } from '../../runtime/host/runtime-host-subagent-runner.service';
 import { INTERNAL_SUBAGENT_SOURCE_ID, SubagentSettingsService } from './subagent-settings.service';
 
 const INTERNAL_SUBAGENT_SOURCE_LABEL = 'Subagent';
-const SUBAGENT_TOOL_NAMES = new Set(['subagent', 'subagent_background', 'cancel_subagent']);
+const SUBAGENT_TOOL_NAMES = new Set(['spawn_subagent', 'wait_subagent', 'send_input_subagent', 'interrupt_subagent', 'close_subagent']);
 
 @Injectable()
 export class SubagentToolService {
@@ -43,26 +43,54 @@ export class SubagentToolService {
     if (!SUBAGENT_TOOL_NAMES.has(toolName)) {
       throw new NotFoundException(`Internal subagent tool not found: ${toolName}`);
     }
-    if (toolName === 'cancel_subagent') {
-      const sid = readRequiredPrompt(args.sessionId, toolName);
-      const removed = await this.runtimeHostSubagentRunnerService.removeSubagentSession(sid);
-      return { cancelled: removed, sessionId: sid };
-    }
     const config = this.subagentSettingsService.readSubagentConfig();
-    const prompt = readRequiredPrompt(args.prompt, toolName);
-    const description = readOptionalText(args.description);
-    const sessionId = readOptionalText(args.sessionId);
-    const subagentType = readOptionalText(args.subagentType);
-    const base = { config, prompt, ...(description ? { description } : {}), ...(sessionId ? { sessionId } : {}), ...(subagentType ? { subagentType } : {}) };
-    return toolName === 'subagent'
-      ? this.runtimeHostSubagentRunnerService.runSubagent(this.getSourceId(), context, buildSubagentRunParams(base) as unknown as JsonObject)
-      : this.runtimeHostSubagentRunnerService.startSubagent(this.getSourceId(), this.getSourceLabel(), context, buildSubagentStartParams({ ...base, shouldWriteBack: readWriteBackFlag(args.writeBack, Boolean(context.conversationId)), conversationId: context.conversationId ?? undefined }) as unknown as JsonObject);
+    if (toolName === 'wait_subagent') {
+      return this.runtimeHostSubagentRunnerService.waitSubagent(this.getSourceId(), buildSubagentWaitParams({
+        conversationId: readRequiredText(args.conversationId, toolName),
+        ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+      }));
+    }
+    if (toolName === 'interrupt_subagent') {
+      return this.runtimeHostSubagentRunnerService.interruptSubagent(this.getSourceId(), readRequiredText(args.conversationId, toolName), context.userId);
+    }
+    if (toolName === 'close_subagent') {
+      return this.runtimeHostSubagentRunnerService.closeSubagent(this.getSourceId(), buildSubagentCloseParams({
+        conversationId: readRequiredText(args.conversationId, toolName),
+      }), context.userId);
+    }
+    if (toolName === 'send_input_subagent') {
+      return this.runtimeHostSubagentRunnerService.sendInputSubagent(this.getSourceId(), context, buildSubagentSendInputParams({
+        config,
+        conversationId: readRequiredText(args.conversationId, toolName),
+        description: readOptionalText(args.description) ?? null,
+        modelId: readOptionalText(args.modelId) ?? null,
+        name: readOptionalText(args.name) ?? null,
+        prompt: readRequiredText(args.prompt, toolName),
+        providerId: readOptionalText(args.providerId) ?? null,
+      }));
+    }
+    return this.runtimeHostSubagentRunnerService.spawnSubagent(
+      this.getSourceId(),
+      this.getSourceLabel(),
+      context,
+      buildSubagentSpawnParams({
+        config,
+        conversationId: context.conversationId ?? undefined,
+        description: readOptionalText(args.description) ?? null,
+        modelId: readOptionalText(args.modelId) ?? null,
+        name: readOptionalText(args.name) ?? null,
+        prompt: readRequiredText(args.prompt, toolName),
+        providerId: readOptionalText(args.providerId) ?? null,
+        shouldWriteBack: readWriteBackFlag(args.writeBack, Boolean(context.conversationId)),
+        subagentType: readOptionalText(args.subagentType) ?? null,
+      }) as unknown as JsonObject,
+    );
   }
 }
 
-function readRequiredPrompt(value: unknown, toolName: string): string {
+function readRequiredText(value: unknown, toolName: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new BadRequestException(`${toolName}.prompt 必填`);
+    throw new BadRequestException(`${toolName} 缺少必填字符串参数`);
   }
   return value.trim();
 }

@@ -226,10 +226,10 @@ function readConversationTaskEvents(
   }
   if (part.type === 'tool-call') {
     state.toolCalls.push({ input: part.input, toolCallId: part.toolCallId, toolName: part.toolName });
-    return [...metadataEvents, { input: part.input, messageId, toolName: part.toolName, type: 'tool-call' }];
+    return [...metadataEvents, { input: part.input, messageId, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-call' }];
   }
   state.toolResults.push({ output: part.output, toolCallId: part.toolCallId, toolName: part.toolName });
-  return [...metadataEvents, { messageId, output: part.output, toolName: part.toolName, type: 'tool-result' }];
+  return [...metadataEvents, { messageId, output: part.output, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-result' }];
 }
 
 function readConversationTaskMetadataEvents(

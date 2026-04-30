@@ -138,7 +138,7 @@
           <span class="actions-list">
             动作：
             <span v-for="(action, i) in auto.actions" :key="i" class="action-tag">
-              {{ describeAction(action, conversations) }}
+              {{ describeAction(action) }}
             </span>
           </span>
           <span v-if="auto.lastRunAt" class="last-run">

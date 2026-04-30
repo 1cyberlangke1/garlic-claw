@@ -48,7 +48,6 @@ export default [
       parserOptions: {
         ecmaVersion: 2024,
         sourceType: 'module',
-        project: './tsconfig.base.json',
       },
       globals: {
         ...globals.node,

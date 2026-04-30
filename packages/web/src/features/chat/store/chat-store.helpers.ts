@@ -43,9 +43,11 @@ export function parseToolCalls(value: string | null): ChatMessage['toolCalls'] {
     return undefined
   }
 
-  return (JSON.parse(value) as Array<{ toolName: string; input: JsonValue }>).map((item) => ({
+  return (JSON.parse(value) as Array<{ toolCallId?: string; toolName: string; input: JsonValue }>).map((item) => ({
+    ...(typeof item.toolCallId === 'string' ? { toolCallId: item.toolCallId } : {}),
     toolName: item.toolName,
-    input: stringifyPayload(item.input),
+    input: item.input,
+    inputPreview: stringifyPayload(item.input),
   }))
 }
 
@@ -59,9 +61,11 @@ export function parseToolResults(value: string | null): ChatMessage['toolResults
     return undefined
   }
 
-  return (JSON.parse(value) as Array<{ toolName: string; output: JsonValue }>).map((item) => ({
+  return (JSON.parse(value) as Array<{ toolCallId?: string; toolName: string; output: JsonValue }>).map((item) => ({
+    ...(typeof item.toolCallId === 'string' ? { toolCallId: item.toolCallId } : {}),
     toolName: item.toolName,
-    output: stringifyPayload(item.output),
+    output: item.output,
+    outputPreview: stringifyPayload(item.output),
   }))
 }
 

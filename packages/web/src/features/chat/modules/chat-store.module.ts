@@ -60,7 +60,7 @@ export interface QueuedChatSendPreviewEntry {
 }
 
 export function createChatStoreModule() {
-  const conversations = ref<Conversation[]>([]);
+  const conversations = shallowRef<Conversation[]>([]);
   const currentConversationId = ref<string | null>(null);
   const contextWindowPreview = ref<ConversationContextWindowPreview | null>(null);
   const messages = shallowRef<ChatMessage[]>([]);

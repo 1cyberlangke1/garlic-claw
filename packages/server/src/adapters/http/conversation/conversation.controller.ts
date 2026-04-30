@@ -6,8 +6,9 @@ import { ConversationMessageLifecycleService } from '../../../conversation/conve
 import { ConversationTaskService } from '../../../conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../../execution/runtime/runtime-tool-permission.service';
 import { RuntimeHostConversationMessageService } from '../../../runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
+import { RuntimeHostConversationRecordService, serializeConversationMessage, type RuntimeConversationRecord } from '../../../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostConversationTodoService } from '../../../runtime/host/runtime-host-conversation-todo.service';
+import { RuntimeHostSubagentRunnerService } from '../../../runtime/host/runtime-host-subagent-runner.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
   ConversationTodoItemDto,
@@ -32,6 +33,7 @@ export class ConversationController {
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
     private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
+    private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService,
   ) {}
 
   private requireOwnedConversation(userId: string, id: string) {
@@ -92,7 +94,71 @@ export class ConversationController {
     @Body() dto: SendMessageDto,
     @Res() res: Response,
   ) {
-    this.requireOwnedConversation(userId, id);
+    const conversation = this.requireOwnedConversation(userId, id);
+    if (conversation.kind === 'subagent' && conversation.subagent) {
+      const pluginId = conversation.subagent.pluginId;
+      await streamSubagentEvents(
+        res,
+        async () => {
+          await this.runtimeHostSubagentRunnerService.sendInputSubagent(pluginId, {
+            ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}),
+            ...(dto.model ? { activeModelId: dto.model } : {}),
+            ...(dto.provider ? { activeProviderId: dto.provider } : {}),
+            conversationId: id,
+            source: 'http-route',
+            userId,
+          }, {
+            conversationId: id,
+            ...(typeof dto.model === 'string' ? { modelId: dto.model } : {}),
+            ...(typeof dto.provider === 'string' ? { providerId: dto.provider } : {}),
+            messages: [toPluginLlmMessage(dto)],
+          });
+          const nextConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          const assistantMessageId = nextConversation.subagent?.activeAssistantMessageId;
+          const assistantMessage = assistantMessageId ? nextConversation.messages.find((message) => message.id === assistantMessageId) : null;
+          const userMessage = findLastConversationMessage(nextConversation, (message) => message.role === 'user');
+          if (!assistantMessage || !userMessage) {
+            throw new Error('子代理会话缺少起始消息');
+          }
+          return {
+            assistantMessageId: String(assistantMessage.id),
+            startPayload: {
+              assistantMessage: serializeConversationMessage(assistantMessage),
+              type: 'message-start' as const,
+              userMessage: serializeConversationMessage(userMessage),
+            },
+          };
+        },
+        async (assistantMessageId) => {
+          await this.runtimeHostSubagentRunnerService.waitSubagent(pluginId, { conversationId: id });
+          const latestConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          const assistantMessage = latestConversation.messages.find((message) => message.id === assistantMessageId);
+          if (!assistantMessage) {
+            return [];
+          }
+          return [
+            ...readAssistantToolEvents(assistantMessageId, assistantMessage),
+            {
+              content: typeof assistantMessage.content === 'string' ? assistantMessage.content : '',
+              messageId: assistantMessageId,
+              type: 'message-patch' as const,
+            },
+            {
+              ...(typeof assistantMessage.error === 'string' ? { error: assistantMessage.error } : {}),
+              messageId: assistantMessageId,
+              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
+              type: 'status' as const,
+            },
+            {
+              messageId: assistantMessageId,
+              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
+              type: 'finish' as const,
+            },
+          ];
+        },
+      );
+      return;
+    }
     await streamTaskEvents(res, this.conversationTaskService, async () => {
       const result = await this.conversationMessageLifecycleService.startMessageGeneration(id, toSendMessagePayload(dto), userId);
       return {
@@ -108,7 +174,72 @@ export class ConversationController {
 
   @Post('conversations/:id/messages/:messageId/retry')
   async retryMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string, @Body() dto: RetryMessageDto, @Res() res: Response) {
-    this.requireOwnedConversation(userId, id);
+    const conversation = this.requireOwnedConversation(userId, id);
+    if (conversation.kind === 'subagent' && conversation.subagent) {
+      const pluginId = conversation.subagent.pluginId;
+      const retriedInput = readRetrySubagentInput(conversation, messageId);
+      await streamSubagentEvents(
+        res,
+        async () => {
+          await this.runtimeHostSubagentRunnerService.sendInputSubagent(pluginId, {
+            ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}),
+            ...(dto.model ? { activeModelId: dto.model } : {}),
+            ...(dto.provider ? { activeProviderId: dto.provider } : {}),
+            conversationId: id,
+            source: 'http-route',
+            userId,
+          }, {
+            conversationId: id,
+            ...(typeof dto.model === 'string' ? { modelId: dto.model } : {}),
+            ...(typeof dto.provider === 'string' ? { providerId: dto.provider } : {}),
+            messages: [retriedInput],
+          });
+          const nextConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          const assistantMessageId = nextConversation.subagent?.activeAssistantMessageId;
+          const assistantMessage = assistantMessageId ? nextConversation.messages.find((message) => message.id === assistantMessageId) : null;
+          const userMessage = findLastConversationMessage(nextConversation, (message) => message.role === 'user');
+          if (!assistantMessage || !userMessage) {
+            throw new Error('子代理会话缺少重试消息');
+          }
+          return {
+            assistantMessageId: String(assistantMessage.id),
+            startPayload: {
+              assistantMessage: serializeConversationMessage(assistantMessage),
+              type: 'message-start' as const,
+              userMessage: serializeConversationMessage(userMessage),
+            },
+          };
+        },
+        async (assistantMessageId) => {
+          await this.runtimeHostSubagentRunnerService.waitSubagent(pluginId, { conversationId: id });
+          const latestConversation = this.runtimeHostConversationRecordService.requireConversation(id, userId);
+          const assistantMessage = latestConversation.messages.find((message) => message.id === assistantMessageId);
+          if (!assistantMessage) {
+            return [];
+          }
+          return [
+            ...readAssistantToolEvents(assistantMessageId, assistantMessage),
+            {
+              content: typeof assistantMessage.content === 'string' ? assistantMessage.content : '',
+              messageId: assistantMessageId,
+              type: 'message-patch' as const,
+            },
+            {
+              ...(typeof assistantMessage.error === 'string' ? { error: assistantMessage.error } : {}),
+              messageId: assistantMessageId,
+              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
+              type: 'status' as const,
+            },
+            {
+              messageId: assistantMessageId,
+              status: String(assistantMessage.status) as 'completed' | 'error' | 'pending' | 'stopped' | 'streaming',
+              type: 'finish' as const,
+            },
+          ];
+        },
+      );
+      return;
+    }
     await streamTaskEvents(res, this.conversationTaskService, async () => {
       const assistantMessage = await this.conversationMessageLifecycleService.retryMessageGeneration(id, messageId, dto, userId);
       return {
@@ -120,7 +251,10 @@ export class ConversationController {
 
   @Post('conversations/:id/messages/:messageId/stop')
   stopMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string) {
-    this.requireOwnedConversation(userId, id);
+    const conversation = this.requireOwnedConversation(userId, id);
+    if (conversation.kind === 'subagent' && conversation.subagent) {
+      return this.runtimeHostSubagentRunnerService.interruptSubagent(conversation.subagent.pluginId, id, userId);
+    }
     return this.conversationMessageLifecycleService.stopMessageGeneration(id, messageId, userId);
   }
 
@@ -164,6 +298,24 @@ async function streamTaskEvents(
   writeSse(res, '[DONE]', true);
 }
 
+async function streamSubagentEvents(
+  res: Response,
+  startTask: () => Promise<{ assistantMessageId: string; startPayload: object }>,
+  finishTask: (assistantMessageId: string) => Promise<object[]>,
+) {
+  initSse(res);
+  try {
+    const { assistantMessageId, startPayload } = await startTask();
+    writeSse(res, startPayload);
+    for (const event of await finishTask(assistantMessageId)) {
+      writeSse(res, event);
+    }
+  } catch (error) {
+    writeSse(res, { error: error instanceof Error ? error.message : '未知错误', type: 'error' });
+  }
+  writeSse(res, '[DONE]', true);
+}
+
 function initSse(res: Response) {
   for (const [name, value] of [['Content-Type', 'text/event-stream'], ['Cache-Control', 'no-cache'], ['Connection', 'keep-alive'], ['Access-Control-Allow-Origin', '*']] as const) {res.setHeader(name, value);}
   res.flushHeaders();
@@ -190,4 +342,99 @@ function toUpdateMessagePatch(dto: UpdateMessageDto) {
     ...(typeof dto.content === 'string' ? { content: dto.content } : {}),
     ...(dto.parts ? { parts: dto.parts as ChatMessagePart[] } : {}),
   };
+}
+
+function toPluginLlmMessage(dto: SendMessageDto) {
+  const parts = dto.parts as ChatMessagePart[] | undefined;
+  if (parts?.length) {
+    return { content: parts, role: 'user' as const };
+  }
+  return { content: dto.content ?? '', role: 'user' as const };
+}
+
+function readRetrySubagentInput(conversation: RuntimeConversationRecord, assistantMessageId: string) {
+  const assistantIndex = conversation.messages.findIndex((message) => message.id === assistantMessageId);
+  if (assistantIndex < 0) {
+    throw new Error(`Message not found: ${assistantMessageId}`);
+  }
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const message = conversation.messages[index];
+    if (message.role !== 'user') {
+      continue;
+    }
+    const parts = Array.isArray(message.parts) ? message.parts as unknown as ChatMessagePart[] : [];
+    return parts.length > 0
+      ? { content: parts, role: 'user' as const }
+      : { content: typeof message.content === 'string' ? message.content : '', role: 'user' as const };
+  }
+  throw new Error('没有可重试的用户输入');
+}
+
+function findLastConversationMessage(
+  conversation: RuntimeConversationRecord,
+  predicate: (message: RuntimeConversationRecord['messages'][number]) => boolean,
+) {
+  for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
+    const message = conversation.messages[index];
+    if (predicate(message)) {
+      return message;
+    }
+  }
+  return null;
+}
+
+function readAssistantToolEvents(
+  assistantMessageId: string,
+  message: RuntimeConversationRecord['messages'][number],
+) {
+  const events: Array<{
+    input?: unknown;
+    messageId: string;
+    output?: unknown;
+    toolCallId: string;
+    toolName: string;
+    type: 'tool-call' | 'tool-result';
+  }> = [];
+  for (const toolCall of readToolEntries(message.toolCalls, 'input')) {
+    events.push({
+      input: toolCall.input,
+      messageId: assistantMessageId,
+      toolCallId: toolCall.toolCallId,
+      toolName: toolCall.toolName,
+      type: 'tool-call',
+    });
+  }
+  for (const toolResult of readToolEntries(message.toolResults, 'output')) {
+    events.push({
+      messageId: assistantMessageId,
+      output: toolResult.output,
+      toolCallId: toolResult.toolCallId,
+      toolName: toolResult.toolName,
+      type: 'tool-result',
+    });
+  }
+  return events;
+}
+
+function readToolEntries(
+  value: unknown,
+  payloadKey: 'input' | 'output',
+): Array<{ input?: unknown; output?: unknown; toolCallId: string; toolName: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') {
+      return [];
+    }
+    const object = entry as Record<string, unknown>;
+    if (typeof object.toolCallId !== 'string' || typeof object.toolName !== 'string') {
+      return [];
+    }
+    return [{
+      [payloadKey]: object[payloadKey],
+      toolCallId: object.toolCallId,
+      toolName: object.toolName,
+    }];
+  });
 }

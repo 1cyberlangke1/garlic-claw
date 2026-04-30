@@ -161,8 +161,10 @@ export function applySseEvent(
         toolCalls: [
           ...(message.toolCalls ?? []),
           {
+            toolCallId: event.toolCallId,
             toolName: event.toolName,
-            input: stringifyPayload(event.input),
+            input: event.input,
+            inputPreview: stringifyPayload(event.input),
           },
         ],
         status: 'streaming',
@@ -173,8 +175,10 @@ export function applySseEvent(
         toolResults: [
           ...(message.toolResults ?? []),
           {
+            toolCallId: event.toolCallId,
             toolName: event.toolName,
-            output: stringifyPayload(event.output),
+            output: event.output,
+            outputPreview: stringifyPayload(event.output),
           },
         ],
         status: 'streaming',

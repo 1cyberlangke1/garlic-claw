@@ -34,6 +34,9 @@ const SHADOW_MODEL_ID = `${PREFIX}-shadow-model`;
 const AUTOMATION_NAME = `${PREFIX}-automation`;
 const AUTOMATION_MESSAGE = `${PREFIX} automation message`;
 const REMOTE_PLUGIN_ID = `${PREFIX}-remote-iot-light`;
+const SUBAGENT_NAME = '浏览器烟测分身';
+const SUBAGENT_TRIGGER = '请使用 subagent 工具委派一个探索任务，并把子代理命名为 浏览器烟测分身。';
+const SUBAGENT_RESULT_TEXT = 'Smoke HTTP Flow 用于后端烟测。';
 let suppressExpectedTeardownConsoleErrors = false;
 let browserSmokeCompleted = false;
 let webOrigin = process.env.GARLIC_CLAW_WEB_ORIGIN || DEFAULT_WEB_ORIGIN;
@@ -100,12 +103,13 @@ async function main() {
     });
 
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
-    createdConversationId = await runChatFlow(page, accessToken);
+    const chatFlow = await runChatFlow(page, accessToken);
+    createdConversationId = chatFlow.conversationId;
     await verifyMcpPage(page);
     await verifyPersonasPage(page);
     await verifySkillsPage(page);
     await verifyCommandsPage(page);
-    await verifySubagentsPage(page);
+    await verifySubagentsPage(page, accessToken, chatFlow);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
     await verifyRuntimeToolsSettingsPage(page);
     await verifyToolsPage(page, accessToken);
@@ -483,6 +487,7 @@ async function runChatFlow(page, accessToken) {
     const conversations = await listConversations(accessToken);
     return conversations.find((item) => !beforeIds.has(item.id)) ?? null;
   }, '等待新对话创建');
+  await page.reload({ waitUntil: 'networkidle' });
   await expectConversationSelected(page, conversation.id);
 
   const modelInput = page.locator('.quick-input');
@@ -538,7 +543,55 @@ async function runChatFlow(page, accessToken) {
       : null;
   }, '等待 /compact 以 display 消息写入会话历史');
 
-  return conversation.id;
+  await composer.fill(SUBAGENT_TRIGGER);
+  await page.locator('.send-button').click();
+  const subagentConversation = await waitFor(async () => {
+    const subagents = await requestJson(`/chat/conversations/${conversation.id}/subagents`, {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => []);
+    return subagents.find((item) => item.title === SUBAGENT_NAME) ?? null;
+  }, '等待聊天触发命名子代理');
+  await waitFor(async () => {
+    const tab = page.getByRole('button', { name: SUBAGENT_NAME });
+    return await tab.count() > 0 ? true : null;
+  }, '等待聊天顶部出现子代理标签');
+  await waitFor(async () => {
+    const toolEntries = page.locator('.message.assistant .tool-entry-summary');
+    const count = await toolEntries.count();
+    if (count < 2) {
+      return null;
+    }
+    const combined = await toolEntries.allTextContents();
+    return combined.some((text) => text.includes('spawn_subagent'))
+      && combined.some((text) => text.includes('wait_subagent'))
+      ? true
+      : null;
+  }, '等待聊天消息展示子代理工具时间线');
+  await waitFor(async () => {
+    const assistantMessages = page.locator('.message.assistant .message-content');
+    if (await assistantMessages.count() === 0) {
+      return null;
+    }
+    const latestText = (await assistantMessages.last().textContent())?.trim() ?? '';
+    return latestText.includes(SUBAGENT_RESULT_TEXT) ? latestText : null;
+  }, '等待主会话收到子代理总结');
+
+  const subagentTab = page.getByRole('button', { name: SUBAGENT_NAME });
+  await subagentTab.click();
+  await waitFor(async () => {
+    const text = await page.locator('.message.assistant .message-content').last().textContent().catch(() => '');
+    return text?.includes(SUBAGENT_RESULT_TEXT) ? true : null;
+  }, '等待切到子代理会话后看到子代理输出');
+
+  const mainTab = page.getByRole('button', { exact: true, name: '对话' });
+  await mainTab.click();
+  await expectConversationSelected(page, conversation.id);
+
+  return {
+    conversationId: conversation.id,
+    subagentConversationId: subagentConversation.id,
+    subagentName: SUBAGENT_NAME,
+  };
 }
 
 async function verifyMcpPage(page) {
@@ -671,11 +724,14 @@ async function verifyToolsPage(page, accessToken) {
   }
 }
 
-async function verifySubagentsPage(page) {
-  await page.goto('/subagents', { waitUntil: 'networkidle' });
-  await page.waitForURL(/\/$/, { timeout: REQUEST_TIMEOUT_MS });
-  await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
-  await expectText(page, 'Garlic Claw');
+async function verifySubagentsPage(page, accessToken, chatFlow) {
+  const overview = await requestJson('/subagents/overview', {
+    headers: createAuthHeaders(accessToken),
+  });
+  const subagent = overview.subagents.find((item) => item.conversationId === chatFlow.subagentConversationId);
+  assert.ok(subagent, '子代理总览没有返回浏览器 smoke 创建的子代理');
+  assert.equal(subagent.title, chatFlow.subagentName, '子代理总览没有保留命名标题');
+  assert.equal(subagent.resultPreview, SUBAGENT_RESULT_TEXT, '子代理总览没有返回 smoke 结果摘要');
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {
@@ -882,12 +938,14 @@ async function assertToolsSectionVisibility(page, title, shouldExist) {
 }
 
 async function expectConversationSelected(page, conversationId) {
+  const targetItem = page.locator(`.conversation-item[data-id="${conversationId}"]`);
+  await targetItem.waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  if (!(await targetItem.getAttribute('class'))?.includes('active')) {
+    await targetItem.click();
+  }
   await waitFor(async () => {
-    const activeItem = page.locator('.conversation-item.active');
-    if (await activeItem.count() === 0) {
-      return null;
-    }
-    return (await activeItem.getAttribute('data-id')) === conversationId ? true : null;
+    const className = await targetItem.getAttribute('class');
+    return className?.includes('active') ? true : null;
   }, '等待新会话选中');
 }
 
@@ -1195,25 +1253,18 @@ async function startFakeOpenAiServer() {
           return;
         }
 
-        writeJson(response, 200, {
-          choices: [{
-            finish_reason: 'stop',
-            index: 0,
-            message: {
-              content: readAssistantText(body),
-              role: 'assistant',
-            },
-          }],
-          created: Math.floor(Date.now() / 1000),
-          id: 'chatcmpl-ui-smoke',
-          model: body.model ?? MODEL_ID,
-          object: 'chat.completion',
-        });
+        writeJson(response, 200, createChatCompletion(body));
         return;
       }
 
       writeJson(response, 404, { error: 'unsupported' });
     } catch (error) {
+      if (response.headersSent || response.writableEnded || response.destroyed) {
+        if (!response.writableEnded && !response.destroyed) {
+          response.end();
+        }
+        return;
+      }
       writeJson(response, 500, {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1250,7 +1301,46 @@ async function writeStream(response, body) {
     'content-type': 'text/event-stream',
   });
 
-  const text = readAssistantText(body);
+  const plannedResponse = planBrowserSmokeChatResponse(body);
+  if (plannedResponse.kind === 'tool-call') {
+    response.write(`data: ${JSON.stringify({
+      choices: [{
+        delta: {
+          role: 'assistant',
+          tool_calls: [{
+            function: {
+              arguments: JSON.stringify(plannedResponse.arguments),
+              name: plannedResponse.toolName,
+            },
+            id: plannedResponse.toolCallId,
+            index: 0,
+            type: 'function',
+          }],
+        },
+        finish_reason: null,
+        index: 0,
+      }],
+      created: Math.floor(Date.now() / 1000),
+      id: 'chatcmpl-ui-smoke',
+      model: body.model ?? MODEL_ID,
+    })}\n\n`);
+    await delay(60);
+    response.write(`data: ${JSON.stringify({
+      choices: [{
+        delta: {},
+        finish_reason: 'tool_calls',
+        index: 0,
+      }],
+      created: Math.floor(Date.now() / 1000),
+      id: 'chatcmpl-ui-smoke',
+      model: body.model ?? MODEL_ID,
+    })}\n\n`);
+    response.write('data: [DONE]\n\n');
+    response.end();
+    return;
+  }
+
+  const text = plannedResponse.text;
   for (const chunk of splitIntoChunks(text, 3)) {
     response.write(`data: ${JSON.stringify({
       choices: [{
@@ -1282,6 +1372,49 @@ async function writeStream(response, body) {
   response.end();
 }
 
+function createChatCompletion(body) {
+  const plannedResponse = planBrowserSmokeChatResponse(body);
+  const model = body.model ?? MODEL_ID;
+  if (plannedResponse.kind === 'tool-call') {
+    return {
+      choices: [{
+        finish_reason: 'tool_calls',
+        index: 0,
+        message: {
+          content: '',
+          role: 'assistant',
+          tool_calls: [{
+            function: {
+              arguments: JSON.stringify(plannedResponse.arguments),
+              name: plannedResponse.toolName,
+            },
+            id: plannedResponse.toolCallId,
+            type: 'function',
+          }],
+        },
+      }],
+      created: Math.floor(Date.now() / 1000),
+      id: 'chatcmpl-ui-smoke',
+      model,
+      object: 'chat.completion',
+    };
+  }
+  return {
+    choices: [{
+      finish_reason: 'stop',
+      index: 0,
+      message: {
+        content: plannedResponse.text,
+        role: 'assistant',
+      },
+    }],
+    created: Math.floor(Date.now() / 1000),
+    id: 'chatcmpl-ui-smoke',
+    model,
+    object: 'chat.completion',
+  };
+}
+
 async function readJsonBody(request) {
   const chunks = [];
   for await (const chunk of request) {
@@ -1299,6 +1432,126 @@ function readAssistantText(body) {
       ? latest.content.map((part) => part?.text ?? '').join('\n')
       : '';
   return text ? `本地 smoke 回复: ${text}` : '本地 smoke 回复。';
+}
+
+function planBrowserSmokeChatResponse(body) {
+  if (shouldTriggerSpawnSubagentTool(body)) {
+    return {
+      arguments: {
+        description: '浏览器 smoke 子代理任务',
+        modelId: MODEL_ID,
+        name: SUBAGENT_NAME,
+        prompt: '请总结 smoke-http-flow 技能的用途',
+        providerId: PROVIDER_ID,
+        subagentType: 'general',
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_browser_smoke_subagent_0',
+      toolName: 'spawn_subagent',
+    };
+  }
+  if (shouldTriggerWaitSubagentTool(body)) {
+    return {
+      arguments: {
+        conversationId: readLatestSubagentConversationId(body),
+      },
+      kind: 'tool-call',
+      toolCallId: 'call_browser_smoke_subagent_wait_0',
+      toolName: 'wait_subagent',
+    };
+  }
+  return {
+    kind: 'text',
+    text: readPlannedAssistantText(body),
+  };
+}
+
+function readPlannedAssistantText(body) {
+  const latestUserText = readLatestUserText(body);
+  if (latestUserText.includes('请总结 smoke-http-flow 技能的用途')) {
+    return SUBAGENT_RESULT_TEXT;
+  }
+  if (requestContainsToolResult(body, 'wait_subagent')) {
+    return `子代理已完成：${SUBAGENT_RESULT_TEXT}`;
+  }
+  return readAssistantText(body);
+}
+
+function shouldTriggerSpawnSubagentTool(body) {
+  return requestIncludesToolName(body, 'spawn_subagent')
+    && !requestContainsToolResult(body, 'spawn_subagent')
+    && readLatestUserText(body).includes(SUBAGENT_TRIGGER);
+}
+
+function shouldTriggerWaitSubagentTool(body) {
+  return requestIncludesToolName(body, 'wait_subagent')
+    && requestContainsToolResult(body, 'spawn_subagent')
+    && !requestContainsToolResult(body, 'wait_subagent')
+    && readLatestUserText(body).includes(SUBAGENT_TRIGGER);
+}
+
+function requestIncludesToolName(body, toolName) {
+  const tools = Array.isArray(body?.tools) ? body.tools : [];
+  return tools.some((tool) => tool?.function?.name === toolName);
+}
+
+function requestContainsToolResult(body, toolName) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  return messages.some((message) => {
+    if (message?.role !== 'tool') {
+      return false;
+    }
+    const toolCallId = typeof message?.tool_call_id === 'string'
+      ? message.tool_call_id
+      : typeof message?.toolCallId === 'string'
+        ? message.toolCallId
+        : '';
+    return (toolName === 'spawn_subagent' && toolCallId === 'call_browser_smoke_subagent_0')
+      || (toolName === 'wait_subagent' && toolCallId === 'call_browser_smoke_subagent_wait_0');
+  });
+}
+
+function readLatestUserText(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'user') {
+      continue;
+    }
+    if (typeof message.content === 'string') {
+      return message.content;
+    }
+    if (Array.isArray(message.content)) {
+      return message.content.map((part) => part?.text ?? '').join('\n');
+    }
+  }
+  return '';
+}
+
+function readLatestSubagentConversationId(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'tool') {
+      continue;
+    }
+    const content = readTextContent(message);
+    const jsonMatch = content.match(/"conversationId"\s*:\s*"([^"]+)"/);
+    if (jsonMatch?.[1]) {
+      return jsonMatch[1];
+    }
+  }
+  throw new Error('浏览器 smoke 未从 spawn_subagent 结果中读到 conversationId');
+}
+
+function readTextContent(message) {
+  if (typeof message?.content === 'string') {
+    return message.content;
+  }
+  if (Array.isArray(message?.content)) {
+    return message.content.map((part) => part?.text ?? '').join('\n');
+  }
+  return '';
 }
 
 function splitIntoChunks(text, count) {

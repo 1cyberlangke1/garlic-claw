@@ -367,7 +367,9 @@ function readContextCompactionCommandInput(content: string, parts: ChatMessagePa
 function readConversationHistorySnapshot(value: unknown): { messages: PluginConversationHistoryMessage[]; revision: string } {
   const record = value as { messages?: PluginConversationHistoryMessage[]; revision?: string } | null;
   return {
-    messages: Array.isArray(record?.messages) ? record.messages : [],
+    messages: Array.isArray(record?.messages)
+      ? record.messages.filter((message): message is PluginConversationHistoryMessage => isRecord(message) && typeof message.id === 'string' && typeof message.role === 'string')
+      : [],
     revision: typeof record?.revision === 'string' ? record.revision : '',
   };
 }

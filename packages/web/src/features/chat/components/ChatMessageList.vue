@@ -159,34 +159,32 @@
                     </div>
                   </details>
                 </div>
-                <div v-if="row.message.parts?.length" class="message-parts">
-                  <template
-                    v-for="(part, partIndex) in row.message.parts"
-                    :key="partIndex"
-                  >
-                    <div
-                      v-if="part.type === 'text'"
-                      class="message-content"
-                      v-html="renderMarkdown(part.text)"
-                    ></div>
-                    <img
-                      v-else
-                      :src="part.image"
-                      alt="用户上传的图片"
-                      class="message-image"
-                      @load="handleRenderedContentChange"
-                    />
-                  </template>
-                </div>
-                <div
-                  v-else
-                  class="message-content"
-                  v-html="renderMarkdown(row.message.content)"
-                ></div>
-
-                <div v-if="row.message.error" class="message-error">
-                  错误: {{ row.message.error }}
-                </div>
+                <template v-if="shouldRenderMessageContentBeforeTools(row.message)">
+                  <div v-if="row.message.parts?.length" class="message-parts">
+                    <template
+                      v-for="(part, partIndex) in row.message.parts"
+                      :key="partIndex"
+                    >
+                      <div
+                        v-if="part.type === 'text'"
+                        class="message-content"
+                        v-html="renderMarkdown(part.text)"
+                      ></div>
+                      <img
+                        v-else
+                        :src="part.image"
+                        alt="用户上传的图片"
+                        class="message-image"
+                        @load="handleRenderedContentChange"
+                      />
+                    </template>
+                  </div>
+                  <div
+                    v-else
+                    class="message-content"
+                    v-html="renderMarkdown(row.message.content)"
+                  ></div>
+                </template>
 
                 <details
                   v-if="shouldShowVisionFallbackDetails(row.message)"
@@ -212,26 +210,72 @@
                   </div>
                 </details>
 
-                <div v-if="row.message.toolCalls?.length" class="tool-calls">
-                  <div
-                    v-for="(toolCall, toolIndex) in row.message.toolCalls"
-                    :key="toolIndex"
-                    class="tool-call"
+                <div
+                  v-if="messageToolTimeline(row.message).length"
+                  class="tool-timeline"
+                >
+                  <details
+                    v-for="entry in messageToolTimeline(row.message)"
+                    :key="entry.key"
+                    class="tool-entry"
+                    :class="entry.kind"
+                    @toggle="handleRenderedContentChange"
                   >
-                    工具调用 <strong>{{ toolCall.toolName }}</strong>
-                    <code>{{ toolCall.input }}</code>
-                  </div>
+                    <summary class="tool-entry-summary">
+                      <span class="tool-entry-badge">
+                        {{ entry.kind === "call" ? "调用" : "结果" }}
+                      </span>
+                      <strong class="tool-entry-name">{{ entry.toolName }}</strong>
+                      <span class="tool-entry-preview">{{ entry.preview }}</span>
+                    </summary>
+                    <div class="tool-entry-body">
+                      <div class="tool-entry-meta">
+                        <span
+                          v-if="entry.toolCallId"
+                          class="tool-entry-chip"
+                        >
+                          {{ shortToolCallId(entry.toolCallId) }}
+                        </span>
+                        <span class="tool-entry-chip">
+                          {{ readJsonValueKindLabel(entry.value) }}
+                        </span>
+                      </div>
+                      <pre class="tool-entry-payload">{{
+                        formatStructuredToolValue(entry.value)
+                      }}</pre>
+                    </div>
+                  </details>
                 </div>
 
-                <div v-if="row.message.toolResults?.length" class="tool-results">
-                  <div
-                    v-for="(toolResult, toolIndex) in row.message.toolResults"
-                    :key="toolIndex"
-                    class="tool-result"
-                  >
-                    工具结果 <strong>{{ toolResult.toolName }}</strong>
-                    <code>{{ toolResult.output }}</code>
+                <template v-if="shouldRenderMessageContentAfterTools(row.message)">
+                  <div v-if="row.message.parts?.length" class="message-parts">
+                    <template
+                      v-for="(part, partIndex) in row.message.parts"
+                      :key="partIndex"
+                    >
+                      <div
+                        v-if="part.type === 'text'"
+                        class="message-content"
+                        v-html="renderMarkdown(part.text)"
+                      ></div>
+                      <img
+                        v-else
+                        :src="part.image"
+                        alt="用户上传的图片"
+                        class="message-image"
+                        @load="handleRenderedContentChange"
+                      />
+                    </template>
                   </div>
+                  <div
+                    v-else
+                    class="message-content"
+                    v-html="renderMarkdown(row.message.content)"
+                  ></div>
+                </template>
+
+                <div v-if="row.message.error" class="message-error">
+                  错误: {{ row.message.error }}
                 </div>
               </template>
 
@@ -299,8 +343,13 @@ import type {
   ChatMessageCustomBlock,
   ChatMessagePart,
   ConversationContextWindowPreview,
+  JsonValue,
 } from "@garlic-claw/shared";
-import type { ChatMessage } from "@/features/chat/store/chat";
+import type {
+  ChatMessage,
+  ChatToolCallEntry,
+  ChatToolResultEntry,
+} from "@/features/chat/store/chat";
 
 interface VisibleMessageRow {
   index: number;
@@ -308,6 +357,15 @@ interface VisibleMessageRow {
   start: number;
   message: ChatMessage;
   virtual: boolean;
+}
+
+interface ToolTimelineEntry {
+  key: string;
+  kind: "call" | "result";
+  preview: string;
+  toolCallId?: string;
+  toolName: string;
+  value: JsonValue;
 }
 
 const AUTO_SCROLL_THRESHOLD = 96;
@@ -581,6 +639,14 @@ function estimateMessageSize(message: ChatMessage | undefined) {
   );
 }
 
+function shouldRenderMessageContentBeforeTools(message: ChatMessage): boolean {
+  return !shouldRenderMessageContentAfterTools(message);
+}
+
+function shouldRenderMessageContentAfterTools(message: ChatMessage): boolean {
+  return message.role === "assistant" && messageToolTimeline(message).length > 0;
+}
+
 function renderMarkdown(text: string): string {
   if (!text) {
     return "";
@@ -737,6 +803,132 @@ function formatJsonBlock(
   block: Extract<ChatMessageCustomBlock, { kind: "json" }>,
 ): string {
   return JSON.stringify(block.data, null, 2);
+}
+
+function messageToolTimeline(message: ChatMessage): ToolTimelineEntry[] {
+  const toolCalls = message.toolCalls ?? [];
+  const toolResults = [...(message.toolResults ?? [])];
+  if (toolCalls.length === 0 && toolResults.length === 0) {
+    return [];
+  }
+
+  const timeline: ToolTimelineEntry[] = [];
+  const usedResults = new Set<number>();
+  toolCalls.forEach((toolCall, callIndex) => {
+    timeline.push(createToolTimelineEntry("call", toolCall, callIndex));
+    toolResults.forEach((toolResult, resultIndex) => {
+      if (usedResults.has(resultIndex)) {
+        return;
+      }
+      if (isMatchingToolResult(toolCall, toolResult, callIndex, resultIndex)) {
+        timeline.push(createToolTimelineEntry("result", toolResult, resultIndex));
+        usedResults.add(resultIndex);
+      }
+    });
+  });
+
+  toolResults.forEach((toolResult, resultIndex) => {
+    if (!usedResults.has(resultIndex)) {
+      timeline.push(createToolTimelineEntry("result", toolResult, resultIndex));
+    }
+  });
+
+  return timeline;
+}
+
+function createToolTimelineEntry(
+  kind: "call",
+  entry: ChatToolCallEntry,
+  index: number,
+): ToolTimelineEntry;
+function createToolTimelineEntry(
+  kind: "result",
+  entry: ChatToolResultEntry,
+  index: number,
+): ToolTimelineEntry;
+function createToolTimelineEntry(
+  kind: "call" | "result",
+  entry: ChatToolCallEntry | ChatToolResultEntry,
+  index: number,
+): ToolTimelineEntry {
+  const value = kind === "call"
+    ? (entry as ChatToolCallEntry).input
+    : (entry as ChatToolResultEntry).output;
+  return {
+    key: `${kind}-${entry.toolCallId ?? entry.toolName}-${index}`,
+    kind,
+    preview: summarizeToolPayload(value),
+    ...(entry.toolCallId ? { toolCallId: entry.toolCallId } : {}),
+    toolName: entry.toolName,
+    value,
+  };
+}
+
+function isMatchingToolResult(
+  toolCall: ChatToolCallEntry,
+  toolResult: ChatToolResultEntry,
+  callIndex: number,
+  resultIndex: number,
+): boolean {
+  if (toolCall.toolCallId && toolResult.toolCallId) {
+    return toolCall.toolCallId === toolResult.toolCallId;
+  }
+  return callIndex === resultIndex && toolCall.toolName === toolResult.toolName;
+}
+
+function summarizeToolPayload(value: JsonValue): string {
+  if (typeof value === "string") {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    return normalized.length > 80
+      ? `${normalized.slice(0, 80)}…`
+      : normalized || "(空字符串)";
+  }
+  if (Array.isArray(value)) {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 80
+      ? `数组(${value.length}) ${serialized.slice(0, 80)}…`
+      : `数组(${value.length}) ${serialized}`;
+  }
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value);
+    return keys.length > 0
+      ? `对象(${keys.length}) ${keys.slice(0, 4).join(", ")}${keys.length > 4 ? "…" : ""}`
+      : "空对象";
+  }
+  if (value === null) {
+    return "null";
+  }
+  return String(value);
+}
+
+function readJsonValueKindLabel(value: JsonValue): string {
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return "数组";
+  }
+  if (typeof value === "object") {
+    return "对象";
+  }
+  if (typeof value === "string") {
+    return "字符串";
+  }
+  if (typeof value === "number") {
+    return "数字";
+  }
+  if (typeof value === "boolean") {
+    return "布尔值";
+  }
+  return "值";
+}
+
+function formatStructuredToolValue(value: JsonValue): string {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function shortToolCallId(toolCallId: string): string {
+  return `调用 ${toolCallId.slice(-8)}`;
 }
 
 function visionFallbackChipLabel(message: ChatMessage): string | null {

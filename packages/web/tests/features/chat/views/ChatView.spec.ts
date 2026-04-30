@@ -7,6 +7,15 @@ const applyCommandSuggestion = vi.fn()
 const replyRuntimePermission = vi.fn()
 const selectConversation = vi.fn()
 const mockFetch = vi.fn()
+const todoItemsState = vi.hoisted(() => ({
+  value: [
+    {
+      content: '实现 todo 面板',
+      priority: 'high',
+      status: 'in_progress',
+    },
+  ],
+}))
 
 vi.stubGlobal('fetch', mockFetch)
 
@@ -16,13 +25,7 @@ vi.mock('@/features/chat/store/chat', () => ({
     selectedProvider: 'demo-provider',
     selectedModel: 'demo-model',
     messages: [],
-    todoItems: [
-      {
-        content: '实现 todo 面板',
-        priority: 'high',
-        status: 'in_progress',
-      },
-    ],
+    todoItems: todoItemsState.value,
     loading: false,
     streaming: false,
     selectConversation,
@@ -93,6 +96,14 @@ vi.mock('@/features/personas/composables/persona-settings.data', () => ({
 
 describe('ChatView', () => {
   beforeEach(() => {
+    vi.useRealTimers()
+    todoItemsState.value = [
+      {
+        content: '实现 todo 面板',
+        priority: 'high',
+        status: 'in_progress',
+      },
+    ]
     applyCommandSuggestion.mockReset()
     replyRuntimePermission.mockReset()
     selectConversation.mockReset()
@@ -173,6 +184,27 @@ describe('ChatView', () => {
     expect(wrapper.text()).toContain('进行中')
   })
 
+  it('hides the todo panel when the current conversation has no todo items', async () => {
+    todoItemsState.value = []
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.chat-todo-panel').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('当前待办')
+  })
+
   it('passes pending runtime permission requests into the approval panel', async () => {
     const wrapper = mount(ChatView, {
       global: {
@@ -237,5 +269,50 @@ describe('ChatView', () => {
     await tabs[1].trigger('click')
 
     expect(selectConversation).toHaveBeenCalledWith(childConversationId)
+  })
+
+  it('refreshes subagent tabs in the background without reloading the page', async () => {
+    vi.useFakeTimers()
+    const childConversationId = '019dd900-1234-7abc-8def-1234567890ab'
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue([]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue([
+          {
+            id: childConversationId,
+            title: '子代理窗口',
+            createdAt: '2026-04-29T00:00:00.000Z',
+            updatedAt: '2026-04-29T00:00:00.000Z',
+            _count: { messages: 1 },
+          },
+        ]),
+      })
+
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('.chat-tab')).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(wrapper.findAll('.chat-tab')).toHaveLength(2)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 })

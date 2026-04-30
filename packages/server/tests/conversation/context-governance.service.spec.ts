@@ -293,12 +293,96 @@ describe('ContextGovernanceService', () => {
       providerId: 'openai',
     }));
   });
+
+  it('compacts history after an assistant message records spawn_subagent and wait_subagent tool events', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        enabled: true,
+        keepRecentMessages: 1,
+        mode: 'manual',
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '先确认技能加载是否正常。'),
+      createHistoryMessage('message-2', 'assistant', '技能已经加载。'),
+      createHistoryMessage('message-3', 'user', '请创建一个子代理去探索 smoke 流程。'),
+      createHistoryMessage('message-4', 'assistant', '子代理已完成：Smoke HTTP Flow 用于后端烟测。', {
+        toolCalls: [
+          {
+            input: {
+              description: '探索 smoke 技能',
+              prompt: '请总结 smoke-http-flow 技能的用途',
+              subagentType: 'review',
+            },
+            toolCallId: 'call_smoke_subagent_0',
+            toolName: 'spawn_subagent',
+          },
+          {
+            input: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+            },
+            toolCallId: 'call_smoke_subagent_wait_0',
+            toolName: 'wait_subagent',
+          },
+        ],
+        toolResults: [
+          {
+            output: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+              description: '探索 smoke 技能',
+              status: 'queued',
+            },
+            toolCallId: 'call_smoke_subagent_0',
+            toolName: 'spawn_subagent',
+          },
+          {
+            output: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+              result: {
+                text: 'Smoke HTTP Flow 用于后端烟测。',
+              },
+              status: 'completed',
+            },
+            toolCallId: 'call_smoke_subagent_wait_0',
+            toolName: 'wait_subagent',
+          },
+        ],
+      }),
+      createHistoryMessage('message-5', 'user', '最后再压缩一下上下文。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '压缩摘要：技能加载、子代理探索、最终收口。',
+    });
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      action: 'short-circuit',
+      assistantContent: '已压缩上下文，覆盖 4 条历史消息。',
+      reason: 'context-compaction:command',
+    }));
+  });
 });
 
 function createHistoryMessage(
   id: string,
   role: 'assistant' | 'user',
   content: string,
+  extra?: {
+    toolCalls?: JsonObject[];
+    toolResults?: JsonObject[];
+  },
 ): JsonObject {
   return {
     content,
@@ -307,6 +391,8 @@ function createHistoryMessage(
     parts: [{ text: content, type: 'text' }],
     role,
     status: 'completed',
+    ...(extra?.toolCalls ? { toolCalls: extra.toolCalls } : {}),
+    ...(extra?.toolResults ? { toolResults: extra.toolResults } : {}),
     updatedAt: '2026-04-27T00:00:00.000Z',
   };
 }

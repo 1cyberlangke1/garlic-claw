@@ -1,4 +1,4 @@
-import { delete as del, get } from '@/api/http'
+import { get, post } from '@/api/http'
 import type {
   PluginSubagentDetail,
   PluginSubagentOverview,
@@ -8,14 +8,14 @@ export function listPluginSubagentOverview() {
   return get<PluginSubagentOverview>('/subagents/overview')
 }
 
-export function getPluginSubagent(sessionId: string) {
-  return get<PluginSubagentDetail>(`/subagents/${sessionId}`)
+export function getPluginSubagent(conversationId: string) {
+  return get<PluginSubagentDetail>(`/subagents/${conversationId}`)
 }
 
-export function removePluginSubagent(sessionId: string) {
-  return del<boolean>(`/subagents/${sessionId}`)
+export function closePluginSubagent(conversationId: string) {
+  return post<PluginSubagentDetail>(`/subagents/${conversationId}/close`)
 }
 
 export const listSubagentOverview = listPluginSubagentOverview
 export const getSubagent = getPluginSubagent
-export const removeSubagent = removePluginSubagent
+export const closeSubagent = closePluginSubagent

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "lint": "cd ../.. && eslint \"packages/web/src/**/*.ts\"",
+    "lint": "cd ../.. && eslint --cache --cache-strategy content --cache-location .cache/eslint \"packages/web/src/**/*.ts\"",
     "typecheck": "vue-tsc --noEmit",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",

@@ -24,8 +24,10 @@ describe('RuntimeHostConversationRecordService', () => {
     delete process.env[conversationsEnvKey];
     delete process.env[runtimeWorkspaceEnvKey];
     try {
-      if (fs.existsSync(storagePath)) {
-        fs.unlinkSync(storagePath);
+      for (const filePath of [storagePath]) {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
       }
       fs.rmSync(runtimeWorkspaceRoot, { force: true, recursive: true });
     } catch {
@@ -433,6 +435,40 @@ describe('RuntimeHostConversationRecordService', () => {
 
     await expect(service.deleteConversation(conversationId)).resolves.toEqual({ message: 'Conversation deleted' });
     expect(fs.existsSync(sessionRoot)).toBe(false);
+  });
+
+  it('deletes child subagent conversations together with the parent conversation', async () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
+    const childConversationId = (service.createConversation({
+      kind: 'subagent',
+      parentId: parentConversationId,
+      subagent: {
+        pluginDisplayName: 'Memory',
+        pluginId: 'builtin.memory',
+        requestPreview: '整理上下文',
+        requestedAt: '2026-04-25T00:00:00.000Z',
+        runtimeKind: 'local',
+        status: 'queued',
+        writeBackStatus: 'pending',
+        writeBackTarget: {
+          id: parentConversationId,
+          type: 'conversation',
+        },
+        startedAt: null,
+        finishedAt: null,
+        closedAt: null,
+      },
+      title: 'Child Chat',
+      userId: 'user-1',
+    }) as { id: string }).id;
+
+    await expect(service.deleteConversation(parentConversationId, 'user-1')).resolves.toEqual({ message: 'Conversation deleted' });
+
+    expect(() => service.requireConversation(parentConversationId, 'user-1')).toThrow(NotFoundException);
+    expect(() => service.requireConversation(childConversationId, 'user-1')).toThrow(NotFoundException);
+    expect(service.listSubagentConversations('user-1')).toEqual([]);
   });
 
   it('persists plugin conversation sessions across service reloads', () => {

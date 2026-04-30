@@ -183,6 +183,107 @@ export type ConversationTodoPriority =
   | 'low';
 
 /**
+ * 对话类型。
+ */
+export type ConversationKind =
+  | 'main'
+  | 'subagent';
+
+/**
+ * 子代理运行状态。
+ */
+export type ConversationSubagentStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'error'
+  | 'interrupted'
+  | 'closed';
+
+/**
+ * 子代理回写状态。
+ */
+export type ConversationSubagentWriteBackStatus =
+  | 'pending'
+  | 'sent'
+  | 'failed'
+  | 'skipped';
+
+/**
+ * 子代理回写目标。
+ */
+export interface ConversationSubagentWriteBackTarget {
+  /** 目标类型。 */
+  type: 'conversation';
+  /** 目标 ID。 */
+  id: string;
+  /** 目标标签。 */
+  label?: string;
+}
+
+/**
+ * 子代理会话元数据。
+ */
+export interface ConversationSubagentState {
+  /** 子代理名称。 */
+  name?: string;
+  /** 子代理所属插件 ID。 */
+  pluginId: string;
+  /** 插件显示名。 */
+  pluginDisplayName?: string;
+  /** runtime 类型。 */
+  runtimeKind: 'local' | 'remote';
+  /** 当前状态。 */
+  status: ConversationSubagentStatus;
+  /** 简短描述。 */
+  description?: string;
+  /** 子代理类型 ID。 */
+  subagentType?: string;
+  /** 子代理类型展示名。 */
+  subagentTypeName?: string;
+  /** 最近一次请求摘要。 */
+  requestPreview: string;
+  /** 最近一次结果摘要。 */
+  resultPreview?: string;
+  /** 当前活跃的 assistant 消息 ID。 */
+  activeAssistantMessageId?: string;
+  /** provider ID。 */
+  providerId?: string;
+  /** model ID。 */
+  modelId?: string;
+  /** system prompt。 */
+  system?: string;
+  /** 允许工具列表。 */
+  toolNames?: string[];
+  /** 模型变体。 */
+  variant?: string;
+  /** provider 额外参数。 */
+  providerOptions?: JsonValue;
+  /** 自定义请求头。 */
+  headers?: Record<string, string>;
+  /** 输出 token 上限。 */
+  maxOutputTokens?: number;
+  /** 错误信息。 */
+  error?: string;
+  /** 回写状态。 */
+  writeBackStatus: ConversationSubagentWriteBackStatus;
+  /** 回写目标。 */
+  writeBackTarget?: ConversationSubagentWriteBackTarget | null;
+  /** 回写失败原因。 */
+  writeBackError?: string;
+  /** 回写消息 ID。 */
+  writeBackMessageId?: string;
+  /** 发起时间。 */
+  requestedAt: string;
+  /** 开始时间。 */
+  startedAt: string | null;
+  /** 完成时间。 */
+  finishedAt: string | null;
+  /** 关闭时间。 */
+  closedAt: string | null;
+}
+
+/**
  * 单条会话待办项。
  */
 export interface ConversationTodoItem {
@@ -200,12 +301,18 @@ export interface ConversationTodoItem {
 export interface Conversation {
   /** 对话 ID。 */
   id: string;
+  /** 父对话 ID。 */
+  parentId?: string;
+  /** 对话类型。 */
+  kind?: ConversationKind;
   /** 对话标题。 */
   title: string;
   /** 创建时间。 */
   createdAt: string;
   /** 更新时间。 */
   updatedAt: string;
+  /** 子代理元数据。 */
+  subagent?: ConversationSubagentState;
   /** 消息数量统计。 */
   _count?: ConversationCount;
 }
@@ -273,12 +380,14 @@ export type SSEEvent =
   | {
       type: 'tool-call';
       messageId: string;
+      toolCallId: string;
       toolName: string;
       input: JsonValue;
     }
   | {
       type: 'tool-result';
       messageId: string;
+      toolCallId: string;
       toolName: string;
       output: JsonValue;
     }

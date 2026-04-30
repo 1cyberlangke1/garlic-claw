@@ -330,8 +330,7 @@
 
 .message-parts,
 .message-custom-blocks,
-.tool-calls,
-.tool-results,
+.tool-timeline,
 .message-editor,
 .vision-fallback-list {
   display: grid;
@@ -548,9 +547,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.message-error,
-.tool-call,
-.tool-result {
+.message-error {
   min-width: 0;
   max-width: 100%;
   padding: 12px 14px;
@@ -567,18 +564,104 @@
   background: rgba(226, 74, 74, 0.14);
 }
 
-.tool-call {
-  border: 1px solid rgba(92, 203, 255, 0.16);
+.tool-entry {
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.14);
+  overflow: hidden;
 }
 
-.tool-result {
-  border: 1px solid rgba(68, 204, 136, 0.2);
+.tool-entry.call {
+  border-color: rgba(92, 203, 255, 0.16);
 }
 
-.tool-call code,
-.tool-result code {
-  display: block;
-  margin-top: 6px;
+.tool-entry.result {
+  border-color: rgba(68, 204, 136, 0.2);
+}
+
+.tool-entry-summary {
+  cursor: pointer;
+  list-style: none;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.tool-entry-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-entry[open] .tool-entry-summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tool-entry-badge,
+.tool-entry-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.tool-entry-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+
+.tool-entry.call .tool-entry-badge {
+  background: rgba(92, 203, 255, 0.12);
+  color: #9fe9ff;
+}
+
+.tool-entry.result .tool-entry-badge {
+  background: rgba(68, 204, 136, 0.12);
+  color: #a6efd0;
+}
+
+.tool-entry-name {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.tool-entry-preview {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-entry-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px 14px;
+}
+
+.tool-entry-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tool-entry-chip {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(224, 224, 239, 0.82);
+}
+
+.tool-entry-payload {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(6, 10, 18, 0.55);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;

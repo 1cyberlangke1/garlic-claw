@@ -3,9 +3,9 @@ import type {
   PluginSubagentSummary,
 } from '@garlic-claw/shared'
 import {
+  closeSubagent,
   getSubagent,
   listSubagentOverview,
-  removeSubagent,
 } from '@/features/subagents/api/subagents'
 import { getErrorMessage } from '@/utils/error'
 
@@ -23,20 +23,20 @@ export function loadPluginSubagentOverview(): Promise<PluginSubagentOverviewData
 
 /**
  * 读取单个后台子代理详情。
- * @param sessionId 子代理 session ID
+ * @param conversationId 子代理会话 ID
  * @returns 子代理详情
  */
-export function loadPluginSubagentDetail(sessionId: string): Promise<PluginSubagentDetail> {
-  return getSubagent(sessionId)
+export function loadPluginSubagentDetail(conversationId: string): Promise<PluginSubagentDetail> {
+  return getSubagent(conversationId)
 }
 
 /**
- * 移除后台子代理会话。
- * @param sessionId 子代理 session ID
- * @returns 是否成功移除
+ * 关闭后台子代理会话。
+ * @param conversationId 子代理会话 ID
+ * @returns 关闭后的子代理详情
  */
-export function removePluginSubagentSession(sessionId: string): Promise<boolean> {
-  return removeSubagent(sessionId)
+export function closePluginSubagentConversation(conversationId: string): Promise<PluginSubagentDetail> {
+  return closeSubagent(conversationId)
 }
 
 /**

@@ -2,10 +2,10 @@ import { SubagentController } from '../../../../src/adapters/http/subagent/subag
 
 describe('SubagentController', () => {
   const runtimeHostSubagentRunnerService = {
+    closeSubagent: jest.fn(),
     getSubagentOrThrow: jest.fn(),
     listOverview: jest.fn(),
     listTypes: jest.fn(),
-    removeSubagentSession: jest.fn(),
   };
 
   let controller: SubagentController;
@@ -15,14 +15,14 @@ describe('SubagentController', () => {
     controller = new SubagentController(runtimeHostSubagentRunnerService as never);
   });
 
-  it('returns the subagent overview', async () => {
+  it('returns the subagent overview', () => {
     runtimeHostSubagentRunnerService.listOverview.mockReturnValue({
       subagents: [
         {
-          sessionId: 'subagent-session-1',
-          sessionMessageCount: 2,
-          sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-          visibility: 'background',
+          conversationId: 'subagent-conversation-1',
+          title: '总结当前对话',
+          messageCount: 2,
+          updatedAt: '2026-03-30T12:00:05.000Z',
           pluginId: 'subagent',
           pluginDisplayName: 'Subagent',
           runtimeKind: 'local',
@@ -36,6 +36,7 @@ describe('SubagentController', () => {
           requestedAt: '2026-03-30T12:00:00.000Z',
           startedAt: '2026-03-30T12:00:01.000Z',
           finishedAt: '2026-03-30T12:00:05.000Z',
+          closedAt: null,
         },
       ],
     });
@@ -43,19 +44,19 @@ describe('SubagentController', () => {
     expect(controller.listOverview()).toEqual({
       subagents: [
         expect.objectContaining({
-          sessionId: 'subagent-session-1',
+          conversationId: 'subagent-conversation-1',
           status: 'completed',
         }),
       ],
     });
   });
 
-  it('returns one persisted subagent session projection', async () => {
+  it('returns one persisted subagent conversation projection', () => {
     runtimeHostSubagentRunnerService.getSubagentOrThrow.mockReturnValue({
-      sessionId: 'subagent-session-1',
-      sessionMessageCount: 2,
-      sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
-      visibility: 'background',
+      conversationId: 'subagent-conversation-1',
+      title: '总结当前对话',
+      messageCount: 2,
+      updatedAt: '2026-03-30T12:00:05.000Z',
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       runtimeKind: 'local',
@@ -69,6 +70,7 @@ describe('SubagentController', () => {
       requestedAt: '2026-03-30T12:00:00.000Z',
       startedAt: '2026-03-30T12:00:01.000Z',
       finishedAt: '2026-03-30T12:00:05.000Z',
+      closedAt: null,
       request: {
         providerId: 'openai',
         modelId: 'gpt-5.2',
@@ -98,8 +100,9 @@ describe('SubagentController', () => {
       },
     });
 
-    expect(controller.getSubagent('subagent-session-1')).toEqual(
+    expect(controller.getSubagent('subagent-conversation-1')).toEqual(
       expect.objectContaining({
+        conversationId: 'subagent-conversation-1',
         request: expect.objectContaining({
           messages: [
             {
@@ -108,7 +111,6 @@ describe('SubagentController', () => {
             },
           ],
         }),
-        sessionId: 'subagent-session-1',
         result: expect.objectContaining({
           text: '这是后台子代理总结',
         }),
@@ -142,9 +144,24 @@ describe('SubagentController', () => {
     ]);
   });
 
-  it('removes one persisted subagent session projection', () => {
-    runtimeHostSubagentRunnerService.removeSubagentSession.mockResolvedValue(true);
+  it('closes one persisted subagent conversation projection', async () => {
+    runtimeHostSubagentRunnerService.getSubagentOrThrow.mockReturnValue({
+      conversationId: 'subagent-conversation-1',
+      pluginId: 'subagent',
+    });
+    runtimeHostSubagentRunnerService.closeSubagent.mockResolvedValue({
+      conversationId: 'subagent-conversation-1',
+      pluginId: 'subagent',
+      status: 'closed',
+    });
 
-    return expect(controller.removeSubagent('subagent-session-1')).resolves.toBe(true);
+    await expect(controller.closeSubagent('subagent-conversation-1')).resolves.toEqual({
+      conversationId: 'subagent-conversation-1',
+      pluginId: 'subagent',
+      status: 'closed',
+    });
+    expect(runtimeHostSubagentRunnerService.closeSubagent).toHaveBeenCalledWith('subagent', {
+      conversationId: 'subagent-conversation-1',
+    });
   });
 });

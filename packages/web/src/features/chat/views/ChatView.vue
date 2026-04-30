@@ -40,12 +40,12 @@
         </button>
       </div>
 
-      <section class="chat-todo-panel">
+      <section v-if="chat.todoItems.length > 0" class="chat-todo-panel">
         <div class="chat-todo-header">
           <h3>当前待办</h3>
           <span class="chat-todo-count">{{ chat.todoItems.length }}</span>
         </div>
-        <div v-if="chat.todoItems.length" class="chat-todo-list">
+        <div class="chat-todo-list">
           <div
             v-for="(item, index) in chat.todoItems"
             :key="`${index}-${item.content}`"
@@ -57,7 +57,6 @@
             <span class="chat-todo-priority">{{ readTodoPriorityLabel(item.priority) }}</span>
           </div>
         </div>
-        <p v-else class="chat-todo-empty">当前会话还没有待办。</p>
       </section>
 
       <ChatRuntimePermissionPanel
@@ -101,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import altArrowUpBold from '@iconify-icons/solar/alt-arrow-up-bold'
 import altArrowDownBold from '@iconify-icons/solar/alt-arrow-down-bold'
@@ -122,6 +121,27 @@ const subagentTabs = ref<Array<{ id: string; title: string }>>([])
 const workspaceConversationId = ref<string | null>(null)
 const currentConversationPersona = ref<PluginPersonaCurrentInfo | null>(null)
 const currentConversationId = computed(() => chat.currentConversationId ?? null)
+const SUBAGENT_TAB_POLL_INTERVAL_MS = 2000
+
+let subagentTabPollTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  subagentTabPollTimer = setInterval(() => {
+    const conversationId = workspaceConversationId.value
+    if (!conversationId) {
+      return
+    }
+    void refreshSubagentTabs(conversationId)
+  }, SUBAGENT_TAB_POLL_INTERVAL_MS)
+})
+
+onBeforeUnmount(() => {
+  if (!subagentTabPollTimer) {
+    return
+  }
+  clearInterval(subagentTabPollTimer)
+  subagentTabPollTimer = null
+})
 
 watch(currentConversationId, async (id) => {
   if (!id) {
@@ -141,13 +161,7 @@ watch(currentConversationId, async (id) => {
   activeTab.value = 'main'
   workspaceConversationId.value = id
   subagentTabs.value = []
-  try {
-    const token = localStorage.getItem('accessToken')
-    const resp = await fetch(`/api/chat/conversations/${id}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-    if (resp.ok && workspaceConversationId.value === id) {
-      subagentTabs.value = await resp.json()
-    }
-  } catch { subagentTabs.value = [] }
+  await refreshSubagentTabs(id)
 }, {
   immediate: true,
 })
@@ -165,6 +179,22 @@ function switchToSubagent(conversationId: string) {
   activeTab.value = conversationId
   void chat.selectConversation(conversationId)
 }
+
+async function refreshSubagentTabs(conversationId: string) {
+  try {
+    const token = localStorage.getItem('accessToken')
+    const resp = await fetch(`/api/chat/conversations/${conversationId}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!resp.ok || workspaceConversationId.value !== conversationId) {
+      return
+    }
+    subagentTabs.value = await resp.json()
+  } catch {
+    if (workspaceConversationId.value === conversationId) {
+      subagentTabs.value = []
+    }
+  }
+}
+
 let currentPersonaRequestId = 0
 const {
   inputText,

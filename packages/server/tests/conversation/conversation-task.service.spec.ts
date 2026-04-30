@@ -102,8 +102,8 @@ describe('ConversationTaskService', () => {
         type: 'message-metadata',
       },
       { messageId: String(assistantMessage.id), text: '模型', type: 'text-delta' },
-      { input: { city: 'Shanghai' }, messageId: String(assistantMessage.id), toolName: 'weather.search', type: 'tool-call' },
-      { messageId: String(assistantMessage.id), output: { temp: 20 }, toolName: 'weather.search', type: 'tool-result' },
+      { input: { city: 'Shanghai' }, messageId: String(assistantMessage.id), toolCallId: 'tool-call-1', toolName: 'weather.search', type: 'tool-call' },
+      { messageId: String(assistantMessage.id), output: { temp: 20 }, toolCallId: 'tool-call-1', toolName: 'weather.search', type: 'tool-result' },
       { content: '最终回复', messageId: String(assistantMessage.id), parts: [{ text: '最终回复', type: 'text' }], type: 'message-patch' },
       { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
     ]);

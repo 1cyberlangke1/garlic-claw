@@ -13,7 +13,7 @@
 
       <div class="conversation-list">
         <button
-          v-for="conversation in chat.conversations"
+          v-for="conversation in visibleConversations"
           :key="conversation.id"
           type="button"
           class="conversation-item"
@@ -43,11 +43,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import ChatView from '@/features/chat/views/ChatView.vue'
 import { useChatStore } from '@/features/chat/store/chat'
 
 const chat = useChatStore()
+const visibleConversations = computed(() =>
+  chat.conversations.filter((conversation) => !(conversation as { parentId?: string }).parentId),
+)
 
 onMounted(() => {
   void chat.loadConversations()
