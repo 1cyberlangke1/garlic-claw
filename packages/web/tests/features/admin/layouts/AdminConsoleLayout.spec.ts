@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
 import AdminConsoleLayout from '@/features/admin/layouts/AdminConsoleLayout.vue'
 
 const authState = {
@@ -29,6 +30,10 @@ vi.mock('vue-router', async () => {
 describe('AdminConsoleLayout', () => {
   beforeEach(() => {
     localStorage.clear()
+    const { setTopbarCollapsed, setTopbarPullCordEnabled, setTopbarPullCordPosition } = useAdminShellPreferences()
+    setTopbarPullCordEnabled(true)
+    setTopbarCollapsed(false)
+    setTopbarPullCordPosition(0.72)
     Object.defineProperty(window, 'innerWidth', {
       configurable: true,
       writable: true,
@@ -63,11 +68,14 @@ describe('AdminConsoleLayout', () => {
     expect(wrapper.text()).toContain('技能')
     expect(wrapper.text()).toContain('AI 设置')
     expect(wrapper.text()).toContain('自动化')
+    expect(wrapper.text()).toContain('设置')
     expect(wrapper.text()).toContain('控制台')
     expect(wrapper.text()).toContain('退出登录')
     expect(wrapper.text()).not.toContain('API Keys')
     expect(wrapper.get('.admin-topbar').text()).toContain('退出登录')
     expect(wrapper.get('.admin-nav').text()).not.toContain('退出登录')
+    expect(wrapper.get('[data-test="topbar-pull-cord"]').attributes('aria-label')).toBe('收起顶栏')
+    expect(wrapper.get('[data-test="topbar-pull-cord"]').attributes('style')).toContain('left: 72%;')
   })
 
   it('restores the saved expanded width from localStorage', async () => {
@@ -95,5 +103,29 @@ describe('AdminConsoleLayout', () => {
 
     expect(wrapper.get('.admin-nav').attributes('style')).toContain('width: 300px;')
     expect(localStorage.getItem('garlic-claw:admin-sider-width')).toBe('300')
+  })
+
+  it('hides the topbar pull cord when the feature is disabled', () => {
+    const { setTopbarPullCordEnabled } = useAdminShellPreferences()
+    setTopbarPullCordEnabled(false)
+
+    const wrapper = mountLayout()
+
+    expect(wrapper.find('[data-test="topbar-pull-cord"]').exists()).toBe(false)
+  })
+
+  it('updates topbar pull cord position after dragging horizontally', async () => {
+    const wrapper = mountLayout()
+
+    await wrapper.get('[data-test="topbar-pull-cord"]').trigger('mousedown', {
+      clientX: 720,
+    })
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 820 }))
+    await nextTick()
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    await nextTick()
+
+    expect(wrapper.get('[data-test="topbar-pull-cord"]').attributes('style')).toContain('left: 79.8125%;')
+    expect(localStorage.getItem('garlic-claw:admin-topbar-pull-cord-position')).toBe('0.798125')
   })
 })

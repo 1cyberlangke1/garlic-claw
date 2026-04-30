@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ThemeToggle from '@/components/header/ThemeToggle.vue'
+import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
 import { useAuthStore } from '@/stores/auth'
 import altArrowLeftBold from '@iconify-icons/solar/alt-arrow-left-bold'
 import altArrowRightBold from '@iconify-icons/solar/alt-arrow-right-bold'
@@ -9,6 +10,7 @@ import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
 import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import logout3Bold from '@iconify-icons/solar/logout-3-bold'
 import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
+import settingsBold from '@iconify-icons/solar/settings-bold'
 import tuning2Bold from '@iconify-icons/solar/tuning-2-bold'
 import userIdBold from '@iconify-icons/solar/user-id-bold'
 import widgetBold from '@iconify-icons/solar/widget-5-bold'
@@ -22,6 +24,13 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const {
+  topbarPullCordEnabled,
+  topbarCollapsed,
+  setTopbarCollapsed,
+  topbarPullCordPosition,
+  setTopbarPullCordPosition,
+} = useAdminShellPreferences()
 
 type SiderMode = 'expanded' | 'compact' | 'hidden'
 
@@ -38,8 +47,9 @@ const EXPAND_RATIO = 0.2
 const HANDLE_MIN_TOP = 80
 const DEFAULT_BOTTOM_OFFSET = 12
 const RESIZE_ACTIVATION_WIDTH = 1024
+const TOPBAR_PULL_ANIMATION_MS = 180
 
-type DragType = 'toggle-handle' | 'resize' | null
+type DragType = 'toggle-handle' | 'resize' | 'topbar-pull-cord' | null
 
 function readSiderMode(): SiderMode {
   if (typeof window === 'undefined') {
@@ -115,13 +125,19 @@ const handleBottom = ref(DEFAULT_BOTTOM_OFFSET)
 const hiddenHandleDragging = ref(false)
 const hiddenHandleMoved = ref(false)
 const resizeDragging = ref(false)
+const topbarPullAnimating = ref(false)
+const topbarPullCordDragging = ref(false)
+const topbarPullCordMoved = ref(false)
+const topbarShellRef = ref<HTMLElement | null>(null)
 const dragState = reactive({
   type: null as DragType,
   startX: 0,
   startY: 0,
   startWidth: 0,
   startBottom: 0,
+  startPullCordPosition: 0,
 })
+let topbarPullTimer: ReturnType<typeof setTimeout> | null = null
 
 const navItems: Array<{
   name:
@@ -134,6 +150,7 @@ const navItems: Array<{
     | 'commands'
     | 'automations'
     | 'ai-settings'
+    | 'console-settings'
   label: string
   icon: IconifyIcon
   divided?: boolean
@@ -147,6 +164,7 @@ const navItems: Array<{
   { name: 'mcp', label: 'MCP', icon: widgetAddBold },
   { name: 'automations', label: '自动化', icon: cpuBoltBold, divided: true },
   { name: 'ai-settings', label: 'AI 设置', icon: codeBold },
+  { name: 'console-settings', label: '设置', icon: settingsBold },
 ]
 
 const visibleNavItems = computed(() => navItems)
@@ -182,6 +200,7 @@ const triggerText = computed(() => {
 })
 
 const triggerIcon = computed(() => (isHidden.value ? altArrowRightBold : altArrowLeftBold))
+const topbarPullLabel = computed(() => (topbarCollapsed.value ? '展开顶栏' : '收起顶栏'))
 
 function toggleSider() {
   if (isHidden.value) {
@@ -300,6 +319,11 @@ function getMouseClientX(event: MouseEvent) {
   return event.clientX
 }
 
+function getTopbarShellWidth() {
+  const shellWidth = topbarShellRef.value?.clientWidth ?? 0
+  return shellWidth > 0 ? shellWidth : window.innerWidth
+}
+
 function onResizeStart(event: MouseEvent) {
   if (!canResizeExpandedSider.value) {
     return
@@ -324,12 +348,51 @@ function onResizeMove(event: MouseEvent) {
   )
 }
 
+function onTopbarPullCordStart(event: MouseEvent) {
+  if (!topbarPullCordEnabled.value) {
+    return
+  }
+
+  event.preventDefault()
+  topbarPullCordDragging.value = true
+  topbarPullCordMoved.value = false
+  dragState.type = 'topbar-pull-cord'
+  dragState.startX = getMouseClientX(event)
+  dragState.startPullCordPosition = topbarPullCordPosition.value
+}
+
+function onTopbarPullCordMove(event: MouseEvent) {
+  if (dragState.type !== 'topbar-pull-cord') {
+    return
+  }
+
+  const shellWidth = getTopbarShellWidth()
+  if (shellWidth <= 0) {
+    return
+  }
+
+  const deltaX = getMouseClientX(event) - dragState.startX
+  if (Math.abs(deltaX) > 3) {
+    topbarPullCordMoved.value = true
+  }
+
+  setTopbarPullCordPosition(dragState.startPullCordPosition + deltaX / shellWidth)
+}
+
 function onHandleEnd() {
   const wasHandleDragging = dragState.type === 'toggle-handle'
+  const wasTopbarDragging = dragState.type === 'topbar-pull-cord'
   dragState.type = null
   hiddenHandleDragging.value = false
   resizeDragging.value = false
+  topbarPullCordDragging.value = false
   if (!wasHandleDragging) {
+    if (!wasTopbarDragging) {
+      return
+    }
+    window.setTimeout(() => {
+      topbarPullCordMoved.value = false
+    }, 50)
     return
   }
 
@@ -346,6 +409,28 @@ function onHandleClick() {
   toggleSider()
 }
 
+function clearTopbarPullTimer() {
+  if (topbarPullTimer !== null) {
+    window.clearTimeout(topbarPullTimer)
+    topbarPullTimer = null
+  }
+}
+
+function handleTopbarPullCordClick() {
+  if (!topbarPullCordEnabled.value || topbarPullAnimating.value || topbarPullCordMoved.value) {
+    return
+  }
+
+  clearTopbarPullTimer()
+  topbarPullAnimating.value = true
+  const nextCollapsed = !topbarCollapsed.value
+  topbarPullTimer = window.setTimeout(() => {
+    setTopbarCollapsed(nextCollapsed)
+    topbarPullAnimating.value = false
+    topbarPullTimer = null
+  }, TOPBAR_PULL_ANIMATION_MS)
+}
+
 function handleLogout() {
   auth.logout()
   void router.push({ name: 'login' })
@@ -356,6 +441,7 @@ onMounted(() => {
   window.addEventListener('resize', updateViewportWidth)
   window.addEventListener('mousemove', onResizeMove)
   window.addEventListener('mousemove', onHandleMove)
+  window.addEventListener('mousemove', onTopbarPullCordMove)
   window.addEventListener('mouseup', onHandleEnd)
   window.addEventListener('touchmove', onHandleMove, { passive: false })
   window.addEventListener('touchend', onHandleEnd)
@@ -363,9 +449,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
+  clearTopbarPullTimer()
   window.removeEventListener('resize', updateViewportWidth)
   window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mousemove', onHandleMove)
+  window.removeEventListener('mousemove', onTopbarPullCordMove)
   window.removeEventListener('mouseup', onHandleEnd)
   window.removeEventListener('touchmove', onHandleMove)
   window.removeEventListener('touchend', onHandleEnd)
@@ -378,19 +466,43 @@ watch(preferredExpandedSiderWidth, (width) => {
 </script>
 
 <template>
-  <div class="admin-shell">
-    <header class="admin-topbar">
-      <div class="topbar-left">
-        <span class="topbar-brand">🦞🧄 Garlic Claw</span>
-      </div>
-      <div class="topbar-right">
-        <ThemeToggle />
-        <button type="button" class="topbar-action-button" @click="handleLogout">
-          <Icon class="topbar-action-icon" :icon="logout3Bold" aria-hidden="true" />
-          退出登录
-        </button>
-      </div>
-    </header>
+  <div
+    class="admin-shell"
+    :class="{
+      'topbar-collapsible': topbarPullCordEnabled,
+      'topbar-collapsed': topbarCollapsed,
+      'topbar-pull-animating': topbarPullAnimating,
+    }"
+  >
+    <div ref="topbarShellRef" class="admin-topbar-shell">
+      <header class="admin-topbar">
+        <div class="topbar-left">
+          <span class="topbar-brand">🦞🧄 Garlic Claw</span>
+        </div>
+        <div class="topbar-right">
+          <ThemeToggle />
+          <button type="button" class="topbar-action-button" @click="handleLogout">
+            <Icon class="topbar-action-icon" :icon="logout3Bold" aria-hidden="true" />
+            退出登录
+          </button>
+        </div>
+      </header>
+
+      <button
+        v-if="topbarPullCordEnabled"
+        type="button"
+        class="topbar-pull-cord"
+        :class="{ 'is-dragging': topbarPullCordDragging }"
+        :style="{ left: `${topbarPullCordPosition * 100}%` }"
+        data-test="topbar-pull-cord"
+        :aria-label="topbarPullLabel"
+        @mousedown="onTopbarPullCordStart"
+        @click="handleTopbarPullCordClick"
+      >
+        <span class="topbar-pull-cord-line" />
+        <span class="topbar-pull-cord-handle" />
+      </button>
+    </div>
 
     <div class="admin-body">
       <aside
@@ -471,6 +583,18 @@ watch(preferredExpandedSiderWidth, (width) => {
   background: var(--shell-bg);
 }
 
+.admin-topbar-shell {
+  position: relative;
+  height: 48px;
+  min-height: 0;
+  flex-shrink: 0;
+  transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.admin-shell.topbar-collapsed .admin-topbar-shell {
+  height: 0;
+}
+
 .admin-topbar {
   display: flex;
   align-items: center;
@@ -481,6 +605,15 @@ watch(preferredExpandedSiderWidth, (width) => {
   background: var(--shell-bg-elevated);
   border-bottom: 1px solid var(--shell-border);
   z-index: 100;
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease;
+}
+
+.admin-shell.topbar-collapsed .admin-topbar {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
 }
 
 .topbar-brand {
@@ -522,6 +655,73 @@ watch(preferredExpandedSiderWidth, (width) => {
   min-width: 16px;
   font-size: 16px;
   flex-shrink: 0;
+}
+
+.topbar-pull-cord {
+  position: absolute;
+  top: 100%;
+  z-index: 110;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  transform: translate(-50%, 0);
+  cursor: pointer;
+  box-shadow: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.topbar-pull-cord.is-dragging {
+  cursor: grabbing;
+}
+
+.topbar-pull-cord:hover,
+.topbar-pull-cord:focus,
+.topbar-pull-cord:focus-visible,
+.topbar-pull-cord:active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.admin-shell.topbar-collapsed .topbar-pull-cord {
+  top: 0;
+}
+
+.topbar-pull-cord-line {
+  width: 2px;
+  height: 18px;
+  background: linear-gradient(180deg, rgba(203, 213, 225, 0.92), rgba(120, 134, 156, 0.72));
+  transition: height 0.18s ease;
+}
+
+.topbar-pull-cord-handle {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.9)),
+    var(--shell-bg-elevated);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+  transition: box-shadow 0.18s ease;
+}
+
+.topbar-pull-cord:hover .topbar-pull-cord-line {
+  height: 20px;
+}
+
+.topbar-pull-cord:hover .topbar-pull-cord-handle {
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.18);
+}
+
+.admin-shell.topbar-pull-animating .topbar-pull-cord-line {
+  height: 26px;
 }
 
 .admin-body {
@@ -845,6 +1045,10 @@ watch(preferredExpandedSiderWidth, (width) => {
 }
 
 @media (max-width: 768px) {
+  .topbar-pull-cord-line {
+    height: 14px;
+  }
+
   .menu-item {
     min-height: 48px;
   }
