@@ -434,6 +434,23 @@ def 执行启动前预检() -> bool:
         if passed:
             continue
         print(detail)
+        if label == "检查 package-lock.json":
+            print("[自动修复] 运行 npm install 生成 package-lock.json …")
+            result = subprocess.run(
+                runtime.normalizeCommand(["npm", "install"]),
+                cwd=ROOT,
+                check=False,
+            )
+            if result.returncode == 0 and (ROOT / "package-lock.json").exists():
+                runtime.startSingleLineStatus(label, width=statusWidth)
+                runtime.finishSingleLineStatus(
+                    label,
+                    width=statusWidth,
+                    result="(通过)",
+                    success=True,
+                )
+                continue
+            print("自动修复失败，请手动运行 npm install 后重试。")
         return False
 
     return True

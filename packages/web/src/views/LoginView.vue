@@ -17,6 +17,15 @@
         <button type="submit" :disabled="submitting">
           {{ submitting ? '登录中...' : '登录' }}
         </button>
+        <button
+          v-if="isDev"
+          type="button"
+          class="dev-login"
+          :disabled="submitting"
+          @click="handleDevLogin"
+        >
+          {{ submitting ? '登录中...' : '开发者一键登录' }}
+        </button>
       </form>
     </div>
   </div>
@@ -34,16 +43,30 @@ const secret = ref('')
 const error = ref('')
 const submitting = ref(false)
 
-async function handleLogin() {
+const isDev = import.meta.env.DEV && !!import.meta.env.VITE_DEV_LOGIN_SECRET
+
+const devSecret = import.meta.env.VITE_DEV_LOGIN_SECRET as string | undefined
+
+async function doLogin(input: string) {
   error.value = ''
   submitting.value = true
   try {
-    await auth.login(secret.value)
+    await auth.login(input)
     router.push('/')
   } catch (e) {
     error.value = (e as Error).message || '登录失败'
   } finally {
     submitting.value = false
+  }
+}
+
+async function handleLogin() {
+  await doLogin(secret.value)
+}
+
+async function handleDevLogin() {
+  if (devSecret) {
+    await doLogin(devSecret)
   }
 }
 </script>
