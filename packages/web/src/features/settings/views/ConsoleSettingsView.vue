@@ -1,16 +1,28 @@
 <script setup lang="ts">
 import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
-import settingsBold from '@iconify-icons/solar/settings-bold'
-import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
-import { Icon } from '@iconify/vue'
+import { useThemeStore } from '@/stores/theme'
 
 const {
   topbarPullCordEnabled,
   setTopbarPullCordEnabled,
 } = useAdminShellPreferences()
+const theme = useThemeStore()
 
 function handleToggleTopbarPullCord() {
   setTopbarPullCordEnabled(!topbarPullCordEnabled.value)
+}
+
+function handleToggleDarkMode() {
+  if (theme.followSystem) {
+    return
+  }
+
+  if (theme.isDark) {
+    theme.setLightMode()
+    return
+  }
+
+  theme.setDarkMode()
 }
 </script>
 
@@ -24,36 +36,70 @@ function handleToggleTopbarPullCord() {
       </div>
     </header>
 
-    <section class="settings-card">
-      <div class="settings-card-header">
-        <div>
-          <span class="settings-section-kicker">顶栏交互</span>
-          <h2>顶部拉绳收起</h2>
-        </div>
-        <Icon :icon="magicStick3Bold" class="settings-card-icon" aria-hidden="true" />
-      </div>
-
-      <div class="settings-row">
-        <div class="settings-copy">
-          <div class="settings-copy-title">
-            <Icon :icon="settingsBold" class="settings-copy-icon" aria-hidden="true" />
+    <section class="settings-grid">
+      <article class="settings-card">
+        <div class="settings-row">
+          <div class="settings-copy">
             <strong>启用顶栏拉绳按钮</strong>
+            <p class="settings-copy-note">开启后，顶栏中间会出现一个可点击的下拉拉绳，用来收起或展开顶部栏。</p>
           </div>
-          <p>开启后，顶栏中间会出现一个可点击的下拉拉绳，用来收起或展开顶部栏。</p>
+
+          <button
+            type="button"
+            class="settings-switch"
+            :class="{ 'settings-switch--on': topbarPullCordEnabled }"
+            role="switch"
+            :aria-checked="topbarPullCordEnabled"
+            aria-label="启用顶栏拉绳按钮"
+            @click="handleToggleTopbarPullCord"
+          >
+            <span class="settings-switch__knob" />
+          </button>
+        </div>
+      </article>
+
+      <article class="settings-card">
+        <div class="settings-row">
+          <div class="settings-copy">
+            <strong>切换深色模式</strong>
+            <p class="settings-copy-note">关闭时使用浅色模式；开启后使用深色模式。</p>
+          </div>
+
+          <button
+            type="button"
+            class="settings-switch"
+            :class="{ 'settings-switch--on': theme.isDark && !theme.followSystem, 'settings-switch--disabled': theme.followSystem }"
+            role="switch"
+            :aria-checked="theme.isDark && !theme.followSystem"
+            :aria-disabled="theme.followSystem"
+            aria-label="切换深色模式"
+            @click="handleToggleDarkMode"
+          >
+            <span class="settings-switch__knob" />
+          </button>
         </div>
 
-        <button
-          type="button"
-          class="settings-switch"
-          :class="{ 'settings-switch--on': topbarPullCordEnabled }"
-          role="switch"
-          :aria-checked="topbarPullCordEnabled"
-          aria-label="启用顶栏拉绳按钮"
-          @click="handleToggleTopbarPullCord"
-        >
-          <span class="settings-switch__knob" />
-        </button>
-      </div>
+        <div class="settings-divider" />
+
+        <div class="settings-row">
+          <div class="settings-copy">
+            <strong>深色模式跟随系统</strong>
+            <p class="settings-copy-note">开启后，界面主题会根据系统主题自动切换。</p>
+          </div>
+
+          <button
+            type="button"
+            class="settings-switch"
+            :class="{ 'settings-switch--on': theme.followSystem }"
+            role="switch"
+            :aria-checked="theme.followSystem"
+            aria-label="深色模式跟随系统"
+            @click="theme.setFollowSystem(!theme.followSystem)"
+          >
+            <span class="settings-switch__knob" />
+          </button>
+        </div>
+      </article>
     </section>
   </div>
 </template>
@@ -100,8 +146,13 @@ function handleToggleTopbarPullCord() {
   line-height: 1.6;
 }
 
-.settings-card {
+.settings-grid {
+  display: grid;
   max-width: 860px;
+  gap: 18px;
+}
+
+.settings-card {
   border: 1px solid var(--shell-border);
   border-radius: 20px;
   padding: 24px;
@@ -109,42 +160,20 @@ function handleToggleTopbarPullCord() {
   box-shadow: 0 22px 48px rgba(15, 23, 42, 0.08);
 }
 
-.settings-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--shell-border);
-}
-
-.settings-card-icon {
-  font-size: 24px;
-  color: var(--shell-active);
-}
-
 .settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding-top: 22px;
 }
 
 .settings-copy {
   min-width: 0;
 }
 
-.settings-copy-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.settings-copy strong {
   color: var(--shell-text);
-}
-
-.settings-copy-icon {
-  font-size: 18px;
-  color: var(--shell-active);
+  font-size: 14px;
 }
 
 .settings-switch {
@@ -163,6 +192,10 @@ function handleToggleTopbarPullCord() {
   background: var(--shell-active);
 }
 
+.settings-switch--disabled {
+  opacity: 0.45;
+}
+
 .settings-switch__knob {
   display: block;
   width: 22px;
@@ -177,6 +210,17 @@ function handleToggleTopbarPullCord() {
   transform: translateX(20px);
 }
 
+.settings-copy-note {
+  font-size: 12px;
+  color: var(--shell-text-tertiary);
+}
+
+.settings-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: var(--shell-border);
+}
+
 @media (max-width: 768px) {
   .console-settings-page {
     padding: 16px;
@@ -188,6 +232,7 @@ function handleToggleTopbarPullCord() {
 
   .settings-row {
     align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

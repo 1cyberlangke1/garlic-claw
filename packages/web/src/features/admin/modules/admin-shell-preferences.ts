@@ -8,12 +8,12 @@ const MAX_TOPBAR_PULL_CORD_POSITION = 0.95
 
 function readTopbarPullCordEnabled() {
   if (typeof window === 'undefined') {
-    return true
+    return false
   }
 
   const saved = window.localStorage.getItem(TOPBAR_PULL_CORD_ENABLED_STORAGE_KEY)
   if (saved === null) {
-    return true
+    return false
   }
 
   return saved === 'true'
