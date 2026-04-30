@@ -1,4 +1,8 @@
 import type { JsonValue } from './json';
+import type {
+  RuntimePermissionReplyResult,
+  RuntimePermissionRequest,
+} from './runtime-permission';
 
 /**
  * 文本消息 part。
@@ -154,23 +158,40 @@ export interface ChatMessageMetadata {
 }
 
 /**
- * 会话级宿主服务开关。
- */
-export interface ConversationHostServices {
-  /** 当前会话宿主服务总开关。 */
-  sessionEnabled: boolean;
-  /** 当前会话是否允许 LLM 自动回复。 */
-  llmEnabled: boolean;
-  /** 为未来 TTS 预留的会话级开关。 */
-  ttsEnabled: boolean;
-}
-
-/**
  * 对话中的消息数量统计。
  */
 export interface ConversationCount {
   /** 消息数量。 */
   messages: number;
+}
+
+/**
+ * 会话待办状态。
+ */
+export type ConversationTodoStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+
+/**
+ * 会话待办优先级。
+ */
+export type ConversationTodoPriority =
+  | 'high'
+  | 'medium'
+  | 'low';
+
+/**
+ * 单条会话待办项。
+ */
+export interface ConversationTodoItem {
+  /** 待办内容。 */
+  content: string;
+  /** 当前状态。 */
+  status: ConversationTodoStatus;
+  /** 优先级。 */
+  priority: ConversationTodoPriority;
 }
 
 /**
@@ -273,6 +294,21 @@ export type SSEEvent =
       metadata: ChatMessageMetadata;
     }
   | {
+      type: 'todo-updated';
+      conversationId: string;
+      todos: ConversationTodoItem[];
+    }
+  | {
+      type: 'permission-request';
+      messageId: string;
+      request: RuntimePermissionRequest;
+    }
+  | {
+      type: 'permission-resolved';
+      messageId: string;
+      result: RuntimePermissionReplyResult;
+    }
+  | {
       type: 'finish';
       messageId: string;
       status: ChatMessageStatus;
@@ -317,7 +353,25 @@ export interface RetryMessagePayload {
 }
 
 /**
- * 更新会话级宿主服务开关时的请求载荷。
+ * 会话当前送模窗口预览。
  */
-export type UpdateConversationHostServicesPayload =
-  Partial<ConversationHostServices>;
+export interface ConversationContextWindowPreview {
+  /** 上下文治理当前是否生效。 */
+  enabled: boolean;
+  /** 当前治理策略。 */
+  strategy: 'sliding' | 'summary';
+  /** 当前仍会进入模型上下文的消息 ID。 */
+  includedMessageIds: string[];
+  /** 当前不会进入模型上下文的消息 ID。 */
+  excludedMessageIds: string[];
+  /** 当前窗口的估算 token 数。 */
+  estimatedTokens: number;
+  /** 当前窗口预算上限。 */
+  maxWindowTokens: number;
+  /** 无论何种策略都至少保留的最近消息数。 */
+  keepRecentMessages: number;
+  /** 前端本地最多缓存的最近消息数。 */
+  frontendMessageWindowSize: number;
+  /** sliding 策略下使用的窗口百分比。 */
+  slidingWindowUsagePercent: number;
+}

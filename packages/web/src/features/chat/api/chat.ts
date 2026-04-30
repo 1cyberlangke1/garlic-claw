@@ -1,15 +1,18 @@
-import { delete as del, get, patch, post, put, requestRaw } from "@/api/http";
+import { delete as del, get, patch, post, requestRaw } from "@/api/http";
 import { toAppError } from "@/utils/error";
 
 import type {
   Conversation,
+  ConversationContextWindowPreview,
   ConversationDetail,
-  ConversationHostServices,
+  RuntimePermissionDecision,
+  RuntimePermissionReplyResult,
+  RuntimePermissionRequest,
+  ConversationTodoItem,
   Message,
   RetryMessagePayload,
   SSEEvent,
   SendMessagePayload,
-  UpdateConversationHostServicesPayload,
   UpdateMessagePayload,
 } from "@garlic-claw/shared";
 
@@ -25,24 +28,50 @@ export function getConversation(id: string) {
   return get<ConversationDetail>(`/chat/conversations/${id}`);
 }
 
+export function getConversationContextWindow(
+  conversationId: string,
+  payload: {
+    providerId?: string;
+    modelId?: string;
+  } = {},
+) {
+  const search = new URLSearchParams();
+  if (payload.providerId) {
+    search.set("providerId", payload.providerId);
+  }
+  if (payload.modelId) {
+    search.set("modelId", payload.modelId);
+  }
+  const query = search.toString();
+  const querySuffix = query ? `?${query}` : "";
+  return get<ConversationContextWindowPreview>(
+    `/chat/conversations/${conversationId}/context-window${querySuffix}`,
+  );
+}
+
+export function getConversationTodo(conversationId: string) {
+  return get<ConversationTodoItem[]>(`/chat/sessions/${conversationId}/todo`);
+}
+
+export function listPendingRuntimePermissions(conversationId: string) {
+  return get<RuntimePermissionRequest[]>(
+    `/chat/conversations/${conversationId}/runtime-permissions/pending`,
+  );
+}
+
+export function replyRuntimePermission(
+  conversationId: string,
+  requestId: string,
+  decision: RuntimePermissionDecision,
+) {
+  return post<RuntimePermissionReplyResult>(
+    `/chat/conversations/${conversationId}/runtime-permissions/${requestId}/reply`,
+    { decision },
+  );
+}
+
 export function deleteConversation(id: string) {
   return del<{ message: string }>(`/chat/conversations/${id}`);
-}
-
-export function getConversationHostServices(conversationId: string) {
-  return get<ConversationHostServices>(
-    `/chat/conversations/${conversationId}/services`,
-  );
-}
-
-export function updateConversationHostServices(
-  conversationId: string,
-  payload: UpdateConversationHostServicesPayload,
-) {
-  return put<ConversationHostServices>(
-    `/chat/conversations/${conversationId}/services`,
-    payload,
-  );
 }
 
 export function updateConversationMessage(
@@ -71,41 +100,6 @@ export function stopConversationMessage(
 ) {
   return post<{ message: string }>(
     `/chat/conversations/${conversationId}/messages/${messageId}/stop`,
-  );
-}
-
-export interface ConversationContextCompactionResult {
-  compacted: boolean;
-  reason?: string;
-  coveredMessageCount?: number;
-  summaryMessageId?: string;
-  revision?: string;
-  beforePreview?: {
-    estimatedTokens: number;
-    messageCount: number;
-    textBytes: number;
-  };
-  afterPreview?: {
-    estimatedTokens: number;
-    messageCount: number;
-    textBytes: number;
-  };
-}
-
-export function compactConversationContext(
-  conversationId: string,
-  payload: {
-    providerId?: string | null;
-    modelId?: string | null;
-  } = {},
-) {
-  return post<ConversationContextCompactionResult>(
-    "/plugin-routes/builtin.context-compaction/context-compaction/run",
-    {
-      conversationId,
-      ...(payload.providerId ? { providerId: payload.providerId } : {}),
-      ...(payload.modelId ? { modelId: payload.modelId } : {}),
-    },
   );
 }
 

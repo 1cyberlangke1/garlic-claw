@@ -12,7 +12,7 @@
     </div>
     <div class="meta-row">
       <span class="meta-chip">{{ skill.id }}</span>
-      <span class="meta-chip">{{ skill.sourceKind === 'project' ? '项目' : '用户' }}</span>
+      <span class="meta-chip">skills/</span>
       <span class="meta-chip">{{ loadPolicyLabel(skill.governance.loadPolicy) }}</span>
       <span class="meta-chip">{{ skill.assets.length }} 个资产</span>
     </div>

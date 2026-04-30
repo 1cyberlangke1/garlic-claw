@@ -1,10 +1,18 @@
 import type { ChatBeforeModelHookResult, JsonValue } from "@garlic-claw/shared";
+import type { PluginManifest } from "@garlic-claw/shared";
+import authoringConfigData from "./authoring-config-data.json";
 import { createChatBeforeModelHookResult } from "./transport";
 import { pickOptionalNumberFields, pickOptionalStringFields, readJsonObjectValue, sanitizeOptionalText } from "./common-helpers";
 export interface PluginPromptBlockConfig {
   limit?: number;
   promptPrefix?: string;
 }
+export const MEMORY_CONTEXT_DEFAULT_LIMIT = authoringConfigData.defaults.memoryContextLimit;
+export const MEMORY_CONTEXT_DEFAULT_PROMPT_PREFIX = authoringConfigData.defaults.memoryContextPromptPrefix;
+export const KB_CONTEXT_DEFAULT_LIMIT = authoringConfigData.defaults.kbContextLimit;
+export const KB_CONTEXT_DEFAULT_PROMPT_PREFIX = authoringConfigData.defaults.kbContextPromptPrefix;
+export const MEMORY_CONTEXT_CONFIG_SCHEMA = authoringConfigData.memoryContextConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
+export const KB_CONTEXT_CONFIG_SCHEMA = authoringConfigData.kbContextConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
 export function createChatBeforeModelLineBlockResult(currentSystemPrompt: string, promptPrefix: string, lines: string[]): ChatBeforeModelHookResult | null {
   if (lines.length === 0) {
     return null;

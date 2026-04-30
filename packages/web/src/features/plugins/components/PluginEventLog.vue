@@ -1,7 +1,7 @@
 <template>
   <EventLogPanel
     title="事件日志"
-    description="查看插件最近的失败、治理动作与健康检查记录。"
+    description="查看插件的事件记录。"
     :events="events"
     :loading="loading"
     :query="query"

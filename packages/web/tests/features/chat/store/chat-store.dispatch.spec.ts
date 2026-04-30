@@ -19,7 +19,10 @@ vi.mock('@/features/chat/modules/chat-conversation.data', () => ({
 function createState(messages: ChatMessage[] = []) {
   const state = {
     currentConversationId: ref<string | null>('conversation-1'),
+    contextWindowPreview: ref(null),
     messages: ref<ChatMessage[]>(messages),
+    pendingRuntimePermissions: ref([]),
+    todoItems: ref([]),
     selectedProvider: ref<string | null>('demo-provider'),
     selectedModel: ref<string | null>('demo-model'),
     streamController: ref<AbortController | null>(null),
@@ -106,6 +109,10 @@ describe('dispatchSendMessage', () => {
 
     expect(refreshConversationSummary).toHaveBeenCalledTimes(1)
     expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: false,
+      summaryRefreshed: true,
+    })
   })
 
   it('swallows summary refresh failures during streaming and still completes final refresh', async () => {
@@ -146,6 +153,10 @@ describe('dispatchSendMessage', () => {
 
     expect(refreshConversationSummary).toHaveBeenCalledTimes(1)
     expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: false,
+      summaryRefreshed: true,
+    })
   })
 
   it('does not fail a successful send when the final conversation refresh fails', async () => {
@@ -181,6 +192,10 @@ describe('dispatchSendMessage', () => {
 
     expect(refreshConversationSummary).toHaveBeenCalledTimes(1)
     expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: false,
+      summaryRefreshed: true,
+    })
   })
 
   it('still refreshes the original conversation state after switching away during send', async () => {
@@ -206,6 +221,10 @@ describe('dispatchSendMessage', () => {
 
     expect(refreshConversationSummary).toHaveBeenCalledTimes(0)
     expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: false,
+      summaryRefreshed: false,
+    })
   })
 
   it('still refreshes the original conversation state after switching away during retry', async () => {
@@ -236,6 +255,101 @@ describe('dispatchSendMessage', () => {
 
     expect(refreshConversationSummary).toHaveBeenCalledTimes(0)
     expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: false,
+      summaryRefreshed: false,
+    })
+  })
+
+  it('marks permission refresh as changed when the stream emitted permission events', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'permission-request',
+          messageId: 'assistant-1',
+          request: {
+            id: 'permission-1',
+            conversationId: 'conversation-1',
+            backendKind: 'just-bash',
+            toolName: 'bash',
+            operations: ['command.execute'],
+            createdAt: '2026-04-20T09:00:00.000Z',
+            summary: '执行 pwd',
+          },
+        })
+      },
+    )
+    const state = createState()
+    const refreshConversationSummary = vi.fn().mockResolvedValue(undefined)
+    const refreshConversationState = vi.fn().mockResolvedValue(undefined)
+
+    await dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      {
+        refreshConversationSummary,
+        refreshConversationState,
+      },
+    )
+
+    expect(state.pendingRuntimePermissions.value).toEqual([
+      expect.objectContaining({
+        id: 'permission-1',
+        toolName: 'bash',
+      }),
+    ])
+    expect(refreshConversationSummary).toHaveBeenCalledTimes(0)
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: true,
+      summaryRefreshed: false,
+    })
+  })
+
+  it('applies todo-updated events directly to the current todo panel without forcing summary refresh', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'todo-updated',
+          conversationId: 'conversation-1',
+          todos: [
+            {
+              content: '同步 todo 面板',
+              priority: 'high',
+              status: 'in_progress',
+            },
+          ],
+        })
+      },
+    )
+    const state = createState()
+    const refreshConversationSummary = vi.fn().mockResolvedValue(undefined)
+    const refreshConversationState = vi.fn().mockResolvedValue(undefined)
+
+    await dispatchSendMessage(
+      state,
+      {
+        content: 'hello',
+      },
+      {
+        refreshConversationSummary,
+        refreshConversationState,
+      },
+    )
+
+    expect(state.todoItems.value).toEqual([
+      {
+        content: '同步 todo 面板',
+        priority: 'high',
+        status: 'in_progress',
+      },
+    ])
+    expect(refreshConversationSummary).not.toHaveBeenCalled()
+    expect(refreshConversationState).toHaveBeenCalledWith({
+      permissionStateChanged: false,
+      summaryRefreshed: false,
+    })
   })
 
   it('does not flush an old pending SSE batch into the newly selected conversation after switching away', async () => {

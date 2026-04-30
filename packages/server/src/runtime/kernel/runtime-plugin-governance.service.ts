@@ -4,7 +4,7 @@ import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../gateway/runtime-gateway-connection-lifecycle.service';
 
-const BUILTIN_PLUGIN_ACTIONS: PluginActionName[] = ['health-check', 'reload'];
+const LOCAL_PLUGIN_ACTIONS: PluginActionName[] = ['health-check'];
 const REMOTE_PLUGIN_ACTIONS: PluginActionName[] = ['health-check', 'reload', 'reconnect', 'refresh-metadata'];
 const REMOTE_PLUGIN_ACTION_MESSAGES = {
   'refresh-metadata': '已请求远程插件重新同步元数据',
@@ -14,36 +14,49 @@ const REMOTE_PLUGIN_ACTION_MESSAGES = {
 
 @Injectable()
 export class RuntimePluginGovernanceService {
+  private readonly failureCounts = new Map<string, { consecutive: number; total: number }>();
+  private readonly healthSnapshots = new Map<string, PluginHealthSnapshot>();
+
   constructor(
     private readonly pluginBootstrapService: PluginBootstrapService,
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
   ) {}
 
-  checkPluginHealth(pluginId: string): { ok: boolean } { return readPluginHealth(this.pluginBootstrapService.getPlugin(pluginId), pluginId, this.runtimeGatewayConnectionLifecycleService); }
-  readPluginHealthSnapshot(pluginId: string): PluginHealthSnapshot {
+  async checkPluginHealth(pluginId: string): Promise<{ ok: boolean }> {
+    return readPluginHealth(this.pluginBootstrapService.getPlugin(pluginId), pluginId, this.runtimeGatewayConnectionLifecycleService);
+  }
+  async readPluginHealthSnapshot(pluginId: string): Promise<PluginHealthSnapshot> {
     const plugin = this.pluginBootstrapService.getPlugin(pluginId);
-    return createPluginHealthSnapshot(
-      plugin,
-      readPluginHealth(plugin, pluginId, this.runtimeGatewayConnectionLifecycleService).ok,
-    );
+    const ok = (await readPluginHealth(plugin, pluginId, this.runtimeGatewayConnectionLifecycleService)).ok;
+    const snapshot = createPluginHealthSnapshot(plugin, ok, this.failureCounts, this.healthSnapshots.get(pluginId) ?? null);
+    this.healthSnapshots.set(pluginId, snapshot);
+    return { ...snapshot };
+  }
+
+  readStoredPluginHealthSnapshot(pluginId: string): PluginHealthSnapshot | null {
+    const snapshot = this.healthSnapshots.get(pluginId);
+    return snapshot ? { ...snapshot } : null;
   }
 
   listPlugins(): RegisteredPluginRecord[] { return this.pluginBootstrapService.listPlugins().sort((left, right) => left.pluginId.localeCompare(right.pluginId)); }
 
   listSupportedActions(pluginId: string): PluginActionName[] {
     const plugin = this.pluginBootstrapService.getPlugin(pluginId);
-    return [...(plugin.manifest.runtime === 'local' ? BUILTIN_PLUGIN_ACTIONS : REMOTE_PLUGIN_ACTIONS)];
+    if (plugin.manifest.runtime !== 'local') {
+      return [...REMOTE_PLUGIN_ACTIONS];
+    }
+    return this.pluginBootstrapService.canReloadBuiltin(pluginId)
+      ? [...LOCAL_PLUGIN_ACTIONS, 'reload']
+      : [...LOCAL_PLUGIN_ACTIONS];
   }
 
   async runPluginAction(input: { action: PluginActionName; pluginId: string }) {
     const plugin = this.pluginBootstrapService.getPlugin(input.pluginId);
     if (input.action === 'health-check') {
-      const health = plugin.manifest.runtime === 'remote'
-        ? await this.runtimeGatewayConnectionLifecycleService.probePluginHealth(input.pluginId)
-        : readPluginHealth(plugin, input.pluginId, this.runtimeGatewayConnectionLifecycleService);
-      return createAcceptedActionResult(input.pluginId, input.action, health.ok ? '插件健康检查通过' : '插件健康检查失败');
+      const snapshot = await this.readPluginHealthSnapshot(input.pluginId);
+      return createAcceptedActionResult(input.pluginId, input.action, snapshot.status === 'healthy' ? '插件健康检查通过' : '插件健康检查失败');
     }
-    if (input.action === 'reload' && plugin.manifest.runtime === 'local') {
+    if (input.action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadBuiltin(input.pluginId)) {
       this.pluginBootstrapService.reloadBuiltin(input.pluginId);
       return createAcceptedActionResult(input.pluginId, input.action, '已重新装载本地插件');
     }
@@ -59,30 +72,41 @@ function createAcceptedActionResult(pluginId: string, action: PluginActionName, 
   return { accepted: true, action, pluginId, message };
 }
 
-function readPluginHealth(
+async function readPluginHealth(
   plugin: RegisteredPluginRecord,
   pluginId: string,
   runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
-): { ok: boolean } {
+): Promise<{ ok: boolean }> {
   return plugin.manifest.runtime === 'remote'
-    ? runtimeGatewayConnectionLifecycleService.checkPluginHealth(pluginId)
+    ? runtimeGatewayConnectionLifecycleService.probePluginHealth(pluginId)
     : { ok: plugin.connected };
 }
 
 function createPluginHealthSnapshot(
   plugin: RegisteredPluginRecord,
   ok: boolean,
+  failureCounts: Map<string, { consecutive: number; total: number }>,
+  previousSnapshot: PluginHealthSnapshot | null,
 ): PluginHealthSnapshot {
   const checkedAt = new Date().toISOString();
   const status = readPluginHealthStatus(plugin, ok);
+  const prev = failureCounts.get(plugin.pluginId) ?? { consecutive: 0, total: 0 };
+
+  if (status === 'error') {
+    prev.consecutive += 1;
+    prev.total += 1;
+  } else {
+    prev.consecutive = 0;
+  }
+  failureCounts.set(plugin.pluginId, prev);
 
   return {
-    consecutiveFailures: status === 'error' ? 1 : 0,
-    failureCount: status === 'error' ? 1 : 0,
+    consecutiveFailures: prev.consecutive,
+    failureCount: prev.total,
     lastCheckedAt: checkedAt,
     lastError: status === 'error' ? '插件健康检查失败' : null,
     lastErrorAt: status === 'error' ? checkedAt : null,
-    lastSuccessAt: ok ? plugin.lastSeenAt : plugin.lastSeenAt,
+    lastSuccessAt: ok ? checkedAt : previousSnapshot?.lastSuccessAt ?? null,
     status,
   };
 }

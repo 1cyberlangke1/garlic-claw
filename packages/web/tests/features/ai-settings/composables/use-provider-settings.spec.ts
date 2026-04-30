@@ -2,6 +2,7 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
+  AiDefaultProviderSelection,
   AiModelConfig,
   AiProviderCatalogItem,
   AiProviderConfig,
@@ -23,7 +24,7 @@ vi.mock('@/features/ai-settings/composables/provider-settings.data', () => ({
   importDiscoveredProviderModels: vi.fn(),
   deleteProviderModel: vi.fn(),
   saveProviderModelContextLength: vi.fn(),
-  saveProviderDefaultModel: vi.fn(),
+  saveAiDefaultProviderSelection: vi.fn(),
   saveProviderModelCapabilities: vi.fn(),
   discoverProviderModels: vi.fn(),
   testProviderConnection: vi.fn(),
@@ -37,7 +38,6 @@ function createProviderSummary(id: string, name = id): AiProviderSummary {
   return {
     id,
     name,
-    mode: 'catalog',
     driver: 'openai',
     defaultModel: `${id}-default`,
     baseUrl: 'https://example.com/v1',
@@ -50,7 +50,6 @@ function createProviderConfig(id: string, name = id): AiProviderConfig {
   return {
     id,
     name,
-    mode: 'catalog',
     driver: 'openai',
     defaultModel: `${id}-default`,
     baseUrl: 'https://example.com/v1',
@@ -107,6 +106,17 @@ function createSelectionData(providerId: string) {
   }
 }
 
+function createDefaultSelection(
+  providerId = 'provider-a',
+  modelId = `${providerId}-default`,
+): AiDefaultProviderSelection {
+  return {
+    providerId,
+    modelId,
+    source: 'default',
+  }
+}
+
 async function mountProviderSettingsHarness() {
   let state!: ReturnType<typeof useProviderSettings>
   const Harness = defineComponent({
@@ -146,6 +156,7 @@ describe('useProviderSettings', () => {
 
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog,
+      defaultSelection: createDefaultSelection('provider-a'),
       providers,
       visionConfig,
       hostModelRoutingConfig: {
@@ -197,6 +208,7 @@ describe('useProviderSettings', () => {
 
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
       providers: [
         createProviderSummary('provider-a', 'Provider A'),
         createProviderSummary('provider-b', 'Provider B'),
@@ -241,6 +253,7 @@ describe('useProviderSettings', () => {
 
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
       providers: [
         createProviderSummary('provider-a', 'Provider A'),
         createProviderSummary('provider-b', 'Provider B'),
@@ -279,6 +292,7 @@ describe('useProviderSettings', () => {
   it('saves host model routing config and updates local state', async () => {
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
       providers: [createProviderSummary('provider-a', 'Provider A')],
       visionConfig: { enabled: false },
       hostModelRoutingConfig: {
@@ -343,9 +357,10 @@ describe('useProviderSettings', () => {
       .toBe('provider-a-model')
   })
 
-  it('updates the selected provider default model locally without reloading provider detail', async () => {
+  it('updates the explicit global default locally without reloading provider detail', async () => {
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
       providers: [createProviderSummary('provider-a', 'Provider A')],
       visionConfig: { enabled: false },
       hostModelRoutingConfig: {
@@ -361,22 +376,27 @@ describe('useProviderSettings', () => {
       hostModelRoutingOptions: [],
       modelsByProviderId: {},
     })
-    vi.mocked(providerData.saveProviderDefaultModel).mockResolvedValue({
-      ...createProviderConfig('provider-a', 'Provider A'),
-      defaultModel: 'provider-a-model',
-      models: ['provider-a-model'],
+    vi.mocked(providerData.saveAiDefaultProviderSelection).mockResolvedValue({
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+      source: 'default',
     })
 
     const state = await mountProviderSettingsHarness()
     await state.setDefaultModel('provider-a-model')
 
-    expect(providerData.saveProviderDefaultModel).toHaveBeenCalledWith(
+    expect(providerData.saveAiDefaultProviderSelection).toHaveBeenCalledWith(
       'provider-a',
       'provider-a-model',
     )
     expect(providerData.loadProviderSelectionData).toHaveBeenCalledTimes(1)
     expect(state.selectedProvider.value?.defaultModel).toBe('provider-a-model')
     expect(state.providers.value[0]?.defaultModel).toBe('provider-a-model')
+    expect(state.defaultSelection.value).toEqual({
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+      source: 'default',
+    })
   })
 
   it('keeps the current provider detail visible while the same provider reloads', async () => {
@@ -387,6 +407,7 @@ describe('useProviderSettings', () => {
 
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
       providers: [createProviderSummary('provider-a', 'Provider A')],
       visionConfig: { enabled: false },
       hostModelRoutingConfig: {
@@ -447,6 +468,7 @@ describe('useProviderSettings', () => {
 
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
       providers: [createProviderSummary('provider-a', 'Provider A')],
       visionConfig: { enabled: false },
       hostModelRoutingConfig: {
@@ -504,6 +526,7 @@ describe('useProviderSettings', () => {
 
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
       providers: [
         createProviderSummary('provider-a', 'Provider A'),
         createProviderSummary('provider-b', 'Provider B'),
@@ -559,6 +582,7 @@ describe('useProviderSettings', () => {
     vi.mocked(providerData.loadProviderSettingsBaseData)
       .mockResolvedValueOnce({
         catalog: [],
+        defaultSelection: createDefaultSelection('provider-a'),
         providers: [createProviderSummary('provider-a', 'Provider A')],
         visionConfig,
         hostModelRoutingConfig: {
@@ -568,6 +592,7 @@ describe('useProviderSettings', () => {
       })
       .mockResolvedValueOnce({
         catalog: [],
+        defaultSelection: createDefaultSelection('provider-b', 'provider-b-default'),
         providers: [
           createProviderSummary('provider-a', 'Provider A'),
           createProviderSummary('provider-b', 'Provider B'),

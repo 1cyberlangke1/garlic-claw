@@ -51,6 +51,10 @@
 - 提交前必须再次实际跑完全部冒烟测试，直到全部通过后才能继续；只要有一项失败，就先修复，不能跳过
 - 提交前先检查，不提交半成品
 - 提交 git 只是保存阶段进度；如果当前计划未完成，提交后必须继续推进直到完成
+- `smoke:web-ui` 失败或明显超时时，先区分“浏览器链路失败”与“开发环境启动失败”：
+  - 该命令会先探测并按需拉起前后端，不是纯前端脚本
+  - 若卡在启动前置，先检查 `prisma generate` 文件锁、后端健康检查、前端 dev server 是否已就绪；不要在未分层定位前反复盲跑整条 smoke
+- 浏览器 smoke 复跑前，先清理上一轮由自己启动的 `smoke:web-ui / browser-smoke.mjs` 残留进程；只能按 PID 精确清理，不能扩大到全部 `node`
 
 ## 命名与注释
 
@@ -65,6 +69,15 @@
 - 该链接属于维护锚点，后续重构、格式化或清理时不能删除
 - 如依赖多个官方文档，优先贴主入口，再补最关键子页面
 - 新增或修改适配时，先确认链接仍然指向官方文档
+- 禁止写“占位可运行”或“伪成功”代码：
+  - `testConnection / discoverModels / health-check / smoke` 这类能力，若对外宣称在验证真实 provider，就必须实际发起对应网络请求
+  - 禁止用写死 `ok: true`、固定返回模型列表、假响应透传、未联网 mock 冒充真实连通性
+  - 若测试使用 fake provider / 本地 stub，名称与断言里必须明确标注“fake / mock / smoke-fixture”，不得把结果表述成真实厂商可用
+  - 真实 provider 失败时必须暴露真实错误，不得吞错后伪装成成功
+- 默认不预置第三方 provider 实例配置：
+  - 仓库可内置 provider catalog 与协议适配能力，但不默认生成需要用户 key 的第三方 provider 配置文件
+  - 第三方 provider 的实例配置只在用户显式添加后写入 `config/ai/providers/*.json`
+  - 不得靠默认 provider 排序、占位 key 或隐式 fallback 把请求偷偷打到用户未启用的第三方 provider
 
 ## 前后端约束
 
@@ -73,6 +86,9 @@
 - DTO 使用 `class-validator`
 - 依赖方向保持 `Controller → Service → Prisma`，单向依赖，禁止循环依赖
 - 模块通过 `exports` 暴露公共 API，其他模块通过 `imports` 引入
+- provider 配置、模型路由、vision fallback 等 AI 设置的持久化 owner 只允许在后端：
+  - 前端只通过 `/api/ai/*` 接口读写，不得直接写本地配置文件
+  - 若出现“前端新增 provider 消失”之类问题，先查后端 `AiProviderSettingsService / ai-management-settings.store` 的写盘与迁移链
 
 ## 项目结构
 
@@ -109,6 +125,7 @@ packages/: server(NestJS) | web(Vue) | shared | plugin-sdk | plugins
 - `packages/server/scripts/http-smoke.mjs` 当前已验证需要：
   - 先确保 `packages/server/tmp` 存在
   - 启动阶段等待上限单独放宽，避免 Windows 冷启动误判
+  - `port / wsPort` 在真正启动后端前再申请，避免 Windows 上因预占端口过早导致 `EADDRINUSE`
 
 ## WSL 网络判定
 
@@ -128,6 +145,7 @@ packages/: server(NestJS) | web(Vue) | shared | plugin-sdk | plugins
 - 服务端口：
   - 前端 `23333`
   - 后端 `23330`
+  - 插件 WS `23331`
 - 优先使用脚本入口：
 
 ```powershell

@@ -24,17 +24,12 @@
         <article class="overview-card accent">
           <span class="overview-label">技能总数</span>
           <strong>{{ totalCount }}</strong>
-          <p>来自项目本地或用户目录的 `SKILL.md` 资产。</p>
+          <p>来自仓库根 `skills/` 目录的 `SKILL.md` 资产。</p>
         </article>
         <article class="overview-card warning">
-          <span class="overview-label">项目技能</span>
-          <strong>{{ projectCount }}</strong>
-          <p>来自仓库内技能目录，适合团队共用。</p>
-        </article>
-        <article class="overview-card neutral">
-          <span class="overview-label">用户技能</span>
-          <strong>{{ userCount }}</strong>
-          <p>来自用户目录，适合个人私有 workflow。</p>
+          <span class="overview-label">skills 目录</span>
+          <strong>{{ directoryCount }}</strong>
+          <p>从仓库根 `skills/` 目录扫描 skill，方便共享与版本管理。</p>
         </article>
         <article class="overview-card warning">
           <span class="overview-label">已拒绝加载</span>
@@ -70,13 +65,13 @@
           :settings="selectedSkill.governance.eventLog"
           :saving="mutatingSkillId === selectedSkill.id"
           title="技能日志设置"
-          description="当前技能自己的事件日志会写到 log/skills/<skillId>/ 目录。"
+          description="此技能的事件日志会写入 log/skills/<skillId>/ 目录。"
           @save="handleSkillEventLogUpdate"
         />
         <EventLogPanel
           v-if="selectedSkill"
           title="技能事件日志"
-          description="查看技能最近的加载、拒绝与治理动作记录。"
+          description="查看技能最近的加载和拒绝记录。"
           :events="eventLogs"
           :loading="eventLoading"
           :query="eventQuery"
@@ -113,8 +108,7 @@ const {
   selectedSkillId,
   selectedSkill,
   totalCount,
-  projectCount,
-  userCount,
+  directoryCount,
   deniedCount,
   packageCount,
   executableCount,

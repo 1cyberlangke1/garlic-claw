@@ -1,7 +1,6 @@
-import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, JsonObject, JsonValue, PluginSubagentRunParams, PluginSubagentRunResult, PluginSubagentTaskStartParams, PluginSubagentTaskSummary, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, JsonObject, JsonValue, TriggerConfig } from "@garlic-claw/shared";
 import { toHostJsonValue } from "../host";
-import { pickOptionalStringFields, readOptionalObjectParam, readOptionalStringParam, readRequiredStringParam, sanitizeOptionalText, readJsonObjectValue } from "./index";
-import { PluginSubagentDelegateConfig } from "./builtin-manifests";
+import { pickOptionalStringFields, readOptionalObjectParam, readOptionalStringParam, readRequiredStringParam, readJsonObjectValue } from "./index";
 export function readMemorySearchResults(value: JsonValue): Array<{ content?: string; category?: string; createdAt?: string }> {
   return Array.isArray(value)
     ? value.flatMap((entry) => {
@@ -13,23 +12,6 @@ export function readMemorySearchResults(value: JsonValue): Array<{ content?: str
 export function readMemorySaveResultId(value: JsonValue): string | null {
   const object = readJsonObjectValue(value);
   return object && typeof object.id === "string" ? object.id : null;
-}
-export function readSubagentDelegateConfig(value: unknown): PluginSubagentDelegateConfig {
-  const object = readJsonObjectValue(value);
-  const llm = readJsonObjectValue(object?.llm);
-  const tools = readJsonObjectValue(object?.tools);
-  const allowedToolNames = readOptionalToolNames(tools?.allowedToolNames);
-  return {
-    ...pickOptionalStringFields(llm, ["targetProviderId", "targetModelId"] as const),
-    ...(allowedToolNames ? { allowedToolNames } : {}),
-  };
-}
-export function buildSubagentDelegateRunParams(input: { config: PluginSubagentDelegateConfig; prompt: string }): PluginSubagentRunParams {
-  return buildSubagentDelegateBaseParams(input);
-}
-export function buildSubagentDelegateTaskParams(input: { config: PluginSubagentDelegateConfig; prompt: string; shouldWriteBack: boolean; conversationId?: string | null }): PluginSubagentTaskStartParams {
-  const base = buildSubagentDelegateBaseParams(input);
-  return { ...base, ...(input.shouldWriteBack && input.conversationId ? { writeBack: { target: { type: "conversation", id: input.conversationId } } } : {}) };
 }
 export function readPluginCreateAutomationParams(params: JsonObject): {
   name: string;
@@ -108,37 +90,6 @@ export function createRouteInspectorContextResponse(input: {
   body: JsonValue;
 } {
   return { status: 200, body: toHostJsonValue({ plugin: readJsonObjectValue(input.plugin), user: readJsonObjectValue(input.user), conversation: input.conversation, messageCount: input.messageCount }) };
-}
-export function createSubagentRunSummary(result: PluginSubagentRunResult): JsonValue {
-  return toHostJsonValue({
-    providerId: result.providerId,
-    modelId: result.modelId,
-    text: result.text,
-    toolCalls: result.toolCalls,
-    toolResults: result.toolResults,
-    ...(result.finishReason !== undefined ? { finishReason: result.finishReason } : {}),
-  });
-}
-export function createSubagentTaskSummaryResult(result: PluginSubagentTaskSummary): JsonValue { return toHostJsonValue(result); }
-function buildSubagentDelegateBaseParams(input: { config: PluginSubagentDelegateConfig; prompt: string }): PluginSubagentRunParams {
-  const toolNames = input.config.allowedToolNames?.length ? input.config.allowedToolNames : null;
-  return {
-    ...(sanitizeOptionalText(input.config.targetProviderId) ? { providerId: sanitizeOptionalText(input.config.targetProviderId) } : {}),
-    ...(sanitizeOptionalText(input.config.targetModelId) ? { modelId: sanitizeOptionalText(input.config.targetModelId) } : {}),
-    messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
-    ...(toolNames ? { toolNames } : {}),
-  };
-}
-
-function readOptionalToolNames(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const normalized = value
-    .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  return normalized.length > 0 ? normalized : undefined;
 }
 function readPluginAutomationActionsParam(params: JsonObject): ActionConfig[] {
   const value = params.actions;

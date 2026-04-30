@@ -53,12 +53,7 @@ export function useSkillManagement() {
     return filteredSkills.value[0] ?? skills.value[0] ?? null
   })
   const totalCount = computed(() => skills.value.length)
-  const projectCount = computed(() =>
-    skills.value.filter((skill) => skill.sourceKind === 'project').length,
-  )
-  const userCount = computed(() =>
-    skills.value.filter((skill) => skill.sourceKind === 'user').length,
-  )
+  const directoryCount = computed(() => skills.value.length)
   const deniedCount = computed(() =>
     skills.value.filter((skill) => skill.governance.loadPolicy === 'deny').length,
   )
@@ -201,8 +196,7 @@ export function useSkillManagement() {
     selectedSkillId,
     selectedSkill,
     totalCount,
-    projectCount,
-    userCount,
+    directoryCount,
     deniedCount,
     packageCount,
     executableCount,

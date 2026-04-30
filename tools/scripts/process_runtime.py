@@ -801,9 +801,136 @@ def parsePortPidOutput(commandName: str, output: str, port: int) -> list[int]:
             parts = line.split()
             if parts and '/' in parts[-1]:
                 pidText = parts[-1].split('/', 1)[0]
-                if pidText.isdigit():
-                    pids.add(int(pidText))
+            if pidText.isdigit():
+                pids.add(int(pidText))
     return sorted(pids)
+
+
+def readWindowsProcessSnapshot(pid: int) -> dict[str, Any] | None:
+    """读取 Windows 进程的 PID、父 PID 与命令行。"""
+    if not IS_WINDOWS or pid <= 0:
+        return None
+
+    powershellPath = findFirstCommand(['pwsh.exe', 'powershell.exe', 'powershell'])
+    if powershellPath is None:
+        return None
+
+    command = [
+        powershellPath,
+        '-NoProfile',
+        '-Command',
+        (
+            '$process = Get-CimInstance Win32_Process -Filter "ProcessId = '
+            f'{pid}'
+            '"; '
+            'if ($null -eq $process) { return }; '
+            '[pscustomobject]@{'
+            'ProcessId = [int]$process.ProcessId; '
+            'ParentProcessId = [int]$process.ParentProcessId; '
+            'CommandLine = [string]$process.CommandLine'
+            '} | ConvertTo-Json -Compress'
+        ),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+
+    payload = result.stdout.strip()
+    if result.returncode != 0 or not payload:
+        return None
+
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def commandLineLooksLikeBackendWatchProcess(commandLine: str | None) -> bool:
+    """判断命令行是否是 `node --watch dist/src/main.js`。"""
+    normalized = (commandLine or '').replace('\\', '/').lower()
+    return '--watch dist/src/main.js' in normalized and 'node' in normalized
+
+
+def findBackendWatchProcessPids() -> list[int]:
+    """枚举当前机器上的 `node --watch dist/src/main.js` 进程。"""
+    if not IS_WINDOWS:
+        return []
+
+    powershellPath = findFirstCommand(['pwsh.exe', 'powershell.exe', 'powershell'])
+    if powershellPath is None:
+        return []
+
+    command = [
+        powershellPath,
+        '-NoProfile',
+        '-Command',
+        (
+            "Get-CimInstance Win32_Process | "
+            "Where-Object { $_.CommandLine -like '*--watch dist/src/main.js*' } | "
+            "Select-Object -ExpandProperty ProcessId | ConvertTo-Json -Compress"
+        ),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+
+    payload = result.stdout.strip()
+    if result.returncode != 0 or not payload:
+        return []
+
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        return []
+
+    if isinstance(parsed, int):
+        return [parsed]
+    if isinstance(parsed, list):
+        return sorted({int(item) for item in parsed if isinstance(item, int)})
+    return []
+
+
+def findBackendWatchAncestorPids(
+    pid: int,
+    *,
+    readProcessSnapshot: Callable[[int], dict[str, Any] | None] = readWindowsProcessSnapshot,
+) -> list[int]:
+    """从监听子进程反查 `node --watch dist/src/main.js` 父进程。"""
+    if not IS_WINDOWS or pid <= 0:
+        return []
+
+    ancestors: list[int] = []
+    seenPids = {pid}
+    currentPid = pid
+    while True:
+        snapshot = readProcessSnapshot(currentPid)
+        if not isinstance(snapshot, dict):
+            return ancestors
+        parentPid = int(snapshot.get('ParentProcessId', 0) or 0)
+        if parentPid <= 0 or parentPid in seenPids:
+            return ancestors
+        seenPids.add(parentPid)
+        parentSnapshot = readProcessSnapshot(parentPid)
+        if not isinstance(parentSnapshot, dict):
+            return ancestors
+        if commandLineLooksLikeBackendWatchProcess(str(parentSnapshot.get('CommandLine') or '')):
+            ancestors.append(parentPid)
+        currentPid = parentPid
 
 
 def stopServices(
@@ -811,6 +938,7 @@ def stopServices(
     ports: list[int] | None = None,
     killPid: Callable[[int, str], bool] | None = None,
     findPortPidsFn: Callable[[int], list[int]] | None = None,
+    findBackendWatchAncestorPidsFn: Callable[[int], list[int]] | None = None,
 ) -> list[tuple[str, int]]:
     """停止受管服务并按端口兜底。
 
@@ -830,6 +958,7 @@ def stopServices(
     """
     killPid = killPid or terminateProcess
     findPortPidsFn = findPortPidsFn or findPortPids
+    findBackendWatchAncestorPidsFn = findBackendWatchAncestorPidsFn or findBackendWatchAncestorPids
     if ports is None:
         ports = list(DEFAULT_PORTS)
 
@@ -854,9 +983,16 @@ def stopServices(
             if pid <= 0 or pid in seenPids:
                 continue
             source = f'port:{port}'
+            backendWatchAncestorPids = findBackendWatchAncestorPidsFn(pid)
             if killPid(pid, source):
                 seenPids.add(pid)
                 stopped.append((source, pid))
+            for ancestorPid in backendWatchAncestorPids:
+                if ancestorPid <= 0 or ancestorPid in seenPids:
+                    continue
+                if killPid(ancestorPid, 'backend_app:watch-parent'):
+                    seenPids.add(ancestorPid)
+                    stopped.append(('backend_app:watch-parent', ancestorPid))
 
     return stopped
 
@@ -895,6 +1031,26 @@ def killPorts(
             if killPid(pid, source):
                 seenPids.add(pid)
                 stopped.append((source, pid))
+    return stopped
+
+
+def killBackendWatchProcessOrphans(
+    *,
+    killPid: Callable[[int, str], bool] | None = None,
+    findBackendWatchProcessPidsFn: Callable[[], list[int]] | None = None,
+) -> list[tuple[str, int]]:
+    """清理遗留的 `node --watch dist/src/main.js` 父进程。"""
+    killPid = killPid or terminateProcess
+    findBackendWatchProcessPidsFn = findBackendWatchProcessPidsFn or findBackendWatchProcessPids
+
+    stopped: list[tuple[str, int]] = []
+    seenPids: set[int] = set()
+    for pid in findBackendWatchProcessPidsFn():
+        if pid <= 0 or pid in seenPids:
+            continue
+        if killPid(pid, 'backend_app:watch-orphan'):
+            seenPids.add(pid)
+            stopped.append(('backend_app:watch-orphan', pid))
     return stopped
 
 

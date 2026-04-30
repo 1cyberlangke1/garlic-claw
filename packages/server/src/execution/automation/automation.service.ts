@@ -1,13 +1,17 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, JsonObject, JsonValue, TriggerConfig } from '@garlic-claw/shared';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, JsonObject, JsonValue, TriggerConfig, ToolSourceKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { CronExpressionParser } from 'cron-parser';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
-import { asJsonValue, cloneJsonValue, readJsonObject, readRequiredString } from '../../runtime/host/runtime-host-values';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
+import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
+import { asJsonValue, cloneJsonValue, readJsonObject, readPositiveInteger, readRequiredString } from '../../runtime/host/runtime-host-values';
 import { AutomationExecutionService } from './automation-execution.service';
 
 export interface PersistedAutomationRecord {
   actions: ActionConfig[];
+  cronRunConversationIds?: string[];
   createdAt: string;
   enabled: boolean;
   id: string;
@@ -18,66 +22,65 @@ export interface PersistedAutomationRecord {
   updatedAt: string;
   userId: string;
 }
-export interface RuntimeAutomationRecord extends PersistedAutomationRecord {}
-interface AutomationPersistenceFile { automations: Record<string, RuntimeAutomationRecord[]>; sequence: number; }
 
-export type AutomationRunContext = { automationId: string; source: 'automation'; userId: string; };
+export interface RuntimeAutomationRecord extends PersistedAutomationRecord {
+  executionConversationId?: string;
+}
+interface AutomationPersistenceFile { automations: Record<string, RuntimeAutomationRecord[]>; sequence: number; }
+interface AutomationStateSnapshot { automations: Map<string, RuntimeAutomationRecord[]>; migrated: boolean; sequence: number; }
+export type AutomationRunContext = { automationId: string; source: 'automation'; userId: string };
+type AutomationRunSource = 'cron' | 'event' | 'manual';
+interface CronChildConversationTarget {
+  maxHistoryConversations: number;
+  parentConversationId: string;
+}
+type AutomationConversationTargetWithCronMode = ActionConfig['target'] & {
+  conversationMode?: 'existing' | 'cron_child';
+  maxHistoryConversations?: number;
+};
+const DEFAULT_CRON_HISTORY_CONVERSATIONS = 10;
 
 @Injectable()
 export class AutomationService implements OnModuleDestroy, OnModuleInit {
   private readonly automations = new Map<string, RuntimeAutomationRecord[]>();
-  private readonly cronJobs = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly cronJobs = new Map<string, ReturnType<typeof setTimeout>>();
   private automationSequence = 0;
   private readonly logger = new Logger(AutomationService.name);
   private readonly storagePath = resolveAutomationStoragePath();
 
-  constructor(private readonly automationExecutionService: AutomationExecutionService) {
-    const restored = this.loadPersistedState();
+  constructor(
+    private readonly automationExecutionService: AutomationExecutionService,
+    private readonly runtimeHostConversationRecordService?: RuntimeHostConversationRecordService,
+  ) {
+    const restored = readAutomationState(this.storagePath);
     this.automationSequence = restored.sequence;
-    for (const [userId, records] of restored.automations.entries()) {this.automations.set(userId, records.map((record) => ({ ...record })));}
-    if (restored.migrated) {this.persist();}
+    for (const [userId, records] of restored.automations.entries()) { this.automations.set(userId, records); }
+    if (restored.migrated) { this.persist(); }
   }
 
-  onModuleInit() { for (const automation of [...this.automations.values()].flat()) {if (automation.enabled) {this.syncCronJob(automation.id, automation.trigger, true);}} }
-
-  onModuleDestroy() { this.destroyCronJobs(); }
+  onModuleInit(): void { for (const automation of readAllAutomations(this.automations)) {if (automation.enabled) {this.syncCronJob(automation.id, automation.trigger, true);}} }
+  onModuleDestroy(): void { for (const timer of this.cronJobs.values()) {clearTimeout(timer);} this.cronJobs.clear(); }
 
   create(userId: string, params: JsonObject): JsonValue {
-    const now = new Date().toISOString();
-    const record: RuntimeAutomationRecord = { actions: readAutomationActions(params), createdAt: now, enabled: true, id: `automation-${++this.automationSequence}`, lastRunAt: null, logs: [], name: readRequiredString(params, 'name'), trigger: readAutomationTrigger(params), updatedAt: now, userId };
-    this.automations.set(userId, [...(this.automations.get(userId) ?? []), record]);
-    this.syncCronJob(record.id, record.trigger, true);
-    this.persist();
-    return this.serializeAutomation(record);
+    const record = createAutomationRecord(userId, params, ++this.automationSequence);
+    this.automations.set(userId, [...readUserAutomations(this.automations, userId), record]);
+    this.syncCronJob(record.id, record.trigger, true); this.persist();
+    return serializeAutomationRecord(record);
   }
 
   async emitEvent(userId: string, event: string): Promise<AutomationEventDispatchInfo> {
     const matchedAutomationIds: string[] = [];
-    for (const automation of this.automations.get(userId) ?? []) {
-      if (!automation.enabled || automation.trigger.type !== 'event' || automation.trigger.event !== event) {continue;}
-      await this.runRecord(automation);
+    for (const automation of readEventAutomations(readUserAutomations(this.automations, userId), event)) {
+      await this.runRecord(automation, 'event');
       matchedAutomationIds.push(automation.id);
     }
     return { event, matchedAutomationIds };
   }
 
-  listByUser(userId: string): JsonValue { return this.listUserAutomations(userId).map((automation) => this.serializeAutomation(automation)); }
-
-  remove(userId: string, automationId: string): JsonValue {
-    const records = this.listUserAutomations(userId);
-    const nextRecords = records.filter((entry) => entry.id !== automationId);
-    if (nextRecords.length === records.length) {throw new NotFoundException(`Automation not found: ${automationId}`);}
-    this.automations.set(userId, nextRecords);
-    this.removeCronJob(automationId);
-    this.persist();
-    return { count: 1 };
-  }
-
-  getById(userId: string, automationId: string): JsonValue { return this.serializeAutomation(this.requireAutomation(userId, automationId)); }
-
+  listByUser(userId: string): JsonValue { return readUserAutomations(this.automations, userId).map((automation) => serializeAutomationRecord(automation)); }
+  getById(userId: string, automationId: string): JsonValue { return serializeAutomationRecord(this.requireAutomation(userId, automationId)); }
   getLogs(userId: string, automationId: string): JsonValue { return this.requireAutomation(userId, automationId).logs.map((log) => asJsonValue(log)); }
-
-  async run(userId: string, automationId: string): Promise<JsonValue> { return this.runRecord(this.requireAutomation(userId, automationId)); }
+  async run(userId: string, automationId: string): Promise<JsonValue> { return this.runRecord(this.requireAutomation(userId, automationId), 'manual'); }
 
   toggle(userId: string, automationId: string): JsonValue {
     const automation = this.requireAutomation(userId, automationId);
@@ -88,83 +91,176 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     return { enabled: automation.enabled, id: automation.id };
   }
 
-  private requireAutomation(userId: string, automationId: string): RuntimeAutomationRecord {
-    const automation = this.listUserAutomations(userId).find((entry) => entry.id === automationId);
-    if (automation) {return automation;}
-    throw new NotFoundException(`Automation not found: ${automationId}`);
+  remove(userId: string, automationId: string): JsonValue {
+    const records = readUserAutomations(this.automations, userId);
+    const nextRecords = records.filter((record) => record.id !== automationId);
+    if (nextRecords.length === records.length) { throw new NotFoundException(`Automation not found: ${automationId}`); }
+    this.automations.set(userId, nextRecords);
+    this.removeCronJob(automationId); this.persist();
+    return { count: 1 };
   }
 
-  private async runRecord(automation: RuntimeAutomationRecord): Promise<JsonValue> {
-    automation.lastRunAt = new Date().toISOString();
-    automation.updatedAt = automation.lastRunAt;
-    const result = await this.automationExecutionService.executeAutomation(automation);
-    automation.logs.unshift({ id: `automation-log-${automation.id}-${automation.logs.length + 1}`, status: readAutomationRunStatus(result), result: JSON.stringify(result), createdAt: automation.lastRunAt });
+  private requireAutomation(userId: string, automationId: string): RuntimeAutomationRecord {
+    const automation = readUserAutomations(this.automations, userId).find((record) => record.id === automationId);
+    if (!automation) { throw new NotFoundException(`Automation not found: ${automationId}`); }
+    return automation;
+  }
+
+  private async runRecord(automation: RuntimeAutomationRecord, runSource: AutomationRunSource): Promise<JsonValue> {
+    const startedAt = new Date().toISOString();
+    automation.lastRunAt = startedAt;
+    automation.updatedAt = startedAt;
+    const executionAutomation = await this.prepareExecutionAutomation(automation, runSource, startedAt);
+    const result = await this.automationExecutionService.executeAutomation(executionAutomation);
+    automation.logs.unshift(createAutomationLog(automation, startedAt, result));
     this.persist();
     return result;
   }
 
-  private serializeAutomation(automation: RuntimeAutomationRecord): JsonValue { const { userId: _userId, ...rest } = automation; return asJsonValue(rest); }
+  private async prepareExecutionAutomation(
+    automation: RuntimeAutomationRecord,
+    runSource: AutomationRunSource,
+    startedAt: string,
+  ): Promise<RuntimeAutomationRecord> {
+    if (runSource !== 'cron') {
+      return automation;
+    }
+    const cronChildTarget = readCronChildConversationTarget(automation.actions);
+    if (!cronChildTarget) {
+      return automation;
+    }
+    if (!this.runtimeHostConversationRecordService) {
+      throw new Error('RuntimeHostConversationRecordService is not available');
+    }
+    this.runtimeHostConversationRecordService.requireConversation(cronChildTarget.parentConversationId, automation.userId);
+    const childConversation = this.runtimeHostConversationRecordService.createConversation({
+      parentId: cronChildTarget.parentConversationId,
+      title: createAutomationRunConversationTitle(automation.name, startedAt),
+      userId: automation.userId,
+    }) as { id: string };
+    automation.cronRunConversationIds = await this.pruneCronRunConversationHistory(
+      automation,
+      childConversation.id,
+      cronChildTarget.maxHistoryConversations,
+    );
+    return {
+      ...automation,
+      actions: automation.actions.map((action) => rewriteCronChildConversationAction(action, childConversation.id)),
+      executionConversationId: childConversation.id,
+    };
+  }
 
-  private listUserAutomations(userId: string): RuntimeAutomationRecord[] { return (this.automations.get(userId) ?? []).sort((left, right) => left.id.localeCompare(right.id)); }
+  private async pruneCronRunConversationHistory(
+    automation: RuntimeAutomationRecord,
+    nextConversationId: string,
+    maxHistoryConversations: number,
+  ): Promise<string[]> {
+    const existingConversationIds = [];
+    for (const conversationId of automation.cronRunConversationIds ?? []) {
+      if (conversationId === nextConversationId) {
+        continue;
+      }
+      try {
+        this.runtimeHostConversationRecordService?.requireConversation(conversationId, automation.userId);
+        existingConversationIds.push(conversationId);
+      } catch {
+        // 用户手动删掉旧会话时，自动从历史索引里移除。
+      }
+    }
+    const nextConversationIds = [...existingConversationIds, nextConversationId];
+    const overflowCount = Math.max(0, nextConversationIds.length - maxHistoryConversations);
+    const deletedConversationIds = nextConversationIds.slice(0, overflowCount);
+    const keptConversationIds = nextConversationIds.slice(overflowCount);
+    for (const conversationId of deletedConversationIds) {
+      try {
+        await this.runtimeHostConversationRecordService?.deleteConversation(conversationId, automation.userId);
+      } catch {
+        // 历史裁剪以尽力清理为主，不把已删除或清理失败放大成运行失败。
+      }
+    }
+    return keptConversationIds;
+  }
 
-  private persist(): void { fs.mkdirSync(path.dirname(this.storagePath), { recursive: true }); fs.writeFileSync(this.storagePath, JSON.stringify(serializeAutomationPersistence(this.automations, this.automationSequence), null, 2), 'utf-8'); }
+  private persist(): void {
+    fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
+    fs.writeFileSync(this.storagePath, JSON.stringify({ automations: Object.fromEntries([...this.automations.entries()].map(([userId, records]) => [userId, cloneJsonValue(records)])), sequence: this.automationSequence } satisfies AutomationPersistenceFile, null, 2), 'utf-8');
+  }
 
   private syncCronJob(automationId: string, trigger: TriggerConfig, enabled: boolean): boolean {
     if (!enabled || trigger.type !== 'cron' || !trigger.cron) { this.removeCronJob(automationId); return false; }
     this.removeCronJob(automationId);
-    const intervalMs = readCronInterval(trigger.cron);
-    if (!intervalMs) { this.logger.warn(`自动化 ${automationId} 的 cron 表达式无效：${trigger.cron}`); return false; }
-    const timer = setInterval(() => {
-      const automation = this.findAutomationById(automationId);
-      if (!automation) {return;}
-      void this.runRecord(automation).catch((error: Error) => { this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${error.message}`); });
-    }, intervalMs);
+    const nextDelay = readCronNextDelay(trigger.cron, new Date());
+    if (nextDelay === null) { this.logger.warn(`自动化 ${automationId} 的 cron 表达式无效：${trigger.cron}`); return false; }
+    const timer = setTimeout(() => {
+      void this.runCronAutomation(automationId).catch((error: Error) => {
+        this.logger.error(`自动化 ${automationId} 的 cron 执行失败：${error.message}`);
+      });
+    }, nextDelay);
+    timer.unref?.();
     this.cronJobs.set(automationId, timer);
-    this.logger.log(`已为自动化 ${automationId} 计划 cron：每 ${trigger.cron}`);
+    this.logger.log(`已为自动化 ${automationId} 计划 cron：${trigger.cron}`);
     return true;
   }
 
   private removeCronJob(automationId: string): void {
     const timer = this.cronJobs.get(automationId);
-    if (!timer) {return;}
-    clearInterval(timer);
+    if (timer) { clearTimeout(timer); }
     this.cronJobs.delete(automationId);
   }
 
-  private destroyCronJobs(): void {
-    for (const timer of this.cronJobs.values()) {clearInterval(timer);}
-    this.cronJobs.clear();
-  }
-
-  private findAutomationById(automationId: string): RuntimeAutomationRecord | undefined {
-    return [...this.automations.values()].flat().find((entry) => entry.id === automationId);
-  }
-
-  private loadPersistedState(): { automations: Map<string, RuntimeAutomationRecord[]>; migrated: boolean; sequence: number } {
+  private async runCronAutomation(automationId: string): Promise<void> {
+    const automation = readAllAutomations(this.automations).find((record) => record.id === automationId);
+    if (!automation || !automation.enabled || automation.trigger.type !== 'cron' || !automation.trigger.cron) {
+      this.removeCronJob(automationId);
+      return;
+    }
     try {
-      fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
-      if (!fs.existsSync(this.storagePath)) {return { automations: new Map<string, RuntimeAutomationRecord[]>(), migrated: false, sequence: 0 };}
-      const parsed = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8')) as Partial<AutomationPersistenceFile>;
-      const entries = Object.entries(parsed.automations ?? {});
-      const currentRecords = cloneJsonValue((parsed.automations ?? {})[SINGLE_USER_ID] ?? []).filter(
-        (record: RuntimeAutomationRecord) => record.userId === SINGLE_USER_ID,
-      );
-      return {
-        automations: new Map(currentRecords.length > 0 ? [[SINGLE_USER_ID, currentRecords]] : []),
-        migrated: entries.length > (currentRecords.length > 0 ? 1 : 0)
-          || currentRecords.length !== ((parsed.automations ?? {})[SINGLE_USER_ID] ?? []).length,
-        sequence: typeof parsed.sequence === 'number' ? parsed.sequence : 0,
-      };
-    } catch {
-      return { automations: new Map<string, RuntimeAutomationRecord[]>(), migrated: false, sequence: 0 };
+      await this.runRecord(automation, 'cron');
+    } finally {
+      this.syncCronJob(automationId, automation.trigger, automation.enabled);
     }
   }
 }
 
+function createAutomationRecord(userId: string, params: JsonObject, sequence: number): RuntimeAutomationRecord {
+  const now = new Date().toISOString();
+  return { actions: readAutomationActions(params), createdAt: now, cronRunConversationIds: [], enabled: true, id: `automation-${sequence}`, lastRunAt: null, logs: [], name: readRequiredString(params, 'name'), trigger: readAutomationTrigger(params), updatedAt: now, userId };
+}
+
+function createAutomationLog(automation: RuntimeAutomationRecord, createdAt: string, result: JsonValue): AutomationLogInfo {
+  return { id: `automation-log-${automation.id}-${automation.logs.length + 1}`, status: readAutomationRunStatus(result), result: JSON.stringify(result), createdAt };
+}
+
+function serializeAutomationRecord(automation: RuntimeAutomationRecord): JsonValue {
+  const { cronRunConversationIds: _cronRunConversationIds, executionConversationId: _executionConversationId, userId: _userId, ...rest } = automation;
+  return asJsonValue(rest);
+}
+
+function readAutomationState(storagePath: string): AutomationStateSnapshot {
+  try {
+    fs.mkdirSync(path.dirname(storagePath), { recursive: true });
+    if (!fs.existsSync(storagePath)) {return { automations: new Map<string, RuntimeAutomationRecord[]>(), migrated: false, sequence: 0 };}
+    const parsed = JSON.parse(fs.readFileSync(storagePath, 'utf-8')) as Partial<AutomationPersistenceFile>;
+    const persistedAutomations = parsed.automations ?? {};
+    const currentRecords = cloneJsonValue(persistedAutomations[SINGLE_USER_ID] ?? []).filter((record: RuntimeAutomationRecord) => record.userId === SINGLE_USER_ID);
+    const persistedCurrent = persistedAutomations[SINGLE_USER_ID] ?? [];
+    return {
+      automations: new Map(currentRecords.length > 0 ? [[SINGLE_USER_ID, currentRecords]] : []),
+      migrated: Object.keys(persistedAutomations).length > (currentRecords.length > 0 ? 1 : 0) || currentRecords.length !== persistedCurrent.length,
+      sequence: typeof parsed.sequence === 'number' ? parsed.sequence : 0,
+    };
+  } catch {
+    return { automations: new Map<string, RuntimeAutomationRecord[]>(), migrated: false, sequence: 0 };
+  }
+}
+
+function readAllAutomations(automations: Map<string, RuntimeAutomationRecord[]>): RuntimeAutomationRecord[] { return [...automations.values()].flat(); }
+function readUserAutomations(automations: Map<string, RuntimeAutomationRecord[]>, userId: string): RuntimeAutomationRecord[] { return automations.get(userId) ?? []; }
+function readEventAutomations(records: RuntimeAutomationRecord[], event: string): RuntimeAutomationRecord[] { return records.filter((record) => record.enabled && record.trigger.type === 'event' && record.trigger.event === event); }
+
 function readAutomationActions(params: JsonObject): ActionConfig[] {
-  const value = params.actions;
-  if (!Array.isArray(value)) {throw new BadRequestException('actions must be an array');}
-  return value.map((entry, index) => readAutomationAction(entry, index));
+  if (!Array.isArray(params.actions)) { throw new BadRequestException('actions must be an array'); }
+  return params.actions.map((entry, index) => readAutomationAction(entry, index));
 }
 
 function readAutomationTrigger(params: JsonObject): TriggerConfig {
@@ -176,44 +272,119 @@ function readAutomationTrigger(params: JsonObject): TriggerConfig {
 
 function readAutomationAction(value: JsonValue, index: number): ActionConfig {
   const action = readJsonObject(value);
-  if (!action) {throw new BadRequestException(`actions[${index}] must be an object`);}
-  if (action.type !== 'device_command' && action.type !== 'ai_message') {throw new BadRequestException(`actions[${index}].type is invalid`);}
+  if (!action) { throw new BadRequestException(`actions[${index}] must be an object`); }
+  if (action.type !== 'device_command' && action.type !== 'ai_message') { throw new BadRequestException(`actions[${index}].type is invalid`); }
   if (action.type === 'device_command') {
     const params = action.params === undefined ? undefined : readJsonObject(action.params);
-    if (action.params !== undefined && !params) {throw new BadRequestException(`actions[${index}].params must be an object`);}
     const capability = typeof action.capability === 'string' && action.capability.trim().length > 0 ? action.capability : null;
     const plugin = typeof action.plugin === 'string' && action.plugin.trim().length > 0 ? action.plugin : null;
-    if (!capability || !plugin) {throw new BadRequestException(`actions[${index}].type is missing required fields`);}
-    return { capability, ...(params ? { params } : {}), plugin, type: action.type };
+    const sourceId = typeof action.sourceId === 'string' && action.sourceId.trim().length > 0 ? action.sourceId.trim() : null;
+    const sourceKind = readAutomationToolSourceKind(action.sourceKind);
+    if (action.params !== undefined && !params) { throw new BadRequestException(`actions[${index}].params must be an object`); }
+    if (!capability || (!plugin && !(sourceKind && sourceId))) { throw new BadRequestException(`actions[${index}].type is missing required fields`); }
+    return { capability, ...(params ? { params } : {}), ...(plugin ? { plugin } : {}), ...(sourceId ? { sourceId } : {}), ...(sourceKind ? { sourceKind } : {}), type: action.type };
   }
   const target = action.target ? readJsonObject(action.target) : null;
-  if (action.target && (!target || target.type !== 'conversation' || typeof target.id !== 'string')) {throw new BadRequestException(`actions[${index}].target is invalid`);}
-  return { ...(typeof action.message === 'string' ? { message: action.message } : {}), ...(target && typeof target.id === 'string' ? { target: { id: target.id, type: 'conversation' as const } } : {}), type: action.type };
+  if (action.target && (!target || target.type !== 'conversation' || typeof target.id !== 'string')) {
+    throw new BadRequestException(`actions[${index}].target is invalid`);
+  }
+  const conversationMode = readAutomationConversationMode(target, index);
+  const maxHistoryConversations = target ? readPositiveInteger(target, 'maxHistoryConversations') : null;
+  return {
+    ...(typeof action.message === 'string' ? { message: action.message } : {}),
+    ...(target && typeof target.id === 'string' ? {
+      target: {
+        id: target.id,
+        ...(conversationMode ? { conversationMode } : {}),
+        ...(maxHistoryConversations ? { maxHistoryConversations } : {}),
+        type: 'conversation' as const,
+      },
+    } : {}),
+    type: action.type,
+  };
 }
 
 function readAutomationRunStatus(result: JsonValue): string {
   return typeof result === 'object' && result !== null && typeof (result as { status?: unknown }).status === 'string' ? (result as { status: string }).status : 'success';
 }
-function serializeAutomationPersistence(automations: Map<string, RuntimeAutomationRecord[]>, sequence: number): AutomationPersistenceFile { return { automations: Object.fromEntries([...automations.entries()].map(([userId, records]) => [userId, cloneJsonValue(records)])), sequence }; }
 
-function readCronInterval(expr: string): number | null {
-  const match = expr.trim().match(/^(\d+)\s*(s|m|h)$/i);
-  if (!match) {return null;}
-  const value = parseInt(match[1], 10);
-  switch (match[2].toLowerCase()) {
-    case 's':
-      return value >= 10 ? value * 1000 : null;
-    case 'm':
-      return value * 60 * 1000;
-    case 'h':
-      return value * 60 * 60 * 1000;
-    default:
-      return null;
+function readAutomationToolSourceKind(value: unknown): ToolSourceKind | null {
+  return value === 'internal' || value === 'plugin' || value === 'mcp' || value === 'skill'
+    ? value
+    : null;
+}
+
+function readAutomationConversationMode(target: JsonObject | null, index: number): 'cron_child' | 'existing' | null {
+  if (!target || target.conversationMode === undefined) {
+    return null;
+  }
+  if (target.conversationMode === 'existing' || target.conversationMode === 'cron_child') {
+    return target.conversationMode;
+  }
+  throw new BadRequestException(`actions[${index}].target.conversationMode is invalid`);
+}
+
+function readCronChildConversationTarget(actions: ActionConfig[]): CronChildConversationTarget | null {
+  for (const action of actions) {
+    const target = action.target as AutomationConversationTargetWithCronMode | undefined;
+    if (action.type !== 'ai_message' || target?.type !== 'conversation' || target.conversationMode !== 'cron_child') {
+      continue;
+    }
+    return {
+      maxHistoryConversations: target.maxHistoryConversations ?? DEFAULT_CRON_HISTORY_CONVERSATIONS,
+      parentConversationId: target.id,
+    };
+  }
+  return null;
+}
+
+function rewriteCronChildConversationAction(action: ActionConfig, conversationId: string): ActionConfig {
+  const target = action.target as AutomationConversationTargetWithCronMode | undefined;
+  if (action.type !== 'ai_message' || target?.type !== 'conversation' || target.conversationMode !== 'cron_child') {
+    return cloneJsonValue(action);
+  }
+  return {
+    ...cloneJsonValue(action),
+    target: {
+      id: conversationId,
+      type: 'conversation',
+    },
+  };
+}
+
+function createAutomationRunConversationTitle(automationName: string, startedAt: string): string {
+  return `${automationName} · ${startedAt.slice(0, 16).replace('T', ' ')}`;
+}
+
+function readCronNextDelay(expr: string, currentDate: Date): number | null {
+  const intervalMs = readIntervalCronDelay(expr);
+  if (intervalMs !== null) {
+    return intervalMs;
+  }
+  try {
+    const nextDate = CronExpressionParser.parse(expr, { currentDate }).next().toDate();
+    return Math.max(nextDate.getTime() - currentDate.getTime(), 1);
+  } catch {
+    return null;
   }
 }
 
+function readIntervalCronDelay(expr: string): number | null {
+  const match = expr.trim().match(/^(\d+)\s*(s|m|h)$/i);
+  if (!match) { return null; }
+  const value = parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+  if (unit === 's') { return value * 1000; }
+  const unitMs = unit === 'm' ? 60 * 1000 : unit === 'h' ? 60 * 60 * 1000 : null;
+  return unitMs ? value * unitMs : null;
+}
+
 function resolveAutomationStoragePath(): string {
-  if (process.env.GARLIC_CLAW_AUTOMATIONS_PATH) {return process.env.GARLIC_CLAW_AUTOMATIONS_PATH;}
-  if (process.env.JEST_WORKER_ID) {return path.join(process.cwd(), 'tmp', `automations.server.test-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);}
-  return path.join(process.cwd(), 'tmp', 'automations.server.json');
+  if (process.env.GARLIC_CLAW_AUTOMATIONS_PATH) {
+    return process.env.GARLIC_CLAW_AUTOMATIONS_PATH;
+  }
+  if (process.env.JEST_WORKER_ID) {
+    return createServerTestArtifactPath({ extension: '.json', prefix: 'automations.server.test', subdirectory: 'server' });
+  }
+  return resolveServerStatePath('automations.server.json');
 }

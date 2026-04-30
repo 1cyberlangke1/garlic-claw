@@ -1,86 +1,58 @@
 import type {
-  JsonValue,
-  PluginCapability,
-  PluginCommandDescriptor,
-  PluginConfigConditionValue,
-  PluginConfigNodeSchema,
-  PluginConfigOptionSchema,
-  PluginConfigRenderType,
-  PluginConfigSchema,
-  PluginCronDescriptor,
-  PluginHookDescriptor,
-  PluginManifest,
-  PluginPermission,
-  PluginRemoteAccessConfig,
-  PluginRemoteDescriptor,
-  RemotePluginConnectionInfo,
-  PluginRouteDescriptor,
-  PluginRuntimeKind,
+  JsonValue, PluginCapability, PluginCommandDescriptor, PluginConfigConditionValue, PluginConfigNodeSchema,
+  PluginConfigOptionSchema, PluginConfigRenderType, PluginConfigSchema, PluginCronDescriptor, PluginHookDescriptor,
+  PluginManifest, PluginPermission, PluginRemoteAccessConfig, PluginRemoteDescriptor, PluginRouteDescriptor,
+  PluginRuntimeKind, RemotePluginConnectionInfo,
 } from '@garlic-claw/shared';
 import { Injectable, Optional } from '@nestjs/common';
 import { BuiltinPluginRegistryService } from '../builtin/builtin-plugin-registry.service';
 import { PluginGovernanceService, type PluginGovernanceOverrides } from '../governance/plugin-governance.service';
-import {
-  PluginPersistenceService,
-  type RegisteredPluginRecord,
-  type RegisteredPluginRemoteRecord,
-} from '../persistence/plugin-persistence.service';
+import { PluginPersistenceService, type RegisteredPluginRecord, type RegisteredPluginRemoteRecord } from '../persistence/plugin-persistence.service';
 
-export interface RegisterPluginInput {
-  connected?: boolean;
-  fallback: PluginManifestFallback;
-  governance?: PluginGovernanceOverrides;
-  manifest?: Partial<PluginManifest> | null;
-  remote?: RegisteredPluginRemoteRecord | null;
-}
+const CONFIG_NODE_TYPES = ['string', 'text', 'int', 'float', 'bool', 'object', 'list'] as const;
+const CONFIG_RENDER_TYPES = ['checkbox', 'select'] as const;
+const PLUGIN_RUNTIME_KINDS = ['local', 'remote'] as const;
+const REMOTE_ENVIRONMENTS = ['api', 'iot'] as const;
+const REMOTE_CAPABILITY_PROFILES = ['query', 'actuate', 'hybrid'] as const;
+const REMOTE_AUTH_MODES = ['none', 'optional', 'required'] as const;
+const CONFIG_TEXT_FIELDS = ['description', 'hint', 'editorLanguage', 'editorTheme', 'specialType'] as const;
+const CONFIG_BOOLEAN_FIELDS = ['obviousHint', 'invisible', 'collapsed', 'editorMode', 'secret'] as const;
+type ManifestRecord = Record<string, unknown>;
 
-export interface UpsertRemotePluginInput {
-  access: PluginRemoteAccessConfig;
-  description?: string;
-  displayName?: string;
-  pluginName: string;
-  remote: PluginRemoteDescriptor;
-  version?: string;
-}
+export interface RegisterPluginInput { connected?: boolean; fallback: PluginManifestFallback; governance?: PluginGovernanceOverrides; manifest?: Partial<PluginManifest> | null; remote?: RegisteredPluginRemoteRecord | null; }
 
-export interface PluginManifestFallback {
-  description?: string;
-  id: string;
-  name?: string;
-  remote?: PluginRemoteDescriptor;
-  runtime?: PluginRuntimeKind;
-  version?: string;
-}
+export interface UpsertRemotePluginInput { access: PluginRemoteAccessConfig; description?: string; displayName?: string; pluginName: string; remote: PluginRemoteDescriptor; version?: string; }
+
+export interface PluginManifestFallback { description?: string; id: string; name?: string; remote?: PluginRemoteDescriptor; runtime?: PluginRuntimeKind; version?: string; }
 
 @Injectable()
 export class PluginBootstrapService {
   constructor(
     private readonly pluginGovernanceService: PluginGovernanceService,
     private readonly pluginPersistenceService: PluginPersistenceService,
-    @Optional()
-    private readonly builtinPluginRegistryService?: BuiltinPluginRegistryService,
+    @Optional() private readonly builtinPluginRegistryService?: BuiltinPluginRegistryService,
   ) {}
 
   getPlugin(pluginId: string): RegisteredPluginRecord { return this.pluginPersistenceService.getPluginOrThrow(pluginId); }
-
   listPlugins(): RegisteredPluginRecord[] { return this.pluginPersistenceService.listPlugins(); }
-
+  markPluginOffline(pluginId: string): RegisteredPluginRecord { return this.pluginPersistenceService.setConnectionState(pluginId, false); }
+  touchHeartbeat(pluginId: string, seenAt: string = new Date().toISOString()): RegisteredPluginRecord { return this.pluginPersistenceService.touchHeartbeat(pluginId, seenAt); }
   bootstrapBuiltins(): string[] {
-    return this.builtinPluginRegistryService
-      ? this.builtinPluginRegistryService
-          .listDefinitions()
-          .map((definition) => this.registerBuiltinDefinition(definition).pluginId)
-      : [];
+    if (!this.builtinPluginRegistryService) {
+      return [];
+    }
+    this.pluginPersistenceService.dropPluginRecords(this.builtinPluginRegistryService.listRetiredPluginIds());
+    return this.builtinPluginRegistryService.listDefinitions().map((definition) => this.registerBuiltinDefinition(definition).pluginId);
   }
 
-  markPluginOffline(pluginId: string): RegisteredPluginRecord { return this.pluginPersistenceService.setConnectionState(pluginId, false); }
+  canReloadBuiltin(pluginId: string): boolean {
+    return this.builtinPluginRegistryService?.hasDefinition(pluginId) ?? false;
+  }
 
   registerPlugin(input: RegisterPluginInput): RegisteredPluginRecord {
     const manifest = normalizePluginManifest(input.manifest, input.fallback);
     const existing = this.pluginPersistenceService.findPlugin(manifest.id);
     const governance = this.pluginGovernanceService.createState({ manifest, overrides: input.governance });
-    const remote = normalizeRemoteRecord(manifest, input.remote ?? existing?.remote ?? null);
-
     return this.pluginPersistenceService.upsertPlugin({
       connected: input.connected ?? true,
       configValues: existing?.configValues,
@@ -91,153 +63,83 @@ export class PluginBootstrapService {
       llmPreference: existing?.llmPreference,
       manifest,
       pluginId: manifest.id,
-      remote,
+      remote: normalizeRemoteRecord(manifest, input.remote ?? existing?.remote ?? null),
     });
   }
 
   upsertRemotePlugin(input: UpsertRemotePluginInput): RegisteredPluginRecord {
-    const normalized = normalizeRemotePluginInput(input);
-    const existing = this.pluginPersistenceService.findPlugin(normalized.pluginName);
-    const cachedManifest = existing?.manifest.runtime === 'remote'
-      ? existing.manifest
-      : null;
-
-    return this.registerPlugin({
-      connected: false,
-      fallback: {
-        description: normalized.description,
-        id: normalized.pluginName,
-        name: normalized.displayName ?? normalized.pluginName,
-        remote: normalized.remote,
-        runtime: 'remote',
-        version: normalized.version,
-      },
-      manifest: cachedManifest ?? {
-        id: normalized.pluginName,
-        name: normalized.displayName ?? normalized.pluginName,
-        permissions: [],
-        remote: normalized.remote,
-        runtime: 'remote',
-        tools: [],
-        version: normalized.version ?? '0.0.0',
-      },
-      remote: {
-        access: normalized.access,
-        descriptor: normalized.remote,
-        metadataCache: existing?.remote?.metadataCache ?? {
-          lastSyncedAt: null,
-          manifestHash: null,
-          status: 'empty',
-        },
-      },
-    });
+    const normalizedInput = normalizeRemotePluginInput(input);
+    return this.registerPlugin(createRemotePluginRegistration(normalizedInput, this.pluginPersistenceService.findPlugin(normalizedInput.pluginName) ?? null));
   }
 
   reloadBuiltin(pluginId: string): string {
-    if (!this.builtinPluginRegistryService) {throw new Error('Builtin plugin registry is unavailable');}
+    if (!this.builtinPluginRegistryService) { throw new Error('Builtin plugin registry is unavailable'); }
     return this.registerBuiltinDefinition(this.builtinPluginRegistryService.getDefinition(pluginId)).pluginId;
   }
 
-  touchHeartbeat(pluginId: string, seenAt: string = new Date().toISOString()): RegisteredPluginRecord {
-    return this.pluginPersistenceService.touchHeartbeat(pluginId, seenAt);
-  }
-
-  private registerBuiltinDefinition(
-    definition: ReturnType<BuiltinPluginRegistryService['getDefinition']>,
-  ): RegisteredPluginRecord {
+  private registerBuiltinDefinition(definition: ReturnType<BuiltinPluginRegistryService['getDefinition']>): RegisteredPluginRecord {
     return this.registerPlugin({
-      fallback: {
-        id: definition.manifest.id,
-        name: definition.manifest.name,
-        runtime: 'local',
-        version: definition.manifest.version,
-      },
+      fallback: { id: definition.manifest.id, name: definition.manifest.name, runtime: 'local', version: definition.manifest.version },
       governance: definition.governance,
       manifest: definition.manifest,
     });
   }
 }
 
-function normalizeRemotePluginInput(
-  input: UpsertRemotePluginInput,
-): UpsertRemotePluginInput {
+function createRemotePluginRegistration(input: UpsertRemotePluginInput, existing: RegisteredPluginRecord | null): RegisterPluginInput {
+  const name = input.displayName ?? input.pluginName;
   return {
-    access: {
-      accessKey: input.access.accessKey?.trim() ? input.access.accessKey.trim() : null,
-      serverUrl: input.access.serverUrl?.trim() ? input.access.serverUrl.trim() : null,
-    },
-    ...(input.description?.trim() ? { description: input.description.trim() } : {}),
-    ...(input.displayName?.trim() ? { displayName: input.displayName.trim() } : {}),
-    pluginName: input.pluginName.trim(),
-    remote: structuredClone(input.remote),
-    ...(input.version?.trim() ? { version: input.version.trim() } : {}),
+    connected: false,
+    fallback: { description: input.description, id: input.pluginName, name, remote: input.remote, runtime: 'remote', version: input.version },
+    manifest: existing?.manifest.runtime === 'remote'
+      ? existing.manifest
+      : { id: input.pluginName, name, permissions: [], remote: input.remote, runtime: 'remote', tools: [], version: input.version ?? '0.0.0' },
+    remote: { access: input.access, descriptor: input.remote, metadataCache: existing?.remote?.metadataCache ?? createEmptyRemoteMetadataCache() },
   };
 }
 
-export function normalizePluginManifest(
-  candidate: Partial<PluginManifest> | null | undefined,
-  fallback: PluginManifestFallback,
-): PluginManifest {
-  const source = readManifestRecord(candidate);
-  const manifest: PluginManifest = {
-    id: readNonEmptyString(source?.id) ?? fallback.id,
-    name: readNonEmptyString(source?.name) ?? fallback.name ?? fallback.id,
-    version: readNonEmptyString(source?.version) ?? fallback.version ?? '0.0.0',
-    runtime: readRuntimeKind(source?.runtime) ?? fallback.runtime ?? 'remote',
-    permissions: readManifestArray<PluginPermission>(source?.permissions),
-    tools: readManifestArray<PluginCapability>(source?.tools),
+function normalizeRemotePluginInput(input: UpsertRemotePluginInput): UpsertRemotePluginInput {
+  const description = readText(input.description), displayName = readText(input.displayName), version = readText(input.version);
+  return {
+    access: { accessKey: readText(input.access.accessKey), serverUrl: readText(input.access.serverUrl) },
+    ...(description ? { description } : {}),
+    ...(displayName ? { displayName } : {}),
+    pluginName: input.pluginName.trim(),
+    remote: structuredClone(input.remote),
+    ...(version ? { version } : {}),
   };
+}
 
-  const description = readNonEmptyString(source?.description) ?? fallback.description;
-  const commands = readManifestArray<PluginCommandDescriptor>(source?.commands);
-  const crons = readManifestArray<PluginCronDescriptor>(source?.crons);
-  const hooks = readManifestArray<PluginHookDescriptor>(source?.hooks);
-  const routes = readManifestArray<PluginRouteDescriptor>(source?.routes);
-  if (description) {manifest.description = description;}
-  if (commands.length > 0) {manifest.commands = commands;}
-  if (crons.length > 0) {manifest.crons = crons;}
-  if (hooks.length > 0) {manifest.hooks = hooks;}
-  if (routes.length > 0) {manifest.routes = routes;}
-  const config = readConfig(source?.config);
-  if (config) {manifest.config = config;}
-  const remote = readRemoteDescriptor(source?.remote) ?? fallback.remote;
-  if (manifest.runtime === 'remote' && remote) {
-    manifest.remote = structuredClone(remote);
+export function normalizePluginManifest(candidate: Partial<PluginManifest> | null | undefined, fallback: PluginManifestFallback): PluginManifest {
+  const source = readRecord(candidate);
+  const manifest: PluginManifest = {
+    id: readText(source?.id) ?? fallback.id,
+    name: readText(source?.name) ?? fallback.name ?? fallback.id,
+    version: readText(source?.version) ?? fallback.version ?? '0.0.0',
+    runtime: readLiteral(source?.runtime, PLUGIN_RUNTIME_KINDS) ?? fallback.runtime ?? 'remote',
+    permissions: readArray<PluginPermission>(source?.permissions),
+    tools: readArray<PluginCapability>(source?.tools),
+  };
+  assignManifestField(manifest, 'description', readText(source?.description) ?? fallback.description ?? null);
+  assignManifestField(manifest, 'commands', readArray<PluginCommandDescriptor>(source?.commands));
+  assignManifestField(manifest, 'crons', readArray<PluginCronDescriptor>(source?.crons));
+  assignManifestField(manifest, 'hooks', readArray<PluginHookDescriptor>(source?.hooks));
+  assignManifestField(manifest, 'routes', readArray<PluginRouteDescriptor>(source?.routes));
+  assignManifestField(manifest, 'config', readConfig(source?.config));
+  if (manifest.runtime === 'remote') {
+    assignManifestField(manifest, 'remote', readRemoteDescriptor(source?.remote) ?? fallback.remote ?? null, true);
   }
-
   return manifest;
 }
 
 export function buildRemotePluginConnectionInfo(record: RegisteredPluginRecord): RemotePluginConnectionInfo {
-  if (!record.remote) {
-    throw new Error(`Plugin ${record.pluginId} is not a remote plugin`);
-  }
-  return {
-    accessKey: record.remote.access.accessKey,
-    pluginName: record.pluginId,
-    remote: structuredClone(record.remote.descriptor),
-    serverUrl: record.remote.access.serverUrl ?? '',
-  };
+  if (!record.remote) { throw new Error(`Plugin ${record.pluginId} is not a remote plugin`); }
+  return { accessKey: record.remote.access.accessKey, pluginName: record.pluginId, remote: structuredClone(record.remote.descriptor), serverUrl: record.remote.access.serverUrl ?? '' };
 }
 
-function readManifestRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function readNonEmptyString(value: unknown): string | null {
-  if (typeof value !== 'string') {return null;}
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
-
-function readRuntimeKind(value: unknown): PluginRuntimeKind | null {
-  return value === 'local' || value === 'remote' ? value : null;
-}
-
-function readManifestArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? [...value] as T[] : [];
+function assignManifestField<K extends keyof PluginManifest>(manifest: PluginManifest, key: K, value: PluginManifest[K] | null, clone: boolean = false): void {
+  if (value === null || (Array.isArray(value) && value.length === 0)) { return; }
+  manifest[key] = (clone ? structuredClone(value) : value) as PluginManifest[K];
 }
 
 function readConfig(value: unknown): PluginConfigSchema | null {
@@ -246,195 +148,102 @@ function readConfig(value: unknown): PluginConfigSchema | null {
 }
 
 function readRemoteDescriptor(value: unknown): PluginRemoteDescriptor | null {
-  const record = readManifestRecord(value);
-  if (!record) {
-    return null;
-  }
-  const remoteEnvironment = record.remoteEnvironment === 'api' || record.remoteEnvironment === 'iot'
-    ? record.remoteEnvironment
-    : null;
-  const capabilityProfile = record.capabilityProfile === 'query'
-    || record.capabilityProfile === 'actuate'
-    || record.capabilityProfile === 'hybrid'
-    ? record.capabilityProfile
-    : null;
-  const authRecord = readManifestRecord(record.auth);
-  const authMode = authRecord?.mode === 'none'
-    || authRecord?.mode === 'optional'
-    || authRecord?.mode === 'required'
-    ? authRecord.mode
-    : null;
-  if (!remoteEnvironment || !capabilityProfile || !authMode) {
-    return null;
-  }
-  return {
-    auth: { mode: authMode },
-    capabilityProfile,
-    remoteEnvironment,
-  };
+  const record = readRecord(value), authMode = readLiteral(readRecord(record?.auth)?.mode, REMOTE_AUTH_MODES), capabilityProfile = readLiteral(record?.capabilityProfile, REMOTE_CAPABILITY_PROFILES), remoteEnvironment = readLiteral(record?.remoteEnvironment, REMOTE_ENVIRONMENTS);
+  return authMode && capabilityProfile && remoteEnvironment ? { auth: { mode: authMode }, capabilityProfile, remoteEnvironment } : null;
 }
 
 function readConfigNode(value: unknown): PluginConfigNodeSchema | null {
-  const record = readManifestRecord(value);
-  if (!record) {return null;}
-  const type = readConfigNodeType(record.type);
-  if (!type) {return null;}
-  const description = readNonEmptyString(record.description);
-  const hint = readNonEmptyString(record.hint);
-  const renderType = readConfigRenderType(record.renderType);
-  const editorLanguage = readNonEmptyString(record.editorLanguage);
-  const editorTheme = readNonEmptyString(record.editorTheme);
-  const specialType = readNonEmptyString(record.specialType);
-
-  const base = {
-    type,
-    ...(description ? { description } : {}),
-    ...(hint ? { hint } : {}),
-    ...(typeof record.obviousHint === 'boolean' ? { obviousHint: record.obviousHint } : {}),
-    ...(typeof record.invisible === 'boolean' ? { invisible: record.invisible } : {}),
-    ...(typeof record.collapsed === 'boolean' ? { collapsed: record.collapsed } : {}),
-    ...(renderType ? { renderType } : {}),
-    ...(typeof record.editorMode === 'boolean' ? { editorMode: record.editorMode } : {}),
-    ...(editorLanguage ? { editorLanguage } : {}),
-    ...(editorTheme ? { editorTheme } : {}),
-    ...(specialType ? { specialType } : {}),
-    ...(typeof record.secret === 'boolean' ? { secret: record.secret } : {}),
-    ...(isJsonValue(record.defaultValue) ? { defaultValue: structuredClone(record.defaultValue) } : {}),
-  };
-
-  const condition = readConfigCondition(record.condition);
-  const options = readConfigOptions(record.options);
-
+  const record = readRecord(value), type = readLiteral(record?.type, CONFIG_NODE_TYPES);
+  if (!record || !type) { return null; }
   if (type === 'object') {
     const items = readConfigItems(record.items);
-    if (Object.keys(items).length === 0) {return null;}
-    return {
-      ...base,
-      ...(condition ? { condition } : {}),
-      ...(options.length > 0 ? { options } : {}),
-      items,
-      type,
-    };
+    return Object.keys(items).length > 0 ? { ...readConfigShared(record), items, type } : null;
   }
-
   if (type === 'list') {
-    const itemSchema = readConfigNode(record.items);
-    return {
-      ...base,
-      ...(condition ? { condition } : {}),
-      ...(options.length > 0 ? { options } : {}),
-      ...(itemSchema ? { items: itemSchema } : {}),
-      type,
-    };
+    const items = readConfigNode(record.items);
+    return items ? { ...readConfigShared(record), items, type } : { ...readConfigShared(record), type };
   }
+  return { ...readConfigShared(record), type };
+}
 
+function readConfigShared(record: ManifestRecord): Omit<PluginConfigNodeSchema, 'items' | 'type'> {
   return {
-    ...base,
-    ...(condition ? { condition } : {}),
-    ...(options.length > 0 ? { options } : {}),
-    type,
+    ...readConfigBase(record),
+    ...readConfigConditionState(record.condition),
+    ...readConfigOptionsState(record.options),
   };
 }
 
-function readConfigNodeType(value: unknown): PluginConfigNodeSchema['type'] | null {
-  return value === 'string'
-    || value === 'text'
-    || value === 'int'
-    || value === 'float'
-    || value === 'bool'
-    || value === 'object'
-    || value === 'list'
-    ? value
-    : null;
+function readConfigBase(record: ManifestRecord): Record<string, JsonValue | PluginConfigRenderType> {
+  const fields = Object.fromEntries([
+    ...CONFIG_TEXT_FIELDS.map((key) => [key, readText(record[key])] as const),
+    ...CONFIG_BOOLEAN_FIELDS.map((key) => [key, typeof record[key] === 'boolean' ? record[key] as boolean : null] as const),
+    ['renderType', readLiteral(record.renderType, CONFIG_RENDER_TYPES)] as const,
+    ['defaultValue', isJsonValue(record.defaultValue) ? structuredClone(record.defaultValue) : null] as const,
+  ].filter(([, value]) => value !== null));
+  return fields as Record<string, JsonValue | PluginConfigRenderType>;
 }
 
 function readConfigItems(value: unknown): Record<string, PluginConfigNodeSchema> {
-  const record = readManifestRecord(value);
-  if (!record) {return {};}
-  return Object.fromEntries(
-    Object.entries(record)
-      .map(([key, itemValue]) => [key, readConfigNode(itemValue)] as const)
-      .filter((entry): entry is [string, PluginConfigNodeSchema] => entry[1] !== null),
-  );
+  const record = readRecord(value);
+  if (!record) { return {}; }
+  return Object.fromEntries(Object.entries(record).flatMap(([key, item]) => {
+    const node = readConfigNode(item);
+    return node ? [[key, node]] : [];
+  }));
 }
 
-function readConfigCondition(value: unknown): Record<string, PluginConfigConditionValue> | null {
-  const record = readManifestRecord(value);
-  if (!record) {return null;}
-  const entries = Object.entries(record)
-    .filter((entry): entry is [string, PluginConfigConditionValue] =>
-      typeof entry[1] === 'string'
-      || typeof entry[1] === 'number'
-      || typeof entry[1] === 'boolean'
-      || entry[1] === null,
-    );
-  return entries.length > 0 ? Object.fromEntries(entries) : null;
+function readConfigConditionState(value: unknown): Pick<PluginConfigNodeSchema, 'condition'> | Record<string, never> {
+  const record = readRecord(value);
+  if (!record) { return {}; }
+  const condition = Object.fromEntries(Object.entries(record).filter((entry): entry is [string, PluginConfigConditionValue] => isConfigConditionValue(entry[1])));
+  return Object.keys(condition).length > 0 ? { condition } : {};
 }
 
-function readConfigOptions(value: unknown): PluginConfigOptionSchema[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((item) => readConfigOption(item))
-    .filter((item): item is PluginConfigOptionSchema => item !== null);
+function readConfigOptionsState(value: unknown): Pick<PluginConfigNodeSchema, 'options'> | Record<string, never> {
+  const options = Array.isArray(value) ? value.flatMap((item) => {
+    const record = readRecord(item), optionValue = readText(record?.value);
+    if (!record || !optionValue) { return []; }
+    const label = readText(record.label), description = readText(record.description);
+    return [{ value: optionValue, ...(label ? { label } : {}), ...(description ? { description } : {}) } satisfies PluginConfigOptionSchema];
+  }) : [];
+  return options.length > 0 ? { options } : {};
 }
 
-function readConfigOption(value: unknown): PluginConfigOptionSchema | null {
-  const record = readManifestRecord(value);
-  if (!record) {
-    return null;
-  }
-  const optionValue = readNonEmptyString(record.value);
-  if (!optionValue) {
-    return null;
-  }
-  const label = readNonEmptyString(record.label);
-  const description = readNonEmptyString(record.description);
-  return {
-    value: optionValue,
-    ...(label ? { label } : {}),
-    ...(description ? { description } : {}),
-  };
-}
-
-function readConfigRenderType(value: unknown): PluginConfigRenderType | null {
-  return value === 'checkbox' || value === 'select'
-    ? value
-    : null;
+function isConfigConditionValue(value: unknown): value is PluginConfigConditionValue {
+  return value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
 function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) {return true;}
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {return true;}
-  if (Array.isArray(value)) {return value.every((item) => isJsonValue(item));}
-  if (typeof value === 'object') {
-    return Object.values(value).every((item) => typeof item !== 'undefined' && isJsonValue(item));
-  }
-  return false;
+  return value === null
+    || typeof value === 'string'
+    || typeof value === 'number'
+    || typeof value === 'boolean'
+    || (Array.isArray(value) && value.every(isJsonValue))
+    || (typeof value === 'object' && value !== null && !Array.isArray(value) && Object.values(value).every((item) => typeof item !== 'undefined' && isJsonValue(item)));
 }
 
-function normalizeRemoteRecord(
-  manifest: PluginManifest,
-  remote: RegisteredPluginRemoteRecord | null,
-): RegisteredPluginRemoteRecord | null {
-  if (manifest.runtime !== 'remote') {
-    return null;
-  }
-  const descriptor = manifest.remote ?? remote?.descriptor;
-  if (!descriptor) {
-    return null;
-  }
-  return {
-    access: {
-      accessKey: remote?.access.accessKey ?? null,
-      serverUrl: remote?.access.serverUrl ?? null,
-    },
-    descriptor,
-    metadataCache: remote?.metadataCache ?? {
-      lastSyncedAt: null,
-      manifestHash: null,
-      status: 'empty',
-    },
-  };
+function normalizeRemoteRecord(manifest: PluginManifest, remote: RegisteredPluginRemoteRecord | null): RegisteredPluginRemoteRecord | null {
+  const descriptor = manifest.runtime === 'remote' ? manifest.remote ?? remote?.descriptor : null;
+  return descriptor ? { access: { accessKey: remote?.access.accessKey ?? null, serverUrl: remote?.access.serverUrl ?? null }, descriptor, metadataCache: remote?.metadataCache ?? createEmptyRemoteMetadataCache() } : null;
+}
+
+function createEmptyRemoteMetadataCache(): RegisteredPluginRemoteRecord['metadataCache'] {
+  return { lastSyncedAt: null, manifestHash: null, status: 'empty' };
+}
+
+function readRecord(value: unknown): ManifestRecord | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as ManifestRecord : null;
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readLiteral<T extends string>(value: unknown, allowed: readonly T[]): T | null {
+  return typeof value === 'string' && allowed.includes(value as T) ? value as T : null;
+}
+
+function readArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? [...value] as T[] : [];
 }

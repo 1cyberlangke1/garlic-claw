@@ -10,7 +10,6 @@ function createProviders(count: number): AiProviderSummary[] {
   return Array.from({ length: count }, (_, index): AiProviderSummary => ({
     id: `provider-${index + 1}`,
     name: `Provider ${index + 1}`,
-    mode: index % 2 === 0 ? 'catalog' : 'protocol',
     driver:
       index % 2 === 0
         ? index % 3 === 0
@@ -39,7 +38,7 @@ describe('AiProviderSidebar', () => {
     expect(wrapper.findAll('.provider-item')).toHaveLength(6)
     expect(wrapper.text()).toContain('匹配 11 / 11')
     expect(wrapper.text()).toContain('第 1 / 2 页')
-    expect(wrapper.text()).toContain('核心协议族')
+    expect(wrapper.text()).toContain('自定义')
 
     await wrapper.get('[data-test="provider-sidebar-next-page"]').trigger('click')
 
@@ -52,7 +51,7 @@ describe('AiProviderSidebar', () => {
     expect(wrapper.text()).toContain('第 1 / 1 页')
     expect(wrapper.findAll('.provider-item')).toHaveLength(1)
     expect(wrapper.text()).toContain('Provider 10')
-    expect(wrapper.text()).toContain('协议接入')
-    expect(wrapper.text()).toContain('OpenAI 协议接入')
+    expect(wrapper.text()).toContain('自定义')
+    expect(wrapper.text()).toContain('OpenAI 兼容协议')
   })
 })

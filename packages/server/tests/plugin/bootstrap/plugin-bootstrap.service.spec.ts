@@ -256,55 +256,43 @@ describe('PluginBootstrapService', () => {
     });
   });
 
-  it('registers builtin plugins from the builtin registry and can reload one by id', () => {
+  it('drops retired builtin plugin records and registers the unified memory builtin during bootstrap', () => {
+    const persistence = new PluginPersistenceService();
     const service = new PluginBootstrapService(
       new PluginGovernanceService(),
-      new PluginPersistenceService(),
+      persistence,
       new BuiltinPluginRegistryService(),
     );
 
+    persistence.upsertPlugin({
+      connected: false,
+      defaultEnabled: true,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'builtin.memory-context',
+        name: 'Memory Context',
+        permissions: [],
+        runtime: 'local',
+        tools: [],
+        version: '1.0.0',
+      },
+      pluginId: 'builtin.memory-context',
+    });
+
     expect(service.bootstrapBuiltins()).toEqual([
-      'builtin.context-compaction',
-      'builtin.conversation-title',
-      'builtin.memory-context',
-      'builtin.subagent-delegate',
+      'builtin.automation',
+      'builtin.memory',
     ]);
-    expect(service.reloadBuiltin('builtin.memory-context')).toBe('builtin.memory-context');
-    expect(service.listPlugins()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          manifest: expect.objectContaining({
-            commands: [
-              expect.objectContaining({
-                aliases: ['/compress'],
-                canonicalCommand: '/compact',
-                variants: ['/compact', '/compress'],
-              }),
-            ],
-            hooks: expect.arrayContaining([
-              expect.objectContaining({
-                name: 'message:received',
-              }),
-            ]),
-            permissions: expect.arrayContaining([
-              'state:read',
-              'state:write',
-            ]),
-          }),
-          pluginId: 'builtin.context-compaction',
-        }),
-        expect.objectContaining({ pluginId: 'builtin.conversation-title' }),
-        expect.objectContaining({ pluginId: 'builtin.memory-context' }),
-        expect.objectContaining({
-          manifest: expect.objectContaining({
-            tools: expect.arrayContaining([
-              expect.objectContaining({ name: 'delegate_summary' }),
-              expect.objectContaining({ name: 'delegate_summary_background' }),
-            ]),
-          }),
-          pluginId: 'builtin.subagent-delegate',
-        }),
-      ]),
-    );
+    expect(service.listPlugins()).toEqual([
+      expect.objectContaining({
+        pluginId: 'builtin.automation',
+      }),
+      expect.objectContaining({
+        pluginId: 'builtin.memory',
+      }),
+    ]);
+    expect(service.canReloadBuiltin('builtin.automation')).toBe(true);
+    expect(service.canReloadBuiltin('builtin.memory')).toBe(true);
   });
 });

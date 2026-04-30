@@ -1,21 +1,38 @@
-import { defineComponent, nextTick, reactive } from 'vue'
+import { defineComponent, nextTick, reactive, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as chatViewData from '@/features/chat/composables/chat-view.data'
 import { useChatView } from '@/features/chat/composables/use-chat-view'
 
-const notify = vi.fn()
-
 vi.mock('@/features/chat/composables/chat-view.data', () => ({
   loadModelCapabilities: vi.fn(),
   loadVisionFallbackEnabled: vi.fn(),
-  loadConversationHostServices: vi.fn(),
-  saveConversationHostServices: vi.fn(),
 }))
 
-vi.mock('@/stores/ui', () => ({
-  useUiStore: () => ({
-    notify,
+vi.mock('@/features/chat/composables/chat-command-catalog.data', () => ({
+  loadChatCommandCatalog: vi.fn().mockResolvedValue({
+    version: 'catalog-v1',
+    commands: [
+      {
+        aliases: ['/compress'],
+        canonicalCommand: '/compact',
+        commandId: 'internal.context-governance:/compact:command',
+        conflictTriggers: [],
+        connected: true,
+        defaultEnabled: true,
+        kind: 'command',
+        path: ['compact'],
+        pluginDisplayName: '上下文压缩',
+        pluginId: 'internal.context-governance',
+        runtimeKind: 'local',
+        source: 'manifest',
+        variants: ['/compact', '/compress'],
+      },
+    ],
+    conflicts: [],
+  }),
+  loadChatCommandCatalogVersion: vi.fn().mockResolvedValue({
+    version: 'catalog-v1',
   }),
 }))
 
@@ -52,10 +69,13 @@ function createChatStub(overrides: Partial<Record<string, unknown>> = {}) {
     currentConversationId: 'conversation-1' as string | null,
     selectedProvider: 'demo-provider' as string | null,
     selectedModel: 'text-only-model' as string | null,
+    queuedSendCount: ref(0),
+    queuedSendPreviewEntries: ref([]),
     setModelSelection(selection: { provider: string | null; model: string | null }) {
       this.selectedProvider = selection.provider
       this.selectedModel = selection.model
     },
+    popQueuedSendRequestTail: vi.fn().mockReturnValue(null),
     sendMessage: vi.fn(),
     updateMessage: vi.fn(),
     deleteMessage: vi.fn(),
@@ -68,20 +88,9 @@ describe('useChatView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(chatViewData.loadVisionFallbackEnabled).mockResolvedValue(false)
-    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
-      sessionEnabled: true,
-      llmEnabled: true,
-      ttsEnabled: true,
-    })
-    vi.mocked(chatViewData.saveConversationHostServices).mockResolvedValue({
-      sessionEnabled: true,
-      llmEnabled: true,
-      ttsEnabled: true,
-    })
     vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
       createModelConfig(false, 'text-only-model').capabilities,
     )
-    notify.mockReset()
   })
 
   it('shows a fallback notice when pending images target a text-only model', async () => {
@@ -192,45 +201,9 @@ describe('useChatView', () => {
     )
   })
 
-  it('disables sending when the current conversation has llm auto reply turned off', async () => {
-    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
-      sessionEnabled: true,
-      llmEnabled: false,
-      ttsEnabled: true,
-    })
-
-    const chat = createChatStub()
-    let state!: ReturnType<typeof useChatView>
-    const Harness = defineComponent({
-      setup() {
-        state = useChatView(chat as never)
-        return () => null
-      },
-    })
-
-    mount(Harness)
-    await flushPromises()
-
-    state.inputText.value = '你好'
-    await nextTick()
-    await state.send()
-
-    expect(state.canSend.value).toBe(false)
-    expect(chat.sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('still allows context compaction commands when llm auto reply is turned off', async () => {
-    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
-      sessionEnabled: true,
-      llmEnabled: false,
-      ttsEnabled: true,
-    })
-
+  it('keeps send enabled while streaming so later messages can enter the queue', async () => {
     const chat = createChatStub({
-      compactContext: vi.fn().mockResolvedValue({
-        compacted: true,
-        coveredMessageCount: 1,
-      }),
+      streaming: true,
     })
     let state!: ReturnType<typeof useChatView>
     const Harness = defineComponent({
@@ -242,24 +215,14 @@ describe('useChatView', () => {
 
     mount(Harness)
     await flushPromises()
-    state.inputText.value = '/compress'
+
+    state.inputText.value = '排队消息'
     await nextTick()
 
     expect(state.canSend.value).toBe(true)
-
-    await state.send()
-
-    expect(chat.sendMessage).not.toHaveBeenCalled()
-    expect(chat.compactContext).toHaveBeenCalledTimes(1)
   })
 
-  it('does not bypass llm auto reply restrictions for slash text with pending images', async () => {
-    vi.mocked(chatViewData.loadConversationHostServices).mockResolvedValue({
-      sessionEnabled: true,
-      llmEnabled: false,
-      ttsEnabled: true,
-    })
-
+  it('keeps text drafts isolated between conversations', async () => {
     const chat = createChatStub()
     let state!: ReturnType<typeof useChatView>
     const Harness = defineComponent({
@@ -271,78 +234,18 @@ describe('useChatView', () => {
 
     mount(Harness)
     await flushPromises()
-    state.inputText.value = '/compact'
-    state.pendingImages.value.push({
-      id: 'image-1',
-      image: 'data:image/png;base64,AAAA',
-      mimeType: 'image/png',
-      name: 'demo.png',
-    })
+
+    state.inputText.value = '会话一草稿'
+    chat.currentConversationId = 'conversation-2'
     await nextTick()
 
-    expect(state.canSend.value).toBe(false)
+    expect(state.inputText.value).toBe('')
 
-    await state.send()
+    state.inputText.value = '会话二草稿'
+    chat.currentConversationId = 'conversation-1'
+    await nextTick()
 
-    expect(chat.sendMessage).not.toHaveBeenCalled()
-  })
-
-  it('updates llm service state for the current conversation', async () => {
-    vi.mocked(chatViewData.loadModelCapabilities).mockResolvedValue(
-      createModelConfig(true, 'image-model').capabilities,
-    )
-    vi.mocked(chatViewData.saveConversationHostServices).mockResolvedValue({
-      sessionEnabled: true,
-      llmEnabled: false,
-      ttsEnabled: true,
-    })
-
-    const chat = createChatStub({
-      selectedModel: 'image-model',
-    })
-    let state!: ReturnType<typeof useChatView>
-    const Harness = defineComponent({
-      setup() {
-        state = useChatView(chat as never)
-        return () => null
-      },
-    })
-
-    mount(Harness)
-    await flushPromises()
-    await state.setConversationLlmEnabled(false)
-
-    expect(chatViewData.saveConversationHostServices).toHaveBeenCalledWith(
-      'conversation-1',
-      {
-        llmEnabled: false,
-      },
-    )
-    expect(state.conversationHostServices.value?.llmEnabled).toBe(false)
-  })
-
-  it('triggers manual context compaction and reports the result through the UI store', async () => {
-    const chat = createChatStub({
-      compactContext: vi.fn().mockResolvedValue({
-        compacted: true,
-        coveredMessageCount: 2,
-      }),
-    })
-    let state!: ReturnType<typeof useChatView>
-    const Harness = defineComponent({
-      setup() {
-        state = useChatView(chat as never)
-        return () => null
-      },
-    })
-
-    mount(Harness)
-    await flushPromises()
-    await state.compactConversationContext()
-
-    expect(chat.compactContext).toHaveBeenCalledTimes(1)
-    expect(notify).toHaveBeenCalledWith('已压缩上下文，覆盖 2 条历史消息。', 'success')
-    expect(state.compacting.value).toBe(false)
+    expect(state.inputText.value).toBe('会话一草稿')
   })
 
   it('computes retry label from the last non-display message', async () => {

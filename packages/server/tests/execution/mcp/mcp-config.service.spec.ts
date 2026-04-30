@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
 
 describe('McpConfigStoreService', () => {
@@ -23,7 +24,7 @@ describe('McpConfigStoreService', () => {
 
   it('returns an empty snapshot when the MCP config directory does not exist', async () => {
     process.env[envKey] = tempConfigRoot;
-    const service = new McpConfigStoreService();
+    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
     expect(service.getSnapshot()).toEqual({
       configPath: tempConfigRoot,
@@ -31,39 +32,44 @@ describe('McpConfigStoreService', () => {
     });
   });
 
-  it('defaults to the repository mcp/servers path when no environment variable is set', () => {
+  it('defaults to the repository config/mcp/servers path when no environment variable is set', () => {
     const workspaceRoot = path.join(os.tmpdir(), `mcp-config.service.workspace-${Date.now()}-${Math.random()}`);
     const nestedServerRoot = path.join(workspaceRoot, 'packages', 'server');
-    const defaultConfigRoot = path.join(workspaceRoot, 'mcp', 'servers');
+    const defaultConfigRoot = path.join(workspaceRoot, 'config', 'mcp', 'servers');
     fs.mkdirSync(nestedServerRoot, { recursive: true });
     fs.mkdirSync(defaultConfigRoot, { recursive: true });
     fs.writeFileSync(path.join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'mcp-config-test' }), 'utf-8');
-    fs.writeFileSync(path.join(defaultConfigRoot, 'weather-server.json'), JSON.stringify({
-      name: 'weather-server',
+    fs.writeFileSync(path.join(defaultConfigRoot, 'tavily-mcp.json'), JSON.stringify({
+      name: 'tavily-mcp',
       command: 'npx',
-      args: ['-y', '@mariox/weather-mcp-server'],
+      args: ['-y', 'tavily-mcp@latest'],
+      env: {
+        TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
     }, null, 2));
 
     process.chdir(nestedServerRoot);
 
     try {
-      const service = new McpConfigStoreService();
+      const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
       expect(service.getSnapshot()).toEqual({
-        configPath: 'mcp/servers',
+        configPath: 'config/mcp/servers',
         servers: [
           {
-            name: 'weather-server',
+            name: 'tavily-mcp',
             command: 'npx',
-            args: ['-y', '@mariox/weather-mcp-server'],
+            args: ['-y', 'tavily-mcp@latest'],
             eventLog: {
               maxFileSizeMb: 1,
             },
-            env: {},
+            env: {
+              TAVILY_API_KEY: '${TAVILY_API_KEY}',
+            },
           },
         ],
       });
-      expect(fs.existsSync(path.join(defaultConfigRoot, 'weather-server.json'))).toBe(true);
+      expect(fs.existsSync(path.join(defaultConfigRoot, 'tavily-mcp.json'))).toBe(true);
     } finally {
       process.chdir(originalCwd);
       fs.rmSync(workspaceRoot, { recursive: true, force: true });
@@ -79,7 +85,7 @@ describe('McpConfigStoreService', () => {
       args: ['-y', '@mariox/weather-mcp-server'],
     }, null, 2));
 
-    const service = new McpConfigStoreService();
+    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
     expect(service.saveServer({
       name: 'tavily',
@@ -163,7 +169,7 @@ describe('McpConfigStoreService', () => {
       args: ['-y', 'tavily-mcp@latest'],
     }, null, 2));
 
-    const service = new McpConfigStoreService();
+    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
 
     expect(service.deleteServer('weather')).toEqual({
       deleted: true,

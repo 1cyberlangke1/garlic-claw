@@ -1,21 +1,28 @@
 import type {
   Conversation,
+  ConversationContextWindowPreview,
+  ConversationTodoItem,
+  RuntimePermissionDecision,
+  RuntimePermissionReplyResult,
+  RuntimePermissionRequest,
   SendMessagePayload,
   UpdateMessagePayload,
 } from '@garlic-claw/shared'
 import {
-  compactConversationContext,
   createConversation,
   deleteConversation,
   deleteConversationMessage,
   getConversation,
+  getConversationContextWindow,
+  getConversationTodo,
   listConversations,
+  listPendingRuntimePermissions,
+  replyRuntimePermission,
   retryMessageSSE,
   sendMessageSSE,
   stopConversationMessage,
   updateConversationMessage,
 } from '@/features/chat/api/chat'
-import type { ConversationContextCompactionResult } from '@/features/chat/api/chat'
 import { dbMessageToChat } from '@/features/chat/store/chat-store.helpers'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
 
@@ -34,6 +41,39 @@ export function deleteConversationRecord(conversationId: string) {
 export async function loadConversationMessages(conversationId: string): Promise<ChatMessage[]> {
   const detail = await getConversation(conversationId)
   return detail.messages.map(dbMessageToChat)
+}
+
+export function loadConversationTodoRecord(
+  conversationId: string,
+): Promise<ConversationTodoItem[]> {
+  return getConversationTodo(conversationId)
+}
+
+export function loadConversationContextWindowRecord(
+  conversationId: string,
+  payload: {
+    providerId?: string | null
+    modelId?: string | null
+  },
+): Promise<ConversationContextWindowPreview> {
+  return getConversationContextWindow(conversationId, {
+    ...(payload.providerId ? { providerId: payload.providerId } : {}),
+    ...(payload.modelId ? { modelId: payload.modelId } : {}),
+  })
+}
+
+export function loadPendingRuntimePermissionsRecord(
+  conversationId: string,
+): Promise<RuntimePermissionRequest[]> {
+  return listPendingRuntimePermissions(conversationId)
+}
+
+export function replyRuntimePermissionRecord(
+  conversationId: string,
+  requestId: string,
+  decision: RuntimePermissionDecision,
+): Promise<RuntimePermissionReplyResult> {
+  return replyRuntimePermission(conversationId, requestId, decision)
 }
 
 export function sendConversationMessage(
@@ -77,14 +117,4 @@ export async function stopConversationMessageRecord(
   messageId: string,
 ): Promise<{ message: string }> {
   return stopConversationMessage(conversationId, messageId)
-}
-
-export function compactConversationContextRecord(
-  conversationId: string,
-  payload: {
-    providerId?: string | null
-    modelId?: string | null
-  },
-): Promise<ConversationContextCompactionResult> {
-  return compactConversationContext(conversationId, payload)
 }

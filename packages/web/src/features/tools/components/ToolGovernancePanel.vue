@@ -30,7 +30,7 @@
       </label>
 
       <div v-if="filteredSources.length === 0" class="empty-state compact">
-        当前没有匹配的工具源。
+        没有匹配的工具源。
       </div>
       <div v-else class="source-list">
         <button
@@ -50,8 +50,8 @@
     <div v-if="selectedSource" class="governance-layout">
       <article class="panel-card">
         <div class="panel-card-header">
-          <div>
-            <span class="panel-kicker">Source</span>
+        <div>
+            <span class="panel-kicker">工具源</span>
             <h3>{{ selectedSource.label }}</h3>
             <p>{{ sourceKindLabel(selectedSource.kind) }} · {{ selectedSource.id }}</p>
           </div>
@@ -100,7 +100,7 @@
       <article class="panel-card">
         <div class="panel-card-header">
           <div>
-            <span class="panel-kicker">Tools</span>
+            <span class="panel-kicker">工具</span>
             <h3>工具列表</h3>
             <p>按 source 查看并覆盖单个工具的启用状态。</p>
           </div>
@@ -120,7 +120,7 @@
         </div>
 
         <div v-if="filteredTools.length === 0" class="empty-state compact">
-          当前 source 下没有匹配工具。
+          此 source 下没有匹配工具。
         </div>
         <div v-else class="tool-list">
           <article
@@ -188,11 +188,11 @@ const props = withDefaults(defineProps<{
   emptyDescription?: string
   sourcePlaceholder?: string
 }>(), {
-  kicker: 'Tool Governance',
+  kicker: '工具管理',
   sourceId: null,
   showSourceList: true,
   emptyTitle: '暂无工具源',
-  emptyDescription: '当前分类下还没有可治理的工具源。',
+  emptyDescription: '此分类下还没有可管理的工具源。',
   sourcePlaceholder: '搜索 source',
 })
 
@@ -236,7 +236,7 @@ const selectedSource = computed<ToolSourceInfo | null>(() => {
   return exact ?? filteredSources.value[0] ?? null
 })
 const selectedSourceActions = computed<PluginActionName[]>(() =>
-  selectedSource.value?.supportedActions ?? ['health-check'],
+  selectedSource.value?.supportedActions ?? [],
 )
 const filteredTools = computed(() => {
   if (!selectedSource.value) {
@@ -303,7 +303,7 @@ async function refresh() {
       ?? null
     selectedSourceId.value = nextSource?.id ?? null
   } catch (caughtError) {
-    error.value = toErrorMessage(caughtError, '加载工具治理数据失败')
+    error.value = toErrorMessage(caughtError, '加载工具管理数据失败')
   } finally {
     loading.value = false
   }
@@ -380,6 +380,8 @@ function actionLabel(action: PluginActionName): string {
       return '重载'
     case 'reconnect':
       return '重连'
+    case 'refresh-metadata':
+      return '刷新元数据'
     default:
       return '健康检查'
   }
@@ -396,7 +398,7 @@ function healthText(health: ToolSourceInfo['health'] | ToolInfo['health']): stri
   }
 }
 
-function formatTime(value: string | null): string {
+function formatTime(value: string | null | undefined): string {
   if (!value) {
     return '尚未检查'
   }
@@ -409,6 +411,8 @@ function formatTime(value: string | null): string {
 
 function sourceKindLabel(kind: ToolSourceKind): string {
   switch (kind) {
+    case 'internal':
+      return '内部工具源'
     case 'plugin':
       return '插件工具源'
     case 'mcp':

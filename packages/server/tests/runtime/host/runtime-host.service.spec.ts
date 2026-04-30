@@ -7,6 +7,25 @@ import { AiProviderSettingsService } from '../../../src/ai-management/ai-provide
 import { createSingleUserProfile } from '../../../src/auth/single-user-auth';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
+import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
+import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
+import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
+import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
+import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
+import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
+import { ProjectWorktreeSearchOverlayService } from '../../../src/execution/project/project-worktree-search-overlay.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
+import { ReadToolService } from '../../../src/execution/read/read-tool.service';
+import { RuntimeCommandService } from '../../../src/execution/runtime/runtime-command.service';
+import { RuntimeCommandCaptureService } from '../../../src/execution/runtime/runtime-command-capture.service';
+import { RuntimeBackendRoutingService } from '../../../src/execution/runtime/runtime-backend-routing.service';
+import { RuntimeJustBashService } from '../../../src/execution/runtime/runtime-just-bash.service';
+import { RuntimeToolBackendService } from '../../../src/execution/runtime/runtime-tool-backend.service';
+import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
+import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
+import { RuntimeToolsSettingsService } from '../../../src/execution/runtime/runtime-tools-settings.service';
+import { WriteToolService } from '../../../src/execution/write/write-tool.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -20,24 +39,56 @@ import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/
 import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-host-knowledge.service';
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
+import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
+import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
+import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 
-const subagentTaskStorePaths: string[] = [];
+const subagentStorePaths: string[] = [];
+const subagentSessionStorePaths: string[] = [];
+const conversationStorePaths: string[] = [];
+const runtimeWorkspaceRoots: string[] = [];
 let fixtureConversationId = 'conversation-1';
 const fixtureConversationTitle = 'Conversation conversation-1';
 
 describe('RuntimeHostService', () => {
+  beforeEach(() => {
+    const conversationStorePath = path.join(os.tmpdir(), `gc-server-host-conversation-${Date.now()}-${Math.random()}.json`);
+    process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationStorePath;
+    conversationStorePaths.push(conversationStorePath);
+  });
+
   afterEach(() => {
-    while (subagentTaskStorePaths.length > 0) {
-      const nextPath = subagentTaskStorePaths.pop();
+    while (subagentStorePaths.length > 0) {
+      const nextPath = subagentStorePaths.pop();
       if (nextPath && fs.existsSync(nextPath)) {
         fs.unlinkSync(nextPath);
       }
     }
-    delete process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH;
+    while (subagentSessionStorePaths.length > 0) {
+      const nextPath = subagentSessionStorePaths.pop();
+      if (nextPath && fs.existsSync(nextPath)) {
+        fs.unlinkSync(nextPath);
+      }
+    }
+    while (conversationStorePaths.length > 0) {
+      const nextPath = conversationStorePaths.pop();
+      if (nextPath && fs.existsSync(nextPath)) {
+        fs.unlinkSync(nextPath);
+      }
+    }
+    while (runtimeWorkspaceRoots.length > 0) {
+      const nextPath = runtimeWorkspaceRoots.pop();
+      if (nextPath && fs.existsSync(nextPath)) {
+        fs.rmSync(nextPath, { force: true, recursive: true });
+      }
+    }
+    delete process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
+    delete process.env.GARLIC_CLAW_SUBAGENTS_PATH;
+    delete process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH;
+    delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
   });
 
   it('rejects unmigrated host methods', async () => {
@@ -47,7 +98,7 @@ describe('RuntimeHostService', () => {
       context: hookContext(),
       method: 'plugin.unknown' as never,
       params: {},
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
     })).rejects.toThrow('Host API plugin.unknown is not implemented in the current server runtime');
   });
 
@@ -60,6 +111,27 @@ describe('RuntimeHostService', () => {
     );
     const runtimeGatewayConnectionLifecycleService = new RuntimeGatewayConnectionLifecycleService(
       pluginBootstrapService,
+    );
+    const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+    const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+      runtimeSessionEnvironmentService,
+    );
+    const runtimeCommandService = new RuntimeCommandService(
+      [new RuntimeJustBashService(runtimeSessionEnvironmentService)],
+      new RuntimeCommandCaptureService(runtimeSessionEnvironmentService),
+    );
+    const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService([
+      runtimeHostFilesystemBackendService,
+    ]);
+    const _runtimeToolBackendService = new RuntimeToolBackendService(
+      new RuntimeBackendRoutingService(),
+      runtimeCommandService,
+      runtimeFilesystemBackendService,
+    );
+    const _runtimeToolPermissionService = new RuntimeToolPermissionService();
+    const _projectWorktreeSearchOverlayService = new ProjectWorktreeSearchOverlayService(
+      runtimeSessionEnvironmentService,
+      new ProjectWorktreeRootService(),
     );
     const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
       builtinPluginRegistryService,
@@ -78,8 +150,9 @@ describe('RuntimeHostService', () => {
       runtimeHostPluginDispatchService,
       new RuntimeHostPluginRuntimeService(),
       {} as never,
+      {} as never,
       new RuntimeHostUserContextService(),
-      new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+      new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
     );
 
     (builtinPluginRegistryService as unknown as {
@@ -147,7 +220,7 @@ describe('RuntimeHostService', () => {
     });
 
     await expect(callMemory(service, 'memory.search', { query: 'coffee' }, hookContext({ conversationId: undefined })))
-      .rejects.toThrow('Plugin builtin.memory-context is missing permission memory:read');
+      .rejects.toThrow('Plugin builtin.memory is missing permission memory:read');
     await expect(callMemory(service, 'config.get', {}, providerContext)).resolves.toEqual({
       defaultLimit: 5,
     });
@@ -184,8 +257,8 @@ describe('RuntimeHostService', () => {
     await expect(callMemory(service, 'plugin.self.get', {}, pluginContext())).resolves.toMatchObject({
       connected: true,
       defaultEnabled: true,
-      id: 'builtin.memory-context',
-      name: 'Memory Context',
+      id: 'builtin.memory',
+      name: 'Memory',
       runtimeKind: 'local',
       version: '1.0.0',
     });
@@ -260,7 +333,7 @@ describe('RuntimeHostService', () => {
       metadata: {
         flow: 'memory',
       },
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       timeoutMs: 60_000,
     });
     await expect(memoryHookCall(service, 'conversation.session.keep', {
@@ -268,12 +341,12 @@ describe('RuntimeHostService', () => {
       timeoutMs: 30_000,
     })).resolves.toMatchObject({
       conversationId: fixtureConversationId,
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       timeoutMs: 90_000,
     });
     await expect(memoryHookCall(service, 'conversation.session.get', {})).resolves.toMatchObject({
       conversationId: fixtureConversationId,
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       timeoutMs: 90_000,
     });
     await expect(memoryPluginCall(service, 'cron.register', {
@@ -286,7 +359,7 @@ describe('RuntimeHostService', () => {
     }, { userId: 'user-1' })).resolves.toMatchObject({
       cron: '10s',
       name: 'heartbeat',
-      pluginId: 'builtin.memory-context',
+      pluginId: 'builtin.memory',
       source: 'host',
     });
     await expect(memoryPluginCall(service, 'cron.list', {})).resolves.toEqual([
@@ -341,13 +414,13 @@ describe('RuntimeHostService', () => {
     });
   });
 
-  it('runs subagent requests and tracks background subagent tasks', async () => {
+  it('runs subagent requests and tracks inline and background subagents', async () => {
     jest.useFakeTimers();
     const { service } = createFixture({
       permissions: ['conversation:read', 'conversation:write', 'subagent:run'],
     });
 
-    await expect(memoryPluginCall(service, 'subagent.run', {
+    const inlineRun = await memoryPluginCall(service, 'subagent.run', {
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -356,7 +429,8 @@ describe('RuntimeHostService', () => {
       ],
       modelId: 'gpt-5.2',
       providerId: 'openai',
-    }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toEqual({
+    }, { userId: 'user-1', conversationId: fixtureConversationId });
+    expect(inlineRun).toEqual({
       finishReason: 'stop',
       message: {
         content: 'Generated: 请帮我总结当前对话',
@@ -364,7 +438,9 @@ describe('RuntimeHostService', () => {
       },
       modelId: 'gpt-5.2',
       providerId: 'openai',
-      text: 'Generated: 请帮我总结当前对话',
+      sessionId: expect.any(String),
+      sessionMessageCount: 2,
+      text: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
       toolCalls: [],
       toolResults: [],
       usage: {
@@ -374,10 +450,20 @@ describe('RuntimeHostService', () => {
         totalTokens: 25,
       },
     });
+    await expect(memoryPluginCall(service, 'subagent.list', {}, {
+      userId: 'user-1',
+      conversationId: fixtureConversationId,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        sessionId: (inlineRun as { sessionId: string }).sessionId,
+        status: 'completed',
+        visibility: 'inline',
+      }),
+    ]);
     await memoryPluginCall(service, 'conversation.title.set', {
       title: fixtureConversationTitle,
     }, { userId: 'user-1', conversationId: fixtureConversationId });
-    const started = await memoryPluginCall(service, 'subagent.task.start', {
+    const started = await memoryPluginCall(service, 'subagent.start', {
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -394,25 +480,31 @@ describe('RuntimeHostService', () => {
       },
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(started).toMatchObject({
-      id: 'subagent-task-1',
-      pluginDisplayName: 'Memory Context',
+      sessionId: expect.any(String),
+      pluginDisplayName: 'Memory',
       status: 'queued',
       writeBackStatus: 'pending',
     });
     await jest.runAllTimersAsync();
-    await expect(memoryPluginCall(service, 'subagent.task.list', {}, {
+    await expect(memoryPluginCall(service, 'subagent.list', {}, {
       userId: 'user-1',
       conversationId: fixtureConversationId,
     })).resolves.toEqual([
       expect.objectContaining({
-        id: 'subagent-task-1',
+        sessionId: (inlineRun as { sessionId: string }).sessionId,
         status: 'completed',
+        visibility: 'inline',
+      }),
+      expect.objectContaining({
+        sessionId: (started as { sessionId: string }).sessionId,
+        status: 'completed',
+        visibility: 'background',
       }),
     ]);
-    await expect(memoryPluginCall(service, 'subagent.task.get', {
-      taskId: 'subagent-task-1',
+    await expect(memoryPluginCall(service, 'subagent.get', {
+      sessionId: (started as { sessionId: string }).sessionId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
-      id: 'subagent-task-1',
+      sessionId: (started as { sessionId: string }).sessionId,
       result: {
         text: 'Generated: 请帮我总结当前对话',
       },
@@ -424,14 +516,14 @@ describe('RuntimeHostService', () => {
       conversationId: fixtureConversationId,
     })).resolves.toEqual([
       expect.objectContaining({
-        content: 'Generated: 请帮我总结当前对话',
+        content: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
         id: expect.any(String),
       }),
     ]);
     jest.useRealTimers();
   });
 
-  it('records subagent task failures and write-back failures without fabricating sent status', async () => {
+  it('records subagent failures and write-back failures without fabricating sent status', async () => {
     jest.useFakeTimers();
     const {
       runtimeHostConversationMessageService,
@@ -443,7 +535,7 @@ describe('RuntimeHostService', () => {
     runtimeHostConversationMessageService.sendMessage = jest.fn(() => {
       throw new Error('message.send failed');
     });
-    const started = await memoryPluginCall(service, 'subagent.task.start', {
+    const started = await memoryPluginCall(service, 'subagent.start', {
       messages: [
         {
           content: '请帮我总结当前对话',
@@ -464,8 +556,8 @@ describe('RuntimeHostService', () => {
       writeBackStatus: 'pending',
     });
     await jest.runAllTimersAsync();
-    await expect(memoryPluginCall(service, 'subagent.task.get', {
-      taskId: 'subagent-task-1',
+    await expect(memoryPluginCall(service, 'subagent.get', {
+      sessionId: (started as { sessionId: string }).sessionId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       status: 'completed',
       writeBackError: 'message.send failed',
@@ -475,7 +567,7 @@ describe('RuntimeHostService', () => {
     (runtimeHostSubagentRunnerService as any).executeSubagent = async () => {
       throw new Error('subagent failed');
     };
-    const failed = await memoryPluginCall(service, 'subagent.task.start', {
+    const failed = await memoryPluginCall(service, 'subagent.start', {
       messages: [
         {
           content: '再次总结',
@@ -486,12 +578,12 @@ describe('RuntimeHostService', () => {
       providerId: 'openai',
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(failed).toMatchObject({
-      id: 'subagent-task-2',
+      sessionId: expect.any(String),
       status: 'queued',
     });
     await jest.runAllTimersAsync();
-    await expect(memoryPluginCall(service, 'subagent.task.get', {
-      taskId: 'subagent-task-2',
+    await expect(memoryPluginCall(service, 'subagent.get', {
+      sessionId: (failed as { sessionId: string }).sessionId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       error: 'subagent failed',
       status: 'error',
@@ -530,7 +622,7 @@ describe('RuntimeHostService', () => {
           providerId: 'openai',
           transportMode: 'stream-collect',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
       }),
     ).resolves.toEqual({
       metadata: {
@@ -656,7 +748,7 @@ describe('RuntimeHostService', () => {
         params: {
           prompt: '请总结当前插件行为',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
       }),
     ).resolves.toEqual({
       metadata: {
@@ -686,7 +778,7 @@ describe('RuntimeHostService', () => {
       },
     });
 
-    pluginPersistenceService.updatePluginLlmPreference('builtin.memory-context', {
+    pluginPersistenceService.updatePluginLlmPreference('builtin.memory', {
       mode: 'override',
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
@@ -704,7 +796,7 @@ describe('RuntimeHostService', () => {
         params: {
           prompt: '请总结当前插件行为',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
       }),
     ).resolves.toEqual({
       metadata: {
@@ -822,12 +914,15 @@ describe('RuntimeHostService', () => {
         content: 'User likes pour-over coffee',
       }),
     ]);
-    await expect(memoryPluginCall(service, 'log.list', {})).resolves.toEqual([
-      expect.objectContaining({
-        message: 'memory saved',
-        type: 'plugin:memory',
-      }),
-    ]);
+    await expect(memoryPluginCall(service, 'log.list', {})).resolves.toEqual({
+      items: [
+        expect.objectContaining({
+          message: 'memory saved',
+          type: 'plugin:memory',
+        }),
+      ],
+      nextCursor: null,
+    });
   });
 
   it('exposes conversation history read, preview and replace through the host facade', async () => {
@@ -940,8 +1035,11 @@ function createFixture(input?: {
   permissions?: string[];
 }) {
   const subagentStorePath = path.join(os.tmpdir(), `gc-server-host-subagent-${Date.now()}-${Math.random()}.json`);
-  process.env.GARLIC_CLAW_SUBAGENT_TASKS_PATH = subagentStorePath;
-  subagentTaskStorePaths.push(subagentStorePath);
+  const subagentSessionPath = path.join(os.tmpdir(), `gc-server-host-subagent-session-${Date.now()}-${Math.random()}.json`);
+  process.env.GARLIC_CLAW_SUBAGENTS_PATH = subagentStorePath;
+  process.env.GARLIC_CLAW_SUBAGENT_SESSIONS_PATH = subagentSessionPath;
+  subagentStorePaths.push(subagentStorePath);
+  subagentSessionStorePaths.push(subagentSessionPath);
   const pluginPersistenceService = new PluginPersistenceService();
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),
@@ -956,7 +1054,6 @@ function createFixture(input?: {
     apiKey: 'test-openai-key',
     defaultModel: 'gpt-5.4',
     driver: 'openai',
-    mode: 'protocol',
     models: ['gpt-5.4'],
     name: 'OpenAI',
   });
@@ -1021,7 +1118,9 @@ function createFixture(input?: {
     {
       invokeHook: jest.fn(),
     } as never,
-    new RuntimeHostSubagentTaskStoreService(),
+    new RuntimeHostSubagentStoreService(),
+    new RuntimeHostSubagentSessionStoreService(),
+    new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
   );
   (runtimeHostSubagentRunnerService as any).executeSubagent = async ({ request }: any) => ({
     finishReason: 'stop',
@@ -1053,12 +1152,15 @@ function createFixture(input?: {
           throw new Error('RuntimeHostConversationMessageService is not available');
         },
       } as never,
+      {
+        executeRegisteredTool: jest.fn(),
+      } as never,
     ),
   );
   pluginBootstrapService.registerPlugin({
     fallback: {
-      id: 'builtin.memory-context',
-      name: 'Memory Context',
+      id: 'builtin.memory',
+      name: 'Memory',
       runtime: 'local',
     },
     manifest: {
@@ -1084,6 +1186,73 @@ function createFixture(input?: {
     runtimeHostLlmService,
     runtimeHostSubagentRunnerService,
     service: (() => {
+      const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-host-'));
+      process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
+      runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
+      const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+      const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
+        runtimeSessionEnvironmentService,
+      );
+      const runtimeBackendRoutingService = new RuntimeBackendRoutingService();
+      const runtimeCommandService = new RuntimeCommandService([
+        new RuntimeJustBashService(runtimeSessionEnvironmentService),
+      ], new RuntimeCommandCaptureService(runtimeSessionEnvironmentService));
+      const runtimeFilesystemBackendService = new RuntimeFilesystemBackendService(
+        [runtimeHostFilesystemBackendService],
+      );
+      const runtimeFileFreshnessService = {
+        assertCanWrite: jest.fn().mockResolvedValue(undefined),
+        rememberRead: jest.fn().mockResolvedValue(undefined),
+        withFileLock: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
+      } as never;
+      const runtimeToolBackendService = new RuntimeToolBackendService(
+        runtimeBackendRoutingService,
+        runtimeCommandService,
+        runtimeFilesystemBackendService,
+      );
+      const runtimeToolPermissionService = new RuntimeToolPermissionService(runtimeHostConversationRecordService);
+      const bashToolService = new BashToolService(
+        runtimeCommandService,
+        runtimeSessionEnvironmentService,
+        runtimeToolBackendService,
+      );
+      const readToolService = new ReadToolService(
+        runtimeSessionEnvironmentService,
+        runtimeFilesystemBackendService,
+        runtimeFileFreshnessService,
+      );
+      const globToolService = new GlobToolService(
+        runtimeSessionEnvironmentService,
+        runtimeFilesystemBackendService,
+      );
+      const grepToolService = new GrepToolService(
+        runtimeSessionEnvironmentService,
+        runtimeFilesystemBackendService,
+      );
+      const writeToolService = new WriteToolService(
+        runtimeSessionEnvironmentService,
+        runtimeFilesystemBackendService,
+        runtimeFileFreshnessService,
+      );
+      const editToolService = new EditToolService(
+        runtimeSessionEnvironmentService,
+        runtimeFilesystemBackendService,
+        runtimeFileFreshnessService,
+      );
+      const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
+        bashToolService,
+        editToolService,
+        globToolService,
+        grepToolService,
+        readToolService,
+        runtimeFileFreshnessService,
+        runtimeFilesystemBackendService,
+        runtimeSessionEnvironmentService,
+        runtimeToolBackendService,
+        runtimeToolPermissionService,
+        new RuntimeToolsSettingsService(),
+        writeToolService,
+      );
       const runtimeHostPluginDispatchService = { registerHostCaller: jest.fn() } as never;
       const service = new RuntimeHostService(
         pluginBootstrapService,
@@ -1095,9 +1264,10 @@ function createFixture(input?: {
         new RuntimeHostKnowledgeService(),
         runtimeHostPluginDispatchService,
         new RuntimeHostPluginRuntimeService(),
+        runtimeHostRuntimeToolService,
         runtimeHostSubagentRunnerService,
         new RuntimeHostUserContextService(),
-        new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+        new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
       );
       service.onModuleInit();
       return service;
@@ -1115,7 +1285,7 @@ function callMemory(
     context: context as never,
     method: method as never,
     params,
-    pluginId: 'builtin.memory-context',
+    pluginId: 'builtin.memory',
   });
 }
 

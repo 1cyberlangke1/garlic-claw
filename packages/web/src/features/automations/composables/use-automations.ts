@@ -27,6 +27,8 @@ interface AutomationFormState {
   capability: string
   message: string
   targetConversationId: string
+  targetConversationMode: 'cron_child' | 'existing'
+  maxHistoryConversations: number
 }
 
 /**
@@ -175,6 +177,8 @@ function createAutomationFormState(): AutomationFormState {
     capability: '',
     message: '',
     targetConversationId: '',
+    targetConversationMode: 'cron_child',
+    maxHistoryConversations: 10,
   }
 }
 
@@ -201,7 +205,11 @@ function hasValidAction(form: AutomationFormState): boolean {
     return Boolean(form.plugin && form.capability)
   }
 
-  return Boolean(form.message && form.targetConversationId)
+  return Boolean(
+    form.message
+    && form.targetConversationId
+    && (form.targetConversationMode !== 'cron_child' || Number.isInteger(form.maxHistoryConversations) && form.maxHistoryConversations > 0),
+  )
 }
 
 /**
@@ -224,6 +232,12 @@ function buildAction(form: AutomationFormState): ActionConfig {
     target: {
       type: 'conversation',
       id: form.targetConversationId,
+      ...(form.triggerType === 'cron' && form.targetConversationMode === 'cron_child'
+        ? {
+            conversationMode: 'cron_child' as const,
+            maxHistoryConversations: form.maxHistoryConversations,
+          }
+        : {}),
     },
   }
 }
@@ -274,6 +288,9 @@ function describeAction(action: ActionConfig, conversations: Conversation[]): st
   const conversation = conversations.find((item) => item.id === targetId)
   const targetLabel = conversation?.title ?? targetId ?? '未指定会话'
   const preview = truncate(action.message ?? '空消息', 20)
+  if (action.target?.conversationMode === 'cron_child') {
+    return `cron会话→${targetLabel} · 保留最近${action.target.maxHistoryConversations ?? 10}个 · ${preview}`
+  }
 
   return `消息→${targetLabel} · ${preview}`
 }

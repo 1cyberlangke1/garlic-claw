@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
@@ -48,6 +49,25 @@ const listModeOptions = [
   { label: '指定列表', value: 'selected' },
 ] as const
 
+const avatarInput = ref<HTMLInputElement | null>(null)
+const uploadingAvatar = ref(false)
+
+function triggerAvatarUpload() { avatarInput.value?.click() }
+
+async function handleAvatarUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !selectedPersona.value) return
+  uploadingAvatar.value = true
+  try {
+    const token = localStorage.getItem('accessToken')
+    const form = new FormData()
+    form.append('file', file)
+    await fetch(`/api/personas/${selectedPersona.value.id}/avatar`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form })
+    await refreshAll()
+  } finally { uploadingAvatar.value = false; input.value = '' }
+}
+
 function readPersonaAvatarLabel(name?: string | null) {
   const normalized = name?.trim()
   return normalized ? normalized.slice(0, 1) : '人'
@@ -95,7 +115,7 @@ function readPersonaAvatarAlt(name?: string | null) {
         </div>
         <h2 v-else>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
         <p v-if="!currentPersona">
-          当前没有会话级人设信息，页面会回退展示默认人设。
+          无会话级人设
         </p>
         <p class="hero-hint">
           {{ hasCurrentConversation
@@ -103,40 +123,13 @@ function readPersonaAvatarAlt(name?: string | null) {
             : '先在左侧选中一个对话，再把人设应用到该会话。' }}
         </p>
       </article>
-
-      <article class="hero-card">
-        <span class="hero-kicker">Selected Persona</span>
-        <div v-if="editorMode === 'edit' && selectedPersona" class="persona-identity">
-          <div class="persona-avatar persona-avatar-large" data-persona-avatar="selected-hero">
-            <img v-if="selectedPersona.avatar" :src="selectedPersona.avatar" :alt="readPersonaAvatarAlt(selectedPersona.name)" class="persona-avatar-image" />
-            <span v-else>{{ readPersonaAvatarLabel(selectedPersona.name) }}</span>
-          </div>
-          <div class="persona-identity-copy">
-            <h2>{{ selectedPersona.name }}</h2>
-            <p>
-              当前选中：
-              <strong>{{ selectedPersona.id }}</strong>
-              <span v-if="selectedPersona.isDefault" class="persona-badge">默认</span>
-            </p>
-          </div>
-        </div>
-        <h2 v-else>{{ editorMode === 'create' ? '创建新的人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
-        <p v-if="editorMode === 'edit' && selectedPersona">
-          当前选中：
-          <strong>{{ selectedPersona.id }}</strong>
-          <span v-if="selectedPersona.isDefault" class="persona-badge">默认</span>
-        </p>
-        <p v-else-if="editorMode === 'create'">
-          在左侧选中已有的人设，或者直接新建一个。
-        </p>
-        <p v-if="deleteResult" class="hero-hint">
-          已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
-          <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
-        </p>
-      </article>
     </section>
 
     <p v-if="error" class="page-error">{{ error }}</p>
+    <p v-if="deleteResult" class="page-hint">
+      已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
+      <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
+    </p>
 
     <div class="persona-grid">
       <section class="persona-list-card">
@@ -181,10 +174,12 @@ function readPersonaAvatarAlt(name?: string | null) {
       <section class="persona-detail-card">
         <div class="section-header">
           <div class="persona-heading">
-            <div v-if="editorMode === 'edit' && selectedPersona" class="persona-avatar persona-avatar-medium" data-persona-avatar="selected-detail">
+            <div v-if="editorMode === 'edit' && selectedPersona" class="persona-avatar persona-avatar-medium" data-persona-avatar="selected-detail" style="cursor:pointer;position:relative" @click="triggerAvatarUpload">
               <img v-if="selectedPersona.avatar" :src="selectedPersona.avatar" :alt="readPersonaAvatarAlt(selectedPersona.name)" class="persona-avatar-image" />
               <span v-else>{{ readPersonaAvatarLabel(selectedPersona.name) }}</span>
+              <span class="avatar-upload-hint">点击上传</span>
             </div>
+            <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
             <div class="persona-heading-copy">
               <span class="section-kicker">{{ editorMode === 'create' ? '新建人设' : '编辑人设' }}</span>
               <h2>{{ editorMode === 'create' ? '新建人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
@@ -267,7 +262,7 @@ function readPersonaAvatarAlt(name?: string | null) {
               </button>
             </div>
             <div v-if="editorDraft.beginDialogs.length === 0" class="section-state">
-              当前没有预置对话。
+              无预置对话。
             </div>
             <div v-else class="dialog-list">
               <div
@@ -442,7 +437,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .hero-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .hero-card,
@@ -528,9 +523,28 @@ function readPersonaAvatarAlt(name?: string | null) {
   display: block;
 }
 
+.avatar-upload-hint {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,.6);
+  color: #fff;
+  font-size: 10px;
+  text-align: center;
+  padding: 2px 0;
+  border-radius: 0 0 6px 6px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.persona-avatar:hover .avatar-upload-hint { opacity: 1; }
+
 .page-error {
   margin: 0;
   color: var(--danger);
+}
+
+.page-hint {
+  margin: 0;
+  color: var(--text-muted);
 }
 
 .persona-grid {

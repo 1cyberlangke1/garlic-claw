@@ -50,7 +50,11 @@ function isPluginMessageHookInfo(value: unknown): value is PluginMessageHookInfo
   if (!isJsonObjectValue(value) || typeof value.role !== "string" || (value.content !== null && typeof value.content !== "string") || !isChatMessagePartArray(value.parts)) {
     return false;
   }
-  return (!("id" in value) || typeof value.id === "string") && (!("provider" in value) || value.provider === null || typeof value.provider === "string") && (!("model" in value) || value.model === null || typeof value.model === "string") && (!("status" in value) || typeof value.status === "undefined" || isChatMessageStatus(value.status));
+  return (!("id" in value) || typeof value.id === "string")
+    && (!("metadata" in value) || typeof value.metadata === "undefined" || isJsonObjectValue(value.metadata))
+    && (!("provider" in value) || value.provider === null || typeof value.provider === "string")
+    && (!("model" in value) || value.model === null || typeof value.model === "string")
+    && (!("status" in value) || typeof value.status === "undefined" || isChatMessageStatus(value.status));
 }
 
 function isPluginConversationSessionInfo(value: unknown): value is PluginConversationSessionInfo {

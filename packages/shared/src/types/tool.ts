@@ -1,7 +1,7 @@
 import type { PluginActionName, PluginParamSchema, PluginRuntimeKind } from './plugin';
 import type { EventLogSettings } from './plugin-records';
 
-export type ToolSourceKind = 'plugin' | 'mcp' | 'skill';
+export type ToolSourceKind = 'internal' | 'plugin' | 'mcp' | 'skill';
 
 export type ToolHealthStatus = 'healthy' | 'error' | 'unknown';
 
@@ -10,9 +10,9 @@ export interface ToolSourceInfo {
   id: string;
   label: string;
   enabled: boolean;
-  health: ToolHealthStatus;
-  lastError: string | null;
-  lastCheckedAt: string | null;
+  health?: ToolHealthStatus;
+  lastError?: string | null;
+  lastCheckedAt?: string | null;
   totalTools: number;
   enabledTools: number;
   pluginId?: string;
@@ -30,9 +30,9 @@ export interface ToolInfo {
   sourceKind: ToolSourceKind;
   sourceId: string;
   sourceLabel: string;
-  health: ToolHealthStatus;
-  lastError: string | null;
-  lastCheckedAt: string | null;
+  health?: ToolHealthStatus;
+  lastError?: string | null;
+  lastCheckedAt?: string | null;
   pluginId?: string;
   runtimeKind?: PluginRuntimeKind;
 }

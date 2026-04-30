@@ -2,9 +2,9 @@
   <div class="capability-layout">
     <section class="capability-section">
       <header class="section-header">
-        <p>能力开关</p>
+        <p>能力标记</p>
         <h4>推理与工具</h4>
-        <span>控制模型是否按当前能力参与思考和工具调用。</span>
+        <span>用于展示模型特征，并给工具、候选筛选等流程提供能力提示。</span>
       </header>
 
       <div class="toggle-grid">
@@ -15,8 +15,8 @@
           <input :checked="capabilities.reasoning" type="checkbox" @change="toggleReasoning" />
           <span class="card-kicker">Thinking</span>
           <strong>推理</strong>
-          <small>允许该模型进入思考/推理模式。</small>
-          <span class="state-pill">{{ capabilities.reasoning ? '已启用' : '已关闭' }}</span>
+          <small>标记该模型具备推理能力。</small>
+          <span class="state-pill">{{ capabilities.reasoning ? '已标记' : '未标记' }}</span>
         </label>
 
         <label
@@ -26,17 +26,17 @@
           <input :checked="capabilities.toolCall" type="checkbox" @change="toggleToolCall" />
           <span class="card-kicker">Tools</span>
           <strong>工具调用</strong>
-          <small>允许模型调用系统工具与自动化能力。</small>
-          <span class="state-pill">{{ capabilities.toolCall ? '已启用' : '已关闭' }}</span>
+          <small>标记该模型支持工具调用。</small>
+          <span class="state-pill">{{ capabilities.toolCall ? '已标记' : '未标记' }}</span>
         </label>
       </div>
     </section>
 
     <section class="capability-section">
       <header class="section-header">
-        <p>模态能力</p>
+        <p>模态标记</p>
         <h4>图片输入与输出</h4>
-        <span>用于聊天上传图片、视觉转述和图片输出能力编排。</span>
+        <span>用于聊天图片能力展示，以及视觉候选模型筛选。</span>
       </header>
 
       <div class="toggle-grid">
@@ -47,8 +47,8 @@
           <input :checked="capabilities.input.image" type="checkbox" @change="toggleImageInput" />
           <span class="card-kicker">Input</span>
           <strong>输入图片</strong>
-          <small>允许直接读取用户上传的图片内容。</small>
-          <span class="state-pill">{{ capabilities.input.image ? '支持' : '不支持' }}</span>
+          <small>标记该模型可直接读取用户上传的图片内容。</small>
+          <span class="state-pill">{{ capabilities.input.image ? '已标记' : '未标记' }}</span>
         </label>
 
         <label
@@ -58,8 +58,8 @@
           <input :checked="capabilities.output.image" type="checkbox" @change="toggleImageOutput" />
           <span class="card-kicker">Output</span>
           <strong>输出图片</strong>
-          <small>允许模型返回图像或图片生成结果。</small>
-          <span class="state-pill">{{ capabilities.output.image ? '支持' : '不支持' }}</span>
+          <small>标记该模型声明支持图片输出。</small>
+          <span class="state-pill">{{ capabilities.output.image ? '已标记' : '未标记' }}</span>
         </label>
       </div>
     </section>

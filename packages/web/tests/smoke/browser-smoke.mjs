@@ -16,10 +16,13 @@ const WEB_DIR = path.resolve(__dirname, '..', '..');
 const PROJECT_ROOT = path.resolve(WEB_DIR, '..', '..');
 const STATE_FILE = path.join(PROJECT_ROOT, 'other', 'dev-processes.json');
 
-const WEB_ORIGIN = 'http://127.0.0.1:23333';
+const DEFAULT_WEB_ORIGIN = 'http://127.0.0.1:23333';
 const API_ORIGIN = 'http://127.0.0.1:23330/api';
-const REQUEST_TIMEOUT_MS = 20_000;
-const STARTUP_TIMEOUT_MS = 120_000;
+const REQUEST_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_REQUEST_TIMEOUT_MS', 20_000);
+const STARTUP_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_STARTUP_TIMEOUT_MS', 120_000);
+const COMMAND_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_COMMAND_TIMEOUT_MS', 180_000);
+const DEV_SERVICE_WAIT_TIMEOUT_SECONDS = readBrowserSmokeTimeoutSeconds('GARLIC_CLAW_BROWSER_SMOKE_DEV_SERVICE_WAIT_TIMEOUT_SECONDS', 30);
+const DEV_RESTART_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_DEV_RESTART_TIMEOUT_MS', 90_000);
 const RETRYABLE_FETCH_ATTEMPTS = 8;
 const LOGIN_SECRET = process.env.GARLIC_CLAW_LOGIN_SECRET || 'smoke-login-secret';
 const SMOKE_PREFIX_ROOT = 'smoke-ui-';
@@ -31,6 +34,9 @@ const SHADOW_MODEL_ID = `${PREFIX}-shadow-model`;
 const AUTOMATION_NAME = `${PREFIX}-automation`;
 const AUTOMATION_MESSAGE = `${PREFIX} automation message`;
 const REMOTE_PLUGIN_ID = `${PREFIX}-remote-iot-light`;
+let suppressExpectedTeardownConsoleErrors = false;
+let browserSmokeCompleted = false;
+let webOrigin = process.env.GARLIC_CLAW_WEB_ORIGIN || DEFAULT_WEB_ORIGIN;
 
 async function main() {
   const fakeOpenAi = await startFakeOpenAiServer();
@@ -42,27 +48,48 @@ async function main() {
   const serviceSession = await ensureDevServices();
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    baseURL: WEB_ORIGIN,
+    baseURL: webOrigin,
   });
   const page = await context.newPage();
+  const handlePageError = (error) => {
+    console.error('[browser-smoke:pageerror]', error);
+  };
+  const handlePageConsole = (message) => {
+    if (
+      suppressExpectedTeardownConsoleErrors
+      && message.type() === 'error'
+      && message.text().includes('Failed to fetch')
+    ) {
+      return;
+    }
+    if (message.type() === 'error') {
+      console.error('[browser-smoke:console]', message.text());
+    }
+  };
+  page.on('pageerror', handlePageError);
+  page.on('console', handlePageConsole);
   let accessToken = '';
   let createdConversationId = null;
   let initialProviderIds = new Set();
   let remotePluginHandle = null;
 
   try {
-    await page.goto('/login', { waitUntil: 'networkidle' });
-    await page.locator('input[type="password"]').fill(LOGIN_SECRET);
-    await page.getByRole('button', { exact: true, name: '登录' }).click();
-    accessToken = await waitFor(async () => {
-      const token = await readAccessToken(page);
-      return token || null;
-    }, '等待登录 token');
-    assert.ok(accessToken, '登录后未拿到 accessToken');
+    accessToken = await loginBrowserSmokeAdmin();
+    await page.addInitScript((token) => {
+      try {
+        window.localStorage.setItem('accessToken', token);
+      } catch {}
+    }, accessToken);
     initialProviderIds = new Set((await requestJson('/ai/providers', {
       headers: createAuthHeaders(accessToken),
     }).catch(() => [])).map((provider) => provider.id));
     await page.goto('/', { waitUntil: 'networkidle' });
+    await page.evaluate((token) => {
+      try {
+        window.localStorage.setItem('accessToken', token);
+      } catch {}
+    }, accessToken);
+    await page.reload({ waitUntil: 'networkidle' });
     await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
     await cleanupSmokeArtifacts(accessToken, {
@@ -75,12 +102,34 @@ async function main() {
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
     createdConversationId = await runChatFlow(page, accessToken);
     await verifyMcpPage(page);
+    await verifyPersonasPage(page);
+    await verifySkillsPage(page);
+    await verifyCommandsPage(page);
+    await verifySubagentsPage(page);
     remotePluginHandle = await verifyPluginsPage(page, accessToken, remotePluginScriptPath);
+    await verifyRuntimeToolsSettingsPage(page);
+    await verifyToolsPage(page, accessToken);
     await runAutomationFlow(page, accessToken, createdConversationId);
     await verifyArtifactsPresent(accessToken, createdConversationId);
 
+    await page.goto('about:blank', { waitUntil: 'load' });
     console.log('browser UI smoke passed');
+    browserSmokeCompleted = true;
+    page.off('pageerror', handlePageError);
+    page.off('console', handlePageConsole);
   } finally {
+    suppressExpectedTeardownConsoleErrors = true;
+    await page.evaluate(() => {
+      window.__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ = true;
+    }).catch(() => undefined);
+    if (!browserSmokeCompleted) {
+      page.off('pageerror', handlePageError);
+      page.off('console', handlePageConsole);
+    }
+    await Promise.allSettled([
+      context.close(),
+      browser.close(),
+    ]);
     await Promise.allSettled([
       cleanupSmokeArtifacts(accessToken, {
         conversationId: createdConversationId,
@@ -89,36 +138,75 @@ async function main() {
         providerId: PROVIDER_ID,
       }),
       remotePluginHandle?.stop?.() ?? Promise.resolve(),
-      context.close(),
-      browser.close(),
       fakeOpenAi.close(),
       fsPromises.rm(tempDir, { recursive: true, force: true }),
-      serviceSession.stop(),
     ]);
+    await serviceSession.stop();
   }
 }
 
 async function ensureDevServices() {
-  if (await isManagedDevEnvironmentReady()) {
+  const [apiReady, webReady] = await Promise.all([
+    isPortListening(23330),
+    isPortListening(23333),
+  ]);
+  const webIsGarlic = webReady ? await isGarlicWebApp(webOrigin) : false;
+  console.log(`[browser-smoke] service probe apiReady=${apiReady} webReady=${webReady} webIsGarlic=${webIsGarlic}`);
+
+  if (apiReady && webReady && webIsGarlic) {
+    console.log('[browser-smoke] reuse existing backend and web dev services');
     return {
-      startedBySmoke: false,
+      mode: 'reuse',
       async stop() {},
     };
   }
 
+  if (webReady && !webIsGarlic) {
+    console.log('[browser-smoke] keep external web port, start isolated Garlic services');
+    const started = [];
+    if (!apiReady) {
+      started.push(await startBrowserSmokeBackendApp());
+    }
+    started.push(await startBrowserSmokeWebApp());
+    await waitForHttpReady(`${API_ORIGIN}/health`);
+    await waitForHttpReady(webOrigin);
+    return {
+      mode: 'isolated-web',
+      async stop() {
+        await Promise.all(started.map((entry) => entry.stop()));
+      },
+    };
+  }
+
+  if (webReady && !apiReady) {
+    console.log('[browser-smoke] reuse existing web, start backend only');
+    const backendApp = await startBrowserSmokeBackendApp();
+    await waitForHttpReady(`${API_ORIGIN}/health`);
+    return {
+      mode: 'backend-only',
+      async stop() {
+        await backendApp.stop();
+      },
+    };
+  }
+
+  console.log('[browser-smoke] restart managed dev services through launcher');
   await runCommand(resolvePythonCommand(), ['tools/start_launcher.py', 'restart'], {
     cwd: PROJECT_ROOT,
     env: {
       ...process.env,
+      GARLIC_CLAW_DEV_BACKEND_APP_PORT_WAIT_TIMEOUT_SECONDS: String(DEV_SERVICE_WAIT_TIMEOUT_SECONDS),
+      GARLIC_CLAW_DEV_BACKEND_COMPILER_WAIT_TIMEOUT_SECONDS: String(DEV_SERVICE_WAIT_TIMEOUT_SECONDS),
       GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
     },
     label: '启动开发环境',
+    timeoutMs: DEV_RESTART_TIMEOUT_MS,
   });
   await waitForHttpReady(`${API_ORIGIN}/health`);
-  await waitForHttpReady(WEB_ORIGIN);
+  await waitForHttpReady(webOrigin);
 
   return {
-    startedBySmoke: true,
+    mode: 'full-stack',
     async stop() {
       await runCommand(resolvePythonCommand(), ['tools/start_launcher.py', '--stop'], {
         cwd: PROJECT_ROOT,
@@ -150,6 +238,80 @@ async function isManagedDevEnvironmentReady() {
   }
 }
 
+async function isGarlicWebApp(origin) {
+  try {
+    const response = await fetch(origin, { signal: AbortSignal.timeout(5_000) });
+    const text = await response.text();
+    return text.includes('Garlic Claw - AI 秘书') && text.includes('<div id="app"></div>');
+  } catch {
+    return false;
+  }
+}
+
+async function startBrowserSmokeBackendApp() {
+  console.log('[browser-smoke] build backend for smoke');
+  await runCommand(process.execPath, [readNpmCliPath(), 'run', 'build:server'], {
+    cwd: PROJECT_ROOT,
+    env: {
+      ...process.env,
+      GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
+    },
+    label: '构建后端',
+    timeoutMs: COMMAND_TIMEOUT_MS,
+  });
+
+  console.log('[browser-smoke] start backend process');
+  const child = spawn(process.execPath, ['dist/src/main.js'], {
+    cwd: path.join(PROJECT_ROOT, 'packages', 'server'),
+    env: {
+      ...process.env,
+      GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.on('data', () => {});
+  child.stderr?.on('data', () => {});
+
+  return {
+    async stop() {
+      if (child.exitCode !== null) {
+        return;
+      }
+      child.kill();
+      await Promise.race([
+        new Promise((resolve) => child.once('exit', resolve)),
+        delay(5_000).then(() => undefined),
+      ]);
+    },
+  };
+}
+
+async function startBrowserSmokeWebApp() {
+  const port = await getFreePort();
+  webOrigin = `http://127.0.0.1:${port}`;
+  console.log(`[browser-smoke] start isolated web dev server on ${webOrigin}`);
+  const child = spawn(process.execPath, [readViteCliPath(), '--host', '127.0.0.1', '--port', String(port)], {
+    cwd: path.join(PROJECT_ROOT, 'packages', 'web'),
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.on('data', () => {});
+  child.stderr?.on('data', () => {});
+  await waitForHttpReady(webOrigin);
+  return {
+    async stop() {
+      if (child.exitCode !== null) {
+        return;
+      }
+      child.kill();
+      await Promise.race([
+        new Promise((resolve) => child.once('exit', resolve)),
+        delay(5_000).then(() => undefined),
+      ]);
+    },
+  };
+}
+
 async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.locator('a[href="/ai"]').click();
@@ -161,12 +323,10 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     await page.getByRole('button', { exact: true, name: '新增' }).click();
     const dialog = page.locator('[data-test="provider-dialog-overlay"]');
     await dialog.waitFor({ state: 'visible' });
-    await dialog.locator('select').nth(0).selectOption('protocol');
-    await dialog.locator('select').nth(1).selectOption('openai');
+    await dialog.locator('select').nth(0).selectOption('openai');
     await dialog.getByPlaceholder('openai 或 my-company').fill(PROVIDER_ID);
     await dialog.getByPlaceholder('显示名称').fill(PROVIDER_NAME);
     await dialog.getByPlaceholder('https://...').fill(fakeOpenAiUrl);
-    await dialog.getByPlaceholder('gpt-4o-mini').fill(MODEL_ID);
     await dialog.getByPlaceholder('sk-...').fill('smoke-openai-key');
     await dialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(MODEL_ID);
 
@@ -203,13 +363,36 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
   const currentContextLengthValue = Number(await contextLengthInput.inputValue());
   const targetContextLength = currentContextLengthValue === 65536 ? 65537 : 65536;
-  await contextLengthInput.evaluate((node, value) => {
-    node.value = value;
-    node.dispatchEvent(new Event('input', { bubbles: true }));
-  }, String(targetContextLength));
   const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
-  await waitFor(async () => (await saveButton.isDisabled()) ? null : true, '等待上下文长度保存按钮可用');
-  await saveButton.click();
+  let contextLengthSaveResponsePromise = null;
+  await waitFor(async () => {
+    await contextLengthInput.click({ clickCount: 3 });
+    await page.keyboard.press('Control+A').catch(() => {});
+    await page.keyboard.type(String(targetContextLength), { delay: 20 });
+    await contextLengthInput.press('Tab');
+    const enabled = await saveButton.evaluate((button) => {
+      if (!(button instanceof HTMLButtonElement) || button.disabled) {
+        return false;
+      }
+      return true;
+    });
+    if (!enabled) {
+      return null;
+    }
+    contextLengthSaveResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST'
+        && response.url().endsWith(`/api/ai/providers/${PROVIDER_ID}/models/${MODEL_ID}`),
+      { timeout: REQUEST_TIMEOUT_MS },
+    );
+    await saveButton.evaluate((button) => {
+      if (button instanceof HTMLButtonElement && !button.disabled) {
+        button.click();
+      }
+    });
+    return true;
+  }, '等待上下文长度保存按钮可用');
+  await contextLengthSaveResponsePromise;
 
   await waitFor(async () => {
     const models = await requestJson(`/ai/providers/${PROVIDER_ID}/models`, {
@@ -221,7 +404,6 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.locator('[data-test="provider-dialog-overlay"]');
   await editDialog.waitFor({ state: 'visible' });
-  await editDialog.getByPlaceholder('gpt-4o-mini').fill(SHADOW_MODEL_ID);
   await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(SHADOW_MODEL_ID);
   const removeOriginalModelResponsePromise = page.waitForResponse(
     (response) =>
@@ -244,7 +426,6 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
 
   await page.getByRole('button', { name: '编辑' }).click();
   await editDialog.waitFor({ state: 'visible' });
-  await editDialog.getByPlaceholder('gpt-4o-mini').fill(MODEL_ID);
   await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill([MODEL_ID, SHADOW_MODEL_ID].join('\n'));
   const readdOriginalModelResponsePromise = page.waitForResponse(
     (response) =>
@@ -267,6 +448,25 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
     const currentValue = await contextLengthInput.inputValue().catch(() => '');
     return currentValue === String(128 * 1024) ? true : null;
   }, '等待前端模型面板展示重新加入模型的默认上下文长度');
+
+  const setDefaultResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT'
+        && response.url().endsWith('/api/ai/default-selection'),
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+  await page.getByRole('button', { name: '设为当前默认' }).click();
+  const setDefaultResponse = await setDefaultResponsePromise;
+  assert.equal(setDefaultResponse.ok(), true, '设置当前默认模型请求失败');
+
+  await waitFor(async () => {
+    const selection = await requestJson('/ai/default-selection', {
+      headers: createAuthHeaders(accessToken),
+    }).catch(() => null);
+    return selection?.providerId === PROVIDER_ID && selection?.modelId === MODEL_ID
+      ? true
+      : null;
+  }, '等待当前默认模型持久化');
 }
 
 async function runChatFlow(page, accessToken) {
@@ -286,6 +486,10 @@ async function runChatFlow(page, accessToken) {
   await expectConversationSelected(page, conversation.id);
 
   const modelInput = page.locator('.quick-input');
+  await waitFor(async () => {
+    const value = await modelInput.inputValue().catch(() => '');
+    return value === `${PROVIDER_ID}/${MODEL_ID}` ? true : null;
+  }, '等待新对话继承当前默认模型');
   await modelInput.click();
   await modelInput.fill(`${PROVIDER_ID}/${MODEL_ID}`);
   await modelInput.press('Tab');
@@ -301,19 +505,38 @@ async function runChatFlow(page, accessToken) {
     const latestText = (await assistantMessages.last().textContent())?.trim() ?? '';
     return latestText.includes(`${PREFIX} chat message`) ? latestText : null;
   }, '等待前端展示 AI 回复');
+  await waitFor(async () => {
+    const detail = await getConversationDetail(accessToken, conversation.id);
+    const latestAssistantMessage = [...detail.messages]
+      .reverse()
+      .find((message) => message.role === 'assistant');
+    if (
+      !latestAssistantMessage ||
+      latestAssistantMessage.status === 'pending' ||
+      latestAssistantMessage.status === 'streaming'
+    ) {
+      return null;
+    }
+    return await page.locator('.send-button').count() > 0 ? true : null;
+  }, '等待聊天恢复空闲');
 
-  const compactRequest = page.waitForResponse((response) =>
-    response.request().method() === 'POST'
-    && response.url().includes('/api/plugin-routes/builtin.context-compaction/context-compaction/run'),
+  const compactRequest = page.waitForRequest((request) =>
+    request.method() === 'POST'
+    && request.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
   );
   await composer.fill('/compact');
   await page.locator('.send-button').click();
-  const compactResponse = await compactRequest;
-  assert.equal(compactResponse.ok(), true, '手动上下文压缩请求失败');
+  await compactRequest;
   await waitFor(async () => {
     const detail = await getConversationDetail(accessToken, conversation.id);
-    return detail.messages.some((message) => message.content === '/compact') ? null : true;
-  }, '等待 /compact 不写入会话历史');
+    const commandMessage = detail.messages.find((message) => message.content === '/compact');
+    const resultMessage = detail.messages.find((message) =>
+      message.role === 'display' && message.content !== '/compact',
+    );
+    return commandMessage?.role === 'display' && resultMessage?.role === 'display'
+      ? true
+      : null;
+  }, '等待 /compact 以 display 消息写入会话历史');
 
   return conversation.id;
 }
@@ -321,7 +544,8 @@ async function runChatFlow(page, accessToken) {
 async function verifyMcpPage(page) {
   await page.goto('/mcp', { waitUntil: 'networkidle' });
   await expectText(page, 'MCP 管理');
-  await expectText(page, 'MCP 工具治理');
+  await expectText(page, '工具启用/禁用统一在工具管理页');
+  await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'MCP 配置');
   const configPath = (await page.locator('.mcp-config-path').textContent())?.trim() ?? '';
   assert.ok(configPath.length > 0, 'MCP 配置区未展示配置路径');
@@ -329,6 +553,32 @@ async function verifyMcpPage(page) {
   await page.locator('[data-test="mcp-new-button"]').click();
   await page.locator('[data-test="mcp-name-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="mcp-command-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifyPersonasPage(page) {
+  await page.goto('/personas', { waitUntil: 'networkidle' });
+  await expectText(page, '人设管理');
+  await expectText(page, '人设索引');
+  await expectText(page, '可用人设');
+  await page.getByRole('button', { name: '新建人设' }).click();
+  await page.locator('input[placeholder="persona.writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('input[placeholder="Writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('textarea[placeholder="输入人设的系统提示词。"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifySkillsPage(page) {
+  await page.goto('/skills', { waitUntil: 'networkidle' });
+  await expectText(page, '技能目录');
+  await expectText(page, '已拒绝加载');
+  await page.getByPlaceholder('搜索技能名称、说明、标签').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifyCommandsPage(page) {
+  await page.goto('/commands', { waitUntil: 'networkidle' });
+  await expectText(page, '命令管理');
+  await expectText(page, '冲突触发词');
+  await expectText(page, '命令目录');
+  await page.getByPlaceholder('搜索插件、命令、别名或说明').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
 async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
@@ -355,7 +605,77 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="plugin-remote-access-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="plugin-remote-access-key"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+
+  const systemToggle = page.locator('[data-test="plugin-sidebar-toggle-system"]');
+  const systemToggleInput = systemToggle.locator('input');
+  if (await systemToggleInput.count() > 0 && !(await systemToggleInput.isChecked())) {
+    await systemToggle.click();
+    await page.waitForLoadState('networkidle');
+  }
+
+  await expectText(page, '工具管理入口');
+  await expectText(page, '打开工具管理');
   return remotePluginHandle
+}
+
+async function verifyRuntimeToolsSettingsPage(page) {
+  await page.goto('/ai', { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.getByRole('button', { exact: true, name: '执行工具' }).click();
+  await page.getByRole('heading', { name: '执行工具' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await expectText(page, 'bash 执行后端');
+  const collapsedToggle = page.locator('button.collapsed-toggle').first();
+  if (await collapsedToggle.count() > 0) {
+    await collapsedToggle.click();
+    await expectText(page, '收起高级配置');
+    await expectText(page, 'bash 输出');
+  }
+  await expectText(page, '工具启用状态');
+  await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function verifyToolsPage(page, accessToken) {
+  const overview = await requestJson('/tools/overview', {
+    headers: createAuthHeaders(accessToken),
+  });
+  const visibleSectionTitles = new Set(
+    (overview.sources ?? [])
+      .filter((source) => Number(source.totalTools ?? 0) > 0)
+      .map((source) => {
+        if (source.kind === 'internal' && source.id === 'runtime-tools') {
+          return '执行工具管理';
+        }
+        if (source.kind === 'internal' && source.id === 'subagent') {
+          return '子代理工具管理';
+        }
+        if (source.kind === 'mcp') {
+          return 'MCP 工具管理';
+        }
+        if (source.kind === 'plugin') {
+          return '插件工具管理';
+        }
+        return null;
+      })
+      .filter(Boolean),
+  );
+
+  await page.goto('/tools', { waitUntil: 'networkidle' });
+  await expectText(page, '工具管理');
+  await assertToolsSectionVisibility(page, '执行工具管理', visibleSectionTitles.has('执行工具管理'));
+  await assertToolsSectionVisibility(page, '子代理工具管理', visibleSectionTitles.has('子代理工具管理'));
+  await assertToolsSectionVisibility(page, 'MCP 工具管理', visibleSectionTitles.has('MCP 工具管理'));
+  await assertToolsSectionVisibility(page, '插件工具管理', visibleSectionTitles.has('插件工具管理'));
+
+  if (visibleSectionTitles.size === 0) {
+    await expectText(page, '当前还没有可管理的实际工具');
+  }
+}
+
+async function verifySubagentsPage(page) {
+  await page.goto('/subagents', { waitUntil: 'networkidle' });
+  await page.waitForURL(/\/$/, { timeout: REQUEST_TIMEOUT_MS });
+  await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await expectText(page, 'Garlic Claw');
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {
@@ -507,6 +827,17 @@ async function listAutomations(accessToken) {
   });
 }
 
+async function loginBrowserSmokeAdmin() {
+  const payload = await requestJson('/auth/login', {
+    body: {
+      secret: LOGIN_SECRET,
+    },
+    method: 'POST',
+  });
+  assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
+  return payload.accessToken;
+}
+
 async function requestJson(routePath, options = {}) {
   const requestInit = {
     body: options.body ? JSON.stringify(options.body) : undefined,
@@ -537,6 +868,17 @@ async function readAccessToken(page) {
 
 async function expectText(page, text) {
   await page.getByText(text, { exact: false }).first().waitFor({ timeout: REQUEST_TIMEOUT_MS });
+}
+
+async function assertToolsSectionVisibility(page, title, shouldExist) {
+  const matches = page.getByText(title, { exact: true });
+  if (shouldExist) {
+    await matches.first().waitFor({ timeout: REQUEST_TIMEOUT_MS });
+    return;
+  }
+
+  await delay(200);
+  assert.equal(await matches.count(), 0, `工具页不应展示 ${title}`);
 }
 
 async function expectConversationSelected(page, conversationId) {
@@ -579,6 +921,17 @@ function resolvePythonCommand() {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 
+function readNpmCliPath() {
+  if (typeof process.env.npm_execpath === 'string' && process.env.npm_execpath.trim()) {
+    return process.env.npm_execpath;
+  }
+  throw new Error('当前环境缺少 npm_execpath，无法从浏览器 smoke 补启动后端');
+}
+
+function readViteCliPath() {
+  return path.join(PROJECT_ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
+}
+
 async function fetchWithRetry(url, requestInit) {
   let lastError = null;
   for (let attempt = 0; attempt < RETRYABLE_FETCH_ATTEMPTS; attempt += 1) {
@@ -612,20 +965,72 @@ function parseMaybeJson(text) {
 
 async function runCommand(command, args, options) {
   await new Promise((resolve, reject) => {
+    let settled = false;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
       stdio: 'inherit',
     });
-    child.once('error', reject);
-    child.once('exit', (code) => {
-      if (code === 0) {
-        resolve();
+    const timeoutHandle = options.timeoutMs && options.timeoutMs > 0
+      ? setTimeout(() => {
+        void stopSmokeCommandProcess(child.pid);
+        finish(() => reject(new Error(`${options.label}超时: ${options.timeoutMs}ms`)));
+      }, options.timeoutMs)
+      : null;
+    const finish = (callback) => {
+      if (settled) {
         return;
       }
-      reject(new Error(`${options.label}失败: ${code ?? 'unknown'}`));
+      settled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      callback();
+    };
+    child.once('error', (error) => finish(() => reject(error)));
+    child.once('exit', (code) => {
+      if (code === 0) {
+        finish(resolve);
+        return;
+      }
+      finish(() => reject(new Error(`${options.label}失败: ${code ?? 'unknown'}`)));
     });
   });
+}
+
+async function stopSmokeCommandProcess(pid) {
+  if (!pid || pid <= 0) {
+    return;
+  }
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => {
+      const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      killer.once('error', () => resolve(undefined));
+      killer.once('exit', () => resolve(undefined));
+    });
+    return;
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {}
+}
+
+function readBrowserSmokeTimeoutMs(envName, fallback) {
+  const raw = process.env[envName]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function readBrowserSmokeTimeoutSeconds(envName, fallback) {
+  const raw = process.env[envName]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 async function isPortListening(port) {
@@ -637,6 +1042,27 @@ async function isPortListening(port) {
     });
     socket.once('error', () => {
       resolve(false);
+    });
+  });
+}
+
+async function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close(() => reject(new Error('无法分配临时端口')));
+        return;
+      }
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(address.port);
+      });
     });
   });
 }

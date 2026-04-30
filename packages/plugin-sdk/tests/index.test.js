@@ -75,9 +75,12 @@ const {
   resolveContextCompactionRuntimeConfig,
   resolveConversationTitleRuntimeConfig,
   CONTEXT_COMPACTION_CONFIG_SCHEMA,
+  CONTEXT_COMPACTION_DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE,
   CONTEXT_COMPACTION_DEFAULT_MODE,
   CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT,
   CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS,
+  CONTEXT_COMPACTION_DEFAULT_SLIDING_WINDOW_USAGE_PERCENT,
+  CONTEXT_COMPACTION_DEFAULT_STRATEGY,
   CONTEXT_COMPACTION_DEFAULT_THRESHOLD,
   readOptionalStringParam,
   readPluginHookPayload,
@@ -715,7 +718,7 @@ test('createPluginAuthorTransportExecutor runs author definitions with shared ro
   ]);
 });
 
-test('plugin-sdk exposes shared author-side text helpers for builtin plugins', () => {
+test('plugin-sdk exposes shared author-side text helpers for authoring flows', () => {
   assert.equal(
     readLatestUserTextFromMessages([
       {
@@ -905,13 +908,19 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.deepEqual(
     readContextCompactionConfig({
       mode: 'manual',
+      strategy: 'sliding',
       keepRecentMessages: 3,
+      frontendMessageWindowSize: 160,
       reservedTokens: 4096,
+      slidingWindowUsagePercent: 45,
     }),
     {
       mode: 'manual',
+      strategy: 'sliding',
       keepRecentMessages: 3,
+      frontendMessageWindowSize: 160,
       reservedTokens: 4096,
+      slidingWindowUsagePercent: 45,
     },
   );
   const contextCompactionRuntimeConfig = resolveContextCompactionRuntimeConfig({});
@@ -919,13 +928,36 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(contextCompactionRuntimeConfig.compressionThreshold, CONTEXT_COMPACTION_DEFAULT_THRESHOLD);
   assert.equal(contextCompactionRuntimeConfig.enabled, true);
   assert.equal(contextCompactionRuntimeConfig.keepRecentMessages, CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT);
+  assert.equal(contextCompactionRuntimeConfig.frontendMessageWindowSize, CONTEXT_COMPACTION_DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE);
   assert.equal(contextCompactionRuntimeConfig.mode, CONTEXT_COMPACTION_DEFAULT_MODE);
   assert.equal(contextCompactionRuntimeConfig.reservedTokens, CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS);
+  assert.equal(contextCompactionRuntimeConfig.slidingWindowUsagePercent, CONTEXT_COMPACTION_DEFAULT_SLIDING_WINDOW_USAGE_PERCENT);
   assert.equal(contextCompactionRuntimeConfig.showCoveredMarker, true);
+  assert.equal(contextCompactionRuntimeConfig.strategy, CONTEXT_COMPACTION_DEFAULT_STRATEGY);
   assert.equal(typeof contextCompactionRuntimeConfig.summaryPrompt, 'string');
   assert.ok(contextCompactionRuntimeConfig.summaryPrompt.length > 0);
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.mode.type, 'string');
   assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.keepRecentMessages.type, 'int');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.frontendMessageWindowSize.type, 'int');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.strategy.type, 'string');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.slidingWindowUsagePercent.type, 'int');
+  assert.equal(CONTEXT_COMPACTION_CONFIG_SCHEMA.items.strategy.type, 'string');
+  assert.equal(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.strategy.options[1].value,
+    'sliding',
+  );
+  assert.deepEqual(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.mode.condition,
+    { strategy: 'summary' },
+  );
+  assert.equal(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.slidingWindowUsagePercent.type,
+    'int',
+  );
+  assert.deepEqual(
+    CONTEXT_COMPACTION_CONFIG_SCHEMA.items.slidingWindowUsagePercent.condition,
+    { strategy: 'sliding' },
+  );
   assert.deepEqual(
     readCurrentProviderInfo({
       providerId: 'openai',
@@ -1012,6 +1044,10 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   assert.equal(
     sanitizeConversationTitle('「咖啡店会员系统设计」\n补充解释'),
     '咖啡店会员系统设计',
+  );
+  assert.equal(
+    sanitizeConversationTitle('本地 smoke 回复: 请为下面这段对话生成一个简洁中文标题。'),
+    '',
   );
 });
 
@@ -1578,11 +1614,28 @@ test('execution context exposes message target lookup and generic send host APIs
   });
 });
 
-test('execution context exposes background subagent task host APIs', async () => {
+test('execution context exposes background subagent host APIs', async () => {
   const client = createClient();
   const sent = installHostCallMock(client, {
-    'subagent.task.start': () => ({
-      id: 'subagent-task-1',
+    'subagent.run': () => ({
+      sessionId: 'subagent-session-inline-1',
+      sessionMessageCount: 2,
+      providerId: 'openai',
+      modelId: 'gpt-5.2',
+      text: '这是同步子代理总结',
+      message: {
+        role: 'assistant',
+        content: '这是同步子代理总结',
+      },
+      finishReason: 'stop',
+      toolCalls: [],
+      toolResults: [],
+    }),
+    'subagent.start': () => ({
+      description: '总结当前对话',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 1,
+      sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
       pluginId: 'plugin.sdk.test',
       pluginDisplayName: 'plugin.sdk.test',
       runtimeKind: 'remote',
@@ -1595,9 +1648,12 @@ test('execution context exposes background subagent task host APIs', async () =>
       startedAt: null,
       finishedAt: null,
     }),
-    'subagent.task.list': () => ([
+    'subagent.list': () => ([
       {
-        id: 'subagent-task-1',
+        description: '总结当前对话',
+        sessionId: 'subagent-session-1',
+        sessionMessageCount: 1,
+        sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
         pluginId: 'plugin.sdk.test',
         pluginDisplayName: 'plugin.sdk.test',
         runtimeKind: 'remote',
@@ -1611,14 +1667,17 @@ test('execution context exposes background subagent task host APIs', async () =>
         finishedAt: null,
       },
     ]),
-    'subagent.task.get': () => ({
-      id: 'subagent-task-1',
+    'subagent.get': () => ({
+      description: '总结当前对话',
+      sessionId: 'subagent-session-1',
+      sessionMessageCount: 2,
+      sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
       pluginId: 'plugin.sdk.test',
       pluginDisplayName: 'plugin.sdk.test',
       runtimeKind: 'remote',
       status: 'completed',
       requestPreview: '请帮我总结当前对话',
-      resultPreview: '这是后台任务总结',
+      resultPreview: '这是后台子代理总结',
       providerId: 'openai',
       modelId: 'gpt-5.2',
       writeBackStatus: 'sent',
@@ -1627,6 +1686,7 @@ test('execution context exposes background subagent task host APIs', async () =>
       startedAt: '2026-03-30T12:00:01.000Z',
       finishedAt: '2026-03-30T12:00:05.000Z',
       request: {
+        description: '总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
         messages: [
@@ -1643,10 +1703,10 @@ test('execution context exposes background subagent task host APIs', async () =>
       result: {
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        text: '这是后台任务总结',
+        text: '这是后台子代理总结',
         message: {
           role: 'assistant',
-          content: '这是后台任务总结',
+          content: '这是后台子代理总结',
         },
         finishReason: 'stop',
         toolCalls: [],
@@ -1660,7 +1720,19 @@ test('execution context exposes background subagent task host APIs', async () =>
     conversationId: 'conv-1',
   });
 
-  const startedTask = await executionContext.host.startSubagentTask({
+  const inlineResult = await executionContext.host.runSubagent({
+    description: '同步总结当前对话',
+    providerId: 'openai',
+    modelId: 'gpt-5.2',
+    messages: [
+      {
+        role: 'user',
+        content: '请同步总结当前对话',
+      },
+    ],
+  });
+  const startedSubagent = await executionContext.host.startSubagent({
+    description: '总结当前对话',
     providerId: 'openai',
     modelId: 'gpt-5.2',
     messages: [
@@ -1676,21 +1748,30 @@ test('execution context exposes background subagent task host APIs', async () =>
       },
     },
   });
-  const listedTasks = await executionContext.host.listSubagentTasks();
-  const loadedTask = await executionContext.host.getSubagentTask('subagent-task-1');
+  const listedSubagents = await executionContext.host.listSubagents();
+  const loadedSubagent = await executionContext.host.getSubagent('subagent-session-1');
 
-  assert.equal(startedTask.status, 'queued');
-  assert.equal(listedTasks.length, 1);
-  assert.equal(loadedTask.status, 'completed');
-  assert.equal(loadedTask.result.text, '这是后台任务总结');
+  assert.equal(inlineResult.sessionId, 'subagent-session-inline-1');
+  assert.equal(inlineResult.sessionMessageCount, 2);
+  assert.equal(startedSubagent.status, 'queued');
+  assert.equal(startedSubagent.description, '总结当前对话');
+  assert.equal(listedSubagents.length, 1);
+  assert.equal(loadedSubagent.status, 'completed');
+  assert.equal(loadedSubagent.result.text, '这是后台子代理总结');
+  assert.equal(sent[0].payload.params.description, '同步总结当前对话');
+  assert.equal(sent[1].payload.params.description, '总结当前对话');
   assert.deepEqual(
     sent.map((entry) => entry.payload.method),
     [
-      'subagent.task.start',
-      'subagent.task.list',
-      'subagent.task.get',
+      'subagent.run',
+      'subagent.start',
+      'subagent.list',
+      'subagent.get',
     ],
   );
+  assert.deepEqual(sent[3].payload.params, {
+    sessionId: 'subagent-session-1',
+  });
 });
 
 test('execution context exposes a conversation session controller helper', async () => {

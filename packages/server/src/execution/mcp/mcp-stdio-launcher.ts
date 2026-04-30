@@ -1,5 +1,5 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 let child: ChildProcessWithoutNullStreams | null = null;
@@ -11,108 +11,77 @@ function main(): void {
     process.exitCode = 1;
     return;
   }
-
-  let launchTarget: { command: string; args: string[] };
   try {
-    launchTarget = resolveLaunchTarget(command, args);
+    const target = resolveLaunchTarget(command, args);
+    child = spawn(target.command, target.args, {
+      env: process.env,
+      shell: false,
+      stdio: 'pipe',
+      windowsHide: true,
+    });
+    pipeProcessStreams();
+    bindShutdownSignals();
+    child.once('error', (error) => failMcpLaunch(error, 1));
+    child.once('exit', (code, signal) => process.exit(shuttingDown ? code ?? 0 : code ?? (signal ? 1 : 0)));
   } catch (error) {
-    reportLaunchFailure(error);
-    process.exitCode = 1;
-    return;
+    failMcpLaunch(error, 1);
   }
-
-  child = spawn(launchTarget.command, launchTarget.args, {
-    env: process.env,
-    shell: false,
-    stdio: 'pipe',
-    windowsHide: true,
-  });
-
-  bindParentInput();
-  bindChildOutput();
-  bindSignals();
-
-  child.once('error', (error) => {
-    reportLaunchFailure(error);
-    shutdown(1);
-  });
-  child.once('exit', (code, signal) => {
-    if (shuttingDown) {
-      process.exit(code ?? 0);
-      return;
-    }
-    process.exit(code ?? (signal ? 1 : 0));
-  });
 }
 
-function bindParentInput(): void {
+export function resolveLaunchTarget(command: string, args: string[]): { command: string; args: string[] } {
+  if (process.platform !== 'win32' || (command !== 'npm' && command !== 'npx')) {
+    return { command, args: [...args] };
+  }
+  return {
+    command: process.execPath,
+    args: [resolveBundledNpmCli(command), ...args],
+  };
+}
+
+function pipeProcessStreams(): void {
   if (!child) {
     return;
   }
-
   process.stdin.on('data', (chunk) => {
-    if (!child || shuttingDown) {
+    if (!child || shuttingDown || child.stdin.write(chunk)) {
       return;
     }
-    if (!child.stdin.write(chunk)) {
-      process.stdin.pause();
+    process.stdin.pause();
+  });
+  process.stdin.on('end', () => child?.stdin.end());
+  process.stdin.on('error', () => shutdown(0));
+  child.stdin.on('drain', () => process.stdin.resume());
+  forwardStream(child.stdout, process.stdout);
+  forwardStream(child.stderr, process.stderr);
+  process.stdout.on('error', handleStreamError);
+  process.stderr.on('error', handleStreamError);
+}
+
+function forwardStream(readable: NodeJS.ReadableStream, writable: NodeJS.WritableStream): void {
+  readable.on('data', (chunk) => {
+    if (shuttingDown || writable.write(chunk)) {
+      return;
+    }
+    if (typeof readable.pause === 'function') {
+      readable.pause();
     }
   });
-  child.stdin.on('drain', () => process.stdin.resume());
-  process.stdin.on('end', () => {
-    child?.stdin.end();
-  });
-  process.stdin.on('error', () => {
-    shutdown(0);
+  readable.on('error', () => shutdown(0));
+  writable.on('drain', () => {
+    if (typeof readable.resume === 'function') {
+      readable.resume();
+    }
   });
 }
 
-function bindChildOutput(): void {
-  if (!child) {
-    return;
-  }
-
-  forwardReadableToWritable(child.stdout, process.stdout);
-  forwardReadableToWritable(child.stderr, process.stderr);
-  process.stdout.on('error', handleWritableError);
-  process.stderr.on('error', handleWritableError);
-}
-
-function bindSignals(): void {
+function bindShutdownSignals(): void {
   process.on('SIGINT', () => shutdown(0, 'SIGINT'));
   process.on('SIGTERM', () => shutdown(0, 'SIGTERM'));
   process.on('disconnect', () => shutdown(0));
 }
 
-function forwardReadableToWritable(
-  readable: NodeJS.ReadableStream,
-  writable: NodeJS.WritableStream,
-): void {
-  readable.on('data', (chunk) => {
-    if (shuttingDown) {
-      return;
-    }
-    const accepted = writable.write(chunk);
-    if (!accepted && 'pause' in readable && typeof readable.pause === 'function') {
-      readable.pause();
-    }
-  });
-  writable.on('drain', () => {
-    if ('resume' in readable && typeof readable.resume === 'function') {
-      readable.resume();
-    }
-  });
-  readable.on('error', () => {
-    shutdown(0);
-  });
-}
-
-function handleWritableError(error: Error & { code?: string }): void {
-  if (error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED') {
-    shutdown(0);
-    return;
-  }
-  shutdown(1);
+function handleStreamError(error: Error & { code?: string }): void {
+  shutdown(error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED' ? 0 : 1);
 }
 
 function shutdown(exitCode: number, signal?: NodeJS.Signals): void {
@@ -120,59 +89,36 @@ function shutdown(exitCode: number, signal?: NodeJS.Signals): void {
     return;
   }
   shuttingDown = true;
-
-  process.stdout.off('error', handleWritableError);
-  process.stderr.off('error', handleWritableError);
-
+  process.stdout.off('error', handleStreamError);
+  process.stderr.off('error', handleStreamError);
   if (child && !child.killed) {
-    if (signal) {
-      child.kill(signal);
-    } else {
-      child.kill();
-    }
-    setTimeout(() => {
-      if (child && !child.killed) {
-        child.kill('SIGKILL');
-      }
-    }, 1000).unref();
+    child.kill(signal);
+    setTimeout(() => child && !child.killed && child.kill('SIGKILL'), 1000).unref();
   }
-
   process.exit(exitCode);
 }
 
-function reportLaunchFailure(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
+function failMcpLaunch(error: unknown, exitCode: number): void {
   try {
-    process.stderr.write(`MCP stdio launcher failed: ${message}\n`);
+    process.stderr.write(`MCP stdio launcher failed: ${error instanceof Error ? error.message : String(error)}\n`);
   } catch {
     // ignore stderr write failure during shutdown
   }
-}
-
-export function resolveLaunchTarget(command: string, args: string[]): { command: string; args: string[] } {
-  if (process.platform !== 'win32') {
-    return { command, args: [...args] };
-  }
-
-  if (command === 'npm' || command === 'npx') {
-    return {
-      command: process.execPath,
-      args: [resolveBundledNpmCli(command), ...args],
-    };
-  }
-
-  return { command, args: [...args] };
+  shutdown(exitCode);
 }
 
 function resolveBundledNpmCli(command: 'npm' | 'npx'): string {
   const cliFileName = command === 'npx' ? 'npx-cli.js' : 'npm-cli.js';
-  const nodeDir = path.dirname(process.execPath);
-  const candidate = path.join(nodeDir, 'node_modules', 'npm', 'bin', cliFileName);
-  if (fs.existsSync(candidate)) {
-    return candidate;
+  const candidates = [
+    path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', cliFileName),
+    path.join(path.dirname(path.dirname(process.execPath)), 'lib', 'node_modules', 'npm', 'bin', cliFileName),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
-
-  throw new Error(`无法解析 ${command} CLI 入口: ${candidate}`);
+  throw new Error(`无法解析 ${command} CLI 入口: ${candidates.join(', ')}`);
 }
 
 if (require.main === module) {

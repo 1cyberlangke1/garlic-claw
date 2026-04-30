@@ -1,5 +1,6 @@
 import type {
   ActionConfig,
+  AiDefaultProviderSelection,
   AiModelCapabilities,
   AiModelConfig,
   AiProviderCatalogItem,
@@ -11,7 +12,7 @@ import type {
   ChatMessageStatus,
   Conversation,
   ConversationDetail,
-  ConversationHostServices,
+  ConversationTodoItem,
   DiscoveredAiModel,
   Message,
   PluginInfo,
@@ -51,7 +52,6 @@ const modelCapabilities: AiModelCapabilities = {
 const providerSummary: AiProviderSummary = {
   id: 'openai',
   name: 'OpenAI',
-  mode: 'catalog',
   driver: 'openai',
   defaultModel: 'gpt-4o-mini',
   baseUrl: 'https://api.openai.com/v1',
@@ -62,7 +62,6 @@ const providerSummary: AiProviderSummary = {
 const providerConfig: AiProviderConfig = {
   id: 'openai',
   name: 'OpenAI',
-  mode: 'catalog',
   driver: 'openai',
   defaultModel: 'gpt-4o-mini',
   models: ['gpt-4o-mini'],
@@ -100,6 +99,12 @@ const connectionResult: AiProviderConnectionTestResult = {
   providerId: 'openai',
   modelId: 'gpt-4o-mini',
   text: 'ok',
+}
+
+const defaultSelection: AiDefaultProviderSelection = {
+  providerId: 'openai',
+  modelId: 'gpt-4o-mini',
+  source: 'default',
 }
 
 const pluginInfo: PluginInfo = {
@@ -194,12 +199,6 @@ const conversationDetail: ConversationDetail = {
   messages: [message],
 }
 
-const conversationHostServices: ConversationHostServices = {
-  sessionEnabled: true,
-  llmEnabled: true,
-  ttsEnabled: true,
-}
-
 const sendPayload: SendMessagePayload = {
   content: 'hello',
   parts: [chatPart],
@@ -227,6 +226,18 @@ const patchedSseEvent: SSEEvent = {
   type: 'message-patch',
   messageId: 'message-1',
   content: 'patched',
+}
+
+const todoItems: ConversationTodoItem[] = [{
+  content: '同步 todo 面板',
+  priority: 'high',
+  status: 'in_progress',
+}]
+
+const todoUpdatedEvent: SSEEvent = {
+  type: 'todo-updated',
+  conversationId: 'conversation-1',
+  todos: todoItems,
 }
 
 const trigger: TriggerConfig = {
@@ -261,16 +272,17 @@ void [
   visionConfig,
   discoveredModel,
   connectionResult,
+  defaultSelection,
   catalogItem,
   pluginInfo,
   pluginStorageEntry,
   conversationDetail,
-  conversationHostServices,
   sendPayload,
   updatePayload,
   retryPayload,
   sseEvent,
   patchedSseEvent,
+  todoUpdatedEvent,
   automation,
 ]
 

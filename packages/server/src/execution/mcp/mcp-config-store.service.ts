@@ -6,6 +6,7 @@ import type {
   McpServerDeleteResult,
 } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
 import { normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
 
 type StoredMcpServerFile = Partial<McpServerConfig> & {
@@ -14,9 +15,15 @@ type StoredMcpServerFile = Partial<McpServerConfig> & {
 
 @Injectable()
 export class McpConfigStoreService {
-  private readonly configRootPath = resolveMcpConfigRootPath();
-  private readonly reportedConfigPath = readReportedMcpConfigPath(this.configRootPath);
-  private servers = this.loadServers();
+  private readonly configRootPath: string;
+  private readonly reportedConfigPath: string;
+  private servers: McpServerConfig[];
+
+  constructor(private readonly projectWorktreeRootService: ProjectWorktreeRootService) {
+    this.configRootPath = this.resolveMcpConfigRootPath();
+    this.reportedConfigPath = readReportedMcpConfigPath(this.configRootPath);
+    this.servers = this.loadServers();
+  }
 
   getSnapshot(): McpConfigSnapshot {
     return {
@@ -74,6 +81,14 @@ export class McpConfigStoreService {
     nextServers.push(cloneServerConfig(server));
     return nextServers.sort((left, right) => left.name.localeCompare(right.name));
   }
+
+  private resolveMcpConfigRootPath(): string {
+    if (process.env.GARLIC_CLAW_MCP_CONFIG_PATH) {
+      return path.resolve(process.env.GARLIC_CLAW_MCP_CONFIG_PATH);
+    }
+
+    return path.join(this.projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'mcp', 'servers');
+  }
 }
 
 function readServerFile(filePath: string): McpServerConfig | null {
@@ -121,47 +136,14 @@ function cloneServerConfig(server: McpServerConfig): McpServerConfig {
   return serializeServer(server);
 }
 
-function resolveMcpConfigRootPath(): string {
-  if (process.env.GARLIC_CLAW_MCP_CONFIG_PATH) {
-    return path.resolve(process.env.GARLIC_CLAW_MCP_CONFIG_PATH);
-  }
-
-  return path.join(resolveProjectRoot(), 'mcp', 'servers');
-}
-
 function readReportedMcpConfigPath(configRootPath: string): string {
   if (process.env.GARLIC_CLAW_MCP_CONFIG_PATH) {
     return configRootPath;
   }
 
-  return 'mcp/servers';
+  return 'config/mcp/servers';
 }
 
 function resolveServerFilePath(configRootPath: string, serverName: string): string {
   return path.join(configRootPath, `${encodeURIComponent(serverName)}.json`);
-}
-
-function resolveProjectRoot(): string {
-  return findProjectRoot(process.cwd())
-    ?? findProjectRoot(__dirname)
-    ?? process.cwd();
-}
-
-function findProjectRoot(startPath: string): string | null {
-  let currentPath = path.resolve(startPath);
-
-  while (true) {
-    if (
-      fs.existsSync(path.join(currentPath, 'package.json'))
-      && fs.existsSync(path.join(currentPath, 'packages', 'server'))
-    ) {
-      return currentPath;
-    }
-
-    const parentPath = path.dirname(currentPath);
-    if (parentPath === currentPath) {
-      return null;
-    }
-    currentPath = parentPath;
-  }
 }

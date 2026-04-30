@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -85,16 +84,28 @@ export class RetryMessageDto {
   model?: string;
 }
 
-export class UpdateConversationHostServicesDto {
-  @IsBoolean()
-  @IsOptional()
-  sessionEnabled?: boolean;
+export class ConversationTodoItemDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  content!: string;
 
-  @IsBoolean()
-  @IsOptional()
-  llmEnabled?: boolean;
+  @IsIn(['pending', 'in_progress', 'completed', 'cancelled'])
+  status!: 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
-  @IsBoolean()
-  @IsOptional()
-  ttsEnabled?: boolean;
+  @IsIn(['high', 'medium', 'low'])
+  priority!: 'high' | 'medium' | 'low';
+}
+
+export class UpdateConversationTodoDto {
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => ConversationTodoItemDto)
+  todos!: ConversationTodoItemDto[];
+}
+
+export class ReplyRuntimePermissionDto {
+  @IsIn(['once', 'always', 'reject'])
+  decision!: 'once' | 'always' | 'reject';
 }

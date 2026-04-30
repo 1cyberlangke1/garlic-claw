@@ -84,7 +84,7 @@ export function usePluginCommandManagement() {
       commands.value = overview.commands
       conflicts.value = overview.conflicts
     } catch (caughtError) {
-      requestState.setError(caughtError, '加载命令治理数据失败')
+      requestState.setError(caughtError, '加载命令管理数据失败')
     } finally {
       loading.value = false
     }

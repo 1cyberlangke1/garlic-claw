@@ -2,8 +2,8 @@
   <section class="panel-card">
     <div class="panel-header">
       <div>
-        <h2>Vision Fallback</h2>
-        <p>文本模型收到图片时，使用这里配置的视觉模型转述。</p>
+        <h2>视觉回退</h2>
+        <p>文本模型收到图片输入时，自动使用下方配置的视觉模型转述图片内容。</p>
       </div>
       <label class="toggle-row">
         <input v-model="form.enabled" type="checkbox" />
@@ -55,7 +55,7 @@
             </div>
 
             <div v-if="filteredModels.length === 0" class="model-picker-empty">
-              当前 provider 下没有匹配模型。
+              无匹配模型。
             </div>
             <div v-else class="model-option-list">
               <button
@@ -148,7 +148,7 @@ const emit = defineEmits<{
 }>()
 
 const defaultPromptPlaceholder =
-  '请简洁但完整地描述这张图片中的主体、场景、文字和重要细节，供另一个文本模型继续理解上下文。'
+  '请简洁但完整地描述这张图片中的主体、场景、文字和重要细节，给另一个文本模型继续理解上下文。'
 
 const form = reactive({
   enabled: false,

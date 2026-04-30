@@ -1,0 +1,106 @@
+import { WriteToolService } from '../../../src/execution/write/write-tool.service';
+
+describe('WriteToolService', () => {
+  it('formats write metadata for the model', async () => {
+    const freshness = {
+      withWriteFreshnessGuard: jest.fn().mockImplementation(async (_sessionId, _filePath, run) => run()),
+    };
+    const service = new WriteToolService(
+      {
+        getDescriptor: () => ({ visibleRoot: '/' }),
+      } as never,
+      {
+        writeTextFile: jest.fn().mockResolvedValue({
+          created: true,
+        diff: {
+          additions: 3,
+          afterLineCount: 3,
+          beforeLineCount: 0,
+          deletions: 0,
+          patch: 'mock patch',
+        },
+        lineCount: 3,
+        path: '/docs/output.txt',
+        postWrite: {
+          diagnostics: [],
+          formatting: {
+            kind: 'json-pretty',
+            label: 'json-pretty',
+          },
+        },
+        size: 2048,
+      }),
+      } as never,
+      freshness as never,
+    );
+
+    await expect(service.execute({
+      backendKind: 'host-filesystem',
+      content: 'one\ntwo\nthree\n',
+      filePath: 'docs/output.txt',
+      sessionId: 'session-1',
+    })).resolves.toEqual({
+      created: true,
+      diff: {
+        additions: 3,
+        afterLineCount: 3,
+        beforeLineCount: 0,
+        deletions: 0,
+        patch: 'mock patch',
+      },
+      lineCount: 3,
+      output: [
+        '<write_result>',
+        'Path: /docs/output.txt',
+        'Status: created',
+        'Lines: 3',
+        'Size: 2.0 KB',
+        'Diff: +3 / -0',
+        'Line delta: 0 -> 3',
+        '<patch>',
+        'mock patch',
+        '</patch>',
+        'Formatting: json-pretty',
+        'Diagnostics: none',
+        'Next: read /docs/output.txt to confirm the formatted output before continuing edits or writes.',
+        '</write_result>',
+      ].join('\n'),
+      path: '/docs/output.txt',
+      postWrite: {
+        diagnostics: [],
+        formatting: {
+          kind: 'json-pretty',
+          label: 'json-pretty',
+        },
+      },
+      postWriteSummary: {
+        currentFileDiagnostics: 0,
+        formatting: {
+          kind: 'json-pretty',
+          label: 'json-pretty',
+        },
+        nextHint: 'Next: read /docs/output.txt to confirm the formatted output before continuing edits or writes.',
+        omittedRelatedFiles: 0,
+        relatedFileDiagnostics: 0,
+        relatedFiles: 0,
+        relatedFocusPaths: [],
+        severityCounts: {
+          error: 0,
+          hint: 0,
+          info: 0,
+          warning: 0,
+        },
+        totalDiagnostics: 0,
+        visibleRelatedPaths: [],
+        visibleRelatedFiles: 0,
+      },
+      size: 2048,
+    });
+    expect(freshness.withWriteFreshnessGuard).toHaveBeenCalledWith(
+      'session-1',
+      'docs/output.txt',
+      expect.any(Function),
+      'host-filesystem',
+    );
+  });
+});

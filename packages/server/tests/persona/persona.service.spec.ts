@@ -1,10 +1,10 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import YAML from 'yaml'
+import { ProjectWorktreeRootService } from '../../src/execution/project/project-worktree-root.service'
 import { DEFAULT_PERSONA_PROMPT } from '../../src/persona/default-persona'
 import { PersonaService } from '../../src/persona/persona.service'
-import { PersonaStoreService, resolvePersonaStorageRoot } from '../../src/persona/persona-store.service'
+import { PersonaStoreService } from '../../src/persona/persona-store.service'
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service'
 
 describe('PersonaService', () => {
@@ -21,7 +21,7 @@ describe('PersonaService', () => {
     process.env.GARLIC_CLAW_PERSONAS_PATH = storageRoot
     conversationRecordService = new RuntimeHostConversationRecordService()
     service = new PersonaService(
-      new PersonaStoreService(),
+      new PersonaStoreService(new ProjectWorktreeRootService()),
       conversationRecordService,
     )
   })
@@ -73,15 +73,9 @@ describe('PersonaService', () => {
       }),
     )
     expect(
-      fs.readFileSync(
-        path.join(storageRoot, 'builtin.default-assistant', 'SYSTEM.md'),
-        'utf-8',
-      ).trim(),
-    ).toBe(DEFAULT_PERSONA_PROMPT)
-    expect(
-      YAML.parse(
+      JSON.parse(
         fs.readFileSync(
-          path.join(storageRoot, 'builtin.default-assistant', 'meta.yaml'),
+          path.join(storageRoot, 'builtin.default-assistant', 'persona.json'),
           'utf-8',
         ),
       ),
@@ -91,9 +85,15 @@ describe('PersonaService', () => {
       name: 'Default Assistant',
     }))
     expect(
-      YAML.parse(
+      fs.readFileSync(
+        path.join(storageRoot, 'builtin.default-assistant', 'prompt.md'),
+        'utf-8',
+      ),
+    ).toBe(DEFAULT_PERSONA_PROMPT)
+    expect(
+      JSON.parse(
         fs.readFileSync(
-          path.join(storageRoot, 'builtin.default-assistant', 'meta.yaml'),
+          path.join(storageRoot, 'builtin.default-assistant', 'persona.json'),
           'utf-8',
         ),
       ),
@@ -137,15 +137,9 @@ describe('PersonaService', () => {
       toolNames: [],
     })
     expect(
-      fs.readFileSync(
-        path.join(storageRoot, 'persona.analyst', 'SYSTEM.md'),
-        'utf-8',
-      ).trim(),
-    ).toBe('你是一个审稿式分析助手。')
-    expect(
-      YAML.parse(
+      JSON.parse(
         fs.readFileSync(
-          path.join(storageRoot, 'persona.analyst', 'meta.yaml'),
+          path.join(storageRoot, 'persona.analyst', 'persona.json'),
           'utf-8',
         ),
       ),
@@ -156,9 +150,15 @@ describe('PersonaService', () => {
       name: 'Reviewer',
     }))
     expect(
-      YAML.parse(
+      fs.readFileSync(
+        path.join(storageRoot, 'persona.analyst', 'prompt.md'),
+        'utf-8',
+      ),
+    ).toBe('你是一个审稿式分析助手。')
+    expect(
+      JSON.parse(
         fs.readFileSync(
-          path.join(storageRoot, 'persona.analyst', 'meta.yaml'),
+          path.join(storageRoot, 'persona.analyst', 'persona.json'),
           'utf-8',
         ),
       ),
@@ -232,7 +232,7 @@ describe('PersonaService', () => {
     fs.writeFileSync(avatarPath, 'fake-avatar', 'utf-8')
 
     const reloadedService = new PersonaService(
-      new PersonaStoreService(),
+      new PersonaStoreService(new ProjectWorktreeRootService()),
       conversationRecordService,
     )
 
@@ -244,7 +244,7 @@ describe('PersonaService', () => {
     )
   })
 
-  it('resolves the default persona directory to the repository root persona folder', () => {
+  it('resolves the default persona directory to the repository root config/personas folder', () => {
     const originalPersonaPath = process.env.GARLIC_CLAW_PERSONAS_PATH
     const originalJestWorkerId = process.env.JEST_WORKER_ID
 
@@ -252,9 +252,16 @@ describe('PersonaService', () => {
     delete process.env.JEST_WORKER_ID
 
     try {
-      expect(resolvePersonaStorageRoot()).toBe(
-        path.resolve(__dirname, '..', '..', '..', '..', 'persona'),
+      const store = new PersonaStoreService(new ProjectWorktreeRootService())
+      const expectedRoot = path.resolve(__dirname, '..', '..', '..', '..', 'config', 'personas')
+
+      expect(store.read('builtin.default-assistant')).toEqual(
+        expect.objectContaining({
+          id: 'builtin.default-assistant',
+        }),
       )
+      expect(fs.existsSync(path.join(expectedRoot, 'builtin.default-assistant', 'persona.json'))).toBe(true)
+      expect(fs.existsSync(path.join(expectedRoot, 'builtin.default-assistant', 'prompt.md'))).toBe(true)
     } finally {
       if (originalPersonaPath) {
         process.env.GARLIC_CLAW_PERSONAS_PATH = originalPersonaPath

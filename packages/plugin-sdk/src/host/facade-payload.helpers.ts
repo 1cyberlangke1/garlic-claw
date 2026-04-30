@@ -1,4 +1,4 @@
-import type { ActionConfig, JsonObject, PluginConversationHistoryPreviewParams, PluginConversationHistoryReplaceParams, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentRunParams, PluginSubagentTaskStartParams, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, JsonObject, PluginConversationHistoryPreviewParams, PluginConversationHistoryReplaceParams, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentRunParams, PluginSubagentStartParams, TriggerConfig } from "@garlic-claw/shared";
 
 import type { PluginGenerateTextParams, PluginScopedStateOptions } from "./facade";
 import { toHostJsonValue } from "./host-json-value.codec";
@@ -62,6 +62,10 @@ export function buildPluginGenerateParams(input: PluginLlmGenerateParams): JsonO
 
 export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): JsonObject {
   return {
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.description ? { description: input.description } : {}),
+    ...(typeof input.maxConversationSubagents === "number" ? { maxConversationSubagents: input.maxConversationSubagents } : {}),
+    ...(input.subagentType ? { subagentType: input.subagentType } : {}),
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
     ...(input.system ? { system: input.system } : {}),
@@ -74,8 +78,12 @@ export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): Js
   };
 }
 
-export function buildPluginStartSubagentTaskParams(input: PluginSubagentTaskStartParams): JsonObject {
+export function buildPluginStartSubagentParams(input: PluginSubagentStartParams): JsonObject {
   return {
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.description ? { description: input.description } : {}),
+    ...(typeof input.maxConversationSubagents === "number" ? { maxConversationSubagents: input.maxConversationSubagents } : {}),
+    ...(input.subagentType ? { subagentType: input.subagentType } : {}),
     messages: toHostJsonValue(input.messages),
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
@@ -108,6 +116,8 @@ export function buildPluginConversationHistoryPreviewParams(
 ): JsonObject {
   return {
     ...(input.messages ? { messages: toHostJsonValue(input.messages) } : {}),
+    ...(input.modelId ? { modelId: input.modelId } : {}),
+    ...(input.providerId ? { providerId: input.providerId } : {}),
   };
 }
 

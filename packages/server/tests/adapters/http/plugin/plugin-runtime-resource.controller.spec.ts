@@ -26,10 +26,6 @@ describe('PluginController runtime resources', () => {
     listPluginStorage: jest.fn(),
     setPluginStorage: jest.fn(),
   };
-  const runtimeHostSubagentRunnerService = {
-    getTaskOrThrow: jest.fn(),
-    listOverview: jest.fn(),
-  };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
     listPlugins: jest.fn(),
@@ -47,7 +43,6 @@ describe('PluginController runtime resources', () => {
       runtimeHostConversationRecordService as never,
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
-      runtimeHostSubagentRunnerService as never,
       runtimePluginGovernanceService as never,
     );
   });
@@ -76,14 +71,14 @@ describe('PluginController runtime resources', () => {
     ]);
     runtimeHostConversationRecordService.finishPluginConversationSession.mockReturnValue(true);
 
-    expect(controller.listPluginStorage('builtin.memory-context', 'greet')).toEqual([
+    expect(controller.listPluginStorage('builtin.memory', 'greet')).toEqual([
       { key: 'greeting', value: 'hello' },
     ]);
-    expect(controller.setPluginStorage('builtin.memory-context', {
+    expect(controller.setPluginStorage('builtin.memory', {
       key: 'greeting',
       value: 'world',
     } as never)).toEqual({ key: 'greeting', value: 'world' });
-    expect(controller.deletePluginStorage('builtin.memory-context', 'greeting')).toBe(true);
+    expect(controller.deletePluginStorage('builtin.memory', 'greeting')).toBe(true);
     expect(controller.listPluginCrons('builtin.cron-heartbeat')).toEqual([
       { id: 'cron-job-1', name: 'heartbeat' },
     ]);
@@ -97,7 +92,7 @@ describe('PluginController runtime resources', () => {
   });
 
   it('rejects empty storage keys before touching runtime host storage', () => {
-    expect(() => controller.deletePluginStorage('builtin.memory-context', '   ')).toThrow(BadRequestException);
+    expect(() => controller.deletePluginStorage('builtin.memory', '   ')).toThrow(BadRequestException);
     expect(runtimeHostPluginRuntimeService.deletePluginStorage).not.toHaveBeenCalled();
   });
 });

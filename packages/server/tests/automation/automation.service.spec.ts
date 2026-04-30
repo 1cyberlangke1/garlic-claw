@@ -4,25 +4,35 @@ import * as path from 'node:path';
 import { SINGLE_USER_ID } from '../../src/auth/single-user-auth';
 import { AutomationExecutionService } from '../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../src/execution/automation/automation.service';
+import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
+import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
 
 describe('AutomationService', () => {
   const envKey = 'GARLIC_CLAW_AUTOMATIONS_PATH';
+  const conversationEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   let service: AutomationService;
   let storagePath: string;
+  let conversationStoragePath: string;
 
   beforeEach(() => {
     jest.useFakeTimers();
     storagePath = path.join(os.tmpdir(), `automation.service.spec-${Date.now()}-${Math.random()}.json`);
+    conversationStoragePath = path.join(os.tmpdir(), `automation.service.conversations-${Date.now()}-${Math.random()}.json`);
     process.env[envKey] = storagePath;
+    process.env[conversationEnvKey] = conversationStoragePath;
     service = createService();
   });
 
   afterEach(() => {
     jest.useRealTimers();
     delete process.env[envKey];
+    delete process.env[conversationEnvKey];
     try {
       if (fs.existsSync(storagePath)) {
         fs.unlinkSync(storagePath);
+      }
+      if (fs.existsSync(conversationStoragePath)) {
+        fs.unlinkSync(conversationStoragePath);
       }
     } catch {
       // 忽略临时文件清理失败，避免影响测试语义。
@@ -73,6 +83,32 @@ describe('AutomationService', () => {
     expect(service.getLogs('user-2', 'automation-2')).toHaveLength(0);
   });
 
+  it('keeps event dispatch order aligned with creation order after double-digit ids appear', async () => {
+    for (let index = 1; index <= 10; index += 1) {
+      service.create('user-1', {
+        actions: [],
+        name: `事件自动化-${index}`,
+        trigger: { event: 'coffee.ready', type: 'event' },
+      });
+    }
+
+    await expect(service.emitEvent('user-1', 'coffee.ready')).resolves.toEqual({
+      event: 'coffee.ready',
+      matchedAutomationIds: [
+        'automation-1',
+        'automation-2',
+        'automation-3',
+        'automation-4',
+        'automation-5',
+        'automation-6',
+        'automation-7',
+        'automation-8',
+        'automation-9',
+        'automation-10',
+      ],
+    });
+  });
+
   it('routes device_command actions through runtime kernel execution', async () => {
     const runtimeHostPluginDispatchService = {
       executeTool: jest.fn().mockResolvedValue({ saved: true, id: 'memory-1' }),
@@ -85,12 +121,12 @@ describe('AutomationService', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           params: { content: '自动化保存的记忆' },
         },
       ],
-      name: '记忆工具自动化',
+      name: '记忆自动化',
       trigger: { type: 'manual' },
     });
 
@@ -99,14 +135,14 @@ describe('AutomationService', () => {
       results: [
         {
           action: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           result: { saved: true, id: 'memory-1' },
         },
       ],
     });
     expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
-      pluginId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '自动化保存的记忆' },
       context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
@@ -125,7 +161,7 @@ describe('AutomationService', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           params: { content: '自动化保存失败' },
         },
@@ -180,7 +216,7 @@ describe('AutomationService', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
           params: { content: '失败后仍需 after-run' },
         },
@@ -238,7 +274,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create('user-1', {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '原始内容' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '原始内容' } }],
       name: '自动化短路',
       trigger: { type: 'manual' },
     });
@@ -276,7 +312,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create('user-1', {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '原始结果' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '原始结果' } }],
       name: 'after-run 改写',
       trigger: { type: 'manual' },
     });
@@ -299,7 +335,7 @@ describe('AutomationService', () => {
             {
               capability: 'save_memory',
               params: { content: '原始结果' },
-              plugin: 'builtin.memory-tools',
+              plugin: 'builtin.memory',
               type: 'device_command',
             },
           ],
@@ -312,7 +348,7 @@ describe('AutomationService', () => {
           {
             action: 'device_command',
             capability: 'save_memory',
-            plugin: 'builtin.memory-tools',
+            plugin: 'builtin.memory',
             result: { saved: true },
           },
         ],
@@ -373,9 +409,98 @@ describe('AutomationService', () => {
       ],
     });
     expect(runtimeHostConversationMessageService.sendMessage).toHaveBeenCalledWith(
-      { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
+      { source: 'automation', userId: 'user-1', automationId: 'automation-1', conversationId: 'conversation-1' },
       { content: '咖啡已经煮好了', target: { type: 'conversation', id: 'conversation-1' } },
     );
+  });
+
+  it('passes the first conversation target into later device_command action context', async () => {
+    const runtimeHostPluginDispatchService = {
+      executeTool: jest.fn().mockResolvedValue({ sessionId: 'subagent-session-1' }),
+      invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
+      listPlugins: jest.fn().mockReturnValue([]),
+    };
+    const toolRegistryService = {
+      executeRegisteredTool: jest.fn().mockResolvedValue({ sessionId: 'subagent-session-1' }),
+    };
+    const runtimeHostConversationMessageService = {
+      sendMessage: jest.fn().mockResolvedValue({
+        id: 'message-1',
+        target: {
+          type: 'conversation',
+          id: 'conversation-1',
+        },
+        role: 'assistant',
+        content: '自动化主会话',
+        parts: [{ type: 'text', text: '自动化主会话' }],
+        status: 'completed',
+        createdAt: '2026-03-29T15:00:00.000Z',
+        updatedAt: '2026-03-29T15:00:00.000Z',
+      }),
+    };
+    service = createService({
+      runtimeHostPluginDispatchService,
+      conversationMessageService: runtimeHostConversationMessageService,
+      toolRegistryService,
+    });
+
+    service.create('user-1', {
+      actions: [
+        {
+          type: 'ai_message',
+          message: '自动化主会话',
+          target: { type: 'conversation', id: 'conversation-1' },
+        },
+        {
+          type: 'device_command',
+          sourceKind: 'internal',
+          sourceId: 'subagent',
+          capability: 'subagent_background',
+          params: { prompt: '请继续处理', writeBack: false },
+        },
+      ],
+      name: '会话绑定 subagent 自动化',
+      trigger: { type: 'manual' },
+    });
+
+    await expect(service.run('user-1', 'automation-1')).resolves.toEqual({
+      status: 'success',
+      results: [
+        {
+          action: 'ai_message',
+          target: { type: 'conversation', id: 'conversation-1' },
+          result: {
+            id: 'message-1',
+            target: { type: 'conversation', id: 'conversation-1' },
+            role: 'assistant',
+            content: '自动化主会话',
+            parts: [{ type: 'text', text: '自动化主会话' }],
+            status: 'completed',
+            createdAt: '2026-03-29T15:00:00.000Z',
+            updatedAt: '2026-03-29T15:00:00.000Z',
+          },
+        },
+        {
+          action: 'device_command',
+          capability: 'subagent_background',
+          sourceKind: 'internal',
+          sourceId: 'subagent',
+          result: { sessionId: 'subagent-session-1' },
+        },
+      ],
+    });
+    expect(toolRegistryService.executeRegisteredTool).toHaveBeenNthCalledWith(1, {
+      sourceKind: 'internal',
+      sourceId: 'subagent',
+      toolName: 'subagent_background',
+      params: { prompt: '请继续处理', writeBack: false },
+      context: {
+        source: 'automation',
+        userId: 'user-1',
+        automationId: 'automation-1',
+        conversationId: 'conversation-1',
+      },
+    });
   });
 
   it('schedules enabled cron automations and runs them on interval', async () => {
@@ -387,7 +512,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create('user-1', {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '定时执行' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '定时执行' } }],
       name: '定时自动化',
       trigger: { type: 'cron', cron: '10s' },
     });
@@ -395,11 +520,85 @@ describe('AutomationService', () => {
     await jest.advanceTimersByTimeAsync(10000);
 
     expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
-      pluginId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '定时执行' },
       context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
     });
+  });
+
+  it('supports standard cron expressions for scheduled automations', async () => {
+    const runtimeHostPluginDispatchService = {
+      executeTool: jest.fn().mockResolvedValue({ saved: true }),
+      invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
+      listPlugins: jest.fn().mockReturnValue([]),
+    };
+    service = createService({ runtimeHostPluginDispatchService });
+
+    service.create('user-1', {
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: 'cron 表达式执行' } }],
+      name: 'cron 表达式自动化',
+      trigger: { type: 'cron', cron: '*/1 * * * * *' },
+    });
+
+    await jest.advanceTimersByTimeAsync(1000);
+
+    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
+      pluginId: 'builtin.memory',
+      toolName: 'save_memory',
+      params: { content: 'cron 表达式执行' },
+      context: { source: 'automation', userId: 'user-1', automationId: 'automation-1' },
+    });
+  });
+
+  it('creates dedicated cron child conversations for ai_message automations and trims old history', async () => {
+    const { conversationMessageService, conversationRecordService } = createConversationServices();
+    const parentConversation = conversationRecordService.createConversation({
+      title: '自动化父会话',
+      userId: 'user-1',
+    }) as { id: string };
+    service = createService({
+      conversationMessageService,
+      conversationRecordService,
+    });
+
+    service.create('user-1', {
+      actions: [
+        {
+          type: 'ai_message',
+          message: '定时整理日报',
+          target: {
+            type: 'conversation',
+            id: parentConversation.id,
+            conversationMode: 'cron_child',
+            maxHistoryConversations: 2,
+          },
+        },
+      ],
+      name: '日报自动化',
+      trigger: { type: 'cron', cron: '10s' },
+    });
+
+    await jest.advanceTimersByTimeAsync(10000);
+    await jest.advanceTimersByTimeAsync(10000);
+    await jest.advanceTimersByTimeAsync(10000);
+
+    const childConversations = conversationRecordService.listChildConversations(parentConversation.id) as Array<{ id: string }>;
+    expect(childConversations).toHaveLength(2);
+
+    const newestIds = childConversations.map((item) => item.id);
+    const parentDetail = conversationRecordService.getConversation(parentConversation.id, 'user-1') as { messages: unknown[] };
+    expect(parentDetail.messages).toHaveLength(0);
+
+    for (const childConversationId of newestIds) {
+      const childDetail = conversationRecordService.getConversation(childConversationId, 'user-1') as { messages: Array<{ content: string | null }> };
+      expect(childDetail.messages).toHaveLength(1);
+      expect(childDetail.messages[0]?.content).toBe('定时整理日报');
+    }
+
+    const automation = service.getById('user-1', 'automation-1') as { cronRunConversationIds?: string[]; logs?: unknown[] };
+    expect(automation.cronRunConversationIds).toBeUndefined();
+    expect(automation.logs).toHaveLength(3);
   });
 
   it('persists automations and keeps sequence after restart', async () => {
@@ -437,7 +636,7 @@ describe('AutomationService', () => {
     service = createService({ runtimeHostPluginDispatchService });
 
     service.create(SINGLE_USER_ID, {
-      actions: [{ type: 'device_command', plugin: 'builtin.memory-tools', capability: 'save_memory', params: { content: '恢复执行' } }],
+      actions: [{ type: 'device_command', plugin: 'builtin.memory', capability: 'save_memory', params: { content: '恢复执行' } }],
       name: '定时自动化',
       trigger: { type: 'cron', cron: '10s' },
     });
@@ -454,7 +653,7 @@ describe('AutomationService', () => {
     await jest.advanceTimersByTimeAsync(10000);
 
     expect(reloadedKernel.executeTool).toHaveBeenCalledWith({
-      pluginId: 'builtin.memory-tools',
+      pluginId: 'builtin.memory',
       toolName: 'save_memory',
       params: { content: '恢复执行' },
       context: { source: 'automation', userId: SINGLE_USER_ID, automationId: 'automation-1' },
@@ -493,26 +692,47 @@ describe('AutomationService', () => {
 });
 
 function createService(input?: {
-  conversationMessageService?: { sendMessage: (...args: unknown[]) => Promise<unknown> };
+  conversationMessageService?: Pick<RuntimeHostConversationMessageService, 'sendMessage'>;
+  conversationRecordService?: RuntimeHostConversationRecordService;
   runtimeHostPluginDispatchService?: {
     executeTool: (...args: unknown[]) => Promise<unknown>;
     invokeHook: (...args: unknown[]) => Promise<unknown>;
     listPlugins: () => unknown[];
   };
+  toolRegistryService?: {
+    executeRegisteredTool: (...args: unknown[]) => Promise<unknown>;
+  };
 }): AutomationService {
+  const runtimeHostPluginDispatchService = input?.runtimeHostPluginDispatchService ?? {
+    executeTool: jest.fn(),
+    invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
+    listPlugins: jest.fn().mockReturnValue([]),
+  };
   const automationExecutionService = new AutomationExecutionService(
-    (input?.runtimeHostPluginDispatchService ?? {
-      executeTool: jest.fn(),
-      invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
-      listPlugins: jest.fn().mockReturnValue([]),
-    }) as never,
+    runtimeHostPluginDispatchService as never,
     (input?.conversationMessageService ?? {
       sendMessage: async () => {
         throw new Error('RuntimeHostConversationMessageService is not available');
       },
     }) as never,
+    (input?.toolRegistryService ?? {
+      executeRegisteredTool: async ({ context, params, sourceId, toolName }: { context: unknown; params: unknown; sourceId: string; toolName: string }) => runtimeHostPluginDispatchService.executeTool({ context, params, pluginId: sourceId, toolName }),
+    }) as never,
   );
   return new AutomationService(
     automationExecutionService,
+    input?.conversationRecordService,
   );
+}
+
+function createConversationServices(): {
+  conversationMessageService: RuntimeHostConversationMessageService;
+  conversationRecordService: RuntimeHostConversationRecordService;
+} {
+  const conversationRecordService = new RuntimeHostConversationRecordService();
+  const conversationMessageService = new RuntimeHostConversationMessageService(conversationRecordService);
+  return {
+    conversationMessageService,
+    conversationRecordService,
+  };
 }

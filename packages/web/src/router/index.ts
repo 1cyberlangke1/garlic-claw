@@ -37,7 +37,8 @@ const router = createRouter({
         },
         {
           path: 'tools',
-          redirect: { name: 'mcp' },
+          name: 'tools',
+          component: () => import('@/features/tools/views/ToolsView.vue'),
         },
         {
           path: 'mcp',
@@ -56,8 +57,8 @@ const router = createRouter({
         },
         {
           path: 'subagents',
-          name: 'subagent-tasks',
-          component: () => import('@/features/subagents/views/SubagentTasksView.vue'),
+          name: 'subagents',
+          redirect: { name: 'chat' },
         },
         {
           path: 'automations',

@@ -41,6 +41,7 @@ describe('AdminConsoleLayout', () => {
     })
 
     expect(wrapper.text()).toContain('对话')
+    expect(wrapper.text()).toContain('工具')
     expect(wrapper.text()).toContain('插件')
     expect(wrapper.text()).toContain('MCP')
     expect(wrapper.text()).toContain('技能')

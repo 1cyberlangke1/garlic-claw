@@ -9,6 +9,7 @@ import { createPluginHostFacade, toHostJsonValue, type PluginConversationSession
 import { dedupeStrings } from "../utils/json-value";
 import { computeFilterSpecificity, getMessageReceivedText, matchesMessageCommand, matchesMessageFilter, mergeExclusiveMessageFilters, normalizePriority } from "../utils/message-filter";
 import { normalizeRoutePath, normalizeRouteResponse } from "../utils/route";
+import { uuidv7 } from "uuidv7";
 export type { PluginAuthorDefinition, PluginAuthorExecutionContext, PluginAuthorTransportExecutor, PluginAuthorTransportExecutorInput, PluginAuthorTransportGovernanceHandlers, PluginHookHandler, PluginRouteHandler, PluginToolHandler } from "../authoring";
 export type { PluginMessageContentResult } from "./plugin-client-message.helpers";
 export type PluginExecutionContext = import("../authoring").PluginAuthorExecutionContext<PluginHostFacade>;
@@ -632,7 +633,7 @@ export class PluginClient {
     if (this.ws?.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("插件尚未连接到服务器"));
     }
-    const requestId = crypto.randomUUID();
+    const requestId = uuidv7();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingHostCalls.delete(requestId);

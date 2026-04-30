@@ -1,4 +1,5 @@
 import type {
+  AiDefaultProviderSelection,
   AiHostModelRoutingConfig,
   AiProviderConnectionTestResult,
   AiModelConfig,
@@ -7,22 +8,30 @@ import type {
   AiProviderConfig,
   AiProviderSummary,
   DiscoveredAiModel,
+  PluginConfigSnapshot,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import {
   deleteAiModel,
   deleteAiProvider,
   discoverAiProviderModels,
+  getAiDefaultSelection,
   getAiProvider,
   getHostModelRoutingConfig,
+  getContextGovernanceConfig,
+  getRuntimeToolsConfig,
+  getSubagentConfig,
   getVisionFallbackConfig,
   listAiModels,
   listAiProviderCatalog,
   listAiProviders,
-  setAiProviderDefaultModel,
+  setAiDefaultSelection,
   testAiProviderConnection,
   updateAiModelCapabilities,
   updateHostModelRoutingConfig,
+  updateContextGovernanceConfig,
+  updateRuntimeToolsConfig,
+  updateSubagentConfig,
   updateVisionFallbackConfig,
   upsertAiModel,
   upsertAiProvider,
@@ -75,9 +84,13 @@ export interface ProviderConnectionResult {
  */
 export interface ProviderSettingsBaseData {
   catalog: AiProviderCatalogItem[]
+  defaultSelection: AiDefaultProviderSelection
   providers: AiProviderSummary[]
   visionConfig: VisionFallbackConfig
   hostModelRoutingConfig: AiHostModelRoutingConfig
+  runtimeToolsConfigSnapshot: PluginConfigSnapshot
+  subagentConfigSnapshot: PluginConfigSnapshot
+  contextGovernanceConfigSnapshot: PluginConfigSnapshot
 }
 
 /**
@@ -93,18 +106,26 @@ export interface ProviderSettingsSelectionData {
  * @returns 官方目录、provider 列表和视觉配置
  */
 export async function loadProviderSettingsBaseData(): Promise<ProviderSettingsBaseData> {
-  const [catalog, providers, visionConfig, hostModelRoutingConfig] = await Promise.all([
+  const [catalog, defaultSelection, providers, visionConfig, hostModelRoutingConfig, runtimeToolsConfigSnapshot, subagentConfigSnapshot, contextGovernanceConfigSnapshot] = await Promise.all([
     listAiProviderCatalog(),
+    getAiDefaultSelection(),
     listAiProviders(),
     getVisionFallbackConfig(),
     getHostModelRoutingConfig(),
+    getRuntimeToolsConfig(),
+    getSubagentConfig(),
+    getContextGovernanceConfig(),
   ])
 
   return {
     catalog,
+    defaultSelection,
     providers,
     visionConfig,
     hostModelRoutingConfig,
+    runtimeToolsConfigSnapshot,
+    subagentConfigSnapshot,
+    contextGovernanceConfigSnapshot,
   }
 }
 
@@ -134,7 +155,6 @@ export async function loadProviderSelectionData(
 export async function saveProviderConfig(provider: AiProviderConfig): Promise<void> {
   await upsertAiProvider(provider.id, {
     name: provider.name,
-    mode: provider.mode,
     driver: provider.driver,
     apiKey: provider.apiKey,
     baseUrl: provider.baseUrl,
@@ -211,14 +231,29 @@ export function deleteProviderModel(providerId: string, modelId: string) {
   return deleteAiModel(providerId, modelId)
 }
 
-/**
- * 保存默认模型。
- * @param providerId provider ID
- * @param modelId 默认模型 ID
- * @returns 更新后的 provider 配置
- */
-export function saveProviderDefaultModel(providerId: string, modelId: string) {
-  return setAiProviderDefaultModel(providerId, modelId)
+export function saveAiDefaultProviderSelection(
+  providerId: string,
+  modelId: string,
+) {
+  return setAiDefaultSelection({ providerId, modelId })
+}
+
+export function saveRuntimeToolsConfig(
+  values: PluginConfigSnapshot['values'],
+) {
+  return updateRuntimeToolsConfig(values)
+}
+
+export function saveSubagentConfig(
+  values: PluginConfigSnapshot['values'],
+) {
+  return updateSubagentConfig(values)
+}
+
+export function saveContextGovernanceConfig(
+  values: PluginConfigSnapshot['values'],
+) {
+  return updateContextGovernanceConfig(values)
 }
 
 /**

@@ -4,7 +4,7 @@
       <div class="dialog-header">
         <div>
           <h2>{{ title }}</h2>
-          <p>按接入方式填写供应商信息、默认模型和连接凭据。</p>
+          <p>填写服务商接入信息、模型与凭据。</p>
         </div>
         <button
           type="button"
@@ -17,15 +17,6 @@
       </div>
 
       <div class="dialog-body">
-        <label class="field">
-          <span>接入方式</span>
-          <select v-model="form.mode" @change="applyDriverDefaults">
-            <option v-for="option in providerModeOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-
         <label class="field">
           <span>驱动</span>
           <select v-model="form.driver" @change="applyDriverDefaults">
@@ -51,10 +42,6 @@
           <label class="field">
             <span>Base URL</span>
             <input v-model="form.baseUrl" placeholder="https://..." />
-          </label>
-          <label class="field">
-            <span>默认模型</span>
-            <input v-model="form.defaultModel" placeholder="gpt-4o-mini" />
           </label>
         </div>
 
@@ -97,13 +84,10 @@ import {
   applyProviderDriverDefaults,
   buildProviderConfigPayload,
   createProviderFormState,
-  getCatalogDriverOptions,
   getProviderDriverHint,
-  providerModeOptions,
   protocolDriverOptions,
   syncProviderFormState,
 } from './provider-editor-form'
-import { isCatalogProviderMode } from './provider-catalog'
 
 const props = defineProps<{
   visible: boolean
@@ -119,14 +103,10 @@ const emit = defineEmits<{
 
 const form = reactive(createProviderFormState())
 
-const driverOptions = computed(() =>
-  isCatalogProviderMode(form.mode)
-    ? getCatalogDriverOptions(props.catalog)
-    : protocolDriverOptions,
-)
+const driverOptions = computed(() => protocolDriverOptions)
 
 const driverHint = computed(() =>
-  getProviderDriverHint(form.mode, form.driver, props.catalog),
+  getProviderDriverHint(form.driver, form.id, props.catalog),
 )
 
 const canSave = computed(() =>

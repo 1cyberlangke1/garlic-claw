@@ -53,9 +53,12 @@
             :saving="savingRemoteAccess"
             @save="saveRemoteAccess"
           />
-          <PluginConfigForm
+          <SchemaConfigForm
             :snapshot="configSnapshot"
             :saving="savingConfig"
+            title="插件配置"
+            description="宿主按插件声明的配置元数据统一渲染，不再依赖扁平字段表单。"
+            empty-text="插件没有声明配置元数据。"
             @save="saveConfig"
           />
           <PluginLlmPreferencePanel
@@ -76,19 +79,18 @@
             :settings="selectedPlugin.eventLog"
             :saving="savingEventLog"
             title="插件日志设置"
-            description="当前插件自己的事件日志会写到 log/plugins/<pluginId>/ 目录。"
+            description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
             @save="saveEventLog"
           />
-          <ToolGovernancePanel
-            class="detail-span"
-            :source-id="selectedPlugin.name"
-            source-kind="plugin"
-            title="插件工具治理"
-            description="当前插件声明的宿主工具都在这里控制启用状态和治理动作。"
-            :show-source-list="false"
-            empty-title="当前插件没有工具源"
-            empty-description="这个插件目前没有暴露宿主工具，或尚未连上运行时。"
-          />
+          <article class="detail-span tool-management-entry">
+            <div class="tool-management-entry-copy">
+              <h3>工具管理入口</h3>
+              <p>插件工具启用/禁用已统一移到工具管理页。当前页继续处理配置、作用域、日志和远程接入。</p>
+            </div>
+            <a class="tool-management-entry-link" :href="selectedPluginToolManagementHref">
+              打开工具管理
+            </a>
+          </article>
           <PluginEventLog
             class="detail-span"
             :events="eventLogs"
@@ -132,7 +134,7 @@
       <section v-else class="plugin-empty">
         <span class="empty-kicker">等待插件接入</span>
         <h2>暂无插件</h2>
-        <p>启动本地插件或远程插件后，就可以在这里统一查看扩展面、健康快照和治理动作。</p>
+        <p>启动本地插件或远程插件后，就可以在这里统一查看扩展面和健康快照。</p>
       </section>
     </div>
   </div>
@@ -143,7 +145,7 @@ import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import PluginAttentionPanel from '@/features/plugins/components/PluginAttentionPanel.vue'
-import PluginConfigForm from '@/features/plugins/components/PluginConfigForm.vue'
+import SchemaConfigForm from '@/features/config/components/SchemaConfigForm.vue'
 import PluginConversationSessionList from '@/features/plugins/components/PluginConversationSessionList.vue'
 import PluginCronList from '@/features/plugins/components/PluginCronList.vue'
 import PluginDetailOverview from '@/features/plugins/components/PluginDetailOverview.vue'
@@ -163,7 +165,6 @@ import {
   pluginUsesHostLlm,
 } from '@/features/plugins/composables/plugin-management.helpers'
 import { usePluginManagement } from '@/features/plugins/composables/use-plugin-management'
-import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
 
 const route = useRoute()
 const preferredPluginName = computed(() => {
@@ -240,6 +241,14 @@ const selectedPluginActions = computed(() =>
 const selectedPluginUsesLlm = computed(() =>
   selectedPlugin.value ? pluginUsesHostLlm(selectedPlugin.value) : false,
 )
+const selectedPluginToolManagementHref = computed(() => {
+  const params = new URLSearchParams({ kind: 'plugin' })
+  if (selectedPlugin.value?.name) {
+    params.set('source', selectedPlugin.value.name)
+  }
+
+  return `/tools?${params.toString()}`
+})
 const selectedCronJobs = computed(() =>
   cronJobs.value.length > 0 ? cronJobs.value : selectedPlugin.value?.crons ?? [],
 )
@@ -296,9 +305,9 @@ const overviewCards = computed(() => {
       label: '在线插件',
       value: String(onlinePluginCount.value),
       note: total === 0
-        ? '当前还没有建立运行中的插件连接'
+        ? '还没有建立运行中的插件连接'
         : onlinePluginCount.value === total
-          ? '当前全部在线'
+          ? '全部在线'
           : `${total - onlinePluginCount.value} 个离线`,
       tone: 'neutral',
     },
@@ -307,11 +316,11 @@ const overviewCards = computed(() => {
       value: String(attentionPluginCount.value),
       note: attentionPluginCount.value > 0
         ? '存在异常、降级或满并发插件'
-        : '当前没有高优先级告警',
+        : '没有高优先级告警',
       tone: attentionPluginCount.value > 0 ? 'warning' : 'neutral',
     },
     {
-      label: '当前焦点',
+      label: '焦点',
       value: selectedPlugin.value
         ? selectedPlugin.value.displayName ?? selectedPlugin.value.name
         : '未选择插件',
@@ -345,11 +354,7 @@ const ACTION_LABELS: Record<PluginActionName, {
   },
 }
 
-/**
- * 把健康快照转成展示文案。
- * @param health 健康快照
- * @returns 展示文本
- */
+/** 健康状态文本。 */
 function healthText(health: PluginHealthSnapshot | null | undefined): string {
   switch (health?.status) {
     case 'healthy':
@@ -365,29 +370,17 @@ function healthText(health: PluginHealthSnapshot | null | undefined): string {
   }
 }
 
-/**
- * 根据运行形态生成更适合页面展示的文案。
- * @param plugin 当前插件
- * @returns 运行形态标签
- */
+/** 运行形态标签。 */
 function runtimeKindLabel(plugin: PluginInfo): string {
   return (plugin.runtimeKind ?? 'remote') === 'local' ? '本地插件' : '远程插件'
 }
 
-/**
- * 判断插件是否需要在总览里被视为“需关注”。
- * @param plugin 插件摘要
- * @returns 是否需要关注
- */
+/** 判断插件是否需要关注。 */
 function needsAttention(plugin: PluginInfo): boolean {
   return hasPluginIssue(plugin)
 }
 
-/**
- * 根据插件权限与 Hook 推导它具备的高阶扩展面。
- * @param plugin 当前插件
- * @returns 可展示的能力标签
- */
+/** 根据权限与 Hook 推导插件能力标签。 */
 function pluginHighlights(plugin: PluginInfo): string[] {
   const permissions = new Set(plugin.manifest.permissions)
   const hooks = new Set((plugin.manifest.hooks ?? []).map((hook) => hook.name))
@@ -506,11 +499,7 @@ function pluginHighlights(plugin: PluginInfo): string[] {
   return [...highlights]
 }
 
-/**
- * 把插件声明的治理动作映射成页面按钮配置。
- * @param plugin 当前插件
- * @returns 动作按钮列表
- */
+/** 映射插件声明的动作到按钮。 */
 function pluginActions(plugin: PluginInfo): Array<{
   name: PluginActionName
   label: string

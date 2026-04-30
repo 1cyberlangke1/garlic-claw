@@ -8,4 +8,6 @@ module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   coverageDirectory: 'coverage',
   collectCoverageFrom: ['src/**/*.service.ts', 'src/**/*.controller.ts', 'src/**/*.config.ts'],
+  globalSetup: '<rootDir>/tests/jest-global-setup.js',
+  globalTeardown: '<rootDir>/tests/jest-global-teardown.js',
 };

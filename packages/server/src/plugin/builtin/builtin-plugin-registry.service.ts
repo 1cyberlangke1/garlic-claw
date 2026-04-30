@@ -1,18 +1,27 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { BuiltinPluginDefinition } from './builtin-plugin-definition';
-import { BUILTIN_CONTEXT_COMPACTION_PLUGIN } from './hooks/builtin-context-compaction.plugin';
-import { BUILTIN_CONVERSATION_TITLE_PLUGIN } from './hooks/builtin-conversation-title.plugin';
-import { BUILTIN_MEMORY_CONTEXT_PLUGIN } from './hooks/builtin-memory-context.plugin';
-import { BUILTIN_SUBAGENT_DELEGATE_PLUGIN } from './tools/builtin-subagent-delegate.plugin';
+import { BUILTIN_AUTOMATION_PLUGIN } from './builtin-automation.plugin';
+import { BUILTIN_MEMORY_PLUGIN } from './builtin-memory.plugin';
+
+const RETIRED_BUILTIN_PLUGIN_IDS = [
+  'builtin.memory-context',
+  'builtin.memory-tools',
+  'builtin.runtime-tools',
+  'builtin.subagent-delegate',
+  'builtin.conversation-title',
+  'builtin.context-compaction',
+] as const;
 
 @Injectable()
 export class BuiltinPluginRegistryService {
   private readonly definitions: BuiltinPluginDefinition[] = [
-    BUILTIN_CONTEXT_COMPACTION_PLUGIN,
-    BUILTIN_CONVERSATION_TITLE_PLUGIN,
-    BUILTIN_MEMORY_CONTEXT_PLUGIN,
-    BUILTIN_SUBAGENT_DELEGATE_PLUGIN,
+    BUILTIN_AUTOMATION_PLUGIN,
+    BUILTIN_MEMORY_PLUGIN,
   ];
+
+  hasDefinition(pluginId: string): boolean {
+    return this.definitions.some((entry) => entry.manifest.id === pluginId);
+  }
 
   getDefinition(pluginId: string): BuiltinPluginDefinition {
     const definition = this.definitions.find((entry) => entry.manifest.id === pluginId);
@@ -24,6 +33,10 @@ export class BuiltinPluginRegistryService {
 
   listDefinitions(): BuiltinPluginDefinition[] {
     return this.definitions.map(cloneBuiltinDefinition);
+  }
+
+  listRetiredPluginIds(): string[] {
+    return [...RETIRED_BUILTIN_PLUGIN_IDS];
   }
 }
 

@@ -1,5 +1,5 @@
 import type { JsonValue, PluginManifest } from "@garlic-claw/shared";
-import builtinManifestData from "./builtin-manifest-data.json";
+import authoringConfigData from "./authoring-config-data.json";
 import {
   pickOptionalNumberFields,
   pickOptionalStringFields,
@@ -8,36 +8,45 @@ import {
 } from "./common-helpers";
 
 export type PluginContextCompactionMode = "auto" | "manual";
+export type PluginContextCompactionStrategy = "sliding" | "summary";
 
 export interface PluginContextCompactionConfig {
   enabled?: boolean;
   mode?: PluginContextCompactionMode;
+  strategy?: PluginContextCompactionStrategy;
   compressionThreshold?: number;
   keepRecentMessages?: number;
+  frontendMessageWindowSize?: number;
   reservedTokens?: number;
+  slidingWindowUsagePercent?: number;
   summaryPrompt?: string;
   showCoveredMarker?: boolean;
   allowAutoContinue?: boolean;
 }
 
 export const CONTEXT_COMPACTION_DEFAULT_MODE =
-  builtinManifestData.defaults.contextCompactionMode as PluginContextCompactionMode;
+  authoringConfigData.defaults.contextCompactionMode as PluginContextCompactionMode;
+export const CONTEXT_COMPACTION_DEFAULT_STRATEGY =
+  authoringConfigData.defaults
+    .contextCompactionStrategy as PluginContextCompactionStrategy;
 export const CONTEXT_COMPACTION_DEFAULT_THRESHOLD =
-  builtinManifestData.defaults.contextCompactionCompressionThreshold;
+  authoringConfigData.defaults.contextCompactionCompressionThreshold;
 export const CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT =
-  builtinManifestData.defaults.contextCompactionKeepRecentMessages;
+  authoringConfigData.defaults.contextCompactionKeepRecentMessages;
+export const CONTEXT_COMPACTION_DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE =
+  authoringConfigData.defaults.contextCompactionFrontendMessageWindowSize;
 export const CONTEXT_COMPACTION_DEFAULT_RESERVED_TOKENS =
-  builtinManifestData.defaults.contextCompactionReservedTokens;
+  authoringConfigData.defaults.contextCompactionReservedTokens;
+export const CONTEXT_COMPACTION_DEFAULT_SLIDING_WINDOW_USAGE_PERCENT =
+  authoringConfigData.defaults.contextCompactionSlidingWindowUsagePercent;
 export const CONTEXT_COMPACTION_DEFAULT_SUMMARY_PROMPT =
-  builtinManifestData.defaults.contextCompactionSummaryPrompt;
+  authoringConfigData.defaults.contextCompactionSummaryPrompt;
 export const CONTEXT_COMPACTION_DEFAULT_SHOW_COVERED_MARKER =
-  builtinManifestData.defaults.contextCompactionShowCoveredMarker;
+  authoringConfigData.defaults.contextCompactionShowCoveredMarker;
 export const CONTEXT_COMPACTION_DEFAULT_ALLOW_AUTO_CONTINUE =
-  builtinManifestData.defaults.contextCompactionAllowAutoContinue;
+  authoringConfigData.defaults.contextCompactionAllowAutoContinue;
 export const CONTEXT_COMPACTION_CONFIG_SCHEMA =
-  builtinManifestData.contextCompactionConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
-export const CONTEXT_COMPACTION_MANIFEST =
-  builtinManifestData.contextCompactionManifest as unknown as PluginManifest;
+  authoringConfigData.contextCompactionConfigSchema as unknown as NonNullable<PluginManifest["config"]>;
 
 export function readContextCompactionConfig(
   value: JsonValue,
@@ -47,13 +56,20 @@ export function readContextCompactionConfig(
     object?.mode === "auto" || object?.mode === "manual"
       ? object.mode
       : undefined;
+  const strategy =
+    object?.strategy === "summary" || object?.strategy === "sliding"
+      ? object.strategy
+      : undefined;
   return {
     ...(mode ? { mode } : {}),
+    ...(strategy ? { strategy } : {}),
     ...pickOptionalStringFields(object, ["summaryPrompt"] as const),
     ...pickOptionalNumberFields(object, [
       "compressionThreshold",
       "keepRecentMessages",
+      "frontendMessageWindowSize",
       "reservedTokens",
+      "slidingWindowUsagePercent",
     ] as const),
     ...(typeof object?.enabled === "boolean" ? { enabled: object.enabled } : {}),
     ...(typeof object?.showCoveredMarker === "boolean"
@@ -70,9 +86,12 @@ export function resolveContextCompactionRuntimeConfig(
 ): {
   enabled: boolean;
   mode: PluginContextCompactionMode;
+  strategy: PluginContextCompactionStrategy;
   compressionThreshold: number;
   keepRecentMessages: number;
+  frontendMessageWindowSize: number;
   reservedTokens: number;
+  slidingWindowUsagePercent: number;
   summaryPrompt: string;
   showCoveredMarker: boolean;
   allowAutoContinue: boolean;
@@ -96,6 +115,12 @@ export function resolveContextCompactionRuntimeConfig(
       1,
       64,
     ),
+    frontendMessageWindowSize: normalizeIntegerInRange(
+      config.frontendMessageWindowSize,
+      CONTEXT_COMPACTION_DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE,
+      20,
+      400,
+    ),
     mode: config.mode === "manual" ? "manual" : CONTEXT_COMPACTION_DEFAULT_MODE,
     reservedTokens: normalizeIntegerInRange(
       config.reservedTokens,
@@ -103,10 +128,18 @@ export function resolveContextCompactionRuntimeConfig(
       256,
       1_000_000,
     ),
+    slidingWindowUsagePercent: normalizeIntegerInRange(
+      config.slidingWindowUsagePercent,
+      CONTEXT_COMPACTION_DEFAULT_SLIDING_WINDOW_USAGE_PERCENT,
+      1,
+      100,
+    ),
     showCoveredMarker:
       typeof config.showCoveredMarker === "boolean"
         ? config.showCoveredMarker
         : CONTEXT_COMPACTION_DEFAULT_SHOW_COVERED_MARKER,
+    strategy:
+      config.strategy === "sliding" ? "sliding" : CONTEXT_COMPACTION_DEFAULT_STRATEGY,
     summaryPrompt:
       sanitizeOptionalText(config.summaryPrompt) ||
       CONTEXT_COMPACTION_DEFAULT_SUMMARY_PROMPT,

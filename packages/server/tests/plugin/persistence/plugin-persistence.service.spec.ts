@@ -476,5 +476,16 @@ describe('PluginPersistenceService', () => {
       items: [expect.objectContaining({ type: 'tool:success' })],
       nextCursor: null,
     });
+
+    const firstPage = service.listPluginEvents('builtin.ping', { limit: 1 });
+    expect(firstPage.items).toHaveLength(1);
+    expect(firstPage.nextCursor).toBe(firstPage.items[0]?.id ?? null);
+    expect(service.listPluginEvents('builtin.ping', {
+      cursor: firstPage.nextCursor ?? undefined,
+      limit: 1,
+    })).toEqual({
+      items: [expect.objectContaining({ type: 'tool:success' })],
+      nextCursor: null,
+    });
   });
 });

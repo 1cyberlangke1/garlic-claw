@@ -1,4 +1,5 @@
 import type { JsonObject } from './json';
+import type { ToolSourceKind } from './tool';
 
 /**
  * 自动化动作可引用的消息目标。
@@ -8,6 +9,10 @@ export interface AutomationActionTargetRef {
   type: 'conversation';
   /** 目标 ID。 */
   id: string;
+  /** 会话写入模式。 */
+  conversationMode?: 'existing' | 'cron_child';
+  /** `cron_child` 模式下最多保留多少历史会话。 */
+  maxHistoryConversations?: number;
 }
 
 /**
@@ -28,6 +33,10 @@ export interface TriggerConfig {
 export interface ActionConfig {
   /** 动作类型。 */
   type: 'device_command' | 'ai_message';
+  /** 工具源类型。 */
+  sourceKind?: ToolSourceKind;
+  /** 工具源 ID。 */
+  sourceId?: string;
   /** 插件 ID。 */
   plugin?: string;
   /** 能力 ID。 */

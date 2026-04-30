@@ -1,0 +1,9 @@
+{
+  "id": "explore",
+  "name": "探索",
+  "description": "偏向资料探索与技能加载。默认开放 webfetch 与 skill，并附带探索导向提示词。",
+  "toolNames": [
+    "webfetch",
+    "skill"
+  ]
+}

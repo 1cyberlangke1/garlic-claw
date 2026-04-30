@@ -1,17 +1,15 @@
 import { computed, ref, watch } from 'vue'
 import type {
   AiModelCapabilities,
-  ChatMessageMetadata,
   ChatMessagePart,
-  ConversationHostServices,
-  UpdateConversationHostServicesPayload,
+  ChatMessageMetadata,
+  RuntimePermissionDecision,
 } from '@garlic-claw/shared'
 import {
-  loadConversationHostServices,
   loadModelCapabilities,
   loadVisionFallbackEnabled,
-  saveConversationHostServices,
 } from '@/features/chat/composables/chat-view.data'
+
 import type { useChatStore } from '@/features/chat/store/chat'
 import {
   formatBytes,
@@ -21,8 +19,7 @@ import {
   prepareChatImageUpload,
   measureDataUrlBytes,
 } from '@/utils/chat-image-upload'
-import { getErrorMessage } from '@/utils/error'
-import { useUiStore } from '@/stores/ui'
+import { useChatCommandCatalog } from '@/features/chat/composables/use-chat-command-catalog'
 
 /**
  * 待发送图片。
@@ -54,16 +51,28 @@ export interface UploadNotice {
  * - 上传预算、模型能力读取与发送逻辑统一收口
  */
 export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
-  const uiStore = useUiStore()
-  const inputText = ref('')
+  const draftTextByConversationId = ref<Record<string, string>>({})
+  const inputText = computed({
+    get() {
+      const conversationId = chat.currentConversationId
+      return conversationId ? draftTextByConversationId.value[conversationId] ?? '' : ''
+    },
+    set(value: string) {
+      const conversationId = chat.currentConversationId
+      if (!conversationId) {
+        return
+      }
+      draftTextByConversationId.value = {
+        ...draftTextByConversationId.value,
+        [conversationId]: value,
+      }
+    },
+  })
   const pendingImages = ref<PendingImage[]>([])
-  const compacting = ref(false)
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
-  const conversationHostServices = ref<ConversationHostServices | null>(null)
   const uploadProcessingNotices = ref<UploadNotice[]>([])
   const visionFallbackEnabled = ref(false)
   let capabilityRequestId = 0
-  let conversationHostServicesRequestId = 0
   const imageFallbackNotice = computed<UploadNotice[]>(() => {
     if (
       pendingImages.value.length === 0 ||
@@ -85,9 +94,14 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     ...imageFallbackNotice.value,
     ...uploadProcessingNotices.value,
   ])
+  const displayedMessages = computed(() => chat.messages)
+  const contextWindowPreview = computed(() => chat.contextWindowPreview)
+  const pendingRuntimePermissions = computed(() => chat.pendingRuntimePermissions)
+  const queuedSendCount = computed(() => chat.queuedSendCount)
+  const queuedSendPreviewEntries = computed(() => chat.queuedSendPreviewEntries)
   const lastMessageRole = computed(() => {
-    for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
-      const message = chat.messages[index]
+    for (let index = displayedMessages.value.length - 1; index >= 0; index -= 1) {
+      const message = displayedMessages.value[index]
       if (message.role !== 'display') {
         return message.role
       }
@@ -95,38 +109,15 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
 
     return null
   })
-  const conversationSendDisabledReason = computed(() => {
-    if (!chat.currentConversationId) {
-      return null
-    }
-
-    if (conversationHostServices.value?.sessionEnabled === false) {
-      return '当前会话宿主服务已停用'
-    }
-
-    if (conversationHostServices.value?.llmEnabled === false) {
-      return '当前会话已关闭 LLM 自动回复'
-    }
-
-    return null
-  })
-  const canBypassLlmDisabledReason = computed(() =>
-    conversationSendDisabledReason.value === '当前会话已关闭 LLM 自动回复'
-    && matchesPotentialChatCommand(inputText.value, pendingImages.value.length),
-  )
+  const conversationSendDisabledReason = computed(() => null)
   const canSend = computed(() =>
-    Boolean(inputText.value.trim() || pendingImages.value.length > 0) &&
-    !chat.streaming &&
-    (
-      !conversationSendDisabledReason.value
-      || canBypassLlmDisabledReason.value
-    ),
+    Boolean(inputText.value.trim() || pendingImages.value.length > 0),
   )
   const retryActionLabel = computed(() =>
     chat.retryableMessageId ? '重试' : lastMessageRole.value === 'user' ? '发送' : '重试',
   )
   const canTriggerRetryAction = computed(() => {
-    if (chat.streaming || conversationSendDisabledReason.value) {
+    if (chat.streaming) {
       return false
     }
 
@@ -142,18 +133,15 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     Boolean(selectedCapabilities.value) &&
     !selectedCapabilities.value?.input.image,
   )
+  const {
+    commandSuggestions,
+    applyCommandSuggestion,
+  } = useChatCommandCatalog(inputText)
 
   watch(
     () => [chat.selectedProvider, chat.selectedModel],
     async ([provider, model]) => {
       await refreshSelectedCapabilities(provider, model)
-    },
-    { immediate: true },
-  )
-  watch(
-    () => chat.currentConversationId,
-    async (conversationId) => {
-      await refreshConversationHostServices(conversationId)
     },
     { immediate: true },
   )
@@ -178,12 +166,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    */
   async function send() {
     const text = inputText.value.trim()
-    if (
-      conversationSendDisabledReason.value
-      && !canBypassLlmDisabledReason.value
-    ) {
-      return
-    }
 
     if (!selectedCapabilities.value && chat.selectedProvider && chat.selectedModel) {
       await refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
@@ -214,13 +196,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     ]
 
     if (parts.length === 0) {
-      return
-    }
-
-    if (pendingImages.value.length === 0 && isContextCompactionCommand(text)) {
-      inputText.value = ''
-      uploadProcessingNotices.value = []
-      await compactConversationContext()
       return
     }
 
@@ -341,10 +316,6 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    * @param messageId assistant 消息 ID
    */
   async function retryMessage(messageId: string) {
-    if (conversationSendDisabledReason.value) {
-      return
-    }
-
     await chat.retryMessage(messageId)
   }
 
@@ -359,7 +330,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    * - 按钮位置固定，不再因为有无可重试消息频繁跳布局
    */
   async function triggerRetryAction() {
-    if (chat.streaming || conversationSendDisabledReason.value) {
+    if (chat.streaming) {
       return
     }
 
@@ -405,120 +376,29 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     visionFallbackEnabled.value = await loadVisionFallbackEnabled()
   }
 
-  /**
-   * 读取当前会话的宿主服务开关。
-   * @param conversationId 当前会话 ID
-   */
-  async function refreshConversationHostServices(
-    conversationId: string | null = chat.currentConversationId,
-  ) {
-    const requestId = ++conversationHostServicesRequestId
-    if (!conversationId) {
-      conversationHostServices.value = null
-      return
-    }
-
-    const services = await loadConversationHostServices(conversationId)
-    if (
-      requestId !== conversationHostServicesRequestId ||
-      chat.currentConversationId !== conversationId
-    ) {
-      return
-    }
-
-    conversationHostServices.value = services
+  async function replyRuntimePermission(requestId: string, decision: RuntimePermissionDecision) {
+    await chat.replyRuntimePermission(requestId, decision)
   }
 
-  /**
-   * 更新当前会话的 LLM 自动回复开关。
-   * @param enabled 是否启用
-   */
-  async function setConversationLlmEnabled(enabled: boolean) {
-    await updateConversationHostServices({
-      llmEnabled: enabled,
-    })
-  }
-
-  /**
-   * 更新当前会话的宿主总开关。
-   * @param enabled 是否启用
-   */
-  async function setConversationSessionEnabled(enabled: boolean) {
-    await updateConversationHostServices({
-      sessionEnabled: enabled,
-    })
-  }
-
-  /**
-   * 更新当前会话的宿主服务开关，并在必要时停止当前流。
-   * @param patch 局部更新
-   */
-  async function updateConversationHostServices(
-    patch: UpdateConversationHostServicesPayload,
-  ) {
-    const conversationId = chat.currentConversationId
-    if (!conversationId) {
+  function popQueuedSendTailToInput() {
+    const popped = chat.popQueuedSendRequestTail()
+    if (!popped) {
       return
     }
-
-    conversationHostServices.value = await saveConversationHostServices(
-      conversationId,
-      patch,
-    )
-
-    if (
-      chat.streaming &&
-      (conversationHostServices.value.sessionEnabled === false ||
-        conversationHostServices.value.llmEnabled === false)
-    ) {
-      await chat.stopStreaming()
-    }
-  }
-
-  async function compactConversationContext() {
-    if (!chat.currentConversationId || compacting.value) {
-      return
-    }
-    compacting.value = true
-    try {
-      const result = await chat.compactContext()
-      if (!result) {
-        return
-      }
-      if (result.compacted) {
-        const coveredCount = result.coveredMessageCount ?? 0
-        uiStore.notify(
-          coveredCount > 0
-            ? `已压缩上下文，覆盖 ${coveredCount} 条历史消息。`
-            : '已完成上下文压缩。',
-          'success',
-        )
-        return
-      }
-      const reasonLabelMap: Record<string, string> = {
-        disabled: '当前压缩插件已关闭。',
-        'threshold-not-reached': '当前上下文还未达到自动压缩阈值。',
-        'not-enough-history': '当前历史还不足以生成稳定摘要。',
-        'empty-summary': '压缩模型没有返回有效摘要。',
-        'invalid-history': '当前历史结构异常，暂时无法压缩。',
-      }
-      uiStore.notify(
-        result.reason ? (reasonLabelMap[result.reason] ?? '本次未执行上下文压缩。') : '本次未执行上下文压缩。',
-        'success',
-      )
-    } catch (error) {
-      uiStore.notify(getErrorMessage(error, '执行上下文压缩失败'), 'error')
-    } finally {
-      compacting.value = false
-    }
+    inputText.value = readQueuedDraftText(popped)
+    pendingImages.value = readQueuedDraftImages(popped.parts)
   }
 
   return {
     inputText,
-    compacting,
     pendingImages,
+    commandSuggestions,
+    displayedMessages,
+    contextWindowPreview,
+    pendingRuntimePermissions,
+    queuedSendCount,
+    queuedSendPreviewEntries,
     selectedCapabilities,
-    conversationHostServices,
     conversationSendDisabledReason,
     uploadNotices,
     canSend,
@@ -533,9 +413,9 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     deleteMessage,
     retryMessage,
     triggerRetryAction,
-    setConversationLlmEnabled,
-    setConversationSessionEnabled,
-    compactConversationContext,
+    replyRuntimePermission,
+    popQueuedSendTailToInput,
+    applyCommandSuggestion,
   }
 }
 
@@ -550,13 +430,31 @@ function getPendingImageBudgetBytes(images: PendingImage[] = []): number {
   )
 }
 
-function matchesPotentialChatCommand(
-  text: string,
-  pendingImageCount: number,
-): boolean {
-  return pendingImageCount === 0 && /^\/\S+/.test(text.trim())
+function readQueuedDraftText(input: { content?: string; parts?: ChatMessagePart[] }): string {
+  const content = input.content?.trim()
+  if (content) {
+    return content
+  }
+  if (!input.parts?.length) {
+    return ''
+  }
+  return input.parts
+    .filter((part): part is Extract<ChatMessagePart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join('\n')
 }
 
-function isContextCompactionCommand(text: string): boolean {
-  return text === '/compact' || text === '/compress'
+function readQueuedDraftImages(parts: ChatMessagePart[] | undefined): PendingImage[] {
+  if (!parts?.length) {
+    return []
+  }
+  return parts
+    .filter((part): part is Extract<ChatMessagePart, { type: 'image' }> => part.type === 'image')
+    .map((part, index) => ({
+      id: `queued-image-${index}-${part.image.slice(0, 24)}`,
+      image: part.image,
+      mimeType: part.mimeType,
+      name: `队列图片 ${index + 1}`,
+    }))
 }

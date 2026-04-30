@@ -110,8 +110,13 @@ export interface PluginCommandConflict {
 }
 
 export interface PluginCommandOverview {
+  version: string;
   commands: PluginCommandInfo[];
   conflicts: PluginCommandConflict[];
+}
+
+export interface PluginCommandCatalogVersion {
+  version: string;
 }
 
 export interface PluginInfo {

@@ -18,15 +18,15 @@ function createFixtures() {
     sources: [
       {
         kind: 'plugin' as const,
-        id: 'builtin.memory-tools',
-        label: '记忆工具',
+        id: 'builtin.memory',
+        label: '记忆',
         enabled: true,
         health: 'healthy' as const,
         lastError: null,
         lastCheckedAt: '2026-03-30T16:00:00.000Z',
         totalTools: 1,
         enabledTools: 1,
-        pluginId: 'builtin.memory-tools',
+        pluginId: 'builtin.memory',
         runtimeKind: 'local' as const,
         supportedActions: ['health-check', 'reload'],
       },
@@ -45,19 +45,19 @@ function createFixtures() {
     ] satisfies ToolSourceInfo[],
     tools: [
       {
-        toolId: 'plugin:builtin.memory-tools:save_memory',
+        toolId: 'plugin:builtin.memory:save_memory',
         name: 'save_memory',
         callName: 'save_memory',
         description: '保存记忆',
         parameters: {},
         enabled: true,
         sourceKind: 'plugin' as const,
-        sourceId: 'builtin.memory-tools',
-        sourceLabel: '记忆工具',
+        sourceId: 'builtin.memory',
+        sourceLabel: '记忆',
         health: 'healthy' as const,
         lastError: null,
         lastCheckedAt: '2026-03-30T16:00:00.000Z',
-        pluginId: 'builtin.memory-tools',
+        pluginId: 'builtin.memory',
         runtimeKind: 'local' as const,
       },
       {
@@ -115,11 +115,11 @@ describe('useToolManagement', () => {
     mount(Harness)
     await flushPromises()
 
-    expect(state.selectedSource.value?.id).toBe('builtin.memory-tools')
+    expect(state.selectedSource.value?.id).toBe('builtin.memory')
     expect(state.filteredSourceCount.value).toBe(2)
     expect(state.filteredToolCount.value).toBe(1)
     expect(state.pagedTools.value.map((tool) => tool.toolId)).toEqual([
-      'plugin:builtin.memory-tools:save_memory',
+      'plugin:builtin.memory:save_memory',
     ])
 
     state.selectSource('mcp', 'weather-server')
@@ -150,9 +150,9 @@ describe('useToolManagement', () => {
     await state.setToolEnabled(tool, false)
     await state.runSourceAction(state.sources.value[1], 'health-check')
 
-    expect(toolData.saveToolSourceEnabled).toHaveBeenCalledWith('plugin', 'builtin.memory-tools', false)
+    expect(toolData.saveToolSourceEnabled).toHaveBeenCalledWith('plugin', 'builtin.memory', false)
     expect(toolData.saveToolEnabled).toHaveBeenCalledWith(
-      'plugin:builtin.memory-tools:save_memory',
+      'plugin:builtin.memory:save_memory',
       false,
     )
     expect(toolData.runToolSourceActionRequest).toHaveBeenCalledWith(

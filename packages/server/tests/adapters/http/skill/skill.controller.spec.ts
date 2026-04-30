@@ -16,15 +16,15 @@ describe('SkillController', () => {
   it('returns the discovered skill catalog', async () => {
     skillRegistryService.listSkills.mockResolvedValue([
       {
-        id: 'project/planner',
-        name: '规划执行',
-        description: '先拆任务，再逐步执行。',
+        id: 'project/weather-query',
+        name: '天气查询',
+        description: '查询指定地点天气。',
       },
     ]);
 
     await expect(controller.listSkills()).resolves.toEqual([
       expect.objectContaining({
-        id: 'project/planner',
+        id: 'project/weather-query',
       }),
     ]);
   });
@@ -32,15 +32,15 @@ describe('SkillController', () => {
   it('refreshes the discovered skill catalog', async () => {
     skillRegistryService.listSkills.mockResolvedValue([
       {
-        id: 'project/planner',
-        name: '规划执行',
-        description: '先拆任务，再逐步执行。',
+        id: 'project/weather-query',
+        name: '天气查询',
+        description: '查询指定地点天气。',
       },
     ]);
 
     await expect(controller.refreshSkills()).resolves.toEqual([
       expect.objectContaining({
-        id: 'project/planner',
+        id: 'project/weather-query',
       }),
     ]);
     expect(skillRegistryService.listSkills).toHaveBeenCalledWith({ refresh: true });
@@ -48,14 +48,14 @@ describe('SkillController', () => {
 
   it('updates governance for one skill', async () => {
     skillRegistryService.updateSkillGovernance.mockResolvedValue({
-      id: 'project/planner',
+      id: 'project/weather-query',
       governance: {
         loadPolicy: 'deny',
       },
     });
 
     await expect(
-      controller.updateSkillGovernance('project/planner', {
+      controller.updateSkillGovernance('project/weather-query', {
         loadPolicy: 'deny',
       } as never),
     ).resolves.toEqual(

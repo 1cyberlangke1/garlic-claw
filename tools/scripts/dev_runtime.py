@@ -215,8 +215,6 @@ def createBuildSteps() -> list[tuple[str, list[str]]]:
     return [
         ("构建 shared", ["npm", "run", "build", "-w", "packages/shared"]),
         ("构建 plugin-sdk", ["npm", "run", "build", "-w", "packages/plugin-sdk"]),
-        ("生成 Prisma Client", ["npm", "run", "prisma:generate", "-w", "packages/server"]),
-        ("同步开发数据库", ["npm", "run", "prisma:push", "-w", "packages/server"]),
         ("构建 server", ["npm", "run", "build", "-w", "packages/server"]),
     ]
 
@@ -242,7 +240,7 @@ def createDevServices() -> dict[str, dict[str, Any]]:
         "backend_app": {
             "name": "后端应用",
             "cwd": SERVER_DIR,
-            "command": ["node", "--watch", "dist/src/main.js"],
+            "command": ["node", "dist/src/main.js"],
             "stdoutPath": str(SERVER_APP_STDOUT),
             "stderrPath": str(SERVER_APP_STDERR),
             "stdoutLabel": "",
@@ -293,9 +291,39 @@ def 等待后端编译器首轮完成(logPath: Path, timeoutSeconds: int) -> boo
 
 
 def getPortWaitTimeoutSeconds(serviceName: str) -> int:
+    serviceOverride = 读取超时环境变量秒数(
+        f"GARLIC_CLAW_DEV_{serviceName.upper()}_PORT_WAIT_TIMEOUT_SECONDS"
+    )
+    if serviceOverride is not None:
+        return serviceOverride
+
+    globalOverride = 读取超时环境变量秒数("GARLIC_CLAW_DEV_PORT_WAIT_TIMEOUT_SECONDS")
+    if globalOverride is not None:
+        return globalOverride
+
     if serviceName == "backend_app" and not runtime.IS_WINDOWS:
         return 180
     return 60
+
+
+def getBackendCompilerWaitTimeoutSeconds() -> int:
+    compilerOverride = 读取超时环境变量秒数(
+        "GARLIC_CLAW_DEV_BACKEND_COMPILER_WAIT_TIMEOUT_SECONDS"
+    )
+    if compilerOverride is not None:
+        return compilerOverride
+    return getPortWaitTimeoutSeconds("backend_app")
+
+
+def 读取超时环境变量秒数(envName: str) -> int | None:
+    rawValue = os.environ.get(envName, "").strip()
+    if not rawValue:
+        return None
+    try:
+        parsedValue = int(rawValue)
+    except ValueError:
+        return None
+    return parsedValue if parsedValue > 0 else None
 
 
 def stopServices(
@@ -383,7 +411,6 @@ def 执行启动前预检() -> bool:
     requiredPaths = [
         ("检查 package-lock.json", ROOT / "package-lock.json"),
         ("检查 server tsconfig.build.json", SERVER_DIR / "tsconfig.build.json"),
-        ("检查 Prisma schema", SERVER_DIR / "prisma" / "schema.prisma"),
         ("检查 web vite.config.ts", WEB_DIR / "vite.config.ts"),
     ]
     for label, path in requiredPaths:
@@ -471,6 +498,7 @@ def stop() -> int:
         state=state,
         ports=list(DEFAULT_PORTS),
     )
+    runtime.killBackendWatchProcessOrphans()
     runtime.clearStateFiles()
     print("开发服务已停止。")
     return 0
@@ -523,6 +551,8 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
         else:
             runtime.clearStateFiles()
 
+    runtime.killBackendWatchProcessOrphans()
+
     if not 确保端口空闲():
         return 1
 
@@ -548,15 +578,9 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
         compilerProcess = runtime.startRelayManagedProcess(compilerService) if tailLogs else runtime.startManagedProcess(compilerService)
         startedServices[compilerName] = 记录已启动服务(compilerName, compilerService, compilerProcess)
 
-        webName = "web"
-        webService = services[webName]
-        print(f"[2/{totalServices}] 正在启动{webService['name']}...")
-        webProcess = runtime.startRelayManagedProcess(webService) if tailLogs else runtime.startManagedProcess(webService)
-        startedServices[webName] = 记录已启动服务(webName, webService, webProcess)
-
         compilerReadyLabel = "等待后端编译器首轮完成"
         compilerReadyWidth = 获取状态输出宽度([compilerReadyLabel])
-        compilerTimeoutSeconds = getPortWaitTimeoutSeconds("backend_app")
+        compilerTimeoutSeconds = getBackendCompilerWaitTimeoutSeconds()
         runtime.startSingleLineStatus(compilerReadyLabel, width=compilerReadyWidth)
         if not 等待后端编译器首轮完成(SERVER_TSC_STDOUT, compilerTimeoutSeconds):
             runtime.finishSingleLineStatus(
@@ -574,26 +598,54 @@ def 启动开发服务(allowAutoStop: bool, tailLogs: bool) -> int:
             success=True,
         )
 
-        remainingServices = [
-            (serviceName, service)
-            for serviceName, service in services.items()
-            if serviceName not in {compilerName, webName}
-        ]
-        for index, (serviceName, service) in enumerate(remainingServices, start=3):
-            print(f"[{index}/{len(services)}] 正在启动{service['name']}...")
-            process = runtime.startRelayManagedProcess(service) if tailLogs else runtime.startManagedProcess(service)
-            startedServices[serviceName] = 记录已启动服务(serviceName, service, process)
+        # TSC 打印 "Watching for file changes." 后，文件系统可能仍有延迟写入。
+        # 若此时立刻启动 node --watch，会因为残留的 dist/ 写入事件反复重启 NestJS，
+        # 导致端口始终无法稳定监听，waitForPort 超时。等待 5 秒让文件系统落盘完毕。
+        time.sleep(5)
 
-        保存受管状态(startedServices)
+        backendAppName = "backend_app"
+        backendAppService = services[backendAppName]
+        print(f"[2/{totalServices}] 正在启动{backendAppService['name']}...")
+        backendAppProcess = runtime.startRelayManagedProcess(backendAppService) if tailLogs else runtime.startManagedProcess(backendAppService)
+        startedServices[backendAppName] = 记录已启动服务(backendAppName, backendAppService, backendAppProcess)
 
         portStatusWidth = 获取状态输出宽度(
             [
                 f"等待{service['name']}端口就绪"
-                for service in startedServices.values()
+                for service in services.values()
                 if isinstance(service.get("port"), int)
             ]
         )
+        backendPortTimeoutSeconds = getPortWaitTimeoutSeconds(backendAppName)
+        backendPortStatusLabel = f"等待{backendAppService['name']}端口就绪"
+        runtime.startSingleLineStatus(backendPortStatusLabel, width=portStatusWidth)
+        if not runtime.waitForPort(int(backendAppService["port"]), backendPortTimeoutSeconds):
+            runtime.finishSingleLineStatus(
+                backendPortStatusLabel,
+                width=portStatusWidth,
+                result=f"(失败, {backendPortTimeoutSeconds}s)",
+                success=False,
+            )
+            print(f"{backendAppService['name']} 未在 {backendPortTimeoutSeconds} 秒内打开端口 {backendAppService['port']}。")
+            return 启动失败清理(startedServices)
+        runtime.finishSingleLineStatus(
+            backendPortStatusLabel,
+            width=portStatusWidth,
+            result=f"(端口 {backendAppService['port']})",
+            success=True,
+        )
+
+        webName = "web"
+        webService = services[webName]
+        print(f"[3/{totalServices}] 正在启动{webService['name']}...")
+        webProcess = runtime.startRelayManagedProcess(webService) if tailLogs else runtime.startManagedProcess(webService)
+        startedServices[webName] = 记录已启动服务(webName, webService, webProcess)
+
+        保存受管状态(startedServices)
+
         for serviceName, service in startedServices.items():
+            if serviceName == backendAppName:
+                continue
             port = service.get("port")
             if not isinstance(port, int):
                 continue

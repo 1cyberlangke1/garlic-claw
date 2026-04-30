@@ -108,6 +108,31 @@ describe('applySseEvent', () => {
       },
     ])
   })
+
+  it('ignores todo-updated events inside the message reducer', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正式回复',
+        status: 'completed',
+        error: null,
+      },
+    ]
+    const event: SSEEvent = {
+      type: 'todo-updated',
+      conversationId: 'conversation-1',
+      todos: [
+        {
+          content: '同步 todo 面板',
+          priority: 'high',
+          status: 'in_progress',
+        },
+      ],
+    }
+
+    expect(applySseEvent(messages, event, { requestKind: 'send' })).toEqual(messages)
+  })
 })
 
 describe('getRetryableMessageId', () => {

@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { PersonaController } from '../../../../src/adapters/http/persona/persona.controller';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 
@@ -159,11 +160,12 @@ describe('PersonaController', () => {
     const response = {
       sendFile: jest.fn(),
     };
-    personaService.readPersonaAvatarPath.mockReturnValue('D:/Git_Repository/garlic-claw/persona/persona.writer/avatar.webp');
+    const avatarPath = path.resolve('config', 'personas', 'persona.writer', 'avatar.webp');
+    personaService.readPersonaAvatarPath.mockReturnValue(avatarPath);
 
     await controller.getPersonaAvatar('persona.writer', response as never);
 
     expect(personaService.readPersonaAvatarPath).toHaveBeenCalledWith('persona.writer');
-    expect(response.sendFile).toHaveBeenCalledWith('D:/Git_Repository/garlic-claw/persona/persona.writer/avatar.webp');
+    expect(response.sendFile).toHaveBeenCalledWith(avatarPath);
   });
 });

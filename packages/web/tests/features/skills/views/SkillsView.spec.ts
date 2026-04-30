@@ -17,13 +17,13 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
     searchKeyword: ref(''),
     skills: shallowRef([
       {
-        id: 'project/planner',
-        name: '规划执行',
-        description: '先拆任务，再逐步执行。',
-        tags: ['planning'],
+        id: 'project/weather-query',
+        name: '天气查询',
+        description: '查询指定地点天气。',
+        tags: ['weather'],
         sourceKind: 'project',
-        entryPath: 'planner/SKILL.md',
-        promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
+        entryPath: 'weather-query/SKILL.md',
+        promptPreview: '请先确认地点，再查询天气。',
         governance: {
           loadPolicy: 'deny',
           eventLog: {
@@ -32,24 +32,24 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
         },
         assets: [
           {
-            path: 'scripts/plan.js',
+            path: 'scripts/weather.js',
             kind: 'script',
             textReadable: true,
             executable: true,
           },
         ],
-        content: '# Planner\n\n把复杂请求拆成 3-5 步，再开始执行。',
+        content: '# weather-query\n\n请先确认地点，再查询天气。',
       },
     ]),
     filteredSkills: computed(() => [
       {
-        id: 'project/planner',
-        name: '规划执行',
-        description: '先拆任务，再逐步执行。',
-        tags: ['planning'],
+        id: 'project/weather-query',
+        name: '天气查询',
+        description: '查询指定地点天气。',
+        tags: ['weather'],
         sourceKind: 'project',
-        entryPath: 'planner/SKILL.md',
-        promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
+        entryPath: 'weather-query/SKILL.md',
+        promptPreview: '请先确认地点，再查询天气。',
         governance: {
           loadPolicy: 'deny',
           eventLog: {
@@ -58,24 +58,24 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
         },
         assets: [
           {
-            path: 'scripts/plan.js',
+            path: 'scripts/weather.js',
             kind: 'script',
             textReadable: true,
             executable: true,
           },
         ],
-        content: '# Planner\n\n把复杂请求拆成 3-5 步，再开始执行。',
+        content: '# weather-query\n\n请先确认地点，再查询天气。',
       },
     ]),
-    selectedSkillId: ref('project/planner'),
+    selectedSkillId: ref('project/weather-query'),
     selectedSkill: computed(() => ({
-      id: 'project/planner',
-      name: '规划执行',
-      description: '先拆任务，再逐步执行。',
-      tags: ['planning'],
+      id: 'project/weather-query',
+      name: '天气查询',
+      description: '查询指定地点天气。',
+      tags: ['weather'],
       sourceKind: 'project',
-      entryPath: 'planner/SKILL.md',
-      promptPreview: '把复杂请求拆成 3-5 步，再开始执行。',
+      entryPath: 'weather-query/SKILL.md',
+      promptPreview: '请先确认地点，再查询天气。',
       governance: {
         loadPolicy: 'deny',
         eventLog: {
@@ -84,17 +84,16 @@ vi.mock('@/features/skills/composables/use-skill-management', () => ({
       },
       assets: [
         {
-          path: 'scripts/plan.js',
+          path: 'scripts/weather.js',
           kind: 'script',
           textReadable: true,
           executable: true,
         },
       ],
-      content: '# Planner\n\n把复杂请求拆成 3-5 步，再开始执行。',
+      content: '# weather-query\n\n请先确认地点，再查询天气。',
     })),
     totalCount: computed(() => 1),
-    projectCount: computed(() => 1),
-    userCount: computed(() => 0),
+    directoryCount: computed(() => 1),
     deniedCount: computed(() => 1),
     packageCount: computed(() => 1),
     executableCount: computed(() => 1),
@@ -127,11 +126,12 @@ describe('SkillsView', () => {
     const wrapper = mount(SkillsView)
 
     expect(wrapper.text()).toContain('技能目录')
-    expect(wrapper.text()).toContain('规划执行')
+    expect(wrapper.text()).toContain('天气查询')
+    expect(wrapper.text()).toContain('skills 目录')
     expect(wrapper.text()).toContain('已拒绝加载')
     expect(wrapper.text()).toContain('拒绝加载')
-    expect(wrapper.text()).toContain('scripts/plan.js')
-    expect(wrapper.text()).toContain('把复杂请求拆成 3-5 步')
+    expect(wrapper.text()).toContain('scripts/weather.js')
+    expect(wrapper.text()).toContain('请先确认地点，再查询天气')
     expect(wrapper.text()).toContain('技能日志设置')
     expect(wrapper.text()).toContain('技能事件日志')
     expect(wrapper.text()).toContain('技能治理已更新')

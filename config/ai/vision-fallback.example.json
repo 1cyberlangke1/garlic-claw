@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "providerId": "openai",
+  "modelId": "gpt-4o-mini",
+  "prompt": "Please describe the uploaded image clearly for a text-only model.",
+  "maxDescriptionLength": 400
+}

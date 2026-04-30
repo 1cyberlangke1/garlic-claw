@@ -148,4 +148,66 @@ describe('useMcpConfigManagement', () => {
     })
     expect(mcpData.deleteMcpServerConfig).toHaveBeenCalledWith('weather-server')
   })
+
+  it('loads more MCP events with nextCursor and appends the next page', async () => {
+    vi.mocked(mcpData.loadMcpServerEvents)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'event-3',
+            type: 'mcp:error',
+            level: 'error',
+            message: 'third',
+            metadata: null,
+            createdAt: '2026-04-21T00:00:03.000Z',
+          },
+          {
+            id: 'event-2',
+            type: 'mcp:warn',
+            level: 'warn',
+            message: 'second',
+            metadata: null,
+            createdAt: '2026-04-21T00:00:02.000Z',
+          },
+        ],
+        nextCursor: 'event-2',
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'event-1',
+            type: 'mcp:info',
+            level: 'info',
+            message: 'first',
+            metadata: null,
+            createdAt: '2026-04-21T00:00:01.000Z',
+          },
+        ],
+        nextCursor: null,
+      })
+
+    let state!: ReturnType<typeof useMcpConfigManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = useMcpConfigManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    expect(state.eventLogs.value.map((entry) => entry.id)).toEqual(['event-3', 'event-2'])
+    expect(state.eventNextCursor.value).toBe('event-2')
+
+    await state.loadMoreServerEvents()
+    await flushPromises()
+
+    expect(mcpData.loadMcpServerEvents).toHaveBeenNthCalledWith(2, 'weather-server', {
+      limit: 50,
+      cursor: 'event-2',
+    })
+    expect(state.eventLogs.value.map((entry) => entry.id)).toEqual(['event-3', 'event-2', 'event-1'])
+    expect(state.eventNextCursor.value).toBeNull()
+  })
 })

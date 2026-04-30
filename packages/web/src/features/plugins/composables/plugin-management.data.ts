@@ -205,9 +205,9 @@ export function deletePluginRecord(pluginName: string) {
 }
 
 /**
- * 归一化事件日志查询条件。
+ * 标准化事件日志查询条件。
  * @param query 原始查询
- * @returns 归一化后的查询对象
+ * @returns 标准化后的查询对象
  */
 export function normalizeEventQuery(query: PluginEventQuery): PluginEventQuery {
   return {

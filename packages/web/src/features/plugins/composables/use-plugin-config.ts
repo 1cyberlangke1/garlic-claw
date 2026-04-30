@@ -18,6 +18,7 @@ import {
   type PluginLlmRouteOption,
   toErrorMessage,
 } from '@/features/plugins/composables/plugin-management.data'
+import { emitPluginConfigChanged } from '@/features/plugins/plugin-config-change'
 
 export interface UsePluginConfigOptions {
   selectedPlugin: ComputedRef<PluginInfo | null>
@@ -67,6 +68,7 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     try {
       configSnapshot.value = await savePluginConfigRequest(pluginName, values)
       options.notice.value = '插件配置已保存'
+      emitPluginConfigChanged({ changeType: 'config', pluginName })
       await options.reloadPluginListSilently()
       await options.refreshSelectedDetails(pluginName)
     } catch (caughtError) {
@@ -109,6 +111,7 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     try {
       scopeSettings.value = await savePluginScopeRequest(pluginName, conversations)
       options.notice.value = '插件作用域已保存'
+      emitPluginConfigChanged({ changeType: 'scope', pluginName })
       await options.reloadPluginListSilently()
       await options.refreshSelectedDetails(pluginName)
     } catch (caughtError) {

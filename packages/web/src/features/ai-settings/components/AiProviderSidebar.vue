@@ -2,8 +2,8 @@
   <aside class="sidebar-card">
     <div class="sidebar-header">
       <div>
-        <h2>供应商</h2>
-        <p>管理可用供应商、默认模型和连接状态。</p>
+        <h2>AI 服务商</h2>
+        <p>管理 AI 服务商、模型与连接状态。</p>
       </div>
       <div class="sidebar-actions">
         <button type="button" class="ghost-button" @click="$emit('refresh')">刷新</button>
@@ -47,7 +47,7 @@
         >
           <div class="provider-title">
             <strong>{{ provider.name }}</strong>
-            <span class="provider-mode">{{ getProviderModeLabel(provider, catalog) }}</span>
+            <span class="provider-mode">{{ getProviderKindLabel(provider, catalog) }}</span>
           </div>
           <div class="provider-meta">
             <span>{{ provider.id }}</span>
@@ -90,7 +90,7 @@
 import { computed, ref, watch } from 'vue'
 import type { AiProviderCatalogItem, AiProviderSummary } from '@garlic-claw/shared'
 import { usePagination } from '@/composables/use-pagination'
-import { getProviderDriverLabel, getProviderModeLabel } from './provider-catalog'
+import { getProviderDriverLabel, getProviderKindLabel } from './provider-catalog'
 
 const props = defineProps<{
   providers: AiProviderSummary[]
@@ -118,7 +118,7 @@ const filteredProviders = computed(() => {
       provider.name,
       provider.id,
       provider.driver,
-      provider.mode,
+      getProviderKindLabel(provider, props.catalog),
       provider.available ? '可用' : '缺少凭据',
     ]
       .join(' ')

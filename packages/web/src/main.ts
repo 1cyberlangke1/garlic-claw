@@ -11,7 +11,21 @@ import './style.css'
 const pinia = createPinia()
 const uiStore = useUiStore(pinia)
 
+if (typeof window !== 'undefined') {
+  const silenceRequestErrors = () => {
+    ;(window as Window & {
+      __GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__?: boolean
+    }).__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ = true
+  }
+  window.addEventListener('pagehide', silenceRequestErrors, { capture: true })
+  window.addEventListener('beforeunload', silenceRequestErrors, { capture: true })
+}
+
 addRequestErrorListener(({ error, method, url }) => {
+  if (shouldSilenceRequestErrorLogs()) {
+    return
+  }
+
   uiStore.notify(error.message || '请求失败，请稍后重试', 'error')
 
   if (!import.meta.env.DEV) {
@@ -26,6 +40,16 @@ addRequestErrorListener(({ error, method, url }) => {
     message: error.message,
   })
 })
+
+function shouldSilenceRequestErrorLogs() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  return (window as Window & {
+    __GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__?: boolean
+  }).__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ === true
+}
 
 const app = createApp(App)
 app.use(pinia)

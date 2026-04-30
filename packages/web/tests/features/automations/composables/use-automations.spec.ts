@@ -26,7 +26,7 @@ function createAutomationInfo(): AutomationInfo {
     actions: [
       {
         type: 'device_command',
-        plugin: 'builtin.memory-tools',
+        plugin: 'builtin.memory',
         capability: 'save_memory',
       },
     ],
@@ -78,7 +78,7 @@ describe('useAutomations', () => {
     state.form.value.name = '咖啡完成提醒'
     state.form.value.triggerType = 'event'
     state.form.value.eventName = 'coffee.ready'
-    state.form.value.plugin = 'builtin.memory-tools'
+    state.form.value.plugin = 'builtin.memory'
     state.form.value.capability = 'save_memory'
 
     expect(state.canCreate.value).toBe(true)
@@ -94,7 +94,7 @@ describe('useAutomations', () => {
       actions: [
         {
           type: 'device_command',
-          plugin: 'builtin.memory-tools',
+          plugin: 'builtin.memory',
           capability: 'save_memory',
         },
       ],
@@ -142,6 +142,64 @@ describe('useAutomations', () => {
           target: {
             type: 'conversation',
             id: 'conversation-1',
+          },
+        },
+      ],
+    })
+  })
+
+  it('creates cron ai_message automations with dedicated cron conversation settings', async () => {
+    vi.mocked(automationData.createAutomationRecord).mockResolvedValue({
+      ...createAutomationInfo(),
+      trigger: {
+        type: 'cron',
+        cron: '5m',
+      },
+      actions: [
+        {
+          type: 'ai_message',
+          message: '整理日报',
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+            conversationMode: 'cron_child',
+            maxHistoryConversations: 6,
+          },
+        },
+      ],
+    })
+
+    const state = await mountAutomationsHarness()
+
+    state.form.value.name = '日报整理'
+    state.form.value.triggerType = 'cron'
+    state.form.value.cronInterval = '5m'
+    state.form.value.actionType = 'ai_message'
+    state.form.value.message = '整理日报'
+    state.form.value.targetConversationId = 'conversation-1'
+    state.form.value.targetConversationMode = 'cron_child'
+    state.form.value.maxHistoryConversations = 6
+
+    expect(state.canCreate.value).toBe(true)
+
+    await state.handleCreate()
+
+    expect(automationData.createAutomationRecord).toHaveBeenCalledWith({
+      name: '日报整理',
+      trigger: {
+        type: 'cron',
+        cron: '5m',
+        event: undefined,
+      },
+      actions: [
+        {
+          type: 'ai_message',
+          message: '整理日报',
+          target: {
+            type: 'conversation',
+            id: 'conversation-1',
+            conversationMode: 'cron_child',
+            maxHistoryConversations: 6,
           },
         },
       ],

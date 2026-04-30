@@ -33,10 +33,6 @@ describe('PluginController', () => {
     listPluginStorage: jest.fn(),
     setPluginStorage: jest.fn(),
   };
-  const runtimeHostSubagentRunnerService = {
-    getTaskOrThrow: jest.fn(),
-    listOverview: jest.fn(),
-  };
   const runtimePluginGovernanceService = {
     checkPluginHealth: jest.fn(),
     readPluginHealthSnapshot: jest.fn(),
@@ -56,7 +52,6 @@ describe('PluginController', () => {
       runtimeHostConversationRecordService as never,
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
-      runtimeHostSubagentRunnerService as never,
       runtimePluginGovernanceService as never,
     );
   });
@@ -71,15 +66,15 @@ describe('PluginController', () => {
         governance: { canDisable: true },
         lastSeenAt: null,
         manifest: {
-          id: 'builtin.memory-context',
-          name: 'Memory Context',
+          id: 'builtin.memory',
+          name: 'Memory',
           description: 'Memory plugin',
           permissions: [],
           runtime: 'local',
           tools: [],
           version: '1.0.0',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
         remote: null,
         status: 'online',
         updatedAt: '2026-03-26T01:00:00.000Z',
@@ -137,15 +132,15 @@ describe('PluginController', () => {
         governance: { canDisable: true },
         lastSeenAt: null,
         manifest: {
-          id: 'builtin.memory-context',
-          name: 'Memory Context',
+          id: 'builtin.memory',
+          name: 'Memory',
           description: 'Memory plugin',
           permissions: [],
           runtime: 'local',
           tools: [],
           version: '1.0.0',
         },
-        pluginId: 'builtin.memory-context',
+        pluginId: 'builtin.memory',
         remote: null,
         status: 'online',
         updatedAt: '2026-03-26T01:00:00.000Z',
@@ -158,29 +153,21 @@ describe('PluginController', () => {
         defaultEnabled: true,
         createdAt: '2026-03-26T00:00:00.000Z',
         description: 'Memory plugin',
-        displayName: 'Memory Context',
+        displayName: 'Memory',
+        eventLog: {},
         governance: { canDisable: true },
-        health: {
-          consecutiveFailures: 0,
-          failureCount: 0,
-          lastCheckedAt: null,
-          lastError: null,
-          lastErrorAt: null,
-          lastSuccessAt: null,
-          status: 'healthy',
-        },
-        id: 'builtin.memory-context',
+        id: 'builtin.memory',
         lastSeenAt: null,
         manifest: {
-          id: 'builtin.memory-context',
-          name: 'Memory Context',
+          id: 'builtin.memory',
+          name: 'Memory',
           description: 'Memory plugin',
           permissions: [],
           runtime: 'local',
           tools: [],
           version: '1.0.0',
         },
-        name: 'builtin.memory-context',
+        name: 'builtin.memory',
         remote: null,
         runtimeKind: 'local',
         status: 'online',
@@ -194,16 +181,8 @@ describe('PluginController', () => {
         createdAt: '2026-03-27T00:00:00.000Z',
         description: 'Remote plugin',
         displayName: 'Remote Echo',
+        eventLog: {},
         governance: { canDisable: true },
-        health: {
-          consecutiveFailures: 0,
-          failureCount: 0,
-          lastCheckedAt: null,
-          lastError: null,
-          lastErrorAt: null,
-          lastSuccessAt: null,
-          status: 'offline',
-        },
         id: 'remote.echo',
         lastSeenAt: null,
         manifest: {
@@ -252,14 +231,14 @@ describe('PluginController', () => {
       {
         manifest: {
           description: 'Memory plugin',
-          id: 'builtin.memory-context',
-          name: 'Memory Context',
+          id: 'builtin.memory',
+          name: 'Memory',
           permissions: [],
           runtime: 'local',
           tools: [],
           version: '1.0.0',
         },
-        name: 'builtin.memory-context',
+        name: 'builtin.memory',
         runtimeKind: 'local',
       },
     ]);
@@ -454,20 +433,20 @@ describe('PluginController', () => {
       conversations: { 'conversation-1': true },
     });
 
-    expect(controller.getPluginConfig('builtin.memory-context')).toEqual({
+    expect(controller.getPluginConfig('builtin.memory')).toEqual({
       values: { limit: 8 },
     });
-    expect(controller.updatePluginConfig('builtin.memory-context', {
+    expect(controller.updatePluginConfig('builtin.memory', {
       values: { limit: 6 },
     } as never)).toEqual({
       values: { limit: 6 },
     });
-    expect(controller.getPluginLlmPreference('builtin.memory-context')).toEqual({
+    expect(controller.getPluginLlmPreference('builtin.memory')).toEqual({
       mode: 'inherit',
       modelId: null,
       providerId: null,
     });
-    expect(controller.updatePluginLlmPreference('builtin.memory-context', {
+    expect(controller.updatePluginLlmPreference('builtin.memory', {
       mode: 'override',
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
@@ -476,36 +455,36 @@ describe('PluginController', () => {
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
     });
-    expect(controller.getPluginScope('builtin.memory-context')).toEqual({
+    expect(controller.getPluginScope('builtin.memory')).toEqual({
       defaultEnabled: true,
       conversations: { 'conversation-1': false },
     });
-    expect(controller.updatePluginScope('builtin.memory-context', {
+    expect(controller.updatePluginScope('builtin.memory', {
       conversations: { 'conversation-1': true },
     } as never)).toEqual({
       defaultEnabled: true,
       conversations: { 'conversation-1': true },
     });
-    expect(pluginPersistenceService.updatePluginConfig).toHaveBeenCalledWith('builtin.memory-context', {
+    expect(pluginPersistenceService.updatePluginConfig).toHaveBeenCalledWith('builtin.memory', {
       limit: 6,
     });
-    expect(pluginPersistenceService.updatePluginLlmPreference).toHaveBeenCalledWith('builtin.memory-context', {
+    expect(pluginPersistenceService.updatePluginLlmPreference).toHaveBeenCalledWith('builtin.memory', {
       mode: 'override',
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
     });
-    expect(pluginPersistenceService.updatePluginScope).toHaveBeenCalledWith('builtin.memory-context', {
+    expect(pluginPersistenceService.updatePluginScope).toHaveBeenCalledWith('builtin.memory', {
       conversations: { 'conversation-1': true },
     });
-    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory-context', {
+    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory', {
       level: 'info',
-      message: 'Updated plugin config for builtin.memory-context',
+      message: 'Updated plugin config for builtin.memory',
       metadata: { keys: ['limit'] },
       type: 'plugin:config.updated',
     });
-    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory-context', {
+    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory', {
       level: 'info',
-      message: 'Updated plugin llm preference for builtin.memory-context',
+      message: 'Updated plugin llm preference for builtin.memory',
       metadata: {
         mode: 'override',
         modelId: 'deepseek-reasoner',
@@ -513,9 +492,9 @@ describe('PluginController', () => {
       },
       type: 'plugin:llm-preference.updated',
     });
-    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory-context', {
+    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('builtin.memory', {
       level: 'info',
-      message: 'Updated plugin scope for builtin.memory-context',
+      message: 'Updated plugin scope for builtin.memory',
       metadata: { conversationCount: 1 },
       type: 'plugin:scope.updated',
     });
@@ -527,14 +506,14 @@ describe('PluginController', () => {
       nextCursor: null,
     });
 
-    expect(controller.listPluginEvents('builtin.memory-context', {
+    expect(controller.listPluginEvents('builtin.memory', {
       limit: '100',
       level: 'error',
       type: 'tool:error',
       keyword: 'memory.search',
       cursor: 'event-2',
     })).toEqual({ items: [], nextCursor: null });
-    expect(pluginPersistenceService.listPluginEvents).toHaveBeenCalledWith('builtin.memory-context', {
+    expect(pluginPersistenceService.listPluginEvents).toHaveBeenCalledWith('builtin.memory', {
       limit: 100,
       level: 'error',
       type: 'tool:error',
@@ -542,12 +521,12 @@ describe('PluginController', () => {
       cursor: 'event-2',
     });
     expect(() =>
-      controller.listPluginEvents('builtin.memory-context', {
+      controller.listPluginEvents('builtin.memory', {
         limit: '0',
       }),
     ).toThrow(BadRequestException);
     expect(() =>
-      controller.listPluginEvents('builtin.memory-context', {
+      controller.listPluginEvents('builtin.memory', {
         level: 'fatal',
       }),
     ).toThrow(BadRequestException);

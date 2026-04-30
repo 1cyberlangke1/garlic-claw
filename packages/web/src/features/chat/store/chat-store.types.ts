@@ -3,6 +3,8 @@ import type {
   ChatMessagePart,
   ChatMessageRole,
   ChatMessageStatus,
+  ConversationTodoItem,
+  RuntimePermissionRequest,
 } from '@garlic-claw/shared'
 
 /**
@@ -34,3 +36,9 @@ export interface ChatSendInput {
   model?: string | null
   optimisticAssistantMetadata?: ChatMessageMetadata
 }
+
+export interface ChatPendingRuntimePermission extends RuntimePermissionRequest {
+  resolving?: boolean
+}
+
+export type { ConversationTodoItem }

@@ -1,15 +1,15 @@
 import type {
   AiHostModelRoutingConfig,
+  AiModelRouteTarget,
   AiModelCapabilities,
-  AiProviderMode,
+  ProviderProtocolDriver,
   VisionFallbackConfig,
 } from '@garlic-claw/shared';
 
 export interface StoredAiProviderConfig {
   id: string;
   name: string;
-  mode: AiProviderMode;
-  driver: string;
+  driver: ProviderProtocolDriver;
   apiKey?: string;
   baseUrl?: string;
   defaultModel?: string;
@@ -25,9 +25,14 @@ export interface StoredAiModelConfig {
   status?: 'alpha' | 'beta' | 'active' | 'deprecated';
 }
 
+export interface AiProviderStorageFile extends StoredAiProviderConfig {
+  persistedModels: StoredAiModelConfig[];
+}
+
 export interface AiSettingsFile {
   providers: StoredAiProviderConfig[];
   models: StoredAiModelConfig[];
   visionFallback: VisionFallbackConfig;
   hostModelRouting: AiHostModelRoutingConfig;
+  defaultSelection: AiModelRouteTarget | null;
 }

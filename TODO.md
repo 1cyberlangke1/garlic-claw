@@ -1,33 +1,47 @@
 # Garlic Claw TODO
 
-> 本文件只保留当前仍有效的项目级真相。
-> 已完成旧流水只保留摘要；本轮实现细节放 `task_plan.md / progress.md / findings.md`。
-
 ## 已完成摘要
 
-- `packages/shared` 已收口为 type-only，共享契约已对齐。
-- `packages/server/src` 已压到 `8494`，Windows 与 WSL 内部目录的 fresh 构建、测试、后端 smoke、前端浏览器 smoke、独立 judge 都已通过。
-- 认证主链已收口为单密钥登录；`users/me / register / dev-login / refresh / role / API Key` 主链路已删除。
-- 聊天链路已支持 provider 自定义扩展块，前端默认折叠展示；插件侧已支持显式 `transportMode: 'generate' | 'stream-collect'`。
-- 聊天页“会话相关元素统一刷新”已完成，发送 / 重试 / 编辑 / 删除 / 停止生成后的摘要刷新、旧 SSE/旧请求竞态收口、独立 judge 都已通过。
-- 文档分层、跨平台约束、无绝对路径约束、测试目录规范已同步到 `AGENTS.md`。
-- N12 Persona 重构（AstrBot 方向）已完成，当前 persona 已改为服务端一等资源并使用目录化存储。
-- N13 插件配置元数据协议已收口为 object-tree 声明式 schema，`shared / plugin-sdk / server / web` 已对齐并通过 fresh 验收。
-- N15 模型上下文长度与 usage 估算已完成；`contextLength` 与模型元数据已持久化，usage 缺失时会统一估算并返回稳定结构。
-- N16 插件化上下文压缩已完成；通用历史接口、`metadata.annotations[]`、自动/手动压缩、聊天摘要展示与 fresh 验收已打通。
-- N14 远程插件静态接入密钥与元数据缓存已完成；远程插件主语义已收口为 `runtimeKind + remoteEnvironment + auth.mode + capabilityProfile`，接入配置面板、静态缓存、IoT 风险提示和 fresh 验收已齐备。
+- 真实 provider 基线已打通：
+  - 默认 provider 不再回落到占位 key
+  - `testConnection` 已改为真实联网
+  - `smoke:server:real` 已支持按 provider 执行
+  - `nvidia` 与修正后的 `ds2api` 真实 smoke 已可通过
+- CRUD 覆盖已补齐：
+  - `AiController` 的 provider/model/config 相关 HTTP 方法已补齐缺失单测
+  - `http-smoke.mjs` 的既有删除链路已补删后 404 / 列表不可见校验
+  - `/compact` fake smoke 已改为稳定断言，专用 summary 冒烟仍单独校验模型请求
 
-## 当前阶段：待定
+## 已完成阶段摘要
 
-- N17 Skill 对齐 OpenCode 已启动：
-  - skill 改为原生按需加载工具
-  - 删除会话级 skill 激活态、专用工具源和隐式常驻 prompt 注入
-  - skill 相关代码执行统一回到通用工具
+- `P1 ~ P5` 已完成：
+  - 所有调用 LLM 的核心 owner 已完成覆盖矩阵核对
+  - fake/real smoke 已复用同一套步骤编排
+  - 测试产物自动清理已补齐
+  - fresh 验收与独立 judge 已通过
+- `runtime/workspace 路径收口 + tmp 清理` 已完成：
+  - runtime 工作目录统一落到仓库根 `workspace/`
+  - server 默认运行态存储不再继续写入 `packages/server/tmp`
+  - `packages/server/tmp` 历史垃圾已删除
+  - Jest 临时产物已改为 `workspace/test-artifacts/server/process-<pid>`，并接入 `globalSetup/globalTeardown`
+  - `http-smoke` 临时目录已在脚本结束后自动删除
+- `subagent 可见性 + 空工作目录回收` 已完成：
+  - `subagentType: "default"` 已映射到 `general`
+  - 无效 `sessionId` 已按新会话处理，且不会绕过容量限制
+  - Subagent 页面已同时展示 `同步 / 后台` 两类记录
+  - 空的 `workspace/runtime-workspaces/<session>` 会在工具调用后自动回收
 
-## 固定约束
+## 当前边界
 
-- 不允许引入绝对路径。
-- WSL 测试必须在 WSL 内部目录执行；如当前环境本身就在 Linux / WSL 内部目录则忽略迁移动作。
-- 提交前 / 修改完成后必须实际跑所有受影响冒烟测试，直到通过才能继续。
-- 测试新增的持久副作用必须清理，不提交 provider、会话记录、聊天记录等测试残留。
-- 不接受把 persona 复杂度继续藏在普通插件顺序或隐式 prompt 覆盖里。
+- 必须覆盖的 LLM owner：
+  - `AiManagementService`
+  - `ConversationMessagePlanningService`
+  - `ContextGovernanceService`
+  - `AiVisionService`
+  - `RuntimeHostService`
+  - `RuntimeHostSubagentRunnerService`
+- `shared` 只放类型，不放逻辑。
+- 不新增 `helper / helpers` 命名。
+- 禁止 `any`。
+- fake LLM 与 real LLM 的 smoke 路径必须复用同一套步骤编排，不能平行复制控制流。
+- 测试创建的会话、provider、临时配置、临时目录、子代理记录必须自动清理。

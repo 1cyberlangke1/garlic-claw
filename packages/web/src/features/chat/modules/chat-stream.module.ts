@@ -1,7 +1,15 @@
 ﻿import { markRaw } from "vue";
 
 import type { Ref } from "vue";
+import type {
+  ConversationContextWindowPreview,
+  ConversationTodoItem,
+  SSEEvent,
+} from "@garlic-claw/shared";
 import type { ChatSendInput } from "@/features/chat/store/chat-store.types";
+import type {
+  ChatPendingRuntimePermission,
+} from "@/features/chat/store/chat-store.types";
 import {
   retryConversationMessage,
   sendConversationMessage,
@@ -26,19 +34,27 @@ import type { ChatMessage } from "@/features/chat/store/chat-store.types";
 
 export interface ChatStreamState {
   currentConversationId: Ref<string | null>;
+  contextWindowPreview: Ref<ConversationContextWindowPreview | null>;
   messages: Ref<ChatMessage[]>;
   selectedProvider: Ref<string | null>;
   selectedModel: Ref<string | null>;
   streamController: Ref<AbortController | null>;
   recoveryTimer: Ref<number | null>;
   currentStreamingMessageId: Ref<string | null>;
+  todoItems: Ref<ConversationTodoItem[]>;
+  pendingRuntimePermissions: Ref<ChatPendingRuntimePermission[]>;
   streaming: Ref<boolean>;
 }
+
+const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
 
 interface ConversationRefreshParams {
   loadConversationDetail?: ((conversationId: string) => Promise<void>) | undefined;
   refreshConversationSummary?: (() => Promise<void>) | undefined;
-  refreshConversationState?: (() => Promise<void>) | undefined;
+  refreshConversationState?: ((input: {
+    summaryRefreshed: boolean;
+    permissionStateChanged: boolean;
+  }) => Promise<void>) | undefined;
 }
 
 interface PendingMessageCommit {
@@ -88,12 +104,26 @@ export function discardPendingMessageUpdates(state: ChatStreamState) {
 }
 
 function syncMessageList(state: ChatStreamState, nextMessages: ChatMessage[]) {
-  state.messages.value = markRaw(nextMessages);
+  state.messages.value = markRaw(trimConversationMessages(state, nextMessages));
   syncChatStreamingState(state);
 }
 
 function getLatestMessages(state: ChatStreamState) {
   return getPendingMessageCommit(state).nextMessages ?? state.messages.value;
+}
+
+function trimConversationMessages(
+  state: ChatStreamState,
+  nextMessages: ChatMessage[],
+) {
+  const windowSize = Math.max(
+    1,
+    state.contextWindowPreview.value?.frontendMessageWindowSize ??
+      DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE,
+  );
+  return nextMessages.length > windowSize
+    ? nextMessages.slice(-windowSize)
+    : nextMessages;
 }
 
 function flushPendingMessages(state: ChatStreamState) {
@@ -144,6 +174,33 @@ export function syncChatStreamingState(state: ChatStreamState) {
   state.streaming.value = Boolean(state.currentStreamingMessageId.value);
 }
 
+function applyRuntimePermissionEvent(
+  state: ChatStreamState,
+  event: Extract<SSEEvent, { type: "permission-request" | "permission-resolved" }>,
+) {
+  if (event.type === "permission-request") {
+    state.pendingRuntimePermissions.value = [
+      ...state.pendingRuntimePermissions.value.filter(
+        (entry) => entry.id !== event.request.id,
+      ),
+      {
+        ...event.request,
+        resolving: false,
+      },
+    ].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    return;
+  }
+  state.pendingRuntimePermissions.value = state.pendingRuntimePermissions.value
+    .filter((entry) => entry.id !== event.result.requestId);
+}
+
+function applyTodoUpdatedEvent(
+  state: ChatStreamState,
+  event: Extract<SSEEvent, { type: "todo-updated" }>,
+) {
+  state.todoItems.value = event.todos;
+}
+
 export function abortChatStream(state: ChatStreamState) {
   state.streamController.value?.abort();
   state.streamController.value = null;
@@ -151,10 +208,6 @@ export function abortChatStream(state: ChatStreamState) {
 
 export function stopChatRecovery(state: ChatStreamState) {
   stopChatRecoveryPolling(state.recoveryTimer);
-}
-
-export function scheduleChatRecovery(state: ChatStreamState) {
-  scheduleChatRecoveryWithState(state, async () => undefined);
 }
 
 export function scheduleChatRecoveryWithState(
@@ -217,6 +270,7 @@ export async function dispatchSendMessage(
   state.streamController.value = controller;
   stopChatRecovery(state);
   let didRefreshConversationStateDuringStream = false;
+  let didChangeRuntimePermissionsDuringStream = false;
 
   try {
     await sendConversationMessage(
@@ -224,6 +278,19 @@ export async function dispatchSendMessage(
       payload,
       (event) => {
         if (state.currentConversationId.value !== requestConversationId) {
+          return;
+        }
+
+        if (
+          event.type === "permission-request" ||
+          event.type === "permission-resolved"
+        ) {
+          didChangeRuntimePermissionsDuringStream = true;
+          applyRuntimePermissionEvent(state, event);
+          return;
+        }
+        if (event.type === "todo-updated") {
+          applyTodoUpdatedEvent(state, event);
           return;
         }
 
@@ -267,7 +334,10 @@ export async function dispatchSendMessage(
       state.streamController.value = null;
     }
 
-    await params?.refreshConversationState?.().catch(() => undefined);
+    await params?.refreshConversationState?.({
+      permissionStateChanged: didChangeRuntimePermissionsDuringStream,
+      summaryRefreshed: didRefreshConversationStateDuringStream,
+    }).catch(() => undefined);
     if (state.currentConversationId.value === requestConversationId) {
       scheduleChatRecoveryWithState(
         state,
@@ -314,6 +384,7 @@ export async function dispatchRetryMessage(
   state.streamController.value = controller;
   stopChatRecovery(state);
   let didRefreshConversationStateDuringStream = false;
+  let didChangeRuntimePermissionsDuringStream = false;
 
   try {
     await retryConversationMessage(
@@ -325,6 +396,19 @@ export async function dispatchRetryMessage(
       },
       (event) => {
         if (state.currentConversationId.value !== requestConversationId) {
+          return;
+        }
+
+        if (
+          event.type === "permission-request" ||
+          event.type === "permission-resolved"
+        ) {
+          didChangeRuntimePermissionsDuringStream = true;
+          applyRuntimePermissionEvent(state, event);
+          return;
+        }
+        if (event.type === "todo-updated") {
+          applyTodoUpdatedEvent(state, event);
           return;
         }
 
@@ -363,7 +447,10 @@ export async function dispatchRetryMessage(
       state.streamController.value = null;
     }
 
-    await params?.refreshConversationState?.().catch(() => undefined);
+    await params?.refreshConversationState?.({
+      permissionStateChanged: didChangeRuntimePermissionsDuringStream,
+      summaryRefreshed: didRefreshConversationStateDuringStream,
+    }).catch(() => undefined);
     if (state.currentConversationId.value === requestConversationId) {
       scheduleChatRecoveryWithState(
         state,

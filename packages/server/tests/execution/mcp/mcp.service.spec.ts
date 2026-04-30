@@ -3,8 +3,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { McpServerConfig } from '@garlic-claw/shared';
 import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
 import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
+import { createServerTestArtifactPath } from '../../../src/runtime/server-workspace-paths';
 
 describe('McpService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';
@@ -36,7 +38,7 @@ describe('McpService', () => {
     process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
     service = new McpService(
       configService as never,
-      new McpConfigStoreService(),
+      new McpConfigStoreService(new ProjectWorktreeRootService()),
       new RuntimeEventLogService(),
     );
   });
@@ -49,7 +51,10 @@ describe('McpService', () => {
   });
 
   it('connects and calls a real stdio MCP server through the launcher', async () => {
-    const workspace = path.join(process.cwd(), 'tmp', `mcp-real-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    const workspace = createServerTestArtifactPath({
+      prefix: 'mcp-real',
+      subdirectory: 'server',
+    });
     const scriptPath = path.join(workspace, 'working-mcp.cjs');
     fs.mkdirSync(workspace, { recursive: true });
     fs.writeFileSync(scriptPath, [
@@ -167,7 +172,6 @@ describe('McpService', () => {
   it('disconnects runtime state and rejects tool calls when a source is disabled online', async () => {
     const weather = createServer('weather');
     const client = { callTool: jest.fn(), close: jest.fn() };
-    const disconnectSpy = jest.spyOn(service as any, 'disconnectServer').mockResolvedValue(undefined);
 
     await service.saveServer(weather);
     (service as any).clients.set('weather', client);
@@ -187,7 +191,7 @@ describe('McpService', () => {
 
     await service.setServerEnabled('weather', false);
 
-    expect(disconnectSpy).toHaveBeenCalledWith('weather');
+    expect(client.close).toHaveBeenCalledTimes(1);
     expect(service.getToolingSnapshot()).toEqual({
       statuses: [expect.objectContaining({ name: 'weather', enabled: false, connected: false, health: 'unknown' })],
       tools: [],
@@ -202,6 +206,59 @@ describe('McpService', () => {
     await service.onModuleDestroy();
 
     expect(disconnectAllSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs a real probe when executing health-check governance action', async () => {
+    const weather = createServer('weather');
+    const staleClient = { callTool: jest.fn(), close: jest.fn() };
+    const freshClient = { callTool: jest.fn(), close: jest.fn() };
+    await service.saveServer(weather);
+    (service as any).clients.set('weather', staleClient);
+    (service as any).serverRecords.set('weather', {
+      status: {
+        name: 'weather',
+        connected: false,
+        enabled: true,
+        health: 'error',
+        lastError: 'stale',
+        lastCheckedAt: '2026-04-03T10:00:00.000Z',
+      },
+      tools: [],
+    });
+    const connectSpy = jest.spyOn(service as any, 'connectClientSession').mockResolvedValue({
+      client: freshClient,
+      tools: [{ serverName: 'weather', name: 'get_forecast', description: 'Get forecast', inputSchema: { type: 'object' } }],
+    });
+
+    await expect(service.runGovernanceAction('weather', 'health-check')).resolves.toEqual({
+      accepted: true,
+      action: 'health-check',
+      sourceId: 'weather',
+      sourceKind: 'mcp',
+      message: 'MCP source health check passed',
+    });
+    expect(connectSpy).toHaveBeenCalledWith({
+      config: weather,
+      name: 'weather',
+    });
+    expect(staleClient.close).toHaveBeenCalledTimes(1);
+    expect(service.getToolingSnapshot()).toEqual({
+      statuses: [
+        expect.objectContaining({
+          name: 'weather',
+          connected: true,
+          health: 'healthy',
+          lastError: null,
+          lastCheckedAt: expect.any(String),
+        }),
+      ],
+      tools: [
+        expect.objectContaining({
+          serverName: 'weather',
+          name: 'get_forecast',
+        }),
+      ],
+    });
   });
 
   it('routes stdio MCP servers through the local launcher process', () => {

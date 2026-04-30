@@ -59,28 +59,21 @@
         <span class="summary-foot">{{ runtimeKindLabel(plugin) }}</span>
       </article>
       <article class="summary-card">
-        <span class="summary-label">健康状态</span>
+        <span class="summary-label">健康</span>
         <strong>{{ healthText(health) }}</strong>
-        <p>最后成功：{{ formatTime(health?.lastSuccessAt ?? null) }}</p>
-        <p>最后检查：{{ formatTime(health?.lastCheckedAt ?? null) }}</p>
-        <p>并发占用：{{ formatRuntimePressure(health) }}</p>
+        <p v-if="health?.lastSuccessAt">最后成功：{{ formatTime(health.lastSuccessAt) }}</p>
+        <p v-if="health?.lastCheckedAt">最后检查：{{ formatTime(health.lastCheckedAt) }}</p>
+        <p>并发：{{ formatRuntimePressure(health) }}</p>
       </article>
       <article class="summary-card">
         <span class="summary-label">失败统计</span>
         <strong>{{ health?.failureCount ?? 0 }}</strong>
         <p>连续失败：{{ health?.consecutiveFailures ?? 0 }}</p>
-        <span class="summary-foot">最近错误已同步到侧栏摘要</span>
       </article>
       <article class="summary-card">
         <span class="summary-label">能力概览</span>
-        <strong>{{ plugin.manifest.tools.length }} 个能力</strong>
-        <p>
-          {{ plugin.manifest.hooks?.length ?? 0 }} 个 Hook，
-          {{ cronCount }} 个 Cron，
-          {{ plugin.manifest.routes?.length ?? 0 }} 个 Route，
-          {{ plugin.manifest.permissions.length }} 个权限
-        </p>
-        <span class="summary-foot">当前详情只展示统一协议下的宿主扩展面</span>
+        <strong>{{ plugin.manifest.tools.length }} 个工具</strong>
+        <p>{{ plugin.manifest.hooks?.length ?? 0 }} Hook / {{ cronCount }} Cron / {{ plugin.manifest.routes?.length ?? 0 }} Route / {{ plugin.manifest.permissions.length }} 权限</p>
       </article>
     </div>
 
@@ -173,9 +166,9 @@ defineEmits<{
  * @param value 时间字符串
  * @returns 展示文案
  */
-function formatTime(value: string | null): string {
+function formatTime(value: string | null | undefined): string {
   if (!value) {
-    return '暂无'
+    return '无'
   }
 
   return new Date(value).toLocaleString()

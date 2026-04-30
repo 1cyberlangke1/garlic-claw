@@ -26,6 +26,9 @@ export type PluginPermission =
   | 'persona:read'
   | 'persona:write'
   | 'provider:read'
+  | 'runtime:command'
+  | 'runtime:read'
+  | 'runtime:write'
   | 'storage:read'
   | 'storage:write'
   | 'subagent:run'
@@ -170,6 +173,7 @@ export type PluginConfigSpecialType =
   | 'selectProvider'
   | 'selectProviders'
   | 'selectPersona'
+  | 'selectSubagentType'
   | 'personaPool'
   | (string & {});
 

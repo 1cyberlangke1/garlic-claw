@@ -3,11 +3,11 @@
     <div v-if="provider" class="panel-header">
       <div>
         <h2>{{ provider.name }}</h2>
-        <p>{{ provider.id }} · {{ getProviderModeLabel(provider, catalog) }} · {{ getProviderDriverLabel(provider, catalog) }}</p>
+        <p>{{ provider.id }} · {{ getProviderKindLabel(provider, catalog) }} · {{ getProviderDriverLabel(provider, catalog) }}</p>
       </div>
       <div class="header-actions">
         <button type="button" class="ghost-button" :disabled="discoveringModels" @click="$emit('discover-models')">
-          {{ discoveringModels ? '拉取中...' : '拉取模型' }}
+          {{ discoveringModels ? '发现中...' : '发现模型' }}
         </button>
         <button type="button" class="ghost-button" :disabled="testingConnection" @click="$emit('test-connection')">
           {{ testingConnection ? '测试中...' : '测试连接' }}
@@ -17,9 +17,13 @@
       </div>
     </div>
 
-    <p v-if="!provider" class="empty-state">从左侧选择 provider 后查看模型配置。</p>
+    <p v-if="!provider" class="empty-state">请从左侧选择服务商。</p>
 
     <template v-else>
+      <p v-if="currentDefaultLabel" class="status-text default-summary">
+        当前默认：{{ currentDefaultLabel }}
+      </p>
+
       <p v-if="connectionResult" class="status-text" :class="connectionResult.kind">
         {{ connectionResult.text }}
       </p>
@@ -59,14 +63,14 @@
               <p>{{ model.id }}</p>
             </div>
             <div class="summary-actions">
-              <span v-if="provider.defaultModel === model.id" class="default-badge">默认</span>
+              <span v-if="isCurrentDefaultModel(model.id)" class="default-badge">当前默认</span>
               <button
                 v-else
                 type="button"
                 class="ghost-button"
                 @click="$emit('set-default-model', model.id)"
               >
-                设为默认
+                设为当前默认
               </button>
               <button type="button" class="danger-button" @click="$emit('delete-model', model.id)">
                 删除
@@ -132,16 +136,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type {
+  AiDefaultProviderSelection,
   AiModelConfig,
   AiProviderConfig,
   AiProviderCatalogItem,
 } from '@garlic-claw/shared'
 import AiModelCapabilityToggles from './AiModelCapabilityToggles.vue'
 import { usePagination } from '@/composables/use-pagination'
-import { getProviderDriverLabel, getProviderModeLabel } from './provider-catalog'
+import { getProviderDriverLabel, getProviderKindLabel } from './provider-catalog'
 
 const props = defineProps<{
   provider: AiProviderConfig | null
+  defaultSelection: AiDefaultProviderSelection
   catalog: AiProviderCatalogItem[]
   models: AiModelConfig[]
   discoveringModels: boolean
@@ -164,10 +170,18 @@ const emit = defineEmits<{
   (event: 'update-context-length', payload: { modelId: string; contextLength: number }): void
 }>()
 
+const currentDefaultLabel = computed(() => {
+  if (!props.defaultSelection.providerId || !props.defaultSelection.modelId) {
+    return ''
+  }
+  return `${props.defaultSelection.providerId} / ${props.defaultSelection.modelId}`
+})
+
 const newModelId = ref('')
 const newModelName = ref('')
 const searchKeyword = ref('')
 const contextLengthDraftByModelId = ref<Record<string, string>>({})
+const contextLengthBaseByModelId = ref<Record<string, string>>({})
 
 const filteredModels = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
@@ -180,6 +194,11 @@ const filteredModels = computed(() => {
     model.name.toLowerCase().includes(keyword),
   )
 })
+
+function isCurrentDefaultModel(modelId: string) {
+  return props.provider?.id === props.defaultSelection.providerId
+    && props.defaultSelection.modelId === modelId
+}
 const {
   currentPage,
   pageCount,
@@ -208,9 +227,21 @@ watch(
 watch(
   () => props.models,
   (models) => {
-    contextLengthDraftByModelId.value = Object.fromEntries(
-      models.map((model) => [model.id, String(model.contextLength)]),
-    )
+    const nextDrafts: Record<string, string> = {}
+    const nextBases: Record<string, string> = {}
+    for (const model of models) {
+      const nextBase = String(model.contextLength)
+      const previousBase = contextLengthBaseByModelId.value[model.id]
+      const previousDraft = contextLengthDraftByModelId.value[model.id]
+      nextBases[model.id] = nextBase
+      if (previousDraft === undefined) {
+        nextDrafts[model.id] = nextBase
+        continue
+      }
+      nextDrafts[model.id] = previousBase !== nextBase ? nextBase : previousDraft
+    }
+    contextLengthBaseByModelId.value = nextBases
+    contextLengthDraftByModelId.value = nextDrafts
   },
   { immediate: true },
 )
@@ -430,6 +461,10 @@ function saveContextLength(model: AiModelConfig) {
 
 .status-text.error {
   color: var(--danger);
+}
+
+.default-summary {
+  color: var(--accent);
 }
 
 .model-item {

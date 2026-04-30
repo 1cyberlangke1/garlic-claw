@@ -4,7 +4,6 @@ import type { AiProviderCatalogItem } from '@garlic-claw/shared'
 import {
   applyProviderDriverDefaults,
   createProviderFormState,
-  getCatalogDriverOptions,
   getProviderDriverHint,
   syncProviderFormState,
 } from '@/features/ai-settings/components/provider-editor-form'
@@ -13,17 +12,12 @@ import { coreProviderCatalogFixture } from './provider-test.fixtures'
 const catalog: AiProviderCatalogItem[] = coreProviderCatalogFixture
 
 describe('provider-editor-form', () => {
-  it('labels and hints the three core catalog templates correctly', () => {
-    expect(getCatalogDriverOptions(catalog)).toEqual([
-      expect.objectContaining({ id: 'openai', label: 'OpenAI · 核心协议族' }),
-      expect.objectContaining({ id: 'anthropic', label: 'Anthropic · 核心协议族' }),
-      expect.objectContaining({ id: 'gemini', label: 'Google Gemini · 核心协议族' }),
-    ])
-    expect(getProviderDriverHint('catalog', 'openai', catalog)).toContain(
-      'OpenAI 核心协议族',
+  it('根据驱动和 provider id 返回正确提示', () => {
+    expect(getProviderDriverHint('openai', 'openai', catalog)).toContain(
+      '内建 OpenAI 供应商',
     )
-    expect(getProviderDriverHint('protocol', 'anthropic', catalog)).toContain(
-      'Anthropic 协议族',
+    expect(getProviderDriverHint('anthropic', 'custom-anthropic', catalog)).toContain(
+      'Anthropic 协议连接供应商',
     )
   })
 
@@ -41,16 +35,16 @@ describe('provider-editor-form', () => {
     expect(form.modelsText).toBe('claude-3-5-sonnet-20241022')
   })
 
-  it('clears stale catalog defaults when switching a new provider to protocol mode', () => {
+  it('给自定义 provider 保留协议语义而不是核心预设', () => {
     const form = reactive(createProviderFormState())
 
     syncProviderFormState(form, null, catalog)
-    form.mode = 'protocol'
+    form.id = 'gemini-proxy'
     form.driver = 'gemini'
     applyProviderDriverDefaults(form, catalog, null)
 
-    expect(form.id).toBe('gemini')
-    expect(form.name).toBe('Gemini 协议接入')
+    expect(form.id).toBe('gemini-proxy')
+    expect(form.name).toBe('Gemini 协议')
     expect(form.baseUrl).toBe('https://generativelanguage.googleapis.com/v1beta')
     expect(form.defaultModel).toBe('')
     expect(form.modelsText).toBe('')

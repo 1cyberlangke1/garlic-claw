@@ -19,7 +19,11 @@
         <div
           :data-message-id="row.message.id ?? undefined"
           class="message"
-          :class="row.message.role"
+          :class="[
+            row.message.role,
+            displayVariantClass(row.message),
+            contextVisibilityClass(row.message),
+          ]"
         >
           <div class="message-role" :title="readRoleTitle(row.message)">
             <img
@@ -34,11 +38,11 @@
             <div class="message-body">
               <div class="message-meta">
                 <span
-                  v-if="isNonContextMessage(row.message)"
+                  v-if="readContextVisibilityLabel(row.message)"
                   class="message-context-visibility excluded"
-                  title="这条消息仅用于前端展示，不会进入默认 LLM 上下文"
+                  :title="readContextVisibilityTitle(row.message)"
                 >
-                  仅展示，不进入 LLM 上下文
+                  {{ readContextVisibilityLabel(row.message) }}
                 </span>
                 <span class="message-status" :class="row.message.status">
                   {{ statusLabelMap[row.message.status] }}
@@ -294,6 +298,7 @@ import type {
   ChatMessageAnnotation,
   ChatMessageCustomBlock,
   ChatMessagePart,
+  ConversationContextWindowPreview,
 } from "@garlic-claw/shared";
 import type { ChatMessage } from "@/features/chat/store/chat";
 
@@ -314,6 +319,7 @@ const props = defineProps<{
     avatar: string | null;
     name: string;
   } | null;
+  contextWindowPreview?: ConversationContextWindowPreview | null;
   loading: boolean;
   messages: ChatMessage[];
 }>();
@@ -598,7 +604,10 @@ function getRoleLabel(message: ChatMessage): string {
     return "用户";
   }
   if (message.role === "display") {
-    return "摘要";
+    if (readDisplayMessageVariant(message) === "command") {
+      return "命令";
+    }
+    return contextCompactionSummary(message) ? "摘要" : "展示";
   }
 
   const assistantName = props.assistantPersona?.name?.trim();
@@ -610,7 +619,7 @@ function readRoleTitle(message: ChatMessage): string {
     return "用户";
   }
   if (message.role === "display") {
-    return "仅展示消息";
+    return readDisplayMessageVariant(message) === "command" ? "命令消息" : "仅展示消息";
   }
 
   return props.assistantPersona?.name?.trim() || "AI";
@@ -622,6 +631,41 @@ function shouldRenderAssistantAvatar(message: ChatMessage): boolean {
 
 function isNonContextMessage(message: ChatMessage): boolean {
   return message.role === "display";
+}
+
+function isExcludedFromCurrentContext(message: ChatMessage): boolean {
+  return Boolean(
+    message.id &&
+      props.contextWindowPreview?.excludedMessageIds.includes(message.id),
+  );
+}
+
+function contextVisibilityClass(message: ChatMessage): string | null {
+  return isExcludedFromCurrentContext(message) ? "excluded-from-context" : null;
+}
+
+function readContextVisibilityLabel(message: ChatMessage): string | null {
+  if (isNonContextMessage(message)) {
+    return "仅展示，不进入 LLM 上下文";
+  }
+  return isExcludedFromCurrentContext(message)
+    ? "已脱离当前 LLM 上下文"
+    : null;
+}
+
+function readContextVisibilityTitle(message: ChatMessage): string {
+  return isNonContextMessage(message)
+    ? "这条消息仅用于前端展示，不会进入默认 LLM 上下文"
+    : "这条消息仍保留在聊天记录中，但当前不会进入模型上下文";
+}
+
+function displayVariantClass(message: ChatMessage): string | null {
+  if (message.role !== "display") {
+    return null;
+  }
+
+  const variant = readDisplayMessageVariant(message);
+  return variant ? `display-${variant}` : null;
 }
 
 function readAssistantPersonaAlt(): string {
@@ -738,8 +782,21 @@ function readContextCompactionAnnotations(
   return (message.metadata?.annotations ?? []).filter(
     (annotation) =>
       annotation.type === "context-compaction" &&
-      annotation.owner === "builtin.context-compaction",
+      annotation.owner === "conversation.context-governance",
   );
+}
+
+function readDisplayMessageVariant(
+  message: ChatMessage,
+): "command" | "result" | null {
+  const annotation = message.metadata?.annotations?.find(
+    (entry) =>
+      entry.type === "display-message" &&
+      entry.owner === "conversation.display-message" &&
+      entry.version === "1",
+  );
+  const variant = isRecord(annotation?.data) ? annotation.data.variant : null;
+  return variant === "command" || variant === "result" ? variant : null;
 }
 
 function isContextCompactionSummaryData(

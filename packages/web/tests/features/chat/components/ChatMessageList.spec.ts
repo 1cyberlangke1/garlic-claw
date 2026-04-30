@@ -164,7 +164,7 @@ describe('ChatMessageList', () => {
               annotations: [
                 {
                   type: 'context-compaction',
-                  owner: 'builtin.context-compaction',
+                  owner: 'conversation.context-governance',
                   version: '1',
                   data: {
                     role: 'summary',
@@ -205,5 +205,118 @@ describe('ChatMessageList', () => {
     expect(displayMessage.html().indexOf('message-annotation-context-compaction')).toBeLessThan(
       displayMessage.html().indexOf('message-content'),
     )
+  })
+
+  it('renders persisted display command and result messages with distinct variants', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'display-command',
+            role: 'display',
+            content: '/compact',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    variant: 'command',
+                  },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+          {
+            id: 'display-result',
+            role: 'display',
+            content: '已压缩上下文，覆盖 2 条历史消息。',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    variant: 'result',
+                  },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const commandMessage = wrapper.find('[data-message-id="display-command"]')
+    const resultMessage = wrapper.find('[data-message-id="display-result"]')
+
+    expect(commandMessage.text()).toContain('命令')
+    expect(commandMessage.classes()).toContain('display-command')
+    expect(commandMessage.text()).toContain('/compact')
+    expect(resultMessage.text()).toContain('展示')
+    expect(resultMessage.classes()).toContain('display-result')
+    expect(resultMessage.text()).toContain('已压缩上下文，覆盖 2 条历史消息。')
+  })
+
+  it('grays out messages excluded from the current LLM context window without deleting them', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        contextWindowPreview: {
+          enabled: true,
+          estimatedTokens: 120,
+          excludedMessageIds: ['assistant-1'],
+          frontendMessageWindowSize: 200,
+          includedMessageIds: ['assistant-2'],
+          keepRecentMessages: 2,
+          maxWindowTokens: 256,
+          slidingWindowUsagePercent: 50,
+          strategy: 'sliding',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '这条消息已经脱离上下文窗口。',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+          },
+          {
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '这条消息仍在当前上下文窗口内。',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+          },
+        ],
+      },
+    })
+
+    const excludedMessage = wrapper.find('[data-message-id="assistant-1"]')
+    const includedMessage = wrapper.find('[data-message-id="assistant-2"]')
+
+    expect(excludedMessage.classes()).toContain('excluded-from-context')
+    expect(excludedMessage.text()).toContain('已脱离当前 LLM 上下文')
+    expect(excludedMessage.text()).toContain('这条消息已经脱离上下文窗口。')
+    expect(includedMessage.classes()).not.toContain('excluded-from-context')
   })
 })

@@ -37,7 +37,7 @@ describe('AiModelExecutionService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    settingsPath = path.join(os.tmpdir(), `gc-server-ai-${Date.now()}-${Math.random()}.json`);
+    settingsPath = path.join(os.tmpdir(), `gc-server-ai-${Date.now()}-${Math.random()}`);
     process.env.GARLIC_CLAW_AI_SETTINGS_PATH = settingsPath;
     mockGenerateText.mockResolvedValue({
       finishReason: 'stop',
@@ -68,9 +68,7 @@ describe('AiModelExecutionService', () => {
 
   afterEach(() => {
     delete process.env.GARLIC_CLAW_AI_SETTINGS_PATH;
-    if (fs.existsSync(settingsPath)) {
-      fs.unlinkSync(settingsPath);
-    }
+    fs.rmSync(settingsPath, { force: true, recursive: true });
   });
 
   it('passes request options through to the ai sdk and preserves image parts', async () => {
@@ -462,6 +460,12 @@ describe('AiModelExecutionService', () => {
     expect(streamed.modelId).toBe('gpt-5.4');
     expect(streamed.providerId).toBe('openai');
     await expect(streamed.finishReason).resolves.toBe('stop');
+    await expect(streamed.usage).resolves.toEqual({
+      inputTokens: 1,
+      outputTokens: 2,
+      source: 'provider',
+      totalTokens: 3,
+    });
 
     const parts: unknown[] = [];
     for await (const part of streamed.fullStream) {
@@ -488,6 +492,88 @@ describe('AiModelExecutionService', () => {
     }));
   });
 
+  it('normalizes rejected finishReason and totalUsage promises when a stream later fails', async () => {
+    const service = createService();
+    const streamFailure = new Error('invalid x-api-key');
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.reject(streamFailure),
+      fullStream: (async function* () {
+        throw streamFailure;
+      })(),
+      totalUsage: Promise.reject(streamFailure),
+    });
+
+    const streamed = service.streamText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'claude-3-5-sonnet-20241022',
+      providerId: 'anthropic',
+    });
+
+    await expect((async () => {
+      for await (const _part of streamed.fullStream) {
+        // noop
+      }
+    })()).rejects.toThrow('invalid x-api-key');
+    await expect(streamed.finishReason).resolves.toBeUndefined();
+    await expect(streamed.usage).resolves.toBeUndefined();
+  });
+
+  it('preserves fullStream when the ai sdk exposes it as a non-enumerable property', async () => {
+    const service = createService();
+    const rawStream = {
+      finishReason: Promise.resolve('stop'),
+      totalUsage: Promise.resolve({
+        inputTokens: 1,
+        outputTokens: 1,
+        totalTokens: 2,
+      }),
+    } as {
+      finishReason: Promise<string>;
+      fullStream?: AsyncIterable<unknown>;
+      totalUsage: Promise<{ inputTokens: number; outputTokens: number; totalTokens: number }>;
+    };
+    Object.defineProperty(rawStream, 'fullStream', {
+      configurable: true,
+      enumerable: false,
+      value: (async function* () {
+        yield {
+          text: 'non-enumerable stream',
+          type: 'text-delta' as const,
+        };
+      })(),
+      writable: true,
+    });
+    mockStreamText.mockReturnValueOnce(rawStream as never);
+
+    const streamed = service.streamText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    });
+
+    const parts: unknown[] = [];
+    for await (const part of streamed.fullStream) {
+      parts.push(part);
+    }
+
+    expect(parts).toEqual([
+      {
+        text: 'non-enumerable stream',
+        type: 'text-delta',
+      },
+    ]);
+  });
+
   it('enables multi-step tool loops for tool-enabled streams through the ai sdk stop condition', async () => {
     const service = createService();
 
@@ -512,6 +598,96 @@ describe('AiModelExecutionService', () => {
         weather_search: {},
       },
     }));
+  });
+
+  it('repairs invalid tool calls into the internal invalid tool when tools are enabled', async () => {
+    const service = createService();
+
+    service.streamText({
+      messages: [
+        {
+          content: '帮我先查天气再总结',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      tools: {
+        invalid: {} as never,
+        weather_search: {} as never,
+      },
+    } as never);
+
+    const repairToolCall = mockStreamText.mock.calls[0][0].experimental_repairToolCall as
+      | ((input: {
+          error: { message?: string; name?: string };
+          toolCall: { input: string; toolCallId: string; toolName: string };
+        }) => Promise<{ input: string; toolCallId: string; toolName: string } | null>)
+      | undefined;
+    expect(typeof repairToolCall).toBe('function');
+
+    await expect(repairToolCall?.({
+      error: {
+        message: 'city is required',
+        name: 'AI_InvalidToolInputError',
+      },
+      toolCall: {
+        input: '{"city":""}',
+        toolCallId: 'tool-call-1',
+        toolName: 'weather_search',
+      },
+    })).resolves.toEqual({
+      input: JSON.stringify({
+        error: 'city is required',
+        inputText: '{"city":""}',
+        phase: 'validate',
+        tool: 'weather_search',
+      }),
+      toolCallId: 'tool-call-1',
+      toolName: 'invalid',
+    });
+  });
+
+  it('repairs polluted tool names back to known tools before falling back to invalid', async () => {
+    const service = createService();
+
+    service.streamText({
+      messages: [
+        {
+          content: '先加载 skill 再继续',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      tools: {
+        invalid: {} as never,
+        skill: {} as never,
+      },
+    } as never);
+
+    const repairToolCall = mockStreamText.mock.calls[0][0].experimental_repairToolCall as
+      | ((input: {
+          error: { message?: string; name?: string };
+          toolCall: { input: string; toolCallId: string; toolName: string };
+        }) => Promise<{ input: string; toolCallId: string; toolName: string } | null>)
+      | undefined;
+
+    await expect(repairToolCall?.({
+      error: {
+        message: 'Model tried to call unavailable tool',
+        name: 'AI_NoSuchToolError',
+      },
+      toolCall: {
+        input: '{"name":"weather-query"}',
+        toolCallId: 'tool-call-2',
+        toolName: 'skill<|channel|>commentary',
+      },
+    })).resolves.toEqual({
+      input: '{"name":"weather-query"}',
+      toolCallId: 'tool-call-2',
+      toolName: 'skill',
+    });
   });
 
   it('normalizes streamed tool calls for openai-compatible providers when the endpoint omits id and type', async () => {
@@ -575,7 +751,6 @@ function createService(): AiModelExecutionService {
     baseUrl: 'https://api.openai.com/v1',
     defaultModel: 'gpt-5.4',
     driver: 'openai',
-    mode: 'protocol',
     models: ['gpt-5.4'],
     name: 'OpenAI',
   });
@@ -584,7 +759,6 @@ function createService(): AiModelExecutionService {
     baseUrl: 'https://api.anthropic.com/v1',
     defaultModel: 'claude-3-7-sonnet',
     driver: 'anthropic',
-    mode: 'protocol',
     models: ['claude-3-7-sonnet'],
     name: 'Anthropic',
   });
@@ -593,7 +767,6 @@ function createService(): AiModelExecutionService {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     defaultModel: 'gemini-2.5-pro',
     driver: 'gemini',
-    mode: 'protocol',
     models: ['gemini-2.5-pro'],
     name: 'Google Gemini',
   });

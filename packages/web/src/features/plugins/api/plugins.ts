@@ -17,6 +17,7 @@ import type {
   PluginRouteMethod,
   PluginScopeSettings,
   PluginStorageEntry,
+  PluginSubagentTypeSummary,
 } from '@garlic-claw/shared'
 
 export function listPlugins() {
@@ -169,6 +170,10 @@ export function updatePluginRemoteAccess(
   },
 ) {
   return put<PluginInfo>(`/plugins/${encodeURIComponent(name)}/remote-access`, payload)
+}
+
+export function listSubagentTypes() {
+  return get<PluginSubagentTypeSummary[]>('/subagents/types')
 }
 
 export interface PluginLlmRouteOption {

@@ -17,13 +17,17 @@ describe('server api contract freeze', () => {
       'DELETE /api/chat/conversations/:id/messages/:messageId',
       'GET /api/chat/conversations',
       'GET /api/chat/conversations/:id',
-      'GET /api/chat/conversations/:id/services',
+      'GET /api/chat/conversations/:id/context-window',
+      'GET /api/chat/conversations/:id/runtime-permissions/pending',
+      'GET /api/chat/conversations/:id/subagents',
+      'GET /api/chat/sessions/:id/todo',
       'PATCH /api/chat/conversations/:id/messages/:messageId',
       'POST /api/chat/conversations',
       'POST /api/chat/conversations/:id/messages',
       'POST /api/chat/conversations/:id/messages/:messageId/retry',
       'POST /api/chat/conversations/:id/messages/:messageId/stop',
-      'PUT /api/chat/conversations/:id/services',
+      'POST /api/chat/conversations/:id/runtime-permissions/:requestId/reply',
+      'PUT /api/chat/sessions/:id/todo',
     ]);
   });
 });

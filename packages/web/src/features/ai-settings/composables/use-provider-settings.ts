@@ -1,14 +1,17 @@
 import { onMounted, ref } from 'vue'
 import type {
+  AiDefaultProviderSelection,
   AiHostModelRoutingConfig,
   AiModelConfig,
   AiProviderCatalogItem,
   AiProviderConfig,
   AiProviderSummary,
   DiscoveredAiModel,
+  PluginConfigSnapshot,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import { useAsyncState } from '@/composables/use-async-state'
+import { emitInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 import {
   addProviderModel,
   deleteProviderConfig,
@@ -21,9 +24,12 @@ import {
   loadProviderSelectionData,
   saveHostModelRouting,
   saveProviderModelContextLength,
-  saveProviderDefaultModel,
   saveProviderModelCapabilities,
   saveProviderConfig,
+  saveSubagentConfig as saveSubagentConfigRequest,
+  saveRuntimeToolsConfig as saveRuntimeToolsConfigRequest,
+  saveContextGovernanceConfig as saveContextGovernanceConfigRequest,
+  saveAiDefaultProviderSelection,
   saveVisionFallbackConfig,
   testProviderConnection as testProviderConnectionRequest,
   toErrorMessage,
@@ -40,7 +46,7 @@ import {
  * - provider / model / vision fallback 所需的响应式状态和操作函数
  * 预期行为:
  * - 页面只负责渲染
- * - 所有数据拉取、选择与保存逻辑统一收口到此 composable
+ * - 所有数据拉取、选择与保存逻辑集中到此 composable
  */
 export function useProviderSettings() {
   const providerRequestState = useAsyncState(false)
@@ -48,9 +54,17 @@ export function useProviderSettings() {
   const error = providerRequestState.error
   const appError = providerRequestState.appError
   const savingVision = ref(false)
+  const savingRuntimeToolsConfig = ref(false)
+  const savingSubagentConfig = ref(false)
+  const savingContextGovernanceConfig = ref(false)
   const discoveringModels = ref(false)
   const testingConnection = ref(false)
   const catalog = ref<AiProviderCatalogItem[]>([])
+  const defaultSelection = ref<AiDefaultProviderSelection>({
+    providerId: null,
+    modelId: null,
+    source: 'default',
+  })
   const providers = ref<AiProviderSummary[]>([])
   const selectedProviderId = ref<string | null>(null)
   const selectedProvider = ref<AiProviderConfig | null>(null)
@@ -61,6 +75,9 @@ export function useProviderSettings() {
     fallbackChatModels: [],
     utilityModelRoles: {},
   })
+  const runtimeToolsConfigSnapshot = ref<PluginConfigSnapshot | null>(null)
+  const subagentConfigSnapshot = ref<PluginConfigSnapshot | null>(null)
+  const contextGovernanceConfigSnapshot = ref<PluginConfigSnapshot | null>(null)
   const visionOptions = ref<VisionModelOption[]>([])
   const hostModelRoutingOptions = ref<HostModelRoutingOption[]>([])
   const showProviderDialog = ref(false)
@@ -82,12 +99,16 @@ export function useProviderSettings() {
     try {
       const baseData = await loadProviderSettingsBaseData()
       catalog.value = baseData.catalog
+      defaultSelection.value = baseData.defaultSelection
       providers.value = baseData.providers
       visionConfig.value = baseData.visionConfig
       hostModelRoutingConfig.value = baseData.hostModelRoutingConfig ?? {
         fallbackChatModels: [],
         utilityModelRoles: {},
       }
+      runtimeToolsConfigSnapshot.value = baseData.runtimeToolsConfigSnapshot
+      subagentConfigSnapshot.value = baseData.subagentConfigSnapshot
+      contextGovernanceConfigSnapshot.value = baseData.contextGovernanceConfigSnapshot
       providerModelsByProviderId.value = Object.fromEntries(
         Object.entries(providerModelsByProviderId.value).filter(([providerId]) =>
           baseData.providers.some((provider) => provider.id === providerId),
@@ -264,22 +285,21 @@ export function useProviderSettings() {
     if (!selectedProvider.value) {
       return
     }
-    const updatedProvider = await saveProviderDefaultModel(
-      selectedProvider.value.id,
+    const providerId = selectedProvider.value.id
+    const updatedSelection = await saveAiDefaultProviderSelection(
+      providerId,
       modelId,
     )
-    selectedProvider.value = updatedProvider
+    defaultSelection.value = updatedSelection
+    selectedProvider.value = {
+      ...selectedProvider.value,
+      defaultModel: modelId,
+    }
     providers.value = providers.value.map((provider) =>
-      provider.id === updatedProvider.id
+      provider.id === providerId
         ? {
             ...provider,
-            name: updatedProvider.name,
-            mode: updatedProvider.mode,
-            driver: updatedProvider.driver,
-            defaultModel: updatedProvider.defaultModel,
-            baseUrl: updatedProvider.baseUrl,
-            modelCount: updatedProvider.models.length,
-            available: Boolean(updatedProvider.apiKey),
+            defaultModel: modelId,
           }
         : provider,
     )
@@ -381,6 +401,36 @@ export function useProviderSettings() {
     hostModelRoutingConfig.value = await saveHostModelRouting(config)
   }
 
+  async function saveRuntimeToolsConfig(values: PluginConfigSnapshot['values']) {
+    savingRuntimeToolsConfig.value = true
+    try {
+      runtimeToolsConfigSnapshot.value = await saveRuntimeToolsConfigRequest(values)
+      emitInternalConfigChanged({ scope: 'runtime-tools' })
+    } finally {
+      savingRuntimeToolsConfig.value = false
+    }
+  }
+
+  async function saveSubagentConfig(values: PluginConfigSnapshot['values']) {
+    savingSubagentConfig.value = true
+    try {
+      subagentConfigSnapshot.value = await saveSubagentConfigRequest(values)
+      emitInternalConfigChanged({ scope: 'subagent' })
+    } finally {
+      savingSubagentConfig.value = false
+    }
+  }
+
+  async function saveContextGovernanceConfig(values: PluginConfigSnapshot['values']) {
+    savingContextGovernanceConfig.value = true
+    try {
+      contextGovernanceConfigSnapshot.value = await saveContextGovernanceConfigRequest(values)
+      emitInternalConfigChanged({ scope: 'context-governance' })
+    } finally {
+      savingContextGovernanceConfig.value = false
+    }
+  }
+
   /**
    * 重新构建 provider 相关模型候选列表。
    */
@@ -419,17 +469,24 @@ export function useProviderSettings() {
   return {
     loadingProviders,
     savingVision,
+    savingRuntimeToolsConfig,
+    savingSubagentConfig,
+    savingContextGovernanceConfig,
     discoveringModels,
     testingConnection,
     error,
     appError,
     catalog,
+    defaultSelection,
     providers,
     selectedProviderId,
     selectedProvider,
     selectedModels,
     visionConfig,
     hostModelRoutingConfig,
+    runtimeToolsConfigSnapshot,
+    subagentConfigSnapshot,
+    contextGovernanceConfigSnapshot,
     visionOptions,
     hostModelRoutingOptions,
     showProviderDialog,
@@ -453,5 +510,8 @@ export function useProviderSettings() {
     testProviderConnection,
     saveVisionConfig,
     saveHostModelRoutingConfig,
+    saveRuntimeToolsConfig,
+    saveSubagentConfig,
+    saveContextGovernanceConfig,
   }
 }

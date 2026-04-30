@@ -7,11 +7,12 @@ import {
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   findAiProviderCatalogItem,
-  isCatalogProviderMode,
+  hasConfiguredProviderApiKey,
   validateAiProviderInput,
 } from './ai-management-model-config';
 import { PROVIDER_CATALOG } from './ai-provider-catalog';
 import {
+  cloneDefaultSelection,
   cloneRoutingConfig,
   loadAiSettings,
   resolveAiSettingsPath,
@@ -40,13 +41,23 @@ export class AiProviderSettingsService {
     return this.settings.providers.map((provider) => ({
       id: provider.id,
       name: provider.name,
-      mode: provider.mode,
       driver: provider.driver,
       defaultModel: provider.defaultModel,
       baseUrl: provider.baseUrl,
       modelCount: provider.models.length,
-      available: Boolean(provider.apiKey),
+      available: hasConfiguredProviderApiKey(provider.apiKey),
     }));
+  }
+
+  readPreferredProvider(): StoredAiProviderConfig | null {
+    const preferredProvider = this.settings.providers.find((provider) => hasConfiguredProviderApiKey(provider.apiKey) && provider.models.length > 0)
+      ?? this.settings.providers.find((provider) => provider.models.length > 0)
+      ?? null;
+    return preferredProvider ? { ...preferredProvider, models: [...preferredProvider.models] } : null;
+  }
+
+  readDefaultSelection() {
+    return cloneDefaultSelection(this.settings.defaultSelection);
   }
 
   getHostModelRoutingConfig(): AiHostModelRoutingConfig {
@@ -86,11 +97,12 @@ export class AiProviderSettingsService {
     validateAiProviderInput(PROVIDER_CATALOG, input);
     const catalog = findAiProviderCatalogItem(PROVIDER_CATALOG, input.driver);
     const existingProvider = this.settings.providers.find((entry) => entry.id === providerId) ?? null;
+    const usesCorePreset = providerId === input.driver;
     const nextProvider: StoredAiProviderConfig = {
       id: providerId,
       ...input,
-      baseUrl: input.baseUrl ?? (isCatalogProviderMode(input.mode) ? catalog?.defaultBaseUrl : undefined),
-      defaultModel: input.defaultModel ?? (isCatalogProviderMode(input.mode) ? catalog?.defaultModel : undefined),
+      baseUrl: input.baseUrl ?? catalog?.defaultBaseUrl,
+      defaultModel: input.defaultModel ?? input.models[0] ?? (usesCorePreset ? catalog?.defaultModel : undefined),
       models: [...input.models],
     };
     const removedModelIds = existingProvider
@@ -139,6 +151,11 @@ export class AiProviderSettingsService {
 
   removePersistedModel(providerId: string, modelId: string): void {
     this.settings.models = this.settings.models.filter((entry) => !(entry.providerId === providerId && entry.id === modelId));
+    this.saveSettings();
+  }
+
+  writeDefaultSelection(selection: { providerId: string; modelId: string } | null): void {
+    this.settings.defaultSelection = cloneDefaultSelection(selection);
     this.saveSettings();
   }
 

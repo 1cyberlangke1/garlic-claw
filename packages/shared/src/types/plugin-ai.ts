@@ -57,6 +57,10 @@ export interface PluginLlmGenerateTextResult {
 
 /** 插件侧统一 Subagent 运行请求。 */
 export interface PluginSubagentRunParams {
+  sessionId?: string;
+  description?: string;
+  maxConversationSubagents?: number;
+  subagentType?: string;
   providerId?: string;
   modelId?: string;
   system?: string;
@@ -68,15 +72,15 @@ export interface PluginSubagentRunParams {
   maxOutputTokens?: number;
 }
 
-/** 后台子代理任务状态。 */
-export type PluginSubagentTaskStatus =
+/** 后台子代理状态。 */
+export type PluginSubagentStatus =
   | 'queued'
   | 'running'
   | 'completed'
   | 'error';
 
-/** 后台子代理任务回写状态。 */
-export type PluginSubagentTaskWriteBackStatus =
+/** 后台子代理回写状态。 */
+export type PluginSubagentWriteBackStatus =
   | 'pending'
   | 'sent'
   | 'failed'
@@ -96,8 +100,8 @@ export interface PluginSubagentToolResult {
   output: JsonValue;
 }
 
-/** 插件侧统一 Subagent 运行结果。 */
-export interface PluginSubagentRunResult {
+/** 子代理执行阶段的内部结果。 */
+export interface PluginSubagentExecutionResult {
   providerId: string;
   modelId: string;
   text: string;
@@ -110,8 +114,16 @@ export interface PluginSubagentRunResult {
   toolResults: PluginSubagentToolResult[];
 }
 
+/** 插件侧统一 Subagent 运行结果。 */
+export interface PluginSubagentRunResult extends PluginSubagentExecutionResult {
+  sessionId: string;
+  sessionMessageCount: number;
+}
+
 /** 子代理运行时可改写的请求快照。 */
 export interface PluginSubagentRequest {
+  description?: string;
+  subagentType?: string;
   providerId?: string;
   modelId?: string;
   system?: string;
@@ -133,7 +145,7 @@ export interface PluginProviderCurrentInfo {
 /** 插件可见的 provider 安全摘要。 */
 export type PluginProviderSummary = Pick<
   AiProviderSummary,
-  'id' | 'name' | 'mode' | 'driver' | 'defaultModel' | 'available'
+  'id' | 'name' | 'driver' | 'defaultModel' | 'available'
 >;
 
 /** 插件可见的模型安全摘要。 */
@@ -190,7 +202,7 @@ export interface SubagentAfterRunHookPayload {
   context: PluginCallContext;
   pluginId: string;
   request: PluginSubagentRequest;
-  result: PluginSubagentRunResult;
+  result: PluginSubagentExecutionResult;
 }
 
 /** 子代理运行后 Hook 透传当前结果。 */
@@ -223,7 +235,7 @@ export interface PluginAvailableToolSummary {
   parameters: Record<string, PluginParamSchema>;
   pluginId?: string;
   runtimeKind?: PluginRuntimeKind;
-  sourceKind?: 'plugin' | 'mcp' | 'skill';
+  sourceKind?: 'internal' | 'plugin' | 'mcp' | 'skill';
   sourceId?: string;
 }
 

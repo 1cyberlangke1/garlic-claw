@@ -35,7 +35,7 @@
     <div class="mcp-config-layout">
       <aside class="mcp-server-sidebar">
         <div v-if="servers.length === 0" class="sidebar-state">
-          当前还没有 MCP server 配置。
+          还没有 MCP server 配置。
         </div>
         <button
           v-for="server in servers"
@@ -93,7 +93,7 @@
           </div>
 
           <div v-if="envRows.length === 0" class="sidebar-state">
-            当前没有环境变量。
+            没有环境变量。
           </div>
           <div v-else class="mcp-env-list">
             <div
@@ -158,12 +158,12 @@
         :settings="selectedServer.eventLog"
         :saving="savingEventLog"
         title="MCP 日志设置"
-        description="当前 MCP server 的事件日志会写到 log/mcp/<serverName>/ 目录。"
+        description="此 MCP server 的事件日志会写入 log/mcp/<serverName>/ 目录。"
         @save="saveServerEventLog"
       />
       <EventLogPanel
         title="MCP 事件日志"
-        description="查看当前 server 最近的失败、治理动作与健康检查记录。"
+        description="查看此 server 最近的事件记录。"
         :events="eventLogs"
         :loading="eventLoading"
         :query="eventQuery"

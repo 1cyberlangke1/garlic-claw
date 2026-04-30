@@ -22,8 +22,8 @@ describe('ToolController', () => {
       sources: [
         {
           kind: 'plugin',
-          id: 'builtin.memory-tools',
-          label: '记忆工具',
+          id: 'builtin.memory',
+          label: '记忆',
           enabled: true,
           health: 'healthy',
           lastError: null,
@@ -35,15 +35,15 @@ describe('ToolController', () => {
       ],
       tools: [
         {
-          toolId: 'plugin:builtin.memory-tools:save_memory',
+          toolId: 'plugin:builtin.memory:save_memory',
           name: 'save_memory',
           callName: 'save_memory',
           description: '保存记忆',
           parameters: {},
           enabled: true,
           sourceKind: 'plugin',
-          sourceId: 'builtin.memory-tools',
-          sourceLabel: '记忆工具',
+          sourceId: 'builtin.memory',
+          sourceLabel: '记忆',
           health: 'healthy',
           lastError: null,
           lastCheckedAt: '2026-03-30T12:00:00.000Z',
@@ -54,13 +54,13 @@ describe('ToolController', () => {
     await expect(controller.listOverview()).resolves.toEqual({
       sources: [
         expect.objectContaining({
-          id: 'builtin.memory-tools',
+          id: 'builtin.memory',
           totalTools: 2,
         }),
       ],
       tools: [
         expect.objectContaining({
-          toolId: 'plugin:builtin.memory-tools:save_memory',
+          toolId: 'plugin:builtin.memory:save_memory',
         }),
       ],
     });
@@ -69,29 +69,29 @@ describe('ToolController', () => {
   it('updates source and tool enabled flags through the registry', async () => {
     toolRegistry.setSourceEnabled.mockResolvedValue({
       kind: 'plugin',
-      id: 'builtin.memory-tools',
+      id: 'builtin.memory',
       enabled: false,
     });
     toolRegistry.setToolEnabled.mockResolvedValue({
-      toolId: 'plugin:builtin.memory-tools:save_memory',
+      toolId: 'plugin:builtin.memory:save_memory',
       enabled: false,
     });
 
     await expect(
-      controller.updateSourceEnabled('plugin', 'builtin.memory-tools', {
+      controller.updateSourceEnabled('plugin', 'builtin.memory', {
         enabled: false,
       } as never),
     ).resolves.toEqual({
       kind: 'plugin',
-      id: 'builtin.memory-tools',
+      id: 'builtin.memory',
       enabled: false,
     });
     await expect(
-      controller.updateToolEnabled('plugin:builtin.memory-tools:save_memory', {
+      controller.updateToolEnabled('plugin:builtin.memory:save_memory', {
         enabled: false,
       } as never),
     ).resolves.toEqual({
-      toolId: 'plugin:builtin.memory-tools:save_memory',
+      toolId: 'plugin:builtin.memory:save_memory',
       enabled: false,
     });
   });
@@ -101,17 +101,17 @@ describe('ToolController', () => {
       accepted: true,
       action: 'health-check',
       sourceKind: 'plugin',
-      sourceId: 'builtin.memory-tools',
+      sourceId: 'builtin.memory',
       message: 'Plugin source health check passed',
     });
 
     await expect(
-      controller.runSourceAction('plugin', 'builtin.memory-tools', 'health-check'),
+      controller.runSourceAction('plugin', 'builtin.memory', 'health-check'),
     ).resolves.toEqual({
       accepted: true,
       action: 'health-check',
       sourceKind: 'plugin',
-      sourceId: 'builtin.memory-tools',
+      sourceId: 'builtin.memory',
       message: 'Plugin source health check passed',
     });
   });

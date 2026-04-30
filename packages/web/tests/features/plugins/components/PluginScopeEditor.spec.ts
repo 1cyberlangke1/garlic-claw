@@ -73,17 +73,17 @@ describe('PluginScopeEditor', () => {
         saving: false,
         plugin: {
           id: 'plugin-1',
-          name: 'builtin.memory-context',
+          name: 'builtin.memory',
           status: 'online',
           connected: true,
           defaultEnabled: true,
           manifest: {
-            id: 'builtin.memory-context',
-            name: 'builtin.memory-context',
+            id: 'builtin.memory',
+            name: 'builtin.memory',
             version: '1.0.0',
             runtime: 'local',
-            permissions: [],
-            tools: [],
+            permissions: ['memory:read'],
+            tools: [{ name: 'recall_memory', description: 'recall', parameters: {} }],
           },
           governance: {
             canDisable: true,
@@ -105,7 +105,7 @@ describe('PluginScopeEditor', () => {
 
     expect(wrapper.find('[data-test="scope-enable-button"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="scope-disable-button"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('统一工具治理页')
+    expect(wrapper.text()).toContain('工具管理页')
   })
 
   it('hides disable conversation options for protected builtin plugins', async () => {

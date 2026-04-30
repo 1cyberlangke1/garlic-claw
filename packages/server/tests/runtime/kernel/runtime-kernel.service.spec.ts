@@ -3,6 +3,8 @@ import { AiManagementService } from '../../../src/ai-management/ai-management.se
 import { AiProviderSettingsService } from '../../../src/ai-management/ai-provider-settings.service';
 import { AutomationExecutionService } from '../../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../../src/execution/automation/automation.service';
+import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
+import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
@@ -17,7 +19,8 @@ import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-h
 import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
 import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostSubagentTaskStoreService } from '../../../src/runtime/host/runtime-host-subagent-task-store.service';
+import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
+import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
@@ -150,12 +153,12 @@ describe('RuntimePluginGovernanceService', () => {
     ]);
   });
 
-  it('reloads builtin plugins through the builtin bootstrap owner and reports governance actions', async () => {
+  it('does not expose reload for ordinary local plugins and still reports health actions', async () => {
     const { pluginBootstrapService, service } = createService();
     pluginBootstrapService.registerPlugin({
       fallback: {
-        id: 'builtin.memory-context',
-        name: 'Memory Context',
+        id: 'local.memory-context',
+        name: 'Local Memory Context',
         runtime: 'local',
       },
       manifest: {
@@ -164,42 +167,34 @@ describe('RuntimePluginGovernanceService', () => {
         version: '1.0.0',
       } as never,
     });
-    pluginBootstrapService.markPluginOffline('builtin.memory-context');
+    pluginBootstrapService.markPluginOffline('local.memory-context');
 
-    expect(service.listSupportedActions('builtin.memory-context')).toEqual([
-      'health-check',
-      'reload',
-    ]);
+    expect(service.listSupportedActions('local.memory-context')).toEqual(['health-check']);
     await expect(
       service.runPluginAction({
         action: 'health-check',
-        pluginId: 'builtin.memory-context',
+        pluginId: 'local.memory-context',
       }),
     ).resolves.toEqual({
       accepted: true,
       action: 'health-check',
-      pluginId: 'builtin.memory-context',
+      pluginId: 'local.memory-context',
       message: '插件健康检查失败',
     });
     await expect(
       service.runPluginAction({
         action: 'reload',
-        pluginId: 'builtin.memory-context',
+        pluginId: 'local.memory-context',
       }),
-    ).resolves.toEqual({
-      accepted: true,
-      action: 'reload',
-      pluginId: 'builtin.memory-context',
-      message: '已重新装载本地插件',
-    });
-    expect(pluginBootstrapService.getPlugin('builtin.memory-context')).toMatchObject({
-      connected: true,
-      pluginId: 'builtin.memory-context',
+    ).rejects.toThrow('does not support action reload');
+    expect(pluginBootstrapService.getPlugin('local.memory-context')).toMatchObject({
+      connected: false,
+      pluginId: 'local.memory-context',
     });
     await expect(
       service.runPluginAction({
         action: 'reconnect',
-        pluginId: 'builtin.memory-context',
+        pluginId: 'local.memory-context',
       }),
     ).rejects.toThrow('does not support action reconnect');
   });
@@ -319,6 +314,38 @@ describe('RuntimePluginGovernanceService', () => {
     expect(runtimeGatewayConnectionLifecycleService.probePluginHealth).toHaveBeenCalledWith('remote.echo');
   });
 
+  it('keeps the previous lastSuccessAt when a later remote health check fails', async () => {
+    const fixture = createService();
+    const { runtimeGatewayConnectionLifecycleService, service } = fixture;
+
+    seedRemotePlugin(fixture);
+    runtimeGatewayConnectionLifecycleService.registerRemotePlugin({
+      connectionId: 'conn-1',
+      fallback: {
+        id: 'remote.echo',
+        name: 'Remote Echo',
+        runtime: 'remote',
+      },
+      manifest: {
+        permissions: [],
+        tools: [],
+        version: '1.0.0',
+      } as never,
+      remoteEnvironment: 'api',
+    });
+    runtimeGatewayConnectionLifecycleService.probePluginHealth = jest.fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false });
+
+    const first = await service.readPluginHealthSnapshot('remote.echo');
+    const second = await service.readPluginHealthSnapshot('remote.echo');
+
+    expect(first.status).toBe('healthy');
+    expect(first.lastSuccessAt).toEqual(expect.any(String));
+    expect(second.status).toBe('offline');
+    expect(second.lastSuccessAt).toBe(first.lastSuccessAt);
+  });
+
   it('refreshes remote metadata cache after the plugin reconnects with a changed manifest', async () => {
     const fixture = createService();
     const { pluginBootstrapService, runtimeGatewayConnectionLifecycleService, service } = fixture;
@@ -388,13 +415,19 @@ describe('RuntimePluginGovernanceService', () => {
     const refreshedPlugin = pluginBootstrapService.getPlugin('remote.echo');
     expect(refreshedPlugin).toMatchObject({
       connected: true,
+      manifest: {
+        description: 'refreshed manifest',
+        version: '1.0.1',
+      },
       remote: {
         metadataCache: {
           status: 'cached',
         },
       },
     });
-    expect(refreshedPlugin.remote?.metadataCache.lastSyncedAt).not.toBe(initialLastSyncedAt);
+    expect(Date.parse(refreshedPlugin.remote?.metadataCache.lastSyncedAt ?? '')).toBeGreaterThanOrEqual(
+      Date.parse(initialLastSyncedAt ?? ''),
+    );
     expect(refreshedPlugin.remote?.metadataCache.manifestHash).not.toBe(initialManifestHash);
   });
 });
@@ -449,7 +482,6 @@ function createService() {
     apiKey: 'test-openai-key',
     defaultModel: 'gpt-5.4',
     driver: 'openai',
-    mode: 'protocol',
     models: ['gpt-5.4'],
     name: 'OpenAI',
   });
@@ -463,7 +495,9 @@ function createService() {
     {
       invokeHook: jest.fn(),
     } as never,
-    new RuntimeHostSubagentTaskStoreService(),
+    new RuntimeHostSubagentStoreService(),
+    new RuntimeHostSubagentSessionStoreService(),
+    new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
   );
   const runtimeHostAutomationService = new AutomationService(
     new AutomationExecutionService(
@@ -476,6 +510,9 @@ function createService() {
         sendMessage: async () => {
           throw new Error('RuntimeHostConversationMessageService is not available');
         },
+      } as never,
+      {
+        executeRegisteredTool: jest.fn(),
       } as never,
     ),
   );
@@ -494,9 +531,10 @@ function createService() {
     new RuntimeHostKnowledgeService(),
     runtimeHostPluginDispatchService,
     new RuntimeHostPluginRuntimeService(),
+    {} as never,
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
-    new PersonaService(new PersonaStoreService(), runtimeHostConversationRecordService),
+    new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();
   return {
