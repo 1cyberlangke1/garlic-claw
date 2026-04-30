@@ -30,19 +30,18 @@
         <div class="governance-actions">
           <label class="trust-level-field">
             <span>加载策略</span>
-            <select
-              :value="skill.governance.loadPolicy"
+            <ElSelect
+              :model-value="skill.governance.loadPolicy"
               :disabled="selectedSkillBusy"
               @change="setSelectedSkillLoadPolicy"
             >
-              <option
+              <ElOption
                 v-for="option in loadPolicyOptions"
                 :key="option.value"
                 :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
+                :label="option.label"
+              />
+            </ElSelect>
           </label>
         </div>
       </section>
@@ -83,6 +82,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ElOption, ElSelect } from 'element-plus'
 import type {
   SkillAssetKind,
   SkillDetail,
@@ -129,12 +129,11 @@ const renderedSkillContent = computed(() => {
   return String(marked.parse(props.skill.content))
 })
 
-function setSelectedSkillLoadPolicy(event: Event) {
+function setSelectedSkillLoadPolicy(nextLoadPolicy: SkillLoadPolicy) {
   if (!props.skill) {
     return
   }
 
-  const nextLoadPolicy = (event.target as HTMLSelectElement).value as SkillLoadPolicy
   if (nextLoadPolicy === props.skill.governance.loadPolicy) {
     return
   }

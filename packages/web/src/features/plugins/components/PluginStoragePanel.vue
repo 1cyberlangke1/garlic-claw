@@ -6,48 +6,45 @@
         <p>查看、筛选和维护插件私有持久化数据。</p>
       </div>
       <div class="section-actions">
-        <input
+        <ElInput
           v-model="prefix"
           class="prefix-input"
           data-test="storage-prefix-input"
-          type="text"
           placeholder="按前缀筛选，例如 cursor."
-        >
-        <button
-          type="button"
-          class="ghost-button refresh-button"
+        />
+        <ElButton
+          class="refresh-button"
           title="刷新 KV"
           :disabled="loading"
           @click="requestRefresh"
         >
           <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="ghost-button save-button"
+        </ElButton>
+        <ElButton
+          class="save-button"
           data-test="storage-save-button"
           title="保存 KV"
           :disabled="saving"
           @click="submit"
         >
           <Icon :icon="disketteBold" class="save-icon" aria-hidden="true" />
-        </button>
+        </ElButton>
       </div>
     </div>
 
     <p v-if="formError" class="section-error">{{ formError }}</p>
 
     <div class="storage-editor">
-      <input
+      <ElInput
         v-model="draftKey"
         data-test="storage-key-input"
-        type="text"
         placeholder="存储键"
-      >
-      <textarea
+      />
+      <ElInput
         v-model="draftValue"
         data-test="storage-value-input"
-        rows="4"
+        type="textarea"
+        :rows="4"
         placeholder="输入 JSON 或纯文本"
       />
     </div>
@@ -63,15 +60,14 @@
       <article v-for="entry in entries" :key="entry.key" class="storage-item">
         <div class="storage-top">
           <strong>{{ entry.key }}</strong>
-          <button
-            type="button"
-            class="ghost-button danger-button"
+          <ElButton
+            type="danger"
             data-test="storage-delete-button"
             :disabled="deletingKey === entry.key"
             @click="$emit('delete', entry.key)"
           >
             {{ deletingKey === entry.key ? '删除中...' : '删除' }}
-          </button>
+          </ElButton>
         </div>
         <pre class="storage-value">{{ formatValue(entry.value) }}</pre>
       </article>
@@ -84,6 +80,7 @@ import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput } from 'element-plus'
 import type { JsonValue, PluginStorageEntry } from '@garlic-claw/shared'
 
 const props = defineProps<{
@@ -217,11 +214,6 @@ function parseStorageValue(raw: string): JsonValue {
 .storage-editor {
   display: grid;
   gap: 10px;
-}
-
-.ghost-button {
-  background: transparent;
-  border: 1px solid var(--border);
 }
 
 .refresh-button,

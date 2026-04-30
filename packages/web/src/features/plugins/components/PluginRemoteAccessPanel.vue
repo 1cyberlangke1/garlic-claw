@@ -9,15 +9,15 @@
         <span class="panel-kicker">Remote Access</span>
         <h3>远程接入配置</h3>
       </div>
-      <button
-        type="button"
+      <ElButton
+        type="primary"
         class="save-button"
         data-test="plugin-remote-access-save"
         :disabled="saving || !dirty || !canSave"
         @click="handleSave"
       >
         {{ saving ? '保存中...' : '保存接入配置' }}
-      </button>
+      </ElButton>
     </div>
 
     <p class="panel-note">
@@ -27,22 +27,21 @@
     <div class="panel-grid">
       <label class="field">
         <span>接入地址</span>
-        <input
+        <ElInput
           v-model.trim="serverUrl"
           data-test="plugin-remote-access-server-url"
-          type="text"
           placeholder="ws://127.0.0.1:23331"
-        >
+        />
       </label>
 
       <label v-if="showAccessKey" class="field">
         <span>接入 Key</span>
-        <input
+        <ElInput
           v-model="accessKey"
           data-test="plugin-remote-access-key"
-          type="password"
+          show-password
           :placeholder="accessKeyPlaceholder"
-        >
+        />
       </label>
 
       <div class="field readonly">
@@ -74,6 +73,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput } from 'element-plus'
 import type { PluginInfo } from '@garlic-claw/shared'
 
 const props = defineProps<{
@@ -220,7 +220,6 @@ function handleSave() {
   gap: 6px;
 }
 
-.field input,
 .field.readonly {
   min-height: 42px;
   padding: 0.72rem 0.85rem;

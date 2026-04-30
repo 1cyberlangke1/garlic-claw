@@ -22,32 +22,29 @@
         </div>
       </div>
       <div class="detail-actions">
-        <button
-          type="button"
+        <ElButton
           class="ghost-button"
           :disabled="detailLoading"
           @click="$emit('refresh-details')"
         >
           {{ detailLoading ? '同步中...' : '刷新详情' }}
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-for="action in actions"
           :key="action.name"
-          type="button"
           class="ghost-button"
           :disabled="runningAction !== null"
           @click="$emit('run-action', action.name)"
         >
           {{ runningAction === action.name ? action.pendingLabel : action.label }}
-        </button>
-        <button
-          type="button"
+        </ElButton>
+        <ElButton
           class="ghost-button danger-button"
           :disabled="deleting || !canDelete"
           @click="$emit('delete-selected')"
         >
           {{ deleting ? '删除中...' : '删除记录' }}
-        </button>
+        </ElButton>
       </div>
     </div>
 
@@ -137,6 +134,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic-claw/shared'
 
 defineProps<{

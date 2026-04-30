@@ -3,6 +3,7 @@ import { useThemeStore } from '@/stores/theme'
 import moonBold from '@iconify-icons/solar/moon-bold'
 import sunBold from '@iconify-icons/solar/sun-bold'
 import { Icon } from '@iconify/vue'
+import { ElButton, ElSwitch } from 'element-plus'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 const theme = useThemeStore()
@@ -63,14 +64,13 @@ onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside, 
     @mouseenter="openPanel"
     @mouseleave="scheduleClose"
   >
-    <button
-      type="button"
+    <ElButton
       class="theme-trigger"
       :title="theme.isDark && !theme.followSystem ? '深色模式' : '浅色模式'"
       @click="toggleTheme"
     >
       <Icon :icon="theme.isDark ? moonBold : sunBold" />
-    </button>
+    </ElButton>
 
     <Transition name="theme-dropdown">
       <div
@@ -81,38 +81,30 @@ onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside, 
       >
         <div class="theme-title">主题设置</div>
         <div class="theme-options">
-          <button
-            type="button"
+          <ElButton
             class="theme-option"
             :class="{ active: !theme.followSystem && !theme.isDark }"
             @click="theme.setLightMode(); closePanel()"
           >
             <Icon :icon="sunBold" class="option-icon" />
             <span>浅色</span>
-          </button>
-          <button
-            type="button"
+          </ElButton>
+          <ElButton
             class="theme-option"
             :class="{ active: !theme.followSystem && theme.isDark }"
             @click="theme.setDarkMode(); closePanel()"
           >
             <Icon :icon="moonBold" class="option-icon" />
             <span>深色</span>
-          </button>
+          </ElButton>
         </div>
         <div class="theme-divider" />
         <div class="follow-system-row">
           <span class="follow-system-label">跟随系统</span>
-          <button
-            type="button"
-            class="custom-toggle"
-            :class="{ 'custom-toggle--on': theme.followSystem }"
-            role="switch"
-            :aria-checked="theme.followSystem"
-            @click="theme.setFollowSystem(!theme.followSystem)"
-          >
-            <span class="custom-toggle__knob" />
-          </button>
+          <ElSwitch
+            :model-value="theme.followSystem"
+            @change="theme.setFollowSystem(!theme.followSystem)"
+          />
         </div>
       </div>
     </Transition>
@@ -219,37 +211,6 @@ onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside, 
   justify-content: space-between;
   font-size: 13px;
   color: var(--text);
-}
-
-.custom-toggle {
-  width: 40px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--border);
-  border: none;
-  padding: 2px;
-  cursor: pointer;
-  transition: background 0.2s;
-  position: relative;
-  flex-shrink: 0;
-}
-
-.custom-toggle--on {
-  background: var(--accent);
-}
-
-.custom-toggle__knob {
-  display: block;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.2s ease;
-  transform: translateX(0);
-}
-
-.custom-toggle--on .custom-toggle__knob {
-  transform: translateX(18px);
 }
 
 /* panel transition */

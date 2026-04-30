@@ -14,14 +14,13 @@
           <h3>压缩模型</h3>
           <p>留空则使用当前会话模型；设置后将固定使用此模型生成压缩摘要。</p>
         </div>
-        <button
-          type="button"
+        <ElButton
           class="clear-button"
           :disabled="!compressionModel"
           @click="clearCompressionModel"
         >
           清除
-        </button>
+        </ElButton>
       </div>
 
       <ModelQuickInput
@@ -51,6 +50,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { ElButton } from 'element-plus'
 import type { JsonObject, PluginConfigSnapshot } from '@garlic-claw/shared'
 import ModelQuickInput from '@/components/ModelQuickInput.vue'
 import SchemaConfigForm from '@/features/config/components/SchemaConfigForm.vue'

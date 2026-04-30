@@ -25,13 +25,12 @@
       <section v-if="activeSection === 'provider-models'" class="provider-models-section">
         <div class="provider-column">
           <div class="column-toolbar">
-            <input
+            <ElInput
               v-model="providerSearch"
               class="field-input"
-              type="text"
               placeholder="搜索服务商…"
             />
-            <button type="button" class="btn-primary" @click="openCreateDialog">新增</button>
+            <ElButton type="primary" @click="openCreateDialog">新增</ElButton>
           </div>
 
           <p v-if="error" class="msg-error">{{ error }}</p>
@@ -70,23 +69,23 @@
                 <span class="default-badge" v-if="currentDefaultLabel">默认：{{ currentDefaultLabel }}</span>
               </div>
               <div class="toolbar-right">
-                <button type="button" class="btn-ghost" :disabled="discoveringModels" @click="openDiscoveryDialog">
+                <ElButton :disabled="discoveringModels" @click="openDiscoveryDialog">
                   {{ discoveringModels ? '发现中…' : '发现模型' }}
-                </button>
-                <button type="button" class="btn-ghost" :disabled="testingConnection" @click="testProviderConnection">
+                </ElButton>
+                <ElButton :disabled="testingConnection" @click="testProviderConnection">
                   {{ testingConnection ? '测试中…' : '测试连接' }}
-                </button>
-                <button type="button" class="btn-ghost" @click="openEditDialog">编辑</button>
-                <button type="button" class="btn-danger" @click="deleteSelectedProvider">删除</button>
+                </ElButton>
+                <ElButton @click="openEditDialog">编辑</ElButton>
+                <ElButton type="danger" @click="deleteSelectedProvider">删除</ElButton>
               </div>
             </div>
 
             <p v-if="connectionResult" class="msg-status" :class="connectionResult.kind">{{ connectionResult.text }}</p>
 
             <div class="add-model-row">
-              <input v-model="newModelId" class="field-input" type="text" placeholder="模型 ID" />
-              <input v-model="newModelName" class="field-input" type="text" placeholder="名称（可选）" />
-              <button type="button" class="btn-primary" :disabled="!newModelId.trim()" @click="handleAddModel">添加</button>
+              <ElInput v-model="newModelId" class="field-input" placeholder="模型 ID" />
+              <ElInput v-model="newModelName" class="field-input" placeholder="名称（可选）" />
+              <ElButton type="primary" :disabled="!newModelId.trim()" @click="handleAddModel">添加</ElButton>
             </div>
 
             <p class="msg-muted capability-note">
@@ -94,10 +93,9 @@
             </p>
 
             <div class="column-toolbar" v-if="selectedModels.length > 0">
-              <input
+              <ElInput
                 v-model="modelSearch"
                 class="field-input"
-                type="text"
                 placeholder="搜索模型…"
               />
               <span class="toolbar-count" v-if="modelSearch">匹配 {{ filteredModels.length }} / {{ selectedModels.length }}</span>
@@ -118,39 +116,48 @@
                     <code>{{ m.id }}</code>
                   </div>
                   <div class="model-cap-row">
-                    <label class="cap-toggle" title="推理">
-                      <input type="checkbox" :checked="m.capabilities.reasoning" @change="emitCapToggle(m, 'reasoning', $event)" /> 推理
-                    </label>
-                    <label class="cap-toggle" title="工具调用">
-                      <input type="checkbox" :checked="m.capabilities.toolCall" @change="emitCapToggle(m, 'toolCall', $event)" /> 工具
-                    </label>
-                    <label class="cap-toggle" title="图片输入">
-                      <input type="checkbox" :checked="m.capabilities.input.image" @change="emitCapImageToggle(m, $event)" /> 图片
-                    </label>
+                    <ElCheckbox
+                      :model-value="m.capabilities.reasoning"
+                      @change="emitCapToggle(m, 'reasoning', $event)"
+                    >
+                      推理
+                    </ElCheckbox>
+                    <ElCheckbox
+                      :model-value="m.capabilities.toolCall"
+                      @change="emitCapToggle(m, 'toolCall', $event)"
+                    >
+                      工具
+                    </ElCheckbox>
+                    <ElCheckbox
+                      :model-value="m.capabilities.input.image"
+                      @change="emitCapImageToggle(m, $event)"
+                    >
+                      图片
+                    </ElCheckbox>
                     <span class="cap-field">
                       上下文
-                      <input
+                      <ElInput
                         :data-test="`context-length-input-${m.id}`"
                         class="field-input field-input-sm"
-                        type="number"
                         :value="ctxDrafts[m.id] ?? m.contextLength"
-                        min="1"
-                        @input="handleCtxInput(m.id, $event)"
+                        type="number"
+                        @input="handleCtxInput(m.id, String($event))"
                       />
                     </span>
-                    <button
+                    <ElButton
                       :data-test="`context-length-save-${m.id}`"
-                      type="button"
-                      class="btn-ghost btn-sm"
+                      size="small"
                       :disabled="!canSaveCtx(m)"
                       @click="saveCtx(m)"
-                    >保存</button>
+                    >
+                      保存
+                    </ElButton>
                   </div>
                 </div>
                 <div class="model-actions">
                   <span v-if="isDefaultModel(m.id)" class="default-chip">默认</span>
-                  <button v-else type="button" class="btn-ghost btn-sm" @click="setDefaultModel(m.id)">设为当前默认</button>
-                  <button type="button" class="btn-danger btn-sm" @click="deleteModel(m.id)">删除</button>
+                  <ElButton v-else size="small" @click="setDefaultModel(m.id)">设为当前默认</ElButton>
+                  <ElButton size="small" type="danger" @click="deleteModel(m.id)">删除</ElButton>
                 </div>
               </div>
             </div>
@@ -238,6 +245,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElCheckbox, ElInput } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import type { IconifyIcon } from '@iconify/types'
 import type { AiModelConfig } from '@garlic-claw/shared'
@@ -357,20 +365,20 @@ function handleAddModel() {
 }
 
 /* ── 能力开关 ── */
-function emitCapToggle(model: AiModelConfig, key: 'reasoning' | 'toolCall', event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
+function emitCapToggle(model: AiModelConfig, key: 'reasoning' | 'toolCall', checked: string | number | boolean) {
+  const enabled = checked === true
   updateCapabilities({
     modelId: model.id,
-    capabilities: { ...model.capabilities, [key]: checked },
+    capabilities: { ...model.capabilities, [key]: enabled },
   })
 }
-function emitCapImageToggle(model: AiModelConfig, event: Event) {
-  const checked = (event.target as HTMLInputElement).checked
+function emitCapImageToggle(model: AiModelConfig, checked: string | number | boolean) {
+  const enabled = checked === true
   updateCapabilities({
     modelId: model.id,
     capabilities: {
       ...model.capabilities,
-      input: { ...model.capabilities.input, image: checked },
+      input: { ...model.capabilities.input, image: enabled },
     },
   })
 }
@@ -391,8 +399,8 @@ watch(() => selectedModels.value, (models) => {
   ctxBases.value = nextBases
   ctxDrafts.value = nextDrafts
 }, { immediate: true })
-function handleCtxInput(modelId: string, e: Event) {
-  ctxDrafts.value = { ...ctxDrafts.value, [modelId]: (e.target as HTMLInputElement).value }
+function handleCtxInput(modelId: string, value: string) {
+  ctxDrafts.value = { ...ctxDrafts.value, [modelId]: value }
 }
 function canSaveCtx(model: AiModelConfig) {
   const draft = Number(ctxDrafts.value[model.id] ?? model.contextLength)

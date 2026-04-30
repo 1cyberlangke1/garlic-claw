@@ -32,50 +32,55 @@
           <h4>路由调试器</h4>
           <p>直接调用当前插件声明的 JSON 路由，验证实际返回结果。</p>
         </div>
-        <button
-          type="button"
+        <ElButton
           class="tester-button"
           data-test="route-run-button"
           :disabled="running"
           @click="runSelectedRoute"
         >
           {{ running ? '调用中...' : '调用路由' }}
-        </button>
+        </ElButton>
       </div>
 
       <div class="tester-grid">
         <label class="tester-field">
           <span>路由</span>
-          <select v-model="selectedPath" data-test="route-path-select">
-            <option v-for="route in routes" :key="route.path" :value="route.path">
-              {{ route.path }}
-            </option>
-          </select>
+          <ElSelect v-model="selectedPath" data-test="route-path-select">
+            <ElOption
+              v-for="route in routes"
+              :key="route.path"
+              :value="route.path"
+              :label="route.path"
+            />
+          </ElSelect>
         </label>
         <label class="tester-field">
           <span>请求方法</span>
-          <select v-model="selectedMethod">
-            <option v-for="method in selectedRouteMethods" :key="method" :value="method">
-              {{ method }}
-            </option>
-          </select>
+          <ElSelect v-model="selectedMethod">
+            <ElOption
+              v-for="method in selectedRouteMethods"
+              :key="method"
+              :value="method"
+              :label="method"
+            />
+          </ElSelect>
         </label>
         <label class="tester-field tester-span">
           <span>查询参数</span>
-          <input
+          <ElInput
             v-model="queryText"
-            type="text"
             placeholder="conversationId=...&foo=bar"
-          >
+          />
         </label>
         <label
           v-if="selectedMethod !== 'GET' && selectedMethod !== 'DELETE'"
           class="tester-field tester-span"
         >
           <span>JSON 请求体</span>
-          <textarea
+          <ElInput
             v-model="bodyText"
-            rows="6"
+            type="textarea"
+            :rows="6"
             placeholder='{"message":"hello"}'
           />
         </label>
@@ -93,6 +98,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import type { JsonValue, PluginRouteDescriptor, PluginRouteMethod } from '@garlic-claw/shared'
 import { invokePluginRoute } from '@/features/plugins/api/plugins'
 
@@ -338,8 +344,7 @@ function parseJsonRequestBody(raw: string): JsonValue | null {
 }
 
 .tester-button {
-  background: transparent;
-  border: 1px solid var(--border);
+  align-self: start;
 }
 
 .tester-error {

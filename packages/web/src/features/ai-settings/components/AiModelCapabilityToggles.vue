@@ -12,7 +12,7 @@
           class="capability-card capability-card--reasoning"
           :class="{ active: capabilities.reasoning }"
         >
-          <input :checked="capabilities.reasoning" type="checkbox" @change="toggleReasoning" />
+          <ElCheckbox :model-value="capabilities.reasoning" @change="toggleReasoning" />
           <span class="card-kicker">Thinking</span>
           <strong>推理</strong>
           <small>标记该模型具备推理能力。</small>
@@ -23,7 +23,7 @@
           class="capability-card capability-card--tool"
           :class="{ active: capabilities.toolCall }"
         >
-          <input :checked="capabilities.toolCall" type="checkbox" @change="toggleToolCall" />
+          <ElCheckbox :model-value="capabilities.toolCall" @change="toggleToolCall" />
           <span class="card-kicker">Tools</span>
           <strong>工具调用</strong>
           <small>标记该模型支持工具调用。</small>
@@ -44,7 +44,7 @@
           class="capability-card capability-card--input"
           :class="{ active: capabilities.input.image }"
         >
-          <input :checked="capabilities.input.image" type="checkbox" @change="toggleImageInput" />
+          <ElCheckbox :model-value="capabilities.input.image" @change="toggleImageInput" />
           <span class="card-kicker">Input</span>
           <strong>输入图片</strong>
           <small>标记该模型可直接读取用户上传的图片内容。</small>
@@ -55,7 +55,7 @@
           class="capability-card capability-card--output"
           :class="{ active: capabilities.output.image }"
         >
-          <input :checked="capabilities.output.image" type="checkbox" @change="toggleImageOutput" />
+          <ElCheckbox :model-value="capabilities.output.image" @change="toggleImageOutput" />
           <span class="card-kicker">Output</span>
           <strong>输出图片</strong>
           <small>标记该模型声明支持图片输出。</small>
@@ -68,6 +68,7 @@
 
 <script setup lang="ts">
 import type { AiModelConfig } from '@garlic-claw/shared'
+import { ElCheckbox } from 'element-plus'
 
 const props = defineProps<{
   capabilities: AiModelConfig['capabilities']
@@ -203,12 +204,9 @@ function toggleImageOutput() {
     box-shadow 0.16s ease;
 }
 
-.capability-card input {
+.capability-card :deep(.el-checkbox) {
   position: absolute;
   inset: 14px 14px auto auto;
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
 }
 
 .capability-card:hover {

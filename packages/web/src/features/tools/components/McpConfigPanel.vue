@@ -7,24 +7,22 @@
         <p>管理 `mcp/servers/` 目录中的 server 定义，保存后会自动重载运行时。</p>
       </div>
       <div class="mcp-config-actions">
-        <button
-          type="button"
-          class="ghost-button action-icon-button"
+        <ElButton
+          class="action-icon-button"
           title="刷新配置"
           :disabled="loading"
           @click="refresh(selectedServerName)"
         >
           <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="ghost-button action-icon-button"
+        </ElButton>
+        <ElButton
+          class="action-icon-button"
           data-test="mcp-new-button"
           title="新增 Server"
           @click="startCreate"
         >
           <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
-        </button>
+        </ElButton>
       </div>
     </div>
 
@@ -36,10 +34,9 @@
         <div v-if="servers.length === 0" class="sidebar-state">
           还没有 MCP server 配置。
         </div>
-        <button
+        <ElButton
           v-for="server in servers"
           :key="server.name"
-          type="button"
           class="mcp-server-item"
           :class="{ active: !isCreating && selectedServerName === server.name }"
           @click="selectExisting(server.name)"
@@ -47,34 +44,33 @@
           <strong>{{ server.name }}</strong>
           <span>{{ server.command }}</span>
           <small>{{ server.args.length }} 个参数 · {{ envCount(server.env) }} 个环境变量</small>
-        </button>
+        </ElButton>
       </aside>
 
       <form class="mcp-editor" @submit.prevent="submitForm">
         <label class="mcp-field">
           <span>Name</span>
-          <input
+          <ElInput
             v-model="draftName"
             data-test="mcp-name-input"
-            type="text"
             placeholder="weather-server"
-          >
+          />
         </label>
         <label class="mcp-field">
           <span>Command</span>
-          <input
+          <ElInput
             v-model="draftCommand"
             data-test="mcp-command-input"
-            type="text"
             placeholder="npx"
-          >
+          />
         </label>
         <label class="mcp-field mcp-field-span">
           <span>Args</span>
-          <textarea
+          <ElInput
             v-model="draftArgsText"
             data-test="mcp-args-input"
-            rows="6"
+            type="textarea"
+            :rows="6"
             placeholder="-y&#10;tavily-mcp@latest"
           />
           <small>每行一个参数，保存时会自动去掉空行。</small>
@@ -86,9 +82,9 @@
               <span>Env</span>
               <p>支持直接值或 `${VAR_NAME}` 占位符。</p>
             </div>
-            <button type="button" class="ghost-button action-icon-button" title="新增变量" @click="addEnvRow">
+            <ElButton class="action-icon-button" title="新增变量" @click="addEnvRow">
               <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
-            </button>
+            </ElButton>
           </div>
 
           <div v-if="envRows.length === 0" class="sidebar-state">
@@ -101,53 +97,50 @@
               class="mcp-env-row"
             >
               <div class="mcp-env-inputs">
-                <input
+                <ElInput
                   :data-test="`mcp-env-key-${index}`"
                   v-model="entry.key"
-                  type="text"
                   placeholder="TAVILY_API_KEY"
-                >
-                <input
+                />
+                <ElInput
                   :data-test="`mcp-env-value-${index}`"
                   v-model="entry.value"
-                  type="text"
                   placeholder="${TAVILY_API_KEY}"
-                >
-                <button
-                  type="button"
-                  class="ghost-button action-icon-button danger-icon-button"
+                />
+                <ElButton
+                  class="action-icon-button danger-icon-button"
                   title="删除"
                   :disabled="envRows.length === 1"
                   @click="removeEnvRow(index)"
                 >
                   <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
-                </button>
+                </ElButton>
               </div>
             </div>
           </div>
         </section>
 
         <div class="mcp-editor-actions">
-          <button
-            type="submit"
+          <ElButton
+            type="primary"
             class="hero-action"
             data-test="mcp-save-button"
             :title="saving ? '保存中...' : isCreating ? '创建 Server' : '保存修改'"
             :disabled="saving"
           >
             <Icon :icon="disketteBold" class="action-icon" aria-hidden="true" />
-          </button>
-          <button
+          </ElButton>
+          <ElButton
             v-if="!isCreating && selectedServer"
-            type="button"
-            class="ghost-button danger-icon-button"
+            type="danger"
+            class="danger-icon-button"
             data-test="mcp-delete-button"
             :title="deleting ? '删除中...' : '删除 Server'"
             :disabled="deleting"
             @click="removeSelectedServer"
           >
             <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
-          </button>
+          </ElButton>
         </div>
       </form>
     </div>
@@ -181,6 +174,7 @@ import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalistic-bold'
 import { Icon } from '@iconify/vue'
 import { ref, watch } from 'vue'
+import { ElButton, ElInput } from 'element-plus'
 import type { McpServerConfig } from '@garlic-claw/shared'
 import EventLogPanel from '@/features/tools/components/EventLogPanel.vue'
 import EventLogSettingsPanel from '@/features/tools/components/EventLogSettingsPanel.vue'

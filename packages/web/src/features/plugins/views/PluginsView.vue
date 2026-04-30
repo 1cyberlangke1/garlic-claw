@@ -7,7 +7,6 @@
     />
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
-    <p v-else-if="notice" class="page-banner success">{{ notice }}</p>
 
     <PluginAttentionPanel
       :plugins="attentionPlugins"
@@ -190,7 +189,6 @@ const {
   deletingStorageKey,
   deleting,
   error,
-  notice,
   plugins,
   selectedPluginName,
   selectedPlugin,

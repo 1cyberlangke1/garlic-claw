@@ -6,8 +6,8 @@
         <p>管理 AI 服务商、模型与连接状态。</p>
       </div>
       <div class="sidebar-actions">
-        <button type="button" class="ghost-button" @click="$emit('refresh')">刷新</button>
-        <button type="button" class="primary-button" @click="$emit('create')">新增</button>
+        <ElButton class="ghost-button" @click="$emit('refresh')">刷新</ElButton>
+        <ElButton type="primary" class="primary-button" @click="$emit('create')">新增</ElButton>
       </div>
     </div>
 
@@ -17,12 +17,11 @@
 
     <template v-else>
       <div class="sidebar-tools">
-        <input
+        <ElInput
           v-model="searchKeyword"
           data-test="provider-sidebar-search"
-          type="text"
           placeholder="搜索名称、ID、驱动或状态"
-        >
+        />
         <div class="sidebar-results">
           <span>匹配 {{ filteredProviders.length }} / {{ providers.length }}</span>
           <span v-if="filteredProviders.length > 0">
@@ -63,24 +62,22 @@
       </div>
 
       <div v-if="filteredProviders.length > 0" class="pager-actions">
-        <button
-          type="button"
+        <ElButton
           class="ghost-button"
           data-test="provider-sidebar-prev-page"
           :disabled="!canGoPrev"
           @click="goPrevPage"
         >
           上一页
-        </button>
-        <button
-          type="button"
+        </ElButton>
+        <ElButton
           class="ghost-button"
           data-test="provider-sidebar-next-page"
           :disabled="!canGoNext"
           @click="goNextPage"
         >
           下一页
-        </button>
+        </ElButton>
       </div>
     </template>
   </aside>
@@ -88,6 +85,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput } from 'element-plus'
 import type { AiProviderCatalogItem, AiProviderSummary } from '@garlic-claw/shared'
 import { usePagination } from '@/composables/use-pagination'
 import { getProviderDriverLabel, getProviderKindLabel } from './provider-catalog'
@@ -196,21 +194,8 @@ watch(searchKeyword, () => {
   margin-bottom: 12px;
 }
 
-.sidebar-tools input {
+.sidebar-tools :deep(.el-input) {
   width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-}
-
-.sidebar-tools input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .sidebar-results {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElButton, ElCheckbox, ElInput, ElOption, ElSelect } from 'element-plus'
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
@@ -84,13 +85,13 @@ function readPersonaAvatarAlt(name?: string | null) {
     <header class="page-header">
       <h1><Icon :icon="userIdBold" class="page-header-icon" aria-hidden="true" />人设管理</h1>
       <div class="header-actions">
-        <button type="button" class="ghost-button refresh-button" :disabled="loading" title="刷新" @click="refreshAll">
+        <ElButton class="ghost-button refresh-button" :disabled="loading" title="刷新" @click="refreshAll">
           <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </button>
-        <button type="button" class="primary-button" @click="beginCreatePersona">
+        </ElButton>
+        <ElButton type="primary" class="primary-button" @click="beginCreatePersona">
           <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
           新建人设
-        </button>
+        </ElButton>
       </div>
     </header>
 
@@ -184,20 +185,21 @@ function readPersonaAvatarAlt(name?: string | null) {
             </div>
           </div>
           <div class="editor-actions">
-            <button
+            <ElButton
               class="ghost-button"
               :disabled="savingPersona"
               @click="resetEditorDraft"
             >
               重置
-            </button>
-            <button
+            </ElButton>
+            <ElButton
+              type="primary"
               class="primary-button"
               :disabled="savingPersona"
               @click="savePersonaDraft"
             >
               {{ savingPersona ? '保存中...' : (editorMode === 'create' ? '创建人设' : '保存人设') }}
-            </button>
+            </ElButton>
           </div>
         </div>
 
@@ -223,41 +225,41 @@ function readPersonaAvatarAlt(name?: string | null) {
           <div class="detail-grid">
             <label class="field-block">
               <span class="summary-label">人设 ID</span>
-              <input v-model.trim="editorDraft.id" class="field-input" :disabled="editorMode === 'edit'" placeholder="persona.writer" />
+              <ElInput v-model.trim="editorDraft.id" class="field-input" :disabled="editorMode === 'edit'" placeholder="persona.writer" />
             </label>
 
             <label class="field-block">
               <span class="summary-label">名称</span>
-              <input v-model.trim="editorDraft.name" class="field-input" placeholder="Writer" />
+              <ElInput v-model.trim="editorDraft.name" class="field-input" placeholder="Writer" />
             </label>
 
             <label class="field-block field-block-full">
               <span class="summary-label">描述</span>
-              <textarea v-model="editorDraft.description" class="field-textarea compact-textarea" placeholder="说明这个人设适合什么场景。" />
+              <ElInput v-model="editorDraft.description" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="说明这个人设适合什么场景。" />
             </label>
 
             <label class="field-block field-block-full">
               <span class="summary-label">系统提示词</span>
-              <textarea v-model="editorDraft.prompt" class="field-textarea prompt-textarea" placeholder="输入人设的系统提示词。" />
+              <ElInput v-model="editorDraft.prompt" class="field-textarea prompt-textarea" type="textarea" :rows="8" placeholder="输入人设的系统提示词。" />
             </label>
 
             <label class="field-block field-block-full">
               <span class="summary-label">自定义失败文案</span>
-              <textarea v-model="editorDraft.customErrorMessage" class="field-textarea compact-textarea" placeholder="仅主对话主回复失败时，用这条文案直接回复用户；subagent、标题、总结不使用它。留空则显示默认错误。" />
+              <ElInput v-model="editorDraft.customErrorMessage" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="仅主对话主回复失败时，用这条文案直接回复用户；subagent、标题、总结不使用它。留空则显示默认错误。" />
             </label>
           </div>
 
           <label class="toggle-row">
-            <input v-model="editorDraft.isDefault" type="checkbox" />
+            <ElCheckbox v-model="editorDraft.isDefault" />
             <span>设为默认人设</span>
           </label>
 
           <div class="detail-block">
             <div class="block-header">
               <span class="summary-label">Begin Dialogs</span>
-              <button type="button" class="ghost-button small-button" @click="addBeginDialog">
+              <ElButton class="ghost-button small-button" @click="addBeginDialog">
                 添加对话
-              </button>
+              </ElButton>
             </div>
             <div v-if="editorDraft.beginDialogs.length === 0" class="section-state">
               无预置对话。
@@ -268,14 +270,14 @@ function readPersonaAvatarAlt(name?: string | null) {
                 :key="`dialog-${index}`"
                 class="dialog-item"
               >
-                <select v-model="dialog.role" class="field-select">
-                  <option value="assistant">assistant</option>
-                  <option value="user">user</option>
-                </select>
-                <textarea v-model="dialog.content" class="field-textarea compact-textarea" placeholder="输入预置对话内容。" />
-                <button type="button" class="ghost-button small-button" @click="removeBeginDialog(index)">
+                <ElSelect v-model="dialog.role" class="field-select">
+                  <ElOption value="assistant" label="assistant" />
+                  <ElOption value="user" label="user" />
+                </ElSelect>
+                <ElInput v-model="dialog.content" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="输入预置对话内容。" />
+                <ElButton class="ghost-button small-button" @click="removeBeginDialog(index)">
                   删除
-                </button>
+                </ElButton>
               </div>
             </div>
           </div>
@@ -283,36 +285,37 @@ function readPersonaAvatarAlt(name?: string | null) {
           <div class="detail-grid">
             <div class="detail-block">
               <span class="summary-label">Tools 约束</span>
-              <select v-model="editorDraft.toolMode" class="field-select">
-                <option v-for="option in listModeOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </option>
-              </select>
-              <textarea
+              <ElSelect v-model="editorDraft.toolMode" class="field-select">
+                <ElOption v-for="option in listModeOptions" :key="option.value" :value="option.value" :label="option.label" />
+              </ElSelect>
+              <ElInput
                 v-if="editorDraft.toolMode === 'selected'"
                 v-model="editorDraft.toolInput"
                 class="field-textarea compact-textarea"
+                type="textarea"
+                :rows="4"
                 placeholder="每行一个 tool 名称，也可以用逗号分隔。"
               />
             </div>
           </div>
 
           <div class="footer-actions">
-            <button
+            <ElButton
+              type="primary"
               class="primary-button"
               :disabled="!canApplySelectedPersona || applyingPersona || editorMode === 'create'"
               @click="applySelectedPersona"
             >
               {{ applyingPersona ? '应用中...' : '应用到当前对话' }}
-            </button>
-            <button
+            </ElButton>
+            <ElButton
               class="danger-button"
               :disabled="!canDeleteSelectedPersona || deletingPersona"
               @click="deleteSelectedPersona"
             >
               <Icon :icon="trashBinTrashBold" class="button-icon" aria-hidden="true" />
               {{ deletingPersona ? '删除中...' : '删除人设' }}
-            </button>
+            </ElButton>
           </div>
         </template>
       </section>

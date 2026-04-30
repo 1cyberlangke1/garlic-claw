@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElSwitch } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import settingsBold from '@iconify-icons/solar/settings-bold'
 import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
@@ -44,17 +45,11 @@ function handleToggleDarkMode() {
             <p class="settings-copy-note">开启后，顶栏中间会出现一个可点击的下拉拉绳，用来收起或展开顶部栏。</p>
           </div>
 
-          <button
-            type="button"
-            class="settings-switch"
-            :class="{ 'settings-switch--on': topbarPullCordEnabled }"
-            role="switch"
-            :aria-checked="topbarPullCordEnabled"
+          <ElSwitch
+            :model-value="topbarPullCordEnabled"
             aria-label="启用顶栏拉绳按钮"
-            @click="handleToggleTopbarPullCord"
-          >
-            <span class="settings-switch__knob" />
-          </button>
+            @change="handleToggleTopbarPullCord"
+          />
         </div>
       </article>
 
@@ -65,18 +60,12 @@ function handleToggleDarkMode() {
             <p class="settings-copy-note">关闭时使用浅色模式；开启后使用深色模式。</p>
           </div>
 
-          <button
-            type="button"
-            class="settings-switch"
-            :class="{ 'settings-switch--on': theme.isDark && !theme.followSystem, 'settings-switch--disabled': theme.followSystem }"
-            role="switch"
-            :aria-checked="theme.isDark && !theme.followSystem"
-            :aria-disabled="theme.followSystem"
+          <ElSwitch
+            :model-value="theme.isDark && !theme.followSystem"
+            :disabled="theme.followSystem"
             aria-label="切换深色模式"
-            @click="handleToggleDarkMode"
-          >
-            <span class="settings-switch__knob" />
-          </button>
+            @change="handleToggleDarkMode"
+          />
         </div>
 
         <div class="settings-divider" />
@@ -87,17 +76,11 @@ function handleToggleDarkMode() {
             <p class="settings-copy-note">开启后，界面主题会根据系统主题自动切换。</p>
           </div>
 
-          <button
-            type="button"
-            class="settings-switch"
-            :class="{ 'settings-switch--on': theme.followSystem }"
-            role="switch"
-            :aria-checked="theme.followSystem"
+          <ElSwitch
+            :model-value="theme.followSystem"
             aria-label="深色模式跟随系统"
-            @click="theme.setFollowSystem(!theme.followSystem)"
-          >
-            <span class="settings-switch__knob" />
-          </button>
+            @change="theme.setFollowSystem(!theme.followSystem)"
+          />
         </div>
       </article>
     </section>
@@ -179,40 +162,6 @@ function handleToggleDarkMode() {
 .settings-copy strong {
   color: var(--shell-text);
   font-size: 14px;
-}
-
-.settings-switch {
-  width: 48px;
-  height: 28px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 999px;
-  padding: 3px;
-  background: rgba(148, 163, 184, 0.35);
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.settings-switch--on {
-  background: var(--shell-active);
-}
-
-.settings-switch--disabled {
-  opacity: 0.45;
-}
-
-.settings-switch__knob {
-  display: block;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
-  transition: transform 0.2s ease;
-}
-
-.settings-switch--on .settings-switch__knob {
-  transform: translateX(20px);
 }
 
 .settings-copy-note {

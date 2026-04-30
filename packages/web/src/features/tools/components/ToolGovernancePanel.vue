@@ -6,14 +6,12 @@
         <h2>{{ title }}</h2>
         <p>{{ description }}</p>
       </div>
-      <button
-        type="button"
-        class="ghost-button"
+      <ElButton
         :disabled="loading"
         @click="refresh"
       >
         刷新
-      </button>
+      </ElButton>
     </header>
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
@@ -21,28 +19,26 @@
     <div v-if="showSourceList" class="source-picker">
       <label class="field">
         <span>筛选 source</span>
-        <input
+        <ElInput
           v-model="sourceKeyword"
-          type="text"
           :placeholder="sourcePlaceholder"
-        >
+        />
       </label>
 
       <div v-if="filteredSources.length === 0" class="empty-state compact">
         没有匹配的工具源。
       </div>
       <div v-else class="source-list">
-        <button
+        <ElButton
           v-for="source in filteredSources"
           :key="source.id"
-          type="button"
           class="source-item"
           :class="{ active: source.id === selectedSourceId }"
           @click="selectSource(source.id)"
         >
           <strong>{{ source.label }}</strong>
           <span>{{ source.enabledTools }} / {{ source.totalTools }} 工具</span>
-        </button>
+        </ElButton>
       </div>
     </div>
 
@@ -55,24 +51,22 @@
             <p>{{ sourceKindLabel(selectedSource.kind) }} · {{ selectedSource.id }}</p>
           </div>
           <div class="action-row">
-            <button
-              type="button"
+            <ElButton
               class="ghost-button"
               :disabled="mutatingSource"
               @click="toggleSourceEnabled"
             >
               {{ selectedSource.enabled ? '禁用' : '启用' }}
-            </button>
-            <button
+            </ElButton>
+            <ElButton
               v-for="action in selectedSourceActions"
               :key="action"
-              type="button"
               class="ghost-button"
               :disabled="runningAction === action"
               @click="runSourceAction(action)"
             >
               {{ actionLabel(action) }}
-            </button>
+            </ElButton>
           </div>
         </div>
 
@@ -104,17 +98,16 @@
             <p>按 source 查看并覆盖单个工具的启用状态。</p>
           </div>
           <div class="tool-controls">
-            <input
+            <ElInput
               v-model="toolKeyword"
-              type="text"
               placeholder="搜索 tool id、call name 或描述"
-            >
-            <select v-model="toolFilter">
-              <option value="all">全部</option>
-              <option value="enabled">已启用</option>
-              <option value="disabled">已禁用</option>
-              <option value="attention">需关注</option>
-            </select>
+            />
+            <ElSelect v-model="toolFilter">
+              <ElOption label="全部" value="all" />
+              <ElOption label="已启用" value="enabled" />
+              <ElOption label="已禁用" value="disabled" />
+              <ElOption label="需关注" value="attention" />
+            </ElSelect>
           </div>
         </div>
 
@@ -132,14 +125,13 @@
                 <strong>{{ tool.callName }}</strong>
                 <p>{{ tool.description }}</p>
               </div>
-              <button
-                type="button"
+              <ElButton
                 class="ghost-button"
                 :disabled="mutatingToolId === tool.toolId"
                 @click="toggleToolEnabled(tool)"
               >
                 {{ tool.enabled ? '禁用' : '启用' }}
-              </button>
+              </ElButton>
             </div>
             <div class="meta-row">
               <span class="meta-chip">{{ tool.enabled ? '已启用' : '已禁用' }}</span>
@@ -162,6 +154,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import type {
   PluginActionName,
   ToolInfo,

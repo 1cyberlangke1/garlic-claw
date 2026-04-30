@@ -6,14 +6,14 @@
         <p>{{ provider.id }} · {{ getProviderKindLabel(provider, catalog) }} · {{ getProviderDriverLabel(provider, catalog) }}</p>
       </div>
       <div class="header-actions">
-        <button type="button" class="ghost-button" :disabled="discoveringModels" @click="$emit('discover-models')">
+        <ElButton class="ghost-button" :disabled="discoveringModels" @click="$emit('discover-models')">
           {{ discoveringModels ? '发现中...' : '发现模型' }}
-        </button>
-        <button type="button" class="ghost-button" :disabled="testingConnection" @click="$emit('test-connection')">
+        </ElButton>
+        <ElButton class="ghost-button" :disabled="testingConnection" @click="$emit('test-connection')">
           {{ testingConnection ? '测试中...' : '测试连接' }}
-        </button>
-        <button type="button" class="ghost-button" @click="$emit('edit-provider')">编辑</button>
-        <button type="button" class="danger-button" @click="$emit('delete-provider')">删除</button>
+        </ElButton>
+        <ElButton class="ghost-button" @click="$emit('edit-provider')">编辑</ElButton>
+        <ElButton class="danger-button" @click="$emit('delete-provider')">删除</ElButton>
       </div>
     </div>
 
@@ -29,15 +29,15 @@
       </p>
 
       <div class="add-row">
-        <input v-model="newModelId" placeholder="新增模型 ID" />
-        <input v-model="newModelName" placeholder="可选名称" />
-        <button type="button" class="primary-button" :disabled="!newModelId.trim()" @click="addModel">
+        <ElInput v-model="newModelId" placeholder="新增模型 ID" />
+        <ElInput v-model="newModelName" placeholder="可选名称" />
+        <ElButton type="primary" class="primary-button" :disabled="!newModelId.trim()" @click="addModel">
           添加模型
-        </button>
+        </ElButton>
       </div>
 
       <div v-if="models.length > 0" class="toolbar-row">
-        <input
+        <ElInput
           v-model="searchKeyword"
           data-test="provider-models-search"
           placeholder="搜索模型 ID 或名称"
@@ -64,17 +64,16 @@
             </div>
             <div class="summary-actions">
               <span v-if="isCurrentDefaultModel(model.id)" class="default-badge">当前默认</span>
-              <button
+              <ElButton
                 v-else
-                type="button"
                 class="ghost-button"
                 @click="$emit('set-default-model', model.id)"
               >
                 设为当前默认
-              </button>
-              <button type="button" class="danger-button" @click="$emit('delete-model', model.id)">
+              </ElButton>
+              <ElButton class="danger-button" @click="$emit('delete-model', model.id)">
                 删除
-              </button>
+              </ElButton>
             </div>
           </div>
 
@@ -86,48 +85,43 @@
           <div class="context-length-row">
             <label class="context-length-field">
               <span>上下文长度</span>
-              <input
-                :value="contextLengthDraftByModelId[model.id] ?? String(model.contextLength)"
+              <ElInput
+                :model-value="contextLengthDraftByModelId[model.id] ?? String(model.contextLength)"
                 :data-test="`context-length-input-${model.id}`"
-                min="1"
-                step="1"
                 type="number"
                 @input="handleContextLengthInput(model.id, $event)"
               />
             </label>
-            <button
-              type="button"
+            <ElButton
               class="ghost-button"
               :data-test="`context-length-save-${model.id}`"
               :disabled="!canSaveContextLength(model)"
               @click="saveContextLength(model)"
             >
               保存上下文
-            </button>
+            </ElButton>
           </div>
           <p class="context-length-hint">默认值 131072，仅在模型未显式配置时自动补齐。</p>
         </article>
       </div>
 
       <div v-if="filteredModels.length > 0" class="pager-actions">
-        <button
-          type="button"
+        <ElButton
           class="ghost-button"
           data-test="provider-models-prev-page"
           :disabled="!canGoPrev"
           @click="goPrevPage"
         >
           上一页
-        </button>
-        <button
-          type="button"
+        </ElButton>
+        <ElButton
           class="ghost-button"
           data-test="provider-models-next-page"
           :disabled="!canGoNext"
           @click="goNextPage"
         >
           下一页
-        </button>
+        </ElButton>
       </div>
     </template>
   </section>
@@ -135,6 +129,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput } from 'element-plus'
 import type {
   AiDefaultProviderSelection,
   AiModelConfig,
@@ -272,8 +267,8 @@ function updateContextLengthDraft(modelId: string, value: string) {
   }
 }
 
-function handleContextLengthInput(modelId: string, event: Event) {
-  updateContextLengthDraft(modelId, (event.target as HTMLInputElement).value)
+function handleContextLengthInput(modelId: string, value: string | number) {
+  updateContextLengthDraft(modelId, String(value))
 }
 
 function canSaveContextLength(model: AiModelConfig) {
@@ -380,42 +375,16 @@ function saveContextLength(model: AiModelConfig) {
   font-size: 13px;
 }
 
-.context-length-field input {
+.context-length-field :deep(.el-input) {
   width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-}
-
-.context-length-field input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .context-length-hint {
   margin: 10px 0 0;
 }
 
-.toolbar-row input {
+.toolbar-row :deep(.el-input) {
   width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-}
-
-.toolbar-row input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .toolbar-summary {
@@ -423,21 +392,9 @@ function saveContextLength(model: AiModelConfig) {
   font-size: 13px;
 }
 
-.add-row input {
+.add-row :deep(.el-input) {
   flex: 1;
   min-width: 180px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-}
-
-.add-row input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .model-list {

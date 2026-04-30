@@ -5,16 +5,15 @@
         <h3>会话作用域</h3>
         <p>全局启用/停用由工具管理页控制，这里只编辑会话级覆盖。</p>
       </div>
-      <button
-        type="button"
-        class="ghost-button save-button"
+      <ElButton
+        class="save-button"
         data-test="scope-save-button"
         title="保存作用域"
         :disabled="saving || !scope"
         @click="submit"
       >
         <Icon :icon="disketteBold" class="save-icon" aria-hidden="true" />
-      </button>
+      </ElButton>
     </div>
 
     <p v-if="formError" class="section-error">{{ formError }}</p>
@@ -39,15 +38,14 @@
       <div class="scope-list">
         <div class="scope-list-header">
           <strong>会话覆盖</strong>
-          <button
-            type="button"
-            class="ghost-button add-button"
+          <ElButton
+            class="add-button"
             data-test="scope-add-row-button"
             title="新增会话"
             @click="addConversationRow"
           >
             <Icon :icon="addCircleBold" class="add-icon" aria-hidden="true" />
-          </button>
+          </ElButton>
         </div>
 
         <div v-if="rows.length === 0" class="section-empty">
@@ -56,17 +54,17 @@
 
         <div v-else class="scope-rows">
           <div v-for="(row, index) in rows" :key="index" class="scope-row">
-            <input
+            <ElInput
               v-model="row.conversationId"
               placeholder="会话 ID"
-            >
-            <select v-model="row.enabled">
-              <option :value="true">启用</option>
-              <option v-if="canDisable" :value="false">禁用</option>
-            </select>
-            <button type="button" class="ghost-button danger-button" @click="removeConversationRow(index)">
+            />
+            <ElSelect v-model="row.enabled">
+              <ElOption :value="true" label="启用" />
+              <ElOption v-if="canDisable" :value="false" label="禁用" />
+            </ElSelect>
+            <ElButton type="danger" @click="removeConversationRow(index)">
               删除
-            </button>
+            </ElButton>
           </div>
         </div>
       </div>
@@ -79,6 +77,7 @@ import { Icon } from '@iconify/vue'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import type { PluginInfo, PluginScopeSettings } from '@garlic-claw/shared'
 
 interface ScopeRow {
@@ -212,11 +211,6 @@ function buildScopeConversations(
   background: color-mix(in srgb, var(--bg-card) 88%, var(--accent) 12%);
 }
 
-.ghost-button {
-  background: transparent;
-  border: 1px solid var(--border);
-}
-
 .save-button,
 .add-button {
   display: inline-flex;
@@ -237,10 +231,6 @@ function buildScopeConversations(
   width: 18px;
   height: 18px;
   color: var(--text);
-}
-
-.danger-button {
-  color: var(--danger);
 }
 
 .scope-list {

@@ -22,15 +22,14 @@
               <span class="session-pill">{{ formatRemaining(session) }}</span>
             </div>
           </div>
-          <button
-            type="button"
+          <ElButton
             class="danger-button session-action"
             data-test="session-finish-button"
             :disabled="finishingConversationId === session.conversationId"
             @click="$emit('finish', session.conversationId)"
           >
             {{ finishingConversationId === session.conversationId ? '结束中...' : '结束等待态' }}
-          </button>
+          </ElButton>
         </div>
 
         <div class="session-meta">
@@ -63,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import type { JsonValue, PluginConversationSessionInfo } from '@garlic-claw/shared'
 
 defineProps<{

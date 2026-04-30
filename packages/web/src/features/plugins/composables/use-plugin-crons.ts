@@ -2,6 +2,7 @@ import { ref, shallowRef, type ComputedRef, type Ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import type { PluginCronJobSummary, PluginInfo } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
+import { useUiStore } from '@/stores/ui'
 import {
   deletePluginCronJob,
   toErrorMessage,
@@ -15,6 +16,7 @@ export interface UsePluginCronsOptions {
 }
 
 export function usePluginCrons(options: UsePluginCronsOptions) {
+  const uiStore = useUiStore()
   const deletingCronJobId = ref<string | null>(null)
   const cronJobs = shallowRef<PluginCronJobSummary[]>([])
 
@@ -48,11 +50,10 @@ export function usePluginCrons(options: UsePluginCronsOptions) {
     const pluginName = options.selectedPlugin.value.name
     deletingCronJobId.value = jobId
     options.error.value = null
-    options.notice.value = null
     try {
       await deletePluginCronJob(pluginName, jobId)
-      options.notice.value = '定时任务已删除'
       await options.refreshSelectedDetails(pluginName)
+      uiStore.notify('定时任务已删除')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '删除定时任务失败')
     } finally {

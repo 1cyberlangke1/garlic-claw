@@ -3,12 +3,11 @@
     <header class="list-toolbar">
       <label class="keyword-field">
         <span class="field-label">搜索</span>
-        <input
+        <ElInput
           v-model="keyword"
-          type="text"
           class="keyword-input"
           placeholder="按关键词搜索"
-        >
+        />
       </label>
 
       <div v-if="filters.length > 0" class="filter-group">
@@ -18,19 +17,18 @@
           class="filter-field"
         >
           <span class="field-label">{{ filter.label }}</span>
-          <select
-            :value="filterValues[filter.key] ?? ''"
-            @change="onFilterChange(filter.key, $event)"
+          <ElSelect
+            v-model="filterValues[filter.key]"
+            placeholder="全部"
           >
-            <option value="">全部</option>
-            <option
+            <ElOption label="全部" value="" />
+            <ElOption
               v-for="option in filter.options"
               :key="option.value"
               :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
+              :label="option.label"
+            />
+          </ElSelect>
         </label>
       </div>
     </header>
@@ -102,28 +100,27 @@
     </div>
 
     <footer class="pagination">
-      <button
-        type="button"
+      <ElButton
         class="page-button"
         :disabled="!canGoPrevPage"
         @click="goPrevPage"
       >
         上一页
-      </button>
-      <button
-        type="button"
+      </ElButton>
+      <ElButton
         class="page-button"
         :disabled="!canGoNextPage"
         @click="goNextPage"
       >
         下一页
-      </button>
+      </ElButton>
     </footer>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 
 type ListItem = Record<string, unknown>
 
@@ -341,10 +338,6 @@ function emitRowClick(item: ListItem, pageRowIndex: number) {
   })
 }
 
-function onFilterChange(filterKey: string, event: Event) {
-  filterValues.value[filterKey] = (event.target as HTMLSelectElement).value
-}
-
 function goPrevPage() {
   if (!canGoPrevPage.value) {
     return
@@ -396,12 +389,8 @@ function goNextPage() {
 }
 
 .keyword-input,
-.filter-field select {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-  color: var(--text);
-  padding: 0.45rem 0.65rem;
+.filter-field :deep(.el-select) {
+  width: 100%;
 }
 
 .list-summary {
@@ -467,16 +456,6 @@ tbody tr:last-child td {
 }
 
 .page-button {
-  border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.page-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 </style>

@@ -10,32 +10,32 @@
     <label class="control-field">
       <span>最大日志文件大小</span>
       <div class="input-row">
-        <input
+        <ElInputNumber
           v-model.number="draftMaxFileSizeMb"
           :min="0"
           :step="0.1"
-          type="number"
-        >
+          controls-position="right"
+        />
         <span class="unit-chip">MB</span>
       </div>
       <small>默认 1MB。设置为 0 表示关闭新的日志写入。</small>
     </label>
 
     <div class="action-row">
-      <button
-        type="button"
-        class="hero-button"
+      <ElButton
+        type="primary"
         :disabled="saving || isUnchanged"
         @click="emitSave()"
       >
         {{ saving ? '保存中...' : '保存日志设置' }}
-      </button>
+      </ElButton>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInputNumber } from 'element-plus'
 import type { EventLogSettings } from '@garlic-claw/shared'
 
 const props = withDefaults(defineProps<{

@@ -8,14 +8,13 @@
           <p>管理子代理 runtime 的状态、上下文与关闭动作。</p>
         </div>
         <div class="subagent-hero-side">
-          <button
-            type="button"
+          <ElButton
             class="hero-action icon-only"
             title="刷新全部"
             @click="refreshAll()"
           >
             <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
-          </button>
+          </ElButton>
           <div class="hero-note">
             <span class="hero-note-label">子代理面板</span>
             <strong>{{ heroHeadline }}</strong>
@@ -199,23 +198,21 @@
           <h2>子代理账本</h2>
           <p>按发起方、模型和状态查看子代理 runtime，不再依赖独立账本文件。</p>
         </div>
-        <button
-          type="button"
+        <ElButton
           class="ghost-button icon-only"
           title="刷新"
           @click="refreshAll()"
         >
           <Icon :icon="refreshBold" class="ghost-button-icon" aria-hidden="true" />
-        </button>
+        </ElButton>
       </div>
 
       <div class="panel-controls">
-        <input
+        <ElInput
           v-model="searchKeyword"
           data-test="subagent-search"
-          type="text"
           placeholder="搜索发起方、请求摘要、结果摘要或模型"
-        >
+        />
         <SegmentedSwitch v-model="filter" :options="filterOptions" />
       </div>
 
@@ -251,22 +248,20 @@
               <p>{{ subagent.description || subagent.requestPreview }}</p>
             </div>
             <div class="subagent-card-actions">
-              <button
-                type="button"
+              <ElButton
                 class="ghost-button"
                 @click="openSubagentWindow(subagent)"
               >
                 查看上下文
-              </button>
-              <button
-                type="button"
+              </ElButton>
+              <ElButton
                 class="ghost-button danger-button"
                 data-test="remove-subagent-button"
                 :disabled="closingConversationId === subagent.conversationId"
                 @click="closeSubagentConversation(subagent.conversationId)"
               >
                 {{ closingConversationId === subagent.conversationId ? '关闭中...' : '关闭' }}
-              </button>
+              </ElButton>
               <RouterLink
                 class="ghost-button link-button"
                 to="/tools"
@@ -302,22 +297,20 @@
       </div>
 
       <div v-if="subagentCount > 0" class="sidebar-pagination">
-        <button
-          type="button"
+        <ElButton
           class="ghost-button"
           :disabled="!canGoPrevPage"
           @click="goPrevPage"
         >
           上一页
-        </button>
-        <button
-          type="button"
+        </ElButton>
+        <ElButton
           class="ghost-button"
           :disabled="!canGoNextPage"
           @click="goNextPage"
         >
           下一页
-        </button>
+        </ElButton>
       </div>
     </section>
   </div>
@@ -327,6 +320,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import { ElButton, ElInput } from 'element-plus'
 import type { ChatMessagePart, PluginSubagentSummary } from '@garlic-claw/shared'
 import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import { useSubagents } from '../composables/use-subagents'
