@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { Icon } from '@iconify/vue'
-import type { IconifyIcon } from '@iconify/types'
-import widgetBold from '@iconify-icons/solar/widget-5-bold'
-import userIdBold from '@iconify-icons/solar/user-id-bold'
-import widgetAddBold from '@iconify-icons/solar/widget-add-bold'
-import codeBold from '@iconify-icons/solar/code-bold'
-import keyboardBold from '@iconify-icons/solar/keyboard-bold'
-import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
-import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
-import widget6Bold from '@iconify-icons/solar/widget-6-bold'
+import ThemeToggle from '@/components/header/ThemeToggle.vue'
+import { useAuthStore } from '@/stores/auth'
 import altArrowLeftBold from '@iconify-icons/solar/alt-arrow-left-bold'
 import altArrowRightBold from '@iconify-icons/solar/alt-arrow-right-bold'
 import chatRoundLineBold from '@iconify-icons/solar/chat-round-line-bold'
+import codeBold from '@iconify-icons/solar/code-bold'
+import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
+import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import logout3Bold from '@iconify-icons/solar/logout-3-bold'
+import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
+import userIdBold from '@iconify-icons/solar/user-id-bold'
+import widgetBold from '@iconify-icons/solar/widget-5-bold'
+import widget6Bold from '@iconify-icons/solar/widget-6-bold'
+import widgetAddBold from '@iconify-icons/solar/widget-add-bold'
+import type { IconifyIcon } from '@iconify/types'
+import { Icon } from '@iconify/vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import ThemeToggle from '@/components/header/ThemeToggle.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -25,14 +25,20 @@ const router = useRouter()
 type SiderMode = 'expanded' | 'compact' | 'hidden'
 
 const SIDER_MODE_STORAGE_KEY = 'garlic-claw:admin-sider-mode'
+const SIDER_WIDTH_STORAGE_KEY = 'garlic-claw:admin-sider-width'
 const DEFAULT_VIEWPORT_WIDTH = 1280
-const EXPANDED_SIDER_WIDTH = 200
+const DEFAULT_EXPANDED_SIDER_WIDTH = 180
+const MIN_EXPANDED_SIDER_WIDTH = 160
+const MAX_EXPANDED_SIDER_WIDTH = 420
 const COMPACT_SIDER_WIDTH = 64
 const HIDDEN_SIDER_WIDTH = 0
 const COLLAPSE_RATIO = 0.22
 const EXPAND_RATIO = 0.2
 const HANDLE_MIN_TOP = 80
 const DEFAULT_BOTTOM_OFFSET = 12
+const RESIZE_ACTIVATION_WIDTH = 1024
+
+type DragType = 'toggle-handle' | 'resize' | null
 
 function readSiderMode(): SiderMode {
   if (typeof window === 'undefined') {
@@ -55,17 +61,64 @@ function saveSiderMode(mode: SiderMode) {
   window.localStorage.setItem(SIDER_MODE_STORAGE_KEY, mode)
 }
 
+function readExpandedSiderWidth() {
+  if (typeof window === 'undefined') {
+    return DEFAULT_EXPANDED_SIDER_WIDTH
+  }
+
+  const savedWidth = Number.parseInt(
+    window.localStorage.getItem(SIDER_WIDTH_STORAGE_KEY) ?? '',
+    10,
+  )
+  if (Number.isNaN(savedWidth)) {
+    return DEFAULT_EXPANDED_SIDER_WIDTH
+  }
+
+  return Math.max(MIN_EXPANDED_SIDER_WIDTH, Math.min(MAX_EXPANDED_SIDER_WIDTH, savedWidth))
+}
+
+function saveExpandedSiderWidth(width: number) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(SIDER_WIDTH_STORAGE_KEY, String(Math.round(width)))
+}
+
+function getEffectiveMaxExpandedWidth(viewportWidth: number) {
+  if (viewportWidth <= 0) {
+    return MAX_EXPANDED_SIDER_WIDTH
+  }
+
+  return Math.max(
+    MIN_EXPANDED_SIDER_WIDTH,
+    Math.min(MAX_EXPANDED_SIDER_WIDTH, Math.floor(viewportWidth * 0.4)),
+  )
+}
+
+function clampExpandedSiderWidth(width: number, viewportWidth: number) {
+  return Math.max(
+    MIN_EXPANDED_SIDER_WIDTH,
+    Math.min(getEffectiveMaxExpandedWidth(viewportWidth), width),
+  )
+}
+
 const viewportWidth = ref(
   typeof window === 'undefined' ? DEFAULT_VIEWPORT_WIDTH : window.innerWidth,
 )
 const userPreferredSiderMode = ref<SiderMode>(readSiderMode())
+const preferredExpandedSiderWidth = ref<number>(readExpandedSiderWidth())
 const siderMode = ref<SiderMode>(userPreferredSiderMode.value)
 const autoCompact = ref(false)
 const handleBottom = ref(DEFAULT_BOTTOM_OFFSET)
-const isDragging = ref(false)
-const hasMoved = ref(false)
+const hiddenHandleDragging = ref(false)
+const hiddenHandleMoved = ref(false)
+const resizeDragging = ref(false)
 const dragState = reactive({
+  type: null as DragType,
+  startX: 0,
   startY: 0,
+  startWidth: 0,
   startBottom: 0,
 })
 
@@ -99,6 +152,12 @@ const visibleNavItems = computed(() => navItems)
 
 const isCompact = computed(() => siderMode.value === 'compact')
 const isHidden = computed(() => siderMode.value === 'hidden')
+const expandedSiderWidth = computed(() =>
+  clampExpandedSiderWidth(preferredExpandedSiderWidth.value, viewportWidth.value),
+)
+const canResizeExpandedSider = computed(() =>
+  !isHidden.value && !isCompact.value && viewportWidth.value >= RESIZE_ACTIVATION_WIDTH,
+)
 const currentSiderWidth = computed(() => {
   if (siderMode.value === 'hidden') {
     return HIDDEN_SIDER_WIDTH
@@ -107,7 +166,7 @@ const currentSiderWidth = computed(() => {
     return COMPACT_SIDER_WIDTH
   }
 
-  return EXPANDED_SIDER_WIDTH
+  return expandedSiderWidth.value
 })
 
 const triggerText = computed(() => {
@@ -126,7 +185,7 @@ const triggerIcon = computed(() => (isHidden.value ? altArrowRightBold : altArro
 function toggleSider() {
   if (isHidden.value) {
     const nextMode: SiderMode = viewportWidth.value > 0
-      && EXPANDED_SIDER_WIDTH / viewportWidth.value >= COLLAPSE_RATIO
+      && expandedSiderWidth.value / viewportWidth.value >= COLLAPSE_RATIO
       ? 'compact'
       : 'expanded'
     userPreferredSiderMode.value = nextMode
@@ -167,7 +226,13 @@ function applyAutoCollapse() {
     return
   }
 
-  const ratio = EXPANDED_SIDER_WIDTH / viewportWidth.value
+  if (viewportWidth.value >= RESIZE_ACTIVATION_WIDTH) {
+    siderMode.value = 'expanded'
+    autoCompact.value = false
+    return
+  }
+
+  const ratio = expandedSiderWidth.value / viewportWidth.value
   if (ratio >= COLLAPSE_RATIO) {
     siderMode.value = 'compact'
     autoCompact.value = true
@@ -201,14 +266,15 @@ function getTouchClientY(event: TouchEvent | MouseEvent) {
 }
 
 function onHandleStart(event: TouchEvent | MouseEvent) {
-  isDragging.value = true
-  hasMoved.value = false
+  hiddenHandleDragging.value = true
+  hiddenHandleMoved.value = false
+  dragState.type = 'toggle-handle'
   dragState.startY = getTouchClientY(event)
   dragState.startBottom = handleBottom.value
 }
 
 function onHandleMove(event: TouchEvent | MouseEvent) {
-  if (!isDragging.value) {
+  if (dragState.type !== 'toggle-handle') {
     return
   }
 
@@ -218,7 +284,7 @@ function onHandleMove(event: TouchEvent | MouseEvent) {
 
   const clientY = getTouchClientY(event)
   if (Math.abs(clientY - dragState.startY) > 3) {
-    hasMoved.value = true
+    hiddenHandleMoved.value = true
   }
 
   const deltaY = dragState.startY - clientY
@@ -229,15 +295,50 @@ function onHandleMove(event: TouchEvent | MouseEvent) {
   )
 }
 
+function getMouseClientX(event: MouseEvent) {
+  return event.clientX
+}
+
+function onResizeStart(event: MouseEvent) {
+  if (!canResizeExpandedSider.value) {
+    return
+  }
+
+  event.preventDefault()
+  resizeDragging.value = true
+  dragState.type = 'resize'
+  dragState.startX = getMouseClientX(event)
+  dragState.startWidth = expandedSiderWidth.value
+}
+
+function onResizeMove(event: MouseEvent) {
+  if (dragState.type !== 'resize') {
+    return
+  }
+
+  const deltaX = getMouseClientX(event) - dragState.startX
+  preferredExpandedSiderWidth.value = clampExpandedSiderWidth(
+    dragState.startWidth + deltaX,
+    viewportWidth.value,
+  )
+}
+
 function onHandleEnd() {
-  isDragging.value = false
+  const wasHandleDragging = dragState.type === 'toggle-handle'
+  dragState.type = null
+  hiddenHandleDragging.value = false
+  resizeDragging.value = false
+  if (!wasHandleDragging) {
+    return
+  }
+
   window.setTimeout(() => {
-    hasMoved.value = false
+    hiddenHandleMoved.value = false
   }, 50)
 }
 
 function onHandleClick() {
-  if (hasMoved.value) {
+  if (hiddenHandleMoved.value) {
     return
   }
 
@@ -252,6 +353,7 @@ function handleLogout() {
 onMounted(() => {
   document.body.style.overflow = 'hidden'
   window.addEventListener('resize', updateViewportWidth)
+  window.addEventListener('mousemove', onResizeMove)
   window.addEventListener('mousemove', onHandleMove)
   window.addEventListener('mouseup', onHandleEnd)
   window.addEventListener('touchmove', onHandleMove, { passive: false })
@@ -261,6 +363,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
   window.removeEventListener('resize', updateViewportWidth)
+  window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mousemove', onHandleMove)
   window.removeEventListener('mouseup', onHandleEnd)
   window.removeEventListener('touchmove', onHandleMove)
@@ -268,6 +371,9 @@ onBeforeUnmount(() => {
 })
 
 watch(viewportWidth, applyAutoCollapse, { immediate: true })
+watch(preferredExpandedSiderWidth, (width) => {
+  saveExpandedSiderWidth(width)
+})
 </script>
 
 <template>
@@ -291,6 +397,8 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
         :class="{
           'is-compact': isCompact,
           'is-hidden': isHidden,
+          'is-resizing': resizeDragging,
+          'has-resize-handle': canResizeExpandedSider,
         }"
         :style="{ width: `${currentSiderWidth}px` }"
       >
@@ -324,7 +432,7 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
             <button
               type="button"
               class="sider-trigger"
-              :class="{ 'is-dragging': isDragging }"
+              :class="{ 'is-dragging': hiddenHandleDragging }"
               :aria-label="triggerText"
               @click="onHandleClick"
               @mousedown="onHandleStart"
@@ -336,6 +444,15 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
           </div>
         </div>
       </aside>
+      <div
+        v-if="canResizeExpandedSider"
+        class="admin-sider-resize-handle"
+        data-test="admin-sider-resize-handle"
+        role="separator"
+        aria-label="调整侧栏宽度"
+        aria-orientation="vertical"
+        @mousedown="onResizeStart"
+      />
 
       <main class="admin-content">
         <RouterView />
@@ -421,6 +538,14 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   color: var(--shell-text);
   transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: width;
+}
+
+.admin-nav.is-resizing {
+  transition: none;
+}
+
+.admin-nav.has-resize-handle {
+  border-right: none;
 }
 
 .sider-inner {
@@ -586,6 +711,21 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   overflow: auto;
   min-width: 0;
   background-color: var(--shell-bg);
+}
+
+.admin-sider-resize-handle {
+  position: relative;
+  width: 2px;
+  flex: 0 0 1px;
+  cursor: col-resize;
+  background: rgba(148, 163, 184, 0.22);
+  touch-action: none;
+  transition: background-color 0.18s ease;
+}
+
+.admin-sider-resize-handle:hover,
+.admin-nav.is-resizing + .admin-sider-resize-handle {
+  background: rgba(59, 130, 246, 0.42);
 }
 
 .admin-nav.is-compact {

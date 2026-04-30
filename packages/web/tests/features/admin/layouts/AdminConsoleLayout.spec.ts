@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminConsoleLayout from '@/features/admin/layouts/AdminConsoleLayout.vue'
 
 const authState = {
@@ -26,8 +27,17 @@ vi.mock('vue-router', async () => {
 })
 
 describe('AdminConsoleLayout', () => {
-  it('renders the unified single-user navigation without the api key entry', () => {
-    const wrapper = mount(AdminConsoleLayout, {
+  beforeEach(() => {
+    localStorage.clear()
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      writable: true,
+      value: 1280,
+    })
+  })
+
+  function mountLayout() {
+    return mount(AdminConsoleLayout, {
       global: {
         plugins: [createPinia()],
         stubs: {
@@ -41,6 +51,10 @@ describe('AdminConsoleLayout', () => {
         },
       },
     })
+  }
+
+  it('renders the unified single-user navigation without the api key entry', () => {
+    const wrapper = mountLayout()
 
     expect(wrapper.text()).toContain('对话')
     expect(wrapper.text()).toContain('工具')
@@ -54,5 +68,32 @@ describe('AdminConsoleLayout', () => {
     expect(wrapper.text()).not.toContain('API Keys')
     expect(wrapper.get('.admin-topbar').text()).toContain('退出登录')
     expect(wrapper.get('.admin-nav').text()).not.toContain('退出登录')
+  })
+
+  it('restores the saved expanded width from localStorage', async () => {
+    localStorage.setItem('garlic-claw:admin-sider-mode', 'expanded')
+    localStorage.setItem('garlic-claw:admin-sider-width', '280')
+
+    const wrapper = mountLayout()
+    await nextTick()
+
+    expect(wrapper.get('.admin-nav').attributes('style')).toContain('width: 280px;')
+    expect(wrapper.get('[data-test="admin-sider-resize-handle"]').attributes('aria-label')).toBe('调整侧栏宽度')
+  })
+
+  it('updates expanded width when dragging the resize handle', async () => {
+    localStorage.setItem('garlic-claw:admin-sider-mode', 'expanded')
+
+    const wrapper = mountLayout()
+    await wrapper.get('[data-test="admin-sider-resize-handle"]').trigger('mousedown', {
+      clientX: 200,
+    })
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 320 }))
+    await nextTick()
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    await nextTick()
+
+    expect(wrapper.get('.admin-nav').attributes('style')).toContain('width: 320px;')
+    expect(localStorage.getItem('garlic-claw:admin-sider-width')).toBe('320')
   })
 })
