@@ -115,6 +115,87 @@ describe('dispatchSendMessage', () => {
     })
   })
 
+  it('applies message-start immediately so display command messages do not wait for stream completion', async () => {
+    let capturedState: ReturnType<typeof createState> | null = null
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-display-1',
+            role: 'display',
+            content: '/compact',
+            partsJson: JSON.stringify([{ text: '/compact', type: 'text' }]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: { variant: 'command' },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-04-30T08:00:00.000Z',
+            updatedAt: '2026-04-30T08:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-display-1',
+            role: 'display',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: { variant: 'result' },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: 'system',
+            model: 'context-compaction-command',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-04-30T08:00:00.000Z',
+            updatedAt: '2026-04-30T08:00:00.000Z',
+          },
+        })
+        capturedState = state
+      },
+    )
+    const state = createState()
+
+    await dispatchSendMessage(state, {
+      content: '/compact',
+      optimisticAssistantRole: 'display',
+      optimisticUserRole: 'display',
+    })
+
+    expect(capturedState?.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'user-display-1',
+        role: 'display',
+        content: '/compact',
+      }),
+      expect.objectContaining({
+        id: 'assistant-display-1',
+        role: 'display',
+        status: 'pending',
+      }),
+    ])
+    expect(capturedState?.streaming.value).toBe(true)
+  })
+
   it('swallows summary refresh failures during streaming and still completes final refresh', async () => {
     vi.mocked(chatConversationData.retryConversationMessage).mockImplementation(
       async (_conversationId, _messageId, _payload, onEvent) => {

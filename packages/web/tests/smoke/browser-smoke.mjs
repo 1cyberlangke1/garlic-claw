@@ -494,14 +494,8 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
   await page.reload({ waitUntil: 'networkidle' });
   await expectConversationSelected(page, conversation.id);
 
-  const modelInput = page.locator('.quick-input');
-  await waitFor(async () => {
-    const value = await modelInput.inputValue().catch(() => '');
-    return value === `${PROVIDER_ID}/${MODEL_ID}` ? true : null;
-  }, '等待新对话继承当前默认模型');
-  await modelInput.click();
-  await modelInput.fill(`${PROVIDER_ID}/${MODEL_ID}`);
-  await modelInput.press('Tab');
+  await expectText(page, `${PROVIDER_ID}/${MODEL_ID}`);
+  await page.getByRole('link', { name: '前往 AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
   const composer = page.getByPlaceholder('输入消息，支持附带图片');
   await composer.fill(`${PREFIX} chat message`);

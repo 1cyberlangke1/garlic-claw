@@ -257,12 +257,15 @@ export async function dispatchSendMessage(
       optimisticUserId,
       payload.content,
       payload.parts,
+      input.optimisticUserMetadata,
+      input.optimisticUserRole,
     ),
     buildOptimisticAssistantMessage(
       optimisticAssistantId,
       payload.provider ?? null,
       payload.model ?? null,
       input.optimisticAssistantMetadata,
+      input.optimisticAssistantRole,
     ),
   ]);
 
@@ -298,15 +301,17 @@ export async function dispatchSendMessage(
           didRefreshConversationStateDuringStream = true;
           void params?.refreshConversationSummary?.().catch(() => undefined);
         }
+        const nextMessages = applySseEvent(getLatestMessages(state), event, {
+          requestKind: "send",
+          optimisticUserId,
+          optimisticAssistantId,
+        });
+        if (event.type === "message-start") {
+          syncMessageList(state, nextMessages);
+          return;
+        }
 
-        queueMessageCommit(
-          state,
-          applySseEvent(getLatestMessages(state), event, {
-            requestKind: "send",
-            optimisticUserId,
-            optimisticAssistantId,
-          }),
-        );
+        queueMessageCommit(state, nextMessages);
       },
       controller.signal,
     );
@@ -416,14 +421,16 @@ export async function dispatchRetryMessage(
           didRefreshConversationStateDuringStream = true;
           void params?.refreshConversationSummary?.().catch(() => undefined);
         }
+        const nextMessages = applySseEvent(getLatestMessages(state), event, {
+          requestKind: "retry",
+          targetMessageId: messageId,
+        });
+        if (event.type === "message-start") {
+          syncMessageList(state, nextMessages);
+          return;
+        }
 
-        queueMessageCommit(
-          state,
-          applySseEvent(getLatestMessages(state), event, {
-            requestKind: "retry",
-            targetMessageId: messageId,
-          }),
-        );
+        queueMessageCommit(state, nextMessages);
       },
       controller.signal,
     );

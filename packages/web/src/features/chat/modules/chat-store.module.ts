@@ -499,14 +499,17 @@ export function createChatStoreModule() {
     if (!conversationId || !messageId) {
       return;
     }
+    const activeMessage = messages.value.find((entry) => entry.id === messageId);
 
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
-    await stopConversationMessageRecord(
-      conversationId,
-      messageId,
-    );
+    if (activeMessage?.role === "assistant") {
+      await stopConversationMessageRecord(
+        conversationId,
+        messageId,
+      );
+    }
     if (currentConversationId.value === conversationId) {
       applyStoppedStreamingMessage(messageId);
       await refreshConversationTailState(conversationId);

@@ -344,7 +344,10 @@ function readOptionalConversationHistoryStatus(value: unknown, label: string): s
 
 function readConversationHistoryTimestamp(value: unknown): string { return typeof value === 'string' && value.trim() ? value : new Date().toISOString(); }
 
-function readConversationHistoryObject(value: unknown, label: string): JsonObject { const object = readJsonObject(value); if (object) {return object;} throw new BadRequestException(`${label} must be an object`); }
+function readConversationHistoryObject(value: unknown, label: string): JsonObject {
+  if (isPlainObject(value)) {return value as JsonObject;}
+  throw new BadRequestException(`${label} must be an object`);
+}
 
 function readConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] { if (!Array.isArray(value)) {throw new BadRequestException(`${label} must be an array`);} return value.map((entry, index) => readEntry(entry, index)); }
 
@@ -381,19 +384,28 @@ function readConversationHistoryCustomBlocks(value: unknown, index: number): Non
     const source = readConversationHistorySource(object.source);
     const state = object.state === 'done' || object.state === 'streaming' ? object.state : undefined;
     if (object.kind === 'text' && typeof object.text === 'string') {return { id: object.id, kind: 'text' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), text: object.text, title: object.title };}
-    if (object.kind === 'json' && object.data !== undefined) {return { data: cloneJsonValue(object.data) as JsonValue, id: object.id, kind: 'json' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), title: object.title };}
+    const data = sanitizeHistoryJsonValue(object.data);
+    if (object.kind === 'json' && data !== undefined) {return { data, id: object.id, kind: 'json' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), title: object.title };}
     throw new BadRequestException(`${label}[${blockIndex}] is invalid`);
   });
 }
 
-function readConversationHistorySource(value: unknown): { key?: string; origin?: string; providerId?: string } | null { const object = readJsonObject(value); return object ? cloneJsonValue(object) as { key?: string; origin?: string; providerId?: string } : null; }
+function readConversationHistorySource(value: unknown): { key?: string; origin?: string; providerId?: string } | null {
+  const object = isPlainObject(value) ? value : null;
+  if (!object) {return null;}
+  const sanitized = sanitizeHistoryJsonObject(object);
+  return Object.keys(sanitized).length > 0
+    ? sanitized as { key?: string; origin?: string; providerId?: string }
+    : null;
+}
 
 function readConversationHistoryAnnotations(value: unknown, index: number): NonNullable<ChatMessageMetadata['annotations']> {
   const label = `${readConversationHistoryLabel(index)}.metadata.annotations`;
   return readConversationHistoryArray(value, label, (entry, annotationIndex) => {
     const object = readConversationHistoryObject(entry, `${label}[${annotationIndex}]`);
     if (typeof object.type !== 'string' || typeof object.owner !== 'string' || typeof object.version !== 'string') {throw new BadRequestException(`${label}[${annotationIndex}] is invalid`);}
-    return { ...(object.data !== undefined ? { data: cloneJsonValue(object.data) as JsonValue } : {}), owner: object.owner, type: object.type, version: object.version };
+    const data = sanitizeHistoryJsonValue(object.data);
+    return { ...(data !== undefined ? { data } : {}), owner: object.owner, type: object.type, version: object.version };
   });
 }
 
@@ -427,6 +439,31 @@ function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { m
 }
 
 function readConversationHistoryPreviewMetadata(message: JsonObject | undefined, index: number): ChatMessageMetadata | null { return message ? (readConversationHistoryMetadata(message.metadata, index) ?? readStoredConversationMetadata(message.metadataJson)) : null; }
+function sanitizeHistoryJsonObject(value: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
+    const sanitized = sanitizeHistoryJsonValue(entry);
+    return sanitized === undefined ? [] : [[key, sanitized] as const];
+  })) as JsonObject;
+}
+
+function sanitizeHistoryJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {return value;}
+  if (typeof value === 'number') {return Number.isFinite(value) ? value : undefined;}
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => {
+      const sanitized = sanitizeHistoryJsonValue(entry);
+      return sanitized === undefined ? [] : [sanitized];
+    });
+  }
+  if (isPlainObject(value)) {
+    return sanitizeHistoryJsonObject(value);
+  }
+  return undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function isPersistedConversationRecordValid(id: string, record: RuntimeConversationRecord): boolean {
   return record.userId === SINGLE_USER_ID

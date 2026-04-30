@@ -201,6 +201,53 @@ describe('useChatView', () => {
     )
   })
 
+  it('marks matched slash commands as display messages before the server echoes them back', async () => {
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    state.inputText.value = '/compact'
+    await nextTick()
+    await state.send()
+
+    expect(chat.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        optimisticAssistantRole: 'display',
+        optimisticUserRole: 'display',
+        optimisticUserMetadata: expect.objectContaining({
+          annotations: [
+            expect.objectContaining({
+              data: {
+                variant: 'command',
+              },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+            }),
+          ],
+        }),
+        optimisticAssistantMetadata: expect.objectContaining({
+          annotations: [
+            expect.objectContaining({
+              data: {
+                variant: 'result',
+              },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+            }),
+          ],
+        }),
+      }),
+    )
+  })
+
   it('keeps send enabled while streaming so later messages can enter the queue', async () => {
     const chat = createChatStub({
       streaming: true,

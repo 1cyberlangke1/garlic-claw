@@ -315,6 +315,73 @@ describe('RuntimeHostConversationRecordService', () => {
     });
   });
 
+  it('normalizes loose history objects with undefined optional fields during replacement', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'Loose History Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+    const looseHistoryMessage = {
+      content: '/compact',
+      createdAt: '2026-04-30T08:00:00.000Z',
+      error: undefined,
+      id: 'display-command',
+      metadata: {
+        annotations: [
+          {
+            data: {
+              nested: {
+                kept: 'value',
+                dropped: undefined,
+              },
+              variant: 'command',
+            },
+            owner: 'conversation.display-message',
+            type: 'display-message',
+            version: '1',
+          },
+        ],
+      },
+      model: undefined,
+      parts: [
+        {
+          text: '/compact',
+          type: 'text',
+        },
+      ],
+      provider: undefined,
+      role: 'display',
+      status: 'completed',
+      updatedAt: '2026-04-30T08:00:00.000Z',
+    } as unknown;
+
+    const replaced = service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [looseHistoryMessage] as unknown as never[],
+    }) as { messages: Array<Record<string, unknown>> };
+
+    expect(replaced.messages).toEqual([
+      expect.objectContaining({
+        content: '/compact',
+        metadata: {
+          annotations: [
+            {
+              data: {
+                nested: {
+                  kept: 'value',
+                },
+                variant: 'command',
+              },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+              version: '1',
+            },
+          ],
+        },
+        role: 'display',
+      }),
+    ]);
+  });
+
   it('prefers the latest matching provider usage annotation when previewing history tokens', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new RuntimeHostConversationRecordService();

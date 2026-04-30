@@ -1,6 +1,7 @@
 import type {
   ChatMessageMetadata,
   ChatMessagePart,
+  ChatMessageRole,
   SSEEvent,
 } from '@garlic-claw/shared'
 import {
@@ -39,12 +40,15 @@ export function buildOptimisticUserMessage(
   id: string,
   content?: string,
   parts?: ChatMessagePart[],
+  metadata?: ChatMessageMetadata,
+  role: ChatMessageRole = 'user',
 ): ChatMessage {
   return {
     id,
-    role: 'user',
+    role,
     content: content ?? '',
     parts,
+    ...(metadata ? { metadata } : {}),
     status: 'completed',
     error: null,
   }
@@ -62,10 +66,11 @@ export function buildOptimisticAssistantMessage(
   provider: string | null,
   model: string | null,
   metadata?: ChatMessageMetadata,
+  role: ChatMessageRole = 'assistant',
 ): ChatMessage {
   return {
     id,
-    role: 'assistant',
+    role,
     content: '',
     toolCalls: [],
     toolResults: [],

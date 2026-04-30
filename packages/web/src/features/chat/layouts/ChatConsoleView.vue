@@ -145,8 +145,14 @@ async function newChat() {
 }
 
 .conversation-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
   color: var(--text-muted);
   line-height: 1;
+  font-size: 1.05rem;
 }
 
 .rail-footer {

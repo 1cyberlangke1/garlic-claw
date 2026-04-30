@@ -49,7 +49,10 @@ export interface ChatSendInput {
   parts?: ChatMessagePart[]
   provider?: string | null
   model?: string | null
+  optimisticUserMetadata?: ChatMessageMetadata
+  optimisticUserRole?: ChatMessageRole
   optimisticAssistantMetadata?: ChatMessageMetadata
+  optimisticAssistantRole?: ChatMessageRole
 }
 
 export interface ChatPendingRuntimePermission extends RuntimePermissionRequest {
