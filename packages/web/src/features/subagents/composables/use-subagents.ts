@@ -9,10 +9,10 @@ import { usePagination } from '@/composables/use-pagination'
 import {
   loadPluginSubagentDetail as loadSubagentDetail,
   loadPluginSubagentOverview as loadSubagentOverview,
-  removePluginSubagentSession as requestRemoveSubagentSession,
+  closePluginSubagentConversation as requestCloseSubagentConversation,
 } from './subagents.data'
 
-type SubagentFilter = 'all' | 'running' | 'completed' | 'error' | 'writeback-failed'
+type SubagentFilter = 'all' | 'running' | 'completed' | 'error'
 type SubagentWorkspaceWindow = SubagentMainWindow | SubagentSessionWindow
 
 interface SubagentWorkspaceSummary {
@@ -33,7 +33,7 @@ interface SubagentSessionWindow {
   id: string
   kind: 'subagent'
   label: string
-  sessionId: string
+  conversationId: string
   status: PluginSubagentStatus
   summary: PluginSubagentSummary
 }
@@ -52,7 +52,7 @@ export function useSubagents() {
   const detailError = detailState.error
   const subagents = shallowRef<PluginSubagentSummary[]>([])
   const activeSubagentDetail = shallowRef<PluginSubagentDetail | null>(null)
-  const removingSessionId = ref<string | null>(null)
+  const closingConversationId = ref<string | null>(null)
   const searchKeyword = ref('')
   const filter = ref<SubagentFilter>('all')
   const activeConversationId = ref<string | null>(null)
@@ -104,9 +104,6 @@ export function useSubagents() {
   )
   const errorSubagentCount = computed(() =>
     subagents.value.filter((subagent) => subagent.status === 'error').length,
-  )
-  const writeBackAttentionCount = computed(() =>
-    subagents.value.filter((subagent) => subagent.writeBackStatus === 'pending' || subagent.writeBackStatus === 'failed').length,
   )
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -188,7 +185,7 @@ export function useSubagents() {
     detailLoading.value = true
     detailState.clearError()
     try {
-      activeSubagentDetail.value = await loadSubagentDetail(window.sessionId)
+      activeSubagentDetail.value = await loadSubagentDetail(window.conversationId)
     } catch (caughtError) {
       activeSubagentDetail.value = null
       detailState.setError(caughtError, '加载子代理上下文失败')
@@ -197,22 +194,20 @@ export function useSubagents() {
     }
   }
 
-  async function removeSubagentSession(sessionId: string) {
-    if (!sessionId.trim() || removingSessionId.value) {
+  async function closeSubagentConversation(conversationId: string) {
+    if (!conversationId.trim() || closingConversationId.value) {
       return
     }
-    removingSessionId.value = sessionId
+    closingConversationId.value = conversationId
     requestState.clearError()
     try {
-      const removed = await requestRemoveSubagentSession(sessionId)
-      if (removed) {
-        await refreshAll()
-      }
+      await requestCloseSubagentConversation(conversationId)
+      await refreshAll()
     } catch (caughtError) {
-      requestState.setError(caughtError, '移除后台子代理失败')
+      requestState.setError(caughtError, '关闭后台子代理失败')
     } finally {
-      if (removingSessionId.value === sessionId) {
-        removingSessionId.value = null
+      if (closingConversationId.value === conversationId) {
+        closingConversationId.value = null
       }
     }
   }
@@ -232,7 +227,7 @@ export function useSubagents() {
     activeWindowKind,
     activeWorkspaceWindows,
     activeSubagentDetail,
-    removingSessionId,
+    closingConversationId,
     searchKeyword,
     filter,
     pagedSubagents,
@@ -248,11 +243,10 @@ export function useSubagents() {
     filteredSubagentCount,
     runningSubagentCount,
     errorSubagentCount,
-    writeBackAttentionCount,
     selectConversation,
     selectWindow,
     refreshAll,
-    removeSubagentSession,
+    closeSubagentConversation,
   }
 }
 
@@ -279,10 +273,10 @@ function createConversationWorkspaceSummaries(
           label: 'main',
         },
         ...orderedSubagents.map((subagent, index) => ({
-          id: subagent.sessionId,
+          id: subagent.conversationId,
           kind: 'subagent' as const,
-          label: `agent${index + 1}`,
-          sessionId: subagent.sessionId,
+          label: readSubagentWindowLabel(subagent, index),
+          conversationId: subagent.conversationId,
           status: subagent.status,
           summary: subagent,
         })),
@@ -303,11 +297,11 @@ function compareSubagentsByRequestedAt(left: PluginSubagentSummary, right: Plugi
   if (requestedAtDiff !== 0) {
     return requestedAtDiff
   }
-  return left.sessionId.localeCompare(right.sessionId)
+  return left.conversationId.localeCompare(right.conversationId)
 }
 
 function readWorkspaceId(subagent: PluginSubagentSummary): string {
-  return subagent.conversationId?.trim() || GLOBAL_WORKSPACE_ID
+  return subagent.parentConversationId?.trim() || GLOBAL_WORKSPACE_ID
 }
 
 function readWorkspaceLabel(workspaceId: string): string {
@@ -320,6 +314,7 @@ function matchesSubagent(subagent: PluginSubagentSummary, keyword: string): bool
   }
 
   return [
+    subagent.title,
     subagent.description ?? '',
     subagent.pluginDisplayName ?? '',
     subagent.pluginId,
@@ -328,12 +323,15 @@ function matchesSubagent(subagent: PluginSubagentSummary, keyword: string): bool
     subagent.providerId ?? '',
     subagent.modelId ?? '',
     subagent.error ?? '',
-    subagent.writeBackError ?? '',
-    subagent.writeBackTarget?.id ?? '',
   ]
     .join(' ')
     .toLocaleLowerCase()
     .includes(keyword)
+}
+
+function readSubagentWindowLabel(subagent: PluginSubagentSummary, index: number): string {
+  const title = subagent.title.trim()
+  return title || `agent${index + 1}`
 }
 
 function matchesFilter(subagent: PluginSubagentSummary, filter: SubagentFilter): boolean {
@@ -344,8 +342,6 @@ function matchesFilter(subagent: PluginSubagentSummary, filter: SubagentFilter):
       return subagent.status === 'completed'
     case 'error':
       return subagent.status === 'error'
-    case 'writeback-failed':
-      return subagent.writeBackStatus === 'failed'
     default:
       return true
   }
@@ -355,15 +351,9 @@ function subagentAttentionWeight(subagent: PluginSubagentSummary): number {
   if (subagent.status === 'error') {
     return 0
   }
-  if (subagent.writeBackStatus === 'failed') {
+  if (subagent.status === 'queued' || subagent.status === 'running') {
     return 1
   }
-  if (subagent.status === 'queued' || subagent.status === 'running') {
-    return 2
-  }
-  if (subagent.writeBackStatus === 'pending') {
-    return 3
-  }
 
-  return 4
+  return 2
 }

@@ -136,6 +136,7 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   const {
     commandSuggestions,
     applyCommandSuggestion,
+    resolveMatchedCommand,
   } = useChatCommandCatalog(inputText)
 
   watch(
@@ -186,6 +187,9 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
         },
       } satisfies ChatMessageMetadata
       : undefined
+    const matchedCommand = pendingImages.value.length === 0
+      ? resolveMatchedCommand(text)
+      : null
     const parts: ChatMessagePart[] = [
       ...pendingImages.value.map((image) => ({
         type: 'image' as const,
@@ -207,9 +211,19 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
       parts,
       provider: chat.selectedProvider,
       model: chat.selectedModel,
-      ...(optimisticAssistantMetadata
-        ? { optimisticAssistantMetadata }
-        : {}),
+      ...(matchedCommand
+        ? {
+          optimisticAssistantMetadata: mergeMessageMetadata(
+            optimisticAssistantMetadata,
+            createDisplayMessageMetadata('result'),
+          ),
+          optimisticAssistantRole: 'display' as const,
+          optimisticUserMetadata: createDisplayMessageMetadata('command'),
+          optimisticUserRole: 'display' as const,
+        }
+        : optimisticAssistantMetadata
+          ? { optimisticAssistantMetadata }
+          : {}),
     })
   }
 
@@ -457,4 +471,40 @@ function readQueuedDraftImages(parts: ChatMessagePart[] | undefined): PendingIma
       mimeType: part.mimeType,
       name: `队列图片 ${index + 1}`,
     }))
+}
+
+function createDisplayMessageMetadata(variant: 'command' | 'result'): ChatMessageMetadata {
+  return {
+    annotations: [
+      {
+        data: {
+          variant,
+        },
+        owner: 'conversation.display-message',
+        type: 'display-message',
+        version: '1',
+      },
+    ],
+  }
+}
+
+function mergeMessageMetadata(
+  base: ChatMessageMetadata | undefined,
+  extra: ChatMessageMetadata,
+): ChatMessageMetadata {
+  if (!base) {
+    return extra
+  }
+
+  return {
+    ...base,
+    ...(extra.annotations
+      ? {
+        annotations: [
+          ...(base.annotations ?? []),
+          ...extra.annotations,
+        ],
+      }
+      : {}),
+  }
 }

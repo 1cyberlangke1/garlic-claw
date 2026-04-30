@@ -162,6 +162,16 @@ export function isRetryableError(error: unknown): boolean {
   return isRetryableStatus(appError.status)
 }
 
+/**
+ * 判断异常是否表示本地主动取消请求。
+ * @param error 任意异常
+ * @returns 是否为取消态
+ */
+export function isAbortedAppError(error: unknown): boolean {
+  const appError = toAppError(error)
+  return appError.code === 'ABORTED'
+}
+
 interface HttpLikeError {
   status: number
   body?: string

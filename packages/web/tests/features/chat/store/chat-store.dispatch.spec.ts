@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage } from '@/features/chat/store/chat-store.types'
+import { BusinessError } from '@/utils/error'
 import {
   abortChatStream,
   discardPendingMessageUpdates,
@@ -78,6 +79,28 @@ describe('dispatchSendMessage', () => {
     expect(state.streaming.value).toBe(false)
   })
 
+  it('does not mark the optimistic assistant as failed when the local stream observer aborts', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockRejectedValue(
+      new BusinessError('请求已取消', {
+        code: 'ABORTED',
+      }),
+    )
+    const state = createState()
+
+    await dispatchSendMessage(state, {
+      content: 'hello',
+    })
+
+    expect(state.messages.value).toHaveLength(2)
+    expect(state.messages.value[1]).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        status: 'pending',
+        error: null,
+      }),
+    )
+  })
+
   it('refreshes summary during streaming and refreshes full state after stream completion', async () => {
     vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
       async (_conversationId, _payload, onEvent) => {
@@ -113,6 +136,87 @@ describe('dispatchSendMessage', () => {
       permissionStateChanged: false,
       summaryRefreshed: true,
     })
+  })
+
+  it('applies message-start immediately so display command messages do not wait for stream completion', async () => {
+    let capturedState: ReturnType<typeof createState> | null = null
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          userMessage: {
+            id: 'user-display-1',
+            role: 'display',
+            content: '/compact',
+            partsJson: JSON.stringify([{ text: '/compact', type: 'text' }]),
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: { variant: 'command' },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            createdAt: '2026-04-30T08:00:00.000Z',
+            updatedAt: '2026-04-30T08:00:00.000Z',
+          },
+          assistantMessage: {
+            id: 'assistant-display-1',
+            role: 'display',
+            content: '',
+            partsJson: null,
+            toolCalls: null,
+            toolResults: null,
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: { variant: 'result' },
+                  owner: 'conversation.display-message',
+                  type: 'display-message',
+                  version: '1',
+                },
+              ],
+            }),
+            provider: 'system',
+            model: 'context-compaction-command',
+            status: 'pending',
+            error: null,
+            createdAt: '2026-04-30T08:00:00.000Z',
+            updatedAt: '2026-04-30T08:00:00.000Z',
+          },
+        })
+        capturedState = state
+      },
+    )
+    const state = createState()
+
+    await dispatchSendMessage(state, {
+      content: '/compact',
+      optimisticAssistantRole: 'display',
+      optimisticUserRole: 'display',
+    })
+
+    expect(capturedState?.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'user-display-1',
+        role: 'display',
+        content: '/compact',
+      }),
+      expect.objectContaining({
+        id: 'assistant-display-1',
+        role: 'display',
+        status: 'pending',
+      }),
+    ])
+    expect(capturedState?.streaming.value).toBe(true)
   })
 
   it('swallows summary refresh failures during streaming and still completes final refresh', async () => {
@@ -157,6 +261,34 @@ describe('dispatchSendMessage', () => {
       permissionStateChanged: false,
       summaryRefreshed: true,
     })
+  })
+
+  it('does not mark the retried assistant as failed when the local stream observer aborts', async () => {
+    vi.mocked(chatConversationData.retryConversationMessage).mockRejectedValue(
+      new BusinessError('请求已取消', {
+        code: 'ABORTED',
+      }),
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+
+    await dispatchRetryMessage(state, 'assistant-1')
+
+    expect(state.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        status: 'pending',
+        error: null,
+      }),
+    ])
   })
 
   it('does not fail a successful send when the final conversation refresh fails', async () => {

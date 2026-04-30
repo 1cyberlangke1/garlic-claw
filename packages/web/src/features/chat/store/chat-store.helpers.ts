@@ -43,9 +43,11 @@ export function parseToolCalls(value: string | null): ChatMessage['toolCalls'] {
     return undefined
   }
 
-  return (JSON.parse(value) as Array<{ toolName: string; input: JsonValue }>).map((item) => ({
+  return (JSON.parse(value) as Array<{ toolCallId?: string; toolName: string; input: JsonValue }>).map((item) => ({
+    ...(typeof item.toolCallId === 'string' ? { toolCallId: item.toolCallId } : {}),
     toolName: item.toolName,
-    input: stringifyPayload(item.input),
+    input: item.input,
+    inputPreview: stringifyPayload(item.input),
   }))
 }
 
@@ -59,9 +61,11 @@ export function parseToolResults(value: string | null): ChatMessage['toolResults
     return undefined
   }
 
-  return (JSON.parse(value) as Array<{ toolName: string; output: JsonValue }>).map((item) => ({
+  return (JSON.parse(value) as Array<{ toolCallId?: string; toolName: string; output: JsonValue }>).map((item) => ({
+    ...(typeof item.toolCallId === 'string' ? { toolCallId: item.toolCallId } : {}),
     toolName: item.toolName,
-    output: stringifyPayload(item.output),
+    output: item.output,
+    outputPreview: stringifyPayload(item.output),
   }))
 }
 
@@ -131,7 +135,7 @@ export function normalizeSendInput(input: ChatSendInput): SendMessagePayload {
 }
 
 /**
- * 找出当前对话中仍在生成的 assistant 消息。
+ * 找出当前对话中仍在生成的回复消息。
  * @param messages 对话消息列表
  * @returns 活跃消息 ID；不存在时返回 null
  */
@@ -139,7 +143,7 @@ export function findActiveAssistantMessageId(messages: ChatMessage[]): string | 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (
-      message.role === 'assistant' &&
+      isActiveResponseMessage(message) &&
       (message.status === 'pending' || message.status === 'streaming')
     ) {
       return message.id ?? null
@@ -147,4 +151,30 @@ export function findActiveAssistantMessageId(messages: ChatMessage[]): string | 
   }
 
   return null
+}
+
+function isActiveResponseMessage(message: ChatMessage): boolean {
+  if (message.role === 'assistant') {
+    return true
+  }
+
+  return message.role === 'display' && readDisplayMessageVariant(message) === 'result'
+}
+
+function readDisplayMessageVariant(message: ChatMessage): 'command' | 'result' | null {
+  const annotation = message.metadata?.annotations?.find(
+    (entry) =>
+      entry.type === 'display-message' &&
+      entry.owner === 'conversation.display-message' &&
+      entry.version === '1',
+  )
+  const variant =
+    annotation?.data &&
+    typeof annotation.data === 'object' &&
+    !Array.isArray(annotation.data) &&
+    'variant' in annotation.data
+      ? annotation.data.variant
+      : null
+
+  return variant === 'command' || variant === 'result' ? variant : null
 }

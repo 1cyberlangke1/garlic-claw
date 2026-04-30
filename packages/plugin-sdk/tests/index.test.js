@@ -1614,46 +1614,23 @@ test('execution context exposes message target lookup and generic send host APIs
   });
 });
 
-test('execution context exposes background subagent host APIs', async () => {
+test('execution context exposes agent runtime style subagent host APIs', async () => {
   const client = createClient();
   const sent = installHostCallMock(client, {
-    'subagent.run': () => ({
-      sessionId: 'subagent-session-inline-1',
-      sessionMessageCount: 2,
-      providerId: 'openai',
-      modelId: 'gpt-5.2',
-      text: '这是同步子代理总结',
-      message: {
-        role: 'assistant',
-        content: '这是同步子代理总结',
-      },
-      finishReason: 'stop',
-      toolCalls: [],
-      toolResults: [],
-    }),
-    'subagent.start': () => ({
-      description: '总结当前对话',
-      sessionId: 'subagent-session-1',
-      sessionMessageCount: 1,
-      sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
-      pluginId: 'plugin.sdk.test',
-      pluginDisplayName: 'plugin.sdk.test',
-      runtimeKind: 'remote',
+    'subagent.spawn': () => ({
+      conversationId: 'subagent-conversation-1',
+      title: '总结当前对话',
+      name: '总结分身',
       status: 'queued',
-      requestPreview: '请帮我总结当前对话',
-      providerId: 'openai',
-      modelId: 'gpt-5.2',
-      writeBackStatus: 'pending',
-      requestedAt: '2026-03-30T12:00:00.000Z',
-      startedAt: null,
-      finishedAt: null,
     }),
     'subagent.list': () => ([
       {
         description: '总结当前对话',
-        sessionId: 'subagent-session-1',
-        sessionMessageCount: 1,
-        sessionUpdatedAt: '2026-03-30T12:00:00.000Z',
+        conversationId: 'subagent-conversation-1',
+        parentConversationId: 'conv-1',
+        title: '总结当前对话',
+        messageCount: 2,
+        updatedAt: '2026-03-30T12:00:00.000Z',
         pluginId: 'plugin.sdk.test',
         pluginDisplayName: 'plugin.sdk.test',
         runtimeKind: 'remote',
@@ -1661,17 +1638,19 @@ test('execution context exposes background subagent host APIs', async () => {
         requestPreview: '请帮我总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        writeBackStatus: 'pending',
         requestedAt: '2026-03-30T12:00:00.000Z',
         startedAt: null,
         finishedAt: null,
+        closedAt: null,
       },
     ]),
     'subagent.get': () => ({
       description: '总结当前对话',
-      sessionId: 'subagent-session-1',
-      sessionMessageCount: 2,
-      sessionUpdatedAt: '2026-03-30T12:00:05.000Z',
+      conversationId: 'subagent-conversation-1',
+      parentConversationId: 'conv-1',
+      title: '总结当前对话',
+      messageCount: 3,
+      updatedAt: '2026-03-30T12:00:05.000Z',
       pluginId: 'plugin.sdk.test',
       pluginDisplayName: 'plugin.sdk.test',
       runtimeKind: 'remote',
@@ -1680,11 +1659,10 @@ test('execution context exposes background subagent host APIs', async () => {
       resultPreview: '这是后台子代理总结',
       providerId: 'openai',
       modelId: 'gpt-5.2',
-      writeBackStatus: 'sent',
-      writeBackMessageId: 'assistant-message-1',
       requestedAt: '2026-03-30T12:00:00.000Z',
       startedAt: '2026-03-30T12:00:01.000Z',
       finishedAt: '2026-03-30T12:00:05.000Z',
+      closedAt: null,
       request: {
         description: '总结当前对话',
         providerId: 'openai',
@@ -1713,6 +1691,31 @@ test('execution context exposes background subagent host APIs', async () => {
         toolResults: [],
       },
     }),
+    'subagent.wait': () => ({
+      conversationId: 'subagent-conversation-1',
+      title: '总结当前对话',
+      name: '总结分身',
+      result: '这是后台子代理总结',
+      status: 'completed',
+    }),
+    'subagent.send-input': () => ({
+      conversationId: 'subagent-conversation-1',
+      title: '继续总结',
+      name: '继续总结分身',
+      status: 'queued',
+    }),
+    'subagent.interrupt': () => ({
+      conversationId: 'subagent-conversation-1',
+      title: '继续总结',
+      name: '继续总结分身',
+      status: 'interrupted',
+    }),
+    'subagent.close': () => ({
+      conversationId: 'subagent-conversation-1',
+      title: '继续总结',
+      name: '继续总结分身',
+      status: 'closed',
+    }),
   });
 
   const executionContext = client.createExecutionContext({
@@ -1720,18 +1723,8 @@ test('execution context exposes background subagent host APIs', async () => {
     conversationId: 'conv-1',
   });
 
-  const inlineResult = await executionContext.host.runSubagent({
-    description: '同步总结当前对话',
-    providerId: 'openai',
-    modelId: 'gpt-5.2',
-    messages: [
-      {
-        role: 'user',
-        content: '请同步总结当前对话',
-      },
-    ],
-  });
-  const startedSubagent = await executionContext.host.startSubagent({
+  const startedSubagent = await executionContext.host.spawnSubagent({
+    name: '总结分身',
     description: '总结当前对话',
     providerId: 'openai',
     modelId: 'gpt-5.2',
@@ -1741,36 +1734,60 @@ test('execution context exposes background subagent host APIs', async () => {
         content: '请帮我总结当前对话',
       },
     ],
-    writeBack: {
-      target: {
-        type: 'conversation',
-        id: 'conv-1',
-      },
-    },
   });
   const listedSubagents = await executionContext.host.listSubagents();
-  const loadedSubagent = await executionContext.host.getSubagent('subagent-session-1');
+  const loadedSubagent = await executionContext.host.getSubagent('subagent-conversation-1');
+  const waitedSubagent = await executionContext.host.waitSubagent({
+    conversationId: 'subagent-conversation-1',
+    timeoutMs: 1000,
+  });
+  const continuedSubagent = await executionContext.host.sendInputSubagent({
+    conversationId: 'subagent-conversation-1',
+    name: '继续总结分身',
+    description: '继续总结',
+    messages: [
+      {
+        role: 'user',
+        content: '再补充一句',
+      },
+    ],
+  });
+  const interruptedSubagent = await executionContext.host.interruptSubagent({
+    conversationId: 'subagent-conversation-1',
+  });
+  const closedSubagent = await executionContext.host.closeSubagent({
+    conversationId: 'subagent-conversation-1',
+  });
 
-  assert.equal(inlineResult.sessionId, 'subagent-session-inline-1');
-  assert.equal(inlineResult.sessionMessageCount, 2);
+  assert.equal(startedSubagent.conversationId, 'subagent-conversation-1');
   assert.equal(startedSubagent.status, 'queued');
-  assert.equal(startedSubagent.description, '总结当前对话');
+  assert.equal(startedSubagent.name, '总结分身');
   assert.equal(listedSubagents.length, 1);
   assert.equal(loadedSubagent.status, 'completed');
   assert.equal(loadedSubagent.result.text, '这是后台子代理总结');
-  assert.equal(sent[0].payload.params.description, '同步总结当前对话');
-  assert.equal(sent[1].payload.params.description, '总结当前对话');
+  assert.equal(waitedSubagent.status, 'completed');
+  assert.equal(waitedSubagent.result, '这是后台子代理总结');
+  assert.equal(continuedSubagent.status, 'queued');
+  assert.equal(interruptedSubagent.status, 'interrupted');
+  assert.equal(closedSubagent.status, 'closed');
+  assert.equal(sent[0].payload.params.name, '总结分身');
+  assert.equal(sent[0].payload.params.description, '总结当前对话');
+  assert.equal(sent[4].payload.params.name, '继续总结分身');
+  assert.equal(sent[4].payload.params.description, '继续总结');
   assert.deepEqual(
     sent.map((entry) => entry.payload.method),
     [
-      'subagent.run',
-      'subagent.start',
+      'subagent.spawn',
       'subagent.list',
       'subagent.get',
+      'subagent.wait',
+      'subagent.send-input',
+      'subagent.interrupt',
+      'subagent.close',
     ],
   );
-  assert.deepEqual(sent[3].payload.params, {
-    sessionId: 'subagent-session-1',
+  assert.deepEqual(sent[2].payload.params, {
+    conversationId: 'subagent-conversation-1',
   });
 });
 

@@ -4,8 +4,23 @@ import type {
   ChatMessageRole,
   ChatMessageStatus,
   ConversationTodoItem,
+  JsonValue,
   RuntimePermissionRequest,
 } from '@garlic-claw/shared'
+
+export interface ChatToolCallEntry {
+  toolCallId?: string
+  toolName: string
+  input: JsonValue
+  inputPreview: string
+}
+
+export interface ChatToolResultEntry {
+  toolCallId?: string
+  toolName: string
+  output: JsonValue
+  outputPreview: string
+}
 
 /**
  * 前端聊天消息。
@@ -15,8 +30,8 @@ export interface ChatMessage {
   role: ChatMessageRole
   content: string
   parts?: ChatMessagePart[]
-  toolCalls?: Array<{ toolName: string; input: string }>
-  toolResults?: Array<{ toolName: string; output: string }>
+  toolCalls?: ChatToolCallEntry[]
+  toolResults?: ChatToolResultEntry[]
   metadata?: ChatMessageMetadata
   provider?: string | null
   model?: string | null
@@ -34,7 +49,10 @@ export interface ChatSendInput {
   parts?: ChatMessagePart[]
   provider?: string | null
   model?: string | null
+  optimisticUserMetadata?: ChatMessageMetadata
+  optimisticUserRole?: ChatMessageRole
   optimisticAssistantMetadata?: ChatMessageMetadata
+  optimisticAssistantRole?: ChatMessageRole
 }
 
 export interface ChatPendingRuntimePermission extends RuntimePermissionRequest {

@@ -1,4 +1,4 @@
-import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef } from "vue";
+import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef, triggerRef } from "vue";
 import type {
   ChatMessagePart,
   Conversation,
@@ -60,7 +60,7 @@ export interface QueuedChatSendPreviewEntry {
 }
 
 export function createChatStoreModule() {
-  const conversations = ref<Conversation[]>([]);
+  const conversations = shallowRef<Conversation[]>([]);
   const currentConversationId = ref<string | null>(null);
   const contextWindowPreview = ref<ConversationContextWindowPreview | null>(null);
   const messages = shallowRef<ChatMessage[]>([]);
@@ -310,8 +310,10 @@ export function createChatStoreModule() {
   }
 
   async function createConversation(title?: string) {
+    conversationListRequestId += 1;
     const conversation = await createConversationRecord(title);
     conversations.value.unshift(conversation);
+    triggerRef(conversations);
     return conversation;
   }
 
@@ -499,14 +501,17 @@ export function createChatStoreModule() {
     if (!conversationId || !messageId) {
       return;
     }
+    const activeMessage = messages.value.find((entry) => entry.id === messageId);
 
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
-    await stopConversationMessageRecord(
-      conversationId,
-      messageId,
-    );
+    if (activeMessage?.role === "assistant") {
+      await stopConversationMessageRecord(
+        conversationId,
+        messageId,
+      );
+    }
     if (currentConversationId.value === conversationId) {
       applyStoppedStreamingMessage(messageId);
       await refreshConversationTailState(conversationId);

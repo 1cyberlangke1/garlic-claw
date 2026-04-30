@@ -319,4 +319,72 @@ describe('ChatMessageList', () => {
     expect(excludedMessage.text()).toContain('这条消息已经脱离上下文窗口。')
     expect(includedMessage.classes()).not.toContain('excluded-from-context')
   })
+
+  it('renders tool calls and tool results as collapsed timeline blocks before the assistant reply', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-tools',
+            role: 'assistant',
+            content: '最终答复在工具后面。',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+            toolCalls: [
+              {
+                toolCallId: 'tool-call-1',
+                toolName: 'spawn_subagent',
+                input: {
+                  name: '资料核对员',
+                  prompt: '检查引用来源',
+                },
+                inputPreview: '{"name":"资料核对员","prompt":"检查引用来源"}',
+              },
+            ],
+            toolResults: [
+              {
+                toolCallId: 'tool-call-1',
+                toolName: 'spawn_subagent',
+                output: {
+                  conversationId: 'subagent-conversation-1',
+                  status: 'completed',
+                },
+                outputPreview: '{"conversationId":"subagent-conversation-1","status":"completed"}',
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    const assistant = wrapper.find('[data-message-id="assistant-tools"]')
+    const toolEntries = assistant.findAll('details.tool-entry')
+    const summaryText = toolEntries.map((entry) => entry.find('summary').text())
+
+    expect(toolEntries).toHaveLength(2)
+    expect((toolEntries[0].element as HTMLDetailsElement).open).toBe(false)
+    expect((toolEntries[1].element as HTMLDetailsElement).open).toBe(false)
+    expect(summaryText[0]).toContain('调用')
+    expect(summaryText[0]).toContain('spawn_subagent')
+    expect(summaryText[1]).toContain('结果')
+    expect(summaryText[1]).toContain('spawn_subagent')
+    expect(assistant.text()).toContain('最终答复在工具后面。')
+    expect(assistant.html().indexOf('tool-timeline')).toBeLessThan(
+      assistant.html().indexOf('message-content'),
+    )
+
+    toolEntries[0].element.setAttribute('open', '')
+    toolEntries[1].element.setAttribute('open', '')
+
+    expect(assistant.text()).toContain('资料核对员')
+    expect(assistant.text()).toContain('conversationId')
+    expect(assistant.text()).toContain('subagent-conversation-1')
+  })
 })

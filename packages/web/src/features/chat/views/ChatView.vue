@@ -1,36 +1,25 @@
 <template>
   <div class="chat-view">
     <template v-if="chat.currentConversationId">
-      <div class="chat-toolbar" :class="{ collapsed: !toolbarExpanded }">
+      <div class="chat-toolbar">
         <div class="toolbar-header">
-          <div class="toolbar-input-wrap">
-            <ModelQuickInput
-              :model="chat.selectedModel"
-              :provider="chat.selectedProvider"
-              placeholder="选择 provider/model"
-              @change="handleModelChange"
-            />
+          <div class="toolbar-model-summary">
+            <div class="toolbar-model-main">
+              <span class="toolbar-model-label">当前模型</span>
+              <strong class="toolbar-model-value">
+                {{ chat.selectedProvider && chat.selectedModel ? `${chat.selectedProvider}/${chat.selectedModel}` : '未在 AI 设置中配置默认模型' }}
+              </strong>
+              <div v-if="selectedCapabilities" class="toolbar-capability-row">
+                <span v-if="selectedCapabilities.reasoning" class="capability-chip">推理</span>
+                <span v-if="selectedCapabilities.toolCall" class="capability-chip">工具</span>
+                <span v-if="selectedCapabilities.input.image" class="capability-chip">支持图片</span>
+              </div>
+            </div>
+            <RouterLink class="toolbar-settings-link" to="/ai">
+              前往 AI 设置
+            </RouterLink>
           </div>
-          <button
-            type="button"
-            class="toolbar-toggle"
-            :title="toolbarExpanded ? '收起' : '展开'"
-            @click="toolbarExpanded = !toolbarExpanded"
-          >
-            <Icon
-              class="toolbar-toggle-icon"
-              :icon="toolbarExpanded ? altArrowUpBold : altArrowDownBold"
-              aria-hidden="true"
-            />
-          </button>
         </div>
-        <template v-if="toolbarExpanded">
-          <div v-if="selectedCapabilities" class="capability-row">
-            <span v-if="selectedCapabilities.reasoning" class="capability-chip">推理</span>
-            <span v-if="selectedCapabilities.toolCall" class="capability-chip">工具</span>
-            <span v-if="selectedCapabilities.input.image" class="capability-chip">支持图片</span>
-          </div>
-        </template>
       </div>
 
       <div v-if="subagentTabs.length" class="chat-tabs">
@@ -40,12 +29,12 @@
         </button>
       </div>
 
-      <section class="chat-todo-panel">
+      <section v-if="chat.todoItems.length > 0" class="chat-todo-panel">
         <div class="chat-todo-header">
           <h3>当前待办</h3>
           <span class="chat-todo-count">{{ chat.todoItems.length }}</span>
         </div>
-        <div v-if="chat.todoItems.length" class="chat-todo-list">
+        <div class="chat-todo-list">
           <div
             v-for="(item, index) in chat.todoItems"
             :key="`${index}-${item.content}`"
@@ -57,7 +46,6 @@
             <span class="chat-todo-priority">{{ readTodoPriorityLabel(item.priority) }}</span>
           </div>
         </div>
-        <p v-else class="chat-todo-empty">当前会话还没有待办。</p>
       </section>
 
       <ChatRuntimePermissionPanel
@@ -101,12 +89,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Icon } from '@iconify/vue'
-import altArrowUpBold from '@iconify-icons/solar/alt-arrow-up-bold'
-import altArrowDownBold from '@iconify-icons/solar/alt-arrow-down-bold'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PluginPersonaCurrentInfo } from '@garlic-claw/shared'
-import ModelQuickInput from '@/components/ModelQuickInput.vue'
 import { useChatView } from '@/features/chat/composables/use-chat-view'
 import ChatComposer from '@/features/chat/components/ChatComposer.vue'
 import ChatMessageList from '@/features/chat/components/ChatMessageList.vue'
@@ -116,12 +100,32 @@ import { useChatStore } from '@/features/chat/store/chat'
 import { isValidConversationRouteId } from '@/utils/uuid'
 
 const chat = useChatStore()
-const toolbarExpanded = ref(true)
 const activeTab = ref('main')
 const subagentTabs = ref<Array<{ id: string; title: string }>>([])
 const workspaceConversationId = ref<string | null>(null)
 const currentConversationPersona = ref<PluginPersonaCurrentInfo | null>(null)
 const currentConversationId = computed(() => chat.currentConversationId ?? null)
+const SUBAGENT_TAB_POLL_INTERVAL_MS = 2000
+
+let subagentTabPollTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  subagentTabPollTimer = setInterval(() => {
+    const conversationId = workspaceConversationId.value
+    if (!conversationId) {
+      return
+    }
+    void refreshSubagentTabs(conversationId)
+  }, SUBAGENT_TAB_POLL_INTERVAL_MS)
+})
+
+onBeforeUnmount(() => {
+  if (!subagentTabPollTimer) {
+    return
+  }
+  clearInterval(subagentTabPollTimer)
+  subagentTabPollTimer = null
+})
 
 watch(currentConversationId, async (id) => {
   if (!id) {
@@ -141,13 +145,7 @@ watch(currentConversationId, async (id) => {
   activeTab.value = 'main'
   workspaceConversationId.value = id
   subagentTabs.value = []
-  try {
-    const token = localStorage.getItem('accessToken')
-    const resp = await fetch(`/api/chat/conversations/${id}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-    if (resp.ok && workspaceConversationId.value === id) {
-      subagentTabs.value = await resp.json()
-    }
-  } catch { subagentTabs.value = [] }
+  await refreshSubagentTabs(id)
 }, {
   immediate: true,
 })
@@ -165,6 +163,22 @@ function switchToSubagent(conversationId: string) {
   activeTab.value = conversationId
   void chat.selectConversation(conversationId)
 }
+
+async function refreshSubagentTabs(conversationId: string) {
+  try {
+    const token = localStorage.getItem('accessToken')
+    const resp = await fetch(`/api/chat/conversations/${conversationId}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (!resp.ok || workspaceConversationId.value !== conversationId) {
+      return
+    }
+    subagentTabs.value = await resp.json()
+  } catch {
+    if (workspaceConversationId.value === conversationId) {
+      subagentTabs.value = []
+    }
+  }
+}
+
 let currentPersonaRequestId = 0
 const {
   inputText,
@@ -178,7 +192,6 @@ const {
   selectedCapabilities,
   uploadNotices,
   canSend,
-  handleModelChange,
   send,
   handleFileChange,
   removeImage,
@@ -274,55 +287,61 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   gap: 12px;
 }
 
-.toolbar-input-wrap {
+.toolbar-model-summary {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.toolbar-toggle {
+.toolbar-model-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toolbar-model-label {
+  font-size: 12px;
+  color: var(--text-muted);
   flex: 0 0 auto;
-  width: 32px;
-  align-self: stretch;
-  border: 1px solid rgba(103, 199, 207, 0.2);
-  border-radius: 8px;
-  background: var(--surface-panel-hover-soft);
+}
+
+.toolbar-model-value {
+  display: inline-flex;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text);
+  word-break: break-all;
+  flex: 0 1 auto;
+}
+
+.toolbar-settings-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border: 1px solid rgba(103, 199, 207, 0.24);
+  border-radius: 10px;
+  background: rgba(10, 19, 24, 0.38);
   color: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition:
-    opacity 0.15s ease,
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
+  text-decoration: none;
+  font-size: 13px;
 }
 
-.toolbar-toggle:hover {
-  opacity: 0.8;
+.toolbar-settings-link:hover {
+  opacity: 0.85;
 }
 
-.toolbar-toggle-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  color: currentColor;
-}
-
-.chat-toolbar.collapsed .toolbar-toggle {
-  background: var(--surface-panel-hover);
-  border-color: rgba(103, 199, 207, 0.28);
-  color: var(--accent-hover);
-}
-
-.capability-row {
+.toolbar-capability-row {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin-top: 12px;
+  align-items: center;
 }
 
 .capability-chip {

@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ChatMessageMetadata, ChatMessagePart, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
+import type { ChatMessageMetadata, ChatMessagePart, ConversationKind, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
@@ -11,7 +11,7 @@ import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-gov
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
 
-export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; id: string; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; title: string; updatedAt: string; userId: string; }
+export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; id: string; kind?: ConversationKind; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; subagent?: ConversationSubagentState; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
 interface RuntimeConversationStoragePayload { conversations?: Record<string, RuntimeConversationRecord>; pluginConversationSessions?: Record<string, RuntimeConversationSessionRecord>; }
 type RuntimeConversationRecordView = 'detail' | 'history' | 'overview' | 'summary';
@@ -33,9 +33,22 @@ export class RuntimeHostConversationRecordService {
     if (stored.migrated) {this.persistConversations();}
   }
 
-  createConversation(input: { id?: string; title?: string; userId?: string; parentId?: string }): JsonValue {
+  createConversation(input: { id?: string; title?: string; userId?: string; parentId?: string; kind?: ConversationKind; subagent?: ConversationSubagentState | null }): JsonValue {
     const timestamp = new Date().toISOString(), conversationId = input.id ?? uuidv7();
-    const conversation: RuntimeConversationRecord = { createdAt: timestamp, id: conversationId, messages: [], ...(input.parentId ? { parentId: input.parentId } : {}), revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`, revisionVersion: 0, runtimePermissionApprovals: [], title: input.title?.trim() || 'New Chat', updatedAt: timestamp, userId: input.userId ?? SINGLE_USER_ID };
+    const conversation: RuntimeConversationRecord = {
+      createdAt: timestamp,
+      id: conversationId,
+      ...(input.kind ? { kind: input.kind } : {}),
+      messages: [],
+      ...(input.parentId ? { parentId: input.parentId } : {}),
+      revision: `${conversationId}:${timestamp}:${Math.random().toString(36).slice(2)}:0`,
+      revisionVersion: 0,
+      runtimePermissionApprovals: [],
+      ...(input.subagent ? { subagent: cloneJsonValue(input.subagent) as ConversationSubagentState } : {}),
+      title: input.title?.trim() || 'New Chat',
+      updatedAt: timestamp,
+      userId: input.userId ?? SINGLE_USER_ID,
+    };
     this.conversations.set(conversation.id, conversation);
     this.persistConversations();
     const overview = readConversationRecordValue(conversation, 'overview') as JsonObject;
@@ -45,9 +58,12 @@ export class RuntimeHostConversationRecordService {
 
   async deleteConversation(conversationId: string, userId?: string): Promise<JsonValue> {
     this.requireConversation(conversationId, userId);
-    this.conversations.delete(conversationId);
-    this.removeConversationSessions(conversationId);
-    await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(conversationId);
+    const conversationIds = this.collectConversationTreeIds(conversationId, userId);
+    for (const currentConversationId of conversationIds) {
+      this.conversations.delete(currentConversationId);
+      this.removeConversationSessions(currentConversationId);
+      await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(currentConversationId);
+    }
     this.persistConversations();
     return { message: 'Conversation deleted' };
   }
@@ -57,8 +73,21 @@ export class RuntimeHostConversationRecordService {
   listConversations(userId?: string): JsonValue { return [...this.conversations.values()].filter((conversation) => !userId || conversation.userId === userId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((conversation) => readConversationRecordValue(conversation, 'overview')); }
 
   listChildConversations(parentId: string): JsonValue { return [...this.conversations.values()].filter(c => c.parentId === parentId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map(c => readConversationRecordValue(c, 'overview')); }
+  listSubagentConversations(userId?: string): JsonValue {
+    return this.listSubagentConversationRecords(userId).map((conversation) => readConversationRecordValue(conversation, 'overview'));
+  }
+  listSubagentConversationRecords(userId?: string): RuntimeConversationRecord[] {
+    return [...this.conversations.values()]
+      .filter((conversation) => conversation.kind === 'subagent' && Boolean(conversation.subagent) && (!userId || conversation.userId === userId))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map((conversation) => cloneJsonValue(conversation) as RuntimeConversationRecord);
+  }
   listPluginConversationSessions(pluginId: string): JsonValue { this.pruneExpiredConversationSessions(); return [...this.conversationSessions.values()].filter((session) => session.pluginId === pluginId).sort((left, right) => left.startedAt.localeCompare(right.startedAt)).map(serializeConversationSession); }
   readConversationRevision(conversationId: string): string | null { return this.conversations.get(conversationId)?.revision ?? null; }
+  readConversationSubagent(conversationId: string, userId?: string): ConversationSubagentState | null {
+    const subagent = this.requireConversation(conversationId, userId).subagent;
+    return subagent ? cloneJsonValue(subagent) as ConversationSubagentState : null;
+  }
   finishPluginConversationSession(pluginId: string, conversationId: string): boolean {
     const deleted = this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId));
     if (deleted) {this.persistConversations();}
@@ -68,6 +97,20 @@ export class RuntimeHostConversationRecordService {
   readRuntimePermissionApprovals(conversationId: string, userId?: string): string[] { return [...(this.requireConversation(conversationId, userId).runtimePermissionApprovals ?? [])]; }
   readConversationHistory(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'history'); }
   readCurrentMessageTarget(conversationId: string, userId?: string): JsonValue { const conversation = this.requireConversation(conversationId, userId); return { id: conversation.id, label: conversation.title, type: 'conversation' }; }
+  updateConversationSubagent<T>(conversationId: string, mutate: (subagent: ConversationSubagentState | null, conversation: RuntimeConversationRecord) => { nextSubagent: ConversationSubagentState | null; result: T }, userId?: string): T {
+    return this.updateConversationRecord(conversationId, userId, (conversation) => {
+      const currentSubagent = conversation.subagent ? cloneJsonValue(conversation.subagent) as ConversationSubagentState : null;
+      const mutated = mutate(currentSubagent, cloneJsonValue(conversation) as RuntimeConversationRecord);
+      if (mutated.nextSubagent) {
+        conversation.kind = 'subagent';
+        conversation.subagent = cloneJsonValue(mutated.nextSubagent) as ConversationSubagentState;
+      } else {
+        delete conversation.subagent;
+        conversation.kind = conversation.kind === 'subagent' ? 'main' : conversation.kind;
+      }
+      return mutated.result;
+    });
+  }
 
   keepConversationSession(pluginId: string, context: PluginCallContext, params: JsonObject): JsonValue {
     const current = this.readConversationSession(pluginId, readConversationId(context));
@@ -206,6 +249,27 @@ export class RuntimeHostConversationRecordService {
     }
   }
 
+  private collectConversationTreeIds(conversationId: string, userId?: string): string[] {
+    const ids: string[] = [];
+    const queue = [conversationId];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const currentConversationId = queue.shift();
+      if (!currentConversationId || visited.has(currentConversationId)) {
+        continue;
+      }
+      const conversation = this.requireConversation(currentConversationId, userId);
+      visited.add(currentConversationId);
+      ids.push(currentConversationId);
+      for (const childConversation of this.conversations.values()) {
+        if (childConversation.parentId === conversation.id) {
+          queue.push(childConversation.id);
+        }
+      }
+    }
+    return ids;
+  }
+
   private async broadcastConversationCreated(conversation: JsonObject, userId: string): Promise<void> {
     const kernel = this.runtimeHostPluginDispatchService;
     if (!kernel) {return;}
@@ -222,10 +286,18 @@ function assertConversationRevision(conversation: RuntimeConversationRecord, exp
 }
 
 function readConversationRecordValue(conversation: RuntimeConversationRecord, view: RuntimeConversationRecordView): JsonValue {
-  const summary = { createdAt: conversation.createdAt, id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt };
+  const summary = asJsonValue({
+    createdAt: conversation.createdAt,
+    id: conversation.id,
+    ...(conversation.kind ? { kind: conversation.kind } : {}),
+    ...(conversation.parentId ? { parentId: conversation.parentId } : {}),
+    ...(conversation.subagent ? { subagent: cloneJsonValue(conversation.subagent) as unknown as JsonValue } : {}),
+    title: conversation.title,
+    updatedAt: conversation.updatedAt,
+  }) as JsonObject;
   if (view === 'history') {return { conversationId: conversation.id, revision: conversation.revision, messages: conversation.messages.map(serializeConversationHistoryMessage) };}
-  if (view === 'summary') {return { ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}), ...summary };}
-  const counted = { _count: { messages: conversation.messages.length }, ...summary };
+  if (view === 'summary') {return asJsonValue({ ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}), ...summary });}
+  const counted = asJsonValue({ _count: { messages: conversation.messages.length }, ...summary }) as JsonObject;
   return view === 'overview' ? counted : asJsonValue({ ...counted, messages: conversation.messages.map(serializeConversationMessage) });
 }
 
@@ -272,7 +344,10 @@ function readOptionalConversationHistoryStatus(value: unknown, label: string): s
 
 function readConversationHistoryTimestamp(value: unknown): string { return typeof value === 'string' && value.trim() ? value : new Date().toISOString(); }
 
-function readConversationHistoryObject(value: unknown, label: string): JsonObject { const object = readJsonObject(value); if (object) {return object;} throw new BadRequestException(`${label} must be an object`); }
+function readConversationHistoryObject(value: unknown, label: string): JsonObject {
+  if (isPlainObject(value)) {return value as JsonObject;}
+  throw new BadRequestException(`${label} must be an object`);
+}
 
 function readConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] { if (!Array.isArray(value)) {throw new BadRequestException(`${label} must be an array`);} return value.map((entry, index) => readEntry(entry, index)); }
 
@@ -309,19 +384,28 @@ function readConversationHistoryCustomBlocks(value: unknown, index: number): Non
     const source = readConversationHistorySource(object.source);
     const state = object.state === 'done' || object.state === 'streaming' ? object.state : undefined;
     if (object.kind === 'text' && typeof object.text === 'string') {return { id: object.id, kind: 'text' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), text: object.text, title: object.title };}
-    if (object.kind === 'json' && object.data !== undefined) {return { data: cloneJsonValue(object.data) as JsonValue, id: object.id, kind: 'json' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), title: object.title };}
+    const data = sanitizeHistoryJsonValue(object.data);
+    if (object.kind === 'json' && data !== undefined) {return { data, id: object.id, kind: 'json' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), title: object.title };}
     throw new BadRequestException(`${label}[${blockIndex}] is invalid`);
   });
 }
 
-function readConversationHistorySource(value: unknown): { key?: string; origin?: string; providerId?: string } | null { const object = readJsonObject(value); return object ? cloneJsonValue(object) as { key?: string; origin?: string; providerId?: string } : null; }
+function readConversationHistorySource(value: unknown): { key?: string; origin?: string; providerId?: string } | null {
+  const object = isPlainObject(value) ? value : null;
+  if (!object) {return null;}
+  const sanitized = sanitizeHistoryJsonObject(object);
+  return Object.keys(sanitized).length > 0
+    ? sanitized as { key?: string; origin?: string; providerId?: string }
+    : null;
+}
 
 function readConversationHistoryAnnotations(value: unknown, index: number): NonNullable<ChatMessageMetadata['annotations']> {
   const label = `${readConversationHistoryLabel(index)}.metadata.annotations`;
   return readConversationHistoryArray(value, label, (entry, annotationIndex) => {
     const object = readConversationHistoryObject(entry, `${label}[${annotationIndex}]`);
     if (typeof object.type !== 'string' || typeof object.owner !== 'string' || typeof object.version !== 'string') {throw new BadRequestException(`${label}[${annotationIndex}] is invalid`);}
-    return { ...(object.data !== undefined ? { data: cloneJsonValue(object.data) as JsonValue } : {}), owner: object.owner, type: object.type, version: object.version };
+    const data = sanitizeHistoryJsonValue(object.data);
+    return { ...(data !== undefined ? { data } : {}), owner: object.owner, type: object.type, version: object.version };
   });
 }
 
@@ -355,11 +439,39 @@ function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { m
 }
 
 function readConversationHistoryPreviewMetadata(message: JsonObject | undefined, index: number): ChatMessageMetadata | null { return message ? (readConversationHistoryMetadata(message.metadata, index) ?? readStoredConversationMetadata(message.metadataJson)) : null; }
+function sanitizeHistoryJsonObject(value: Record<string, unknown>): JsonObject {
+  return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => {
+    const sanitized = sanitizeHistoryJsonValue(entry);
+    return sanitized === undefined ? [] : [[key, sanitized] as const];
+  })) as JsonObject;
+}
+
+function sanitizeHistoryJsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') {return value;}
+  if (typeof value === 'number') {return Number.isFinite(value) ? value : undefined;}
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => {
+      const sanitized = sanitizeHistoryJsonValue(entry);
+      return sanitized === undefined ? [] : [sanitized];
+    });
+  }
+  if (isPlainObject(value)) {
+    return sanitizeHistoryJsonObject(value);
+  }
+  return undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function isPersistedConversationRecordValid(id: string, record: RuntimeConversationRecord): boolean {
   return record.userId === SINGLE_USER_ID
     && record.id === id
     && isUuidV7Text(record.id)
+    && (record.parentId === undefined || isUuidV7Text(record.parentId))
+    && (record.kind === undefined || record.kind === 'main' || record.kind === 'subagent')
+    && (record.subagent === undefined || isConversationSubagentStateValid(record.subagent))
     && record.messages.every(isPersistedConversationMessageValid);
 }
 
@@ -382,4 +494,15 @@ function isPersistedConversationSessionRecordValid(key: string, session: Runtime
 
 function isUuidV7Text(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function isConversationSubagentStateValid(value: ConversationSubagentState): boolean {
+  return typeof value.pluginId === 'string'
+    && typeof value.runtimeKind === 'string'
+    && typeof value.requestPreview === 'string'
+    && typeof value.requestedAt === 'string'
+    && (value.startedAt === null || typeof value.startedAt === 'string')
+    && (value.finishedAt === null || typeof value.finishedAt === 'string')
+    && (value.closedAt === null || typeof value.closedAt === 'string')
+    && typeof value.status === 'string';
 }

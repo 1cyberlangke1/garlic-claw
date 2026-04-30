@@ -31,6 +31,7 @@ import {
   replaceMessage,
 } from "@/features/chat/store/chat-store.runtime";
 import type { ChatMessage } from "@/features/chat/store/chat-store.types";
+import { isAbortedAppError } from "@/utils/error";
 
 export interface ChatStreamState {
   currentConversationId: Ref<string | null>;
@@ -257,12 +258,15 @@ export async function dispatchSendMessage(
       optimisticUserId,
       payload.content,
       payload.parts,
+      input.optimisticUserMetadata,
+      input.optimisticUserRole,
     ),
     buildOptimisticAssistantMessage(
       optimisticAssistantId,
       payload.provider ?? null,
       payload.model ?? null,
       input.optimisticAssistantMetadata,
+      input.optimisticAssistantRole,
     ),
   ]);
 
@@ -298,15 +302,17 @@ export async function dispatchSendMessage(
           didRefreshConversationStateDuringStream = true;
           void params?.refreshConversationSummary?.().catch(() => undefined);
         }
+        const nextMessages = applySseEvent(getLatestMessages(state), event, {
+          requestKind: "send",
+          optimisticUserId,
+          optimisticAssistantId,
+        });
+        if (event.type === "message-start") {
+          syncMessageList(state, nextMessages);
+          return;
+        }
 
-        queueMessageCommit(
-          state,
-          applySseEvent(getLatestMessages(state), event, {
-            requestKind: "send",
-            optimisticUserId,
-            optimisticAssistantId,
-          }),
-        );
+        queueMessageCommit(state, nextMessages);
       },
       controller.signal,
     );
@@ -316,7 +322,7 @@ export async function dispatchSendMessage(
         ? error
         : new Error(typeof error === "string" ? error : "Unknown error");
     if (
-      requestError.name !== "AbortError" &&
+      !isAbortedAppError(requestError) &&
       state.currentConversationId.value === requestConversationId
     ) {
       syncMessageList(
@@ -416,14 +422,16 @@ export async function dispatchRetryMessage(
           didRefreshConversationStateDuringStream = true;
           void params?.refreshConversationSummary?.().catch(() => undefined);
         }
+        const nextMessages = applySseEvent(getLatestMessages(state), event, {
+          requestKind: "retry",
+          targetMessageId: messageId,
+        });
+        if (event.type === "message-start") {
+          syncMessageList(state, nextMessages);
+          return;
+        }
 
-        queueMessageCommit(
-          state,
-          applySseEvent(getLatestMessages(state), event, {
-            requestKind: "retry",
-            targetMessageId: messageId,
-          }),
-        );
+        queueMessageCommit(state, nextMessages);
       },
       controller.signal,
     );
@@ -433,7 +441,7 @@ export async function dispatchRetryMessage(
         ? error
         : new Error(typeof error === "string" ? error : "Unknown error");
     if (
-      requestError.name !== "AbortError" &&
+      !isAbortedAppError(requestError) &&
       state.currentConversationId.value === requestConversationId
     ) {
       syncMessageList(

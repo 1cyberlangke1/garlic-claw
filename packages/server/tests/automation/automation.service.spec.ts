@@ -416,12 +416,12 @@ describe('AutomationService', () => {
 
   it('passes the first conversation target into later device_command action context', async () => {
     const runtimeHostPluginDispatchService = {
-      executeTool: jest.fn().mockResolvedValue({ sessionId: 'subagent-session-1' }),
+      executeTool: jest.fn().mockResolvedValue({ conversationId: 'subagent-conversation-1' }),
       invokeHook: jest.fn().mockResolvedValue({ action: 'pass' }),
       listPlugins: jest.fn().mockReturnValue([]),
     };
     const toolRegistryService = {
-      executeRegisteredTool: jest.fn().mockResolvedValue({ sessionId: 'subagent-session-1' }),
+      executeRegisteredTool: jest.fn().mockResolvedValue({ conversationId: 'subagent-conversation-1' }),
     };
     const runtimeHostConversationMessageService = {
       sendMessage: jest.fn().mockResolvedValue({
@@ -455,8 +455,8 @@ describe('AutomationService', () => {
           type: 'device_command',
           sourceKind: 'internal',
           sourceId: 'subagent',
-          capability: 'subagent_background',
-          params: { prompt: '请继续处理', writeBack: false },
+          capability: 'spawn_subagent',
+          params: { prompt: '请继续处理' },
         },
       ],
       name: '会话绑定 subagent 自动化',
@@ -482,18 +482,18 @@ describe('AutomationService', () => {
         },
         {
           action: 'device_command',
-          capability: 'subagent_background',
+          capability: 'spawn_subagent',
           sourceKind: 'internal',
           sourceId: 'subagent',
-          result: { sessionId: 'subagent-session-1' },
+          result: { conversationId: 'subagent-conversation-1' },
         },
       ],
     });
     expect(toolRegistryService.executeRegisteredTool).toHaveBeenNthCalledWith(1, {
       sourceKind: 'internal',
       sourceId: 'subagent',
-      toolName: 'subagent_background',
-      params: { prompt: '请继续处理', writeBack: false },
+      toolName: 'spawn_subagent',
+      params: { prompt: '请继续处理' },
       context: {
         source: 'automation',
         userId: 'user-1',

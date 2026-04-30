@@ -20,7 +20,7 @@
     "build:web": "npm run build -w packages/web",
     "build:shared": "npm run build -w packages/shared",
     "count:server-src": "node ./tools/count-server-src-lines.mjs",
-    "lint": "eslint \"packages/*/src/**/*.ts\" \"packages/*/tests/**/*.ts\" \"packages/plugins/*/src/**/*.ts\"",
+    "lint": "eslint --cache --cache-strategy content --cache-location .cache/eslint \"packages/*/src/**/*.ts\" \"packages/*/tests/**/*.ts\" \"packages/plugins/*/src/**/*.ts\"",
     "repo:refactor-metrics": "node ./tools/refactor/cli.js refactor-metrics",
     "repo:exports-guard": "node ./tools/refactor/cli.js exports-guard",
     "repo:forbidden-imports": "node ./tools/refactor/cli.js forbidden-imports",

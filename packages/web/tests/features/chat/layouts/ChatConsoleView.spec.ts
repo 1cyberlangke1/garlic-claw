@@ -16,6 +16,11 @@ const chatState = vi.hoisted(() => ({
       id: 'conversation-1',
       title: '最近一次对话',
     },
+    {
+      id: 'conversation-child-1',
+      parentId: 'conversation-1',
+      title: '子代理窗口',
+    },
   ],
   currentConversationId: 'conversation-1',
   loadConversations: vi.fn(),
@@ -69,6 +74,7 @@ describe('ChatConsoleView', () => {
 
     expect(chatState.loadConversations).toHaveBeenCalled()
     expect(wrapper.text()).toContain('最近一次对话')
+    expect(wrapper.text()).not.toContain('子代理窗口')
     expect(wrapper.text()).toContain('新对话')
     expect(wrapper.find('.chat-rail').exists()).toBe(true)
     expect(wrapper.find('.chat-content').exists()).toBe(true)

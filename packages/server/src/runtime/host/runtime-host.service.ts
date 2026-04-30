@@ -1,4 +1,4 @@
-import { type JsonObject, type JsonValue, type PluginCallContext, type PluginHostMethod, type PluginLlmMessage, type PluginLlmTransportMode } from '@garlic-claw/shared';
+import { type JsonObject, type JsonValue, type PluginCallContext, type PluginHostMethod, type PluginLlmMessage, type PluginLlmTransportMode, type PluginSubagentCloseParams, type PluginSubagentSendInputParams, type PluginSubagentWaitParams } from '@garlic-claw/shared';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
 import { AiManagementService } from '../../ai-management/ai-management.service';
@@ -123,10 +123,13 @@ export class RuntimeHostService implements OnModuleInit {
       'provider.get': (input) => asJsonValue(this.aiManagementService.getProviderSummary(String(input.params.providerId))),
       'provider.list': () => asJsonValue(this.aiManagementService.listProviders()),
       'provider.model.get': (input) => asJsonValue(this.aiManagementService.getProviderModelSummary(String(input.params.providerId), String(input.params.modelId))),
-      'subagent.get': (input) => asJsonValue(this.runtimeHostSubagentRunnerService.getSubagent(input.pluginId, readRequiredString(input.params, 'sessionId'))),
+      'subagent.close': async (input) => this.runtimeHostSubagentRunnerService.closeSubagent(input.pluginId, readRuntimeHostSubagentCloseParams(input.params), input.context.userId),
+      'subagent.get': (input) => asJsonValue(this.runtimeHostSubagentRunnerService.getSubagent(input.pluginId, readRequiredString(input.params, 'conversationId'))),
+      'subagent.interrupt': async (input) => this.runtimeHostSubagentRunnerService.interruptSubagent(input.pluginId, readRequiredString(input.params, 'conversationId'), input.context.userId),
       'subagent.list': (input) => asJsonValue(this.runtimeHostSubagentRunnerService.listSubagents(input.pluginId)),
-      'subagent.run': (input) => this.runtimeHostSubagentRunnerService.runSubagent(input.pluginId, input.context, input.params),
-      'subagent.start': (input) => this.runtimeHostSubagentRunnerService.startSubagent(input.pluginId, input.plugin.manifest.name, input.context, input.params),
+      'subagent.send-input': (input) => this.runtimeHostSubagentRunnerService.sendInputSubagent(input.pluginId, input.context, readRuntimeHostSubagentSendInputParams(input.params)),
+      'subagent.spawn': (input) => this.runtimeHostSubagentRunnerService.spawnSubagent(input.pluginId, input.plugin.manifest.name, input.context, input.params),
+      'subagent.wait': (input) => this.runtimeHostSubagentRunnerService.waitSubagent(input.pluginId, readRuntimeHostSubagentWaitParams(input.params)),
       'user.get': (input) => { if (!input.context.userId) {throw new NotFoundException('User not found: unknown');} return asJsonValue(createSingleUserProfile()); },
       ...toolHandlers,
       ...storeHandlers,
@@ -232,4 +235,35 @@ function readTransportMode(params: JsonObject): PluginLlmTransportMode | null {
   if (!value) {return null;}
   if (value === 'generate' || value === 'stream-collect') {return value;}
   throw new BadRequestException('transportMode must be generate or stream-collect');
+}
+
+function readRuntimeHostSubagentWaitParams(params: JsonObject): PluginSubagentWaitParams {
+  return {
+    conversationId: readRequiredString(params, 'conversationId'),
+    ...(typeof params.timeoutMs === 'number' ? { timeoutMs: params.timeoutMs } : {}),
+  };
+}
+
+function readRuntimeHostSubagentSendInputParams(params: JsonObject): PluginSubagentSendInputParams {
+  const providerOptions = readJsonObject(params.providerOptions);
+  return {
+    conversationId: readRequiredString(params, 'conversationId'),
+    ...(typeof params.name === 'string' && params.name.trim() ? { name: params.name.trim() } : {}),
+    ...(typeof params.description === 'string' && params.description.trim() ? { description: params.description.trim() } : {}),
+    ...(typeof params.providerId === 'string' ? { providerId: params.providerId } : {}),
+    ...(typeof params.modelId === 'string' ? { modelId: params.modelId } : {}),
+    ...(typeof params.system === 'string' ? { system: params.system } : {}),
+    messages: readPluginLlmMessages(params.messages, 'subagent.send-input messages must be a non-empty array', (message) => new Error(message), 'subagent.send-input'),
+    ...(Array.isArray(params.toolNames) ? { toolNames: params.toolNames.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0) } : {}),
+    ...(typeof params.variant === 'string' ? { variant: params.variant } : {}),
+    ...(providerOptions ? { providerOptions } : {}),
+    ...(readJsonObject(params.headers) ? { headers: readJsonObject(params.headers) as Record<string, string> } : {}),
+    ...(typeof params.maxOutputTokens === 'number' ? { maxOutputTokens: params.maxOutputTokens } : {}),
+  };
+}
+
+function readRuntimeHostSubagentCloseParams(params: JsonObject): PluginSubagentCloseParams {
+  return {
+    conversationId: readRequiredString(params, 'conversationId'),
+  };
 }

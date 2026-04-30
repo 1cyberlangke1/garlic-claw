@@ -314,12 +314,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
           </nav>
 
           <div class="sider-meta">
-            <div class="sider-user">
-              <span class="sider-user-label">当前模式</span>
-              <strong>单用户控制台</strong>
-              <small>本机持久登录态</small>
-            </div>
-
             <div class="sider-actions">
               <button type="button" class="sider-action-link" @click="handleLogout">
                 <Icon class="sider-action-icon" :icon="logout3Bold" aria-hidden="true" />
@@ -512,27 +506,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   margin-top: auto;
   padding: 12px 16px;
   border-top: 1px solid var(--shell-border);
-}
-
-.sider-user {
-  display: grid;
-  gap: 2px;
-  color: var(--shell-text-secondary);
-}
-
-.sider-user strong {
-  color: var(--shell-text);
-}
-
-.sider-user small {
-  color: var(--shell-text-tertiary);
-}
-
-.sider-user-label {
-  color: var(--shell-text-tertiary);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .sider-actions {

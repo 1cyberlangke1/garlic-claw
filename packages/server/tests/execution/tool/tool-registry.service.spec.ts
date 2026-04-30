@@ -57,8 +57,6 @@ import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runti
 import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
 import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
 import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostSubagentSessionStoreService } from '../../../src/runtime/host/runtime-host-subagent-session-store.service';
-import { RuntimeHostSubagentStoreService } from '../../../src/runtime/host/runtime-host-subagent-store.service';
 import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
 import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.service';
@@ -443,9 +441,11 @@ describe('ToolRegistryService', () => {
       'grep',
       'write',
       'edit',
-      'subagent',
-      'subagent_background',
-      'cancel_subagent',
+      'spawn_subagent',
+      'wait_subagent',
+      'send_input_subagent',
+      'interrupt_subagent',
+      'close_subagent',
       'todowrite',
       'webfetch',
       'skill',
@@ -474,9 +474,11 @@ describe('ToolRegistryService', () => {
       'grep',
       'write',
       'edit',
-      'subagent',
-      'subagent_background',
-      'cancel_subagent',
+      'spawn_subagent',
+      'wait_subagent',
+      'send_input_subagent',
+      'interrupt_subagent',
+      'close_subagent',
       'todowrite',
       'webfetch',
       'skill',
@@ -813,33 +815,70 @@ describe('ToolRegistryService', () => {
       expect.objectContaining({
         sourceKind: 'internal',
         sourceId: 'subagent',
-        callName: 'subagent',
-        toolId: 'internal:subagent:subagent',
+        callName: 'spawn_subagent',
+        toolId: 'internal:subagent:spawn_subagent',
       }),
       expect.objectContaining({
         sourceKind: 'internal',
         sourceId: 'subagent',
-        callName: 'subagent_background',
-        toolId: 'internal:subagent:subagent_background',
+        callName: 'wait_subagent',
+        toolId: 'internal:subagent:wait_subagent',
       }),
     ]));
   });
 
   it('routes internal subagent tools through the internal subagent owner', async () => {
     const { runtimeHostSubagentRunnerService, service } = createFixture();
-    jest.spyOn(runtimeHostSubagentRunnerService, 'startSubagent').mockResolvedValue({
+    jest.spyOn(runtimeHostSubagentRunnerService, 'spawnSubagent').mockResolvedValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '继续处理当前仓库',
-      sessionId: 'subagent-session-2',
-      sessionMessageCount: 1,
-      sessionUpdatedAt: '2026-04-26T10:00:00.000Z',
+      conversationId: 'subagent-conversation-2',
+      parentConversationId: 'conversation-1',
+      title: '浏览器烟测分身',
+      messageCount: 2,
+      updatedAt: '2026-04-26T10:00:00.000Z',
       runtimeKind: 'local',
       status: 'queued',
-      writeBackStatus: 'pending',
       requestedAt: '2026-04-26T10:00:00.000Z',
       startedAt: null,
       finishedAt: null,
+      closedAt: null,
+    } as never);
+    jest.spyOn(runtimeHostSubagentRunnerService, 'waitSubagent').mockResolvedValue({
+      conversationId: 'subagent-conversation-2',
+      result: '已完成',
+      title: '浏览器烟测分身',
+      name: '浏览器烟测分身',
+      status: 'completed',
+    } as never);
+    jest.spyOn(runtimeHostSubagentRunnerService, 'getSubagent').mockReturnValue({
+      pluginId: 'subagent',
+      pluginDisplayName: 'Subagent',
+      requestPreview: '继续处理当前仓库',
+      conversationId: 'subagent-conversation-2',
+      parentConversationId: 'conversation-1',
+      title: '浏览器烟测分身',
+      messageCount: 2,
+      updatedAt: '2026-04-26T10:00:01.000Z',
+      runtimeKind: 'local',
+      status: 'completed',
+      requestedAt: '2026-04-26T10:00:00.000Z',
+      startedAt: '2026-04-26T10:00:00.500Z',
+      finishedAt: '2026-04-26T10:00:01.000Z',
+      closedAt: null,
+      context: { source: 'plugin', conversationId: 'conversation-1' },
+      request: {
+        messages: [{ content: '继续处理当前仓库', role: 'user' }],
+      },
+      result: {
+        providerId: 'openai',
+        modelId: 'gpt-5.4',
+        text: '已完成',
+        message: { role: 'assistant', content: '已完成' },
+        toolCalls: [],
+        toolResults: [],
+      },
     } as never);
 
     const toolSet = await service.buildToolSet({
@@ -848,51 +887,98 @@ describe('ToolRegistryService', () => {
         source: 'plugin',
         userId: 'user-1',
       },
-      allowedToolNames: ['subagent', 'subagent_background'],
+      allowedToolNames: ['spawn_subagent', 'wait_subagent'],
     });
 
-    const inlineResult = await (toolSet?.subagent as any).execute({
-      description: '仓库总结',
-      prompt: '请总结当前仓库的技能目录',
-    });
-    const backgroundResult = await (toolSet?.subagent_background as any).execute({
+    const backgroundResult = await (toolSet?.spawn_subagent as any).execute({
       description: '继续处理',
+      name: '浏览器烟测分身',
       prompt: '继续处理当前仓库',
-      writeBack: false,
+    });
+    const waitedResult = await (toolSet?.wait_subagent as any).execute({
+      conversationId: 'subagent-conversation-2',
+      timeoutMs: 1000,
     });
 
-    expect(inlineResult).toEqual(expect.objectContaining({
-      providerId: 'openai',
-      modelId: 'gpt-5.4',
-      sessionId: 'subagent-session-1',
-    }));
     expect(backgroundResult).toEqual(expect.objectContaining({
-      pluginId: 'subagent',
-      sessionId: 'subagent-session-2',
-      writeBackStatus: 'pending',
+      conversationId: 'subagent-conversation-2',
+      status: 'queued',
+      title: '浏览器烟测分身',
     }));
-    expect(runtimeHostSubagentRunnerService.runSubagent).toHaveBeenCalledWith(
-      'subagent',
-      expect.objectContaining({ conversationId: 'conversation-1' }),
-      expect.objectContaining({
-        description: '仓库总结',
-        messages: [
-          {
-            content: [{ text: '请总结当前仓库的技能目录', type: 'text' }],
-            role: 'user',
-          },
-        ],
-      }),
-    );
-    expect(runtimeHostSubagentRunnerService.startSubagent).toHaveBeenCalledWith(
+    expect(waitedResult).toEqual(expect.objectContaining({
+      conversationId: 'subagent-conversation-2',
+      status: 'completed',
+    }));
+    expect(runtimeHostSubagentRunnerService.spawnSubagent).toHaveBeenCalledWith(
       'subagent',
       'Subagent',
       expect.objectContaining({ conversationId: 'conversation-1' }),
       expect.objectContaining({
         description: '继续处理',
+        name: '浏览器烟测分身',
         messages: [
           {
             content: [{ text: '继续处理当前仓库', type: 'text' }],
+            role: 'user',
+          },
+        ],
+      }),
+    );
+    expect(runtimeHostSubagentRunnerService.waitSubagent).toHaveBeenCalledWith('subagent', {
+      conversationId: 'subagent-conversation-2',
+      timeoutMs: 1000,
+    });
+  });
+
+  it('passes name through send_input_subagent to the subagent owner', async () => {
+    const { runtimeHostSubagentRunnerService, service } = createFixture();
+    jest.spyOn(runtimeHostSubagentRunnerService, 'sendInputSubagent').mockResolvedValue({
+      pluginId: 'subagent',
+      pluginDisplayName: 'Subagent',
+      requestPreview: '补一条新的输入',
+      conversationId: 'subagent-conversation-2',
+      parentConversationId: 'conversation-1',
+      title: '跟进分身',
+      messageCount: 4,
+      updatedAt: '2026-04-26T10:00:02.000Z',
+      runtimeKind: 'local',
+      status: 'queued',
+      requestedAt: '2026-04-26T10:00:02.000Z',
+      startedAt: null,
+      finishedAt: null,
+      closedAt: null,
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['send_input_subagent'],
+    });
+
+    const result = await (toolSet?.send_input_subagent as any).execute({
+      conversationId: 'subagent-conversation-2',
+      description: '继续处理',
+      name: '跟进分身',
+      prompt: '补一条新的输入',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      conversationId: 'subagent-conversation-2',
+      title: '跟进分身',
+    }));
+    expect(runtimeHostSubagentRunnerService.sendInputSubagent).toHaveBeenCalledWith(
+      'subagent',
+      expect.objectContaining({ conversationId: 'conversation-1' }),
+      expect.objectContaining({
+        conversationId: 'subagent-conversation-2',
+        description: '继续处理',
+        name: '跟进分身',
+        messages: [
+          {
+            content: [{ text: '补一条新的输入', type: 'text' }],
             role: 'user',
           },
         ],
@@ -7759,24 +7845,9 @@ function createFixture(options: {
       invokeHook: jest.fn(),
       listPlugins: jest.fn().mockReturnValue([]),
     } as never,
-    new RuntimeHostSubagentStoreService(),
-    new RuntimeHostSubagentSessionStoreService(),
     new ProjectSubagentTypeRegistryService(projectWorktreeRootService),
+    runtimeHostConversationRecordService,
   );
-  jest.spyOn(runtimeHostSubagentRunnerService, 'runSubagent').mockResolvedValue({
-    finishReason: 'stop',
-    message: {
-      content: 'Generated: 请总结当前仓库的技能目录',
-      role: 'assistant',
-    },
-    modelId: 'gpt-5.4',
-    providerId: 'openai',
-    sessionId: 'subagent-session-1',
-    sessionMessageCount: 2,
-    text: 'Generated: 请总结当前仓库的技能目录',
-    toolCalls: [],
-    toolResults: [],
-  } as never);
   const runtimeHostAutomationService = new AutomationService(
     new AutomationExecutionService(
       {

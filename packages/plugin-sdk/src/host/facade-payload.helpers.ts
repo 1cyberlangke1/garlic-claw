@@ -1,4 +1,4 @@
-import type { ActionConfig, JsonObject, PluginConversationHistoryPreviewParams, PluginConversationHistoryReplaceParams, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentRunParams, PluginSubagentStartParams, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, JsonObject, PluginConversationHistoryPreviewParams, PluginConversationHistoryReplaceParams, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginCronDescriptor, PluginLlmGenerateParams, PluginMessageSendParams, PluginSubagentCloseParams, PluginSubagentInterruptParams, PluginSubagentSendInputParams, PluginSubagentSpawnParams, PluginSubagentWaitParams, TriggerConfig } from "@garlic-claw/shared";
 
 import type { PluginGenerateTextParams, PluginScopedStateOptions } from "./facade";
 import { toHostJsonValue } from "./host-json-value.codec";
@@ -60,9 +60,9 @@ export function buildPluginGenerateParams(input: PluginLlmGenerateParams): JsonO
   };
 }
 
-export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): JsonObject {
+export function buildPluginSubagentSpawnParams(input: PluginSubagentSpawnParams): JsonObject {
   return {
-    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.name ? { name: input.name } : {}),
     ...(input.description ? { description: input.description } : {}),
     ...(typeof input.maxConversationSubagents === "number" ? { maxConversationSubagents: input.maxConversationSubagents } : {}),
     ...(input.subagentType ? { subagentType: input.subagentType } : {}),
@@ -78,12 +78,18 @@ export function buildPluginRunSubagentParams(input: PluginSubagentRunParams): Js
   };
 }
 
-export function buildPluginStartSubagentParams(input: PluginSubagentStartParams): JsonObject {
+export function buildPluginSubagentWaitParams(input: PluginSubagentWaitParams): JsonObject {
   return {
-    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    conversationId: input.conversationId,
+    ...(typeof input.timeoutMs === "number" ? { timeoutMs: input.timeoutMs } : {}),
+  };
+}
+
+export function buildPluginSubagentSendInputParams(input: PluginSubagentSendInputParams): JsonObject {
+  return {
+    conversationId: input.conversationId,
+    ...(input.name ? { name: input.name } : {}),
     ...(input.description ? { description: input.description } : {}),
-    ...(typeof input.maxConversationSubagents === "number" ? { maxConversationSubagents: input.maxConversationSubagents } : {}),
-    ...(input.subagentType ? { subagentType: input.subagentType } : {}),
     messages: toHostJsonValue(input.messages),
     ...(input.providerId ? { providerId: input.providerId } : {}),
     ...(input.modelId ? { modelId: input.modelId } : {}),
@@ -93,7 +99,18 @@ export function buildPluginStartSubagentParams(input: PluginSubagentStartParams)
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.headers ? { headers: toHostJsonValue(input.headers) } : {}),
     ...(typeof input.maxOutputTokens === "number" ? { maxOutputTokens: input.maxOutputTokens } : {}),
-    ...(input.writeBack ? { writeBack: toHostJsonValue(input.writeBack) } : {}),
+  };
+}
+
+export function buildPluginSubagentInterruptParams(input: PluginSubagentInterruptParams): JsonObject {
+  return {
+    conversationId: input.conversationId,
+  };
+}
+
+export function buildPluginSubagentCloseParams(input: PluginSubagentCloseParams): JsonObject {
+  return {
+    conversationId: input.conversationId,
   };
 }
 

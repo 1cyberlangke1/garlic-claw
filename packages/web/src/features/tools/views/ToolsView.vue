@@ -4,16 +4,6 @@
       <div class="hero-copy">
         <span class="hero-kicker">统一入口</span>
         <h1>工具管理</h1>
-        <p>
-          执行工具、子代理、MCP 和插件工具的启用/禁用统一收口到这里。
-          连接配置、运行参数和插件详情仍在各自页面维护。
-        </p>
-      </div>
-
-      <div class="hero-actions">
-        <a class="ghost-link" href="/ai">AI 设置</a>
-        <a class="ghost-link" href="/mcp">MCP 配置</a>
-        <a class="ghost-link" href="/plugins">插件详情</a>
       </div>
     </section>
 
@@ -185,9 +175,6 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
 }
 
 .tools-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 20px;
@@ -199,8 +186,7 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
   gap: 10px;
 }
 
-.hero-copy h1,
-.hero-copy p {
+.hero-copy h1 {
   margin: 0;
 }
 
@@ -209,36 +195,6 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.hero-copy p {
-  color: var(--text-muted);
-  max-width: 60rem;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.ghost-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--text);
-  text-decoration: none;
-}
-
-@media (max-width: 900px) {
-  .tools-hero {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 720px) {

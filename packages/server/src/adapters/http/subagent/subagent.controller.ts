@@ -1,5 +1,5 @@
 import type { PluginSubagentDetail, PluginSubagentOverview, PluginSubagentTypeSummary } from '@garlic-claw/shared';
-import { Controller, Delete, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Post } from '@nestjs/common';
 import { RuntimeHostSubagentRunnerService } from '../../../runtime/host/runtime-host-subagent-runner.service';
 
 @Controller('subagents')
@@ -16,13 +16,15 @@ export class SubagentController {
     return this.runtimeHostSubagentRunnerService.listTypes();
   }
 
-  @Get(':sessionId')
-  getSubagent(@Param('sessionId') sessionId: string): PluginSubagentDetail {
-    return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(sessionId);
+  @Get(':conversationId')
+  getSubagent(@Param('conversationId') conversationId: string): PluginSubagentDetail {
+    return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
   }
 
-  @Delete(':sessionId')
-  removeSubagent(@Param('sessionId') sessionId: string): Promise<boolean> {
-    return this.runtimeHostSubagentRunnerService.removeSubagentSession(sessionId);
+  @Post(':conversationId/close')
+  async closeSubagent(@Param('conversationId') conversationId: string) {
+    const subagent = this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
+    await this.runtimeHostSubagentRunnerService.closeSubagent(subagent.pluginId, { conversationId });
+    return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
   }
 }
