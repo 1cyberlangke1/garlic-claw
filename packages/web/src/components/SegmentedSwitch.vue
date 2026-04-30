@@ -1,20 +1,24 @@
 <template>
-  <div class="segmented-switch" role="group" aria-label="分段切换">
-    <button
+  <ElRadioGroup
+    class="segmented-switch"
+    :model-value="modelValue"
+    size="small"
+    @update:model-value="handleUpdate"
+  >
+    <ElRadioButton
       v-for="option in options"
       :key="option.value"
-      type="button"
       class="segmented-option"
-      :class="{ active: modelValue === option.value }"
-      :aria-pressed="modelValue === option.value"
-      @click="emit('update:modelValue', option.value)"
+      :value="option.value"
     >
       {{ option.label }}
-    </button>
-  </div>
+    </ElRadioButton>
+  </ElRadioGroup>
 </template>
 
 <script setup lang="ts">
+import { ElRadioButton, ElRadioGroup } from 'element-plus'
+
 interface Option {
   value: string
   label: string
@@ -28,36 +32,43 @@ defineProps<{
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
 }>()
+
+function handleUpdate(value: string | number | boolean | undefined) {
+  if (typeof value === 'string') {
+    emit('update:modelValue', value)
+  }
+}
 </script>
 
 <style scoped>
 .segmented-switch {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0;
+  --el-radio-button-checked-bg-color: color-mix(in srgb, var(--accent) 14%, transparent);
+  --el-radio-button-checked-border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  --el-radio-button-checked-text-color: var(--accent);
+  --el-radio-button-bg-color: transparent;
+  --el-radio-button-text-color: var(--text-muted);
+  --el-radio-button-border-color: rgba(133, 163, 199, 0.14);
+  --el-fill-color-blank: transparent;
   padding: 3px;
   border-radius: 10px;
   border: 1px solid rgba(133, 163, 199, 0.14);
   background: var(--surface-panel-hover-soft);
 }
 
-.segmented-option {
-  padding: 0.35rem 0.85rem;
+.segmented-switch :deep(.el-radio-button__inner) {
+  min-height: 30px;
   border-radius: 8px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  background: transparent;
   border: 1px solid transparent;
-  transition: background 0.15s ease, color 0.15s ease;
+  background: transparent;
+  box-shadow: none;
 }
 
-.segmented-option:hover:not(:disabled) {
-  color: var(--text);
+.segmented-switch :deep(.el-radio-button:first-child .el-radio-button__inner),
+.segmented-switch :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-radius: 8px;
 }
 
-.segmented-option.active {
-  background: rgba(103, 199, 207, 0.14);
-  color: var(--accent);
-  border-color: rgba(103, 199, 207, 0.22);
+.segmented-switch :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  box-shadow: none;
 }
 </style>

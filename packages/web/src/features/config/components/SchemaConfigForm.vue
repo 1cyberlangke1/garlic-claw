@@ -5,15 +5,14 @@
         <h3>{{ title }}</h3>
         <p>{{ description }}</p>
       </div>
-      <button
-        type="button"
-        class="ghost-button save-button"
+      <ElButton
+        class="save-button"
         :title="saveButtonTitle"
         :disabled="saving || !hasSchema"
         @click="submit"
       >
         <Icon :icon="disketteBold" class="save-icon" aria-hidden="true" />
-      </button>
+      </ElButton>
     </div>
 
     <p v-if="formError" class="section-error">{{ formError }}</p>
@@ -38,6 +37,7 @@
 import { Icon } from '@iconify/vue'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
 import { computed, reactive, ref, watch } from 'vue'
+import { ElButton } from 'element-plus'
 import type {
   AiProviderSummary,
   JsonObject,
@@ -269,11 +269,6 @@ function schemaUsesSpecialType(
 .section-header p {
   color: var(--text-muted);
   font-size: 0.82rem;
-}
-
-.ghost-button {
-  background: transparent;
-  border: 1px solid var(--border);
 }
 
 .save-button {

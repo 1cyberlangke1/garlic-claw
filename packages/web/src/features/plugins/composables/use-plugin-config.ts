@@ -9,6 +9,7 @@ import type {
   PluginScopeSettings,
 } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
+import { useUiStore } from '@/stores/ui'
 import {
   savePluginConfig as savePluginConfigRequest,
   savePluginEventLog as savePluginEventLogRequest,
@@ -29,6 +30,7 @@ export interface UsePluginConfigOptions {
 }
 
 export function usePluginConfig(options: UsePluginConfigOptions) {
+  const uiStore = useUiStore()
   const savingConfig = ref(false)
   const savingLlmPreference = ref(false)
   const savingRemoteAccess = ref(false)
@@ -64,13 +66,12 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     const pluginName = options.selectedPlugin.value.name
     savingConfig.value = true
     options.error.value = null
-    options.notice.value = null
     try {
       configSnapshot.value = await savePluginConfigRequest(pluginName, values)
-      options.notice.value = '插件配置已保存'
       emitPluginConfigChanged({ changeType: 'config', pluginName })
       await options.reloadPluginListSilently()
       await options.refreshSelectedDetails(pluginName)
+      uiStore.notify('插件配置已保存')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '保存插件配置失败')
     } finally {
@@ -86,12 +87,11 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     const pluginName = options.selectedPlugin.value.name
     savingLlmPreference.value = true
     options.error.value = null
-    options.notice.value = null
     try {
       llmPreference.value = await savePluginLlmPreferenceRequest(pluginName, preference)
-      options.notice.value = '插件模型策略已保存'
       await options.reloadPluginListSilently()
       await options.refreshSelectedDetails(pluginName)
+      uiStore.notify('插件模型策略已保存')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '保存插件模型策略失败')
     } finally {
@@ -107,13 +107,12 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     const pluginName = options.selectedPlugin.value.name
     savingScope.value = true
     options.error.value = null
-    options.notice.value = null
     try {
       scopeSettings.value = await savePluginScopeRequest(pluginName, conversations)
-      options.notice.value = '插件作用域已保存'
       emitPluginConfigChanged({ changeType: 'scope', pluginName })
       await options.reloadPluginListSilently()
       await options.refreshSelectedDetails(pluginName)
+      uiStore.notify('插件作用域已保存')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '保存插件作用域失败')
     } finally {
@@ -138,12 +137,11 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     const pluginName = options.selectedPlugin.value.name
     savingRemoteAccess.value = true
     options.error.value = null
-    options.notice.value = null
     try {
       await savePluginRemoteAccessRequest(pluginName, payload)
-      options.notice.value = '远程接入配置已保存'
       await options.reloadPluginListSilently()
       await options.refreshSelectedDetails(pluginName)
+      uiStore.notify('远程接入配置已保存')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '保存远程接入配置失败')
     } finally {
@@ -159,12 +157,11 @@ export function usePluginConfig(options: UsePluginConfigOptions) {
     const pluginName = options.selectedPlugin.value.name
     savingEventLog.value = true
     options.error.value = null
-    options.notice.value = null
     try {
       await savePluginEventLogRequest(pluginName, settings)
-      options.notice.value = '插件日志设置已保存'
       await options.reloadPluginListSilently()
       await options.refreshSelectedDetails(pluginName)
+      uiStore.notify('插件日志设置已保存')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '保存插件日志设置失败')
     } finally {

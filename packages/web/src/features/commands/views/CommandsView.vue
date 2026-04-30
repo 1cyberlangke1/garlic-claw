@@ -3,14 +3,13 @@
     <section class="command-hero">
       <header class="command-hero-header">
         <h1><Icon :icon="keyboardBold" class="hero-icon" aria-hidden="true" />命令管理</h1>
-        <button
-          type="button"
+        <ElButton
           class="hero-action icon-only"
           title="刷新全部"
           @click="refreshAll()"
         >
           <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
-        </button>
+        </ElButton>
       </header>
 
       <div class="overview-grid">
@@ -42,23 +41,21 @@
             <h2>命令目录</h2>
             <p>按插件查看 slash 命令、别名、保护状态和冲突提示。</p>
           </div>
-          <button
-            type="button"
+          <ElButton
             class="ghost-button icon-only"
             title="刷新"
             @click="refreshAll()"
           >
             <Icon :icon="refreshBold" class="ghost-button-icon" aria-hidden="true" />
-          </button>
+          </ElButton>
         </div>
 
         <div class="panel-controls">
-          <input
+          <ElInput
             v-model="searchKeyword"
             data-test="command-search"
-            type="text"
             placeholder="搜索插件、命令、别名或说明"
-          >
+          />
           <SegmentedSwitch v-model="filter" :options="filterOptions" />
         </div>
 
@@ -119,22 +116,20 @@
         </div>
 
         <div v-if="commandCount > 0" class="sidebar-pagination">
-          <button
-            type="button"
+          <ElButton
             class="ghost-button"
             :disabled="!canGoPrevPage"
             @click="goPrevPage"
           >
             上一页
-          </button>
-          <button
-            type="button"
+          </ElButton>
+          <ElButton
             class="ghost-button"
             :disabled="!canGoNextPage"
             @click="goNextPage"
           >
             下一页
-          </button>
+          </ElButton>
         </div>
       </section>
 
@@ -181,6 +176,7 @@ import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import keyboardBold from '@iconify-icons/solar/keyboard-bold'
+import { ElButton, ElInput } from 'element-plus'
 import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import { usePluginCommandManagement } from '../composables/use-plugin-command-management'
 
@@ -349,7 +345,8 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   margin: 1rem 0 0.75rem;
 }
 
-.panel-controls input {
+.panel-controls :deep(.el-input),
+.panel-controls :deep(.el-select) {
   flex: 1 1 240px;
 }
 

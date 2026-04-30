@@ -11,25 +11,25 @@
       <div class="field">
         <span>Fallback Chat Models</span>
         <div class="inline-row">
-          <select v-model="pendingFallbackSelection" data-test="fallback-model-select">
-            <option value="">请选择要加入回退链的模型</option>
-            <option
+          <ElSelect
+            v-model="pendingFallbackSelection"
+            data-test="fallback-model-select"
+            placeholder="请选择要加入回退链的模型"
+          >
+            <ElOption
               v-for="option in options"
               :key="encodeTarget(option)"
+              :label="option.label"
               :value="encodeTarget(option)"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-          <button
-            type="button"
-            class="ghost-button"
+            />
+          </ElSelect>
+          <ElButton
             data-test="fallback-model-add"
             :disabled="!pendingFallbackSelection"
             @click="addFallbackModel"
           >
             加入回退链
-          </button>
+          </ElButton>
         </div>
 
         <div v-if="fallbackModels.length === 0" class="empty-state">
@@ -46,44 +46,38 @@
               <span>{{ resolveLabel(target) }}</span>
             </div>
             <div class="fallback-actions">
-              <button
-                type="button"
-                class="ghost-button"
+              <ElButton
                 :disabled="index === 0"
                 @click="moveFallback(index, -1)"
               >
                 上移
-              </button>
-              <button
-                type="button"
-                class="ghost-button"
+              </ElButton>
+              <ElButton
                 :disabled="index === fallbackModels.length - 1"
                 @click="moveFallback(index, 1)"
               >
                 下移
-              </button>
-              <button
-                type="button"
-                class="ghost-button danger"
+              </ElButton>
+              <ElButton
+                type="danger"
                 @click="removeFallback(index)"
               >
                 删除
-              </button>
+              </ElButton>
             </div>
           </li>
         </ul>
       </div>
 
       <div class="actions">
-        <button
-          type="button"
-          class="primary-button"
+        <ElButton
+          type="primary"
           data-test="host-routing-save"
           :disabled="saving"
           @click="submit"
         >
           保存
-        </button>
+        </ElButton>
       </div>
     </div>
   </section>
@@ -91,6 +85,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElOption, ElSelect } from 'element-plus'
 import type {
   AiHostModelRoutingConfig,
   AiModelRouteTarget,
@@ -238,14 +233,9 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
   flex-wrap: wrap;
 }
 
-.field select {
+.field :deep(.el-select) {
   width: 100%;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  color: var(--text);
 }
 
 .empty-state,

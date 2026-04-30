@@ -1,6 +1,6 @@
 <template>
   <div ref="containerRef" class="model-quick-input">
-    <input
+    <ElInput
       ref="inputRef"
       v-model="inputValue"
       :disabled="disabled"
@@ -33,6 +33,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ElInput } from 'element-plus'
 import type { AiModelCapabilities } from '@garlic-claw/shared'
 import {
   listAiModels,
@@ -68,7 +69,7 @@ const searchQuery = ref('')
 const showSuggestions = ref(false)
 const selectedIndex = ref(0)
 const containerRef = ref<HTMLElement | null>(null)
-const inputRef = ref<HTMLInputElement | null>(null)
+const inputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const allSuggestions = ref<SuggestionItem[]>([])
 
 const filteredSuggestions = computed(() => {
@@ -139,7 +140,11 @@ function handleFocus() {
   showSuggestions.value = true
 }
 
-function handleKeydown(event: KeyboardEvent) {
+function handleKeydown(event: Event | KeyboardEvent) {
+  if (!(event instanceof KeyboardEvent)) {
+    return
+  }
+
   if (!showSuggestions.value || filteredSuggestions.value.length === 0) {
     return
   }
@@ -221,27 +226,8 @@ defineExpose({
   width: 100%;
 }
 
-.quick-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  font-size: 14px;
+:deep(.quick-input .el-input__wrapper) {
   background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-}
-
-.quick-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
-}
-
-.quick-input:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
 }
 
 .suggestions {

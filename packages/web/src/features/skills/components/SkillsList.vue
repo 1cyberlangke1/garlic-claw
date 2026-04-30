@@ -8,13 +8,12 @@
       </div>
     </div>
 
-    <input
-      :value="searchKeyword"
+    <ElInput
+      :model-value="searchKeyword"
       class="skill-search"
-      type="text"
       placeholder="搜索技能名称、说明、标签"
       @input="onSearchInput"
-    >
+    />
 
     <div v-if="loading" class="empty-state">加载中...</div>
     <div v-else-if="skills.length === 0" class="empty-state">当前筛选下没有技能。</div>
@@ -32,6 +31,7 @@
 
 <script setup lang="ts">
 import type { SkillDetail } from '@garlic-claw/shared'
+import { ElInput } from 'element-plus'
 import SkillCard from './SkillCard.vue'
 
 defineProps<{
@@ -46,7 +46,7 @@ const emit = defineEmits<{
   (event: 'update:searchKeyword', value: string): void
 }>()
 
-function onSearchInput(event: Event) {
-  emit('update:searchKeyword', (event.target as HTMLInputElement).value)
+function onSearchInput(value: string) {
+  emit('update:searchKeyword', value)
 }
 </script>

@@ -6,32 +6,34 @@
       <form @submit.prevent="handleLogin">
         <div class="field">
           <label>访问密钥</label>
-          <input
+          <ElInput
             v-model="secret"
             type="password"
-            required
+            show-password
             autocomplete="current-password"
+            required
           />
         </div>
         <p v-if="error" class="error">{{ error }}</p>
-        <button type="submit" :disabled="submitting">
+        <ElButton native-type="submit" type="primary" :loading="submitting">
           {{ submitting ? '登录中...' : '登录' }}
-        </button>
-        <button
+        </ElButton>
+        <ElButton
           v-if="isDev"
-          type="button"
           class="dev-login"
+          native-type="button"
           :disabled="submitting"
           @click="handleDevLogin"
         >
           {{ submitting ? '登录中...' : '开发者一键登录' }}
-        </button>
+        </ElButton>
       </form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ElButton, ElInput } from 'element-plus'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
@@ -70,3 +72,10 @@ async function handleDevLogin() {
   }
 }
 </script>
+
+<style scoped>
+.auth-card :deep(.el-button) {
+  margin-left: 0;
+  padding: 1.25em 0.7em;
+}
+</style>

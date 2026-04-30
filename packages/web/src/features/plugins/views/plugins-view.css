@@ -145,42 +145,6 @@
   background: var(--surface-panel-muted-strong);
 }
 
-.plugins-page :deep(input),
-.plugins-page :deep(textarea),
-.plugins-page :deep(select) {
-  width: 100%;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-  padding: 0.65rem 0.82rem;
-  font-size: 0.92rem;
-  font-family: inherit;
-  outline: none;
-}
-
-.plugins-page :deep(input:focus),
-.plugins-page :deep(textarea:focus),
-.plugins-page :deep(select:focus) {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
-}
-
-.plugins-page :deep(select) {
-  appearance: none;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
-    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
-  background-position:
-    calc(100% - 18px) calc(1em + 2px),
-    calc(100% - 12px) calc(1em + 2px);
-  background-size: 6px 6px, 6px 6px;
-  background-repeat: no-repeat;
-  padding-right: 2.2rem;
-}
-
 @media (max-width: 1100px) {
   .plugins-layout,
   .detail-grid {

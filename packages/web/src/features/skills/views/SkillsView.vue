@@ -4,15 +4,14 @@
       <header class="skill-hero-header">
         <h1><Icon :icon="magicStick3Bold" class="hero-icon" aria-hidden="true" />技能目录</h1>
         <div class="hero-actions">
-          <button
-            type="button"
+          <ElButton
             class="hero-button icon-only"
             title="刷新目录"
             :disabled="refreshing"
             @click="refreshAll()"
           >
             <Icon :icon="refreshBold" class="hero-button-icon" aria-hidden="true" />
-          </button>
+          </ElButton>
         </div>
       </header>
 
@@ -85,6 +84,7 @@ import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
+import { ElButton } from 'element-plus'
 import type { SkillLoadPolicy } from '@garlic-claw/shared'
 import SkillDetailPanel from '@/features/skills/components/SkillDetailPanel.vue'
 import SkillsList from '@/features/skills/components/SkillsList.vue'

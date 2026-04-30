@@ -1,6 +1,8 @@
 import { ref, shallowRef, type ComputedRef, type Ref } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import type { PluginInfo, PluginStorageEntry } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
+import { useUiStore } from '@/stores/ui'
 import {
   deletePluginStorageEntry as deletePluginStorageEntryRequest,
   loadPluginStorage,
@@ -16,6 +18,7 @@ export interface UsePluginStorageOptions {
 }
 
 export function usePluginStorage(options: UsePluginStorageOptions) {
+  const uiStore = useUiStore()
   const savingStorage = ref(false)
   const deletingStorageKey = ref<string | null>(null)
   const storageEntries = shallowRef<PluginStorageEntry[]>([])
@@ -59,11 +62,10 @@ export function usePluginStorage(options: UsePluginStorageOptions) {
     const pluginName = options.selectedPlugin.value.name
     savingStorage.value = true
     options.error.value = null
-    options.notice.value = null
     try {
       await savePluginStorageEntryRequest(pluginName, entry)
-      options.notice.value = '插件 KV 已保存'
       await refreshPluginStorage(storagePrefix.value)
+      uiStore.notify('插件 KV 已保存')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '保存插件 KV 失败')
     } finally {
@@ -75,18 +77,28 @@ export function usePluginStorage(options: UsePluginStorageOptions) {
     if (!options.selectedPlugin.value) {
       return
     }
-    if (!window.confirm(`确认删除插件 KV ${key} 吗？`)) {
+    try {
+      await ElMessageBox.confirm(
+        `确认删除插件 KV ${key} 吗？`,
+        '删除插件 KV',
+        {
+          type: 'warning',
+          confirmButtonText: '确认删除',
+          cancelButtonText: '取消',
+          autofocus: false,
+        },
+      )
+    } catch {
       return
     }
 
     const pluginName = options.selectedPlugin.value.name
     deletingStorageKey.value = key
     options.error.value = null
-    options.notice.value = null
     try {
       await deletePluginStorageEntryRequest(pluginName, key)
-      options.notice.value = '插件 KV 已删除'
       await refreshPluginStorage(storagePrefix.value)
+      uiStore.notify('插件 KV 已删除')
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '删除插件 KV 失败')
     } finally {

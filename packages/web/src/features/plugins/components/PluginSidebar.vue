@@ -6,9 +6,9 @@
         <h2>插件</h2>
         <p>默认聚焦用户可感知插件，系统本地插件按需展开。</p>
       </div>
-      <button type="button" class="ghost-button refresh-button" title="刷新" @click="$emit('refresh')">
+      <ElButton class="ghost-button refresh-button" title="刷新" @click="$emit('refresh')">
         <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-      </button>
+      </ElButton>
     </div>
 
     <div v-if="!loading && plugins.length > 0" class="sidebar-overview">
@@ -27,57 +27,30 @@
     </div>
 
     <div v-if="!loading && plugins.length > 0" class="sidebar-tools">
-      <input
+      <ElInput
         v-model="searchKeyword"
         data-test="plugin-sidebar-search"
-        type="text"
         placeholder="搜索名称、描述或问题摘要"
-      >
+      />
       <div v-if="systemBuiltinCount > 0" class="sidebar-system-hint">
         <span class="system-hint-text">
           {{ showSystemBuiltins ? `已显示 ${systemBuiltinCount} 个系统本地插件` : `已隐藏 ${systemBuiltinCount} 个系统本地插件` }}
         </span>
-        <label class="switch" data-test="plugin-sidebar-toggle-system">
-          <input v-model="showSystemBuiltins" type="checkbox">
-          <span class="slider" />
-        </label>
+        <ElSwitch
+          v-model="showSystemBuiltins"
+          data-test="plugin-sidebar-toggle-system"
+        />
       </div>
-      <div class="filter-chips">
-        <button
-          type="button"
-          class="filter-chip"
-          data-test="plugin-sidebar-filter-all"
-          :class="{ active: activeFilter === 'all' }"
-          @click="activeFilter = 'all'"
-        >
-          全部
-        </button>
-        <button
-          type="button"
-          class="filter-chip"
-          data-test="plugin-sidebar-filter-attention"
-          :class="{ active: activeFilter === 'attention' }"
-          @click="activeFilter = 'attention'"
-        >
-          需关注
-        </button>
-        <button
-          type="button"
-          class="filter-chip"
-          :class="{ active: activeFilter === 'local' }"
-          @click="activeFilter = 'local'"
-        >
-          本地
-        </button>
-        <button
-          type="button"
-          class="filter-chip"
-          :class="{ active: activeFilter === 'remote' }"
-          @click="activeFilter = 'remote'"
-        >
-          远程
-        </button>
-      </div>
+      <ElRadioGroup
+        v-model="activeFilter"
+        class="filter-chips"
+        size="small"
+      >
+        <ElRadioButton data-test="plugin-sidebar-filter-all" value="all">全部</ElRadioButton>
+        <ElRadioButton data-test="plugin-sidebar-filter-attention" value="attention">需关注</ElRadioButton>
+        <ElRadioButton value="local">本地</ElRadioButton>
+        <ElRadioButton value="remote">远程</ElRadioButton>
+      </ElRadioGroup>
     </div>
 
     <div v-if="!loading && plugins.length > 0" class="sidebar-results">
@@ -87,15 +60,14 @@
           · 第 {{ currentPage }} / {{ pageCount }} 页 · 显示 {{ rangeStart }}-{{ rangeEnd }} 项
         </span>
       </span>
-      <button
+      <ElButton
         v-if="hasActiveFilter"
-        type="button"
         class="results-clear"
         data-test="plugin-sidebar-clear-filters"
         @click="clearFilters"
       >
         清除筛选
-      </button>
+      </ElButton>
     </div>
 
     <p v-if="!loading && selectedPluginHidden" class="sidebar-hint">
@@ -112,10 +84,9 @@
       {{ hasActiveFilter ? '当前筛选下没有匹配插件。' : '当前还没有可管理的插件。' }}
     </div>
     <div v-else class="plugin-list">
-      <button
+      <ElButton
         v-for="plugin in pagedPlugins"
         :key="plugin.name"
-        type="button"
         class="plugin-item"
         :class="{ active: plugin.name === selectedPluginName }"
         @click="$emit('select', plugin.name)"
@@ -148,28 +119,26 @@
         <div class="plugin-item-footer">
           <span>{{ pluginSurfaceSummary(plugin) }}</span>
         </div>
-      </button>
+      </ElButton>
     </div>
 
     <div v-if="!loading && orderedPlugins.length > 0" class="sidebar-pagination">
-      <button
-        type="button"
+      <ElButton
         class="ghost-button"
         data-test="plugin-sidebar-prev-page"
         :disabled="!canGoPrev"
         @click="goPrevPage"
       >
         上一页
-      </button>
-      <button
-        type="button"
+      </ElButton>
+      <ElButton
         class="ghost-button"
         data-test="plugin-sidebar-next-page"
         :disabled="!canGoNext"
         @click="goNextPage"
       >
         下一页
-      </button>
+      </ElButton>
     </div>
   </section>
 </template>
@@ -178,6 +147,7 @@
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElInput, ElRadioButton, ElRadioGroup, ElSwitch } from 'element-plus'
 import type { PluginInfo } from '@garlic-claw/shared'
 import { usePagination } from '@/composables/use-pagination'
 import {

@@ -36,24 +36,23 @@
         </div>
 
         <div class="attention-actions">
-          <button
-            type="button"
+          <ElButton
             class="ghost-button"
             :data-test="`plugin-attention-open-${plugin.name}`"
             @click="$emit('select-plugin', plugin.name)"
           >
             打开详情
-          </button>
-          <button
+          </ElButton>
+          <ElButton
             v-if="primaryAction(plugin)"
-            type="button"
+            type="primary"
             class="primary-button"
             :disabled="runningAction !== null"
             :data-test="`plugin-attention-action-${plugin.name}`"
             @click="emitRunAction(plugin)"
           >
             {{ runningAction === primaryAction(plugin) ? pendingActionLabel(primaryAction(plugin)!) : actionLabel(primaryAction(plugin)!) }}
-          </button>
+          </ElButton>
         </div>
       </article>
     </div>
@@ -62,6 +61,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ElButton } from 'element-plus'
 import type { PluginActionName, PluginInfo } from '@garlic-claw/shared'
 import {
   hasPluginIssue,

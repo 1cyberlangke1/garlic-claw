@@ -4,9 +4,9 @@
       <div class="hero-copy">
         <h1><Icon :icon="widgetBold" class="hero-icon" aria-hidden="true" />插件管理</h1>
       </div>
-      <button type="button" class="hero-action" title="刷新全部" @click="$emit('refresh')">
+      <ElButton class="hero-action" title="刷新全部" @click="$emit('refresh')">
         <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-      </button>
+      </ElButton>
     </header>
 
     <div class="overview-grid">
@@ -33,6 +33,7 @@
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import widgetBold from '@iconify-icons/solar/widget-5-bold'
+import { ElButton } from 'element-plus'
 
 defineProps<{
   headline: string

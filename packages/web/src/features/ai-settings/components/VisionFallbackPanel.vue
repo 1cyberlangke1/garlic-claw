@@ -5,32 +5,35 @@
         <h2>视觉回退</h2>
         <p>文本模型收到图片输入时，自动使用下方配置的视觉模型转述图片内容。</p>
       </div>
-      <label class="toggle-row">
-        <input v-model="form.enabled" type="checkbox" />
-        启用
-      </label>
+      <div class="toggle-row">
+        <span>启用</span>
+        <ElSwitch v-model="form.enabled" />
+      </div>
     </div>
 
     <div class="panel-body">
       <div class="field-grid">
         <label class="field">
           <span>Provider</span>
-          <select
+          <ElSelect
             v-model="form.providerId"
             :disabled="!form.enabled"
             @change="handleProviderChange"
           >
-            <option value="">请选择</option>
-            <option v-for="provider in providers" :key="provider.id" :value="provider.id">
-              {{ provider.name }}
-            </option>
-          </select>
+            <ElOption label="请选择" value="" />
+            <ElOption
+              v-for="provider in providers"
+              :key="provider.id"
+              :label="provider.name"
+              :value="provider.id"
+            />
+          </ElSelect>
         </label>
 
         <label class="field">
           <span>模型</span>
           <div class="model-picker" :class="{ disabled: !form.enabled }">
-            <input
+            <ElInput
               v-model="modelQuery"
               data-test="vision-model-search"
               :disabled="!form.enabled || totalProviderModels === 0"
@@ -44,14 +47,13 @@
                   · 第 {{ currentPage }} / {{ pageCount }} 页 · 显示 {{ rangeStart }}-{{ rangeEnd }} 项
                 </span>
               </span>
-              <button
-                type="button"
-                class="clear-link"
+              <ElButton
+                text
                 :disabled="!form.enabled || !form.modelId"
                 @click="clearModelSelection"
               >
                 清空选择
-              </button>
+              </ElButton>
             </div>
 
             <div v-if="filteredModels.length === 0" class="model-picker-empty">
@@ -72,24 +74,20 @@
             </div>
 
             <div v-if="filteredModels.length > 0" class="model-picker-actions">
-              <button
-                type="button"
-                class="ghost-button"
+              <ElButton
                 data-test="vision-model-prev-page"
                 :disabled="!canGoPrev"
                 @click="goPrevPage"
               >
                 上一页
-              </button>
-              <button
-                type="button"
-                class="ghost-button"
+              </ElButton>
+              <ElButton
                 data-test="vision-model-next-page"
                 :disabled="!canGoNext"
                 @click="goNextPage"
               >
                 下一页
-              </button>
+              </ElButton>
             </div>
           </div>
         </label>
@@ -97,29 +95,29 @@
 
       <label class="field">
         <span>提示词</span>
-        <textarea
+        <ElInput
           v-model="form.prompt"
+          type="textarea"
           :disabled="!form.enabled"
           :placeholder="defaultPromptPlaceholder"
-          rows="4"
-        ></textarea>
+          :rows="4"
+        />
       </label>
 
       <label class="field">
         <span>最大描述长度</span>
-        <input
+        <ElInputNumber
           v-model="form.maxDescriptionLength"
           :disabled="!form.enabled"
-          type="number"
-          min="0"
-          max="4000"
-          placeholder="0 表示不限制"
+          :min="0"
+          :max="4000"
+          controls-position="right"
         />
         <small class="field-note">填 `0` 表示不限制长度；留空则使用后端默认值。</small>
       </label>
 
       <div class="actions">
-        <button type="button" class="primary-button" :disabled="saving" @click="submit">保存</button>
+        <ElButton type="primary" :disabled="saving" @click="submit">保存</ElButton>
       </div>
     </div>
   </section>
@@ -127,6 +125,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { ElButton, ElInput, ElInputNumber, ElOption, ElSelect, ElSwitch } from 'element-plus'
 import type { VisionFallbackConfig } from '@garlic-claw/shared'
 import { usePagination } from '@/composables/use-pagination'
 
@@ -155,7 +154,7 @@ const form = reactive({
   providerId: '',
   modelId: '',
   prompt: '',
-  maxDescriptionLength: '',
+  maxDescriptionLength: undefined as number | undefined,
 })
 const modelQuery = ref('')
 
@@ -223,10 +222,7 @@ watch(
     form.providerId = config.providerId ?? ''
     form.modelId = config.modelId ?? ''
     form.prompt = config.prompt ?? ''
-    form.maxDescriptionLength =
-      config.maxDescriptionLength !== undefined
-        ? String(config.maxDescriptionLength)
-        : ''
+    form.maxDescriptionLength = config.maxDescriptionLength
     modelQuery.value = ''
   },
   { immediate: true, deep: true },
@@ -274,19 +270,9 @@ function submit() {
     modelId: form.enabled ? form.modelId || undefined : undefined,
     prompt: form.prompt.trim() || undefined,
     maxDescriptionLength: form.enabled
-      ? parseMaxDescriptionLength(form.maxDescriptionLength)
+      ? form.maxDescriptionLength
       : undefined,
   })
-}
-
-function parseMaxDescriptionLength(value: string): number | undefined {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return undefined
-  }
-
-  const parsed = Number(trimmed)
-  return Number.isFinite(parsed) ? parsed : undefined
 }
 </script>
 
@@ -354,25 +340,12 @@ function parseMaxDescriptionLength(value: string): number | undefined {
   color: var(--text-muted);
 }
 
-.field select,
-.field textarea,
-.field input {
+.field :deep(.el-input),
+.field :deep(.el-select),
+.field :deep(.el-textarea),
+.field :deep(.el-input-number) {
   width: 100%;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-panel-soft-strong);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--text);
-}
-
-.field select:focus,
-.field textarea:focus,
-.field input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
 .model-picker {

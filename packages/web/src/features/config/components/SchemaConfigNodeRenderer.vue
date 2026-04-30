@@ -25,13 +25,12 @@
           />
 
           <div v-if="collapsedEntries.length > 0" class="collapsed-group">
-            <button
-              type="button"
+            <ElButton
               class="collapsed-toggle"
               @click="showCollapsed = !showCollapsed"
             >
               {{ showCollapsed ? '收起高级配置' : '展开高级配置' }}
-            </button>
+            </ElButton>
 
             <div v-if="showCollapsed" class="collapsed-items">
               <SchemaConfigNodeRenderer
@@ -62,13 +61,12 @@
         />
 
         <div v-if="collapsedEntries.length > 0" class="collapsed-group">
-          <button
-            type="button"
+          <ElButton
             class="collapsed-toggle"
             @click="showCollapsed = !showCollapsed"
           >
             {{ showCollapsed ? '收起高级配置' : '展开高级配置' }}
-          </button>
+          </ElButton>
 
           <div v-if="showCollapsed" class="collapsed-items">
             <SchemaConfigNodeRenderer
@@ -96,120 +94,139 @@
         {{ nodeSchema.hint }}
       </span>
 
-      <textarea
+      <ElInput
         v-if="isTextareaField"
         :value="textValue"
+        type="textarea"
         :rows="nodeSchema.editorMode ? 10 : 4"
         class="config-textarea"
-        @input="writeTextValue(($event.target as HTMLTextAreaElement).value)"
+        @input="writeTextValue(String($event))"
       />
 
-      <input
+      <ElInputNumber
         v-else-if="nodeSchema.type === 'int' || nodeSchema.type === 'float'"
-        :value="numberValue"
-        type="number"
+        :model-value="numberValue"
         class="config-input"
-        @input="writeNumberValue(($event.target as HTMLInputElement).value)"
-      >
+        controls-position="right"
+        @change="writeNumberValue($event)"
+      />
 
-      <label v-else-if="nodeSchema.type === 'bool'" class="checkbox-field">
-        <input
-          :checked="booleanValue"
-          type="checkbox"
-          @change="emit('update:modelValue', ($event.target as HTMLInputElement).checked)"
-        >
-        <span>{{ booleanValue ? '已启用' : '已关闭' }}</span>
-      </label>
+      <ElSwitch
+        v-else-if="nodeSchema.type === 'bool'"
+        :model-value="booleanValue"
+        inline-prompt
+        active-text="已启用"
+        inactive-text="已关闭"
+        @change="emit('update:modelValue', $event)"
+      />
 
-      <select
+      <ElSelect
         v-else-if="selectOptions.length > 0"
-        :value="stringValue"
+        :model-value="stringValue"
         class="config-input"
-        @change="emit('update:modelValue', ($event.target as HTMLSelectElement).value)"
+        @change="emit('update:modelValue', $event)"
       >
-        <option value="">{{ emptySelectLabel }}</option>
-        <option
+        <ElOption :label="emptySelectLabel" value="" />
+        <ElOption
           v-for="option in selectOptions"
           :key="option.value"
+          :label="option.label"
           :value="option.value"
-        >
-          {{ option.label }}
-        </option>
-      </select>
+        />
+      </ElSelect>
 
-      <select
+      <ElSelect
         v-else-if="multiSelectOptions.length > 0"
-        :value="selectedListValues"
+        :model-value="selectedListValues"
         class="config-input config-multi-select"
         multiple
-        @change="writeMultiSelectValue($event.target as HTMLSelectElement)"
+        @change="writeMultiSelectValue($event)"
       >
-        <option
+        <ElOption
           v-for="option in multiSelectOptions"
           :key="option.value"
+          :label="option.label"
           :value="option.value"
-        >
-          {{ option.label }}
-        </option>
-      </select>
+        />
+      </ElSelect>
 
-      <div v-else-if="checkboxOptions.length > 0" class="checkbox-group">
-        <label
+      <ElCheckboxGroup
+        v-else-if="checkboxOptions.length > 0"
+        :model-value="selectedListValues"
+        class="checkbox-group"
+        @change="writeCheckboxGroupValue"
+      >
+        <ElCheckbox
           v-for="option in checkboxOptions"
           :key="option.value"
+          :value="option.value"
           class="checkbox-option"
         >
-          <input
-            :checked="selectedListValues.includes(option.value)"
-            type="checkbox"
-            @change="toggleCheckboxValue(option.value, ($event.target as HTMLInputElement).checked)"
-          >
           <span>{{ option.label }}</span>
-        </label>
-      </div>
+        </ElCheckbox>
+      </ElCheckboxGroup>
 
-      <input
+      <ElInput
         v-else
-        :value="stringValue"
-        :type="nodeSchema.secret ? 'password' : 'text'"
+        :model-value="stringValue"
+        :show-password="nodeSchema.secret"
         class="config-input"
-        @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
-      >
+        @input="emit('update:modelValue', String($event))"
+      />
 
-      <button
+      <ElButton
         v-if="nodeSchema.editorMode"
-        type="button"
         class="editor-button"
         @click="openEditor"
       >
         全屏编辑
-      </button>
+      </ElButton>
 
       <p v-if="fieldError" class="field-error">{{ fieldError }}</p>
 
-      <div v-if="editorOpen" class="editor-dialog">
-        <div class="editor-card">
-          <header class="editor-header">
+      <ElDialog
+        v-if="editorOpen"
+        :model-value="editorOpen"
+        width="960px"
+        top="6vh"
+        :teleported="false"
+        class="editor-dialog-shell"
+        @close="editorOpen = false"
+      >
+        <template #header>
+          <div class="editor-header">
             <strong>{{ fieldLabel }}</strong>
             <div class="editor-actions">
-              <button type="button" class="editor-action" @click="saveEditor">保存</button>
-              <button type="button" class="editor-action" @click="editorOpen = false">关闭</button>
+              <ElButton class="editor-action" @click="saveEditor">保存</ElButton>
+              <ElButton class="editor-action" @click="editorOpen = false">关闭</ElButton>
             </div>
-          </header>
-          <textarea
-            v-model="editorDraft"
-            rows="20"
-            class="editor-textarea"
-          />
-          <p v-if="editorError" class="field-error">{{ editorError }}</p>
-        </div>
-      </div>
+          </div>
+        </template>
+        <ElInput
+          v-model="editorDraft"
+          type="textarea"
+          :rows="20"
+          class="editor-textarea"
+        />
+        <p v-if="editorError" class="field-error">{{ editorError }}</p>
+      </ElDialog>
     </label>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import {
+  ElButton,
+  ElCheckbox,
+  ElCheckboxGroup,
+  ElDialog,
+  ElInput,
+  ElInputNumber,
+  ElOption,
+  ElSelect,
+  ElSwitch,
+} from 'element-plus'
 import type {
   AiProviderSummary,
   JsonObject,
@@ -280,7 +297,7 @@ const stringValue = computed(() =>
   typeof props.modelValue === 'string' ? props.modelValue : '',
 )
 const numberValue = computed(() =>
-  typeof props.modelValue === 'number' ? String(props.modelValue) : '',
+  typeof props.modelValue === 'number' ? props.modelValue : undefined,
 )
 const booleanValue = computed(() => Boolean(props.modelValue))
 const selectedListValues = computed(() =>
@@ -417,9 +434,9 @@ function writeTextValue(nextValue: string) {
   emit('update:modelValue', nextValue)
 }
 
-function writeNumberValue(nextValue: string) {
+function writeNumberValue(nextValue: string | number | null | undefined) {
   fieldError.value = null
-  if (!nextValue.trim()) {
+  if (nextValue === null || typeof nextValue === 'undefined' || nextValue === '') {
     emit('update:modelValue', undefined)
     return
   }
@@ -432,21 +449,12 @@ function writeNumberValue(nextValue: string) {
   emit('update:modelValue', parsed)
 }
 
-function toggleCheckboxValue(value: string, checked: boolean) {
-  const currentValues = new Set(selectedListValues.value)
-  if (checked) {
-    currentValues.add(value)
-  } else {
-    currentValues.delete(value)
-  }
-  emit('update:modelValue', [...currentValues])
+function writeCheckboxGroupValue(values: CheckboxValueType[]) {
+  emit('update:modelValue', values.map((value) => String(value)))
 }
 
-function writeMultiSelectValue(target: HTMLSelectElement) {
-  emit(
-    'update:modelValue',
-    Array.from(target.selectedOptions, (option) => option.value),
-  )
+function writeMultiSelectValue(values: CheckboxValueType[] | string[]) {
+  emit('update:modelValue', values.map((value) => String(value)))
 }
 
 function openEditor() {
@@ -536,6 +544,8 @@ function isNodeVisible(
 function isRecord(value: JsonValue | undefined): value is JsonObject {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
+
+type CheckboxValueType = string | number | boolean
 </script>
 
 <style scoped>
@@ -602,68 +612,22 @@ function isRecord(value: JsonValue | undefined): value is JsonObject {
   font-size: 0.82rem;
 }
 
-.config-input,
-.config-textarea,
-.editor-textarea,
-select {
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-input);
-  color: var(--text);
-  padding: 0.75rem 0.85rem;
-}
-
 .config-multi-select {
   min-height: 7.5rem;
 }
 
-.checkbox-field,
 .checkbox-group {
   display: grid;
   gap: 10px;
 }
 
 .checkbox-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.editor-button,
-.collapsed-toggle,
-.editor-action {
-  width: fit-content;
-  padding: 0.45rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text);
+  margin-right: 0;
 }
 
 .collapsed-group {
   display: grid;
   gap: 10px;
-}
-
-.editor-dialog {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 2rem;
-  background: var(--surface-overlay);
-  z-index: 1000;
-}
-
-.editor-card {
-  width: min(960px, 100%);
-  display: grid;
-  gap: 12px;
-  padding: 1rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
 }
 
 .editor-header {
@@ -684,10 +648,6 @@ select {
 }
 
 @media (max-width: 720px) {
-  .editor-dialog {
-    padding: 1rem;
-  }
-
   .editor-header {
     flex-direction: column;
     align-items: flex-start;

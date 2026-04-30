@@ -6,58 +6,53 @@
         <p>{{ description }}</p>
       </div>
       <div class="section-actions">
-        <button
-          type="button"
-          class="ghost-button refresh-button"
+        <ElButton
+          class="refresh-button"
           :data-test="refreshButtonTestId"
           title="刷新日志"
           :disabled="loading"
           @click="emitRefresh()"
         >
           <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </button>
+        </ElButton>
       </div>
     </div>
 
     <div class="filter-grid">
       <label class="control-field">
         <span>最近</span>
-        <select
-          :value="selectedLimit"
+        <ElSelect
+          :model-value="selectedLimit"
           :data-test="limitSelectTestId"
           @change="handleLimitChange"
         >
-          <option v-for="option in limitOptions" :key="option" :value="option">
-            {{ option }}
-          </option>
-        </select>
+          <ElOption v-for="option in limitOptions" :key="option" :label="String(option)" :value="option" />
+        </ElSelect>
       </label>
       <label class="control-field">
         <span>级别</span>
-        <select v-model="levelFilter" :data-test="levelFilterTestId">
-          <option value="all">全部</option>
-          <option value="info">info</option>
-          <option value="warn">warn</option>
-          <option value="error">error</option>
-        </select>
+        <ElSelect v-model="levelFilter" :data-test="levelFilterTestId">
+          <ElOption label="全部" value="all" />
+          <ElOption label="info" value="info" />
+          <ElOption label="warn" value="warn" />
+          <ElOption label="error" value="error" />
+        </ElSelect>
       </label>
       <label class="control-field">
         <span>类型</span>
-        <input
+        <ElInput
           v-model="typeFilter"
           :data-test="typeFilterTestId"
-          type="text"
           placeholder="如 tool:error"
-        >
+        />
       </label>
       <label class="control-field control-span">
         <span>关键词</span>
-        <input
+        <ElInput
           v-model="searchFilter"
           :data-test="searchFilterTestId"
-          type="text"
           placeholder="按 message / metadata 搜索"
-        >
+        />
       </label>
     </div>
 
@@ -79,24 +74,24 @@
         <pre v-if="event.metadata" class="event-metadata">{{ JSON.stringify(event.metadata, null, 2) }}</pre>
       </article>
     </div>
-    <button
+    <ElButton
       v-if="nextCursor"
-      type="button"
       class="ghost-button load-more-button"
       :data-test="loadMoreButtonTestId"
       :disabled="loading"
       @click="emitLoadMore()"
     >
       {{ loading ? '加载中...' : '加载更多' }}
-    </button>
+    </ElButton>
   </section>
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
-import refreshBold from '@iconify-icons/solar/refresh-bold'
-import { computed, ref, watch } from 'vue'
 import type { EventLogQuery, EventLogRecord } from '@garlic-claw/shared'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import { Icon } from '@iconify/vue'
+import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
+import { computed, ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -162,8 +157,8 @@ function emitLoadMore() {
   })
 }
 
-function handleLimitChange(event: Event) {
-  const nextValue = Number((event.target as HTMLSelectElement).value)
+function handleLimitChange(value: string | number | boolean) {
+  const nextValue = Number(value)
   selectedLimit.value = nextValue
   emitRefresh(buildQuery())
 }
@@ -230,6 +225,11 @@ function buildQuery(): EventLogQuery {
   gap: 6px;
 }
 
+.control-field :deep(.el-input),
+.control-field :deep(.el-select) {
+  width: 100%;
+}
+
 .control-field span {
   color: var(--text-muted);
   font-size: 0.78rem;
@@ -237,11 +237,6 @@ function buildQuery(): EventLogQuery {
 
 .control-span {
   min-width: 0;
-}
-
-.ghost-button {
-  background: transparent;
-  border: 1px solid var(--border);
 }
 
 .refresh-button {

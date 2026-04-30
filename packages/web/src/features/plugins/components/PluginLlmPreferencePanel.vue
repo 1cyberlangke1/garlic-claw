@@ -11,47 +11,45 @@
     <div class="panel-body">
       <label class="field">
         <span>策略</span>
-        <select v-model="mode">
-          <option value="inherit">继承主聊天配置</option>
-          <option value="override">为当前插件单独指定</option>
-        </select>
+        <ElSelect v-model="mode">
+          <ElOption label="继承主聊天配置" value="inherit" />
+          <ElOption label="为当前插件单独指定" value="override" />
+        </ElSelect>
       </label>
 
       <div class="field-grid">
         <label class="field">
           <span>Provider</span>
-          <select
+          <ElSelect
             v-model="selectedProviderId"
             :disabled="mode !== 'override'"
             data-test="plugin-llm-provider"
           >
-            <option value="">请选择 provider</option>
-            <option
+            <ElOption label="请选择 provider" value="" />
+            <ElOption
               v-for="provider in providers"
               :key="provider.id"
+              :label="provider.name"
               :value="provider.id"
-            >
-              {{ provider.name }}
-            </option>
-          </select>
+            />
+          </ElSelect>
         </label>
 
         <label class="field">
           <span>Model</span>
-          <select
+          <ElSelect
             v-model="selectedModelId"
             :disabled="mode !== 'override' || availableModels.length === 0"
             data-test="plugin-llm-model"
           >
-            <option value="">请选择 model</option>
-            <option
+            <ElOption label="请选择 model" value="" />
+            <ElOption
               v-for="option in availableModels"
               :key="`${option.providerId}:${option.modelId}`"
+              :label="option.label"
               :value="option.modelId"
-            >
-              {{ option.label }}
-            </option>
-          </select>
+            />
+          </ElSelect>
         </label>
       </div>
 
@@ -60,15 +58,14 @@
       </p>
 
       <div class="panel-actions">
-        <button
-          type="button"
-          class="primary-button"
+        <ElButton
+          type="primary"
           :disabled="saving || !canSave"
           data-test="plugin-llm-save"
           @click="submit"
         >
           保存
-        </button>
+        </ElButton>
       </div>
     </div>
   </section>
@@ -76,6 +73,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElButton, ElOption, ElSelect } from 'element-plus'
 import type {
   AiProviderSummary,
   PluginLlmPreference,
@@ -197,16 +195,6 @@ function submit() {
 
 .field-grid > * {
   flex: 1 1 0;
-}
-
-.field select {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(7, 16, 27, 0.9);
-  color: var(--text);
 }
 
 .panel-actions {

@@ -19,16 +19,15 @@
           <div class="cron-meta">
             <span class="cron-source">{{ cronSourceLabel(job.source) }}</span>
             <span class="cron-pill">{{ job.cron }}</span>
-            <button
+            <ElButton
               v-if="job.source === 'host'"
-              type="button"
               class="cron-action danger-button"
               data-test="cron-delete-button"
               :disabled="deletingJobId === job.id"
               @click="$emit('delete', job.id)"
             >
               {{ deletingJobId === job.id ? '删除中...' : '删除' }}
-            </button>
+            </ElButton>
           </div>
         </div>
         <p class="cron-description">{{ job.description ?? '未提供额外说明。' }}</p>
@@ -46,6 +45,7 @@
 </template>
 
 <script setup lang="ts">
+import { ElButton } from 'element-plus'
 import type { PluginCronJobSummary } from '@garlic-claw/shared'
 
 defineProps<{
