@@ -1,14 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 export type NotificationType = 'success' | 'error'
-
-export interface UiNotification {
-  id: string
-  message: string
-  type: NotificationType
-  createdAt: number
-}
 
 export interface ConfirmDialogState {
   visible: boolean
@@ -19,7 +13,6 @@ export interface ConfirmDialogState {
 type ConfirmHandler = () => void | Promise<void>
 
 export const useUiStore = defineStore('ui', () => {
-  const notifications = ref<UiNotification[]>([])
   const confirmDialog = ref<ConfirmDialogState>({
     visible: false,
     message: '',
@@ -31,25 +24,16 @@ export const useUiStore = defineStore('ui', () => {
   let currentConfirmHandler: ConfirmHandler | null = null
 
   /**
-   * 推送全局提示消息。
+   * 推送全局提示消息，统一委托给 Element Plus Message。
    */
   function notify(message: string, type: NotificationType = 'success') {
-    notifications.value.push({
-      id: createNotificationId(),
+    ElMessage({
       message,
       type,
-      createdAt: Date.now(),
+      duration: type === 'error' ? 5000 : 3200,
+      showClose: true,
+      grouping: true,
     })
-  }
-
-  function removeNotification(notificationId: string) {
-    notifications.value = notifications.value.filter(
-      (notification) => notification.id !== notificationId,
-    )
-  }
-
-  function clearNotifications() {
-    notifications.value = []
   }
 
   /**
@@ -117,21 +101,14 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    notifications,
     confirmDialog,
     loading,
     notify,
     confirm,
     runConfirm,
     cancelConfirm,
-    removeNotification,
-    clearNotifications,
     beginLoading,
     endLoading,
     withLoading,
   }
 })
-
-function createNotificationId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}

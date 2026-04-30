@@ -8,6 +8,7 @@ import {
   saveToolEnabled,
   saveToolSourceEnabled,
 } from '@/features/tools/composables/tool-management.data'
+import { useUiStore } from '@/stores/ui'
 
 type ToolFilter = 'all' | 'enabled' | 'disabled' | 'attention'
 
@@ -22,6 +23,7 @@ type ToolFilter = 'all' | 'enabled' | 'disabled' | 'attention'
  * - 所有统一工具治理请求集中到此 composable
  */
 export function createToolManagementModule() {
+  const uiStore = useUiStore()
   const requestState = useAsyncState(false)
   const loading = requestState.loading
   const error = requestState.error
@@ -29,7 +31,6 @@ export function createToolManagementModule() {
   const mutatingSourceKey = ref<string | null>(null)
   const mutatingToolId = ref<string | null>(null)
   const runningActionKey = ref<string | null>(null)
-  const notice = ref<string | null>(null)
   const sources = shallowRef<ToolSourceInfo[]>([])
   const tools = shallowRef<ToolInfo[]>([])
   const selectedSourceKey = ref<string | null>(null)
@@ -175,11 +176,10 @@ export function createToolManagementModule() {
     const sourceKey = buildSourceKey(source)
     mutatingSourceKey.value = sourceKey
     requestState.clearError()
-    notice.value = null
     try {
       await saveToolSourceEnabled(source.kind, source.id, enabled)
-      notice.value = enabled ? '工具源已启用' : '工具源已禁用'
       await refreshAll(sourceKey)
+      uiStore.notify(enabled ? '工具源已启用' : '工具源已禁用')
     } catch (caughtError) {
       requestState.setError(caughtError, '更新工具源状态失败')
     } finally {
@@ -190,11 +190,10 @@ export function createToolManagementModule() {
   async function setToolEnabled(tool: ToolInfo, enabled: boolean) {
     mutatingToolId.value = tool.toolId
     requestState.clearError()
-    notice.value = null
     try {
       await saveToolEnabled(tool.toolId, enabled)
-      notice.value = enabled ? '工具已启用' : '工具已禁用'
       await refreshAll(selectedSourceKey.value)
+      uiStore.notify(enabled ? '工具已启用' : '工具已禁用')
     } catch (caughtError) {
       requestState.setError(caughtError, '更新工具状态失败')
     } finally {
@@ -206,11 +205,10 @@ export function createToolManagementModule() {
     const actionKey = `${buildSourceKey(source)}:${action}`
     runningActionKey.value = actionKey
     requestState.clearError()
-    notice.value = null
     try {
       const result = await runToolSourceActionRequest(source.kind, source.id, action)
-      notice.value = result.message
       await refreshAll(buildSourceKey(source))
+      uiStore.notify(result.message)
     } catch (caughtError) {
       requestState.setError(caughtError, '执行工具源管理操作失败')
     } finally {
@@ -225,7 +223,6 @@ export function createToolManagementModule() {
     runningActionKey,
     error,
     appError,
-    notice,
     sources,
     tools,
     selectedSourceKey,

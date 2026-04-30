@@ -16,6 +16,7 @@ import {
   normalizeMcpEventQuery,
   updateMcpServerConfig,
 } from './mcp-config-management.data'
+import { useUiStore } from '@/stores/ui'
 
 const emptySnapshot = (): McpConfigSnapshot => ({
   configPath: '',
@@ -23,6 +24,7 @@ const emptySnapshot = (): McpConfigSnapshot => ({
 })
 
 export function useMcpConfigManagement() {
+  const uiStore = useUiStore()
   const requestState = useAsyncState(false)
   const loading = requestState.loading
   const error = requestState.error
@@ -30,7 +32,6 @@ export function useMcpConfigManagement() {
   const saving = ref(false)
   const savingEventLog = ref(false)
   const deleting = ref(false)
-  const notice = ref<string | null>(null)
   const snapshot = shallowRef<McpConfigSnapshot>(emptySnapshot())
   const selectedServerName = ref<string | null>(null)
   const eventLoading = ref(false)
@@ -83,11 +84,10 @@ export function useMcpConfigManagement() {
   async function createServer(input: McpServerConfig) {
     saving.value = true
     requestState.clearError()
-    notice.value = null
     try {
       const saved = await createMcpServerConfig(input)
-      notice.value = 'MCP server 已创建'
       await refresh(saved.name)
+      uiStore.notify('MCP server 已创建')
       return saved
     } catch (caughtError) {
       throw requestState.setError(caughtError, '创建 MCP server 失败')
@@ -99,11 +99,10 @@ export function useMcpConfigManagement() {
   async function updateServer(currentName: string, input: McpServerConfig) {
     saving.value = true
     requestState.clearError()
-    notice.value = null
     try {
       const saved = await updateMcpServerConfig(currentName, input)
-      notice.value = 'MCP server 已更新'
       await refresh(saved.name)
+      uiStore.notify('MCP server 已更新')
       return saved
     } catch (caughtError) {
       throw requestState.setError(caughtError, '更新 MCP server 失败')
@@ -115,11 +114,10 @@ export function useMcpConfigManagement() {
   async function deleteServer(name: string) {
     deleting.value = true
     requestState.clearError()
-    notice.value = null
     try {
       const result = await deleteMcpServerConfig(name)
-      notice.value = 'MCP server 已删除'
       await refresh()
+      uiStore.notify('MCP server 已删除')
       return result
     } catch (caughtError) {
       throw requestState.setError(caughtError, '删除 MCP server 失败')
@@ -135,14 +133,13 @@ export function useMcpConfigManagement() {
 
     savingEventLog.value = true
     requestState.clearError()
-    notice.value = null
     try {
       const saved = await updateMcpServerConfig(selectedServer.value.name, {
         ...selectedServer.value,
         eventLog: settings,
       })
-      notice.value = 'MCP 日志设置已更新'
       await refresh(saved.name)
+      uiStore.notify('MCP 日志设置已更新')
       return saved
     } catch (caughtError) {
       throw requestState.setError(caughtError, '更新 MCP 日志设置失败')
@@ -215,7 +212,6 @@ export function useMcpConfigManagement() {
     deleting,
     error,
     appError,
-    notice,
     snapshot,
     servers,
     selectedServerName,

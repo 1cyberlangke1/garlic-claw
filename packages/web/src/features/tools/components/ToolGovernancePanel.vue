@@ -17,7 +17,6 @@
     </header>
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
-    <p v-else-if="notice" class="page-banner success">{{ notice }}</p>
 
     <div v-if="showSourceList" class="source-picker">
       <label class="field">
@@ -176,6 +175,7 @@ import {
   saveToolSourceEnabled,
   toErrorMessage,
 } from '@/features/tools/composables/tool-management.data'
+import { useUiStore } from '@/stores/ui'
 
 const props = withDefaults(defineProps<{
   sourceKind: ToolSourceKind
@@ -200,9 +200,9 @@ const emit = defineEmits<{
   (event: 'update:selectedSourceId', value: string | null): void
 }>()
 
+const uiStore = useUiStore()
 const loading = ref(false)
 const error = ref<string | null>(null)
-const notice = ref<string | null>(null)
 const mutatingSource = ref(false)
 const mutatingToolId = ref<string | null>(null)
 const runningAction = ref<PluginActionName | null>(null)
@@ -316,15 +316,15 @@ async function toggleSourceEnabled() {
 
   mutatingSource.value = true
   error.value = null
-  notice.value = null
   try {
+    const successMessage = selectedSource.value.enabled ? '工具源已禁用' : '工具源已启用'
     await saveToolSourceEnabled(
       selectedSource.value.kind,
       selectedSource.value.id,
       !selectedSource.value.enabled,
     )
-    notice.value = selectedSource.value.enabled ? '工具源已禁用' : '工具源已启用'
     await refresh()
+    uiStore.notify(successMessage)
   } catch (caughtError) {
     error.value = toErrorMessage(caughtError, '更新工具源状态失败')
   } finally {
@@ -339,15 +339,14 @@ async function runSourceAction(action: PluginActionName) {
 
   runningAction.value = action
   error.value = null
-  notice.value = null
   try {
     const result = await runToolSourceActionRequest(
       selectedSource.value.kind,
       selectedSource.value.id,
       action,
     )
-    notice.value = result.message
     await refresh()
+    uiStore.notify(result.message)
   } catch (caughtError) {
     error.value = toErrorMessage(caughtError, '执行工具源动作失败')
   } finally {
@@ -362,11 +361,10 @@ function selectSource(sourceId: string) {
 async function toggleToolEnabled(tool: ToolInfo) {
   mutatingToolId.value = tool.toolId
   error.value = null
-  notice.value = null
   try {
     await saveToolEnabled(tool.toolId, !tool.enabled)
-    notice.value = tool.enabled ? '工具已禁用' : '工具已启用'
     await refresh()
+    uiStore.notify(tool.enabled ? '工具已禁用' : '工具已启用')
   } catch (caughtError) {
     error.value = toErrorMessage(caughtError, '更新工具状态失败')
   } finally {

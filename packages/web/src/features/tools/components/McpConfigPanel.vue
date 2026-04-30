@@ -30,7 +30,6 @@
 
     <p class="mcp-config-path">{{ snapshot.configPath || '尚未解析配置路径' }}</p>
     <p v-if="panelError" class="page-banner error">{{ panelError }}</p>
-    <p v-else-if="notice" class="page-banner success">{{ notice }}</p>
 
     <div class="mcp-config-layout">
       <aside class="mcp-server-sidebar">
@@ -206,7 +205,6 @@ const {
   saving,
   savingEventLog,
   deleting,
-  notice,
   snapshot,
   servers,
   selectedServerName,

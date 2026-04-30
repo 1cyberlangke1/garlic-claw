@@ -1,5 +1,6 @@
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
+import 'element-plus/dist/index.css'
 
 import { addRequestErrorListener } from '@/api/http'
 import { useThemeStore } from '@/stores/theme'
