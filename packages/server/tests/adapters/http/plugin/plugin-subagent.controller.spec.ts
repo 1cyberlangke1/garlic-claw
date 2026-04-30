@@ -31,8 +31,6 @@ describe('SubagentController', () => {
           resultPreview: '这是后台子代理总结',
           providerId: 'openai',
           modelId: 'gpt-5.2',
-          writeBackStatus: 'sent',
-          writeBackMessageId: 'assistant-message-1',
           requestedAt: '2026-03-30T12:00:00.000Z',
           startedAt: '2026-03-30T12:00:01.000Z',
           finishedAt: '2026-03-30T12:00:05.000Z',
@@ -65,8 +63,6 @@ describe('SubagentController', () => {
       resultPreview: '这是后台子代理总结',
       providerId: 'openai',
       modelId: 'gpt-5.2',
-      writeBackStatus: 'sent',
-      writeBackMessageId: 'assistant-message-1',
       requestedAt: '2026-03-30T12:00:00.000Z',
       startedAt: '2026-03-30T12:00:01.000Z',
       finishedAt: '2026-03-30T12:00:05.000Z',
@@ -145,10 +141,16 @@ describe('SubagentController', () => {
   });
 
   it('closes one persisted subagent conversation projection', async () => {
-    runtimeHostSubagentRunnerService.getSubagentOrThrow.mockReturnValue({
-      conversationId: 'subagent-conversation-1',
-      pluginId: 'subagent',
-    });
+    runtimeHostSubagentRunnerService.getSubagentOrThrow
+      .mockReturnValueOnce({
+        conversationId: 'subagent-conversation-1',
+        pluginId: 'subagent',
+      })
+      .mockReturnValueOnce({
+        conversationId: 'subagent-conversation-1',
+        pluginId: 'subagent',
+        status: 'closed',
+      });
     runtimeHostSubagentRunnerService.closeSubagent.mockResolvedValue({
       conversationId: 'subagent-conversation-1',
       pluginId: 'subagent',

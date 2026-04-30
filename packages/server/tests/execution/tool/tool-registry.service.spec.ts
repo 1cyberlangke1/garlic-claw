@@ -840,13 +840,19 @@ describe('ToolRegistryService', () => {
       updatedAt: '2026-04-26T10:00:00.000Z',
       runtimeKind: 'local',
       status: 'queued',
-      writeBackStatus: 'pending',
       requestedAt: '2026-04-26T10:00:00.000Z',
       startedAt: null,
       finishedAt: null,
       closedAt: null,
     } as never);
     jest.spyOn(runtimeHostSubagentRunnerService, 'waitSubagent').mockResolvedValue({
+      conversationId: 'subagent-conversation-2',
+      result: '已完成',
+      title: '浏览器烟测分身',
+      name: '浏览器烟测分身',
+      status: 'completed',
+    } as never);
+    jest.spyOn(runtimeHostSubagentRunnerService, 'getSubagent').mockReturnValue({
       pluginId: 'subagent',
       pluginDisplayName: 'Subagent',
       requestPreview: '继续处理当前仓库',
@@ -857,7 +863,6 @@ describe('ToolRegistryService', () => {
       updatedAt: '2026-04-26T10:00:01.000Z',
       runtimeKind: 'local',
       status: 'completed',
-      writeBackStatus: 'skipped',
       requestedAt: '2026-04-26T10:00:00.000Z',
       startedAt: '2026-04-26T10:00:00.500Z',
       finishedAt: '2026-04-26T10:00:01.000Z',
@@ -889,7 +894,6 @@ describe('ToolRegistryService', () => {
       description: '继续处理',
       name: '浏览器烟测分身',
       prompt: '继续处理当前仓库',
-      writeBack: false,
     });
     const waitedResult = await (toolSet?.wait_subagent as any).execute({
       conversationId: 'subagent-conversation-2',
@@ -898,8 +902,8 @@ describe('ToolRegistryService', () => {
 
     expect(backgroundResult).toEqual(expect.objectContaining({
       conversationId: 'subagent-conversation-2',
-      pluginId: 'subagent',
-      writeBackStatus: 'pending',
+      status: 'queued',
+      title: '浏览器烟测分身',
     }));
     expect(waitedResult).toEqual(expect.objectContaining({
       conversationId: 'subagent-conversation-2',
@@ -939,7 +943,6 @@ describe('ToolRegistryService', () => {
       updatedAt: '2026-04-26T10:00:02.000Z',
       runtimeKind: 'local',
       status: 'queued',
-      writeBackStatus: 'pending',
       requestedAt: '2026-04-26T10:00:02.000Z',
       startedAt: null,
       finishedAt: null,

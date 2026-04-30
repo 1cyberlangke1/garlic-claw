@@ -504,6 +504,5 @@ function isConversationSubagentStateValid(value: ConversationSubagentState): boo
     && (value.startedAt === null || typeof value.startedAt === 'string')
     && (value.finishedAt === null || typeof value.finishedAt === 'string')
     && (value.closedAt === null || typeof value.closedAt === 'string')
-    && typeof value.writeBackStatus === 'string'
     && typeof value.status === 'string';
 }

@@ -24,7 +24,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
     }
   });
 
-  it('spawns a child conversation, completes execution and writes back to the parent conversation', async () => {
+  it('spawns a child conversation and completes execution in the child conversation itself', async () => {
     const fixture = createFixture();
     Reflect.set(fixture.runner as object, 'executeSubagent', jest.fn(async ({ request }) => ({
       finishReason: 'stop',
@@ -48,17 +48,10 @@ describe('RuntimeHostSubagentRunnerService', () => {
       messages: [{ content: '请帮我总结当前对话', role: 'user' }],
       modelId: 'gpt-5.4',
       providerId: 'openai',
-      writeBack: {
-        target: {
-          id: fixture.parentConversationId,
-          type: 'conversation',
-        },
-      },
     } as never) as { conversationId: string; status: string };
 
     expect(summary).toMatchObject({
       conversationId: expect.any(String),
-      parentConversationId: fixture.parentConversationId,
       status: 'queued',
     });
 
@@ -72,16 +65,9 @@ describe('RuntimeHostSubagentRunnerService', () => {
         text: 'Generated: 请帮我总结当前对话',
       },
       status: 'completed',
-      writeBackStatus: 'sent',
-      writeBackMessageId: expect.any(String),
     });
     expect(fixture.recordService.requireConversation(summary.conversationId, 'user-1').parentId).toBe(fixture.parentConversationId);
-    expect(fixture.recordService.requireConversation(fixture.parentConversationId, 'user-1').messages).toEqual([
-      expect.objectContaining({
-        content: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
-        role: 'assistant',
-      }),
-    ]);
+    expect(fixture.recordService.requireConversation(fixture.parentConversationId, 'user-1').messages).toEqual([]);
   });
 
   it('continues the same child conversation through sendInputSubagent', async () => {
@@ -120,7 +106,6 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
     expect(continued).toMatchObject({
       conversationId: summary.conversationId,
-      description: '第二轮',
       status: 'queued',
     });
 
@@ -152,7 +137,6 @@ describe('RuntimeHostSubagentRunnerService', () => {
     const interrupted = await fixture.runner.interruptSubagent('builtin.memory', summary.conversationId, 'user-1');
     expect(interrupted).toMatchObject({
       conversationId: summary.conversationId,
-      error: '子代理已被手动中断',
       status: 'interrupted',
     });
   });
@@ -186,7 +170,6 @@ describe('RuntimeHostSubagentRunnerService', () => {
     }, 'user-1');
 
     expect(closed).toMatchObject({
-      closedAt: expect.any(String),
       conversationId: summary.conversationId,
       status: 'closed',
     });
@@ -216,7 +199,6 @@ describe('RuntimeHostSubagentRunnerService', () => {
         requestedAt: '2026-04-30T10:00:00.000Z',
         runtimeKind: 'local',
         status: 'queued',
-        writeBackStatus: 'skipped',
         startedAt: null,
         finishedAt: null,
         closedAt: null,
@@ -246,7 +228,6 @@ describe('RuntimeHostSubagentRunnerService', () => {
         requestedAt: '2026-04-30T10:00:00.000Z',
         runtimeKind: 'local',
         status: 'running',
-        writeBackStatus: 'skipped',
         startedAt: '2026-04-30T10:00:01.000Z',
         finishedAt: null,
         closedAt: null,

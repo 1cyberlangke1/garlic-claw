@@ -456,7 +456,7 @@ describe('AutomationService', () => {
           sourceKind: 'internal',
           sourceId: 'subagent',
           capability: 'spawn_subagent',
-          params: { prompt: '请继续处理', writeBack: false },
+          params: { prompt: '请继续处理' },
         },
       ],
       name: '会话绑定 subagent 自动化',
@@ -493,7 +493,7 @@ describe('AutomationService', () => {
       sourceKind: 'internal',
       sourceId: 'subagent',
       toolName: 'spawn_subagent',
-      params: { prompt: '请继续处理', writeBack: false },
+      params: { prompt: '请继续处理' },
       context: {
         source: 'automation',
         userId: 'user-1',

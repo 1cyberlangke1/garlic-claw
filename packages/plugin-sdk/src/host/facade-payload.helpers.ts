@@ -60,7 +60,7 @@ export function buildPluginGenerateParams(input: PluginLlmGenerateParams): JsonO
   };
 }
 
-export function buildPluginSubagentSpawnParams(input: PluginSubagentSpawnParams & { writeBack?: JsonObject | { target: { id: string; type: "conversation" } } }): JsonObject {
+export function buildPluginSubagentSpawnParams(input: PluginSubagentSpawnParams): JsonObject {
   return {
     ...(input.name ? { name: input.name } : {}),
     ...(input.description ? { description: input.description } : {}),
@@ -75,7 +75,6 @@ export function buildPluginSubagentSpawnParams(input: PluginSubagentSpawnParams 
     ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
     ...(input.headers ? { headers: toHostJsonValue(input.headers) } : {}),
     ...(typeof input.maxOutputTokens === "number" ? { maxOutputTokens: input.maxOutputTokens } : {}),
-    ...(input.writeBack ? { writeBack: toHostJsonValue(input.writeBack) } : {}),
   };
 }
 

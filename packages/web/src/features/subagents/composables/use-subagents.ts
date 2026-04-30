@@ -12,7 +12,7 @@ import {
   closePluginSubagentConversation as requestCloseSubagentConversation,
 } from './subagents.data'
 
-type SubagentFilter = 'all' | 'running' | 'completed' | 'error' | 'writeback-failed'
+type SubagentFilter = 'all' | 'running' | 'completed' | 'error'
 type SubagentWorkspaceWindow = SubagentMainWindow | SubagentSessionWindow
 
 interface SubagentWorkspaceSummary {
@@ -104,9 +104,6 @@ export function useSubagents() {
   )
   const errorSubagentCount = computed(() =>
     subagents.value.filter((subagent) => subagent.status === 'error').length,
-  )
-  const writeBackAttentionCount = computed(() =>
-    subagents.value.filter((subagent) => subagent.writeBackStatus === 'pending' || subagent.writeBackStatus === 'failed').length,
   )
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -246,7 +243,6 @@ export function useSubagents() {
     filteredSubagentCount,
     runningSubagentCount,
     errorSubagentCount,
-    writeBackAttentionCount,
     selectConversation,
     selectWindow,
     refreshAll,
@@ -327,8 +323,6 @@ function matchesSubagent(subagent: PluginSubagentSummary, keyword: string): bool
     subagent.providerId ?? '',
     subagent.modelId ?? '',
     subagent.error ?? '',
-    subagent.writeBackError ?? '',
-    subagent.writeBackTarget?.id ?? '',
   ]
     .join(' ')
     .toLocaleLowerCase()
@@ -348,8 +342,6 @@ function matchesFilter(subagent: PluginSubagentSummary, filter: SubagentFilter):
       return subagent.status === 'completed'
     case 'error':
       return subagent.status === 'error'
-    case 'writeback-failed':
-      return subagent.writeBackStatus === 'failed'
     default:
       return true
   }
@@ -359,15 +351,9 @@ function subagentAttentionWeight(subagent: PluginSubagentSummary): number {
   if (subagent.status === 'error') {
     return 0
   }
-  if (subagent.writeBackStatus === 'failed') {
+  if (subagent.status === 'queued' || subagent.status === 'running') {
     return 1
   }
-  if (subagent.status === 'queued' || subagent.status === 'running') {
-    return 2
-  }
-  if (subagent.writeBackStatus === 'pending') {
-    return 3
-  }
 
-  return 4
+  return 2
 }

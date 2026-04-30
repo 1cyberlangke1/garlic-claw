@@ -303,12 +303,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
         </nav>
 
         <div class="sider-meta">
-          <div class="sider-user">
-            <span class="sider-user-label">当前模式</span>
-            <strong>单用户控制台</strong>
-            <small>本机持久登录态</small>
-          </div>
-
           <div class="sider-actions">
             <button type="button" class="sider-action-link" @click="handleLogout">
               <Icon class="sider-action-icon" :icon="logout3Bold" aria-hidden="true" />

@@ -2,10 +2,10 @@ import type {
   JsonValue,
   PluginConfigSchema,
   PluginSubagentCloseParams,
+  PluginSubagentHandle,
   PluginSubagentInterruptParams,
   PluginSubagentSendInputParams,
   PluginSubagentSpawnParams,
-  PluginSubagentSummary,
   PluginSubagentWaitParams,
 } from "@garlic-claw/shared";
 import { toHostJsonValue } from "../host";
@@ -103,10 +103,6 @@ export const SUBAGENT_TOOL_DEFINITIONS = [
         type: "string",
         description: "指定子代理类型 ID",
       },
-      writeBack: {
-        type: "boolean",
-        description: "完成后是否回写到当前会话",
-      },
     },
   },
   {
@@ -195,11 +191,8 @@ export function readSubagentConfig(value: unknown): PluginSubagentConfig {
   };
 }
 
-export function buildSubagentSpawnParams(input: { config: PluginSubagentConfig; prompt: string; shouldWriteBack: boolean; conversationId?: string | null; name?: string | null; description?: string | null; subagentType?: string | null; providerId?: string | null; modelId?: string | null }): PluginSubagentSpawnParams & { writeBack?: { target: { id: string; type: "conversation" } } } {
-  return {
-    ...buildSubagentBaseParams(input),
-    ...(input.shouldWriteBack && input.conversationId ? { writeBack: { target: { id: input.conversationId, type: "conversation" } } } : {}),
-  };
+export function buildSubagentSpawnParams(input: { config: PluginSubagentConfig; prompt: string; name?: string | null; description?: string | null; subagentType?: string | null; providerId?: string | null; modelId?: string | null }): PluginSubagentSpawnParams {
+  return buildSubagentBaseParams(input);
 }
 
 export function buildSubagentWaitParams(input: { conversationId: string; timeoutMs?: number | null }): PluginSubagentWaitParams {
@@ -237,7 +230,7 @@ export function buildSubagentCloseParams(input: { conversationId: string }): Plu
   return { conversationId: input.conversationId };
 }
 
-export function createSubagentSummaryResult(result: PluginSubagentSummary): JsonValue {
+export function createSubagentSummaryResult(result: PluginSubagentHandle): JsonValue {
   return toHostJsonValue(result);
 }
 

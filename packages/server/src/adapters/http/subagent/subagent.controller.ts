@@ -22,8 +22,9 @@ export class SubagentController {
   }
 
   @Post(':conversationId/close')
-  closeSubagent(@Param('conversationId') conversationId: string) {
+  async closeSubagent(@Param('conversationId') conversationId: string) {
     const subagent = this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
-    return this.runtimeHostSubagentRunnerService.closeSubagent(subagent.pluginId, { conversationId });
+    await this.runtimeHostSubagentRunnerService.closeSubagent(subagent.pluginId, { conversationId });
+    return this.runtimeHostSubagentRunnerService.getSubagentOrThrow(conversationId);
   }
 }

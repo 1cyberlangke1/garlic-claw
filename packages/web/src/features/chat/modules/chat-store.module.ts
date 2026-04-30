@@ -1,4 +1,4 @@
-import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef } from "vue";
+import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef, triggerRef } from "vue";
 import type {
   ChatMessagePart,
   Conversation,
@@ -310,8 +310,10 @@ export function createChatStoreModule() {
   }
 
   async function createConversation(title?: string) {
+    conversationListRequestId += 1;
     const conversation = await createConversationRecord(title);
     conversations.value.unshift(conversation);
+    triggerRef(conversations);
     return conversation;
   }
 

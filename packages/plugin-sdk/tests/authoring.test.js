@@ -34,13 +34,11 @@ test('subagent authoring helpers allow explicit provider/model overrides', () =>
   };
   assert.deepEqual(buildSubagentSpawnParams({
     config,
-    conversationId: 'conversation-1',
     description: '执行 smoke 任务',
     modelId: 'override-model',
     name: '测试分身',
     prompt: '执行 smoke 任务',
     providerId: 'override-provider',
-    shouldWriteBack: true,
   }), {
     description: '执行 smoke 任务',
     messages: [{
@@ -52,12 +50,6 @@ test('subagent authoring helpers allow explicit provider/model overrides', () =>
     providerId: 'override-provider',
     subagentType: 'general',
     toolNames: ['skill'],
-    writeBack: {
-      target: {
-        id: 'conversation-1',
-        type: 'conversation',
-      },
-    },
   });
   assert.deepEqual(buildSubagentSendInputParams({
     config,

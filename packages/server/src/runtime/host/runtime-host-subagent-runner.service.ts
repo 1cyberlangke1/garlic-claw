@@ -1,4 +1,4 @@
-import type { ChatMessagePart, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext, PluginLlmMessage, PluginMessageTargetInfo, PluginSubagentCloseParams, PluginSubagentDetail, PluginSubagentExecutionResult, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSendInputParams, PluginSubagentSpawnParams, PluginSubagentSummary, PluginSubagentWaitParams, SubagentAfterRunHookResult, SubagentBeforeRunHookResult } from '@garlic-claw/shared';
+import type { ChatMessagePart, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext, PluginLlmMessage, PluginSubagentCloseParams, PluginSubagentDetail, PluginSubagentExecutionResult, PluginSubagentHandle, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSendInputParams, PluginSubagentSpawnParams, PluginSubagentSummary, PluginSubagentWaitParams, PluginSubagentWaitResult, SubagentAfterRunHookResult, SubagentBeforeRunHookResult } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional, forwardRef } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
@@ -13,7 +13,7 @@ import { asJsonValue, cloneJsonValue, readAssistantStreamPart, readJsonObject, r
 type ResolvedSubagentType = ReturnType<ProjectSubagentTypeRegistryService['getType']>;
 type RuntimeSubagentExecutionState = {
   abortController: AbortController;
-  completion: Promise<PluginSubagentDetail>;
+  completion: Promise<PluginSubagentWaitResult>;
 };
 
 @Injectable()
@@ -109,10 +109,6 @@ export class RuntimeHostSubagentRunnerService {
         system: request.request.system,
         toolNames: request.request.toolNames,
         variant: request.request.variant,
-        writeBackError: undefined,
-        writeBackMessageId: undefined,
-        writeBackStatus: readSubagentWriteBackTarget(params) ? 'pending' : 'skipped',
-        ...(readSubagentWriteBackTarget(params) ? { writeBackTarget: readSubagentWriteBackTarget(params) } : {}),
       },
       title: readSubagentConversationTitle(request.request, request.subagentType?.name),
       userId: context.userId,
@@ -132,20 +128,20 @@ export class RuntimeHostSubagentRunnerService {
       result: null,
     }));
     this.scheduleSubagentExecution(conversation.id);
-    return asJsonValue(this.getSubagent(pluginId, conversation.id));
+    return asJsonValue(this.buildSubagentHandle(this.requireSubagentConversation(conversation.id, pluginId)));
   }
 
   async waitSubagent(pluginId: string, params: PluginSubagentWaitParams): Promise<JsonValue> {
     const conversation = this.requireSubagentConversation(params.conversationId, pluginId);
     const subagent = requireConversationSubagent(conversation);
     if (subagent.status !== 'queued' && subagent.status !== 'running') {
-      return asJsonValue(this.buildSubagentDetail(conversation));
+      return asJsonValue(this.buildSubagentWaitResult(conversation));
     }
     this.scheduleSubagentExecution(conversation.id);
     const timeoutMs = typeof params.timeoutMs === 'number' && params.timeoutMs > 0 ? params.timeoutMs : null;
     if (timeoutMs === null) {
       await this.awaitSubagentStateChange(conversation.id);
-      return asJsonValue(this.getSubagent(pluginId, conversation.id));
+      return asJsonValue(this.buildSubagentWaitResult(this.requireSubagentConversation(conversation.id, pluginId)));
     }
     await Promise.race([
       this.awaitSubagentStateChange(conversation.id),
@@ -153,7 +149,7 @@ export class RuntimeHostSubagentRunnerService {
         setTimeout(resolve, timeoutMs);
       }),
     ]);
-    return asJsonValue(this.getSubagent(pluginId, conversation.id));
+    return asJsonValue(this.buildSubagentWaitResult(this.requireSubagentConversation(conversation.id, pluginId)));
   }
 
   async sendInputSubagent(pluginId: string, context: PluginCallContext, params: PluginSubagentSendInputParams): Promise<JsonValue> {
@@ -206,9 +202,6 @@ export class RuntimeHostSubagentRunnerService {
             ...(request.request.system ? { system: request.request.system } : {}),
             ...(request.request.toolNames ? { toolNames: cloneJsonValue(request.request.toolNames) as string[] } : {}),
             ...(request.request.variant ? { variant: request.request.variant } : {}),
-            writeBackError: undefined,
-            writeBackMessageId: undefined,
-            writeBackStatus: currentSubagent.writeBackTarget ? 'pending' : 'skipped',
           }
         : null,
       result: null,
@@ -219,7 +212,7 @@ export class RuntimeHostSubagentRunnerService {
       context.userId,
     );
     this.scheduleSubagentExecution(conversation.id);
-    return asJsonValue(this.getSubagent(pluginId, conversation.id));
+    return asJsonValue(this.buildSubagentHandle(this.requireSubagentConversation(conversation.id, pluginId, context.userId)));
   }
 
   async interruptSubagent(pluginId: string, conversationId: string, userId?: string): Promise<JsonValue> {
@@ -228,7 +221,7 @@ export class RuntimeHostSubagentRunnerService {
     if (execution) {
       execution.abortController.abort();
       await execution.completion.catch(() => undefined);
-      return asJsonValue(this.getSubagent(pluginId, conversation.id));
+      return asJsonValue(this.buildSubagentHandle(this.requireSubagentConversation(conversation.id, pluginId, userId)));
     }
     this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
       nextSubagent: currentSubagent
@@ -243,7 +236,7 @@ export class RuntimeHostSubagentRunnerService {
       result: null,
     }), userId);
     this.notifyWaiters(conversation.id);
-    return asJsonValue(this.getSubagent(pluginId, conversation.id));
+    return asJsonValue(this.buildSubagentHandle(this.requireSubagentConversation(conversation.id, pluginId, userId)));
   }
 
   async closeSubagent(pluginId: string, params: PluginSubagentCloseParams, userId?: string): Promise<JsonValue> {
@@ -256,13 +249,12 @@ export class RuntimeHostSubagentRunnerService {
             closedAt: new Date().toISOString(),
             finishedAt: currentSubagent.finishedAt ?? new Date().toISOString(),
             status: 'closed',
-            writeBackStatus: currentSubagent.writeBackStatus === 'sent' ? 'sent' : 'skipped',
           }
         : null,
       result: null,
     }), userId);
     this.notifyWaiters(params.conversationId);
-    return asJsonValue(this.getSubagent(pluginId, params.conversationId));
+    return asJsonValue(this.buildSubagentHandle(this.requireSubagentConversation(params.conversationId, pluginId, userId)));
   }
 
   private listRuntimeSubagentConversations(pluginId?: string): RuntimeConversationRecord[] {
@@ -306,10 +298,27 @@ export class RuntimeHostSubagentRunnerService {
       title: conversation.title,
       updatedAt: conversation.updatedAt,
       ...(conversation.userId ? { userId: conversation.userId } : {}),
-      writeBackError: subagent.writeBackError,
-      writeBackMessageId: subagent.writeBackMessageId,
-      writeBackStatus: subagent.writeBackStatus,
-      ...(subagent.writeBackTarget ? { writeBackTarget: cloneJsonValue(subagent.writeBackTarget) as PluginMessageTargetInfo } : {}),
+    };
+  }
+
+  private buildSubagentHandle(conversation: RuntimeConversationRecord): PluginSubagentHandle {
+    const subagent = requireConversationSubagent(conversation);
+    return {
+      conversationId: conversation.id,
+      ...(subagent.name ? { name: subagent.name } : {}),
+      status: subagent.status,
+      title: conversation.title,
+    };
+  }
+
+  private buildSubagentWaitResult(conversation: RuntimeConversationRecord): PluginSubagentWaitResult {
+    const executionResult = readConversationExecutionResult(conversation);
+    const subagent = requireConversationSubagent(conversation);
+    const resultText = executionResult?.text ?? subagent.resultPreview;
+    return {
+      ...this.buildSubagentHandle(conversation),
+      ...(subagent.error ? { error: subagent.error } : {}),
+      ...(typeof resultText === 'string' ? { result: resultText } : {}),
     };
   }
 
@@ -359,7 +368,7 @@ export class RuntimeHostSubagentRunnerService {
     }, 0);
   }
 
-  private async executeSubagentConversation(conversationId: string): Promise<PluginSubagentDetail> {
+  private async executeSubagentConversation(conversationId: string): Promise<PluginSubagentWaitResult> {
     const active = this.activeExecutions.get(conversationId);
     if (active) {
       return active.completion;
@@ -374,11 +383,11 @@ export class RuntimeHostSubagentRunnerService {
     return completion;
   }
 
-  private async runSubagentConversation(conversationId: string, abortSignal: AbortSignal): Promise<PluginSubagentDetail> {
+  private async runSubagentConversation(conversationId: string, abortSignal: AbortSignal): Promise<PluginSubagentWaitResult> {
     const conversation = this.requireSubagentConversation(conversationId);
     const subagent = requireConversationSubagent(conversation);
     if (subagent.status === 'closed') {
-      return this.getSubagent(subagent.pluginId, conversation.id);
+      return this.buildSubagentWaitResult(conversation);
     }
     this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
       nextSubagent: currentSubagent
@@ -388,8 +397,6 @@ export class RuntimeHostSubagentRunnerService {
             finishedAt: null,
             startedAt: currentSubagent.startedAt ?? new Date().toISOString(),
             status: 'running',
-            writeBackError: undefined,
-            writeBackMessageId: undefined,
           }
         : null,
       result: null,
@@ -416,7 +423,6 @@ export class RuntimeHostSubagentRunnerService {
         toolCalls: result.toolCalls as unknown as JsonValue[],
         toolResults: result.toolResults as unknown as JsonValue[],
       });
-      const writeBack = await this.writeBackMessageIfNeeded(refreshed, result);
       this.runtimeHostConversationRecordService?.updateConversationSubagent(refreshed.id, (currentSubagent) => ({
         nextSubagent: currentSubagent
           ? {
@@ -429,14 +435,11 @@ export class RuntimeHostSubagentRunnerService {
               resultPreview: result.text,
               startedAt: currentSubagent.startedAt ?? new Date().toISOString(),
               status: 'completed',
-              writeBackError: writeBack.error ?? undefined,
-              writeBackMessageId: writeBack.messageId ?? undefined,
-              writeBackStatus: writeBack.status,
             }
           : null,
         result: null,
       }));
-      return this.getSubagent(subagent.pluginId, refreshed.id);
+      return this.buildSubagentWaitResult(this.requireSubagentConversation(refreshed.id, subagent.pluginId));
     } catch (error) {
       const message = abortSignal.aborted
         ? '子代理已被手动中断'
@@ -448,9 +451,6 @@ export class RuntimeHostSubagentRunnerService {
         error: message,
         status: abortSignal.aborted ? 'stopped' : 'error',
       });
-      const writeBack = abortSignal.aborted
-        ? { error: null, messageId: null, status: 'skipped' as const }
-        : await this.writeBackMessageIfNeeded(conversation, null, message);
       this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
         nextSubagent: currentSubagent
           ? {
@@ -460,14 +460,11 @@ export class RuntimeHostSubagentRunnerService {
               finishedAt: new Date().toISOString(),
               startedAt: currentSubagent.startedAt ?? new Date().toISOString(),
               status: abortSignal.aborted ? 'interrupted' : 'error',
-              writeBackError: writeBack.error ?? undefined,
-              writeBackMessageId: writeBack.messageId ?? undefined,
-              writeBackStatus: writeBack.status,
             }
           : null,
         result: null,
       }));
-      return this.getSubagent(subagent.pluginId, conversation.id);
+      return this.buildSubagentWaitResult(this.requireSubagentConversation(conversation.id, subagent.pluginId));
     }
   }
 
@@ -513,31 +510,6 @@ export class RuntimeHostSubagentRunnerService {
       readContext: () => input.context,
       excludedPluginId: input.pluginId,
     });
-  }
-
-  private async writeBackMessageIfNeeded(conversation: RuntimeConversationRecord, result: PluginSubagentExecutionResult | null, errorMessage?: string): Promise<{ error: string | null; messageId: string | null; status: 'failed' | 'sent' | 'skipped' }> {
-    const subagent = requireConversationSubagent(conversation);
-    if (!subagent.writeBackTarget) {
-      return { error: null, messageId: null, status: 'skipped' };
-    }
-    try {
-      const sent = await this.runtimeHostConversationMessageService.sendMessage(createSubagentContext(conversation), {
-        content: result
-          ? `<subagent_result>\n${result.text}\n</subagent_result>`
-          : `子代理执行失败：${errorMessage ?? '未知错误'}`,
-        ...(result?.modelId ? { model: result.modelId } : {}),
-        ...(result?.providerId ? { provider: result.providerId } : {}),
-        target: { id: subagent.writeBackTarget.id, type: subagent.writeBackTarget.type },
-      });
-      const messageId = readJsonObject(sent)?.id;
-      return { error: null, messageId: typeof messageId === 'string' ? messageId : null, status: 'sent' };
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : '子代理结果回写失败',
-        messageId: null,
-        status: 'failed',
-      };
-    }
   }
 
   private appendConversationMessages(conversationId: string, messages: PluginLlmMessage[], status: 'completed' | 'pending' = 'completed'): string[] {
@@ -695,21 +667,6 @@ function requireConversationSubagent(conversation: RuntimeConversationRecord): C
     throw new NotFoundException(`Subagent conversation not found: ${conversation.id}`);
   }
   return conversation.subagent;
-}
-
-function readSubagentWriteBackTarget(params: JsonObject): PluginMessageTargetInfo | null {
-  const target = readJsonObject(readJsonObject(params.writeBack)?.target);
-  if (!target) {
-    return null;
-  }
-  if (target.type !== 'conversation' || typeof target.id !== 'string') {
-    throw new BadRequestException('subagent writeBack.target is invalid');
-  }
-  return {
-    id: target.id,
-    ...(typeof target.label === 'string' ? { label: target.label } : {}),
-    type: 'conversation',
-  };
 }
 
 function normalizeSubagentTypeId(subagentType: string): string {

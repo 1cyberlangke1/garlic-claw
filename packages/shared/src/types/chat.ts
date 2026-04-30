@@ -201,27 +201,6 @@ export type ConversationSubagentStatus =
   | 'closed';
 
 /**
- * 子代理回写状态。
- */
-export type ConversationSubagentWriteBackStatus =
-  | 'pending'
-  | 'sent'
-  | 'failed'
-  | 'skipped';
-
-/**
- * 子代理回写目标。
- */
-export interface ConversationSubagentWriteBackTarget {
-  /** 目标类型。 */
-  type: 'conversation';
-  /** 目标 ID。 */
-  id: string;
-  /** 目标标签。 */
-  label?: string;
-}
-
-/**
  * 子代理会话元数据。
  */
 export interface ConversationSubagentState {
@@ -265,14 +244,6 @@ export interface ConversationSubagentState {
   maxOutputTokens?: number;
   /** 错误信息。 */
   error?: string;
-  /** 回写状态。 */
-  writeBackStatus: ConversationSubagentWriteBackStatus;
-  /** 回写目标。 */
-  writeBackTarget?: ConversationSubagentWriteBackTarget | null;
-  /** 回写失败原因。 */
-  writeBackError?: string;
-  /** 回写消息 ID。 */
-  writeBackMessageId?: string;
   /** 发起时间。 */
   requestedAt: string;
   /** 开始时间。 */

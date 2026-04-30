@@ -81,13 +81,6 @@ export type PluginSubagentStatus =
   | 'interrupted'
   | 'closed';
 
-/** 后台子代理回写状态。 */
-export type PluginSubagentWriteBackStatus =
-  | 'pending'
-  | 'sent'
-  | 'failed'
-  | 'skipped';
-
 /** 子代理工具调用摘要。 */
 export interface PluginSubagentToolCall {
   toolCallId: string;

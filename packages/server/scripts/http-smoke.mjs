@@ -2681,7 +2681,6 @@ async function runHttpFlow(apiBase, state, input) {
             params: {
               description: '自动化烟测任务',
               prompt: '请输出 smoke automation task',
-              writeBack: false,
             },
             sourceId: 'subagent',
             sourceKind: 'internal',
@@ -4706,7 +4705,7 @@ function readNormalizedFileContent(filePath) {
 }
 
 function isRenderedSubagentToolContent(content) {
-  return content.includes('<subagent_result') || content.includes('"conversationId"');
+  return content.includes('"conversationId"') || content.includes('"result"') || content.includes('"error"');
 }
 
 function requestContainsInvalidToolResult(body, toolName, errorFragment) {

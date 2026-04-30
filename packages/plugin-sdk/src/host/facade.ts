@@ -1,4 +1,4 @@
-import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, HostCallPayload, JsonObject, JsonValue, PluginConversationHistoryPreviewParams, PluginConversationHistoryPreviewResult, PluginConversationHistoryReplaceParams, PluginConversationHistoryReplaceResult, PluginConversationHistorySnapshot, PluginCronDescriptor, PluginCronJobSummary, PluginEventLevel, PluginEventListResult, PluginEventQuery, PluginKbEntryDetail, PluginKbEntrySummary, PluginMessageSendInfo, PluginMessageSendParams, PluginMessageTargetInfo, PluginPersonaCurrentInfo, PluginPersonaSummary, PluginProviderCurrentInfo, PluginProviderModelSummary, PluginProviderSummary, PluginScopedStateScope, PluginSelfInfo, PluginSubagentCloseParams, PluginSubagentDetail, PluginSubagentSummary, PluginConversationSessionInfo, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginMessageHookInfo, PluginLlmGenerateParams, PluginLlmGenerateResult, PluginLlmGenerateTextResult, PluginLlmTransportMode, PluginRuntimeCommandParams, PluginRuntimeCommandResult, PluginRuntimeEditParams, PluginRuntimeEditResult, PluginRuntimeGlobParams, PluginRuntimeGlobResult, PluginRuntimeGrepParams, PluginRuntimeGrepResult, PluginRuntimeReadParams, PluginRuntimeReadResult, PluginRuntimeWriteParams, PluginRuntimeWriteResult, PluginSubagentInterruptParams, PluginSubagentSendInputParams, PluginSubagentSpawnParams, PluginSubagentWaitParams, TriggerConfig } from "@garlic-claw/shared";
+import type { ActionConfig, AutomationEventDispatchInfo, AutomationInfo, HostCallPayload, JsonObject, JsonValue, PluginConversationHistoryPreviewParams, PluginConversationHistoryPreviewResult, PluginConversationHistoryReplaceParams, PluginConversationHistoryReplaceResult, PluginConversationHistorySnapshot, PluginCronDescriptor, PluginCronJobSummary, PluginEventLevel, PluginEventListResult, PluginEventQuery, PluginKbEntryDetail, PluginKbEntrySummary, PluginMessageSendInfo, PluginMessageSendParams, PluginMessageTargetInfo, PluginPersonaCurrentInfo, PluginPersonaSummary, PluginProviderCurrentInfo, PluginProviderModelSummary, PluginProviderSummary, PluginScopedStateScope, PluginSelfInfo, PluginSubagentCloseParams, PluginSubagentDetail, PluginSubagentHandle, PluginSubagentSummary, PluginConversationSessionInfo, PluginConversationSessionKeepParams, PluginConversationSessionStartParams, PluginMessageHookInfo, PluginLlmGenerateParams, PluginLlmGenerateResult, PluginLlmGenerateTextResult, PluginLlmTransportMode, PluginRuntimeCommandParams, PluginRuntimeCommandResult, PluginRuntimeEditParams, PluginRuntimeEditResult, PluginRuntimeGlobParams, PluginRuntimeGlobResult, PluginRuntimeGrepParams, PluginRuntimeGrepResult, PluginRuntimeReadParams, PluginRuntimeReadResult, PluginRuntimeWriteParams, PluginRuntimeWriteResult, PluginSubagentInterruptParams, PluginSubagentSendInputParams, PluginSubagentSpawnParams, PluginSubagentWaitParams, PluginSubagentWaitResult, TriggerConfig } from "@garlic-claw/shared";
 import { buildPluginConversationHistoryPreviewParams, buildPluginConversationHistoryReplaceParams, buildPluginConversationSessionKeepParams, buildPluginConversationSessionStartParams, buildPluginCreateAutomationParams, buildPluginGenerateParams, buildPluginGenerateTextParams, buildPluginMessageSendParams, buildPluginRegisterCronParams, buildPluginSubagentCloseParams, buildPluginSubagentInterruptParams, buildPluginSubagentSendInputParams, buildPluginSubagentSpawnParams, buildPluginSubagentWaitParams, toScopedStateParams } from "./facade-payload.helpers";
 import { toHostJsonValue } from "./host-json-value.codec";
 export interface PluginScopedStateOptions { scope?: PluginScopedStateScope; }
@@ -68,11 +68,11 @@ export interface PluginHostFacade {
   getUser(): Promise<JsonValue>;
   setConversationTitle(title: string): Promise<JsonValue>;
   generate(params: PluginLlmGenerateParams): Promise<PluginLlmGenerateResult>;
-  spawnSubagent(params: PluginSubagentSpawnParams): Promise<PluginSubagentSummary>;
-  waitSubagent(params: PluginSubagentWaitParams): Promise<PluginSubagentDetail>;
-  sendInputSubagent(params: PluginSubagentSendInputParams): Promise<PluginSubagentDetail>;
-  interruptSubagent(params: PluginSubagentInterruptParams): Promise<PluginSubagentDetail>;
-  closeSubagent(params: PluginSubagentCloseParams): Promise<PluginSubagentDetail>;
+  spawnSubagent(params: PluginSubagentSpawnParams): Promise<PluginSubagentHandle>;
+  waitSubagent(params: PluginSubagentWaitParams): Promise<PluginSubagentWaitResult>;
+  sendInputSubagent(params: PluginSubagentSendInputParams): Promise<PluginSubagentHandle>;
+  interruptSubagent(params: PluginSubagentInterruptParams): Promise<PluginSubagentHandle>;
+  closeSubagent(params: PluginSubagentCloseParams): Promise<PluginSubagentHandle>;
   listSubagents(): Promise<PluginSubagentSummary[]>;
   getSubagent(conversationId: string): Promise<PluginSubagentDetail>;
   generateText(params: PluginGenerateTextParams): Promise<PluginLlmGenerateTextResult>;
@@ -153,11 +153,11 @@ export function createPluginHostFacade(input: PluginHostFacadeFactoryInput): Plu
     getUser: () => call("user.get", {}),
     setConversationTitle: (title) => call("conversation.title.set", { title }),
     generate: (params) => callHost<PluginLlmGenerateResult>("llm.generate", buildPluginGenerateParams(params)),
-    spawnSubagent: (params) => callHost<PluginSubagentSummary>("subagent.spawn", buildPluginSubagentSpawnParams(params)),
-    waitSubagent: (params) => callHost<PluginSubagentDetail>("subagent.wait", buildPluginSubagentWaitParams(params)),
-    sendInputSubagent: (params) => callHost<PluginSubagentDetail>("subagent.send-input", buildPluginSubagentSendInputParams(params)),
-    interruptSubagent: (params) => callHost<PluginSubagentDetail>("subagent.interrupt", buildPluginSubagentInterruptParams(params)),
-    closeSubagent: (params) => callHost<PluginSubagentDetail>("subagent.close", buildPluginSubagentCloseParams(params)),
+    spawnSubagent: (params) => callHost<PluginSubagentHandle>("subagent.spawn", buildPluginSubagentSpawnParams(params)),
+    waitSubagent: (params) => callHost<PluginSubagentWaitResult>("subagent.wait", buildPluginSubagentWaitParams(params)),
+    sendInputSubagent: (params) => callHost<PluginSubagentHandle>("subagent.send-input", buildPluginSubagentSendInputParams(params)),
+    interruptSubagent: (params) => callHost<PluginSubagentHandle>("subagent.interrupt", buildPluginSubagentInterruptParams(params)),
+    closeSubagent: (params) => callHost<PluginSubagentHandle>("subagent.close", buildPluginSubagentCloseParams(params)),
     listSubagents: callHostNoArgs<PluginSubagentSummary[]>("subagent.list"),
     getSubagent: callHostByKey<PluginSubagentDetail>("subagent.get", "conversationId"),
     generateText: (params) => callHost<PluginLlmGenerateTextResult>("llm.generate-text", buildPluginGenerateTextParams(params)),

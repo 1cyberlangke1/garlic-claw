@@ -75,13 +75,11 @@ export class SubagentToolService {
       context,
       buildSubagentSpawnParams({
         config,
-        conversationId: context.conversationId ?? undefined,
         description: readOptionalText(args.description) ?? null,
         modelId: readOptionalText(args.modelId) ?? null,
         name: readOptionalText(args.name) ?? null,
         prompt: readRequiredText(args.prompt, toolName),
         providerId: readOptionalText(args.providerId) ?? null,
-        shouldWriteBack: readWriteBackFlag(args.writeBack, Boolean(context.conversationId)),
         subagentType: readOptionalText(args.subagentType) ?? null,
       }) as unknown as JsonObject,
     );
@@ -99,8 +97,4 @@ function readOptionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0
     ? value.trim()
     : undefined;
-}
-
-function readWriteBackFlag(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
 }

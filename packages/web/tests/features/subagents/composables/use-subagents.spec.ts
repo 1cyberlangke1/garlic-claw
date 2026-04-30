@@ -27,7 +27,6 @@ function createOverview() {
         requestPreview: '请帮我总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        writeBackStatus: 'pending' as const,
         requestedAt: '2026-03-30T12:00:00.000Z',
         startedAt: '2026-03-30T12:00:01.000Z',
         finishedAt: null,
@@ -47,7 +46,6 @@ function createOverview() {
         resultPreview: '这是后台子代理总结',
         providerId: 'anthropic',
         modelId: 'claude-3-7-sonnet',
-        writeBackStatus: 'sent' as const,
         requestedAt: '2026-03-30T11:50:00.000Z',
         startedAt: '2026-03-30T11:50:01.000Z',
         finishedAt: '2026-03-30T11:50:05.000Z',
@@ -77,7 +75,6 @@ describe('useSubagents', () => {
       startedAt: '2026-03-30T12:00:01.000Z',
       finishedAt: null,
       closedAt: null,
-      writeBackStatus: 'pending',
       request: {
         messages: [
           {

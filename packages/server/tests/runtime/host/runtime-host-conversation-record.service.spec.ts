@@ -518,11 +518,6 @@ describe('RuntimeHostConversationRecordService', () => {
         requestedAt: '2026-04-25T00:00:00.000Z',
         runtimeKind: 'local',
         status: 'queued',
-        writeBackStatus: 'pending',
-        writeBackTarget: {
-          id: parentConversationId,
-          type: 'conversation',
-        },
         startedAt: null,
         finishedAt: null,
         closedAt: null,

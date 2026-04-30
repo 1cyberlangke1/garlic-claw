@@ -412,21 +412,10 @@ describe('RuntimeHostService', () => {
       ],
       modelId: 'gpt-5.2',
       providerId: 'openai',
-      writeBack: {
-        target: {
-          id: fixtureConversationId,
-          type: 'conversation',
-        },
-      },
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(spawned).toMatchObject({
       conversationId: expect.any(String),
-      description: '当前对话总结',
-      messageCount: 2,
-      parentConversationId: fixtureConversationId,
-      pluginDisplayName: 'Memory',
       status: 'queued',
-      writeBackStatus: 'pending',
     });
     await jest.runAllTimersAsync();
     const loaded = await memoryPluginCall(service, 'subagent.wait', {
@@ -435,13 +424,8 @@ describe('RuntimeHostService', () => {
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(loaded).toMatchObject({
       conversationId: (spawned as { conversationId: string }).conversationId,
-      messageCount: 2,
-      result: {
-        text: 'Generated: 请帮我总结当前对话',
-      },
+      result: 'Generated: 请帮我总结当前对话',
       status: 'completed',
-      writeBackMessageId: expect.any(String),
-      writeBackStatus: 'sent',
     });
     await expect(memoryPluginCall(service, 'subagent.list', {}, {
       userId: 'user-1',
@@ -465,7 +449,6 @@ describe('RuntimeHostService', () => {
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(continued).toMatchObject({
       conversationId: (spawned as { conversationId: string }).conversationId,
-      description: '继续补充总结',
       status: 'queued',
     });
     await jest.runAllTimersAsync();
@@ -479,35 +462,21 @@ describe('RuntimeHostService', () => {
         text: 'Generated: 再补充一句结论',
       },
       status: 'completed',
-      writeBackMessageId: expect.any(String),
     });
     await expect(memoryPluginCall(service, 'conversation.messages.list', {}, {
       userId: 'user-1',
       conversationId: fixtureConversationId,
-    })).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        content: '<subagent_result>\nGenerated: 请帮我总结当前对话\n</subagent_result>',
-        id: expect.any(String),
-      }),
-      expect.objectContaining({
-        content: '<subagent_result>\nGenerated: 再补充一句结论\n</subagent_result>',
-        id: expect.any(String),
-      }),
-    ]));
+    })).resolves.toEqual([]);
     jest.useRealTimers();
   });
 
-  it('records subagent failures and write-back failures without fabricating sent status', async () => {
+  it('records subagent failures without fabricating parent conversation messages', async () => {
     jest.useFakeTimers();
     const {
-      runtimeHostConversationMessageService,
       runtimeHostSubagentRunnerService,
       service,
     } = createFixture({
       permissions: ['subagent:run'],
-    });
-    runtimeHostConversationMessageService.sendMessage = jest.fn(() => {
-      throw new Error('message.send failed');
     });
     const started = await memoryPluginCall(service, 'subagent.spawn', {
       messages: [
@@ -518,24 +487,15 @@ describe('RuntimeHostService', () => {
       ],
       modelId: 'gpt-5.2',
       providerId: 'openai',
-      writeBack: {
-        target: {
-          id: fixtureConversationId,
-          type: 'conversation',
-        },
-      },
     }, { userId: 'user-1', conversationId: fixtureConversationId });
     expect(started).toMatchObject({
       status: 'queued',
-      writeBackStatus: 'pending',
     });
     await jest.runAllTimersAsync();
     await expect(memoryPluginCall(service, 'subagent.get', {
       conversationId: (started as { conversationId: string }).conversationId,
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       status: 'completed',
-      writeBackError: 'message.send failed',
-      writeBackStatus: 'failed',
     });
 
     (runtimeHostSubagentRunnerService as any).executeSubagent = async () => {
@@ -561,7 +521,6 @@ describe('RuntimeHostService', () => {
     }, { userId: 'user-1', conversationId: fixtureConversationId })).resolves.toMatchObject({
       error: 'subagent failed',
       status: 'error',
-      writeBackStatus: 'skipped',
     });
     jest.useRealTimers();
   });

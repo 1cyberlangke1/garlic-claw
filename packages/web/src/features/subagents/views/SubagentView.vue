@@ -100,7 +100,7 @@
               <article class="workspace-summary-card">
                 <span class="overview-label">异常态</span>
                 <strong>{{ activeErrorCount }}</strong>
-                <p>失败或回写失败的子代理数量。</p>
+                <p>失败状态的子代理数量。</p>
               </article>
             </div>
 
@@ -141,11 +141,6 @@
                   <span class="overview-label">发起方 / 模型</span>
                   <strong>{{ activeSubagentSummary.pluginDisplayName || activeSubagentSummary.pluginId }}</strong>
                   <p>{{ activeSubagentSummary.providerId || '未指定 provider' }} / {{ activeSubagentSummary.modelId || '未指定 model' }}</p>
-                </article>
-                <article class="detail-card">
-                  <span class="overview-label">回写状态</span>
-                  <strong>{{ writeBackLabel(activeSubagentSummary.writeBackStatus) }}</strong>
-                  <p>{{ activeSubagentSummary.writeBackError || '无回写异常' }}</p>
                 </article>
                 <article class="detail-card">
                   <span class="overview-label">运行方式</span>
@@ -289,9 +284,6 @@
             <span class="meta-chip">消息 {{ subagent.messageCount }} 条</span>
             <span v-if="subagent.providerId" class="meta-chip">{{ subagent.providerId }}</span>
             <span v-if="subagent.modelId" class="meta-chip">{{ subagent.modelId }}</span>
-            <span class="meta-chip writeback-chip" :class="subagent.writeBackStatus">
-              {{ writeBackLabel(subagent.writeBackStatus) }}
-            </span>
           </div>
 
           <p v-if="subagent.resultPreview" class="detail-line">
@@ -299,12 +291,6 @@
           </p>
           <p v-if="subagent.error" class="detail-line warning-text">
             失败原因: {{ subagent.error }}
-          </p>
-          <p v-if="subagent.writeBackError" class="detail-line warning-text">
-            回写失败: {{ subagent.writeBackError }}
-          </p>
-          <p v-if="subagent.writeBackTarget" class="detail-line muted-text">
-            回写目标: {{ subagent.writeBackTarget.label || subagent.writeBackTarget.id }}
           </p>
           <p class="detail-line muted-text">
             请求时间: {{ formatTime(subagent.requestedAt) }}
@@ -373,7 +359,6 @@ const {
   filteredSubagentCount,
   runningSubagentCount,
   errorSubagentCount,
-  writeBackAttentionCount,
   refreshAll,
   closeSubagentConversation,
   selectConversation,
@@ -391,7 +376,7 @@ const activeRunningCount = computed(() =>
   activeConversationSubagents.value.filter((subagent) => subagent.status === 'queued' || subagent.status === 'running').length,
 )
 const activeErrorCount = computed(() =>
-  activeConversationSubagents.value.filter((subagent) => subagent.status === 'error' || subagent.writeBackStatus === 'failed').length,
+  activeConversationSubagents.value.filter((subagent) => subagent.status === 'error').length,
 )
 
 const heroHeadline = computed(() => {
@@ -422,12 +407,6 @@ const overviewCards = computed(() => [
     tone: runningSubagentCount.value > 0 ? 'warning' : 'neutral',
   },
   {
-    label: '回写关注项',
-    value: String(writeBackAttentionCount.value),
-    note: '重点关注等待回写或回写失败的子代理',
-    tone: writeBackAttentionCount.value > 0 ? 'warning' : 'neutral',
-  },
-  {
     label: '失败子代理',
     value: String(errorSubagentCount.value),
     note: errorSubagentCount.value > 0 ? '失败子代理需要回看请求和插件权限' : '没有失败子代理',
@@ -440,7 +419,6 @@ const filterOptions = [
   { value: 'running', label: '运行中' },
   { value: 'completed', label: '已完成' },
   { value: 'error', label: '失败' },
-  { value: 'writeback-failed', label: '回写失败' },
 ]
 
 function openSubagentWindow(subagent: PluginSubagentSummary) {
@@ -463,19 +441,6 @@ function statusLabel(status: 'closed' | 'completed' | 'error' | 'interrupted' | 
       return '已关闭'
     default:
       return '失败'
-  }
-}
-
-function writeBackLabel(status: 'pending' | 'sent' | 'failed' | 'skipped') {
-  switch (status) {
-    case 'pending':
-      return '回写等待中'
-    case 'sent':
-      return '已回写'
-    case 'failed':
-      return '回写失败'
-    default:
-      return '未回写'
   }
 }
 
@@ -697,20 +662,17 @@ function readSubagentDisplayLabel(subagent: PluginSubagentSummary) {
 }
 
 .status-pill.running,
-.status-pill.queued,
-.writeback-chip.pending {
+.status-pill.queued {
   border-color: rgba(214, 162, 36, 0.4);
   color: #b77c15;
 }
 
-.status-pill.completed,
-.writeback-chip.sent {
+.status-pill.completed {
   border-color: rgba(44, 125, 88, 0.4);
   color: #2c7d58;
 }
 
-.status-pill.error,
-.writeback-chip.failed {
+.status-pill.error {
   border-color: rgba(184, 74, 74, 0.4);
   color: #b84a4a;
 }

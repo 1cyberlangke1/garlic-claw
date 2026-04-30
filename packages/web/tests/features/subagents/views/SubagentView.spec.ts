@@ -30,11 +30,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         requestPreview: '请帮我总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        writeBackStatus: 'pending',
-        writeBackTarget: {
-          type: 'conversation',
-          id: 'conversation-1',
-        },
         requestedAt: '2026-03-30T12:00:00.000Z',
         startedAt: '2026-03-30T12:00:01.000Z',
         finishedAt: null,
@@ -63,11 +58,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
             requestPreview: '请帮我总结当前对话',
             providerId: 'openai',
             modelId: 'gpt-5.2',
-            writeBackStatus: 'pending',
-            writeBackTarget: {
-              type: 'conversation',
-              id: 'conversation-1',
-            },
             requestedAt: '2026-03-30T12:00:00.000Z',
             startedAt: '2026-03-30T12:00:01.000Z',
             finishedAt: null,
@@ -102,11 +92,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
               requestPreview: '请帮我总结当前对话',
               providerId: 'openai',
               modelId: 'gpt-5.2',
-              writeBackStatus: 'pending',
-              writeBackTarget: {
-                type: 'conversation',
-                id: 'conversation-1',
-              },
               requestedAt: '2026-03-30T12:00:00.000Z',
               startedAt: '2026-03-30T12:00:01.000Z',
               finishedAt: null,
@@ -134,11 +119,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         requestPreview: '请帮我总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        writeBackStatus: 'pending',
-        writeBackTarget: {
-          type: 'conversation',
-          id: 'conversation-1',
-        },
         requestedAt: '2026-03-30T12:00:00.000Z',
         startedAt: '2026-03-30T12:00:01.000Z',
         finishedAt: null,
@@ -168,11 +148,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         requestPreview: '请帮我总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        writeBackStatus: 'pending',
-        writeBackTarget: {
-          type: 'conversation',
-          id: 'conversation-1',
-        },
         requestedAt: '2026-03-30T12:00:00.000Z',
         startedAt: '2026-03-30T12:00:01.000Z',
         finishedAt: null,
@@ -208,11 +183,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
           requestPreview: '请帮我总结当前对话',
           providerId: 'openai',
           modelId: 'gpt-5.2',
-          writeBackStatus: 'pending',
-          writeBackTarget: {
-            type: 'conversation',
-            id: 'conversation-1',
-          },
           requestedAt: '2026-03-30T12:00:00.000Z',
           startedAt: '2026-03-30T12:00:01.000Z',
           finishedAt: null,
@@ -235,7 +205,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
       startedAt: '2026-03-30T12:00:01.000Z',
       finishedAt: null,
       closedAt: null,
-      writeBackStatus: 'pending',
       request: {
         messages: [
           {
@@ -285,11 +254,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
         requestPreview: '请帮我总结当前对话',
         providerId: 'openai',
         modelId: 'gpt-5.2',
-        writeBackStatus: 'pending',
-        writeBackTarget: {
-          type: 'conversation',
-          id: 'conversation-1',
-        },
         requestedAt: '2026-03-30T12:00:00.000Z',
         startedAt: '2026-03-30T12:00:01.000Z',
         finishedAt: null,
@@ -307,7 +271,6 @@ vi.mock('@/features/subagents/composables/use-subagents', () => ({
     filteredSubagentCount: computed(() => 1),
     runningSubagentCount: computed(() => 1),
     errorSubagentCount: computed(() => 0),
-    writeBackAttentionCount: computed(() => 1),
     subagentCount: computed(() => 1),
     selectConversation,
     selectWindow,
@@ -340,7 +303,6 @@ describe('SubagentView', () => {
     expect(wrapper.text()).toContain('继续已有后台子代理')
     expect(wrapper.text()).toContain('探索')
     expect(wrapper.text()).toContain('消息 3 条')
-    expect(wrapper.text()).toContain('回写等待中')
     expect(wrapper.text()).toContain('上下文消息')
     expect(wrapper.text()).toContain('这是后台子代理总结')
     expect(wrapper.text()).toContain('关闭')

@@ -7,15 +7,9 @@ import type {
   PluginSubagentStatus,
   PluginSubagentSpawnParams,
   PluginSubagentWaitParams,
-  PluginSubagentWriteBackStatus,
 } from './plugin-ai';
 import type { ConversationSubagentState } from './chat';
-import type { PluginMessageTargetInfo, PluginMessageTargetRef } from './plugin-chat';
 import type { PluginCallContext, PluginRuntimeKind } from './plugin-core';
-
-export interface PluginSubagentWriteBack {
-  target?: PluginMessageTargetRef | null;
-}
 
 export interface PluginSubagentTypeSummary {
   id: string;
@@ -23,8 +17,16 @@ export interface PluginSubagentTypeSummary {
   description?: string;
 }
 
-export interface PluginSubagentSpawnWithWriteBackParams extends PluginSubagentSpawnParams {
-  writeBack?: PluginSubagentWriteBack | null;
+export interface PluginSubagentHandle {
+  conversationId: string;
+  status: PluginSubagentStatus;
+  title: string;
+  name?: string;
+}
+
+export interface PluginSubagentWaitResult extends PluginSubagentHandle {
+  result?: string;
+  error?: string;
 }
 
 export interface PluginSubagentSummary {
@@ -45,10 +47,6 @@ export interface PluginSubagentSummary {
   providerId?: string;
   modelId?: string;
   error?: string;
-  writeBackStatus: PluginSubagentWriteBackStatus;
-  writeBackTarget?: PluginMessageTargetInfo | null;
-  writeBackError?: string;
-  writeBackMessageId?: string;
   requestedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
