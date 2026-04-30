@@ -7,7 +7,6 @@ dist/
 packages/*/dist/
 packages/server/tmp/
 workspace/
-log/
 packages/*/node_modules/.cache/
 packages/web/node_modules/.vite/
 packages/web/node_modules/.vite-temp/
@@ -80,3 +79,6 @@ docs/superpowers/
 # 其他
 other/
 .cache/
+.playwright-mcp/
+log/
+.claude/

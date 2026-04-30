@@ -205,7 +205,7 @@ const {
 
 /* 创建表单 */
 .create-form {
-  background: rgba(14, 24, 38, 0.85);
+  background: var(--surface-panel);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   padding: 1.2rem;
@@ -228,7 +228,7 @@ const {
   margin-bottom: 0.3rem;
 }
 .create-form select {
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -239,7 +239,7 @@ const {
   width: 100%;
 }
 .create-form textarea {
-  background: rgba(11, 21, 35, 0.9);
+  background: var(--surface-panel-soft-strong);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--text);
@@ -265,7 +265,7 @@ const {
   gap: 0.8rem;
 }
 .automation-card {
-  background: rgba(14, 24, 38, 0.85);
+  background: var(--surface-panel);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border-radius: var(--radius);

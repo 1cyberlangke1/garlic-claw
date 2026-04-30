@@ -260,6 +260,7 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   flex-direction: column;
   gap: 1.25rem;
   min-height: 0;
+  padding: 1.5rem 2rem;
 }
 
 .command-hero,
@@ -421,6 +422,12 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 
   .command-conflict-panel {
     width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .commands-page {
+    padding: 1rem;
   }
 }
 </style>

@@ -6,6 +6,44 @@
   --bg-sidebar: rgba(9, 15, 24, 0.98);
   --bg-glass: rgba(15, 25, 40, 0.96);
   --bg-glass-light: rgba(10, 17, 29, 0.96);
+  --surface-card-gradient:
+    linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(10, 17, 29, 0.96)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  --surface-hero-gradient:
+    linear-gradient(135deg, rgba(103, 199, 207, 0.1), rgba(240, 198, 118, 0.05)),
+    linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(10, 17, 29, 0.96));
+  --surface-sidebar-gradient:
+    linear-gradient(180deg, rgba(9, 15, 24, 0.98), rgba(9, 15, 24, 0.9)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  --surface-panel: rgba(14, 24, 38, 0.85);
+  --surface-panel-strong: rgba(14, 24, 38, 0.96);
+  --surface-panel-soft: rgba(11, 21, 35, 0.72);
+  --surface-panel-soft-strong: rgba(11, 21, 35, 0.9);
+  --surface-panel-muted: rgba(12, 22, 36, 0.52);
+  --surface-panel-muted-strong: rgba(12, 22, 36, 0.78);
+  --surface-panel-hover: rgba(11, 21, 35, 0.85);
+  --surface-panel-hover-soft: rgba(9, 17, 29, 0.42);
+  --surface-panel-hover-faint: rgba(9, 17, 29, 0.32);
+  --surface-subtle: rgba(255, 255, 255, 0.03);
+  --surface-subtle-strong: rgba(255, 255, 255, 0.06);
+  --surface-overlay: rgba(0, 0, 0, 0.45);
+  --surface-overlay-strong: rgba(0, 0, 0, 0.6);
+  --surface-code: rgba(0, 0, 0, 0.18);
+  --surface-success-soft: rgba(89, 207, 155, 0.14);
+  --surface-info-soft: rgba(76, 189, 255, 0.12);
+  --surface-danger-soft: rgba(255, 107, 107, 0.12);
+  --surface-warning-soft: rgba(255, 184, 77, 0.15);
+  --surface-brand-soft: rgba(124, 106, 246, 0.16);
+  --focus-ring: rgba(103, 199, 207, 0.24);
+  --shell-bg: #0f172a;
+  --shell-bg-elevated: #1e293b;
+  --shell-bg-hover: #334155;
+  --shell-text: #f1f5f9;
+  --shell-text-secondary: #cbd5e1;
+  --shell-text-tertiary: #94a3b8;
+  --shell-border: #334155;
+  --shell-border-light: #475569;
+  --shell-active: #18a058;
 
   /* 颜色系统 */
   --text: #ecf3ff;
@@ -34,6 +72,68 @@
   --header-gradient: linear-gradient(135deg, rgba(103, 199, 207, 0.12), rgba(103, 199, 207, 0.05));
 }
 
+/* Light theme overrides */
+html.light {
+  --bg-card: rgba(255, 255, 255, 0.92);
+  --bg-input: rgba(248, 250, 252, 0.95);
+  --bg-sidebar: rgba(248, 250, 252, 0.98);
+  --bg-glass: rgba(255, 255, 255, 0.9);
+  --bg-glass-light: rgba(248, 250, 252, 0.95);
+  --surface-card-gradient:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.94)),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.015), transparent);
+  --surface-hero-gradient:
+    linear-gradient(135deg, rgba(8, 145, 178, 0.12), rgba(22, 163, 74, 0.06)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95));
+  --surface-sidebar-gradient:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.98)),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.015), transparent);
+  --surface-panel: rgba(255, 255, 255, 0.86);
+  --surface-panel-strong: rgba(255, 255, 255, 0.96);
+  --surface-panel-soft: rgba(255, 255, 255, 0.72);
+  --surface-panel-soft-strong: rgba(248, 250, 252, 0.96);
+  --surface-panel-muted: rgba(241, 245, 249, 0.82);
+  --surface-panel-muted-strong: rgba(241, 245, 249, 0.92);
+  --surface-panel-hover: rgba(241, 245, 249, 0.98);
+  --surface-panel-hover-soft: rgba(226, 232, 240, 0.72);
+  --surface-panel-hover-faint: rgba(226, 232, 240, 0.5);
+  --surface-subtle: rgba(15, 23, 42, 0.04);
+  --surface-subtle-strong: rgba(15, 23, 42, 0.07);
+  --surface-overlay: rgba(148, 163, 184, 0.24);
+  --surface-overlay-strong: rgba(148, 163, 184, 0.42);
+  --surface-code: rgba(15, 23, 42, 0.08);
+  --surface-success-soft: rgba(22, 163, 74, 0.12);
+  --surface-info-soft: rgba(8, 145, 178, 0.12);
+  --surface-danger-soft: rgba(220, 38, 38, 0.1);
+  --surface-warning-soft: rgba(217, 119, 6, 0.14);
+  --surface-brand-soft: rgba(14, 165, 233, 0.12);
+  --focus-ring: rgba(8, 145, 178, 0.2);
+  --shell-bg: #f8fafc;
+  --shell-bg-elevated: #ffffff;
+  --shell-bg-hover: #f1f5f9;
+  --shell-text: #0f172a;
+  --shell-text-secondary: #475569;
+  --shell-text-tertiary: #94a3b8;
+  --shell-border: #e2e8f0;
+  --shell-border-light: #cbd5e1;
+  --shell-active: #0891b2;
+
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --accent: #0891b2;
+  --accent-hover: #0e7490;
+  --accent-light: rgba(8, 145, 178, 0.12);
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #d97706;
+  --border: rgba(148, 163, 184, 0.25);
+  --border-hover: rgba(148, 163, 184, 0.4);
+  --border-glow: rgba(8, 145, 178, 0.15);
+  --shadow: 0 24px 56px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 12px 28px rgba(0, 0, 0, 0.06);
+  --header-gradient: linear-gradient(135deg, rgba(8, 145, 178, 0.08), rgba(8, 145, 178, 0.03));
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -51,6 +151,27 @@ html, body, #app {
   color: var(--text);
   line-height: 1.6;
   position: relative;
+}
+
+html.light,
+html.light body,
+html.light #app {
+  background:
+    radial-gradient(circle at top right, rgba(8, 145, 178, 0.1), transparent 32%),
+    radial-gradient(circle at bottom left, rgba(217, 119, 6, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fafc, #f1f5f9);
+}
+
+html.light body::before {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.2), transparent 72%);
+}
+
+html.light input,
+html.light textarea {
+  background: rgba(255, 255, 255, 0.85);
 }
 
 /* 添加全局网格背景图案 */
@@ -117,7 +238,7 @@ input, textarea {
 }
 input:focus, textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.24), 0 0 15px rgba(103, 199, 207, 0.15);
+  box-shadow: 0 0 0 1px var(--focus-ring), 0 0 15px rgba(103, 199, 207, 0.15);
 }
 input::placeholder, textarea::placeholder {
   color: var(--text-muted);
@@ -129,12 +250,11 @@ input::placeholder, textarea::placeholder {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  background: transparent;
 }
 
 .auth-card {
-  background:
-    linear-gradient(180deg, rgba(15, 25, 40, 0.96), rgba(10, 17, 29, 0.96)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+  background: var(--surface-card-gradient);
   padding: 2.5rem;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
@@ -168,6 +288,12 @@ input::placeholder, textarea::placeholder {
   width: 100%;
   padding: 0.7em;
   margin-top: 0.5rem;
+  font-size: 1rem;
+}
+.auth-card .dev-login {
+  width: 100%;
+  padding: 0.7em;
+  margin-top: 0.6rem;
   font-size: 1rem;
 }
 .auth-card .error {

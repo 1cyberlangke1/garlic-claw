@@ -38,5 +38,5 @@ if %ERRORLEVEL% EQU 0 (
   exit /b %ERRORLEVEL%
 )
 
-echo Python 3.10+ is required. Please install Python and try again.
+echo "未找到 Python，请先安装 Python 3.10 或更高版本"
 exit /b 1
