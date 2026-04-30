@@ -187,9 +187,9 @@ const {
   height: 100%;
 }
 .automations-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
   margin-bottom: 1.5rem;
 }
 .hero-icon {
@@ -197,9 +197,6 @@ const {
   margin-right: 6px;
 }
 
-.automations-header h1 {
-  font-size: 1.4rem;
-}
 .loading, .empty {
   text-align: center;
   padding: 3rem 0;

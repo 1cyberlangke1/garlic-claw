@@ -3,24 +3,22 @@
     <section class="command-hero">
       <header class="command-hero-header">
         <h1><Icon :icon="keyboardBold" class="hero-icon" aria-hidden="true" />命令管理</h1>
-        <div class="command-hero-side">
-          <button
-            type="button"
-            class="hero-action icon-only"
-            title="刷新全部"
-            @click="refreshAll()"
-          >
-            <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
-          </button>
-          <div class="hero-note">
-            <span class="hero-note-label">命令概览</span>
-            <strong>{{ heroHeadline }}</strong>
-            <p>冲突在这里查看，到对应插件页处理。</p>
-          </div>
-        </div>
+        <button
+          type="button"
+          class="hero-action icon-only"
+          title="刷新全部"
+          @click="refreshAll()"
+        >
+          <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
+        </button>
       </header>
 
       <div class="overview-grid">
+        <article class="overview-card accent">
+          <span class="overview-label">命令概览</span>
+          <strong>{{ heroHeadline }}</strong>
+          <p>冲突在这里查看，到对应插件页处理。</p>
+        </article>
         <article
           v-for="card in overviewCards"
           :key="card.label"
@@ -260,13 +258,18 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   padding: 1.5rem 2rem;
 }
 
-.command-hero,
 .command-list-panel,
 .command-conflict-panel {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) * 1.2);
   background: var(--bg-card);
   padding: 1rem;
+}
+
+.command-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .command-hero-header,
@@ -300,8 +303,6 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   flex-shrink: 0;
 }
 
-.command-hero-side,
-.hero-note,
 .command-list,
 .conflict-list {
   display: flex;
@@ -315,8 +316,7 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 }
 
 .hero-kicker,
-.panel-kicker,
-.hero-note-label {
+.panel-kicker {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;

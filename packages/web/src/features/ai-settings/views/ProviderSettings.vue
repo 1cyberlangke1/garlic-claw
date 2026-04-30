@@ -1,11 +1,10 @@
 <template>
-  <div class="ai-settings-layout">
-    <aside class="ai-settings-sidebar">
-      <div class="sider-inner">
-        <header class="sider-title">
-          <h1 class="sider-title-text"><Icon class="hero-icon" :icon="codeBold" aria-hidden="true" />AI 设置</h1>
-        </header>
-
+  <div class="ai-settings-page">
+    <header class="page-header">
+      <h1><Icon class="hero-icon" :icon="codeBold" aria-hidden="true" />AI 设置</h1>
+    </header>
+    <div class="ai-settings-shell">
+      <aside class="ai-settings-sidebar">
         <nav class="sider-menu">
           <button
             v-for="item in navItems"
@@ -19,7 +18,6 @@
             <span class="menu-label">{{ item.label }}</span>
           </button>
         </nav>
-      </div>
     </aside>
 
     <main class="ai-settings-content">
@@ -216,25 +214,26 @@
         @save="saveContextGovernanceConfig"
       />
     </main>
-
-    <AiProviderEditorDialog
-      :catalog="catalog"
-      :initial-config="editingProvider"
-      :title="editingProvider ? '编辑服务商' : '新增服务商'"
-      :visible="showProviderDialog"
-      @close="showProviderDialog = false"
-      @save="saveProvider"
-    />
-
-    <AiModelDiscoveryDialog
-      :loading="discoveringModels"
-      :models="discoveredModels"
-      :title="selectedProvider ? `发现 ${selectedProvider.name} 的模型` : '发现模型'"
-      :visible="showDiscoveryDialog"
-      @add="importDiscoveredModels"
-      @close="showDiscoveryDialog = false"
-    />
   </div>
+
+  <AiProviderEditorDialog
+    :catalog="catalog"
+    :initial-config="editingProvider"
+    :title="editingProvider ? '编辑服务商' : '新增服务商'"
+    :visible="showProviderDialog"
+    @close="showProviderDialog = false"
+    @save="saveProvider"
+  />
+
+  <AiModelDiscoveryDialog
+    :loading="discoveringModels"
+    :models="discoveredModels"
+    :title="selectedProvider ? `发现 ${selectedProvider.name} 的模型` : '发现模型'"
+    :visible="showDiscoveryDialog"
+    @add="importDiscoveredModels"
+    @close="showDiscoveryDialog = false"
+  />
+</div>
 </template>
 
 <script setup lang="ts">
@@ -409,44 +408,46 @@ function saveCtx(model: AiModelConfig) {
 /* ═══════════════════════════════════════════════════════════════════════
    布局
    ═══════════════════════════════════════════════════════════════════════ */
-.ai-settings-layout {
+.ai-settings-page {
   display: flex;
+  flex-direction: column;
   height: 100%;
-  overflow: hidden;
+  padding: 1.5rem 2rem;
+  gap: 18px;
   background: var(--shell-bg, #0f172a);
 }
 
-/* ── 侧边栏：对齐 AdminConsoleLayout ── */
+.page-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+}
+
+.ai-settings-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--shell-border, #334155);
+  border-radius: 16px;
+  background: var(--shell-bg-elevated, #1e293b);
+  overflow: hidden;
+}
+
+/* ── 侧边栏 ── */
 .ai-settings-sidebar {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   width: 200px;
   border-right: 1px solid var(--shell-border, #334155);
-  background: var(--shell-bg-elevated, #1e293b);
   color: var(--shell-text, #f1f5f9);
   overflow-y: auto;
-}
-.sider-inner {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 8px 0;
-}
-.sider-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px 16px 24px;
-  font-size: 16px;
-  font-weight: 600;
-  white-space: nowrap;
 }
 .hero-icon {
   vertical-align: -0.15em;
   margin-right: 6px;
 }
-.sider-menu { flex: 1; overflow-y: auto; padding: 0 8px; }
+.sider-menu { flex: 1; overflow-y: auto; padding: 12px 8px; }
 .sider-menu::-webkit-scrollbar { display: none; }
 
 .menu-item {
@@ -757,7 +758,8 @@ function saveCtx(model: AiModelConfig) {
   .tool-management-hint { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
-  .ai-settings-layout { flex-direction: column; }
+  .ai-settings-page { padding: 1rem; }
+  .ai-settings-shell { flex-direction: column; }
   .ai-settings-sidebar { width: 100%; max-height: 110px; flex-shrink: 0; border-right: none; border-bottom: 1px solid var(--shell-border, #334155); }
   .sider-menu { display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; overflow-y: hidden; }
   .menu-item { min-height: 40px; padding: 0 14px; white-space: nowrap; flex-shrink: 0; }

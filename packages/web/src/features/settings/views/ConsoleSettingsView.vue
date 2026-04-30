@@ -107,7 +107,7 @@ function handleToggleDarkMode() {
 <style scoped>
 .console-settings-page {
   min-height: 100%;
-  padding: 24px;
+  padding: 1.5rem 2rem;
   background:
     radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 28%),
     radial-gradient(circle at left 20%, rgba(148, 163, 184, 0.08), transparent 26%),
@@ -228,7 +228,7 @@ function handleToggleDarkMode() {
 
 @media (max-width: 768px) {
   .console-settings-page {
-    padding: 16px;
+    padding: 1rem;
   }
 
   .settings-card {

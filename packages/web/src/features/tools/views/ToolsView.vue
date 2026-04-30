@@ -176,10 +176,8 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
 }
 
 .tools-hero {
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--surface-panel-soft);
+  display: grid;
+  gap: 10px;
 }
 
 .hero-copy {

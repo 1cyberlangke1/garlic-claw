@@ -32,10 +32,7 @@ import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
 }
 
 .mcp-hero {
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface-panel-soft);
+  /* clean header row — no box */
 }
 
 .mcp-management-entry {

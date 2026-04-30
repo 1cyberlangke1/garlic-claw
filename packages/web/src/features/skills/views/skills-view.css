@@ -19,7 +19,6 @@
   padding: 1.5rem 2rem;
 }
 
-.skills-page .skill-hero,
 .skills-page .skill-list-panel,
 .skills-page .skill-detail-panel {
   border: 1px solid var(--border);
@@ -28,7 +27,12 @@
   padding: 1rem;
 }
 
-.skills-page .skill-hero,
+.skills-page .skill-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
 .skills-page .skill-list-panel,
 .skills-page .skill-detail-panel,
 .skills-page .skill-list,

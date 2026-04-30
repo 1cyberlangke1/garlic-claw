@@ -204,7 +204,6 @@ function pendingActionLabel(action: PluginActionName): string {
   background:
     linear-gradient(135deg, rgba(71, 34, 18, 0.78), rgba(24, 16, 28, 0.86)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
-  box-shadow: 0 20px 44px rgba(1, 6, 15, 0.22);
 }
 
 .attention-header,
