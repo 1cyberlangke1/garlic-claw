@@ -73,6 +73,7 @@ async function main() {
   page.on('console', handlePageConsole);
   let accessToken = '';
   let createdConversationId = null;
+  const createdConversationIds = new Set();
   let initialProviderIds = new Set();
   let remotePluginHandle = null;
 
@@ -97,13 +98,14 @@ async function main() {
 
     await cleanupSmokeArtifacts(accessToken, {
       conversationId: null,
+      conversationIds: [],
       initialProviderIds,
       prefix: PREFIX,
       providerId: PROVIDER_ID,
     });
 
     await createProviderThroughUi(page, accessToken, fakeOpenAi.url);
-    const chatFlow = await runChatFlow(page, accessToken);
+    const chatFlow = await runChatFlow(page, accessToken, createdConversationIds);
     createdConversationId = chatFlow.conversationId;
     await verifyMcpPage(page);
     await verifyPersonasPage(page);
@@ -137,6 +139,7 @@ async function main() {
     await Promise.allSettled([
       cleanupSmokeArtifacts(accessToken, {
         conversationId: createdConversationId,
+        conversationIds: [...createdConversationIds],
         initialProviderIds,
         prefix: PREFIX,
         providerId: PROVIDER_ID,
@@ -473,7 +476,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   }, '等待当前默认模型持久化');
 }
 
-async function runChatFlow(page, accessToken) {
+async function runChatFlow(page, accessToken, createdConversationIds) {
   const beforeIds = new Set((await listConversations(accessToken)).map((item) => item.id));
   await page.goto('/', { waitUntil: 'networkidle' });
   const createConversationResponse = page.waitForResponse((response) =>
@@ -487,6 +490,7 @@ async function runChatFlow(page, accessToken) {
     const conversations = await listConversations(accessToken);
     return conversations.find((item) => !beforeIds.has(item.id)) ?? null;
   }, '等待新对话创建');
+  createdConversationIds.add(conversation.id);
   await page.reload({ waitUntil: 'networkidle' });
   await expectConversationSelected(page, conversation.id);
 
@@ -546,6 +550,7 @@ async function runChatFlow(page, accessToken) {
     }).catch(() => []);
     return subagents.find((item) => item.title === SUBAGENT_NAME) ?? null;
   }, '等待聊天触发命名子代理');
+  createdConversationIds.add(subagentConversation.id);
   await waitFor(async () => {
     const tab = page.getByRole('button', { name: SUBAGENT_NAME });
     return await tab.count() > 0 ? true : null;
@@ -791,8 +796,20 @@ async function cleanupSmokeArtifacts(accessToken, input) {
   } catch {}
 
   try {
-    if (input.conversationId) {
-      await requestJson(`/chat/conversations/${input.conversationId}`, {
+    const explicitConversationIds = Array.from(new Set([
+      input.conversationId,
+      ...(Array.isArray(input.conversationIds) ? input.conversationIds : []),
+    ].filter(Boolean)));
+    for (const conversationId of explicitConversationIds) {
+      await requestJson(`/chat/conversations/${conversationId}`, {
+        headers,
+        method: 'DELETE',
+      }).catch(() => undefined);
+    }
+
+    const smokeConversationIds = await findSmokeConversationIds(headers, SMOKE_PREFIX_ROOT);
+    for (const conversationId of smokeConversationIds) {
+      await requestJson(`/chat/conversations/${conversationId}`, {
         headers,
         method: 'DELETE',
       }).catch(() => undefined);
@@ -857,13 +874,51 @@ async function cleanupSmokeArtifacts(accessToken, input) {
     '清理后仍残留 smoke automation',
   );
   assert.ok(
-    conversations.every((conversation) => !conversation.title?.startsWith(input.prefix)),
+    conversations.every((conversation) => !conversation.title?.startsWith(SMOKE_PREFIX_ROOT)),
     '清理后仍残留 smoke conversation',
+  );
+  const lingeringSmokeConversationIds = await findSmokeConversationIds(headers, SMOKE_PREFIX_ROOT);
+  assert.equal(
+    lingeringSmokeConversationIds.length,
+    0,
+    '清理后仍残留带 smoke 消息内容的会话',
   );
   assert.ok(
     plugins.every((plugin) => !plugin.name?.startsWith(input.prefix)),
     '清理后仍残留 smoke plugin',
   );
+}
+
+async function findSmokeConversationIds(headers, smokePrefixRoot) {
+  const conversations = await requestJson('/chat/conversations', { headers }).catch(() => []);
+  const conversationIds = new Set();
+
+  for (const conversation of conversations) {
+    if (conversation.title?.startsWith(smokePrefixRoot)) {
+      conversationIds.add(conversation.id);
+      continue;
+    }
+    const detail = await requestJson(`/chat/conversations/${conversation.id}`, {
+      headers,
+    }).catch(() => null);
+    if (detail?.messages?.some((message) => conversationMessageContainsSmokePrefix(message, smokePrefixRoot))) {
+      conversationIds.add(conversation.id);
+    }
+  }
+
+  return [...conversationIds];
+}
+
+function conversationMessageContainsSmokePrefix(message, smokePrefixRoot) {
+  if (typeof message?.content === 'string') {
+    return message.content.includes(smokePrefixRoot);
+  }
+
+  if (typeof message?.content === 'undefined' || message?.content === null) {
+    return false;
+  }
+
+  return JSON.stringify(message.content).includes(smokePrefixRoot);
 }
 
 async function listConversations(accessToken) {
