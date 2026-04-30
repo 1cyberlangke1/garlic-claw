@@ -1,7 +1,7 @@
 <template>
   <div class="automations-view">
     <div class="automations-header">
-      <h1>自动化</h1>
+      <h1><Icon :icon="cpuBoltBold" class="hero-icon" aria-hidden="true" />自动化</h1>
       <button @click="showCreate = !showCreate">
         {{ showCreate ? '取消' : '+ 新建自动化' }}
       </button>
@@ -159,6 +159,8 @@
 </template>
 
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
+import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
 import { useAutomations } from '@/features/automations/composables/use-automations'
 
 const {
@@ -185,14 +187,16 @@ const {
   height: 100%;
 }
 .automations-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
   margin-bottom: 1.5rem;
 }
-.automations-header h1 {
-  font-size: 1.4rem;
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
+
 .loading, .empty {
   text-align: center;
   padding: 3rem 0;

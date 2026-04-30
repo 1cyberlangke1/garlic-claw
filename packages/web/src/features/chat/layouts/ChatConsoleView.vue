@@ -4,7 +4,7 @@
       <header class="rail-header">
         <div class="brand-block">
           <span class="brand-kicker">Chat Workbench</span>
-          <h1>Garlic Claw</h1>
+          <h1>聊天工作台</h1>
         </div>
         <button type="button" class="new-chat-button" @click="newChat">
           新对话
@@ -43,9 +43,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
-import ChatView from '@/features/chat/views/ChatView.vue'
 import { useChatStore } from '@/features/chat/store/chat'
+import ChatView from '@/features/chat/views/ChatView.vue'
+import { computed, onMounted } from 'vue'
 
 const chat = useChatStore()
 const visibleConversations = computed(() =>

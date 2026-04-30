@@ -2,7 +2,7 @@
   <section class="plugin-sidebar">
     <div class="sidebar-header">
       <div class="sidebar-header-copy">
-        <span class="sidebar-kicker">Plugin Index</span>
+        <span class="sidebar-kicker">插件索引</span>
         <h2>插件</h2>
         <p>默认聚焦用户可感知插件，系统本地插件按需展开。</p>
       </div>
@@ -414,7 +414,7 @@ function pluginSortWeight(plugin: PluginInfo): number {
  * @returns 扩展摘要
  */
 function pluginSurfaceSummary(plugin: PluginInfo): string {
-  return `${plugin.manifest.tools.length} 工具 · ${plugin.manifest.hooks?.length ?? 0} Hook · ${plugin.manifest.routes?.length ?? 0} Route`
+  return `${plugin.manifest.tools.length} 工具 · ${plugin.manifest.hooks?.length ?? 0} 个钩子 · ${plugin.manifest.routes?.length ?? 0} 条路由`
 }
 
 function readShowSystemBuiltinsPreference(): boolean {

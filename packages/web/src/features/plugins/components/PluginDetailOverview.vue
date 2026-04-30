@@ -73,7 +73,7 @@
       <article class="summary-card">
         <span class="summary-label">能力概览</span>
         <strong>{{ plugin.manifest.tools.length }} 个工具</strong>
-        <p>{{ plugin.manifest.hooks?.length ?? 0 }} Hook / {{ cronCount }} Cron / {{ plugin.manifest.routes?.length ?? 0 }} Route / {{ plugin.manifest.permissions.length }} 权限</p>
+        <p>{{ plugin.manifest.hooks?.length ?? 0 }} 个钩子 / {{ cronCount }} 个定时任务 / {{ plugin.manifest.routes?.length ?? 0 }} 条路由 / {{ plugin.manifest.permissions.length }} 项权限</p>
       </article>
     </div>
 
@@ -92,7 +92,7 @@
       </article>
       <article class="tag-group">
         <div class="tag-group-head">
-          <span class="tag-label">Hook</span>
+          <span class="tag-label">钩子</span>
           <span class="tag-count">{{ plugin.manifest.hooks?.length ?? 0 }}</span>
         </div>
         <div class="token-list">

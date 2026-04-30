@@ -2,14 +2,14 @@
   <section class="route-card">
     <header class="route-header">
       <div>
-        <h3>Web Routes</h3>
+        <h3>Web 路由</h3>
         <p>插件通过统一协议声明的宿主 HTTP 扩展点。</p>
       </div>
       <span class="route-count">{{ routes.length }} 个</span>
     </header>
 
     <div v-if="routes.length === 0" class="route-empty">
-      插件没有声明 Web Route。
+      插件没有声明 Web 路由。
     </div>
 
     <ul v-else class="route-list">
@@ -29,8 +29,8 @@
     <div v-if="routes.length > 0" class="tester-card">
       <div class="tester-header">
         <div>
-          <h4>Route Tester</h4>
-          <p>直接调用当前插件声明的 JSON Route，验证实际返回结果。</p>
+          <h4>路由调试器</h4>
+          <p>直接调用当前插件声明的 JSON 路由，验证实际返回结果。</p>
         </div>
         <button
           type="button"
@@ -39,13 +39,13 @@
           :disabled="running"
           @click="runSelectedRoute"
         >
-          {{ running ? '调用中...' : '调用 Route' }}
+          {{ running ? '调用中...' : '调用路由' }}
         </button>
       </div>
 
       <div class="tester-grid">
         <label class="tester-field">
-          <span>Route</span>
+          <span>路由</span>
           <select v-model="selectedPath" data-test="route-path-select">
             <option v-for="route in routes" :key="route.path" :value="route.path">
               {{ route.path }}
@@ -53,7 +53,7 @@
           </select>
         </label>
         <label class="tester-field">
-          <span>Method</span>
+          <span>请求方法</span>
           <select v-model="selectedMethod">
             <option v-for="method in selectedRouteMethods" :key="method" :value="method">
               {{ method }}
@@ -61,7 +61,7 @@
           </select>
         </label>
         <label class="tester-field tester-span">
-          <span>Query</span>
+          <span>查询参数</span>
           <input
             v-model="queryText"
             type="text"
@@ -72,7 +72,7 @@
           v-if="selectedMethod !== 'GET' && selectedMethod !== 'DELETE'"
           class="tester-field tester-span"
         >
-          <span>JSON Body</span>
+          <span>JSON 请求体</span>
           <textarea
             v-model="bodyText"
             rows="6"
@@ -141,7 +141,7 @@ watch([selectedPath, selectedMethod], () => {
 /** 调用选中的 Route 并展示结果。 */
 async function runSelectedRoute() {
   if (!selectedPath.value) {
-    responseError.value = '没有可调用的 route'
+    responseError.value = '没有可调用的路由'
     responseText.value = ''
     responseStatus.value = null
     responseHeadersText.value = ''
@@ -168,7 +168,7 @@ async function runSelectedRoute() {
     responseHeadersText.value = formatHeaders(result.headers)
     responseText.value = formatResponse(result.body)
   } catch (error) {
-    responseError.value = error instanceof Error ? error.message : '调用 Route 失败'
+    responseError.value = error instanceof Error ? error.message : '调用路由失败'
   } finally {
     running.value = false
   }
@@ -206,7 +206,7 @@ function parseJsonRequestBody(raw: string): JsonValue | null {
   try {
     return JSON.parse(trimmed) as JsonValue
   } catch {
-    throw new Error('JSON Body 必须是有效 JSON')
+    throw new Error('JSON 请求体必须是有效 JSON')
   }
 }
 </script>

@@ -576,7 +576,7 @@ export class RuntimeHostSubagentRunnerService {
 
 function readSubagentSpawnRequest(params: JsonObject): PluginSubagentSpawnParams {
   const providerOptions = readJsonObject(params.providerOptions);
-  const headers = readJsonStringRecord(params.headers, 'subagent headers must be string record');
+  const headers = readJsonStringRecord(params.headers, 'subagent headers 必须是字符串键值对');
   return {
     ...(typeof params.name === 'string' && params.name.trim() ? { name: params.name.trim() } : {}),
     ...(typeof params.description === 'string' && params.description.trim() ? { description: params.description.trim() } : {}),

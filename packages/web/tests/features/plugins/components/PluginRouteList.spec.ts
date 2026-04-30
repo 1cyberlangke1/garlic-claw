@@ -74,7 +74,7 @@ describe('PluginRouteList', () => {
     await flushPromises()
 
     expect(invokePluginRoute).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('JSON Body 必须是有效 JSON')
+    expect(wrapper.text()).toContain('JSON 请求体必须是有效 JSON')
   })
 
   it('clears the previous response when the selected route changes', async () => {

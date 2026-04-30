@@ -70,8 +70,8 @@ describe('http request', () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            message: 'Invalid credentials',
-            error: 'Unauthorized',
+            message: '访问密钥无效',
+            error: '未授权',
             statusCode: 401,
           }),
           {
@@ -97,7 +97,7 @@ describe('http request', () => {
       type: 'auth',
       status: 401,
       code: 'HTTP_ERROR',
-      message: 'Invalid credentials',
+      message: '访问密钥无效',
     })
   })
 
@@ -108,8 +108,8 @@ describe('http request', () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            message: 'Unauthorized',
-            error: 'Unauthorized',
+            message: '未授权',
+            error: '未授权',
             statusCode: 401,
           }),
           {

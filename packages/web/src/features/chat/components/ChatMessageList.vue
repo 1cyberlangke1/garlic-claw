@@ -109,7 +109,7 @@
                     </span>
                     <span class="message-annotation-chip">
                       {{
-                        `Token ${contextCompactionSummary(row.message)?.beforePreview.estimatedTokens ?? 0} -> ${contextCompactionSummary(row.message)?.afterPreview.estimatedTokens ?? 0}`
+                        `Token 估算 ${contextCompactionSummary(row.message)?.beforePreview.estimatedTokens ?? 0} -> ${contextCompactionSummary(row.message)?.afterPreview.estimatedTokens ?? 0}`
                       }}
                     </span>
                     <span

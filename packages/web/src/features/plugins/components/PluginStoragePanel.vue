@@ -42,7 +42,7 @@
         v-model="draftKey"
         data-test="storage-key-input"
         type="text"
-        placeholder="storage key"
+        placeholder="存储键"
       >
       <textarea
         v-model="draftValue"
@@ -127,7 +127,7 @@ function requestRefresh() {
 function submit() {
   const key = draftKey.value.trim()
   if (!key) {
-    formError.value = 'key 不能为空'
+    formError.value = '存储键不能为空'
     return
   }
 
@@ -163,7 +163,7 @@ function formatValue(value: JsonValue): string {
 function parseStorageValue(raw: string): JsonValue {
   const trimmed = raw.trim()
   if (!trimmed) {
-    throw new Error('value 不能为空')
+    throw new Error('存储值不能为空')
   }
 
   try {

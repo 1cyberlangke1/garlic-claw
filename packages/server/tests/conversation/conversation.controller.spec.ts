@@ -53,14 +53,14 @@ describe('ConversationController', () => {
   });
 
   it('creates, lists, reads and deletes conversations through user-owned conversation APIs', async () => {
-    const overview = { _count: { messages: 0 }, createdAt: '2026-04-11T00:00:00.000Z', id: conversationId, title: 'New Chat', updatedAt: '2026-04-11T00:00:00.000Z' };
+    const overview = { _count: { messages: 0 }, createdAt: '2026-04-11T00:00:00.000Z', id: conversationId, title: '新的对话', updatedAt: '2026-04-11T00:00:00.000Z' };
     runtimeHostConversationRecordService.createConversation.mockReturnValue(overview);
     runtimeHostConversationRecordService.listConversations.mockReturnValue([overview]);
     runtimeHostConversationRecordService.getConversation.mockReturnValue({ ...overview, messages: [] });
     runtimeHostConversationRecordService.deleteConversation.mockResolvedValue({ message: 'Conversation deleted' });
 
-    expect(controller.createConversation('user-1', { title: 'New Chat' } as never)).toEqual(overview);
-    expect(runtimeHostConversationRecordService.createConversation).toHaveBeenCalledWith({ title: 'New Chat', userId: 'user-1' });
+    expect(controller.createConversation('user-1', { title: '新的对话' } as never)).toEqual(overview);
+    expect(runtimeHostConversationRecordService.createConversation).toHaveBeenCalledWith({ title: '新的对话', userId: 'user-1' });
     expect(controller.listConversations('user-1')).toEqual([overview]);
     expect(runtimeHostConversationRecordService.listConversations).toHaveBeenCalledWith('user-1');
     expect(controller.getConversation('user-1', conversationId)).toEqual({ ...overview, messages: [] });
@@ -255,7 +255,7 @@ describe('ConversationController', () => {
       createdAt: '2026-04-11T00:00:00.000Z',
       id: conversationId,
       messages: [{ content: '你好', createdAt: '2026-04-11T00:00:00.000Z', error: null, id: assistantMessageId, metadataJson: null, model: 'gpt-5.4', partsJson: '[{"type":"text","text":"你好"}]', provider: 'openai', role: 'assistant', status: 'completed', toolCalls: null, toolResults: null, updatedAt: '2026-04-11T00:00:01.000Z' }],
-      title: 'New Chat',
+      title: '新的对话',
       updatedAt: '2026-04-11T00:00:01.000Z',
     };
     runtimeHostConversationRecordService.getConversation.mockReturnValue(detail);

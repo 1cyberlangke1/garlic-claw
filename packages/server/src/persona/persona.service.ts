@@ -44,9 +44,9 @@ export class PersonaService {
   }
 
   createPersona(input: PluginPersonaUpsertInput): PluginPersonaDetail {
-    const personaId = normalizeRequiredText(input.id, 'id is required')
+    const personaId = normalizeRequiredText(input.id, 'ID 不能为空')
     const personas = this.listStoredPersonas()
-    if (personas.some((persona) => persona.id === personaId)) {throw new BadRequestException(`Persona already exists: ${personaId}`)}
+    if (personas.some((persona) => persona.id === personaId)) {throw new BadRequestException(`人设已存在: ${personaId}`)}
     return toPersonaDetail(this.requirePersistedPersona(this.persistPersonas([...personas, createStoredPersona(input, personaId)], personaId), personaId, 'create'))
   }
 
@@ -59,7 +59,7 @@ export class PersonaService {
   }
 
   deletePersona(personaId: string): PluginPersonaDeleteResult {
-    if (personaId === DEFAULT_PERSONA_ID) {throw new BadRequestException('Default persona cannot be deleted')}
+    if (personaId === DEFAULT_PERSONA_ID) {throw new BadRequestException('默认人设不能删除')}
     this.requirePersona(personaId)
     this.persistPersonas(this.listStoredPersonas().filter((persona) => persona.id !== personaId))
     const fallbackPersonaId = this.requireDefaultPersona(this.listStoredPersonas()).id
@@ -76,7 +76,7 @@ export class PersonaService {
     this.requirePersona(personaId)
     const avatarPath = this.personaStoreService.readAvatarPath(personaId)
     if (avatarPath) {return avatarPath}
-    throw new NotFoundException(`Persona avatar not found: ${personaId}`)
+    throw new NotFoundException(`未找到人设头像: ${personaId}`)
   }
 
   savePersonaAvatar(personaId: string, buffer: Buffer, mimetype: string): void {
@@ -96,19 +96,19 @@ export class PersonaService {
   private requirePersona(personaId: string): StoredPersonaRecord {
     const persona = this.personaStoreService.read(personaId)
     if (persona) {return persona}
-    throw new NotFoundException(`Persona not found: ${personaId}`)
+    throw new NotFoundException(`未找到人设: ${personaId}`)
   }
 
   private requirePersistedPersona(personas: StoredPersonaRecord[], personaId: string, action: 'create' | 'update'): StoredPersonaRecord {
     const persona = personas.find((entry) => entry.id === personaId)
     if (persona) {return persona}
-    throw new NotFoundException(`Persona not found after ${action}: ${personaId}`)
+    throw new NotFoundException(`${action === 'create' ? '创建后' : '更新后'}未找到人设: ${personaId}`)
   }
 
   private requireDefaultPersona(personas: StoredPersonaRecord[]): StoredPersonaRecord {
     const persona = personas.find((entry) => entry.isDefault) ?? personas.find((entry) => entry.id === DEFAULT_PERSONA_ID)
     if (persona) {return persona}
-    throw new NotFoundException('Default persona not found')
+    throw new NotFoundException('未找到默认人设')
   }
 
   private readConversationActivePersonaId(conversationId?: string): string | undefined {
@@ -143,8 +143,8 @@ function createStoredPersona(input: PluginPersonaUpsertInput, personaId: string)
     description: normalizeOptionalText(input.description),
     id: personaId,
     isDefault: input.isDefault === true,
-    name: normalizeRequiredText(input.name, 'name is required'),
-    prompt: normalizeRequiredText(input.prompt, 'prompt is required'),
+    name: normalizeRequiredText(input.name, '名称不能为空'),
+    prompt: normalizeRequiredText(input.prompt, '提示词不能为空'),
     toolNames: normalizeNullableIdList(input.toolNames),
     updatedAt: timestamp,
   }
@@ -157,8 +157,8 @@ function updateStoredPersona(current: StoredPersonaRecord, patch: PluginPersonaU
     ...(patch.customErrorMessage !== undefined ? { customErrorMessage: normalizeNullableText(patch.customErrorMessage) } : {}),
     ...(patch.description !== undefined ? { description: normalizeOptionalText(patch.description) } : {}),
     ...(patch.isDefault !== undefined ? { isDefault: patch.isDefault } : {}),
-    ...(patch.name !== undefined ? { name: normalizeRequiredText(patch.name, 'name is required') } : {}),
-    ...(patch.prompt !== undefined ? { prompt: normalizeRequiredText(patch.prompt, 'prompt is required') } : {}),
+    ...(patch.name !== undefined ? { name: normalizeRequiredText(patch.name, '名称不能为空') } : {}),
+    ...(patch.prompt !== undefined ? { prompt: normalizeRequiredText(patch.prompt, '提示词不能为空') } : {}),
     ...(patch.toolNames !== undefined ? { toolNames: normalizeNullableIdList(patch.toolNames) } : {}),
     updatedAt: new Date().toISOString(),
   }

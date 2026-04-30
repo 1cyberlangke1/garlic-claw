@@ -1,4 +1,3 @@
-import { uuidv7 } from 'uuidv7';
 import {
   buildConversationTitlePrompt,
   normalizePositiveInteger,
@@ -16,6 +15,7 @@ import type {
   PluginConversationHistoryPreviewResult,
 } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { uuidv7 } from 'uuidv7';
 import { AiManagementService } from '../ai-management/ai-management.service';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
@@ -231,7 +231,7 @@ export class ContextGovernanceService {
 
   private readContextWindowTarget(providerId?: string, modelId?: string): ContextWindowTarget {
     const resolvedProviderId = providerId ?? this.aiManagementService.getDefaultProviderSelection().providerId ?? this.aiManagementService.listProviders()[0]?.id ?? null;
-    if (!resolvedProviderId) {throw new NotFoundException('当前没有可用的 AI provider');}
+    if (!resolvedProviderId) {throw new NotFoundException('当前没有可用的 AI 供应商');}
     const provider = this.aiManagementService.getProvider(resolvedProviderId);
     const resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0] ?? null;
     if (!resolvedModelId) {throw new NotFoundException(`Provider "${resolvedProviderId}" 没有可用模型`);}

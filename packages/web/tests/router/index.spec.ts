@@ -23,10 +23,11 @@ describe('router', () => {
     expect(resolved.matched[0]?.name).toBe('admin-shell')
   })
 
-  it('keeps plugin、mcp 和 ai routes mounted inside the same shell', () => {
+  it('keeps plugin、mcp、ai 和 settings routes mounted inside the same shell', () => {
     expect(router.resolve({ name: 'plugins' }).matched[0]?.name).toBe('admin-shell')
     expect(router.resolve({ name: 'mcp' }).matched[0]?.name).toBe('admin-shell')
     expect(router.resolve({ name: 'ai-settings' }).matched[0]?.name).toBe('admin-shell')
+    expect(router.resolve({ name: 'console-settings' }).matched[0]?.name).toBe('admin-shell')
   })
 
   it('removes the register and api key routes from the web console', () => {

@@ -9,8 +9,6 @@
 .error-card {
   border: 1px solid var(--border);
   background: var(--surface-card-gradient);
-  box-shadow: 0 24px 56px rgba(1, 6, 15, 0.28);
-  backdrop-filter: blur(18px);
 }
 
 .detail-header {

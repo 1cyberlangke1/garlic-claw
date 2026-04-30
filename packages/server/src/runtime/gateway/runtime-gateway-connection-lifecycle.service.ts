@@ -170,12 +170,12 @@ function cloneConnectionRecord(connection: RuntimeGatewayConnectionRecord): Runt
 }
 
 function validateRemotePluginAuthentication(plugin: RegisteredPluginRecord, remoteEnvironment: PluginRemoteEnvironment, accessKey: string | null): RegisteredPluginRemoteRecord {
-  if (plugin.manifest.runtime !== 'remote' || !plugin.remote) { throw new Error(`Plugin ${plugin.pluginId} is not configured as a remote plugin`); }
-  if (plugin.remote.descriptor.remoteEnvironment !== remoteEnvironment) { throw new Error('Remote plugin environment does not match configured plugin slot'); }
+  if (plugin.manifest.runtime !== 'remote' || !plugin.remote) { throw new Error(`插件 ${plugin.pluginId} 未配置为远程插件`); }
+  if (plugin.remote.descriptor.remoteEnvironment !== remoteEnvironment) { throw new Error('远程插件环境与已配置插件槽位不匹配'); }
   const expectedAccessKey = plugin.remote.access.accessKey ?? null, authMode = plugin.remote.descriptor.auth.mode;
-  if (authMode === 'required' && !expectedAccessKey) { throw new Error(`Remote plugin ${plugin.pluginId} is missing a configured access key`); }
-  if (authMode !== 'none' && expectedAccessKey && expectedAccessKey !== (accessKey ?? null)) { throw new Error('Remote plugin access key does not match configured plugin slot'); }
-  if (authMode !== 'none' && authMode !== 'optional' && authMode !== 'required') { throw new Error('Unsupported remote plugin auth mode'); }
+  if (authMode === 'required' && !expectedAccessKey) { throw new Error(`远程插件 ${plugin.pluginId} 缺少已配置 access key`); }
+  if (authMode !== 'none' && expectedAccessKey && expectedAccessKey !== (accessKey ?? null)) { throw new Error('远程插件 access key 与已配置插件槽位不匹配'); }
+  if (authMode !== 'none' && authMode !== 'optional' && authMode !== 'required') { throw new Error('不支持的远程插件鉴权模式'); }
   return plugin.remote;
 }
 

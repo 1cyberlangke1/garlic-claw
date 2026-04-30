@@ -3,7 +3,7 @@ import { post } from '@/api/http'
 function ensureRequiredText(value: string | null | undefined, field: 'secret') {
   const normalized = value?.trim() ?? ''
   if (!normalized) {
-    throw new Error(`${field} is required`)
+    throw new Error(field === 'secret' ? '访问密钥不能为空' : `${field} 不能为空`)
   }
 
   return normalized

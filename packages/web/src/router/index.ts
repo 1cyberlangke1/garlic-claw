@@ -70,6 +70,11 @@ const router = createRouter({
           name: 'ai-settings',
           component: () => import('@/features/ai-settings/views/ProviderSettings.vue'),
         },
+        {
+          path: 'settings',
+          name: 'console-settings',
+          component: () => import('@/features/settings/views/ConsoleSettingsView.vue'),
+        },
       ],
     },
   ],

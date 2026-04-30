@@ -4,7 +4,7 @@
     "memoryContextPromptPrefix": "与此用户相关的记忆",
     "kbContextLimit": 3,
     "kbContextPromptPrefix": "与当前问题相关的系统知识",
-    "conversationTitleDefaultTitle": "New Chat",
+    "conversationTitleDefaultTitle": "新的对话",
     "conversationTitleMaxMessages": 4,
     "providerRouterDefaultShortCircuitReply": "本轮请求已由 provider-router 直接处理。",
     "contextCompactionMode": "auto",
@@ -54,7 +54,7 @@
       "defaultTitle": {
         "type": "string",
         "description": "仍命中该默认标题时才尝试自动改标题",
-        "defaultValue": "New Chat"
+        "defaultValue": "新的对话"
       },
       "maxMessages": {
         "type": "int",

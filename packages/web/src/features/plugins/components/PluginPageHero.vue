@@ -2,23 +2,19 @@
   <section class="hero-shell">
     <header class="page-header">
       <div class="hero-copy">
-        <span class="hero-kicker">Plugin Control Surface</span>
-        <h1>插件管理</h1>
-        <p>管理本地与远程插件的配置、作用域和健康状态。</p>
+        <h1><Icon :icon="widgetBold" class="hero-icon" aria-hidden="true" />插件管理</h1>
       </div>
-      <div class="hero-side">
-        <button type="button" class="hero-action" title="刷新全部" @click="$emit('refresh')">
-          <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </button>
-        <div class="hero-note">
-          <span class="hero-note-label">统一协议运行面</span>
-          <strong>{{ headline }}</strong>
-          <p>本地插件跟随后端启动，远程插件通过同一套宿主协议接入。</p>
-        </div>
-      </div>
+      <button type="button" class="hero-action" title="刷新全部" @click="$emit('refresh')">
+        <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
+      </button>
     </header>
 
     <div class="overview-grid">
+      <article class="overview-card accent">
+        <span class="overview-label">统一协议运行面</span>
+        <strong>{{ headline }}</strong>
+        <p>本地插件跟随后端启动，远程插件通过同一套宿主协议接入。</p>
+      </article>
       <article
         v-for="card in cards"
         :key="card.label"
@@ -36,6 +32,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import widgetBold from '@iconify-icons/solar/widget-5-bold'
 
 defineProps<{
   headline: string
@@ -60,31 +57,14 @@ defineEmits<{
 
 .page-header {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.9fr);
+  grid-template-columns: 1fr auto;
+  align-items: start;
   gap: 18px;
-  position: relative;
-  padding: 1.35rem 1.45rem;
-  border: 1px solid var(--border);
-  border-radius: 24px;
-  background: var(--surface-hero-gradient);
-  box-shadow: 0 24px 56px rgba(1, 6, 15, 0.32);
-  backdrop-filter: blur(18px);
-  overflow: hidden;
 }
 
-.page-header::after {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  border-radius: 23px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 58%);
-  pointer-events: none;
-}
-
-.hero-copy,
-.hero-side {
-  position: relative;
-  z-index: 1;
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
 
 .hero-copy {
@@ -93,8 +73,7 @@ defineEmits<{
 }
 
 .hero-kicker,
-.overview-label,
-.hero-note-label {
+.overview-label {
   font-size: 0.76rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -104,29 +83,12 @@ defineEmits<{
   color: var(--accent);
 }
 
-.page-header h1 {
-  font-size: clamp(1.85rem, 3vw, 2.7rem);
-  line-height: 1.08;
-  font-family: 'Aptos Display', 'Segoe UI Variable Display', 'Trebuchet MS', 'Segoe UI', sans-serif;
-}
-
-.page-header p,
-.hero-note p {
-  color: var(--text-muted);
-}
-
 .page-header p {
+  color: var(--text-muted);
   max-width: 60ch;
 }
 
-.hero-side {
-  display: grid;
-  gap: 12px;
-  align-content: space-between;
-}
-
 .hero-action {
-  justify-self: end;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -147,27 +109,9 @@ defineEmits<{
   background: linear-gradient(135deg, #7ad8dc, #6cb5f1);
 }
 
-.hero-note {
-  display: grid;
-  gap: 8px;
-  padding: 1rem 1.05rem;
-  border-radius: 18px;
-  border: 1px solid rgba(133, 163, 199, 0.16);
-  background: var(--surface-panel-hover-soft);
-}
-
-.hero-note-label {
-  color: var(--warning);
-}
-
-.hero-note strong {
-  font-size: 1.25rem;
-  line-height: 1.2;
-}
-
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -179,8 +123,6 @@ defineEmits<{
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--surface-card-gradient);
-  box-shadow: 0 24px 56px rgba(1, 6, 15, 0.28);
-  backdrop-filter: blur(18px);
 }
 
 .overview-card strong {
@@ -216,6 +158,12 @@ defineEmits<{
 
 @media (max-width: 1280px) {
   .overview-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .overview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -226,13 +174,8 @@ defineEmits<{
     grid-template-columns: 1fr;
   }
 
-  .page-header {
-    border-radius: 20px;
-  }
-
   .hero-action {
     width: 100%;
-    justify-self: stretch;
   }
 }
 </style>

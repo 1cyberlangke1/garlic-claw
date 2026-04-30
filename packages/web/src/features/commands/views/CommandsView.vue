@@ -2,29 +2,23 @@
   <div class="plugins-page commands-page">
     <section class="command-hero">
       <header class="command-hero-header">
-        <div>
-          <span class="hero-kicker">Command Management</span>
-          <h1>命令管理</h1>
-          <p>查看插件的消息命令和冲突触发词。</p>
-        </div>
-        <div class="command-hero-side">
-          <button
-            type="button"
-            class="hero-action icon-only"
-            title="刷新全部"
-            @click="refreshAll()"
-          >
-            <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
-          </button>
-          <div class="hero-note">
-            <span class="hero-note-label">命令概览</span>
-            <strong>{{ heroHeadline }}</strong>
-            <p>冲突在这里查看，到对应插件页处理。</p>
-          </div>
-        </div>
+        <h1><Icon :icon="keyboardBold" class="hero-icon" aria-hidden="true" />命令管理</h1>
+        <button
+          type="button"
+          class="hero-action icon-only"
+          title="刷新全部"
+          @click="refreshAll()"
+        >
+          <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
+        </button>
       </header>
 
       <div class="overview-grid">
+        <article class="overview-card accent">
+          <span class="overview-label">命令概览</span>
+          <strong>{{ heroHeadline }}</strong>
+          <p>冲突在这里查看，到对应插件页处理。</p>
+        </article>
         <article
           v-for="card in overviewCards"
           :key="card.label"
@@ -186,6 +180,7 @@
 import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import SegmentedSwitch from '@/components/SegmentedSwitch.vue'
 import { usePluginCommandManagement } from '../composables/use-plugin-command-management'
 
@@ -263,13 +258,18 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   padding: 1.5rem 2rem;
 }
 
-.command-hero,
 .command-list-panel,
 .command-conflict-panel {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) * 1.2);
   background: var(--bg-card);
   padding: 1rem;
+}
+
+.command-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .command-hero-header,
@@ -303,8 +303,6 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   flex-shrink: 0;
 }
 
-.command-hero-side,
-.hero-note,
 .command-list,
 .conflict-list {
   display: flex;
@@ -312,9 +310,13 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   gap: 0.75rem;
 }
 
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
+}
+
 .hero-kicker,
-.panel-kicker,
-.hero-note-label {
+.panel-kicker {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;

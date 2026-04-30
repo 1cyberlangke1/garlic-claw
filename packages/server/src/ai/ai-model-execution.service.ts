@@ -61,12 +61,12 @@ export class AiModelExecutionService {
   constructor(private readonly aiProviderSettingsService: AiProviderSettingsService = new AiProviderSettingsService()) {}
 
   async generateText(input: AiModelExecutionRequest): Promise<AiModelExecutionResult> {
-    return this.runAcrossTargets(input, 'AI text generation failed', (target) =>
+    return this.runAcrossTargets(input, 'AI 文本生成失败', (target) =>
       this.readTextExecutionResult(input, target, input.transportMode === 'stream-collect'));
   }
 
   streamText(input: AiModelStreamRequest): AiModelExecutionStreamResult {
-    return this.runAcrossTargetsSync(input, 'AI text streaming failed', (target) => {
+    return this.runAcrossTargetsSync(input, 'AI 文本流式生成失败', (target) => {
       const result = this.startTextStream(input, target);
       return {
         finishReason: result.finishReason,
@@ -109,11 +109,11 @@ export class AiModelExecutionService {
 
   private resolveExecutionTarget(providerId: string | undefined, modelId: string | undefined): AiExecutionTarget {
     const preferredProvider = providerId ? this.aiProviderSettingsService.getProvider(providerId) : this.aiProviderSettingsService.readPreferredProvider();
-    if (!preferredProvider) {throw new Error('No provider configured');}
+    if (!preferredProvider) {throw new Error('未配置可用的 provider');}
     const provider = preferredProvider, resolvedModelId = modelId ?? provider.defaultModel ?? provider.models[0];
-    if (!resolvedModelId) {throw new Error(`Provider "${provider.id}" does not have any configured model`);}
-    if (!provider.apiKey) {throw new Error(`Provider "${provider.id}" is missing apiKey`);}
-    if (!provider.baseUrl) {throw new Error(`Provider "${provider.id}" is missing baseUrl`);}
+    if (!resolvedModelId) {throw new Error(`provider "${provider.id}" 没有已配置模型`);}
+    if (!provider.apiKey) {throw new Error(`provider "${provider.id}" 缺少 apiKey`);}
+    if (!provider.baseUrl) {throw new Error(`provider "${provider.id}" 缺少 baseUrl`);}
     return { modelId: resolvedModelId, provider };
   }
 
@@ -283,7 +283,7 @@ function estimateTokenCount(text: string): number { return Math.ceil(Buffer.byte
 function toAiSdkImageInput(image: string): string | ArrayBuffer {
   if (!image.startsWith('data:')) {return image;}
   const matched = /^data:([^;]+);base64,(.+)$/u.exec(image);
-  if (!matched) {throw new Error('Unsupported image data URL');}
+  if (!matched) {throw new Error('不支持的图片 data URL');}
   const binary = Buffer.from(matched[2], 'base64');
   return binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength);
 }

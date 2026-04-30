@@ -18,7 +18,7 @@ describe('PluginScopeEditor', () => {
     await wrapper.get('[data-test="scope-save-button"]').trigger('click')
 
     expect(wrapper.emitted('save')).toBeUndefined()
-    expect(wrapper.text()).toContain('conversation id 不能为空')
+    expect(wrapper.text()).toContain('会话 ID 不能为空')
   })
 
   it('blocks save when conversation override ids are duplicated', async () => {
@@ -35,12 +35,12 @@ describe('PluginScopeEditor', () => {
     })
 
     await wrapper.get('[data-test="scope-add-row-button"]').trigger('click')
-    const inputs = wrapper.findAll('input[placeholder="conversation id"]')
+    const inputs = wrapper.findAll('input[placeholder="会话 ID"]')
     await inputs[1].setValue('conversation-1')
     await wrapper.get('[data-test="scope-save-button"]').trigger('click')
 
     expect(wrapper.emitted('save')).toBeUndefined()
-    expect(wrapper.text()).toContain('conversation id 不能重复')
+    expect(wrapper.text()).toContain('会话 ID 不能重复')
   })
 
   it('emits normalized scope overrides when all rows are valid', async () => {

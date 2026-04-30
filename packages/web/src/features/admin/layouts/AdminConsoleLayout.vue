@@ -1,38 +1,55 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { Icon } from '@iconify/vue'
-import type { IconifyIcon } from '@iconify/types'
-import widgetBold from '@iconify-icons/solar/widget-5-bold'
-import userIdBold from '@iconify-icons/solar/user-id-bold'
-import widgetAddBold from '@iconify-icons/solar/widget-add-bold'
-import codeBold from '@iconify-icons/solar/code-bold'
-import keyboardBold from '@iconify-icons/solar/keyboard-bold'
-import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
-import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
-import widget6Bold from '@iconify-icons/solar/widget-6-bold'
+import ThemeToggle from '@/components/header/ThemeToggle.vue'
+import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
+import { useAuthStore } from '@/stores/auth'
 import altArrowLeftBold from '@iconify-icons/solar/alt-arrow-left-bold'
 import altArrowRightBold from '@iconify-icons/solar/alt-arrow-right-bold'
 import chatRoundLineBold from '@iconify-icons/solar/chat-round-line-bold'
+import codeBold from '@iconify-icons/solar/code-bold'
+import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
+import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import logout3Bold from '@iconify-icons/solar/logout-3-bold'
+import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
+import settingsBold from '@iconify-icons/solar/settings-bold'
+import tuning2Bold from '@iconify-icons/solar/tuning-2-bold'
+import userIdBold from '@iconify-icons/solar/user-id-bold'
+import widgetBold from '@iconify-icons/solar/widget-5-bold'
+import widget6Bold from '@iconify-icons/solar/widget-6-bold'
+import widgetAddBold from '@iconify-icons/solar/widget-add-bold'
+import type { IconifyIcon } from '@iconify/types'
+import { Icon } from '@iconify/vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import ThemeToggle from '@/components/header/ThemeToggle.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const {
+  topbarPullCordEnabled,
+  topbarCollapsed,
+  setTopbarCollapsed,
+  topbarPullCordPosition,
+  setTopbarPullCordPosition,
+} = useAdminShellPreferences()
 
 type SiderMode = 'expanded' | 'compact' | 'hidden'
 
 const SIDER_MODE_STORAGE_KEY = 'garlic-claw:admin-sider-mode'
+const SIDER_WIDTH_STORAGE_KEY = 'garlic-claw:admin-sider-width'
 const DEFAULT_VIEWPORT_WIDTH = 1280
-const EXPANDED_SIDER_WIDTH = 200
+const DEFAULT_EXPANDED_SIDER_WIDTH = 180
+const MIN_EXPANDED_SIDER_WIDTH = 160
+const MAX_EXPANDED_SIDER_WIDTH = 420
 const COMPACT_SIDER_WIDTH = 64
 const HIDDEN_SIDER_WIDTH = 0
 const COLLAPSE_RATIO = 0.22
 const EXPAND_RATIO = 0.2
 const HANDLE_MIN_TOP = 80
 const DEFAULT_BOTTOM_OFFSET = 12
+const RESIZE_ACTIVATION_WIDTH = 1024
+const TOPBAR_PULL_ANIMATION_MS = 180
+
+type DragType = 'toggle-handle' | 'resize' | 'topbar-pull-cord' | null
 
 function readSiderMode(): SiderMode {
   if (typeof window === 'undefined') {
@@ -55,19 +72,72 @@ function saveSiderMode(mode: SiderMode) {
   window.localStorage.setItem(SIDER_MODE_STORAGE_KEY, mode)
 }
 
+function readExpandedSiderWidth() {
+  if (typeof window === 'undefined') {
+    return DEFAULT_EXPANDED_SIDER_WIDTH
+  }
+
+  const savedWidth = Number.parseInt(
+    window.localStorage.getItem(SIDER_WIDTH_STORAGE_KEY) ?? '',
+    10,
+  )
+  if (Number.isNaN(savedWidth)) {
+    return DEFAULT_EXPANDED_SIDER_WIDTH
+  }
+
+  return Math.max(MIN_EXPANDED_SIDER_WIDTH, Math.min(MAX_EXPANDED_SIDER_WIDTH, savedWidth))
+}
+
+function saveExpandedSiderWidth(width: number) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(SIDER_WIDTH_STORAGE_KEY, String(Math.round(width)))
+}
+
+function getEffectiveMaxExpandedWidth(viewportWidth: number) {
+  if (viewportWidth <= 0) {
+    return MAX_EXPANDED_SIDER_WIDTH
+  }
+
+  return Math.max(
+    MIN_EXPANDED_SIDER_WIDTH,
+    Math.min(MAX_EXPANDED_SIDER_WIDTH, Math.floor(viewportWidth * 0.4)),
+  )
+}
+
+function clampExpandedSiderWidth(width: number, viewportWidth: number) {
+  return Math.max(
+    MIN_EXPANDED_SIDER_WIDTH,
+    Math.min(getEffectiveMaxExpandedWidth(viewportWidth), width),
+  )
+}
+
 const viewportWidth = ref(
   typeof window === 'undefined' ? DEFAULT_VIEWPORT_WIDTH : window.innerWidth,
 )
 const userPreferredSiderMode = ref<SiderMode>(readSiderMode())
+const preferredExpandedSiderWidth = ref<number>(readExpandedSiderWidth())
 const siderMode = ref<SiderMode>(userPreferredSiderMode.value)
 const autoCompact = ref(false)
 const handleBottom = ref(DEFAULT_BOTTOM_OFFSET)
-const isDragging = ref(false)
-const hasMoved = ref(false)
+const hiddenHandleDragging = ref(false)
+const hiddenHandleMoved = ref(false)
+const resizeDragging = ref(false)
+const topbarPullAnimating = ref(false)
+const topbarPullCordDragging = ref(false)
+const topbarPullCordMoved = ref(false)
+const topbarShellRef = ref<HTMLElement | null>(null)
 const dragState = reactive({
+  type: null as DragType,
+  startX: 0,
   startY: 0,
+  startWidth: 0,
   startBottom: 0,
+  startPullCordPosition: 0,
 })
+let topbarPullTimer: ReturnType<typeof setTimeout> | null = null
 
 const navItems: Array<{
   name:
@@ -80,6 +150,7 @@ const navItems: Array<{
     | 'commands'
     | 'automations'
     | 'ai-settings'
+    | 'console-settings'
   label: string
   icon: IconifyIcon
   divided?: boolean
@@ -88,17 +159,24 @@ const navItems: Array<{
   { name: 'persona-settings', label: '人设', icon: userIdBold },
   { name: 'skills', label: '技能', icon: magicStick3Bold },
   { name: 'commands', label: '命令', icon: keyboardBold },
-  { name: 'tools', label: '工具', icon: widgetBold },
+  { name: 'tools', label: '工具', icon: tuning2Bold },
   { name: 'plugins', label: '插件', icon: widgetBold, divided: true },
   { name: 'mcp', label: 'MCP', icon: widgetAddBold },
   { name: 'automations', label: '自动化', icon: cpuBoltBold, divided: true },
   { name: 'ai-settings', label: 'AI 设置', icon: codeBold },
+  { name: 'console-settings', label: '设置', icon: settingsBold },
 ]
 
 const visibleNavItems = computed(() => navItems)
 
 const isCompact = computed(() => siderMode.value === 'compact')
 const isHidden = computed(() => siderMode.value === 'hidden')
+const expandedSiderWidth = computed(() =>
+  clampExpandedSiderWidth(preferredExpandedSiderWidth.value, viewportWidth.value),
+)
+const canResizeExpandedSider = computed(() =>
+  !isHidden.value && !isCompact.value && viewportWidth.value >= RESIZE_ACTIVATION_WIDTH,
+)
 const currentSiderWidth = computed(() => {
   if (siderMode.value === 'hidden') {
     return HIDDEN_SIDER_WIDTH
@@ -107,7 +185,7 @@ const currentSiderWidth = computed(() => {
     return COMPACT_SIDER_WIDTH
   }
 
-  return EXPANDED_SIDER_WIDTH
+  return expandedSiderWidth.value
 })
 
 const triggerText = computed(() => {
@@ -122,11 +200,12 @@ const triggerText = computed(() => {
 })
 
 const triggerIcon = computed(() => (isHidden.value ? altArrowRightBold : altArrowLeftBold))
+const topbarPullLabel = computed(() => (topbarCollapsed.value ? '展开顶栏' : '收起顶栏'))
 
 function toggleSider() {
   if (isHidden.value) {
     const nextMode: SiderMode = viewportWidth.value > 0
-      && EXPANDED_SIDER_WIDTH / viewportWidth.value >= COLLAPSE_RATIO
+      && expandedSiderWidth.value / viewportWidth.value >= COLLAPSE_RATIO
       ? 'compact'
       : 'expanded'
     userPreferredSiderMode.value = nextMode
@@ -167,7 +246,13 @@ function applyAutoCollapse() {
     return
   }
 
-  const ratio = EXPANDED_SIDER_WIDTH / viewportWidth.value
+  if (viewportWidth.value >= RESIZE_ACTIVATION_WIDTH) {
+    siderMode.value = 'expanded'
+    autoCompact.value = false
+    return
+  }
+
+  const ratio = expandedSiderWidth.value / viewportWidth.value
   if (ratio >= COLLAPSE_RATIO) {
     siderMode.value = 'compact'
     autoCompact.value = true
@@ -201,14 +286,15 @@ function getTouchClientY(event: TouchEvent | MouseEvent) {
 }
 
 function onHandleStart(event: TouchEvent | MouseEvent) {
-  isDragging.value = true
-  hasMoved.value = false
+  hiddenHandleDragging.value = true
+  hiddenHandleMoved.value = false
+  dragState.type = 'toggle-handle'
   dragState.startY = getTouchClientY(event)
   dragState.startBottom = handleBottom.value
 }
 
 function onHandleMove(event: TouchEvent | MouseEvent) {
-  if (!isDragging.value) {
+  if (dragState.type !== 'toggle-handle') {
     return
   }
 
@@ -218,7 +304,7 @@ function onHandleMove(event: TouchEvent | MouseEvent) {
 
   const clientY = getTouchClientY(event)
   if (Math.abs(clientY - dragState.startY) > 3) {
-    hasMoved.value = true
+    hiddenHandleMoved.value = true
   }
 
   const deltaY = dragState.startY - clientY
@@ -229,19 +315,120 @@ function onHandleMove(event: TouchEvent | MouseEvent) {
   )
 }
 
+function getMouseClientX(event: MouseEvent) {
+  return event.clientX
+}
+
+function getTopbarShellWidth() {
+  const shellWidth = topbarShellRef.value?.clientWidth ?? 0
+  return shellWidth > 0 ? shellWidth : window.innerWidth
+}
+
+function onResizeStart(event: MouseEvent) {
+  if (!canResizeExpandedSider.value) {
+    return
+  }
+
+  event.preventDefault()
+  resizeDragging.value = true
+  dragState.type = 'resize'
+  dragState.startX = getMouseClientX(event)
+  dragState.startWidth = expandedSiderWidth.value
+}
+
+function onResizeMove(event: MouseEvent) {
+  if (dragState.type !== 'resize') {
+    return
+  }
+
+  const deltaX = getMouseClientX(event) - dragState.startX
+  preferredExpandedSiderWidth.value = clampExpandedSiderWidth(
+    dragState.startWidth + deltaX,
+    viewportWidth.value,
+  )
+}
+
+function onTopbarPullCordStart(event: MouseEvent) {
+  if (!topbarPullCordEnabled.value) {
+    return
+  }
+
+  event.preventDefault()
+  topbarPullCordDragging.value = true
+  topbarPullCordMoved.value = false
+  dragState.type = 'topbar-pull-cord'
+  dragState.startX = getMouseClientX(event)
+  dragState.startPullCordPosition = topbarPullCordPosition.value
+}
+
+function onTopbarPullCordMove(event: MouseEvent) {
+  if (dragState.type !== 'topbar-pull-cord') {
+    return
+  }
+
+  const shellWidth = getTopbarShellWidth()
+  if (shellWidth <= 0) {
+    return
+  }
+
+  const deltaX = getMouseClientX(event) - dragState.startX
+  if (Math.abs(deltaX) > 3) {
+    topbarPullCordMoved.value = true
+  }
+
+  setTopbarPullCordPosition(dragState.startPullCordPosition + deltaX / shellWidth)
+}
+
 function onHandleEnd() {
-  isDragging.value = false
+  const wasHandleDragging = dragState.type === 'toggle-handle'
+  const wasTopbarDragging = dragState.type === 'topbar-pull-cord'
+  dragState.type = null
+  hiddenHandleDragging.value = false
+  resizeDragging.value = false
+  topbarPullCordDragging.value = false
+  if (!wasHandleDragging) {
+    if (!wasTopbarDragging) {
+      return
+    }
+    window.setTimeout(() => {
+      topbarPullCordMoved.value = false
+    }, 50)
+    return
+  }
+
   window.setTimeout(() => {
-    hasMoved.value = false
+    hiddenHandleMoved.value = false
   }, 50)
 }
 
 function onHandleClick() {
-  if (hasMoved.value) {
+  if (hiddenHandleMoved.value) {
     return
   }
 
   toggleSider()
+}
+
+function clearTopbarPullTimer() {
+  if (topbarPullTimer !== null) {
+    window.clearTimeout(topbarPullTimer)
+    topbarPullTimer = null
+  }
+}
+
+function handleTopbarPullCordClick() {
+  if (!topbarPullCordEnabled.value || topbarPullAnimating.value || topbarPullCordMoved.value) {
+    return
+  }
+
+  clearTopbarPullTimer()
+  topbarPullAnimating.value = true
+  const nextCollapsed = !topbarCollapsed.value
+  topbarPullTimer = window.setTimeout(() => {
+    setTopbarCollapsed(nextCollapsed)
+    topbarPullAnimating.value = false
+    topbarPullTimer = null
+  }, TOPBAR_PULL_ANIMATION_MS)
 }
 
 function handleLogout() {
@@ -252,7 +439,9 @@ function handleLogout() {
 onMounted(() => {
   document.body.style.overflow = 'hidden'
   window.addEventListener('resize', updateViewportWidth)
+  window.addEventListener('mousemove', onResizeMove)
   window.addEventListener('mousemove', onHandleMove)
+  window.addEventListener('mousemove', onTopbarPullCordMove)
   window.addEventListener('mouseup', onHandleEnd)
   window.addEventListener('touchmove', onHandleMove, { passive: false })
   window.addEventListener('touchend', onHandleEnd)
@@ -260,26 +449,60 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.body.style.overflow = ''
+  clearTopbarPullTimer()
   window.removeEventListener('resize', updateViewportWidth)
+  window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mousemove', onHandleMove)
+  window.removeEventListener('mousemove', onTopbarPullCordMove)
   window.removeEventListener('mouseup', onHandleEnd)
   window.removeEventListener('touchmove', onHandleMove)
   window.removeEventListener('touchend', onHandleEnd)
 })
 
 watch(viewportWidth, applyAutoCollapse, { immediate: true })
+watch(preferredExpandedSiderWidth, (width) => {
+  saveExpandedSiderWidth(width)
+})
 </script>
 
 <template>
-  <div class="admin-shell">
-    <header class="admin-topbar">
-      <div class="topbar-left">
-        <span class="topbar-brand">🦞🧄 Garlic Claw</span>
-      </div>
-      <div class="topbar-right">
-        <ThemeToggle />
-      </div>
-    </header>
+  <div
+    class="admin-shell"
+    :class="{
+      'topbar-collapsible': topbarPullCordEnabled,
+      'topbar-collapsed': topbarCollapsed,
+      'topbar-pull-animating': topbarPullAnimating,
+    }"
+  >
+    <div ref="topbarShellRef" class="admin-topbar-shell">
+      <header class="admin-topbar">
+        <div class="topbar-left">
+          <span class="topbar-brand">🦞🧄 Garlic Claw</span>
+        </div>
+        <div class="topbar-right">
+          <ThemeToggle />
+          <button type="button" class="topbar-action-button" @click="handleLogout">
+            <Icon class="topbar-action-icon" :icon="logout3Bold" aria-hidden="true" />
+            退出登录
+          </button>
+        </div>
+      </header>
+
+      <button
+        v-if="topbarPullCordEnabled"
+        type="button"
+        class="topbar-pull-cord"
+        :class="{ 'is-dragging': topbarPullCordDragging }"
+        :style="{ left: `${topbarPullCordPosition * 100}%` }"
+        data-test="topbar-pull-cord"
+        :aria-label="topbarPullLabel"
+        @mousedown="onTopbarPullCordStart"
+        @click="handleTopbarPullCordClick"
+      >
+        <span class="topbar-pull-cord-line" />
+        <span class="topbar-pull-cord-handle" />
+      </button>
+    </div>
 
     <div class="admin-body">
       <aside
@@ -287,6 +510,8 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
         :class="{
           'is-compact': isCompact,
           'is-hidden': isHidden,
+          'is-resizing': resizeDragging,
+          'has-resize-handle': canResizeExpandedSider,
         }"
         :style="{ width: `${currentSiderWidth}px` }"
       >
@@ -313,15 +538,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
             </RouterLink>
           </nav>
 
-          <div class="sider-meta">
-            <div class="sider-actions">
-              <button type="button" class="sider-action-link" @click="handleLogout">
-                <Icon class="sider-action-icon" :icon="logout3Bold" aria-hidden="true" />
-                退出登录
-              </button>
-            </div>
-          </div>
-
           <div
             class="sider-footer"
             :style="isHidden ? { bottom: `calc(${handleBottom}px + var(--app-safe-area-bottom, 0px))` } : undefined"
@@ -329,7 +545,7 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
             <button
               type="button"
               class="sider-trigger"
-              :class="{ 'is-dragging': isDragging }"
+              :class="{ 'is-dragging': hiddenHandleDragging }"
               :aria-label="triggerText"
               @click="onHandleClick"
               @mousedown="onHandleStart"
@@ -341,6 +557,15 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
           </div>
         </div>
       </aside>
+      <div
+        v-if="canResizeExpandedSider"
+        class="admin-sider-resize-handle"
+        data-test="admin-sider-resize-handle"
+        role="separator"
+        aria-label="调整侧栏宽度"
+        aria-orientation="vertical"
+        @mousedown="onResizeStart"
+      />
 
       <main class="admin-content">
         <RouterView />
@@ -358,6 +583,18 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   background: var(--shell-bg);
 }
 
+.admin-topbar-shell {
+  position: relative;
+  height: 48px;
+  min-height: 0;
+  flex-shrink: 0;
+  transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.admin-shell.topbar-collapsed .admin-topbar-shell {
+  height: 0;
+}
+
 .admin-topbar {
   display: flex;
   align-items: center;
@@ -368,12 +605,123 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   background: var(--shell-bg-elevated);
   border-bottom: 1px solid var(--shell-border);
   z-index: 100;
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease;
+}
+
+.admin-shell.topbar-collapsed .admin-topbar {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
 }
 
 .topbar-brand {
   font-size: 14px;
   font-weight: 600;
   color: var(--shell-text);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid var(--shell-border-light);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--shell-text-secondary);
+  font-size: 14px;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.topbar-action-button:hover {
+  border-color: #64748b;
+  background-color: var(--shell-bg-hover);
+  color: var(--shell-text);
+}
+
+.topbar-action-icon {
+  min-width: 16px;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.topbar-pull-cord {
+  position: absolute;
+  top: 100%;
+  z-index: 110;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  transform: translate(-50%, 0);
+  cursor: pointer;
+  box-shadow: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.topbar-pull-cord.is-dragging {
+  cursor: grabbing;
+}
+
+.topbar-pull-cord:hover,
+.topbar-pull-cord:focus,
+.topbar-pull-cord:focus-visible,
+.topbar-pull-cord:active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.admin-shell.topbar-collapsed .topbar-pull-cord {
+  top: 0;
+}
+
+.topbar-pull-cord-line {
+  width: 2px;
+  height: 18px;
+  background: linear-gradient(180deg, rgba(203, 213, 225, 0.92), rgba(120, 134, 156, 0.72));
+  transition: height 0.18s ease;
+}
+
+.topbar-pull-cord-handle {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.9)),
+    var(--shell-bg-elevated);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+  transition: box-shadow 0.18s ease;
+}
+
+.topbar-pull-cord:hover .topbar-pull-cord-line {
+  height: 20px;
+}
+
+.topbar-pull-cord:hover .topbar-pull-cord-handle {
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.18);
+}
+
+.admin-shell.topbar-pull-animating .topbar-pull-cord-line {
+  height: 26px;
 }
 
 .admin-body {
@@ -391,6 +739,14 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   color: var(--shell-text);
   transition: width 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: width;
+}
+
+.admin-nav.is-resizing {
+  transition: none;
+}
+
+.admin-nav.has-resize-handle {
+  border-right: none;
 }
 
 .sider-inner {
@@ -500,49 +856,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   white-space: nowrap;
 }
 
-.sider-meta {
-  display: grid;
-  gap: 10px;
-  margin-top: auto;
-  padding: 12px 16px;
-  border-top: 1px solid var(--shell-border);
-}
-
-.sider-actions {
-  display: grid;
-  gap: 8px;
-}
-
-.sider-action-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 36px;
-  border: 1px solid var(--shell-border-light);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--shell-text-secondary);
-  font-size: 14px;
-  text-decoration: none;
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.sider-action-icon {
-  min-width: 16px;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.sider-action-link:hover {
-  border-color: #64748b;
-  background-color: var(--shell-bg-hover);
-  color: var(--shell-text);
-}
-
 .sider-footer {
   margin-top: auto;
   overflow: hidden;
@@ -601,6 +914,21 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   background-color: var(--shell-bg);
 }
 
+.admin-sider-resize-handle {
+  position: relative;
+  width: 2px;
+  flex: 0 0 1px;
+  cursor: col-resize;
+  background: rgba(148, 163, 184, 0.22);
+  touch-action: none;
+  transition: background-color 0.18s ease;
+}
+
+.admin-sider-resize-handle:hover,
+.admin-nav.is-resizing + .admin-sider-resize-handle {
+  background: rgba(59, 130, 246, 0.42);
+}
+
 .admin-nav.is-compact {
   min-width: 64px;
 }
@@ -629,10 +957,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
 .admin-nav.is-compact .sider-title-text,
 .admin-nav.is-compact .sider-trigger-text,
 .admin-nav.is-compact .menu-label {
-  display: none;
-}
-
-.admin-nav.is-compact .sider-meta {
   display: none;
 }
 
@@ -665,8 +989,7 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
 }
 
 .admin-nav.is-hidden .sider-title,
-.admin-nav.is-hidden .sider-menu,
-.admin-nav.is-hidden .sider-meta {
+.admin-nav.is-hidden .sider-menu {
   opacity: 0;
   pointer-events: none;
 }
@@ -722,6 +1045,10 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
 }
 
 @media (max-width: 768px) {
+  .topbar-pull-cord-line {
+    height: 14px;
+  }
+
   .menu-item {
     min-height: 48px;
   }

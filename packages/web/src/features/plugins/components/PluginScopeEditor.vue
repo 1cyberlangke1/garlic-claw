@@ -58,7 +58,7 @@
           <div v-for="(row, index) in rows" :key="index" class="scope-row">
             <input
               v-model="row.conversationId"
-              placeholder="conversation id"
+              placeholder="会话 ID"
             >
             <select v-model="row.enabled">
               <option :value="true">启用</option>
@@ -157,10 +157,10 @@ function buildScopeConversations(
   for (const row of scopeRows) {
     const conversationId = row.conversationId.trim()
     if (!conversationId) {
-      throw new Error('conversation id 不能为空')
+      throw new Error('会话 ID 不能为空')
     }
     if (seen.has(conversationId)) {
-      throw new Error('conversation id 不能重复')
+      throw new Error('会话 ID 不能重复')
     }
 
     seen.add(conversationId)

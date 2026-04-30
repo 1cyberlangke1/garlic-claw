@@ -124,7 +124,7 @@ export function validateAiProviderInput(
 ): void {
   if (!isProviderProtocolDriver(input.driver)) {
     const supportedDrivers = providerCatalog.map((item) => item.protocol).join(', ');
-    throw new Error(`Provider driver must be one of: ${supportedDrivers}`);
+    throw new Error(`provider driver 必须是以下之一: ${supportedDrivers}`);
   }
 }
 

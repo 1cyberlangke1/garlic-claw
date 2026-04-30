@@ -2,8 +2,7 @@
   <div class="tools-page">
     <section class="tools-hero">
       <div class="hero-copy">
-        <span class="hero-kicker">统一入口</span>
-        <h1>工具管理</h1>
+        <h1><Icon :icon="tuning2Bold" class="hero-icon" aria-hidden="true" />工具管理</h1>
       </div>
     </section>
 
@@ -66,6 +65,8 @@
 import type { ToolSourceInfo } from '@garlic-claw/shared'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { Icon } from '@iconify/vue'
+import tuning2Bold from '@iconify-icons/solar/tuning-2-bold'
 import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
 import { loadToolOverview, toErrorMessage } from '@/features/tools/composables/tool-management.data'
 
@@ -175,15 +176,18 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
 }
 
 .tools-hero {
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--surface-panel-soft);
+  display: grid;
+  gap: 10px;
 }
 
 .hero-copy {
   display: grid;
   gap: 10px;
+}
+
+.hero-icon {
+  vertical-align: -0.15em;
+  margin-right: 6px;
 }
 
 .hero-copy h1 {

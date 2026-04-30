@@ -506,7 +506,7 @@ export function createChatStoreModule() {
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
-    if (activeMessage?.role === "assistant") {
+    if (!activeMessage || activeMessage.role === "assistant") {
       await stopConversationMessageRecord(
         conversationId,
         messageId,
