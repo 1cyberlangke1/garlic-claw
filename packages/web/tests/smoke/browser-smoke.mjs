@@ -525,13 +525,8 @@ async function runChatFlow(page, accessToken) {
     return await page.locator('.send-button').count() > 0 ? true : null;
   }, '等待聊天恢复空闲');
 
-  const compactRequest = page.waitForRequest((request) =>
-    request.method() === 'POST'
-    && request.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
-  );
   await composer.fill('/compact');
   await page.locator('.send-button').click();
-  await compactRequest;
   await waitFor(async () => {
     const detail = await getConversationDetail(accessToken, conversation.id);
     const commandMessage = detail.messages.find((message) => message.content === '/compact');
@@ -732,6 +727,12 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
   assert.ok(subagent, '子代理总览没有返回浏览器 smoke 创建的子代理');
   assert.equal(subagent.title, chatFlow.subagentName, '子代理总览没有保留命名标题');
   assert.equal(subagent.resultPreview, SUBAGENT_RESULT_TEXT, '子代理总览没有返回 smoke 结果摘要');
+
+  await page.goto('/subagents', { waitUntil: 'networkidle' });
+  await expectText(page, 'Subagent');
+  await expectText(page, '会话窗口');
+  await expectText(page, chatFlow.subagentName);
+  await expectText(page, SUBAGENT_RESULT_TEXT);
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {

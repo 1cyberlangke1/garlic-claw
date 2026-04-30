@@ -62,6 +62,7 @@ export function buildPluginGenerateParams(input: PluginLlmGenerateParams): JsonO
 
 export function buildPluginSubagentSpawnParams(input: PluginSubagentSpawnParams & { writeBack?: JsonObject | { target: { id: string; type: "conversation" } } }): JsonObject {
   return {
+    ...(input.name ? { name: input.name } : {}),
     ...(input.description ? { description: input.description } : {}),
     ...(typeof input.maxConversationSubagents === "number" ? { maxConversationSubagents: input.maxConversationSubagents } : {}),
     ...(input.subagentType ? { subagentType: input.subagentType } : {}),
@@ -88,6 +89,7 @@ export function buildPluginSubagentWaitParams(input: PluginSubagentWaitParams): 
 export function buildPluginSubagentSendInputParams(input: PluginSubagentSendInputParams): JsonObject {
   return {
     conversationId: input.conversationId,
+    ...(input.name ? { name: input.name } : {}),
     ...(input.description ? { description: input.description } : {}),
     messages: toHostJsonValue(input.messages),
     ...(input.providerId ? { providerId: input.providerId } : {}),

@@ -1873,6 +1873,7 @@ test('execution context exposes agent runtime style subagent host APIs', async (
   });
 
   const startedSubagent = await executionContext.host.spawnSubagent({
+    name: '总结分身',
     description: '总结当前对话',
     providerId: 'openai',
     modelId: 'gpt-5.2',
@@ -1891,6 +1892,7 @@ test('execution context exposes agent runtime style subagent host APIs', async (
   });
   const continuedSubagent = await executionContext.host.sendInputSubagent({
     conversationId: 'subagent-conversation-1',
+    name: '继续总结分身',
     description: '继续总结',
     messages: [
       {
@@ -1917,7 +1919,9 @@ test('execution context exposes agent runtime style subagent host APIs', async (
   assert.equal(continuedSubagent.status, 'queued');
   assert.equal(interruptedSubagent.status, 'interrupted');
   assert.equal(closedSubagent.status, 'closed');
+  assert.equal(sent[0].payload.params.name, '总结分身');
   assert.equal(sent[0].payload.params.description, '总结当前对话');
+  assert.equal(sent[4].payload.params.name, '继续总结分身');
   assert.equal(sent[4].payload.params.description, '继续总结');
   assert.deepEqual(
     sent.map((entry) => entry.payload.method),
