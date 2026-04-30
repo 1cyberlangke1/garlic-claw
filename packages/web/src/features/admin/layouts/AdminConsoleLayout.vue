@@ -278,6 +278,10 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
       </div>
       <div class="topbar-right">
         <ThemeToggle />
+        <button type="button" class="topbar-action-button" @click="handleLogout">
+          <Icon class="topbar-action-icon" :icon="logout3Bold" aria-hidden="true" />
+          退出登录
+        </button>
       </div>
     </header>
 
@@ -312,15 +316,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
               <span class="menu-label">{{ item.label }}</span>
             </RouterLink>
           </nav>
-
-          <div class="sider-meta">
-            <div class="sider-actions">
-              <button type="button" class="sider-action-link" @click="handleLogout">
-                <Icon class="sider-action-icon" :icon="logout3Bold" aria-hidden="true" />
-                退出登录
-              </button>
-            </div>
-          </div>
 
           <div
             class="sider-footer"
@@ -374,6 +369,41 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   font-size: 14px;
   font-weight: 600;
   color: var(--shell-text);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid var(--shell-border-light);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--shell-text-secondary);
+  font-size: 14px;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.topbar-action-button:hover {
+  border-color: #64748b;
+  background-color: var(--shell-bg-hover);
+  color: var(--shell-text);
+}
+
+.topbar-action-icon {
+  min-width: 16px;
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
 .admin-body {
@@ -500,49 +530,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   white-space: nowrap;
 }
 
-.sider-meta {
-  display: grid;
-  gap: 10px;
-  margin-top: auto;
-  padding: 12px 16px;
-  border-top: 1px solid var(--shell-border);
-}
-
-.sider-actions {
-  display: grid;
-  gap: 8px;
-}
-
-.sider-action-link {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 36px;
-  border: 1px solid var(--shell-border-light);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--shell-text-secondary);
-  font-size: 14px;
-  text-decoration: none;
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease,
-    border-color 0.2s ease;
-}
-
-.sider-action-icon {
-  min-width: 16px;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.sider-action-link:hover {
-  border-color: #64748b;
-  background-color: var(--shell-bg-hover);
-  color: var(--shell-text);
-}
-
 .sider-footer {
   margin-top: auto;
   overflow: hidden;
@@ -632,10 +619,6 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
   display: none;
 }
 
-.admin-nav.is-compact .sider-meta {
-  display: none;
-}
-
 .admin-nav.is-compact .menu-item--admin-start::before {
   left: 12px;
   right: 12px;
@@ -665,8 +648,7 @@ watch(viewportWidth, applyAutoCollapse, { immediate: true })
 }
 
 .admin-nav.is-hidden .sider-title,
-.admin-nav.is-hidden .sider-menu,
-.admin-nav.is-hidden .sider-meta {
+.admin-nav.is-hidden .sider-menu {
   opacity: 0;
   pointer-events: none;
 }

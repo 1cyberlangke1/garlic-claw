@@ -52,5 +52,7 @@ describe('AdminConsoleLayout', () => {
     expect(wrapper.text()).toContain('控制台')
     expect(wrapper.text()).toContain('退出登录')
     expect(wrapper.text()).not.toContain('API Keys')
+    expect(wrapper.get('.admin-topbar').text()).toContain('退出登录')
+    expect(wrapper.get('.admin-nav').text()).not.toContain('退出登录')
   })
 })
