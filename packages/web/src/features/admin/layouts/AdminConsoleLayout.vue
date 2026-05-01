@@ -658,6 +658,8 @@ watch(preferredExpandedSiderWidth, (width) => {
 }
 
 .topbar-pull-cord {
+  appearance: none;
+  -webkit-appearance: none;
   position: absolute;
   top: 100%;
   z-index: 110;
@@ -665,12 +667,15 @@ watch(preferredExpandedSiderWidth, (width) => {
   flex-direction: column;
   align-items: center;
   width: 28px;
-  padding: 0;
-  border: none;
-  background: transparent;
+  min-height: 0;
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: inherit;
   transform: translate(-50%, 0);
   cursor: pointer;
-  box-shadow: none;
+  box-shadow: none !important;
   outline: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -683,9 +688,9 @@ watch(preferredExpandedSiderWidth, (width) => {
 .topbar-pull-cord:focus,
 .topbar-pull-cord:focus-visible,
 .topbar-pull-cord:active {
-  background: transparent;
-  border-color: transparent;
-  box-shadow: none;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
   outline: none;
 }
 
@@ -709,7 +714,7 @@ watch(preferredExpandedSiderWidth, (width) => {
     radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.9)),
     var(--shell-bg-elevated);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
-  transition: box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .topbar-pull-cord:hover .topbar-pull-cord-line {
@@ -717,6 +722,7 @@ watch(preferredExpandedSiderWidth, (width) => {
 }
 
 .topbar-pull-cord:hover .topbar-pull-cord-handle {
+  border-color: rgba(148, 163, 184, 0.6);
   box-shadow: 0 12px 22px rgba(15, 23, 42, 0.18);
 }
 

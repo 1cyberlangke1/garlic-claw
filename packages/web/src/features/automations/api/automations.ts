@@ -1,5 +1,5 @@
 import { delete as del, get, patch, post } from '@/api/http'
-import type { ActionConfig, AutomationInfo, JsonValue, TriggerConfig } from '@garlic-claw/shared'
+import type { ActionConfig, AutomationInfo, AutomationLogInfo, JsonValue, TriggerConfig } from '@garlic-claw/shared'
 
 export function listAutomations() {
   return get<AutomationInfo[]>('/automations')
@@ -26,7 +26,7 @@ export function deleteAutomation(id: string) {
 }
 
 export function getAutomationLogs(id: string) {
-  return get<{ id: string; status: string; result: string | null; createdAt: string }[]>(
+  return get<AutomationLogInfo[]>(
     `/automations/${id}/logs`,
   )
 }

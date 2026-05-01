@@ -1,8 +1,19 @@
 <template>
   <div class="automations-view">
     <div class="automations-header">
-      <h1><Icon :icon="cpuBoltBold" class="hero-icon" aria-hidden="true" />自动化</h1>
-      <ElButton @click="openCreateDialog">+ 新建自动化</ElButton>
+      <h1 class="header-title">
+        <Icon :icon="currentView === 'automations' ? cpuBoltBold : listCheckBold" class="hero-icon" aria-hidden="true" />
+        {{ currentView === 'automations' ? '自动化' : '执行日志' }}
+      </h1>
+      <div class="header-actions">
+        <AutomationViewSwitch
+          :model-value="currentView"
+          :options="viewOptions"
+          @update:model-value="handleViewSwitch"
+        />
+        <ElButton v-if="currentView === 'automations'" @click="openCreateDialog">+ 新建自动化</ElButton>
+        <ElButton v-else @click="loadAutomationLogs">刷新日志</ElButton>
+      </div>
     </div>
 
     <!-- 创建/编辑弹窗 -->
@@ -109,14 +120,14 @@
       </template>
     </ElDialog>
 
-    <div v-if="loading" class="loading">加载中...</div>
+    <div v-if="currentView === 'automations' && loading" class="loading">加载中...</div>
 
-    <div v-else-if="automations.length === 0" class="empty">
+    <div v-else-if="currentView === 'automations' && automations.length === 0" class="empty">
       <p>暂无自动化规则</p>
       <p class="hint">可以通过上方按钮创建，或在对话中让 AI 帮你创建</p>
     </div>
 
-    <div v-else class="automation-list">
+    <div v-else-if="currentView === 'automations'" class="automation-list">
       <div
         v-for="auto in automations"
         :key="auto.id"
@@ -130,26 +141,22 @@
         @mouseup="() => onTouchEnd(auto.id)"
         @mouseleave="() => onTouchEnd(auto.id)"
       >
-        <!-- 左侧操作按钮（右滑显示）- 启用/停用 -->
         <div class="swipe-action left-action" :style="getLeftActionStyle(auto.id)">
           <Icon :icon="auto.enabled ? closeCircleBold : checkCircleBold" :width="24" />
           <span class="action-text">{{ auto.enabled ? '停用' : '启用' }}</span>
         </div>
 
-        <!-- 右侧操作按钮（左滑显示）- 删除 -->
         <div class="swipe-action right-action" :style="getRightActionStyle(auto.id)">
           <Icon :icon="trashBold" :width="24" />
           <span class="action-text">删除</span>
         </div>
 
-        <!-- 自动化卡片 -->
         <div
           class="automation-card"
           :class="{ disabled: !auto.enabled }"
           :style="getCardStyle(auto.id)"
           @click="handleCardClick(auto)"
         >
-          <!-- 头部：名称 + 手动运行 -->
           <div class="card-header">
             <h3 class="card-title">{{ auto.name }}</h3>
             <ElButton
@@ -162,7 +169,6 @@
             </ElButton>
           </div>
 
-          <!-- 动作标签 -->
           <div v-if="auto.actions.length > 0" class="card-detail">
             <span class="actions-list">
               <span v-for="(action, i) in auto.actions" :key="i" class="action-tag">
@@ -171,36 +177,48 @@
             </span>
           </div>
 
-          <!-- 底部：执行间隔 + 上次运行 -->
           <div class="card-footer">
             <span class="trigger-interval">
               <Icon :icon="clockCircleBold" class="interval-icon" />
-              <template v-if="auto.trigger.type === 'cron'">
-                每 {{ auto.trigger.cron }}
-              </template>
-              <template v-else-if="auto.trigger.type === 'event'">
-                事件 {{ auto.trigger.event }}
-              </template>
-              <template v-else>
-                手动触发
-              </template>
+              {{ formatTriggerLabel(auto.trigger) }}
             </span>
             <span v-if="auto.lastRunAt" class="last-run">
               上次运行: {{ formatTime(auto.lastRunAt) }}
             </span>
             <span v-else class="last-run never">尚未运行</span>
           </div>
-
-          <!-- 最近日志 -->
-          <div v-if="auto.logs?.length" class="logs">
-            <div v-for="log in auto.logs.slice(0, 3)" :key="log.id" class="log-entry" :class="log.status">
-              <span class="log-status">{{ log.status === 'success' ? '✓' : '✗' }}</span>
-              <span class="log-time">{{ formatTime(log.createdAt) }}</span>
-              <span v-if="log.result" class="log-result">{{ truncate(log.result, 60) }}</span>
-            </div>
-          </div>
         </div>
       </div>
+    </div>
+
+    <div v-else-if="logsLoading" class="loading">日志加载中...</div>
+
+    <div v-else-if="logEntries.length === 0" class="empty">
+      <p>暂无执行日志</p>
+      <p class="hint">先手动运行一次自动化，或等待定时 / 事件触发。</p>
+    </div>
+
+    <div v-else class="log-list">
+      <article
+        v-for="log in logEntries"
+        :key="log.id"
+        class="log-card"
+        :class="log.status"
+      >
+        <div class="log-card-header">
+          <div class="log-card-title-row">
+            <span class="log-badge">{{ log.status === 'success' ? '成功' : log.status }}</span>
+            <h3 class="log-card-title">{{ log.automationName }}</h3>
+            <span v-if="!log.enabled" class="log-disabled-tag">已停用</span>
+          </div>
+          <span class="log-card-time">{{ formatTime(log.createdAt) }}</span>
+        </div>
+        <div class="log-card-meta">
+          <span>{{ formatTriggerLabel(log.trigger) }}</span>
+          <span>{{ log.automationId }}</span>
+        </div>
+        <pre class="log-card-result">{{ log.result || '无返回结果' }}</pre>
+      </article>
     </div>
   </div>
 </template>
@@ -212,29 +230,48 @@ import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
 import clockCircleBold from '@iconify-icons/solar/clock-circle-bold'
 import closeCircleBold from '@iconify-icons/solar/close-circle-bold'
 import checkCircleBold from '@iconify-icons/solar/check-circle-bold'
+import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import trashBold from '@iconify-icons/solar/trash-bin-trash-bold'
 import { ElButton, ElDialog, ElInput, ElInputNumber, ElMessageBox, ElOption, ElSelect } from 'element-plus'
+import AutomationViewSwitch from '@/features/automations/components/AutomationViewSwitch.vue'
 import { useAutomations } from '@/features/automations/composables/use-automations'
 import type { AutomationInfo } from '@garlic-claw/shared'
 
+type AutomationView = 'automations' | 'logs'
+
 const {
   automations,
+  currentView,
   conversations,
   loading,
   form,
   canCreate,
+  logsLoading,
+  logEntries,
   handleCreate,
   handleToggle,
   handleRun,
   handleDelete,
+  handleViewChange,
+  loadAutomationLogs,
   describeAction,
   formatTime,
-  truncate,
+  formatTriggerLabel,
 } = useAutomations()
 
-// 弹窗状态
+const viewOptions: ReadonlyArray<{ label: string; value: AutomationView }> = [
+  { label: '自动化', value: 'automations' },
+  { label: '日志', value: 'logs' },
+]
+
 const dialogVisible = ref(false)
 const editingAutomation = ref<AutomationInfo | null>(null)
+
+function handleViewSwitch(value: string | number) {
+  if (value === 'automations' || value === 'logs') {
+    handleViewChange(value)
+  }
+}
 
 function openCreateDialog() {
   editingAutomation.value = null
@@ -274,12 +311,10 @@ function closeDialog() {
 }
 
 async function handleSave() {
-  // 编辑模式暂不支持后端更新，仅创建可用
   await handleCreate()
   dialogVisible.value = false
 }
 
-// 滑动状态
 const swipeState = reactive<Record<string, {
   offset: number
   startX: number
@@ -428,10 +463,24 @@ function getRightActionStyle(id: string) {
 }
 
 .automations-header {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: start;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+.header-title {
+  margin: 0;
+  min-width: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .hero-icon {
@@ -450,7 +499,6 @@ function getRightActionStyle(id: string) {
   margin-top: 0.5rem;
 }
 
-/* 弹窗表单 */
 .dialog-body .field {
   margin-bottom: 0.8rem;
 }
@@ -478,21 +526,18 @@ function getRightActionStyle(id: string) {
   display: block;
 }
 
-/* 自动化列表 */
 .automation-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* 滑动容器 */
 .automation-swipe-item {
   position: relative;
   touch-action: pan-y;
   user-select: none;
 }
 
-/* 滑动操作按钮 */
 .swipe-action {
   position: absolute;
   top: 0;
@@ -525,7 +570,6 @@ function getRightActionStyle(id: string) {
   white-space: nowrap;
 }
 
-/* 自动化卡片 */
 .automation-card {
   position: relative;
   z-index: 1;
@@ -554,7 +598,6 @@ function getRightActionStyle(id: string) {
   opacity: 0.65;
 }
 
-/* 卡片头部 */
 .card-header {
   display: flex;
   align-items: center;
@@ -573,7 +616,6 @@ function getRightActionStyle(id: string) {
   min-width: 0;
 }
 
-/* 动作标签 */
 .card-detail {
   margin-top: 8px;
 }
@@ -593,7 +635,6 @@ function getRightActionStyle(id: string) {
   color: var(--text-muted);
 }
 
-/* 底部：执行间隔 + 上次运行 */
 .card-footer {
   display: flex;
   align-items: center;
@@ -627,61 +668,107 @@ function getRightActionStyle(id: string) {
   opacity: 0.7;
 }
 
-/* 最近日志 */
-.logs {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.log-entry {
+.log-card {
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 28px rgba(1, 6, 15, 0.16);
+}
+
+.log-card.success {
+  border-left: 3px solid var(--success);
+}
+
+.log-card.error {
+  border-left: 3px solid var(--danger);
+}
+
+.log-card-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.78rem;
-  padding: 0.15em 0;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.log-entry.success .log-status {
-  color: var(--success);
+.log-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.log-entry.error .log-status {
-  color: var(--danger);
-}
-
-.log-time {
-  color: var(--text-muted);
+.log-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   flex-shrink: 0;
 }
 
-.log-result {
-  color: var(--text-muted);
-  font-family: 'Cascadia Code', monospace;
-  font-size: 0.72rem;
+.log-card.success .log-badge {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+.log-card.error .log-badge {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.log-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 响应式 */
+.log-disabled-tag,
+.log-card-time,
+.log-card-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.log-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+
+.log-card-result {
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-input);
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  color: var(--text-muted);
+  font-family: 'Cascadia Code', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 840px) {
   .automations-view {
     padding: 1rem;
   }
 
-  .automations-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-  }
-
-  .card-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .card-footer {
+  .automations-header,
+  .header-actions,
+  .card-header,
+  .card-footer,
+  .log-card-header {
     flex-direction: column;
     align-items: flex-start;
   }

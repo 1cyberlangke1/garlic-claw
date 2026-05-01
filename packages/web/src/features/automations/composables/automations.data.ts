@@ -1,10 +1,12 @@
 import type {
   AutomationInfo,
+  AutomationLogInfo,
   Conversation,
 } from '@garlic-claw/shared'
 import {
   createAutomation,
   deleteAutomation,
+  getAutomationLogs,
   listAutomations,
   runAutomation,
   toggleAutomation,
@@ -20,6 +22,15 @@ export type CreateAutomationInput = Parameters<typeof createAutomation>[0]
  */
 export function loadAutomations(): Promise<AutomationInfo[]> {
   return listAutomations()
+}
+
+/**
+ * 读取指定自动化的执行日志。
+ * @param automationId 自动化 ID
+ * @returns 自动化日志列表
+ */
+export function loadAutomationLogs(automationId: string): Promise<AutomationLogInfo[]> {
+  return getAutomationLogs(automationId)
 }
 
 /**

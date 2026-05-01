@@ -6,16 +6,17 @@
     <div class="ai-settings-shell">
       <aside class="ai-settings-sidebar">
         <nav class="sider-menu">
-          <ElButton
+          <button
             v-for="item in navItems"
             :key="item.id"
+            type="button"
             class="menu-item"
             :class="{ active: activeSection === item.id, 'menu-item--divided': item.divided }"
             @click="activeSection = item.id"
           >
             <Icon class="menu-icon" :icon="item.icon" aria-hidden="true" />
             <span class="menu-label">{{ item.label }}</span>
-          </ElButton>
+          </button>
         </nav>
     </aside>
 

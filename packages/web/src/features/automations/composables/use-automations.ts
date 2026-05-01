@@ -1,10 +1,14 @@
 import { computed, onMounted, shallowRef, ref } from 'vue'
 import type {
   ActionConfig,
+  AutomationLogInfo,
+  AutomationInfo,
+  Conversation,
   TriggerConfig,
 } from '@garlic-claw/shared'
 import { useAsyncState } from '@/composables/use-async-state'
 import {
+  loadAutomationLogs as loadAutomationLogsById,
   createAutomationRecord,
   deleteAutomationRecord,
   loadAutomationConversations as loadAutomationConversationOptions,
@@ -12,10 +16,10 @@ import {
   runAutomationRequest,
   toggleAutomationEnabled,
 } from './automations.data'
-import type { AutomationInfo, Conversation } from '@garlic-claw/shared'
 
 type AutomationTriggerType = 'cron' | 'manual' | 'event'
 type AutomationActionType = ActionConfig['type']
+type AutomationPageView = 'automations' | 'logs'
 
 interface AutomationFormState {
   name: string
@@ -29,6 +33,17 @@ interface AutomationFormState {
   targetConversationId: string
   targetConversationMode: 'cron_child' | 'existing'
   maxHistoryConversations: number
+}
+
+interface AutomationLogEntryViewModel {
+  automationId: string
+  automationName: string
+  createdAt: string
+  enabled: boolean
+  id: string
+  result: string | null
+  status: string
+  trigger: TriggerConfig
 }
 
 /**
@@ -50,9 +65,27 @@ export function useAutomations() {
   const appError = requestState.appError
   const showCreate = ref(false)
   const form = ref(createAutomationFormState())
+  const currentView = ref<AutomationPageView>('automations')
+  const logsLoading = ref(false)
+  const logsLoaded = ref(false)
+  const automationLogs = shallowRef<Record<string, AutomationLogInfo[]>>({})
   const canCreate = computed(
     () => Boolean(form.value.name && hasValidTrigger(form.value) && hasValidAction(form.value)),
   )
+  const logEntries = computed<AutomationLogEntryViewModel[]>(() => {
+    return automations.value
+      .flatMap((automation) => (automationLogs.value[automation.id] ?? []).map((log) => ({
+        automationId: automation.id,
+        automationName: automation.name,
+        createdAt: log.createdAt,
+        enabled: automation.enabled,
+        id: log.id,
+        result: log.result,
+        status: log.status,
+        trigger: automation.trigger,
+      })))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+  })
 
   onMounted(() => {
     void Promise.all([loadAutomations(), loadConversations()])
@@ -63,6 +96,9 @@ export function useAutomations() {
     requestState.clearError()
     try {
       automations.value = await loadAutomationList()
+      if (currentView.value === 'logs' && !logsLoading.value) {
+        void loadAutomationLogs()
+      }
     } catch (caughtError) {
       requestState.setError(caughtError, '无法加载自动化程序')
     } finally {
@@ -128,6 +164,9 @@ export function useAutomations() {
     try {
       await runAutomationRequest(id)
       await loadAutomations()
+      if (currentView.value === 'logs') {
+        await loadAutomationLogs()
+      }
     } catch (caughtError) {
       requestState.setError(caughtError, '执行自动化失败')
     }
@@ -137,16 +176,47 @@ export function useAutomations() {
     requestState.clearError()
     try {
       await deleteAutomationRecord(id)
+      const { [id]: _deletedLog, ...restLogs } = automationLogs.value
+      automationLogs.value = restLogs
       await loadAutomations()
     } catch (caughtError) {
       requestState.setError(caughtError, '删除自动化失败')
     }
   }
 
+  async function loadAutomationLogs() {
+    logsLoading.value = true
+    requestState.clearError()
+    try {
+      const entries = await Promise.all(
+        automations.value.map(async (automation) => [
+          automation.id,
+          await loadAutomationLogsById(automation.id),
+        ] as const),
+      )
+      automationLogs.value = Object.fromEntries(entries)
+      logsLoaded.value = true
+    } catch (caughtError) {
+      requestState.setError(caughtError, '无法加载自动化日志')
+    } finally {
+      logsLoading.value = false
+    }
+  }
+
+  function handleViewChange(view: AutomationPageView) {
+    currentView.value = view
+    if (view === 'logs' && !logsLoading.value) {
+      void loadAutomationLogs()
+    }
+  }
+
   return {
     automations,
+    currentView,
     conversations,
     loading,
+    logsLoading,
+    logEntries,
     error,
     appError,
     showCreate,
@@ -156,8 +226,11 @@ export function useAutomations() {
     handleToggle,
     handleRun,
     handleDelete,
+    handleViewChange,
+    loadAutomationLogs,
     describeAction: (action: ActionConfig) => describeAction(action, conversations.value),
     formatTime,
+    formatTriggerLabel,
     truncate,
   }
 }
@@ -271,6 +344,21 @@ function formatTime(iso: string): string {
  */
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}...` : value
+}
+
+/**
+ * 生成统一的触发器展示文案。
+ * @param trigger 触发配置
+ * @returns 可读标签
+ */
+function formatTriggerLabel(trigger: TriggerConfig): string {
+  if (trigger.type === 'cron') {
+    return `每 ${trigger.cron ?? '未配置'}`
+  }
+  if (trigger.type === 'event') {
+    return `事件 ${trigger.event ?? '未配置'}`
+  }
+  return '手动触发'
 }
 
 /**
