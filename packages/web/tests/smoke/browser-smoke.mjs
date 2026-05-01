@@ -87,13 +87,13 @@ async function main() {
     initialProviderIds = new Set((await requestJson('/ai/providers', {
       headers: createAuthHeaders(accessToken),
     }).catch(() => [])).map((provider) => provider.id));
-    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'load' });
     await page.evaluate((token) => {
       try {
         window.localStorage.setItem('accessToken', token);
       } catch {}
     }, accessToken);
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'load' });
     await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
     await cleanupSmokeArtifacts(accessToken, {
@@ -175,8 +175,10 @@ async function ensureDevServices() {
       started.push(await startBrowserSmokeBackendApp());
     }
     started.push(await startBrowserSmokeWebApp());
-    await waitForHttpReady(`${API_ORIGIN}/health`);
-    await waitForHttpReady(webOrigin);
+    await Promise.all([
+      waitForHttpReady(`${API_ORIGIN}/health`),
+      waitForHttpReady(webOrigin),
+    ]);
     return {
       mode: 'isolated-web',
       async stop() {
@@ -209,8 +211,10 @@ async function ensureDevServices() {
     label: '启动开发环境',
     timeoutMs: DEV_RESTART_TIMEOUT_MS,
   });
-  await waitForHttpReady(`${API_ORIGIN}/health`);
-  await waitForHttpReady(webOrigin);
+  await Promise.all([
+    waitForHttpReady(`${API_ORIGIN}/health`),
+    waitForHttpReady(webOrigin),
+  ]);
 
   return {
     mode: 'full-stack',
@@ -320,7 +324,7 @@ async function startBrowserSmokeWebApp() {
 }
 
 async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.goto('/', { waitUntil: 'load' });
   await page.locator('a[href="/ai"]').click();
   await page.waitForURL(/\/ai$/, { timeout: REQUEST_TIMEOUT_MS });
   await page.getByRole('heading', { name: 'AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -355,7 +359,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
       throw new Error(saveError);
     }
     await waitForHttpReady(`${API_ORIGIN}/health`);
-    await page.goto('/ai', { waitUntil: 'networkidle' });
+    await page.goto('/ai', { waitUntil: 'load' });
   }
 
   await waitFor(async () => {
@@ -478,7 +482,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
 
 async function runChatFlow(page, accessToken, createdConversationIds) {
   const beforeIds = new Set((await listConversations(accessToken)).map((item) => item.id));
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.goto('/', { waitUntil: 'load' });
   const createConversationResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
       && response.url().endsWith('/api/chat/conversations'),
@@ -491,7 +495,7 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
     return conversations.find((item) => !beforeIds.has(item.id)) ?? null;
   }, '等待新对话创建');
   createdConversationIds.add(conversation.id);
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'load' });
   await expectConversationSelected(page, conversation.id);
 
   await expectText(page, `${PROVIDER_ID}/${MODEL_ID}`);
@@ -586,7 +590,7 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
 }
 
 async function verifyMcpPage(page) {
-  await page.goto('/mcp', { waitUntil: 'networkidle' });
+  await page.goto('/mcp', { waitUntil: 'load' });
   await expectText(page, 'MCP 管理');
   await expectText(page, '工具启用/禁用统一在工具管理页');
   await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -600,7 +604,7 @@ async function verifyMcpPage(page) {
 }
 
 async function verifyPersonasPage(page) {
-  await page.goto('/personas', { waitUntil: 'networkidle' });
+  await page.goto('/personas', { waitUntil: 'load' });
   await expectText(page, '人设管理');
   await expectText(page, '人设索引');
   await expectText(page, '可用人设');
@@ -611,14 +615,14 @@ async function verifyPersonasPage(page) {
 }
 
 async function verifySkillsPage(page) {
-  await page.goto('/skills', { waitUntil: 'networkidle' });
+  await page.goto('/skills', { waitUntil: 'load' });
   await expectText(page, '技能目录');
   await expectText(page, '已拒绝加载');
   await page.getByPlaceholder('搜索技能名称、说明、标签').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
 async function verifyCommandsPage(page) {
-  await page.goto('/commands', { waitUntil: 'networkidle' });
+  await page.goto('/commands', { waitUntil: 'load' });
   await expectText(page, '命令管理');
   await expectText(page, '冲突触发词');
   await expectText(page, '命令目录');
@@ -627,14 +631,14 @@ async function verifyCommandsPage(page) {
 
 async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   const remotePluginHandle = await createCachedRemotePluginFixture(accessToken, remotePluginScriptPath)
-  await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'networkidle' });
+  await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'load' });
   await expectText(page, '已接入插件');
   let pluginItems = page.locator('.plugin-item');
   if (await pluginItems.count() === 0) {
     const toggle = page.locator('[data-test="plugin-sidebar-toggle-system"]');
     if (await toggle.count() > 0) {
       await toggle.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('load');
       pluginItems = page.locator('.plugin-item');
     }
   }
@@ -654,7 +658,7 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   const systemToggleInput = systemToggle.locator('input');
   if (await systemToggleInput.count() > 0 && !(await systemToggleInput.isChecked())) {
     await systemToggle.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
   }
 
   await expectText(page, '工具管理入口');
@@ -663,7 +667,7 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
 }
 
 async function verifyRuntimeToolsSettingsPage(page) {
-  await page.goto('/ai', { waitUntil: 'networkidle' });
+  await page.goto('/ai', { waitUntil: 'load' });
   await page.getByRole('heading', { name: 'AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.getByRole('button', { exact: true, name: '执行工具' }).click();
   await page.getByRole('heading', { name: '执行工具' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -703,7 +707,7 @@ async function verifyToolsPage(page, accessToken) {
       .filter(Boolean),
   );
 
-  await page.goto('/tools', { waitUntil: 'networkidle' });
+  await page.goto('/tools', { waitUntil: 'load' });
   await expectText(page, '工具管理');
   await assertToolsSectionVisibility(page, '执行工具管理', visibleSectionTitles.has('执行工具管理'));
   await assertToolsSectionVisibility(page, '子代理工具管理', visibleSectionTitles.has('子代理工具管理'));
@@ -724,7 +728,7 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
   assert.equal(subagent.title, chatFlow.subagentName, '子代理总览没有保留命名标题');
   assert.equal(subagent.resultPreview, SUBAGENT_RESULT_TEXT, '子代理总览没有返回 smoke 结果摘要');
 
-  await page.goto('/subagents', { waitUntil: 'networkidle' });
+  await page.goto('/subagents', { waitUntil: 'load' });
   await expectText(page, 'Subagent');
   await expectText(page, '会话窗口');
   await expectText(page, chatFlow.subagentName);
@@ -732,7 +736,7 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {
-  await page.goto('/automations', { waitUntil: 'networkidle' });
+  await page.goto('/automations', { waitUntil: 'load' });
   await page.getByRole('button', { name: '+ 新建自动化' }).click();
   const form = page.locator('.create-form');
   await form.locator('input[placeholder*="每5分钟检查系统信息"]').fill(AUTOMATION_NAME);
@@ -931,12 +935,12 @@ async function listAutomations(accessToken) {
 }
 
 async function loginBrowserSmokeAdmin() {
-  const payload = await requestJson('/auth/login', {
-    body: {
-      secret: LOGIN_SECRET,
-    },
+  const response = await fetchWithRetry(`${API_ORIGIN}/auth/login`, {
+    body: JSON.stringify({ secret: LOGIN_SECRET }),
+    headers: { 'content-type': 'application/json' },
     method: 'POST',
   });
+  const payload = await response.json();
   assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
   return payload.accessToken;
 }
@@ -950,7 +954,10 @@ async function requestJson(routePath, options = {}) {
     },
     method: options.method ?? 'GET',
   };
-  const response = await fetchWithRetry(`${API_ORIGIN}${routePath}`, requestInit);
+  const response = await fetch(`${API_ORIGIN}${routePath}`, {
+    ...requestInit,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   const text = await response.text();
   const payload = parseMaybeJson(text);
   if (!response.ok) {
@@ -1003,7 +1010,7 @@ async function waitFor(task, label) {
     if (result) {
       return result;
     }
-    await delay(300);
+    await delay(100);
   }
   throw new Error(`${label}超时`);
 }
@@ -1044,7 +1051,7 @@ async function waitForHttpReady(url) {
         return;
       }
     } catch {}
-    await delay(500);
+    await delay(200);
   }
   throw new Error(`等待服务就绪超时: ${url}`);
 }
@@ -1398,7 +1405,7 @@ async function writeStream(response, body) {
       id: 'chatcmpl-ui-smoke',
       model: body.model ?? MODEL_ID,
     })}\n\n`);
-    await delay(60);
+    await delay(0);
     response.write(`data: ${JSON.stringify({
       choices: [{
         delta: {},
@@ -1429,7 +1436,7 @@ async function writeStream(response, body) {
       id: 'chatcmpl-ui-smoke',
       model: body.model ?? MODEL_ID,
     })}\n\n`);
-    await delay(60);
+    await delay(0);
   }
 
   response.write(`data: ${JSON.stringify({

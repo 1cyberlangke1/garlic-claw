@@ -646,13 +646,12 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(pending) && pending.length === 0, `Expected ${label} to leave no pending runtime permission request`);
   };
 
-  await runStep('ai.provider-catalog', async () => {
-    const catalog = await getJson(apiBase, '/ai/provider-catalog');
+  await runStep('ai.provider-catalog+providers.list.initial', async () => {
+    const [catalog, providers] = await Promise.all([
+      getJson(apiBase, '/ai/provider-catalog'),
+      getJson(apiBase, '/ai/providers'),
+    ]);
     ensure(Array.isArray(catalog) && catalog.length > 0, 'Expected provider catalog to be non-empty');
-  });
-
-  await runStep('ai.providers.list.initial', async () => {
-    const providers = await getJson(apiBase, '/ai/providers');
     ensure(Array.isArray(providers), 'Expected providers list to be an array');
   });
 
@@ -2062,15 +2061,14 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(config.values.contextCompaction.strategy === 'sliding', 'Expected context governance compaction strategy to persist');
   });
 
-  await runStep('commands.overview', async () => {
-    const overview = await getJson(apiBase, '/command-catalog/overview');
+  await runStep('commands.overview+version', async () => {
+    const [overview, version] = await Promise.all([
+      getJson(apiBase, '/command-catalog/overview'),
+      getJson(apiBase, '/command-catalog/version'),
+    ]);
     ensure(Array.isArray(overview.commands), 'Expected command overview payload');
     ensure(overview.commands.some((entry) => entry.commandId === 'internal.context-governance:/compact:command'), 'Expected internal context governance command');
     ensure(typeof overview.version === 'string' && overview.version.length > 0, 'Expected command overview version');
-  });
-
-  await runStep('commands.version', async () => {
-    const version = await getJson(apiBase, '/command-catalog/version');
     ensure(typeof version.version === 'string' && version.version.length > 0, 'Expected command catalog version payload');
   });
 
@@ -3098,7 +3096,12 @@ async function writeRealSmokeJsonDefaults(aiSettingsPath) {
 }
 
 async function runTypescriptBuild() {
-  await runCommand(process.execPath, [resolveTscCliEntry(), '-p', 'tsconfig.build.json'], {
+  await runCommand(process.execPath, [
+    resolveTscCliEntry(),
+    '-p', 'tsconfig.build.json',
+    '--incremental',
+    '--tsBuildInfoFile', path.join(SERVER_DIR, 'dist', 'tsconfig.build.tsbuildinfo-smoke'),
+  ], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
@@ -3191,7 +3194,7 @@ async function waitForJson(url, backend, timeoutMs = DEFAULT_TIMEOUT_MS) {
       // keep polling
     }
 
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error(`Timed out waiting for ${url}`);
@@ -3399,13 +3402,22 @@ async function waitForBootstrapAdminLogin(apiBase) {
       // keep polling
     }
 
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error('Timed out waiting for bootstrap admin login');
 }
 
 async function waitForPluginHealth(apiBase, pluginId, expectedOk) {
+  try {
+    const health = await getJson(apiBase, `/plugins/${pluginId}/health`);
+    if (readPluginHealthOk(health) === expectedOk) {
+      return health;
+    }
+  } catch {
+    // fall through to polling loop
+  }
+
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
@@ -3418,7 +3430,7 @@ async function waitForPluginHealth(apiBase, pluginId, expectedOk) {
       // keep polling
     }
 
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error(`Timed out waiting for plugin ${pluginId} health=${expectedOk}`);
@@ -3439,7 +3451,7 @@ async function waitForSubagentTaskCompletion(apiBase, conversationId) {
     if (subagent?.status === 'error') {
       throw new Error(`Subagent conversation ${conversationId} failed: ${subagent.error ?? 'unknown error'}`);
     }
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error(`Timed out waiting for subagent conversation ${conversationId} to complete`);
@@ -3972,7 +3984,7 @@ async function writeStreamResponse(request, response, body) {
       id: 'chatcmpl-smoke',
       model,
     });
-    await delay(80);
+    await delay(0);
     if (request.aborted || response.destroyed || response.writableEnded) {
       return;
     }
@@ -4020,7 +4032,7 @@ async function writeStreamResponse(request, response, body) {
       id: 'chatcmpl-smoke',
       model,
     });
-    await delay(80);
+    await delay(0);
   }
 
   if (request.aborted || response.destroyed || response.writableEnded) {
