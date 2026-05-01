@@ -79,14 +79,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ElOption, ElSelect } from 'element-plus'
 import type {
   SkillAssetKind,
   SkillDetail,
   SkillLoadPolicy,
-} from '@garlic-claw/shared'
-import { marked } from 'marked'
+} from '@garlic-claw/shared';
+import { ElOption, ElSelect } from 'element-plus';
+import { marked } from 'marked';
+import { computed } from 'vue';
 
 const props = defineProps<{
   skill: SkillDetail | null
@@ -111,7 +111,7 @@ const loadPolicyOptions: Array<{
   },
   {
     value: 'deny',
-    label: '拒绝加载',
+    label: '禁用技能',
   },
 ]
 
@@ -145,7 +145,7 @@ function setSelectedSkillLoadPolicy(nextLoadPolicy: SkillLoadPolicy) {
 function loadPolicyLabel(loadPolicy: SkillLoadPolicy): string {
   switch (loadPolicy) {
     case 'deny':
-      return '拒绝加载'
+      return '禁用技能'
     case 'ask':
       return '请求确认'
     default:

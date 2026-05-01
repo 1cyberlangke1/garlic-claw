@@ -649,7 +649,7 @@ async function verifyPersonasPage(page) {
 async function verifySkillsPage(page) {
   await page.goto('/skills', { waitUntil: 'load' });
   await expectText(page, '技能目录');
-  await expectText(page, '已拒绝加载');
+  await expectText(page, '已禁用技能');
   await page.getByPlaceholder('搜索技能名称、说明、标签').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 

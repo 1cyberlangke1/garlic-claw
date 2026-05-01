@@ -92,11 +92,8 @@ vi.mock('@/modules/skills/composables/use-skill-management', () => ({
       ],
       content: '# weather-query\n\n请先确认地点，再查询天气。',
     })),
+    enabledCount: computed(() => 0),
     totalCount: computed(() => 1),
-    directoryCount: computed(() => 1),
-    deniedCount: computed(() => 1),
-    packageCount: computed(() => 1),
-    executableCount: computed(() => 1),
     mutatingSkillId: ref(null),
     eventLoading: ref(false),
     eventLogs: shallowRef([
@@ -124,15 +121,19 @@ vi.mock('@/modules/skills/composables/use-skill-management', () => ({
 describe('SkillsView', () => {
   it('switches between skill details and event logs', async () => {
     const wrapper = mount(SkillsView)
+    const skillCardText = () => wrapper.get('.skill-card').text()
 
     expect(wrapper.text()).toContain('技能目录')
     expect(wrapper.text()).toContain('天气查询')
-    expect(wrapper.text()).toContain('skills 目录')
-    expect(wrapper.text()).toContain('已拒绝加载')
-    expect(wrapper.text()).toContain('拒绝加载')
-    expect(wrapper.text()).toContain('scripts/weather.js')
+    expect(wrapper.text()).toContain('已启用 0 / 1')
+    expect(skillCardText()).toContain('weather')
+    expect(skillCardText()).toContain('weather-query/SKILL.md')
     expect(wrapper.text()).toContain('请先确认地点，再查询天气')
-    expect(wrapper.text()).toContain('技能日志设置')
+    expect(wrapper.text()).not.toContain('skills 目录')
+    expect(wrapper.text()).not.toContain('已禁用技能')
+    expect(skillCardText()).not.toContain('禁用技能')
+    expect(skillCardText()).not.toContain('skills/')
+    expect(wrapper.text()).not.toContain('技能日志设置')
     expect(wrapper.text()).not.toContain('技能治理已更新')
 
     await wrapper.get('button[title="日志"]').trigger('click')
@@ -140,5 +141,10 @@ describe('SkillsView', () => {
     expect(wrapper.text()).toContain('技能日志')
     expect(wrapper.text()).toContain('技能事件日志')
     expect(wrapper.text()).toContain('技能治理已更新')
+    expect(wrapper.text()).not.toContain('技能日志设置')
+
+    await wrapper.get('button[title="日志设置"]').trigger('click')
+
+    expect(wrapper.text()).toContain('技能日志设置')
   })
 })
