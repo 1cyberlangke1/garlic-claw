@@ -136,7 +136,8 @@ function handleToggleDarkMode() {
 
 .settings-grid {
   display: grid;
-  max-width: 860px;
+  width: min(100%, 860px);
+  margin: 0 auto;
   gap: 18px;
 }
 
