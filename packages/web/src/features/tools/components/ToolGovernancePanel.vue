@@ -439,7 +439,7 @@ function parameterSummary(parameters: ToolInfo['parameters']) {
   return count === 0 ? '无参数' : `${count} 个参数`
 }
 
-function shouldRefreshFromInternalConfig(scope: 'context-governance' | 'provider-models' | 'runtime-tools' | 'subagent' | 'vision-fallback') {
+function shouldRefreshFromInternalConfig(scope: 'context-governance' | 'provider-models' | 'runtime-tools' | 'subagent' | 'vision-fallback' | 'mcp') {
   if (props.sourceKind !== 'internal') {
     return false
   }

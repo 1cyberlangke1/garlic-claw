@@ -206,6 +206,25 @@
 - 同一会话下两次轮询若旧请求更晚返回，旧标签列表会覆盖较新的结果。
 - 当前已补请求序号守卫，只有最新轮询结果允许写回页面。
 
+## 2026-05-01 阶段 N 新增收口
+
+### `packages/web/src/features/tools/views/ToolsView.vue`
+- `/tools` 之前只订阅 `runtime-tools / subagent` 内部配置事件。
+- 因此 MCP 配置更新、插件配置更新后，总览不会自动刷新，页面会停在旧快照。
+- 当前已补两条刷新来源：
+  - `mcp` 内部配置事件
+  - `PLUGIN_CONFIG_CHANGED_EVENT`
+
+### `packages/web/src/features/tools/composables/use-mcp-config-management.ts`
+- `refresh()` 之前没有外层请求代次守卫。
+- 旧 `loadMcpConfigSnapshot()` 慢返回时，会把 `snapshot` 和 `selectedServerName` 覆盖回旧值。
+- 当前已补 `refreshRequestId`，只允许最新一轮全量刷新回写状态。
+
+### `packages/web/src/features/ai-settings/composables/use-provider-settings.ts`
+- `refreshAll()` 之前没有外层请求代次守卫。
+- 旧 `loadProviderSettingsBaseData()` 慢返回时，会把 provider/default/vision/host routing 基线重新盖回旧快照。
+- 当前已补 `refreshAllRequestId`，只允许最新一轮基线刷新写回这些字段。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

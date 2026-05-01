@@ -1,8 +1,20 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as internalConfigChange from '@/features/ai-settings/internal-config-change'
 import { useMcpConfigManagement } from '@/features/tools/composables/use-mcp-config-management'
 import * as mcpData from '@/features/tools/composables/mcp-config-management.data'
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return {
+    promise,
+    resolve,
+  }
+}
 
 vi.mock('@/features/tools/composables/mcp-config-management.data', () => ({
   loadMcpConfigSnapshot: vi.fn(),
@@ -89,6 +101,7 @@ describe('useMcpConfigManagement', () => {
   })
 
   it('creates, updates, and deletes MCP servers through the API layer', async () => {
+    const emitSpy = vi.spyOn(internalConfigChange, 'emitInternalConfigChanged')
     let state!: ReturnType<typeof useMcpConfigManagement>
     const Harness = defineComponent({
       setup() {
@@ -147,6 +160,65 @@ describe('useMcpConfigManagement', () => {
       },
     })
     expect(mcpData.deleteMcpServerConfig).toHaveBeenCalledWith('weather-server')
+    expect(emitSpy).toHaveBeenCalledTimes(3)
+    expect(emitSpy).toHaveBeenNthCalledWith(1, { scope: 'mcp' })
+    expect(emitSpy).toHaveBeenNthCalledWith(2, { scope: 'mcp' })
+    expect(emitSpy).toHaveBeenNthCalledWith(3, { scope: 'mcp' })
+  })
+
+  it('still emits the MCP config change event when create succeeds but refresh fails', async () => {
+    const emitSpy = vi.spyOn(internalConfigChange, 'emitInternalConfigChanged')
+    vi.mocked(mcpData.loadMcpConfigSnapshot)
+      .mockResolvedValueOnce({
+        configPath: 'mcp/servers',
+        servers: [
+          {
+            name: 'weather-server',
+            command: 'npx',
+            args: ['-y', '@mariox/weather-mcp-server'],
+            env: {},
+            eventLog: {
+              maxFileSizeMb: 1,
+            },
+          },
+        ],
+      })
+      .mockRejectedValueOnce(new Error('refresh failed'))
+
+    let state!: ReturnType<typeof useMcpConfigManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = useMcpConfigManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    await expect(state.createServer({
+      name: 'tavily',
+      command: 'npx',
+      args: ['-y', 'tavily-mcp@latest'],
+      env: {
+        TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
+    })).resolves.toEqual({
+      name: 'tavily',
+      command: 'npx',
+      args: ['-y', 'tavily-mcp@latest'],
+      env: {
+        TAVILY_API_KEY: '${TAVILY_API_KEY}',
+      },
+      eventLog: {
+        maxFileSizeMb: 1,
+      },
+    })
+
+    expect(emitSpy).toHaveBeenCalledWith({ scope: 'mcp' })
   })
 
   it('loads more MCP events with nextCursor and appends the next page', async () => {
@@ -397,5 +469,74 @@ describe('useMcpConfigManagement', () => {
     expect(mcpData.loadMcpServerEvents).toHaveBeenNthCalledWith(2, 'search-server', {
       limit: 50,
     })
+  })
+
+  it('keeps the latest MCP snapshot when an older refresh resolves later', async () => {
+    let state!: ReturnType<typeof useMcpConfigManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = useMcpConfigManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    vi.clearAllMocks()
+    const firstRefresh = createDeferred<{
+      configPath: string
+      servers: Array<{
+        name: string
+        command: string
+        args: string[]
+        env: Record<string, string>
+        eventLog: {
+          maxFileSizeMb: number
+        }
+      }>
+    }>()
+    vi.mocked(mcpData.loadMcpConfigSnapshot)
+      .mockImplementationOnce(() => firstRefresh.promise)
+      .mockResolvedValueOnce({
+        configPath: 'mcp/servers',
+        servers: [
+          {
+            name: 'search-server',
+            command: 'npx',
+            args: ['-y', '@mariox/search-mcp-server'],
+            env: {},
+            eventLog: {
+              maxFileSizeMb: 1,
+            },
+          },
+        ],
+      })
+
+    const firstPromise = state.refresh('weather-server')
+    const secondPromise = state.refresh('search-server')
+    await secondPromise
+
+    expect(state.selectedServer.value?.name).toBe('search-server')
+    expect(state.servers.value.map((server) => server.name)).toEqual(['search-server'])
+
+    firstRefresh.resolve({
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'weather-server',
+          command: 'npx',
+          args: ['-y', '@mariox/weather-mcp-server'],
+          env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    })
+    await firstPromise
+    await flushPromises()
+
+    expect(state.selectedServer.value?.name).toBe('search-server')
+    expect(state.servers.value.map((server) => server.name)).toEqual(['search-server'])
   })
 })

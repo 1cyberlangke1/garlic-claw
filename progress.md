@@ -461,6 +461,73 @@
 - 独立 judge 已复核 `PASS`。
 - 下一步是提交阶段 M，并继续处理 `/tools` 跨页不刷新、MCP/Provider 全量刷新旧快照回写等剩余配置联动缺陷。
 
+### 已提交
+- commit: `b60ac45` `修复: 收口阶段M配置保存与标签轮询竞态`
+
+## 2026-05-01 阶段 N：工具总览联动与全量刷新旧快照回写
+
+### 已开始
+- 阶段 M 提交后，继续优先处理“配置改了别处不更新”和“旧全量刷新覆盖新状态”。
+- 当前锁定三条真实缺陷：
+  - `/tools` 页面不会跟随 MCP 配置变更、插件配置变更自动刷新
+  - `useMcpConfigManagement.refresh()` 旧快照慢返回时会把当前选中 server 改回旧值
+  - `useProviderSettings.refreshAll()` 旧基线慢返回时会把 provider/default/vision/routing 快照盖回旧状态
+
+### 本轮已完成修复
+- `useMcpConfigManagement` 现在补了外层 `refreshRequestId` 守卫：
+  - 旧 `loadMcpConfigSnapshot()` 回包不会再覆盖最新 `snapshot / selectedServerName`
+  - MCP create / update / delete 成功后会先发出 `mcp` 内部配置变更事件，再做本地刷新
+- `ToolsView.vue` 现在同时订阅：
+  - `runtime-tools / subagent / mcp` 内部配置变更
+  - 插件 `PLUGIN_CONFIG_CHANGED_EVENT`
+  - 因此 MCP 和插件配置变更后，工具总览会自动刷新
+  - `refresh()` 自身也补了 `refreshRequestId`，旧总览响应不会覆盖最新总览
+- `useProviderSettings.refreshAll()` 现在补了外层 `refreshAllRequestId` 守卫：
+  - 旧 `loadProviderSettingsBaseData()` 慢回包时，不再覆盖最新基线快照
+
+### 本轮新增回归
+- `tests/features/tools/views/ToolsView.spec.ts`
+  - MCP 配置变更后，`/tools` 总览会自动刷新
+  - 插件配置变更后，`/tools` 总览会自动刷新
+  - 两次总览刷新乱序返回时，只保留最新总览
+- `tests/features/tools/composables/use-mcp-config-management.spec.ts`
+  - MCP create / update / delete 会发出 `mcp` 内部配置变更事件
+  - 即使后续本地 refresh 失败，create 成功后也仍会发出 `mcp` 事件
+  - 两次 `refresh()` 乱序返回时，只保留最新 snapshot 与 selected server
+- `tests/features/ai-settings/composables/use-provider-settings.spec.ts`
+  - 两次 `refreshAll()` 乱序返回时，只保留最新 provider 基线快照
+
+### 本轮验证
+- 已通过：
+  - `npm run test:run -w packages/web -- tests/features/tools/views/ToolsView.spec.ts tests/features/tools/composables/use-mcp-config-management.spec.ts tests/features/ai-settings/composables/use-provider-settings.spec.ts`
+  - `npm run typecheck -w packages/web`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 验收备注
+- `smoke:web-ui` 首次失败不是业务回归，而是外部进程占用 `23333`：
+  - `other/logs/web-vite.err.log` 明确报 `Port 23333 is already in use`
+  - 已执行 `python tools\\一键启停脚本.py --kill-port 23333` 精确清理占用进程
+  - 随后复跑 `npm run smoke:web-ui`，改走隔离端口并通过
+
+### 当前状态
+- 下一步是拉独立 judge 复核阶段 N，通过后提交。
+
+### judge 复核补丁
+- 首轮独立 judge 判 `FAIL`：
+  - `mcp` 事件发在本地 `refresh()` 之后；若 refresh 失败，`/tools` 收不到刷新事件
+  - `ToolsView.refresh()` 自己没有请求代次守卫，旧总览响应仍可覆盖新状态
+- 第二轮独立 judge 再判 `FAIL`：
+  - `refreshProviderModelOptions()` 仍可能被旧一轮 `refreshAll()` 的慢回包覆盖
+- 已按 judge 意见补齐后重新通过：
+  - `npm run test:run -w packages/web -- tests/features/tools/views/ToolsView.spec.ts tests/features/tools/composables/use-mcp-config-management.spec.ts tests/features/ai-settings/composables/use-provider-settings.spec.ts`
+  - `npm run typecheck -w packages/web`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+- 第三轮独立 judge 已复核 `PASS`。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

@@ -87,9 +87,11 @@ export function useProviderSettings() {
   const discoveredModels = ref<DiscoveredAiModel[]>([])
   const connectionResult = ref<ProviderConnectionResult | null>(null)
   let providerSelectionRequestId = 0
+  let providerModelOptionsRequestId = 0
   let discoveryRequestId = 0
   let connectionTestRequestId = 0
   let hostModelRoutingRequestId = 0
+  let refreshAllRequestId = 0
 
   function emitProviderModelsChanged() {
     emitInternalConfigChanged({ scope: 'provider-models' })
@@ -100,10 +102,14 @@ export function useProviderSettings() {
   })
 
   async function refreshAll(preferredProviderId?: string) {
+    const requestId = ++refreshAllRequestId
     loadingProviders.value = true
     providerRequestState.clearError()
     try {
       const baseData = await loadProviderSettingsBaseData()
+      if (requestId !== refreshAllRequestId) {
+        return
+      }
       catalog.value = baseData.catalog
       defaultSelection.value = baseData.defaultSelection
       providers.value = baseData.providers
@@ -121,11 +127,19 @@ export function useProviderSettings() {
         ),
       )
       const selectedSelection = await selectAvailableProvider(preferredProviderId)
+      if (requestId !== refreshAllRequestId) {
+        return
+      }
       await refreshProviderModelOptions(selectedSelection)
     } catch (caughtError) {
+      if (requestId !== refreshAllRequestId) {
+        return
+      }
       providerRequestState.setError(caughtError, '加载失败')
     } finally {
-      loadingProviders.value = false
+      if (requestId === refreshAllRequestId) {
+        loadingProviders.value = false
+      }
     }
   }
 
@@ -464,6 +478,7 @@ export function useProviderSettings() {
   async function refreshProviderModelOptions(
     selectionData?: Awaited<ReturnType<typeof loadProviderSelectionData>> | null,
   ) {
+    const requestId = ++providerModelOptionsRequestId
     const options = await loadProviderModelOptions({
       providers: providers.value,
       preloadedModelsByProviderId: {
@@ -475,6 +490,9 @@ export function useProviderSettings() {
           : {}),
       },
     })
+    if (requestId !== providerModelOptionsRequestId) {
+      return
+    }
     providerModelsByProviderId.value = options.modelsByProviderId
     visionOptions.value = options.visionOptions
     hostModelRoutingOptions.value = options.hostModelRoutingOptions

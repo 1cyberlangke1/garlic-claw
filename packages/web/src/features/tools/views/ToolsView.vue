@@ -67,6 +67,7 @@ import type { ToolSourceInfo } from '@garlic-claw/shared'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { subscribeInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
+import { subscribePluginConfigChanged } from '@/features/plugins/plugin-config-change'
 import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
 import { loadToolOverview, toErrorMessage } from '@/features/tools/composables/tool-management.data'
 
@@ -74,6 +75,7 @@ const route = useRoute()
 const loading = ref(false)
 const error = ref<string | null>(null)
 const sources = ref<ToolSourceInfo[]>([])
+let refreshRequestId = 0
 
 const focusedSourceKind = computed(() =>
   typeof route.query.kind === 'string' ? route.query.kind : null,
@@ -114,12 +116,16 @@ const visibleSections = computed(() => [
   hasPluginTools.value,
 ].filter(Boolean))
 let removeInternalConfigChangedListener = () => {}
+let removePluginConfigChangedListener = () => {}
 
 onMounted(() => {
   removeInternalConfigChangedListener = subscribeInternalConfigChanged(({ scope }) => {
-    if (scope !== 'runtime-tools' && scope !== 'subagent') {
+    if (scope !== 'runtime-tools' && scope !== 'subagent' && scope !== 'mcp') {
       return
     }
+    void refresh()
+  })
+  removePluginConfigChangedListener = subscribePluginConfigChanged(() => {
     void refresh()
   })
   void refresh()
@@ -127,18 +133,28 @@ onMounted(() => {
 
 onUnmounted(() => {
   removeInternalConfigChangedListener()
+  removePluginConfigChangedListener()
 })
 
 async function refresh() {
+  const requestId = ++refreshRequestId
   loading.value = true
   error.value = null
   try {
     const overview = await loadToolOverview()
+    if (requestId !== refreshRequestId) {
+      return
+    }
     sources.value = overview.sources
   } catch (caughtError) {
+    if (requestId !== refreshRequestId) {
+      return
+    }
     error.value = toErrorMessage(caughtError, '加载工具管理总览失败')
   } finally {
-    loading.value = false
+    if (requestId === refreshRequestId) {
+      loading.value = false
+    }
   }
 }
 

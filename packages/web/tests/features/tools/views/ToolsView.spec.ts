@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
+import { PLUGIN_CONFIG_CHANGED_EVENT } from '@/features/plugins/plugin-config-change'
 import ToolsView from '@/features/tools/views/ToolsView.vue'
 import * as toolData from '@/features/tools/composables/tool-management.data'
 
@@ -21,6 +22,17 @@ vi.mock('vue-router', async () => {
 vi.mock('@/features/tools/composables/tool-management.data', () => ({
   loadToolOverview: vi.fn(),
 }))
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return {
+    promise,
+    resolve,
+  }
+}
 
 describe('ToolsView', () => {
   beforeEach(() => {
@@ -165,6 +177,123 @@ describe('ToolsView', () => {
     await flushPromises()
 
     expect(vi.mocked(toolData.loadToolOverview).mock.calls.length).toBeGreaterThan(callCountBeforeEvent)
+    wrapper.unmount()
+  })
+
+  it('refreshes overview when MCP config changes', async () => {
+    const wrapper = mount(ToolsView, {
+      global: {
+        stubs: {
+          ToolGovernancePanel: {
+            props: ['sourceKind', 'sourceId', 'title'],
+            template: '<div>{{ title }}|{{ sourceKind }}|{{ sourceId || "all" }}</div>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+    const callCountBeforeEvent = vi.mocked(toolData.loadToolOverview).mock.calls.length
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'mcp',
+      },
+    }))
+    await flushPromises()
+
+    expect(vi.mocked(toolData.loadToolOverview).mock.calls.length).toBeGreaterThan(callCountBeforeEvent)
+    wrapper.unmount()
+  })
+
+  it('refreshes overview when plugin config changes', async () => {
+    const wrapper = mount(ToolsView, {
+      global: {
+        stubs: {
+          ToolGovernancePanel: {
+            props: ['sourceKind', 'sourceId', 'title'],
+            template: '<div>{{ title }}|{{ sourceKind }}|{{ sourceId || "all" }}</div>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+    const callCountBeforeEvent = vi.mocked(toolData.loadToolOverview).mock.calls.length
+
+    window.dispatchEvent(new CustomEvent(PLUGIN_CONFIG_CHANGED_EVENT, {
+      detail: {
+        changeType: 'config',
+        pluginName: 'builtin.demo',
+      },
+    }))
+    await flushPromises()
+
+    expect(vi.mocked(toolData.loadToolOverview).mock.calls.length).toBeGreaterThan(callCountBeforeEvent)
+    wrapper.unmount()
+  })
+
+  it('keeps the latest overview when an older refresh resolves later', async () => {
+    const staleOverview = createDeferred<{
+      sources: Array<{
+        kind: 'plugin'
+        id: string
+        label: string
+        enabled: boolean
+        totalTools: number
+        enabledTools: number
+      }>
+      tools: []
+    }>()
+    vi.mocked(toolData.loadToolOverview)
+      .mockImplementationOnce(() => staleOverview.promise)
+      .mockResolvedValueOnce({
+        sources: [
+          {
+            kind: 'plugin',
+            id: 'builtin.demo',
+            label: 'Demo Plugin',
+            enabled: true,
+            totalTools: 5,
+            enabledTools: 5,
+          },
+        ],
+        tools: [],
+      })
+
+    const wrapper = mount(ToolsView, {
+      global: {
+        stubs: {
+          ToolGovernancePanel: {
+            props: ['sourceKind', 'sourceId', 'title'],
+            template: '<div>{{ title }}|{{ sourceKind }}|{{ sourceId || "all" }}</div>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(PLUGIN_CONFIG_CHANGED_EVENT, {
+      detail: {
+        changeType: 'config',
+        pluginName: 'builtin.demo',
+      },
+    }))
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'mcp',
+      },
+    }))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('插件工具管理|plugin|builtin.demo')
+
+    staleOverview.resolve({
+      sources: [],
+      tools: [],
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('插件工具管理|plugin|builtin.demo')
     wrapper.unmount()
   })
 })

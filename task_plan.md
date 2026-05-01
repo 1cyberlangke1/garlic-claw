@@ -140,6 +140,15 @@
 - [x] 补对应前端回归测试
 - [x] 跑完整验证后提交
 
+## 2026-05-01 阶段 N：工具总览联动与全量刷新旧快照回写
+
+### 目标
+- [x] `/tools` 页面在 MCP 配置变更、插件配置变更后自动刷新
+- [x] `useMcpConfigManagement.refresh()` 旧快照晚回包时不再覆盖新选中 server
+- [x] `useProviderSettings.refreshAll()` 旧基线晚回包时不再覆盖最新 provider / default / routing / vision 快照
+- [x] 补对应前端回归测试
+- [x] 跑完整验证后提交
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 目标

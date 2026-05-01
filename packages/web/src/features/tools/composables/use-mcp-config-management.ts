@@ -7,6 +7,7 @@ import type {
   McpServerConfig,
 } from '@garlic-claw/shared'
 import { useAsyncState } from '@/composables/use-async-state'
+import { emitInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 import {
   createMcpServerConfig,
   dedupeMcpEventLogs,
@@ -37,6 +38,7 @@ export function useMcpConfigManagement() {
   const eventLogs = shallowRef<EventLogRecord[]>([])
   const eventQuery = shallowRef<EventLogQuery>({ limit: 50 })
   const eventNextCursor = ref<string | null>(null)
+  let refreshRequestId = 0
   let activeEventRequestId = 0
 
   const servers = computed(() => snapshot.value.servers)
@@ -49,10 +51,14 @@ export function useMcpConfigManagement() {
   })
 
   async function refresh(preferredName = selectedServerName.value) {
+    const requestId = ++refreshRequestId
     loading.value = true
     requestState.clearError()
     try {
       const nextSnapshot = await loadMcpConfigSnapshot()
+      if (requestId !== refreshRequestId) {
+        return
+      }
       snapshot.value = nextSnapshot
       const fallback = nextSnapshot.servers.find((server) => server.name === preferredName)
         ?? nextSnapshot.servers[0]
@@ -64,9 +70,14 @@ export function useMcpConfigManagement() {
         clearServerEvents()
       }
     } catch (caughtError) {
+      if (requestId !== refreshRequestId) {
+        return
+      }
       requestState.setError(caughtError, '加载 MCP 配置失败')
     } finally {
-      loading.value = false
+      if (requestId === refreshRequestId) {
+        loading.value = false
+      }
     }
   }
 
@@ -91,6 +102,7 @@ export function useMcpConfigManagement() {
     try {
       const saved = await createMcpServerConfig(input)
       notice.value = 'MCP server 已创建'
+      emitInternalConfigChanged({ scope: 'mcp' })
       await refresh(saved.name)
       return saved
     } catch (caughtError) {
@@ -107,6 +119,7 @@ export function useMcpConfigManagement() {
     try {
       const saved = await updateMcpServerConfig(currentName, input)
       notice.value = 'MCP server 已更新'
+      emitInternalConfigChanged({ scope: 'mcp' })
       await refresh(saved.name)
       return saved
     } catch (caughtError) {
@@ -123,6 +136,7 @@ export function useMcpConfigManagement() {
     try {
       const result = await deleteMcpServerConfig(name)
       notice.value = 'MCP server 已删除'
+      emitInternalConfigChanged({ scope: 'mcp' })
       await refresh()
       return result
     } catch (caughtError) {
