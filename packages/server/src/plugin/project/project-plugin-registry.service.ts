@@ -122,8 +122,10 @@ export class ProjectPluginRegistryService {
     }
 
     const resolvedEntryFilePath = localRequire.resolve(entryFilePath);
-    delete localRequire.cache[resolvedEntryFilePath];
-    const loadedModule = localRequire(resolvedEntryFilePath) as Record<string, unknown>;
+    const loadedModule = loadProjectPluginModule(
+      resolvedEntryFilePath,
+      directoryPath,
+    ) as Record<string, unknown>;
     const definition = resolveProjectPluginDefinition(
       loadedModule,
       config.definitionExport,
@@ -238,4 +240,68 @@ function readProjectPluginLoadErrorMessage(
 ): string {
   const message = error instanceof Error ? error.message : String(error);
   return `跳过损坏的本地项目插件目录 ${directoryPath}: ${message}`;
+}
+
+function loadProjectPluginModule(
+  entryFilePath: string,
+  directoryPath: string,
+  cache = new Map<string, unknown>(),
+): unknown {
+  const normalizedEntryFilePath = path.resolve(entryFilePath);
+  const cached = cache.get(normalizedEntryFilePath);
+  if (cached !== undefined) {
+    return cached;
+  }
+  if (path.extname(normalizedEntryFilePath).toLowerCase() === '.json') {
+    const parsed = JSON.parse(fs.readFileSync(normalizedEntryFilePath, 'utf-8'));
+    cache.set(normalizedEntryFilePath, parsed);
+    return parsed;
+  }
+  const exportsObject: Record<string, unknown> = {};
+  const moduleRecord = {
+    exports: exportsObject as unknown,
+  } as {
+    exports: unknown;
+  };
+  cache.set(normalizedEntryFilePath, moduleRecord.exports);
+  const moduleRequire = createRequire(normalizedEntryFilePath);
+  const normalizedDirectoryPath = path.resolve(directoryPath).toLowerCase();
+  const source = fs.readFileSync(normalizedEntryFilePath, 'utf-8');
+  const wrapped = new Function(
+    'exports',
+    'require',
+    'module',
+    '__filename',
+    '__dirname',
+    source,
+  ) as (
+    exports: Record<string, unknown>,
+    require: (request: string) => unknown,
+    module: { exports: unknown },
+    __filename: string,
+    __dirname: string,
+  ) => void;
+  wrapped(
+    exportsObject,
+    (request: string) => {
+      const resolvedChildPath = moduleRequire.resolve(request);
+      if (
+        path.resolve(resolvedChildPath).toLowerCase().startsWith(
+          `${normalizedDirectoryPath}${path.sep}`,
+        )
+      ) {
+        return loadProjectPluginModule(
+          resolvedChildPath,
+          directoryPath,
+          cache,
+        );
+      }
+      return moduleRequire(request);
+    },
+    moduleRecord,
+    normalizedEntryFilePath,
+    path.dirname(normalizedEntryFilePath),
+  );
+  cache.set(normalizedEntryFilePath, moduleRecord.exports);
+  return moduleRecord.exports;
 }

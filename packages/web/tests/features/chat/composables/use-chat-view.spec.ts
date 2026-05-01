@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
 import * as chatViewData from '@/features/chat/composables/chat-view.data'
+import * as chatImageUpload from '@/utils/chat-image-upload'
 import { useChatView } from '@/features/chat/composables/use-chat-view'
 
 vi.mock('@/features/chat/composables/chat-view.data', () => ({
@@ -294,6 +295,59 @@ describe('useChatView', () => {
     await nextTick()
 
     expect(state.inputText.value).toBe('会话一草稿')
+  })
+
+  it('keeps pending images and upload notices isolated between conversations', async () => {
+    vi.spyOn(chatImageUpload, 'prepareChatImageUpload').mockResolvedValue({
+      compressed: true,
+      compressedBytes: 128,
+      image: 'data:image/png;base64,Zm9v',
+      mimeType: 'image/png',
+      originalBytes: 512,
+    })
+
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    await state.handleFileChange({
+      target: {
+        files: [new File(['demo'], 'demo.png', { type: 'image/png' })],
+        value: 'demo.png',
+      },
+    } as unknown as Event)
+    await flushPromises()
+
+    expect(state.pendingImages.value).toHaveLength(1)
+    expect(state.uploadNotices.value).toContainEqual(
+      expect.objectContaining({
+        text: expect.stringContaining('已压缩'),
+      }),
+    )
+
+    chat.currentConversationId = 'conversation-2'
+    await nextTick()
+
+    expect(state.pendingImages.value).toEqual([])
+    expect(state.uploadNotices.value).toEqual([])
+
+    chat.currentConversationId = 'conversation-1'
+    await nextTick()
+
+    expect(state.pendingImages.value).toHaveLength(1)
+    expect(state.uploadNotices.value).toContainEqual(
+      expect.objectContaining({
+        text: expect.stringContaining('已压缩'),
+      }),
+    )
   })
 
   it('computes retry label from the last non-display message', async () => {

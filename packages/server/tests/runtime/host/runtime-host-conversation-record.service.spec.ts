@@ -720,6 +720,46 @@ describe('RuntimeHostConversationRecordService', () => {
     });
   });
 
+  it('deletes all conversation sessions for a plugin', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const firstConversationId = (service.createConversation({ title: 'Session Chat 1', userId: 'user-1' }) as { id: string }).id;
+    const secondConversationId = (service.createConversation({ title: 'Session Chat 2', userId: 'user-1' }) as { id: string }).id;
+
+    service.startConversationSession('builtin.memory', {
+      conversationId: firstConversationId,
+      source: 'chat-hook',
+      userId: 'user-1',
+    }, {
+      timeoutMs: 60_000,
+    });
+    service.startConversationSession('builtin.memory', {
+      conversationId: secondConversationId,
+      source: 'chat-hook',
+      userId: 'user-1',
+    }, {
+      timeoutMs: 60_000,
+    });
+    service.startConversationSession('builtin.other', {
+      conversationId: secondConversationId,
+      source: 'chat-hook',
+      userId: 'user-1',
+    }, {
+      timeoutMs: 60_000,
+    });
+
+    expect(service.deletePluginConversationSessions('builtin.memory')).toBe(2);
+
+    const reloaded = new RuntimeHostConversationRecordService();
+    expect(reloaded.listPluginConversationSessions('builtin.memory')).toEqual([]);
+    expect(reloaded.listPluginConversationSessions('builtin.other')).toEqual([
+      expect.objectContaining({
+        conversationId: secondConversationId,
+        pluginId: 'builtin.other',
+      }),
+    ]);
+  });
+
   it('drops legacy todos from conversation storage payload after reload', () => {
     process.env[conversationsEnvKey] = storagePath;
     const legacyConversationId = '019dc88c-1a11-7806-a2ff-9f4ab8d4fb47';

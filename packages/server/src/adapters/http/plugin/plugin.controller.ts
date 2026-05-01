@@ -66,6 +66,9 @@ export class PluginController {
   deletePlugin(@Param('pluginId') pluginId: string) {
     this.recordPluginEvent(pluginId, { level: 'warn', message: `Deleted plugin ${pluginId}`, type: 'plugin:deleted' });
     const deleted = this.pluginPersistenceService.deletePlugin(pluginId);
+    this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
+    this.runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+    this.runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
     return deleted;
   }
 

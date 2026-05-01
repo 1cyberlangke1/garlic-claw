@@ -53,6 +53,8 @@ export interface UploadNotice {
  */
 export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   const draftTextByConversationId = ref<Record<string, string>>({})
+  const pendingImagesByConversationId = ref<Record<string, PendingImage[]>>({})
+  const uploadProcessingNoticesByConversationId = ref<Record<string, UploadNotice[]>>({})
   const inputText = computed({
     get() {
       const conversationId = chat.currentConversationId
@@ -69,9 +71,37 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
       }
     },
   })
-  const pendingImages = ref<PendingImage[]>([])
+  const pendingImages = computed({
+    get() {
+      return readConversationScopedList(
+        pendingImagesByConversationId,
+        chat.currentConversationId,
+      )
+    },
+    set(value: PendingImage[]) {
+      writeConversationScopedList(
+        pendingImagesByConversationId,
+        chat.currentConversationId,
+        value,
+      )
+    },
+  })
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
-  const uploadProcessingNotices = ref<UploadNotice[]>([])
+  const uploadProcessingNotices = computed({
+    get() {
+      return readConversationScopedList(
+        uploadProcessingNoticesByConversationId,
+        chat.currentConversationId,
+      )
+    },
+    set(value: UploadNotice[]) {
+      writeConversationScopedList(
+        uploadProcessingNoticesByConversationId,
+        chat.currentConversationId,
+        value,
+      )
+    },
+  })
   const visionFallbackEnabled = ref(false)
   let capabilityRequestId = 0
   const imageFallbackNotice = computed<UploadNotice[]>(() => {
@@ -456,6 +486,39 @@ function getPendingImageBudgetBytes(images: PendingImage[] = []): number {
     (total, image) => total + measureDataUrlBytes(image.image),
     0,
   )
+}
+
+function readConversationScopedList<T>(
+  bucket: { value: Record<string, T[]> },
+  conversationId: string | null,
+): T[] {
+  if (!conversationId) {
+    return []
+  }
+  const existing = bucket.value[conversationId]
+  if (existing) {
+    return existing
+  }
+  const created: T[] = []
+  bucket.value = {
+    ...bucket.value,
+    [conversationId]: created,
+  }
+  return created
+}
+
+function writeConversationScopedList<T>(
+  bucket: { value: Record<string, T[]> },
+  conversationId: string | null,
+  value: T[],
+): void {
+  if (!conversationId) {
+    return
+  }
+  bucket.value = {
+    ...bucket.value,
+    [conversationId]: value,
+  }
 }
 
 function readQueuedDraftText(input: { content?: string; parts?: ChatMessagePart[] }): string {

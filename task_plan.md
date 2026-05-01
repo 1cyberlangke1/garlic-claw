@@ -1,5 +1,21 @@
 # Task Plan
 
+## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
+
+### 目标
+- [ ] 只读扫描 `packages/server/src/execution`、`packages/server/src/plugin`、`packages/web/src/features/tools`、`packages/web/src/features/plugins` 与对应 tests
+- [ ] 只记录真实行为缺陷、风险回归、缺失测试，不报告风格问题
+- [ ] 输出可复现依据、影响范围、文件位置，并按严重度排序
+
+### 阶段 A：范围取证
+- [x] 读取 `TODO.md`、`task_plan.md`、`findings.md`、`progress.md`
+- [x] 列出目标源码与测试文件
+- [x] 并行读取 MCP / 工具管理 / 本地插件 / 远程插件 / 自动化关键实现
+
+### 阶段 B：缺陷归纳
+- [x] 交叉核对实现与测试，确认真实缺陷与缺失覆盖
+- [ ] 形成按严重度排序的扫描结果
+
 ## 2026-05-01 subagent 扫描后的高优先级缺陷清单
 
 ### 目标
@@ -36,6 +52,13 @@
 - [x] 查明真实阻塞在“前端待发送队列等待流结束后的补刷新”
 - [x] 让 `dispatchSendMessage / dispatchRetryMessage` 不再阻塞等待最终补刷新
 - [x] 调整 browser smoke 等待口径，改为等待上一条聊天 SSE 请求真正结束
+
+### 阶段 E：subagent 扫描后的下一批高危缺陷
+- [x] 修复 direct execution 绕过 tool/source enabled 与插件会话作用域
+- [x] 修复删除插件后残留 runtime storage / session / 旧状态
+- [x] 修复聊天未发送图片与上传提示跨会话串发
+- [x] 修复插件详情乱序响应覆盖当前选中项
+- [x] 视进度继续处理 MCP 失败泄漏、本地插件 reload 传递依赖缓存、事件分页 cursor 丢失
 
 ## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
 

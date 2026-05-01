@@ -1,5 +1,5 @@
 import type { JsonValue, PluginActionName, PluginAvailableToolSummary, PluginCallContext, PluginParamSchema, PluginToolOutput, SkillLoadResult, ToolInfo, ToolOverview, ToolSourceActionResult, ToolSourceInfo, ToolSourceKind } from '@garlic-claw/shared';
-import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import type { Tool } from 'ai';
 import { z } from 'zod';
 import { BashToolService } from '../bash/bash-tool.service';
@@ -138,34 +138,7 @@ export class ToolRegistryService {
     sourceKind: ToolSourceKind;
     toolName: string;
   }): Promise<unknown> {
-    if (input.sourceKind === 'plugin') {
-      return this.runtimeHostPluginDispatchService.executeTool({
-        context: input.context,
-        params: input.params as never,
-        pluginId: input.sourceId,
-        toolName: input.toolName,
-      });
-    }
-    if (input.sourceKind === 'mcp') {
-      return this.mcpService.callTool({
-        arguments: input.params,
-        serverName: input.sourceId,
-        toolName: input.toolName,
-      });
-    }
-    if (input.sourceKind !== 'internal') {
-      throw new BadRequestException(`暂不支持执行工具源 ${input.sourceKind}:${input.sourceId}`);
-    }
-    const configuredShellBackend = this.runtimeToolsSettingsService.readConfiguredShellBackend();
-    const shellToolName = this.bashToolService.getToolName(configuredShellBackend);
-    const resolvedToolName = this.bashToolService.isToolName(input.toolName, configuredShellBackend)
-      ? shellToolName
-      : input.toolName;
-    const definition = (await this.readInternalTools({ context: input.context }))
-      .find((entry) => entry.sourceId === input.sourceId && entry.callName === resolvedToolName);
-    if (!definition) {
-      throw new NotFoundException(`Tool not found: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
-    }
+    const definition = await this.resolveRegisteredToolExecution(input);
     return definition.execute(input.params);
   }
 
@@ -196,6 +169,50 @@ export class ToolRegistryService {
       .filter((entry) => entry.sourceKind !== 'internal')
       .filter((entry) => (!input.excludedPluginId || entry.pluginId !== input.excludedPluginId) && this.isToolEnabledForContext(entry, input.context) && (!input.allowedToolNames || input.allowedToolNames.includes(entry.callName)))
       .map((entry) => toExecutableToolDefinition(entry, input.context, input.assistantMessageId, this.mcpService, this.runtimeHostPluginDispatchService));
+  }
+
+  private async resolveRegisteredToolExecution(input: {
+    context: PluginCallContext;
+    params: Record<string, unknown>;
+    sourceId: string;
+    sourceKind: ToolSourceKind;
+    toolName: string;
+  }): Promise<ExecutableToolDefinition> {
+    if (input.sourceKind === 'internal') {
+      return this.resolveInternalRegisteredToolExecution(input);
+    }
+    if (input.sourceKind !== 'plugin' && input.sourceKind !== 'mcp') {
+      throw new BadRequestException(`暂不支持执行工具源 ${input.sourceKind}:${input.sourceId}`);
+    }
+    const tool = (await this.listOverview()).tools.find((entry) =>
+      entry.sourceKind === input.sourceKind
+      && entry.sourceId === input.sourceId
+      && (entry.name === input.toolName || entry.callName === input.toolName || entry.toolId === input.toolName));
+    if (!tool) {
+      throw new NotFoundException(`Tool not found: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
+    }
+    if (!this.isToolEnabledForContext(tool, input.context)) {
+      throw new ForbiddenException(`Tool disabled for current context: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
+    }
+    return toExecutableToolDefinition(tool, input.context, undefined, this.mcpService, this.runtimeHostPluginDispatchService);
+  }
+
+  private async resolveInternalRegisteredToolExecution(input: {
+    context: PluginCallContext;
+    sourceId: string;
+    toolName: string;
+  }): Promise<ExecutableToolDefinition> {
+    const configuredShellBackend = this.runtimeToolsSettingsService.readConfiguredShellBackend();
+    const shellToolName = this.bashToolService.getToolName(configuredShellBackend);
+    const resolvedToolName = this.bashToolService.isToolName(input.toolName, configuredShellBackend)
+      ? shellToolName
+      : input.toolName;
+    const definition = (await this.readInternalTools({ context: input.context }))
+      .find((entry) => entry.sourceId === input.sourceId && entry.callName === resolvedToolName);
+    if (!definition) {
+      throw new NotFoundException(`Tool not found: internal:${input.sourceId}:${input.toolName}`);
+    }
+    return definition;
   }
 
   private async readNativeTools(input: { allowedToolNames?: string[]; assistantMessageId?: string; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {

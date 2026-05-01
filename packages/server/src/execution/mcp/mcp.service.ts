@@ -190,13 +190,21 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   private async connectClientSession(input: { name: string; config: McpServerConfig }): Promise<{ client: McpClientSession; tools: McpToolDescriptor[] }> {
     let lastError: Error | null = null;
     for (let attempt = 1; attempt <= MCP_MAX_RETRIES; attempt += 1) {
+      let client: Client | null = null;
       try {
-        const client = new Client({ name: `garlic-claw-${input.name}`, version: '0.1.0' }, { capabilities: {} });
+        client = new Client({ name: `garlic-claw-${input.name}`, version: '0.1.0' }, { capabilities: {} });
         await withTimeout(client.connect(new StdioClientTransport(this.buildTransportConfig(input.config))), MCP_CONNECT_TIMEOUT, `连接 MCP 服务器 "${input.name}"`);
         const response = await withTimeout(client.listTools(), MCP_TOOL_CALL_TIMEOUT, `获取 MCP 服务器 "${input.name}" 工具列表`) as McpToolListResponse;
         return { client, tools: (response.tools ?? []).map((tool) => ({ serverName: input.name, name: tool.name, description: tool.description, inputSchema: tool.inputSchema })) };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
+        if (client) {
+          try {
+            await client.close();
+          } catch {
+            void client;
+          }
+        }
         if (attempt < MCP_MAX_RETRIES) {await new Promise((resolve) => setTimeout(resolve, attempt * 1000));}
       }
     }

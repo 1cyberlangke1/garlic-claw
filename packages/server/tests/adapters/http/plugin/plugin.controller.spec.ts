@@ -20,6 +20,7 @@ describe('PluginController', () => {
     upsertPlugin: jest.fn(),
   };
   const runtimeHostConversationRecordService = {
+    deletePluginConversationSessions: jest.fn(),
     listPluginConversationSessions: jest.fn(),
   };
   const runtimeHostPluginDispatchService = {
@@ -28,6 +29,7 @@ describe('PluginController', () => {
   };
   const runtimeHostPluginRuntimeService = {
     deleteCronJob: jest.fn(),
+    deletePluginRuntimeState: jest.fn(),
     listCronJobs: jest.fn(),
     deletePluginStorage: jest.fn(),
     listPluginStorage: jest.fn(),
@@ -39,6 +41,7 @@ describe('PluginController', () => {
     listConnectedPlugins: jest.fn(),
     listPlugins: jest.fn(),
     listSupportedActions: jest.fn(),
+    deletePluginRuntimeState: jest.fn(),
     runPluginAction: jest.fn(),
   };
 
@@ -541,6 +544,9 @@ describe('PluginController', () => {
       pluginId: 'remote.echo',
     });
     expect(pluginPersistenceService.deletePlugin).toHaveBeenCalledWith('remote.echo');
+    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
+    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('remote.echo');
+    expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
     expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('remote.echo', {
       level: 'warn',
       message: 'Deleted plugin remote.echo',

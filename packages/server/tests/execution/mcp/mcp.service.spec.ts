@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { McpServerConfig } from '@garlic-claw/shared';
 import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
@@ -155,6 +156,21 @@ describe('McpService', () => {
         name: 'get_forecast',
       }),
     ]);
+  });
+
+  it('closes temporary MCP clients when tool discovery fails after connect', async () => {
+    const weather = createServer('weather');
+    const connectSpy = jest.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined as never);
+    const listToolsSpy = jest.spyOn(Client.prototype, 'listTools').mockRejectedValue(new Error('list tools failed'));
+    const closeSpy = jest.spyOn(Client.prototype, 'close').mockResolvedValue(undefined as never);
+
+    await expect((service as any).connectClientSession({
+      config: weather,
+      name: 'weather',
+    })).rejects.toThrow('list tools failed');
+    expect(connectSpy).toHaveBeenCalledTimes(2);
+    expect(listToolsSpy).toHaveBeenCalledTimes(2);
+    expect(closeSpy).toHaveBeenCalledTimes(2);
   });
 
   it('reloads MCP sources from config with persisted enabled state', async () => {

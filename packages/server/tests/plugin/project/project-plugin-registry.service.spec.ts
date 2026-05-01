@@ -146,6 +146,66 @@ describe('ProjectPluginRegistryService', () => {
       }),
     ]);
   });
+
+  it('reloads local plugins after transitive dependency changes', async () => {
+    writePluginPackage(projectRootPath, 'local-echo', {
+      garlicClaw: {
+        runtime: 'local',
+      },
+      main: 'dist/index.js',
+      name: '@garlic-claw/local-echo',
+    }, [
+      "const message = require('./lib/message.js');",
+      'module.exports.definition = {',
+      "  manifest: {",
+      "    id: 'local.echo',",
+      "    name: 'Local Echo',",
+      "    version: '1.0.0',",
+      "    runtime: 'local',",
+      '    permissions: [],',
+      '    tools: [{ name: \'echo\', description: \'echo\', parameters: {} }],',
+      '  },',
+      '  tools: {',
+      '    echo: async () => ({ echoed: message.readMessage() }),',
+      '  },',
+      '};',
+    ]);
+    const messageModulePath = path.join(
+      projectRootPath,
+      'config',
+      'plugins',
+      'local-echo',
+      'dist',
+      'lib',
+      'message.js',
+    );
+    fs.mkdirSync(path.dirname(messageModulePath), { recursive: true });
+    fs.writeFileSync(
+      messageModulePath,
+      "module.exports.readMessage = () => 'first';\n",
+      'utf-8',
+    );
+
+    const service = new ProjectPluginRegistryService(
+      new ProjectWorktreeRootService(),
+    );
+
+    service.loadDefinitions();
+    expect(await service.getDefinition('local.echo').definition.tools?.echo?.({} as never, {} as never)).toEqual({
+      echoed: 'first',
+    });
+
+    fs.writeFileSync(
+      messageModulePath,
+      "module.exports.readMessage = () => 'second';\n",
+      'utf-8',
+    );
+
+    const reloaded = service.reloadDefinition('local.echo');
+    expect(await reloaded.definition.tools?.echo?.({} as never, {} as never)).toEqual({
+      echoed: 'second',
+    });
+  });
 });
 
 function writePluginPackage(

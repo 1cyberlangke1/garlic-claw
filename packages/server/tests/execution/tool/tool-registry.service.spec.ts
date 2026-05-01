@@ -597,6 +597,105 @@ describe('ToolRegistryService', () => {
     ]);
   });
 
+  it('blocks direct plugin execution when the plugin is disabled for the current conversation scope', async () => {
+    const { pluginBootstrapService, runtimeHostPluginDispatchService, service } = createFixture();
+    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+    const persisted = (pluginBootstrapService as unknown as {
+      pluginPersistenceService: PluginPersistenceService;
+    }).pluginPersistenceService;
+    persisted.upsertPlugin({
+      ...pluginBootstrapService.getPlugin('builtin.memory'),
+      connected: true,
+      conversationScopes: {
+        'conversation-1': false,
+      },
+      defaultEnabled: true,
+      lastSeenAt: new Date().toISOString(),
+    });
+
+    await expect(service.executeRegisteredTool({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'automation',
+        userId: 'user-1',
+      },
+      params: { content: 'should not run' },
+      sourceId: 'builtin.memory',
+      sourceKind: 'plugin',
+      toolName: 'save_memory',
+    })).rejects.toThrow('Tool disabled for current context: plugin:builtin.memory:save_memory');
+    expect(executeToolSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks direct plugin execution when the source is disabled', async () => {
+    const { runtimeHostPluginDispatchService, service } = createFixture();
+    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+
+    await service.setSourceEnabled('plugin', 'builtin.memory', false);
+
+    await expect(service.executeRegisteredTool({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'automation',
+        userId: 'user-1',
+      },
+      params: { content: 'should not run' },
+      sourceId: 'builtin.memory',
+      sourceKind: 'plugin',
+      toolName: 'save_memory',
+    })).rejects.toThrow('Tool disabled for current context: plugin:builtin.memory:save_memory');
+    expect(executeToolSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks direct MCP execution when the tool is disabled', async () => {
+    const { mcpService, service } = createFixture();
+    mcpService.listToolSources.mockReturnValue([
+      {
+        source: {
+          kind: 'mcp',
+          id: 'weather',
+          label: 'weather',
+          enabled: true,
+          health: 'healthy',
+          lastError: null,
+          lastCheckedAt: '2026-05-01T00:00:00.000Z',
+          totalTools: 1,
+          enabledTools: 0,
+          supportedActions: ['health-check', 'reconnect', 'reload'],
+        },
+        tools: [
+          {
+            toolId: 'mcp:weather:get_forecast',
+            name: 'get_forecast',
+            callName: 'weather__get_forecast',
+            description: 'Get forecast',
+            parameters: {},
+            enabled: false,
+            sourceKind: 'mcp',
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'healthy',
+            lastError: null,
+            lastCheckedAt: '2026-05-01T00:00:00.000Z',
+          },
+        ],
+      },
+    ]);
+
+    await expect(service.executeRegisteredTool({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'automation',
+        userId: 'user-1',
+      },
+      params: { city: 'Shanghai' },
+      sourceId: 'weather',
+      sourceKind: 'mcp',
+      toolName: 'get_forecast',
+    })).rejects.toThrow('Tool disabled for current context: mcp:weather:get_forecast');
+    expect(mcpService.callTool).not.toHaveBeenCalled();
+  });
+
   it('includes builtin tools in the executable tool set when enabled', async () => {
     const { service } = createFixture();
 
@@ -8217,6 +8316,7 @@ function createFixture(options: {
     pluginBootstrapService,
     runtimeHostConversationRecordService,
     runtimeHostConversationTodoService,
+    runtimeHostPluginDispatchService,
     runtimePluginGovernanceService,
     runtimeHostSubagentRunnerService,
     skillRegistryService,

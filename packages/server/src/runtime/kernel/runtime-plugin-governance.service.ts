@@ -38,6 +38,11 @@ export class RuntimePluginGovernanceService {
     return snapshot ? { ...snapshot } : null;
   }
 
+  deletePluginRuntimeState(pluginId: string): void {
+    this.failureCounts.delete(pluginId);
+    this.healthSnapshots.delete(pluginId);
+  }
+
   listPlugins(): RegisteredPluginRecord[] { return this.pluginBootstrapService.listPlugins().sort((left, right) => left.pluginId.localeCompare(right.pluginId)); }
 
   listSupportedActions(pluginId: string): PluginActionName[] {

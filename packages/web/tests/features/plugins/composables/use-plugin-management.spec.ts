@@ -432,4 +432,74 @@ describe('usePluginManagement', () => {
     )
     expect(state.selectedPluginName.value).toBe('builtin.demo')
   })
+
+  it('ignores stale detail responses after quickly switching plugins', async () => {
+    const alpha = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.alpha',
+      displayName: 'Alpha Plugin',
+    })
+    const beta = createPlugin({
+      id: 'plugin-2',
+      name: 'builtin.beta',
+      displayName: 'Beta Plugin',
+    })
+    let resolveAlpha!: (value: ReturnType<typeof createDetailSnapshot>) => void
+    const alphaDetail = new Promise<ReturnType<typeof createDetailSnapshot>>((resolve) => {
+      resolveAlpha = resolve
+    })
+    const betaHealth: PluginHealthSnapshot = {
+      status: 'degraded',
+      failureCount: 2,
+      consecutiveFailures: 1,
+      lastError: 'beta failed',
+      lastErrorAt: '2026-03-28T00:05:00.000Z',
+      lastSuccessAt: '2026-03-28T00:04:00.000Z',
+      lastCheckedAt: '2026-03-28T00:05:00.000Z',
+    }
+
+    vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([alpha, beta])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot).mockImplementation((pluginName) => {
+      if (pluginName === 'builtin.alpha') {
+        return alphaDetail
+      }
+      return Promise.resolve(createDetailSnapshot({
+        healthSnapshot: betaHealth,
+      }))
+    })
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    await state.selectPlugin('builtin.beta')
+    await flushPromises()
+
+    expect(state.selectedPluginName.value).toBe('builtin.beta')
+    expect(state.healthSnapshot.value).toEqual(betaHealth)
+
+    resolveAlpha(createDetailSnapshot({
+      healthSnapshot: {
+        status: 'error',
+        failureCount: 9,
+        consecutiveFailures: 9,
+        lastError: 'alpha stale',
+        lastErrorAt: '2026-03-28T00:09:00.000Z',
+        lastSuccessAt: null,
+        lastCheckedAt: '2026-03-28T00:09:00.000Z',
+      },
+    }))
+    await flushPromises()
+
+    expect(state.selectedPluginName.value).toBe('builtin.beta')
+    expect(state.healthSnapshot.value).toEqual(betaHealth)
+    expect(state.selectedPlugin.value?.name).toBe('builtin.beta')
+  })
 })

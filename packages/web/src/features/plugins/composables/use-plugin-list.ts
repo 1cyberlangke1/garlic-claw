@@ -41,6 +41,8 @@ export function usePluginList(options: UsePluginListOptions) {
   const selectedPluginName = ref<string | null>(null)
   const conversationSessions = shallowRef<PluginConversationSessionInfo[]>([])
   const healthSnapshot = shallowRef<PluginHealthSnapshot | null>(null)
+  let activeDetailRequestId = 0
+  let appliedDetailPluginName: string | null = null
 
   const selectedPlugin = computed<PluginInfo | null>(() => {
     const found = plugins.value.find(
@@ -102,6 +104,7 @@ export function usePluginList(options: UsePluginListOptions) {
       if (fallback) {
         await refreshSelectedDetails(fallback.name)
       } else {
+        appliedDetailPluginName = null
         options.clearDetailState()
       }
     } catch (caughtError) {
@@ -120,10 +123,16 @@ export function usePluginList(options: UsePluginListOptions) {
     pluginName = selectedPluginName.value ?? undefined,
   ) {
     if (!pluginName) {
+      appliedDetailPluginName = null
       options.clearDetailState()
       return
     }
 
+    const requestId = ++activeDetailRequestId
+    if (selectedPluginName.value === pluginName && appliedDetailPluginName !== pluginName) {
+      clearDetailState()
+      options.clearDetailState()
+    }
     options.detailLoading.value = true
     options.error.value = null
     try {
@@ -132,6 +141,10 @@ export function usePluginList(options: UsePluginListOptions) {
         options.getEventQuery(),
         options.getStoragePrefix(),
       )
+      if (requestId !== activeDetailRequestId || selectedPluginName.value !== pluginName) {
+        return
+      }
+      appliedDetailPluginName = pluginName
       conversationSessions.value = detail.conversationSessions
       healthSnapshot.value = detail.healthSnapshot
       updatePluginSummary(pluginName, {
@@ -139,9 +152,14 @@ export function usePluginList(options: UsePluginListOptions) {
       })
       options.applyDetailSnapshot(detail, pluginName)
     } catch (caughtError) {
+      if (requestId !== activeDetailRequestId || selectedPluginName.value !== pluginName) {
+        return
+      }
       options.error.value = toErrorMessage(caughtError, '加载插件详情失败')
     } finally {
-      options.detailLoading.value = false
+      if (requestId === activeDetailRequestId) {
+        options.detailLoading.value = false
+      }
     }
   }
 

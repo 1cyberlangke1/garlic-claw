@@ -102,6 +102,20 @@ export class RuntimeHostConversationRecordService {
     if (deleted) {this.persistConversations();}
     return deleted;
   }
+  deletePluginConversationSessions(pluginId: string): number {
+    let deleted = 0;
+    for (const [key, session] of this.conversationSessions.entries()) {
+      if (session.pluginId !== pluginId) {
+        continue;
+      }
+      this.conversationSessions.delete(key);
+      deleted += 1;
+    }
+    if (deleted > 0) {
+      this.persistConversations();
+    }
+    return deleted;
+  }
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'summary'); }
   readRuntimePermissionApprovals(conversationId: string, userId?: string): string[] { return [...(this.requireConversation(conversationId, userId).runtimePermissionApprovals ?? [])]; }
   readConversationHistory(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'history'); }

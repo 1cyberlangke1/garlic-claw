@@ -1,5 +1,39 @@
 # Findings
 
+## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
+
+### 高优先级
+- `packages/server/src/execution/mcp/mcp.service.ts`
+  - `connectClientSession()` 在 `client.connect()` 或 `client.listTools()` 失败后只记录错误并重试，没有关闭本次新建的 `Client`。
+  - 真实后果：当 MCP server 启动成功但工具发现超时、半连接失败、或 `health-check / reload` 连续失败时，会反复遗留 stdio 子进程。
+  - 复现思路：配置一个会卡在 `listTools` 的 MCP server，多次触发 `reload` 或启动重试，观察子进程数量持续增加。
+  - 现有 `packages/server/tests/execution/mcp/mcp.service.spec.ts` 覆盖了成功连接、持久化启停和健康检查，但没有覆盖“连接后发现失败时必须回收客户端/子进程”。
+
+- `packages/server/src/plugin/project/project-plugin-registry.service.ts`
+  - 本地插件 reload 只 `delete localRequire.cache[resolvedEntryFilePath]`，没有清掉该入口依赖的传递模块缓存。
+  - 真实后果：修改 `config/plugins/<plugin>/dist/lib/*.js` 之类被入口 `require()` 的文件后，点“重载插件”仍可能继续执行旧逻辑，直到宿主进程重启。
+  - 复现思路：让 `dist/index.js` 引入一个子模块，修改子模块返回值后调用本地插件 `reload`，行为不会更新。
+  - `packages/server/tests/plugin/project/project-plugin-registry.service.spec.ts` 只测首次加载、跳过 remote、坏目录容错，没有覆盖“reload 后传递依赖更新”。
+
+- `packages/web/src/features/plugins/composables/use-plugin-list.ts`
+  - `selectPlugin()` 和 `refreshAll()` 都直接 `await refreshSelectedDetails(pluginName)`；`refreshSelectedDetails()` 完成后无二次校验，任何慢请求都能覆盖当前详情状态。
+  - 真实后果：快速从插件 A 切到插件 B 时，A 的慢响应可把 `conversationSessions / healthSnapshot / configSnapshot / llmOptions` 写进 B 的详情面板；随后保存动作却会按 `selectedPlugin.value.name` 写回 B。
+  - 这是可误操作的数据错配，不只是视觉闪烁。
+  - `packages/web/tests/features/plugins/composables/use-plugin-management.spec.ts` 没有覆盖“快速切换插件 + 乱序返回”。
+
+### 中优先级
+- `packages/server/src/execution/automation/automation.service.ts`
+  - `runRecord()` 在 `prepareExecutionAutomation()` 之前先改 `lastRunAt/updatedAt`，但如果 `prepareExecutionAutomation()` 抛错，既不会写失败日志，也不会持久化这次失败。
+  - 真实后果：`cron_child` 自动化一旦父会话被删、或运行环境缺 `RuntimeHostConversationRecordService`，cron 任务会持续失败，但 UI 日志列表看不到失败记录，重启后连 `lastRunAt` 都会回退。
+  - 复现思路：创建 `conversationMode: 'cron_child'` 的自动化后删除其父会话，等待下一次 cron 触发。
+  - `packages/server/tests/automation/automation.service.spec.ts` 覆盖了 action 执行失败和 event 广播兜底，但没有覆盖“准备阶段失败”。
+
+- `packages/server/src/execution/tool/tool-registry.service.ts`
+  - `buildPluginSources()` 只保留 `plugin.connected && plugin.manifest.tools.length > 0` 的插件工具源。
+  - 真实后果：远程插件一旦离线，统一 `/tools` 页面会直接看不到该插件工具源，无法在统一入口继续查看已登记工具、启用状态或执行恢复动作；这和 MCP source 已修掉的“离线后隐身”问题形成回归。
+  - 复现思路：接入一个带 tools 的远程插件，断开连接后刷新 `/tools/overview`，对应 `plugin` source 会消失。
+  - `packages/server/tests/execution/tool/tool-registry.service.spec.ts` 有 MCP 离线 source 可见性测试，但没有插件离线 source 的对等覆盖。
+
 ## 2026-05-01 subagent 并行扫描汇总
 
 ### 聊天 / 上下文
@@ -49,6 +83,46 @@
 ### 修正方向
 - 队列串行只该依赖真正的流结束，不该再被补刷新拖住。
 - smoke 的等待条件也不能再拿 UI 层的 stop 按钮做代理信号；更可靠的是直接等待上一条 `/api/chat/conversations/:id/messages` SSE 请求 `requestfinished`。
+
+## 2026-05-01 subagent 第二轮扫描新增高危项
+
+### 后端 / 工具 / 插件
+- `ToolRegistryService` 的 direct execution 路径还会绕过 tool/source enabled 与插件会话作用域；自动化 `device_command` 正好能走到这条旁路。
+- 删除插件记录不会清理 runtime storage / plugin conversation session / 旧 runtime 状态；同 ID 重建会继承脏状态。
+- `McpService.connectClientSession()` 在 connect / listTools 失败重试时没有回收客户端，可能遗留 stdio 子进程。
+- 本地项目插件 `reload` 只删入口缓存，不删传递依赖缓存，改子模块后 reload 仍跑旧代码。
+
+### 前端 / 聊天 / 插件管理
+- 聊天只把文本草稿按会话隔离；`pendingImages` 和上传提示还是全局态，未发送图片会跨会话串发。
+- 插件详情请求没有“当前选中项”守卫，快切插件或内部刷新时，旧响应可能覆盖新面板。
+- 插件事件日志与 MCP 事件日志的 `cursor` 都在 data 层标准化时被吃掉，加载更多会反复请求第一页。
+
+### 当前取舍
+- `display result` 阻塞但不可停止这条先不按 bug 处理：
+  - 它与当前已经确认过的产品语义冲突
+  - 后续若要改，必须先重新定义“内部命令是否允许 stop”
+
+### 已完成修复记录
+- `ToolRegistryService.executeRegisteredTool()` 之前会绕过 overview 校验，导致自动化 `device_command` 可以直达 plugin / MCP 执行器。
+  - 现在 direct execution 会先按 `sourceKind/sourceId/toolName` 回查当前 tool 总览，再复用统一 `enabled + scope` 判断。
+  - 因此 plugin source 禁用、tool 禁用、conversation scope 禁用都不会再被旁路绕过。
+- `PluginController.deletePlugin()` 之前只删持久化插件记录，不会清该插件 runtime side state。
+  - 现在删除插件会同时清：
+    - `plugin-runtime.server.json` 里的 `storage / state / cron`
+    - `conversations.server.json` 里的 plugin conversation sessions
+    - `RuntimePluginGovernanceService` 的健康快照与失败计数
+- `chat-view.module.ts` 之前只把文本草稿按会话隔离，`pendingImages / uploadProcessingNotices` 仍是全局单例。
+  - 现在两者都改成按 `conversationId` 分桶。
+  - 切换会话时，图片草稿和上传提示会回到各自所属会话。
+- `use-plugin-list.ts` 之前没有防守异步乱序：
+  - 旧插件详情请求返回较慢时，可以在用户切换后覆盖当前插件面板。
+  - 现在详情请求会校验“是否仍是当前激活请求 + 当前选中插件”，慢响应会被直接丢弃。
+- `McpService.connectClientSession()` 之前失败后只记错重试，不回收本次临时 `Client`。
+  - 现在在每次失败分支都会 `close()` 临时 client，再决定是否进入下一次重试。
+- `ProjectPluginRegistryService` 的本地插件 reload 之前只依赖全局 `require.cache` 清理入口模块。
+  - 现在插件目录内文件改走自管 loader，传递依赖不再复用旧缓存。
+- `normalizeEventQuery()` 和 `normalizeMcpEventQuery()` 之前会把 `cursor` 丢掉。
+  - 现在分页查询会保留 `cursor` 原样透传到 API 层。
 
 ## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
 

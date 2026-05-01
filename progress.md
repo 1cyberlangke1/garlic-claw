@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
+
+### 已完成
+- 读取 `TODO.md`、`task_plan.md`、`findings.md`、`progress.md`
+- 列出本轮扫描范围内的 server / web 源码与测试文件
+- 确认本轮只做只读审阅，不改业务代码
+- 已确认 5 条真实缺陷/回归：
+  - MCP 失败重试会泄漏客户端/子进程
+  - 本地插件 reload 不会失效传递依赖缓存
+  - 插件详情切换存在异步乱序覆盖
+  - cron child 自动化准备阶段失败不会记日志/持久化
+  - 离线插件工具源会从 `/tools` 统一入口消失
+
+### 下一步
+- 输出按严重度排序的只读扫描结果，并标出对应测试缺口
+
 ## 2026-05-01 subagent 扫描后的高优先级缺陷清单
 
 ### 已收集问题
@@ -192,6 +208,69 @@
 - 独立 judge：
   - 首轮 `FAIL`：指出 smoke 不能拿 stop 按钮禁用冒充真实空闲
   - 修正为等待上一条聊天 SSE 请求 `requestfinished` 后，复核 `PASS`
+
+### 阶段 E 第一批已完成修复
+- `ToolRegistryService.executeRegisteredTool()` 不再走“直接 dispatch”旁路：
+  - 现在会先按当前 `/tools` 总览解析目标 tool
+  - 统一复用 `enabled` 与插件会话作用域校验
+  - disabled source / disabled tool / conversation scope 禁用时会直接拒绝执行
+- `PluginController.deletePlugin()` 现在会同步清理该插件的 runtime 残留：
+  - `RuntimeHostPluginRuntimeService.deletePluginRuntimeState()` 清空 `storage / state / cron`
+  - `RuntimeHostConversationRecordService.deletePluginConversationSessions()` 清空插件会话 session
+  - `RuntimePluginGovernanceService.deletePluginRuntimeState()` 清空内存健康快照与失败计数
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/execution/tool/tool-registry.service.spec.ts` ✅
+  - `npm run test -w packages/server -- tests/runtime/host/runtime-host-plugin-runtime.service.spec.ts tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/adapters/http/plugin/plugin.controller.spec.ts` ✅
+- 下一步：
+  - 继续修聊天未发送图片与上传提示跨会话串发
+  - 再修插件详情乱序响应覆盖当前选中项
+
+### 阶段 E 第二批已完成修复
+- `chat-view.module.ts` 现在把以下前端草稿态按 `conversationId` 隔离：
+  - `pendingImages`
+  - `uploadProcessingNotices`
+- 结果：
+  - 未发送图片不会再跨会话串发
+  - 上传压缩提示、失败提示也不会带到别的会话输入框
+- `use-plugin-list.ts` 现在为详情加载加了请求序号与当前选中项守卫：
+  - 快速从插件 A 切到插件 B 时，A 的慢响应不会再覆盖 B 的详情面板
+  - 切换到新插件且详情尚未返回时，会先清掉旧插件详情态
+- 本轮验证：
+  - `npm run test:run -w packages/web -- tests/features/chat/composables/use-chat-view.spec.ts` ✅
+  - `npm run test:run -w packages/web -- tests/features/plugins/composables/use-plugin-management.spec.ts` ✅
+- 下一步：
+  - 继续处理 `MCP` 失败重试泄漏 client / stdio 子进程
+  - 再修本地插件 `reload` 不刷新传递依赖缓存
+  - 最后补插件 / MCP 事件分页 cursor
+
+### 阶段 E 第三批已完成修复
+- `McpService.connectClientSession()` 现在在 `connect / listTools` 任一阶段失败后，都会主动关闭本次临时 `Client`。
+  - 连续失败重试不再遗留 stdio 子进程。
+- `ProjectPluginRegistryService` 不再依赖全局 `require.cache` 命中：
+  - 本地插件目录内文件改走自管 CommonJS loader
+  - reload 时会为该插件目录重新求值本地依赖链
+  - 修改 `dist/lib/*.js` 之类传递依赖后，reload 会立即生效
+- `plugin-management.data.ts / mcp-config-management.data.ts` 现在保留 `cursor`：
+  - 事件分页第二页起不再被 data 层标准化吃掉
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/execution/mcp/mcp.service.spec.ts tests/plugin/project/project-plugin-registry.service.spec.ts` ✅
+  - `npm run test:run -w packages/web -- tests/features/plugins/composables/plugin-management.data.spec.ts tests/features/tools/composables/mcp-config-management.data.spec.ts tests/features/plugins/composables/use-plugin-events.spec.ts tests/features/tools/composables/use-mcp-config-management.spec.ts` ✅
+- 下一步：
+  - 进入完整验证与独立 judge
+
+### 阶段 E 完整验证
+- 新鲜完整验证已通过：
+  - `npm run lint` ✅
+  - `npm run typecheck -w packages/server` ✅
+  - `npm run typecheck -w packages/web` ✅
+  - `npm run smoke:server` ✅
+  - `npm run smoke:web-ui` ✅
+- 当前状态：
+  - 独立 judge 已判 `PASS`
+  - judge 结论同时指出的剩余覆盖缺口：
+    - 缺少单独点名 `mcp source disabled` 的 direct execution 回归
+    - 缺少“删除插件后同 ID 重建不继承旧 runtime state”的整链回归
+    - 本地插件 reload 目前只覆盖普通 CommonJS 传递依赖，不含 circular/native module 特例
 
 ## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
 
