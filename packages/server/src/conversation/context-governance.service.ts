@@ -15,7 +15,7 @@ import type {
   PluginConversationHistoryMessage,
   PluginConversationHistoryPreviewResult,
 } from '@garlic-claw/shared';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AiManagementService } from '../ai-management/ai-management.service';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
@@ -28,6 +28,7 @@ const CONTEXT_COMPACTION_VERSION = '1';
 const CONTEXT_COMPACTION_COMMAND_MODEL = 'context-compaction-command';
 const CONTEXT_COMPACTION_COMMAND_PROVIDER = 'system';
 const AUTO_STOP_REPLY = '已完成上下文压缩，本轮不继续生成主回复。';
+const AUTO_COMPACTION_FAILED_REPLY = '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。';
 const CONTEXT_COMPACTION_COMMANDS = ['/compact', '/compress'] as const;
 const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前上下文治理已关闭压缩。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前历史还不足以生成稳定摘要。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
 const CONTEXT_COMPACTION_ROLE_LABELS: Partial<Record<PluginConversationHistoryMessage['role'], string>> = { assistant: '助手', system: '系统' };
@@ -59,6 +60,8 @@ type ContextGovernanceBeforeModelResult =
 @Injectable()
 export class ContextGovernanceService {
   private readonly autoStopConversationIds = new Set<string>();
+  private readonly blockedConversationReplies = new Map<string, string>();
+  private readonly logger = new Logger(ContextGovernanceService.name);
 
   constructor(
     private readonly aiManagementService: AiManagementService,
@@ -99,11 +102,52 @@ export class ContextGovernanceService {
   async rewriteHistoryBeforeModel(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
     if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return;}
-    const result = await this.runContextCompaction({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, trigger: 'prepare-model', userId: input.userId });
-    if (result.compacted && !runtimeConfig.allowAutoContinue) {this.autoStopConversationIds.add(input.conversationId);}
+    try {
+      const result = await this.runContextCompaction({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, trigger: 'prepare-model', userId: input.userId });
+      if (result.compacted) {
+        this.clearBlockedConversationReply(input.conversationId);
+        if (!runtimeConfig.allowAutoContinue) {this.autoStopConversationIds.add(input.conversationId);}
+        return;
+      }
+      if (result.reason && result.reason !== 'threshold-not-reached') {
+        this.blockConversationAfterCompactionFailure(input.conversationId, result.reason);
+      } else {
+        this.clearBlockedConversationReply(input.conversationId);
+      }
+    } catch (error) {
+      this.blockConversationAfterCompactionFailure(input.conversationId, error);
+    }
+  }
+
+  async rewriteHistoryAfterCompletedResponse(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
+    const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
+    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return;}
+    try {
+      const result = await this.runContextCompaction({
+        conversationId: input.conversationId,
+        modelId: input.modelId,
+        providerId: input.providerId,
+        trigger: 'prepare-model',
+        userId: input.userId,
+      });
+      if (result.compacted) {
+        this.clearBlockedConversationReply(input.conversationId);
+        return;
+      }
+      if (result.reason && result.reason !== 'threshold-not-reached') {
+        this.blockConversationAfterCompactionFailure(input.conversationId, result.reason);
+      }
+    } catch (error) {
+      this.blockConversationAfterCompactionFailure(input.conversationId, error);
+    }
   }
 
   async applyBeforeModel(input: ContextGovernanceBeforeModelInput): Promise<ContextGovernanceBeforeModelResult> {
+    const blockedReply = this.blockedConversationReplies.get(input.conversationId);
+    if (blockedReply) {
+      this.blockedConversationReplies.delete(input.conversationId);
+      return { action: 'short-circuit', assistantContent: blockedReply, assistantParts: [{ text: blockedReply, type: 'text' }], modelId: input.modelId, providerId: input.providerId, reason: 'context-compaction:failed' };
+    }
     if (this.autoStopConversationIds.delete(input.conversationId)) {
       return { action: 'short-circuit', assistantContent: AUTO_STOP_REPLY, assistantParts: [{ text: AUTO_STOP_REPLY, type: 'text' }], modelId: input.modelId, providerId: input.providerId, reason: 'context-compaction:auto-stop' };
     }
@@ -325,17 +369,27 @@ export class ContextGovernanceService {
     providerId: string;
     userId?: string;
   }): Promise<DeferredInternalCommandResolution> {
-    const result = input.commandInput.hasUnexpectedArgs
-      ? null
-      : await this.runContextCompaction({
+    let result: ContextCompactionRunResult | null = null;
+    let failureReason: string | null = null;
+    if (!input.commandInput.hasUnexpectedArgs) {
+      try {
+        result = await this.runContextCompaction({
           conversationId: input.conversationId,
           modelId: input.modelId,
           providerId: input.providerId,
           trigger: 'manual',
           userId: input.userId,
         });
+        if (result.compacted) {
+          this.clearBlockedConversationReply(input.conversationId);
+        }
+      } catch (error) {
+        failureReason = this.readCompactionFailureDetail(error);
+      }
+    }
     const assistantContent = input.commandInput.hasUnexpectedArgs
       ? '上下文压缩命令不接受额外参数。\n可用命令：/compact 或 /compress'
+      : failureReason ? `${AUTO_COMPACTION_FAILED_REPLY}\n原因：${failureReason}`
       : !result ? '本次未执行上下文压缩。'
         : result.compacted ? (result.coveredMessageCount ? `已压缩上下文，覆盖 ${result.coveredMessageCount} 条历史消息。` : '已完成上下文压缩。')
           : (CONTEXT_COMPACTION_REASON_LABELS[result.reason ?? ''] ?? '本次未执行上下文压缩。');
@@ -346,6 +400,27 @@ export class ContextGovernanceService {
       providerId: CONTEXT_COMPACTION_COMMAND_PROVIDER,
       reason: 'context-compaction:command',
     };
+  }
+
+  private blockConversationAfterCompactionFailure(conversationId: string, failure: string | unknown): void {
+    const detail = this.readCompactionFailureDetail(failure);
+    const reply = detail ? `${AUTO_COMPACTION_FAILED_REPLY}\n原因：${detail}` : AUTO_COMPACTION_FAILED_REPLY;
+    this.blockedConversationReplies.set(conversationId, reply);
+    this.logger.warn(`会话 ${conversationId} 自动压缩失败，已停止后续继续生成: ${detail || 'unknown'}`);
+  }
+
+  private clearBlockedConversationReply(conversationId: string): void {
+    this.blockedConversationReplies.delete(conversationId);
+  }
+
+  private readCompactionFailureDetail(failure: string | unknown): string {
+    if (typeof failure === 'string') {
+      return CONTEXT_COMPACTION_REASON_LABELS[failure] ?? failure;
+    }
+    if (failure instanceof Error) {
+      return failure.message.trim() || '压缩模型请求失败';
+    }
+    return '压缩模型请求失败';
   }
 }
 

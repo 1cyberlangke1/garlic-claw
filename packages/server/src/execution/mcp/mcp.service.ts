@@ -3,7 +3,7 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { EventLogListResult, EventLogQuery, JsonObject, JsonValue, McpConfigSnapshot, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
-import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
 import { McpConfigStoreService } from './mcp-config-store.service';
@@ -24,10 +24,17 @@ const MCP_MAX_RETRIES = 2;
 export class McpService implements OnModuleDestroy, OnModuleInit {
   readonly clients = new Map<string, McpClientSession>();
   readonly serverRecords = new Map<string, McpRecord>();
+  private readonly logger = new Logger(McpService.name);
 
   constructor(private readonly configService: ConfigService, private readonly mcpConfigStoreService: McpConfigStoreService, private readonly runtimeEventLogService: RuntimeEventLogService) {}
 
-  async onModuleInit(): Promise<void> { await this.reloadServersFromConfig(); }
+  onModuleInit(): void {
+    this.primeServerRecords(this.getSnapshot().servers);
+    void this.reloadServersFromConfig().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`启动期 MCP 预热失败: ${message}`);
+    });
+  }
   async onModuleDestroy(): Promise<void> { await this.disconnectAllClients(); }
   getSnapshot(): McpConfigSnapshot { return this.mcpConfigStoreService.getSnapshot(); }
 
@@ -114,6 +121,12 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   async disconnectAllClients(): Promise<void> { for (const name of [...this.clients.keys()]) {await this.disconnectServer(name);} }
 
   private requireServerConfig(name: string): McpServerConfig { const server = this.mcpConfigStoreService.getServer(name); if (!server) {throw new NotFoundException(`MCP server not found: ${name}`);} return server; }
+  private primeServerRecords(servers: McpServerConfig[]): void {
+    this.serverRecords.clear();
+    for (const server of servers) {
+      this.serverRecords.set(server.name, createMcpRecord(server.name, { enabled: true }, []));
+    }
+  }
   private async syncServerRecord(name: string, config: McpServerConfig, enabled = true): Promise<void> { this.serverRecords.set(name, createMcpRecord(name, { enabled }, [])); await this.closeClient(name); this.updateServerStatus(name, { connected: false, health: 'unknown', lastError: null }); if (enabled) {await this.connectMcpServer(name, config);} }
   private updateServerStatus(name: string, patch: Partial<McpServerStatus>): void { const record = this.serverRecords.get(name); if (record) {record.status = { ...record.status, ...patch };} }
   private async closeClient(name: string): Promise<void> {

@@ -1,5 +1,113 @@
 # Progress
 
+## 2026-05-01 回复完成后立即检查上下文压缩
+
+### 已确认现状
+- 当前自动压缩 owner 只挂在 `ContextGovernanceService.rewriteHistoryBeforeModel()`，时机是“下一次准备送模前”。
+- 当前 assistant 回复完成后，后端不会立刻再跑一次压缩检查，因此会出现“已超预算但要等下一轮输入才压”的空窗。
+- 主对话在流式生成或阻塞命令期间，新输入会进入前端待发送队列，不会并发打进同一会话。
+
+### 本轮执行顺序
+- 先补回复完成后触发压缩的红测
+- 再把压缩检查接到回复完成链路
+- 最后跑相关后端回归测试并回写计划文件
+
+### 已完成修改
+- `ContextGovernanceService` 新增 `rewriteHistoryAfterCompletedResponse(...)`：
+  - 继续复用现有 `runContextCompaction(... trigger: 'prepare-model')`
+  - 回复后压缩成功时不再写入 `autoStopConversationIds`
+  - 回复后或送模前一旦压缩失败，会记录“停止继续生成”的短路回复，而不是把异常原样抛穿
+- `ContextGovernanceService.applyBeforeModel(...)` 现在会优先消费压缩失败短路回复：
+  - 行为对齐 `other/opencode`
+  - 压缩不了就停下，不继续带着超限上下文送模
+- `ConversationMessagePlanningService.broadcastAfterSend(...)` 现在会在 `responseSource === 'model'` 时，先触发一次回复后压缩检查，再继续现有 `response:after-send` hook 广播
+- `conversation-message-planning.service.spec.ts` 新增两类回归测试：
+  - 回复后压缩失败时，不影响当前已完成回复，但下一轮会被短路停止
+  - 送模前压缩失败时，当前这轮直接短路停止，不再继续调用模型
+
+### 本轮验证
+- `npm run test -w packages/server -- tests/conversation/conversation-message-planning.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/context-governance.service.spec.ts tests/conversation/conversation-message-planning.service.spec.ts` ✅
+- `npm run typecheck -w packages/server` ✅
+- `npm run smoke:server` ✅
+- `npm run smoke:web-ui` ✅
+
+### 独立 judge
+- 独立 judge 结论：`PASS`
+- 复核重点：
+  - 用户消息送模前的自动压缩仍然先于 `streamText`
+  - assistant 回复发出后已接入立即压缩检查
+  - 自动压缩失败时，当前已完成回复保留，但后续送模会被 short-circuit 拦下
+  - `/compact` 手动命令与 `allowAutoContinue` 旧语义未发现回归
+- judge 提醒的剩余风险：
+  - 回复后立即压缩挂在 `broadcastAfterSend()`，后续若发送时序变更，需要一起复核
+
+### 验收补充
+- 已补 `/compact` 手动命令在压缩模型 API 失败时的回归测试
+- `npm run test -w packages/server -- tests/conversation/context-governance.service.spec.ts` ✅
+
+## 2026-05-01 上下文压缩触发时机与输入队列语义核对
+
+### 已确认现状
+- 聊天页顶部 `100% / estimatedTokens / contextLength` 只是 `contextWindowPreview` 的前端展示，不会直接触发历史改写。
+- 自动压缩真正执行点在 `ContextGovernanceService.rewriteHistoryBeforeModel()`，也就是“下一次准备送模之前”，不是预览数字变化的瞬间。
+- 当前本地 `config/context-governance.json` 中：
+  - `compressionThreshold = 72`
+  - `reservedTokens = 12000`
+  - `allowAutoContinue = true`
+- 在 `contextLength = 10000` 的模型上，这组配置会让自动压缩阈值按后端预算函数收敛到一个很小的内部预算阈值；因此“没立即压缩”不是阈值没过，而是压缩 owner 根本不在预览刷新链路上。
+
+### 输入队列结论
+- 聊天发送在前端 store 里会先 `appendQueuedSendRequest(...)`，再尝试 `drainQueuedSendRequests()`。
+- `drainQueuedSendRequests()` 只有在 `!streaming.value` 时才会真正取出队首并发送。
+- `dispatchSendMessage()` / `dispatchRetryMessage()` 也都有 `state.streaming.value` 早退保护。
+- 结论：主对话当前有阻塞中的生成或命令时，新输入不会并发执行，而是进入当前会话的待发送队列，等当前流结束后再按顺序发送。
+
+## 2026-05-01 开发态后端启动过慢与端口超时
+
+### 已确认现状
+- 用户复现里，`python tools\一键启停脚本.py --log` 在后端路由映射完成后仍未开放 `23330`，60 秒端口等待失败。
+- `tools/scripts/dev_runtime.py` 当前会先等 `backend_tsc` 首轮完成，再启动 `backend_app`，随后只按端口开放与 HTTP 健康检查判断是否成功。
+- `packages/server/src/core/bootstrap/bootstrap-http-app.ts` 在 `await app.listen(port)` 前没有额外业务 warmup；真正会阻塞监听的是 Nest 生命周期里的模块初始化。
+- `packages/server/src/execution/mcp/mcp.service.ts` 当前在 `onModuleInit()` 里 `await reloadServersFromConfig()`，并对每个 MCP server 串行执行连接与工具发现。
+- 当前本地真实配置 `config/mcp/servers/tavily-mcp.json` 使用 `npx -y tavily-mcp@latest`，属于启动期外部进程与网络依赖。
+
+### 对照复现
+- 默认 MCP 配置下，直接启动 `packages/server/dist/src/main.js`，端口开放约 `34.6s`。
+- 将 `GARLIC_CLAW_MCP_CONFIG_PATH` 指向空目录后，同一启动路径端口开放约 `3.6s`。
+- 默认配置日志显示：
+  - `11:18:21` 开始 Nest 启动并完成路由映射
+  - `11:18:52` 才出现 `插件 WebSocket 服务器监听端口 23331` 与 `Nest application successfully started`
+- 结论：慢启动主增量来自 MCP 初始化阻塞应用监听，不是 `dev_runtime.py` 的端口探测本身。
+
+### 中间错误
+- 第一次写启动对照脚本时，把 `Invoke-StartupProbe` 两次调用塞进数组字面量，触发 PowerShell 参数重复解析错误。
+- 已改成分两次调用并拿到对照结果，没有继续重复原命令结构。
+
+### 已完成修改
+- `packages/server/src/execution/mcp/mcp.service.ts`
+  - `onModuleInit()` 改为先同步注册配置里的 MCP source 占位状态，再后台触发 `reloadServersFromConfig()`
+  - 启动期预热失败只记录 `warn`，不再阻塞 HTTP 监听
+  - 保留显式 `reload / reconnect / health-check` 的真实连接与探活行为
+- `packages/server/tests/execution/mcp/mcp.service.spec.ts`
+  - 新增“模块初始化阶段后台预热 MCP”测试
+
+### 本轮验证
+- `npm run test -w packages/server -- tests/execution/mcp/mcp.service.spec.ts` ✅
+- `npm run typecheck -w packages/server` ✅
+- `npm run lint` ✅
+- `npm run smoke:server` ✅
+- `npm run smoke:web-ui` ✅
+
+### 启动复验
+- 修复前同口径对照：
+  - 默认 MCP 配置：`34.6s`
+  - 空 MCP 配置：`3.6s`
+- 修复后同口径对照：
+  - 默认 MCP 配置：`3.4s`
+  - 空 MCP 配置：`3.3s`
+- 结论：默认 MCP 配置已不再拖慢端口开放，慢启动增量基本消失。
+
 ## 2026-04-30 上下文长度显示语义与上下文设置文案修正
 
 ### 已确认现状

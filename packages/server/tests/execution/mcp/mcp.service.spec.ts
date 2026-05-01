@@ -169,6 +169,34 @@ describe('McpService', () => {
     ]));
   });
 
+  it('starts MCP warmup in background during module init', async () => {
+    const weather = createServer('weather');
+    await service.saveServer(weather);
+    let resolveReload!: () => void;
+    const reloadPromise = new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    });
+    const reloadSpy = jest.spyOn(service, 'reloadServersFromConfig').mockReturnValue(reloadPromise);
+
+    service.onModuleInit();
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(service.getToolingSnapshot()).toEqual({
+      statuses: [
+        expect.objectContaining({
+          name: 'weather',
+          connected: false,
+          enabled: true,
+          health: 'unknown',
+        }),
+      ],
+      tools: [],
+    });
+
+    resolveReload();
+    await reloadPromise;
+  });
+
   it('disconnects runtime state and rejects tool calls when a source is disabled online', async () => {
     const weather = createServer('weather');
     const client = { callTool: jest.fn(), close: jest.fn() };

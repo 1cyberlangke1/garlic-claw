@@ -102,6 +102,14 @@ export class ConversationMessagePlanningService {
   }
 
   async broadcastAfterSend(contextInput: { activePersonaId?: string; conversationId: string; userId?: string }, result: CompletedConversationTaskResult, responseSource: ConversationResponseSource): Promise<void> {
+    if (responseSource === 'model') {
+      await this.contextGovernanceService.rewriteHistoryAfterCompletedResponse({
+        conversationId: result.conversationId,
+        modelId: result.modelId,
+        providerId: result.providerId,
+        userId: contextInput.userId,
+      });
+    }
     const context = createConversationHookContext({ ...contextInput, modelId: result.modelId, providerId: result.providerId });
     const payload = asJsonValue({ assistantContent: result.content, assistantMessageId: result.assistantMessageId, assistantParts: result.parts, context, conversationId: result.conversationId, modelId: result.modelId, providerId: result.providerId, responseSource, sentAt: new Date().toISOString(), toolCalls: result.toolCalls, toolResults: result.toolResults });
     for (const pluginId of listDispatchableHookPluginIds({ context, hookName: 'response:after-send', kernel: this.runtimeHostPluginDispatchService })) {

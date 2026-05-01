@@ -207,6 +207,49 @@ describe('ContextGovernanceService', () => {
       && annotation.data?.role === 'summary')).toBe(true);
   });
 
+  it('returns a clear failure message when /compact hits a compaction API error', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        enabled: true,
+        keepRecentMessages: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一条历史消息，说明 smoke 需要真实 provider。'),
+      createHistoryMessage('message-2', 'assistant', '第二条历史回复，说明默认 provider 不能落到占位 key。'),
+      createHistoryMessage('message-3', 'user', '第三条历史消息，说明 subagent 结果需要回写。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(result.action).toBe('deferred-short-circuit');
+    if (result.action !== 'deferred-short-circuit') {
+      throw new Error(`unexpected action: ${result.action}`);
+    }
+    await expect(result.deferred.execute({
+      assistantMessageId: 'assistant-1',
+      conversationId,
+      userId: 'user-1',
+      userMessageId: 'user-1',
+    })).resolves.toEqual({
+      assistantContent: '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。\n原因：compaction api failed',
+      assistantParts: [{ text: '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。\n原因：compaction api failed', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+  });
+
   it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
     settingsService.updateConfig({
       contextCompaction: {
