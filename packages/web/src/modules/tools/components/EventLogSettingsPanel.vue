@@ -18,10 +18,10 @@
         />
         <span class="unit-chip">MB</span>
       </div>
-      <small>默认 1MB。设置为 0 表示关闭新的日志写入。</small>
     </label>
 
     <div class="action-row">
+      <small>默认 1MB。设置为 0 表示关闭新的日志写入。</small>
       <ElButton
         type="primary"
         :disabled="saving || isUnchanged"
@@ -99,36 +99,53 @@ function emitSave() {
 }
 
 .control-field {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
-.control-field span {
+.control-field > span {
   font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .input-row {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
-.input-row input {
-  width: 160px;
+.input-row :deep(.el-input-number) {
+  width: 96px;
+}
+
+.input-row :deep(.el-input-number) input {
+  width: 100%;
 }
 
 .unit-chip {
   display: inline-flex;
   align-items: center;
   padding: 0.3rem 0.7rem;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   color: var(--text-muted);
+  font-size: 0.82rem;
 }
 
 .action-row {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.action-row small {
+  color: var(--text-muted);
+  font-size: 0.82rem;
 }
 
 @media (max-width: 720px) {
@@ -137,7 +154,7 @@ function emitSave() {
     flex-direction: column;
   }
 
-  .input-row input {
+  .input-row :deep(.el-input-number) {
     width: 100%;
   }
 }

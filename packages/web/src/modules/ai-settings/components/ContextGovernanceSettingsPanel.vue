@@ -2,7 +2,6 @@
   <section class="panel-shell">
     <header class="panel-header">
       <div>
-        <span class="panel-kicker">Context</span>
         <h2>上下文设置</h2>
         <p>配置自动标题、上下文压缩窗口与压缩专用模型。</p>
       </div>
@@ -140,13 +139,6 @@ function readJsonObject(value: unknown): JsonObject | null {
 
 .panel-shell {
   min-width: 0;
-}
-
-.panel-kicker {
-  color: var(--accent);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .panel-header h2,

@@ -2,7 +2,6 @@
   <section class="panel-shell">
     <header class="panel-header">
       <div>
-        <span class="panel-kicker">Subagent</span>
         <h2>子代理</h2>
         <p>配置子代理与后台子代理工具。</p>
       </div>
@@ -40,13 +39,6 @@ const emit = defineEmits<{
 
 .panel-shell {
   min-width: 0;
-}
-
-.panel-kicker {
-  color: var(--accent);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .panel-header h2,

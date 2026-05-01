@@ -6,13 +6,23 @@
         {{ currentView === 'automations' ? '自动化' : '执行日志' }}
       </h1>
       <div class="header-actions">
-        <AutomationViewSwitch
+        <HeaderViewSwitch
           :model-value="currentView"
           :options="viewOptions"
           @update:model-value="handleViewSwitch"
         />
-        <ElButton v-if="currentView === 'automations'" @click="openCreateDialog">+ 新建自动化</ElButton>
-        <ElButton v-else @click="loadAutomationLogs">刷新日志</ElButton>
+        <ElButton v-if="currentView === 'automations'" type="primary" class="header-button" @click="openCreateDialog">
+          <span class="button-content">
+            <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
+            新建
+          </span>
+        </ElButton>
+        <ElButton v-else class="header-button" @click="loadAutomationLogs">
+          <span class="button-content">
+            <Icon :icon="refreshBold" class="button-icon" aria-hidden="true" />
+            刷新
+          </span>
+        </ElButton>
       </div>
     </div>
 
@@ -120,122 +130,126 @@
       </template>
     </ElDialog>
 
-    <div v-if="currentView === 'automations' && loading" class="loading">加载中...</div>
+    <div class="automations-content">
+      <div v-if="currentView === 'automations' && loading" class="loading">加载中...</div>
 
-    <div v-else-if="currentView === 'automations' && automations.length === 0" class="empty">
-      <p>暂无自动化规则</p>
-      <p class="hint">可以通过上方按钮创建，或在对话中让 AI 帮你创建</p>
-    </div>
+      <div v-else-if="currentView === 'automations' && automations.length === 0" class="empty">
+        <p>暂无自动化规则</p>
+        <p class="hint">可以通过上方按钮创建，或在对话中让 AI 帮你创建</p>
+      </div>
 
-    <div v-else-if="currentView === 'automations'" class="automation-list">
-      <div
-        v-for="auto in automations"
-        :key="auto.id"
-        class="automation-swipe-item"
-        @touchstart.passive="(e) => onTouchStart(e, auto.id)"
-        @touchmove="(e) => onTouchMove(e, auto.id)"
-        @touchend="() => onTouchEnd(auto.id)"
-        @touchcancel="() => onTouchEnd(auto.id)"
-        @mousedown="(e) => onTouchStart(e, auto.id)"
-        @mousemove="(e) => onTouchMove(e, auto.id)"
-        @mouseup="() => onTouchEnd(auto.id)"
-        @mouseleave="() => onTouchEnd(auto.id)"
-      >
-        <div class="swipe-action left-action" :style="getLeftActionStyle(auto.id)">
-          <Icon :icon="auto.enabled ? closeCircleBold : checkCircleBold" :width="24" />
-          <span class="action-text">{{ auto.enabled ? '停用' : '启用' }}</span>
-        </div>
-
-        <div class="swipe-action right-action" :style="getRightActionStyle(auto.id)">
-          <Icon :icon="trashBold" :width="24" />
-          <span class="action-text">删除</span>
-        </div>
-
+      <div v-else-if="currentView === 'automations'" class="automation-list">
         <div
-          class="automation-card"
-          :class="{ disabled: !auto.enabled }"
-          :style="getCardStyle(auto.id)"
-          @click="handleCardClick(auto)"
+          v-for="auto in automations"
+          :key="auto.id"
+          class="automation-swipe-item"
+          @touchstart.passive="(e) => onTouchStart(e, auto.id)"
+          @touchmove="(e) => onTouchMove(e, auto.id)"
+          @touchend="() => onTouchEnd(auto.id)"
+          @touchcancel="() => onTouchEnd(auto.id)"
+          @mousedown="(e) => onTouchStart(e, auto.id)"
+          @mousemove="(e) => onTouchMove(e, auto.id)"
+          @mouseup="() => onTouchEnd(auto.id)"
+          @mouseleave="() => onTouchEnd(auto.id)"
         >
-          <div class="card-header">
-            <h3 class="card-title">{{ auto.name }}</h3>
-            <ElButton
-              size="small"
-              plain
-              @click.stop="handleRun(auto.id)"
-              :disabled="!auto.enabled"
-            >
-              手动运行
-            </ElButton>
+          <div class="swipe-action left-action" :style="getLeftActionStyle(auto.id)">
+            <Icon :icon="auto.enabled ? closeCircleBold : checkCircleBold" :width="24" />
+            <span class="action-text">{{ auto.enabled ? '停用' : '启用' }}</span>
           </div>
 
-          <div v-if="auto.actions.length > 0" class="card-detail">
-            <span class="actions-list">
-              <span v-for="(action, i) in auto.actions" :key="i" class="action-tag">
-                {{ describeAction(action) }}
+          <div class="swipe-action right-action" :style="getRightActionStyle(auto.id)">
+            <Icon :icon="trashBold" :width="24" />
+            <span class="action-text">删除</span>
+          </div>
+
+          <div
+            class="automation-card"
+            :class="{ disabled: !auto.enabled }"
+            :style="getCardStyle(auto.id)"
+            @click="handleCardClick(auto)"
+          >
+            <div class="card-header">
+              <h3 class="card-title">{{ auto.name }}</h3>
+              <ElButton
+                size="small"
+                plain
+                @click.stop="handleRun(auto.id)"
+                :disabled="!auto.enabled"
+              >
+                手动运行
+              </ElButton>
+            </div>
+
+            <div v-if="auto.actions.length > 0" class="card-detail">
+              <span class="actions-list">
+                <span v-for="(action, i) in auto.actions" :key="i" class="action-tag">
+                  {{ describeAction(action) }}
+                </span>
               </span>
-            </span>
-          </div>
+            </div>
 
-          <div class="card-footer">
-            <span class="trigger-interval">
-              <Icon :icon="clockCircleBold" class="interval-icon" />
-              {{ formatTriggerLabel(auto.trigger) }}
-            </span>
-            <span v-if="auto.lastRunAt" class="last-run">
-              上次运行: {{ formatTime(auto.lastRunAt) }}
-            </span>
-            <span v-else class="last-run never">尚未运行</span>
+            <div class="card-footer">
+              <span class="trigger-interval">
+                <Icon :icon="clockCircleBold" class="interval-icon" />
+                {{ formatTriggerLabel(auto.trigger) }}
+              </span>
+              <span v-if="auto.lastRunAt" class="last-run">
+                上次运行: {{ formatTime(auto.lastRunAt) }}
+              </span>
+              <span v-else class="last-run never">尚未运行</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div v-else-if="logsLoading" class="loading">日志加载中...</div>
+      <div v-else-if="logsLoading" class="loading">日志加载中...</div>
 
-    <div v-else-if="logEntries.length === 0" class="empty">
-      <p>暂无执行日志</p>
-      <p class="hint">先手动运行一次自动化，或等待定时 / 事件触发。</p>
-    </div>
+      <div v-else-if="logEntries.length === 0" class="empty">
+        <p>暂无执行日志</p>
+        <p class="hint">先手动运行一次自动化，或等待定时 / 事件触发。</p>
+      </div>
 
-    <div v-else class="log-list">
-      <article
-        v-for="log in logEntries"
-        :key="log.id"
-        class="log-card"
-        :class="log.status"
-      >
-        <div class="log-card-header">
-          <div class="log-card-title-row">
-            <span class="log-badge">{{ log.status === 'success' ? '成功' : log.status }}</span>
-            <h3 class="log-card-title">{{ log.automationName }}</h3>
-            <span v-if="!log.enabled" class="log-disabled-tag">已停用</span>
+      <div v-else class="log-list">
+        <article
+          v-for="log in logEntries"
+          :key="log.id"
+          class="log-card"
+          :class="log.status"
+        >
+          <div class="log-card-header">
+            <div class="log-card-title-row">
+              <span class="log-badge">{{ log.status === 'success' ? '成功' : log.status }}</span>
+              <h3 class="log-card-title">{{ log.automationName }}</h3>
+              <span v-if="!log.enabled" class="log-disabled-tag">已停用</span>
+            </div>
+            <span class="log-card-time">{{ formatTime(log.createdAt) }}</span>
           </div>
-          <span class="log-card-time">{{ formatTime(log.createdAt) }}</span>
-        </div>
-        <div class="log-card-meta">
-          <span>{{ formatTriggerLabel(log.trigger) }}</span>
-          <span>{{ log.automationId }}</span>
-        </div>
-        <pre class="log-card-result">{{ log.result || '无返回结果' }}</pre>
-      </article>
+          <div class="log-card-meta">
+            <span>{{ formatTriggerLabel(log.trigger) }}</span>
+            <span>{{ log.automationId }}</span>
+          </div>
+          <pre class="log-card-result">{{ log.result || '无返回结果' }}</pre>
+        </article>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { Icon } from '@iconify/vue'
-import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
+import { useAutomations } from '@/modules/automations/composables/use-automations'
+import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
+import type { AutomationInfo } from '@garlic-claw/shared'
+import addCircleBold from '@iconify-icons/solar/add-circle-bold'
+import checkCircleBold from '@iconify-icons/solar/check-circle-bold'
 import clockCircleBold from '@iconify-icons/solar/clock-circle-bold'
 import closeCircleBold from '@iconify-icons/solar/close-circle-bold'
-import checkCircleBold from '@iconify-icons/solar/check-circle-bold'
+import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
 import listCheckBold from '@iconify-icons/solar/list-check-bold'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBold from '@iconify-icons/solar/trash-bin-trash-bold'
+import { Icon } from '@iconify/vue'
 import { ElButton, ElDialog, ElInput, ElInputNumber, ElMessageBox, ElOption, ElSelect } from 'element-plus'
-import AutomationViewSwitch from '@/modules/automations/components/AutomationViewSwitch.vue'
-import { useAutomations } from '@/modules/automations/composables/use-automations'
-import type { AutomationInfo } from '@garlic-claw/shared'
+import { reactive, ref } from 'vue'
 
 type AutomationView = 'automations' | 'logs'
 
@@ -267,7 +281,7 @@ const viewOptions: ReadonlyArray<{ label: string; value: AutomationView }> = [
 const dialogVisible = ref(false)
 const editingAutomation = ref<AutomationInfo | null>(null)
 
-function handleViewSwitch(value: string | number) {
+function handleViewSwitch(value: string) {
   if (value === 'automations' || value === 'logs') {
     handleViewChange(value)
   }
@@ -457,9 +471,13 @@ function getRightActionStyle(id: string) {
 
 <style scoped>
 .automations-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
   padding: 1.5rem 2rem;
-  overflow-y: auto;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .automations-header {
@@ -467,7 +485,7 @@ function getRightActionStyle(id: string) {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1.5rem;
+  flex-shrink: 0;
 }
 
 .header-title {
@@ -486,6 +504,31 @@ function getRightActionStyle(id: string) {
 .hero-icon {
   vertical-align: -0.15em;
   margin-right: 6px;
+}
+
+.header-button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.button-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.button-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.automations-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .loading, .empty {
@@ -580,13 +623,12 @@ function getRightActionStyle(id: string) {
   padding: 12px 16px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--success);
-  box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.08);
   cursor: pointer;
-  transition: box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .automation-card:hover {
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1), 0 0 20px rgba(103, 199, 207, 0.12);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
 }
 
 .automation-card:active {
@@ -679,7 +721,6 @@ function getRightActionStyle(id: string) {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px 16px;
-  box-shadow: 0 12px 28px rgba(1, 6, 15, 0.16);
 }
 
 .log-card.success {
@@ -762,6 +803,7 @@ function getRightActionStyle(id: string) {
 @media (max-width: 840px) {
   .automations-view {
     padding: 1rem;
+    gap: 1rem;
   }
 
   .automations-header,

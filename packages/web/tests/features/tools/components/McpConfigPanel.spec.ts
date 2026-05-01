@@ -37,13 +37,14 @@ describe('McpConfigPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('MCP Config')
+    expect(wrapper.text()).toContain('MCP 配置')
+    expect(wrapper.text()).not.toContain('MCP Config')
     expect(wrapper.text()).toContain('mcp/servers')
     expect(wrapper.text()).toContain('weather-server')
     expect(wrapper.find('[data-test="mcp-name-input"]').element).toHaveProperty('value', 'weather-server')
     expect(wrapper.find('[data-test="mcp-command-input"]').element).toHaveProperty('value', 'npx')
-    expect(wrapper.text()).toContain('MCP 日志设置')
-    expect(wrapper.text()).toContain('MCP 事件日志')
+    expect(wrapper.text()).not.toContain('MCP 日志设置')
+    expect(wrapper.text()).not.toContain('MCP 事件日志')
   })
 
   it('submits create requests with command args and env entries', async () => {
@@ -94,15 +95,51 @@ describe('McpConfigPanel', () => {
     }
     hoisted.state.selectedServerName.value = 'weather-server'
 
-    const wrapper = mount(McpConfigPanel)
+    const wrapper = mount(McpConfigPanel, {
+      props: {
+        view: 'logs',
+      },
+    })
     await flushPromises()
 
+    await wrapper.get('[title="日志设置"]').trigger('click')
     await wrapper.get('input[type="number"]').setValue('2')
-    await wrapper.get('.mcp-detail-panels button.hero-button').trigger('click')
+    await wrapper.get('.action-row .el-button--primary').trigger('click')
 
     expect(hoisted.state?.saveServerEventLog).toHaveBeenCalledWith({
       maxFileSizeMb: 2,
     })
+  })
+
+  it('renders event logs in logs view without config editor', async () => {
+    hoisted.state = createManagementState()
+    hoisted.state.snapshot.value = {
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'weather-server',
+          command: 'npx',
+          args: ['-y', '@mariox/weather-mcp-server'],
+          env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    }
+    hoisted.state.selectedServerName.value = 'weather-server'
+
+    const wrapper = mount(McpConfigPanel, {
+      props: {
+        view: 'logs',
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('MCP 事件日志')
+    expect(wrapper.text()).not.toContain('MCP Logs')
+    expect(wrapper.find('[data-test="mcp-name-input"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('MCP 日志设置')
   })
 })
 

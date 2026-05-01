@@ -251,7 +251,7 @@ function parseJsonRequestBody(raw: string): JsonValue | null {
 
 .route-list {
   display: grid;
-  gap: 12px;
+  gap: 0;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -261,9 +261,12 @@ function parseJsonRequestBody(raw: string): JsonValue | null {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr);
   gap: 12px;
-  padding: 0.85rem 0.9rem;
-  border-radius: 10px;
-  background: var(--bg-input);
+  padding: 0.7rem 0;
+  border-bottom: 1px solid rgba(133, 163, 199, 0.1);
+}
+
+.route-item:last-child {
+  border-bottom: none;
 }
 
 .route-methods {

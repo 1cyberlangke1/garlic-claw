@@ -1,24 +1,24 @@
 <template>
   <article
     class="skill-card"
-    :class="{ active: selected }"
+    :class="[statusClass(skill.governance.loadPolicy), { active: selected }]"
     @click="$emit('select', skill.id)"
   >
     <div class="skill-card-top">
       <div>
-        <strong>{{ skill.name }}</strong>
-        <p>{{ skill.description || '当前技能没有额外说明。' }}</p>
+        <strong class="skill-card-title">{{ skill.name }}</strong>
+        <p class="skill-card-description">{{ skill.description || '当前技能没有额外说明。' }}</p>
       </div>
     </div>
-    <div class="meta-row">
-      <span class="meta-chip">{{ skill.id }}</span>
-      <span class="meta-chip">skills/</span>
-      <span class="meta-chip">{{ loadPolicyLabel(skill.governance.loadPolicy) }}</span>
-      <span class="meta-chip">{{ skill.assets.length }} 个资产</span>
+    <div v-if="skill.tags.length > 0" class="skill-card-tags">
+      <span v-for="tag in skill.tags" :key="tag" class="skill-card-tag">
+        {{ tag }}
+      </span>
     </div>
-    <p v-if="skill.tags.length > 0" class="detail-line">标签: {{ skill.tags.join(' · ') }}</p>
-    <p class="detail-line">入口: {{ skill.entryPath }}</p>
-    <p v-if="skill.assets.length > 0" class="detail-line">资产: {{ skill.assets.map((asset) => asset.path).join(' · ') }}</p>
+    <div class="skill-card-footer">
+      <span class="skill-card-path">{{ skill.entryPath }}</span>
+      <span class="skill-card-assets">{{ skill.assets.length }} 个资产</span>
+    </div>
   </article>
 </template>
 
@@ -34,14 +34,14 @@ defineEmits<{
   (event: 'select', skillId: string): void
 }>()
 
-function loadPolicyLabel(loadPolicy: SkillLoadPolicy): string {
+function statusClass(loadPolicy: SkillLoadPolicy): string {
   switch (loadPolicy) {
     case 'deny':
-      return '拒绝加载'
+      return 'policy-deny'
     case 'ask':
-      return '请求确认'
+      return 'policy-ask'
     default:
-      return '允许加载'
+      return 'policy-allow'
   }
 }
 </script>

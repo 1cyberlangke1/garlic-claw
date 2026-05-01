@@ -3,6 +3,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { PluginInfo } from '@garlic-claw/shared'
 import PluginSidebar from '@/modules/plugins/components/PluginSidebar.vue'
 
+const FILTER_OPTIONS = [
+  { label: '全部', value: 'all' },
+  { label: '需关注', value: 'attention' },
+  { label: '本地', value: 'local' },
+  { label: '远程', value: 'remote' },
+]
+
 function createPlugin(
   input: Partial<PluginInfo> & Pick<PluginInfo, 'id' | 'name'>,
 ): PluginInfo {
@@ -47,6 +54,8 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: 'builtin.demo',
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins: [
           createPlugin({
             id: 'plugin-1',
@@ -81,6 +90,8 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: null,
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins: [
           createPlugin({
             id: 'plugin-1',
@@ -133,6 +144,8 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: null,
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins: [
           createPlugin({
             id: 'plugin-1',
@@ -205,6 +218,8 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: null,
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins: [
           createPlugin({
             id: 'plugin-1',
@@ -263,7 +278,7 @@ describe('PluginSidebar', () => {
       },
     })
 
-    await wrapper.get('[data-test="plugin-sidebar-filter-attention"]').trigger('click')
+    await wrapper.setProps({ activeFilter: 'attention' })
     let titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
     expect(titles).toEqual(['Error Plugin'])
 
@@ -272,7 +287,7 @@ describe('PluginSidebar', () => {
     expect(titles).toEqual([])
     expect(wrapper.text()).toContain('当前筛选下没有匹配插件。')
 
-    await wrapper.get('[data-test="plugin-sidebar-filter-all"]').trigger('click')
+    await wrapper.setProps({ activeFilter: 'all' })
     titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
     expect(titles).toEqual(['Alpha Plugin'])
   })
@@ -283,6 +298,8 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: 'builtin.alpha',
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins: [
           createPlugin({
             id: 'plugin-1',
@@ -343,11 +360,11 @@ describe('PluginSidebar', () => {
 
     expect(wrapper.text()).toContain('匹配 2 / 2')
 
-    await wrapper.get('[data-test="plugin-sidebar-filter-attention"]').trigger('click')
+    await wrapper.setProps({ activeFilter: 'attention' })
     expect(wrapper.text()).toContain('匹配 1 / 2')
     expect(wrapper.text()).toContain('当前详情插件未命中筛选条件。')
 
-    await wrapper.get('[data-test="plugin-sidebar-clear-filters"]').trigger('click')
+    await wrapper.setProps({ activeFilter: 'all' })
     expect(wrapper.text()).toContain('匹配 2 / 2')
     expect(wrapper.text()).not.toContain('当前详情插件未命中筛选条件。')
   })
@@ -375,18 +392,20 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: null,
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins,
       },
     })
 
-    expect(wrapper.findAll('.plugin-item')).toHaveLength(4)
+    expect(wrapper.findAll('.plugin-item')).toHaveLength(8)
     expect(wrapper.text()).toContain('匹配 11 / 11')
-    expect(wrapper.text()).toContain('第 1 / 3 页')
+    expect(wrapper.text()).toContain('第 1 / 2 页')
 
     await wrapper.get('[data-test="plugin-sidebar-next-page"]').trigger('click')
 
-    expect(wrapper.text()).toContain('第 2 / 3 页')
-    expect(wrapper.find('.plugin-item strong').text()).toBe('Plugin 05')
+    expect(wrapper.text()).toContain('第 2 / 2 页')
+    expect(wrapper.find('.plugin-item strong').text()).toBe('Plugin 09')
 
     await wrapper.get('[data-test="plugin-sidebar-search"]').setValue('plugin-11')
 
@@ -402,6 +421,8 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: null,
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins: [
           createPlugin({
             id: 'plugin-1',
@@ -514,6 +535,8 @@ describe('PluginSidebar', () => {
         loading: false,
         selectedPluginName: null,
         error: null,
+        activeFilter: 'all',
+        filterOptions: FILTER_OPTIONS,
         plugins: [
           createPlugin({
             id: 'plugin-1',

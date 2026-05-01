@@ -638,7 +638,7 @@ async function verifyMcpPage(page) {
 async function verifyPersonasPage(page) {
   await page.goto('/personas', { waitUntil: 'load' });
   await expectText(page, '人设管理');
-  await expectText(page, '人设索引');
+  await expectText(page, '可用人设');
   await expectText(page, '可用人设');
   await page.getByRole('button', { name: '新建人设' }).click();
   await page.locator('input[placeholder="persona.writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -649,7 +649,7 @@ async function verifyPersonasPage(page) {
 async function verifySkillsPage(page) {
   await page.goto('/skills', { waitUntil: 'load' });
   await expectText(page, '技能目录');
-  await expectText(page, '已拒绝加载');
+  await expectText(page, '已禁用技能');
   await page.getByPlaceholder('搜索技能名称、说明、标签').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
@@ -769,7 +769,7 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
 
 async function runAutomationFlow(page, accessToken, conversationId) {
   await page.goto('/automations', { waitUntil: 'load' });
-  await page.getByRole('button', { name: '+ 新建自动化' }).click();
+  await page.getByRole('button', { name: '新建自动化' }).click();
   const form = page.locator('.create-form');
   await form.locator('input[placeholder*="每5分钟检查系统信息"]').fill(AUTOMATION_NAME);
   await form.locator('select').nth(0).selectOption('manual');

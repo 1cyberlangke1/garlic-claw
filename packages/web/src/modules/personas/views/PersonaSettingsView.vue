@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ElButton, ElCheckbox, ElInput, ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElInput, ElOption, ElSelect, ElSwitch } from 'element-plus'
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
@@ -97,7 +97,6 @@ function readPersonaAvatarAlt(name?: string | null) {
 
     <section class="hero-grid">
       <article class="hero-card">
-        <span class="hero-kicker">Current Conversation</span>
         <div v-if="currentPersona" class="persona-identity">
           <div class="persona-avatar persona-avatar-large" data-persona-avatar="current">
             <img v-if="currentPersona.avatar" :src="currentPersona.avatar" :alt="readPersonaAvatarAlt(currentPersona.name)" class="persona-avatar-image" />
@@ -134,7 +133,6 @@ function readPersonaAvatarAlt(name?: string | null) {
       <section class="persona-list-card">
         <div class="section-header">
           <div>
-            <span class="section-kicker">人设索引</span>
             <h2>可用人设</h2>
           </div>
           <span class="section-meta">{{ personas.length }} 个</span>
@@ -180,7 +178,6 @@ function readPersonaAvatarAlt(name?: string | null) {
             </div>
             <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
             <div class="persona-heading-copy">
-              <span class="section-kicker">{{ editorMode === 'create' ? '新建人设' : '编辑人设' }}</span>
               <h2>{{ editorMode === 'create' ? '新建人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
             </div>
           </div>
@@ -249,10 +246,13 @@ function readPersonaAvatarAlt(name?: string | null) {
             </label>
           </div>
 
-          <label class="toggle-row">
-            <ElCheckbox v-model="editorDraft.isDefault" />
-            <span>设为默认人设</span>
-          </label>
+          <div class="setting-row">
+            <div class="setting-row-copy">
+              <span class="summary-label">默认人设</span>
+              <span>设为默认人设</span>
+            </div>
+            <ElSwitch v-model="editorDraft.isDefault" />
+          </div>
 
           <div class="detail-block">
             <div class="block-header">
@@ -462,17 +462,10 @@ function readPersonaAvatarAlt(name?: string | null) {
   background: var(--surface-hero-gradient);
 }
 
-.hero-kicker,
-.section-kicker,
 .summary-label {
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.hero-kicker,
-.section-kicker {
-  color: var(--accent);
 }
 
 .persona-source,
@@ -608,7 +601,8 @@ function readPersonaAvatarAlt(name?: string | null) {
 
 .field-block,
 .summary-item,
-.detail-block {
+.detail-block,
+.setting-row-copy {
   display: grid;
   gap: 8px;
 }
@@ -621,6 +615,19 @@ function readPersonaAvatarAlt(name?: string | null) {
 .field-select,
 .field-textarea {
   width: 100%;
+}
+
+.field-input :deep(.el-input__wrapper),
+.field-select :deep(.el-select__wrapper) {
+  min-height: 46px;
+  border-radius: 14px;
+  background: var(--surface-panel-soft-strong);
+  box-shadow: 0 0 0 1px var(--border, rgba(133, 163, 199, 0.18)) inset;
+}
+
+.field-textarea :deep(.el-textarea__inner) {
+  min-height: 120px;
+  resize: vertical;
   border-radius: 14px;
   border: 1px solid var(--border, rgba(133, 163, 199, 0.18));
   background: var(--surface-panel-soft-strong);
@@ -628,24 +635,24 @@ function readPersonaAvatarAlt(name?: string | null) {
   padding: 12px 14px;
 }
 
-.field-textarea {
-  min-height: 120px;
-  resize: vertical;
-}
-
-.compact-textarea {
+.compact-textarea :deep(.el-textarea__inner) {
   min-height: 92px;
 }
 
-.prompt-textarea {
+.prompt-textarea :deep(.el-textarea__inner) {
   min-height: 180px;
   font-family: 'Cascadia Code', 'Consolas', monospace;
 }
 
-.toggle-row {
-  display: inline-flex;
+.setting-row {
+  display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--surface-panel-muted-strong);
+  border: 1px solid var(--border, rgba(133, 163, 199, 0.16));
 }
 
 .dialog-list {

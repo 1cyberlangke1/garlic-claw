@@ -2,10 +2,10 @@
   <section class="skill-list-panel">
     <div class="panel-header">
       <div>
-        <span class="panel-kicker">Catalog</span>
         <h2>技能目录</h2>
         <p>宿主当前能发现的技能目录。模型只会看到其中 `允许加载` 的项。</p>
       </div>
+      <strong class="panel-header-summary">已启用 {{ enabledCount }} / {{ totalCount }}</strong>
     </div>
 
     <ElInput
@@ -37,6 +37,8 @@ import SkillCard from './SkillCard.vue'
 defineProps<{
   modelValue: string | null
   searchKeyword: string
+  enabledCount: number
+  totalCount: number
   skills: SkillDetail[]
   loading: boolean
 }>()

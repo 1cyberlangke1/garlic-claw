@@ -3,7 +3,6 @@
     <section class="subagent-hero">
       <header class="subagent-hero-header">
         <div>
-          <span class="hero-kicker">Subagent Sessions</span>
           <h1>Subagent</h1>
           <p>管理子代理 runtime 的状态、上下文与关闭动作。</p>
         </div>
@@ -42,7 +41,6 @@
     <section class="subagent-workspace-panel">
       <div class="panel-header">
         <div>
-          <span class="panel-kicker">Workspace Windows</span>
           <h2>会话窗口</h2>
           <p>按主会话聚合同步与后台子代理，并在 `main / 命名子代理` 之间查看上下文。</p>
         </div>
@@ -191,7 +189,6 @@
     <section class="subagent-list-panel">
       <div class="panel-header">
         <div>
-          <span class="panel-kicker">Subagent Overview</span>
           <h2>子代理账本</h2>
           <p>按发起方、模型和状态查看子代理 runtime，不再依赖独立账本文件。</p>
         </div>
@@ -510,8 +507,6 @@ function readSubagentDisplayLabel(subagent: PluginSubagentSummary) {
   gap: 0.75rem;
 }
 
-.hero-kicker,
-.panel-kicker,
 .hero-note-label {
   font-size: 0.75rem;
   letter-spacing: 0.08em;

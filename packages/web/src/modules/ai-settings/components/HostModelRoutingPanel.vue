@@ -184,13 +184,7 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
 
 <style scoped>
 .panel-card {
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-panel);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.08);
+  padding: 0;
   min-width: 0;
 }
 
@@ -288,10 +282,6 @@ function decodeTarget(value: string): AiModelRouteTarget | undefined {
 }
 
 @media (max-width: 720px) {
-  .panel-card {
-    padding: 16px;
-  }
-
   .actions {
     justify-content: stretch;
   }

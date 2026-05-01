@@ -1,3 +1,10 @@
 {
-  "skills": {}
+  "skills": {
+    "project/weather-query": {
+      "eventLog": {
+        "maxFileSizeMb": 1
+      },
+      "loadPolicy": "allow"
+    }
+  }
 }

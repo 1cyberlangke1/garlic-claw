@@ -1,25 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-type AutomationView = 'automations' | 'logs'
-
-interface AutomationViewOption {
+interface HeaderViewOption {
   label: string
-  value: AutomationView
+  value: string
   disabled?: boolean
   title?: string
 }
 
 const props = withDefaults(defineProps<{
-  modelValue: AutomationView
-  options: readonly AutomationViewOption[]
+  modelValue: string
+  options: readonly HeaderViewOption[]
   ariaLabel?: string
   fullWidth?: boolean
   activeColor?: string
   activeTextColor?: string
   size?: 'default' | 'small'
 }>(), {
-  ariaLabel: '自动化视图切换',
+  ariaLabel: '页面视图切换',
   fullWidth: false,
   activeColor: 'var(--el-color-primary)',
   activeTextColor: '#fff',
@@ -27,8 +25,8 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  (event: 'update:modelValue', value: AutomationView): void
-  (event: 'change', value: AutomationView): void
+  (event: 'update:modelValue', value: string): void
+  (event: 'change', value: string): void
 }>()
 
 const componentStyle = computed(() => ({
@@ -36,7 +34,7 @@ const componentStyle = computed(() => ({
   '--segmented-active-text-color': props.activeTextColor,
 }))
 
-function handleSelect(value: AutomationView, disabled?: boolean) {
+function handleSelect(value: string, disabled?: boolean) {
   if (disabled || value === props.modelValue) {
     return
   }
