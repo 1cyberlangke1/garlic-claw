@@ -19,6 +19,8 @@
 
     <div class="plugins-layout">
       <PluginSidebar
+        v-model:active-filter="activeFilter"
+        :filter-options="filterOptions"
         :plugins="plugins"
         :loading="loading"
         :selected-plugin-name="selectedPluginName"
@@ -169,12 +171,20 @@ import {
 import { usePluginManagement } from '@/modules/plugins/composables/use-plugin-management'
 
 type PluginsPageView = 'manage' | 'logs'
+type PluginFilterValue = 'all' | 'attention' | 'local' | 'remote'
 
 const route = useRoute()
 const currentView = ref<PluginsPageView>('manage')
+const activeFilter = ref<PluginFilterValue>('all')
 const viewOptions: ReadonlyArray<{ label: string; value: PluginsPageView }> = [
   { label: '管理', value: 'manage' },
   { label: '日志', value: 'logs' },
+]
+const filterOptions: ReadonlyArray<{ label: string; value: PluginFilterValue }> = [
+  { label: '全部', value: 'all' },
+  { label: '需关注', value: 'attention' },
+  { label: '本地', value: 'local' },
+  { label: '远程', value: 'remote' },
 ]
 const preferredPluginName = computed(() => {
   const raw = route.query.plugin

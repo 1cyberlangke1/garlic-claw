@@ -49,26 +49,34 @@
 
     <div class="summary-grid">
       <article class="summary-card">
-        <span class="summary-label">连接状态</span>
-        <strong>{{ plugin.connected ? '在线' : '离线' }}</strong>
+        <div class="summary-card-head">
+          <span class="summary-label">连接状态</span>
+          <strong>{{ plugin.connected ? '在线' : '离线' }}</strong>
+        </div>
         <p>最后活跃：{{ formatTime(plugin.lastSeenAt) }}</p>
         <span class="summary-foot">{{ runtimeKindLabel(plugin) }}</span>
       </article>
       <article class="summary-card">
-        <span class="summary-label">健康</span>
-        <strong>{{ healthText(health) }}</strong>
+        <div class="summary-card-head">
+          <span class="summary-label">健康</span>
+          <strong>{{ healthText(health) }}</strong>
+        </div>
         <p v-if="health?.lastSuccessAt">最后成功：{{ formatTime(health.lastSuccessAt) }}</p>
         <p v-if="health?.lastCheckedAt">最后检查：{{ formatTime(health.lastCheckedAt) }}</p>
         <p>并发：{{ formatRuntimePressure(health) }}</p>
       </article>
       <article class="summary-card">
-        <span class="summary-label">失败统计</span>
-        <strong>{{ health?.failureCount ?? 0 }}</strong>
+        <div class="summary-card-head">
+          <span class="summary-label">失败统计</span>
+          <strong>{{ health?.failureCount ?? 0 }}</strong>
+        </div>
         <p>连续失败：{{ health?.consecutiveFailures ?? 0 }}</p>
       </article>
       <article class="summary-card">
-        <span class="summary-label">能力概览</span>
-        <strong>{{ plugin.manifest.tools.length }} 个工具</strong>
+        <div class="summary-card-head">
+          <span class="summary-label">能力概览</span>
+          <strong>{{ plugin.manifest.tools.length }} 个工具</strong>
+        </div>
         <p>{{ plugin.manifest.hooks?.length ?? 0 }} 个钩子 / {{ cronCount }} 个定时任务 / {{ plugin.manifest.routes?.length ?? 0 }} 条路由 / {{ plugin.manifest.permissions.length }} 项权限</p>
       </article>
     </div>

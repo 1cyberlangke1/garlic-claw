@@ -139,6 +139,13 @@
   border-radius: 18px;
 }
 
+.summary-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .summary-card strong {
   font-size: 1.25rem;
 }

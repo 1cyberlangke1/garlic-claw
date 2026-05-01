@@ -40,16 +40,14 @@
           data-test="plugin-sidebar-toggle-system"
         />
       </div>
-      <ElRadioGroup
-        v-model="activeFilter"
-        class="filter-chips"
+      <HeaderViewSwitch
+        :model-value="activeFilter"
+        :options="filterOptions"
+        :full-width="true"
         size="small"
-      >
-        <ElRadioButton data-test="plugin-sidebar-filter-all" value="all">全部</ElRadioButton>
-        <ElRadioButton data-test="plugin-sidebar-filter-attention" value="attention">需关注</ElRadioButton>
-        <ElRadioButton value="local">本地</ElRadioButton>
-        <ElRadioButton value="remote">远程</ElRadioButton>
-      </ElRadioGroup>
+        aria-label="插件筛选"
+        @update:model-value="emit('update:activeFilter', $event)"
+      />
     </div>
 
     <div v-if="!loading && plugins.length > 0" class="sidebar-results">
@@ -146,7 +144,8 @@
 import { Icon } from '@iconify/vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import { computed, ref, watch } from 'vue'
-import { ElButton, ElInput, ElRadioButton, ElRadioGroup, ElSwitch } from 'element-plus'
+import { ElButton, ElInput, ElSwitch } from 'element-plus'
+import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
 import type { PluginInfo } from '@garlic-claw/shared'
 import { usePagination } from '@/shared/composables/use-pagination'
 import {
@@ -161,15 +160,17 @@ const props = defineProps<{
   loading: boolean
   selectedPluginName: string | null
   error: string | null
+  activeFilter: 'all' | 'attention' | 'local' | 'remote'
+  filterOptions: ReadonlyArray<{ label: string; value: string }>
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'refresh'): void
   (event: 'select', pluginName: string): void
+  (event: 'update:activeFilter', value: string): void
 }>()
 
 const searchKeyword = ref('')
-const activeFilter = ref<'all' | 'attention' | 'local' | 'remote'>('all')
 const showSystemBuiltins = ref(readShowSystemBuiltinsPreference())
 const normalizedKeyword = computed(() =>
   searchKeyword.value.trim().toLocaleLowerCase(),
@@ -216,13 +217,13 @@ const systemBuiltinCount = computed(() =>
   props.plugins.filter((plugin) => isSystemBuiltinPlugin(plugin)).length,
 )
 const hasActiveFilter = computed(() =>
-  activeFilter.value !== 'all' || normalizedKeyword.value.length > 0,
+  props.activeFilter !== 'all' || normalizedKeyword.value.length > 0,
 )
 const selectedPluginHidden = computed(() =>
   !!props.selectedPluginName && !filteredPlugins.value.some((plugin) => plugin.name === props.selectedPluginName),
 )
 
-watch([searchKeyword, activeFilter, showSystemBuiltins], () => {
+watch([searchKeyword, () => props.activeFilter, showSystemBuiltins], () => {
   resetPage()
 })
 
@@ -235,7 +236,7 @@ watch(showSystemBuiltins, (value) => {
  */
 function clearFilters() {
   searchKeyword.value = ''
-  activeFilter.value = 'all'
+  emit('update:activeFilter', 'all')
   resetPage()
 }
 
@@ -245,7 +246,7 @@ function clearFilters() {
  * @returns 是否命中筛选
  */
 function matchesFilter(plugin: PluginInfo): boolean {
-  switch (activeFilter.value) {
+  switch (props.activeFilter) {
     case 'attention':
       return hasPluginIssue(plugin)
     case 'local':

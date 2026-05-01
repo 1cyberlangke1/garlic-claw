@@ -14,19 +14,16 @@
     </template>
 
     <div class="overview-grid">
-      <article class="overview-card accent">
-        <span class="overview-label">统一协议运行面</span>
-        <strong>{{ headline }}</strong>
-        <p>本地插件跟随后端启动，远程插件通过同一套宿主协议接入。</p>
-      </article>
       <article
         v-for="card in cards"
         :key="card.label"
         class="overview-card"
         :class="card.tone"
       >
-        <span class="overview-label">{{ card.label }}</span>
-        <strong>{{ card.value }}</strong>
+        <div class="overview-card-head">
+          <span class="overview-label">{{ card.label }}</span>
+          <strong>{{ card.value }}</strong>
+        </div>
         <p>{{ card.note }}</p>
       </article>
     </div>
@@ -85,8 +82,15 @@ function handleViewUpdate(value: string) {
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.overview-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .overview-card {
@@ -112,10 +116,6 @@ function handleViewUpdate(value: string) {
 .overview-card p {
   color: var(--text-muted);
   font-size: 0.85rem;
-}
-
-.overview-card.accent {
-  border-color: rgba(103, 199, 207, 0.24);
 }
 
 .overview-card.warning {
