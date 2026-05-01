@@ -20,6 +20,7 @@ vi.mock('@/features/plugins/composables/plugin-management.data', async () => {
     loadPlugins: vi.fn(),
     loadPluginDetailSnapshot: vi.fn(),
     finishPluginConversation: vi.fn(),
+    runPluginActionRequest: vi.fn(),
     savePluginScope: vi.fn(),
   }
 })
@@ -501,6 +502,57 @@ describe('usePluginManagement', () => {
     expect(state.selectedPluginName.value).toBe('builtin.beta')
     expect(state.healthSnapshot.value).toEqual(betaHealth)
     expect(state.selectedPlugin.value?.name).toBe('builtin.beta')
+  })
+
+  it('falls back to another plugin when reload removes the currently selected local plugin', async () => {
+    const alpha = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.alpha',
+      displayName: 'Alpha Plugin',
+      supportedActions: ['reload'],
+    })
+    const beta = createPlugin({
+      id: 'plugin-2',
+      name: 'builtin.beta',
+      displayName: 'Beta Plugin',
+    })
+
+    vi.mocked(pluginManagementData.loadPlugins)
+      .mockResolvedValueOnce([alpha, beta])
+      .mockResolvedValueOnce([beta])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot).mockResolvedValue(
+      createDetailSnapshot({}),
+    )
+    vi.mocked(pluginManagementData.runPluginActionRequest).mockResolvedValue({
+      accepted: true,
+      action: 'reload',
+      pluginId: 'builtin.alpha',
+      message: '本地插件目录已删除，已清理旧记录',
+    })
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    await state.runAction('reload')
+    await flushPromises()
+
+    expect(state.selectedPluginName.value).toBe('builtin.beta')
+    expect(state.selectedPlugin.value?.name).toBe('builtin.beta')
+    expect(state.error.value).toBeNull()
+    expect(state.notice.value).toBe('本地插件目录已删除，已清理旧记录')
+    expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenLastCalledWith(
+      'builtin.beta',
+      { limit: 50 },
+      '',
+    )
   })
 
   it('resets event query and storage prefix before loading another plugin detail snapshot', async () => {

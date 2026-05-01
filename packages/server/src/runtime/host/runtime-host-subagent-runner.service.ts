@@ -140,14 +140,19 @@ export class RuntimeHostSubagentRunnerService {
     if (subagent.status !== 'queued' && subagent.status !== 'running') {
       return asJsonValue(this.buildSubagentWaitResult(conversation));
     }
+    const waitForStateChange = this.awaitSubagentStateChange(conversation.id, () => {
+      const currentConversation = this.requireSubagentConversation(conversation.id, pluginId);
+      const currentSubagent = requireConversationSubagent(currentConversation);
+      return currentSubagent.status !== 'queued' && currentSubagent.status !== 'running';
+    });
     this.scheduleSubagentExecution(conversation.id);
     const timeoutMs = typeof params.timeoutMs === 'number' && params.timeoutMs > 0 ? params.timeoutMs : null;
     if (timeoutMs === null) {
-      await this.awaitSubagentStateChange(conversation.id);
+      await waitForStateChange;
       return asJsonValue(this.buildSubagentWaitResult(this.requireSubagentConversation(conversation.id, pluginId)));
     }
     await Promise.race([
-      this.awaitSubagentStateChange(conversation.id),
+      waitForStateChange,
       new Promise<void>((resolve) => {
         setTimeout(resolve, timeoutMs);
       }),
@@ -535,7 +540,7 @@ export class RuntimeHostSubagentRunnerService {
     return nextMessages.slice(-messages.length).map((message) => String(message.id));
   }
 
-  private awaitSubagentStateChange(conversationId: string): Promise<void> {
+  private awaitSubagentStateChange(conversationId: string, shouldResolveImmediately?: () => boolean): Promise<void> {
     return new Promise<void>((resolve) => {
       const waiters = this.waiters.get(conversationId) ?? new Set<() => void>();
       const handler = () => {
@@ -547,6 +552,9 @@ export class RuntimeHostSubagentRunnerService {
       };
       waiters.add(handler);
       this.waiters.set(conversationId, waiters);
+      if (shouldResolveImmediately?.()) {
+        handler();
+      }
     });
   }
 

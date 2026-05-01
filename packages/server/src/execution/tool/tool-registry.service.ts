@@ -272,7 +272,9 @@ export class ToolRegistryService {
         plugin,
         source,
         tool,
-        plugin.connected && (this.toolManagementSettingsService.readToolEnabledOverride(`plugin:${plugin.pluginId}:${tool.name}`) ?? sourceEnabled),
+        plugin.connected
+        && sourceEnabled
+        && (this.toolManagementSettingsService.readToolEnabledOverride(`plugin:${plugin.pluginId}:${tool.name}`) ?? true),
       ));
       source.enabledTools = tools.filter((tool) => tool.enabled).length;
       return { source, tools };

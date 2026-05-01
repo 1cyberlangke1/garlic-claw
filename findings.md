@@ -160,6 +160,28 @@
   - 删除审计：`log/deleted-plugins/<pluginId>/events.json`
 - 因为代际隔离已回到真实 owner，同 `pluginId` 重建不会再继承旧活跃日志。
 
+## 2026-05-01 阶段 K 新增收口
+
+### `packages/server/src/conversation/context-governance.service.ts`
+- summary 压缩现在不再把“有摘要”直接当作成功。
+- 压缩后会重新计算 `afterPreview`；若仍超预算，则拒绝替换历史并返回失败原因。
+
+### `packages/web/src/features/plugins/composables/use-plugin-list.ts`
+- 本地插件 `reload` 命中“目录已删除”后，前端不再继续拉取旧插件详情。
+- 插件列表静默刷新后会重新选择仍存在的插件，或回到空态。
+
+### `packages/web/src/features/tools/composables/use-mcp-config-management.ts`
+- MCP 事件日志现在会在切换 server 时重置基础查询。
+- 事件刷新和加载更多都补了当前 server / requestId 守卫，旧请求不会覆盖新选中项。
+
+### `packages/server/src/execution/tool/tool-registry.service.ts`
+- plugin source 禁用后，tool 总览 `enabled` 与 `enabledTools` 统计不再被 tool 级 `true` override 误抬高。
+- 展示口径已和真实执行口径统一到 `plugin.connected && sourceEnabled && toolEnabled`。
+
+### `packages/server/src/runtime/host/runtime-host-subagent-runner.service.ts`
+- `waitSubagent()` 已补“先挂 waiter，再立即复核状态”的竞态保护。
+- 子代理若在 waiter 建立前瞬时完成，不会再把 HTTP 等待链挂死。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

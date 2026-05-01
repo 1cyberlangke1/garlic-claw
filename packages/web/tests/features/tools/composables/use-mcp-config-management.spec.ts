@@ -273,4 +273,129 @@ describe('useMcpConfigManagement', () => {
     })
     expect(state.eventQuery.value).toEqual({ limit: 50 })
   })
+
+  it('ignores stale MCP event responses after switching servers and resets the event query', async () => {
+    vi.mocked(mcpData.normalizeMcpEventQuery).mockImplementation((query) => ({
+      limit: query.limit ?? 50,
+      ...(query.keyword ? { keyword: query.keyword } : {}),
+      ...(query.cursor ? { cursor: query.cursor } : {}),
+    }))
+    let resolveWeather!: (value: {
+      items: Array<{
+        id: string
+        type: string
+        level: 'error' | 'info' | 'warn'
+        message: string
+        metadata: null
+        createdAt: string
+      }>
+      nextCursor: string | null
+    }) => void
+    const weatherEvents = new Promise<{
+      items: Array<{
+        id: string
+        type: string
+        level: 'error' | 'info' | 'warn'
+        message: string
+        metadata: null
+        createdAt: string
+      }>
+      nextCursor: string | null
+    }>((resolve) => {
+      resolveWeather = resolve
+    })
+
+    vi.mocked(mcpData.loadMcpConfigSnapshot).mockResolvedValue({
+      configPath: 'mcp/servers',
+      servers: [
+        {
+          name: 'weather-server',
+          command: 'npx',
+          args: ['-y', '@mariox/weather-mcp-server'],
+          env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+        {
+          name: 'search-server',
+          command: 'npx',
+          args: ['-y', '@mariox/search-mcp-server'],
+          env: {},
+          eventLog: {
+            maxFileSizeMb: 1,
+          },
+        },
+      ],
+    })
+    vi.mocked(mcpData.loadMcpServerEvents)
+      .mockResolvedValueOnce({
+        items: [],
+        nextCursor: null,
+      })
+      .mockImplementation((serverName) => {
+        if (serverName === 'weather-server') {
+          return weatherEvents
+        }
+        return Promise.resolve({
+          items: [
+            {
+              id: 'search-1',
+              type: 'mcp:info',
+              level: 'info',
+              message: 'search current',
+              metadata: null,
+              createdAt: '2026-04-21T00:00:11.000Z',
+            },
+          ],
+          nextCursor: null,
+        })
+      })
+
+    let state!: ReturnType<typeof useMcpConfigManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = useMcpConfigManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    vi.clearAllMocks()
+
+    state.eventQuery.value = {
+      limit: 50,
+      keyword: 'weather-only',
+    }
+    void state.refreshServerEvents(undefined, 'weather-server')
+    state.selectServer('search-server')
+
+    resolveWeather({
+      items: [
+        {
+          id: 'weather-1',
+          type: 'mcp:error',
+          level: 'error',
+          message: 'weather stale',
+          metadata: null,
+          createdAt: '2026-04-21T00:00:10.000Z',
+        },
+      ],
+      nextCursor: 'weather-1',
+    })
+    await flushPromises()
+
+    expect(state.selectedServerName.value).toBe('search-server')
+    expect(state.eventQuery.value).toEqual({ limit: 50 })
+    expect(state.eventLogs.value.map((entry) => entry.id)).toEqual(['search-1'])
+    expect(state.eventNextCursor.value).toBeNull()
+    expect(mcpData.loadMcpServerEvents).toHaveBeenNthCalledWith(1, 'weather-server', {
+      keyword: 'weather-only',
+      limit: 50,
+    })
+    expect(mcpData.loadMcpServerEvents).toHaveBeenNthCalledWith(2, 'search-server', {
+      limit: 50,
+    })
+  })
 })

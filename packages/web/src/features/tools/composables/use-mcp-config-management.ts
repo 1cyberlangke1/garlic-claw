@@ -37,6 +37,7 @@ export function useMcpConfigManagement() {
   const eventLogs = shallowRef<EventLogRecord[]>([])
   const eventQuery = shallowRef<EventLogQuery>({ limit: 50 })
   const eventNextCursor = ref<string | null>(null)
+  let activeEventRequestId = 0
 
   const servers = computed(() => snapshot.value.servers)
   const selectedServer = computed(() =>
@@ -70,11 +71,14 @@ export function useMcpConfigManagement() {
   }
 
   function selectServer(name: string | null) {
+    activeEventRequestId += 1
     selectedServerName.value = servers.value.some((server) => server.name === name)
       ? name
       : null
+    eventQuery.value = readBaseMcpEventQuery({ limit: 50 })
     if (selectedServerName.value) {
-      void refreshServerEvents(undefined, selectedServerName.value)
+      clearServerEvents()
+      void refreshServerEvents(eventQuery.value, selectedServerName.value)
       return
     }
     clearServerEvents()
@@ -162,17 +166,26 @@ export function useMcpConfigManagement() {
       return
     }
 
+    const requestId = ++activeEventRequestId
     eventLoading.value = true
     requestState.clearError()
     try {
       const result = await loadMcpServerEvents(serverName, baseQuery)
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
       eventQuery.value = baseQuery
       eventLogs.value = result.items
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
       requestState.setError(caughtError, '加载 MCP 事件日志失败')
     } finally {
-      eventLoading.value = false
+      if (requestId === activeEventRequestId) {
+        eventLoading.value = false
+      }
     }
   }
 
@@ -186,6 +199,7 @@ export function useMcpConfigManagement() {
       return
     }
 
+    const requestId = ++activeEventRequestId
     eventLoading.value = true
     requestState.clearError()
     try {
@@ -193,13 +207,21 @@ export function useMcpConfigManagement() {
         ...baseQuery,
         cursor,
       })
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
       eventQuery.value = baseQuery
       eventLogs.value = dedupeMcpEventLogs([...eventLogs.value, ...result.items])
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
       requestState.setError(caughtError, '加载更多 MCP 事件日志失败')
     } finally {
-      eventLoading.value = false
+      if (requestId === activeEventRequestId) {
+        eventLoading.value = false
+      }
     }
   }
 

@@ -196,6 +196,50 @@ describe('RuntimeHostSubagentRunnerService', () => {
     });
   });
 
+  it('waits successfully even if the subagent completes before the waiter is fully attached', async () => {
+    const fixture = createFixture();
+    let releaseExecution!: () => void
+    Reflect.set(fixture.runner as object, 'executeSubagent', jest.fn(async ({ request }) => {
+      await new Promise<void>((resolve) => {
+        releaseExecution = resolve
+      })
+      return {
+        message: {
+          content: `Generated: ${readLatestPrompt(request.messages)}`,
+          role: 'assistant',
+        },
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        text: `Generated: ${readLatestPrompt(request.messages)}`,
+        toolCalls: [],
+        toolResults: [],
+      }
+    }));
+
+    const summary = await fixture.runner.spawnSubagent('builtin.memory', 'Memory', {
+      conversationId: fixture.parentConversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [{ content: '快速完成', role: 'user' }],
+      providerId: 'openai',
+    } as never) as { conversationId: string }
+
+    const waitPromise = fixture.runner.waitSubagent('builtin.memory', {
+      conversationId: summary.conversationId,
+    })
+
+    await jest.advanceTimersByTimeAsync(0)
+    releaseExecution()
+    await jest.runAllTimersAsync()
+
+    await expect(waitPromise).resolves.toMatchObject({
+      conversationId: summary.conversationId,
+      result: 'Generated: 快速完成',
+      status: 'completed',
+    })
+  });
+
   it('resumes queued conversations and converts stale running conversations to interrupted', async () => {
     const fixture = createFixture();
     Reflect.set(fixture.runner as object, 'executeSubagent', jest.fn(async ({ request }) => ({

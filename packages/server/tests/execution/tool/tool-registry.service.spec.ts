@@ -352,6 +352,34 @@ describe('ToolRegistryService', () => {
     expect(tool?.enabled).toBe(false);
   });
 
+  it('does not report plugin tools as enabled when the whole plugin source is disabled', async () => {
+    const { service } = createFixture();
+
+    await service.setSourceEnabled('plugin', 'builtin.memory', false);
+
+    await expect(
+      service.setToolEnabled('plugin:builtin.memory:save_memory', true),
+    ).resolves.toEqual(expect.objectContaining({
+      enabled: false,
+      toolId: 'plugin:builtin.memory:save_memory',
+    }));
+
+    const overview = await service.listOverview();
+    const source = overview.sources.find((entry) => entry.kind === 'plugin' && entry.id === 'builtin.memory');
+    const tool = overview.tools.find((entry) => entry.toolId === 'plugin:builtin.memory:save_memory');
+
+    expect(source).toEqual(expect.objectContaining({
+      enabled: false,
+      enabledTools: 0,
+      id: 'builtin.memory',
+      kind: 'plugin',
+    }));
+    expect(tool).toEqual(expect.objectContaining({
+      enabled: false,
+      toolId: 'plugin:builtin.memory:save_memory',
+    }));
+  });
+
   it('does not fabricate plugin health before any health snapshot exists', async () => {
     const { service } = createFixture();
 

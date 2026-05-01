@@ -325,6 +325,71 @@
 - 已按 judge 意见修正后复跑验证，并由独立 judge 复核 `PASS`。
 - 阶段 J 现在可以提交。
 
+### 已提交
+- commit: `3f8692e` `修复: 收口阶段J插件事件日志生命周期污染`
+
+## 2026-05-01 阶段 K：阶段 J 提交后继续并行扫错
+
+### 已开始
+- 阶段 J 已提交，当前继续按你的要求派多路 subagent 扫描剩余真实 bug。
+- 下一轮优先面向：
+  - conversation / context 生命周期残余缺口
+  - web 配置联动与并发乱序
+  - plugin / tool / MCP 的 owner 错位与资源残留
+
+### 阶段 K 首批收敛项
+- 子代理只读扫描已收敛出 4 条首修项：
+  - `ContextGovernanceService` 把“压缩后仍超预算”的结果误报为成功
+  - `use-plugin-list` 在本地插件 reload 删除后不会修正当前选中项
+  - `use-mcp-config-management` 切换 server / 连续刷新时旧事件日志请求可覆盖新状态
+  - `ToolRegistryService` 的 plugin source 禁用后，tool 总览 enabled 展示与真实执行口径不一致
+
+### 阶段 K 本轮已完成修复
+- `ContextGovernanceService`
+  - summary 压缩后会再校验 `afterPreview.estimatedTokens`
+  - 若压缩后仍超预算，不再替换历史，也不会误报 `compacted: true`
+- `use-plugin-list`
+  - 本地插件 `reload` 成功但目录已删除时，会重新选择仍存在的插件或回到空态
+  - 不再继续拉取已不存在插件的详情
+- `use-mcp-config-management`
+  - 切换 server 时重置事件查询到基础分页口径
+  - 事件刷新 / 加载更多补了 requestId + 当前选中 server 守卫，旧请求不会覆盖新状态
+- `ToolRegistryService`
+  - plugin source 禁用后，tool 总览 `tool.enabled` 与 `enabledTools` 统计口径现在与真实执行一致
+- `RuntimeHostSubagentRunnerService`
+  - `waitSubagent()` 先挂 waiter，再立即复核当前状态
+  - 子代理在 waiter 建立前瞬时完成时，不会再把等待挂死
+
+### 阶段 K 新增回归
+- server
+  - `tests/conversation/context-governance.service.spec.ts`
+    - 压缩后仍超预算时不得替换历史，也不得回报成功
+  - `tests/execution/tool/tool-registry.service.spec.ts`
+    - plugin source 禁用后，即使 tool override=true，总览里也必须保持 `enabled=false`
+  - `tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+    - `waitSubagent()` 对“先完成、后等待”竞态不再丢通知
+- web
+  - `tests/features/plugins/composables/use-plugin-management.spec.ts`
+    - 本地插件 reload 删除后会回退到仍存在的插件
+  - `tests/features/tools/composables/use-mcp-config-management.spec.ts`
+    - 切换 MCP server 后，旧事件请求不会覆盖新 server 的日志状态
+
+### 阶段 K 验证
+- 已通过：
+  - `npm run test -w packages/server -- tests/conversation/context-governance.service.spec.ts tests/execution/tool/tool-registry.service.spec.ts`
+  - `npm run test -w packages/server -- tests/runtime/host/runtime-host-subagent-runner.service.spec.ts`
+  - `npm run test:run -w packages/web -- tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/tools/composables/use-mcp-config-management.spec.ts`
+  - `npm run typecheck -w packages/server`
+  - `npm run typecheck -w packages/web`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 阶段 K 当前状态
+- 本轮 5 条首修项已完成实现与完整验证。
+- 独立 judge 已复核 `PASS`。
+- 下一步是提交当前批次，并继续扫描剩余高优先级缺陷。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

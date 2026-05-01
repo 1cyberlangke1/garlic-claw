@@ -199,7 +199,13 @@ export function usePluginList(options: UsePluginListOptions) {
       const result = await runPluginActionRequest(pluginName, action)
       options.notice.value = result.message
       await reloadPluginListSilently()
-      await refreshSelectedDetails(pluginName)
+      if (selectedPluginName.value) {
+        await refreshSelectedDetails(selectedPluginName.value)
+      } else {
+        appliedDetailPluginName = null
+        clearDetailState()
+        options.clearDetailState()
+      }
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '执行插件动作失败')
     } finally {
@@ -239,8 +245,19 @@ export function usePluginList(options: UsePluginListOptions) {
   }
 
   async function reloadPluginListSilently() {
+    const currentPluginName = selectedPluginName.value
     const nextPlugins = await loadPlugins()
     plugins.value = nextPlugins
+    selectedPluginName.value = pickDefaultPluginName({
+      plugins: nextPlugins,
+      currentPluginName,
+      preferredPluginName: options.preferredPluginName?.value ?? null,
+    })
+    if (!selectedPluginName.value) {
+      appliedDetailPluginName = null
+      clearDetailState()
+      options.clearDetailState()
+    }
   }
 
   function updatePluginSummary(pluginName: string, patch: Partial<PluginInfo>) {

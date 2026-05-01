@@ -110,6 +110,20 @@
 - [x] 扫描确认插件删除后的事件日志残留与同 ID 重建污染
 - [x] 处理插件删除后的事件日志生命周期 owner
 
+## 2026-05-01 阶段 K：阶段 J 提交后继续并行扫错
+
+### 目标
+- [ ] 派多路 subagent 继续扫描 server / web / plugin-runtime 剩余真实 bug
+- [ ] 优先挑 owner 错位、状态残留、并发乱序与资源泄漏
+- [ ] 选一组高价值问题继续修复、验证与提交
+
+### 当前锁定首修项
+- [x] `packages/server/src/conversation/context-governance.service.ts` 压缩后仍超预算却误报成功
+- [x] `packages/web/src/features/plugins/composables/use-plugin-list.ts` 本地插件 reload 删除后选中态错乱
+- [x] `packages/web/src/features/tools/composables/use-mcp-config-management.ts` MCP 事件日志切换/刷新乱序覆盖
+- [x] `packages/server/src/execution/tool/tool-registry.service.ts` source 禁用后 tool 总览 enabled 状态仍错
+- [x] `packages/server/src/runtime/host/runtime-host-subagent-runner.service.ts` `waitSubagent()` 丢通知竞态
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 目标

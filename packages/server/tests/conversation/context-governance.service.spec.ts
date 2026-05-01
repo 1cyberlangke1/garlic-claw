@@ -251,14 +251,68 @@ describe('ContextGovernanceService', () => {
     });
   });
 
-  it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
+  it('does not report compaction as successful when the summary still leaves history over budget', async () => {
     settingsService.updateConfig({
       contextCompaction: {
-        allowAutoContinue: false,
         compressionThreshold: 1,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一条历史消息。'.repeat(20)),
+      createHistoryMessage('message-2', 'assistant', '第二条历史回复。'.repeat(20)),
+      createHistoryMessage('message-3', 'user', '第三条消息保留给最近窗口。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '仍然过长的摘要。'.repeat(40),
+    });
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(result.action).toBe('deferred-short-circuit');
+    if (result.action !== 'deferred-short-circuit') {
+      throw new Error(`unexpected action: ${result.action}`);
+    }
+    await expect(result.deferred.execute({
+      assistantMessageId: 'assistant-1',
+      conversationId,
+      userId: 'user-1',
+      userMessageId: 'user-1',
+    })).resolves.toEqual({
+      assistantContent: '压缩后的上下文仍超过预算，本次未替换历史。',
+      assistantParts: [{ text: '压缩后的上下文仍超过预算，本次未替换历史。', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages).toHaveLength(3);
+    expect(history.messages.some((message) => typeof message.content === 'string' && message.content.includes('仍然过长的摘要'))).toBe(false);
+  });
+
+  it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        allowAutoContinue: false,
+        compressionThreshold: 20,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 900,
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
@@ -271,7 +325,7 @@ describe('ContextGovernanceService', () => {
     aiModelExecutionService.generateText.mockResolvedValue({
       modelId: 'gpt-oss-20b',
       providerId: 'nvidia',
-      text: '自动压缩摘要：保留最近窗口并折叠更早历史。',
+      text: '自动摘要。',
     });
 
     await service.rewriteHistoryBeforeModel({
