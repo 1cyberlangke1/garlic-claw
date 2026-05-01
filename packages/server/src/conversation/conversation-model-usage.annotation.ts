@@ -45,7 +45,7 @@ export function readConversationModelUsageAnnotation(
       continue;
     }
     if (data.modelId === target.modelId && data.providerId === target.providerId) {
-      return normalizeConversationModelUsageAnnotationData(data);
+      return data;
     }
   }
   return null;
@@ -95,7 +95,6 @@ function isConversationModelUsageAnnotationData(
   }
   return typeof value.modelId === 'string'
     && typeof value.providerId === 'string'
-    && (value.historySignature === undefined || typeof value.historySignature === 'string')
     && (value.requestHistorySignature === undefined || typeof value.requestHistorySignature === 'string')
     && (value.responseHistorySignature === undefined || typeof value.responseHistorySignature === 'string')
     && isTokenCount(value.inputTokens)
@@ -103,19 +102,6 @@ function isConversationModelUsageAnnotationData(
     && isTokenCount(value.outputTokens)
     && isTokenCount(value.totalTokens)
     && (value.source === 'provider' || value.source === 'estimated');
-}
-
-function normalizeConversationModelUsageAnnotationData(
-  data: ConversationModelUsageAnnotationData & { historySignature?: string },
-): ConversationModelUsageAnnotationData {
-  return {
-    ...data,
-    ...(data.requestHistorySignature
-      ? {}
-      : data.historySignature
-        ? { requestHistorySignature: data.historySignature }
-        : {}),
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
