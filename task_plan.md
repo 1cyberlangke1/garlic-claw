@@ -1,5 +1,36 @@
 # Task Plan
 
+## 2026-05-01 阶段 F：剩余中高优先级缺陷继续扫描与修复
+
+### 目标
+- [ ] 先把新一轮扫描范围写入记录文件，避免上下文漂移
+- [ ] 并行扫描 `conversation/context`、`automation/tools`、`plugin/runtime`、`web state sync` 剩余缺陷
+- [ ] 只挑真实行为错误、状态错乱、数据丢失、资源泄漏与缺失回归
+- [ ] 选一组高价值问题完成修复、测试、验证与提交
+
+### 阶段 A：记录与分流
+- [x] 读取当前 `TODO.md / task_plan.md / progress.md / findings.md`
+- [x] 把阶段 F 的扫描目标与假设写回文件
+- [x] 按 server / web / plugin-runtime 三路派发只读扫描
+
+### 阶段 B：缺陷取证
+- [x] 汇总子代理扫描结果
+- [x] 交叉核对实现、已有测试与 smoke 覆盖
+- [x] 确认本轮先修项与验证范围
+
+### 阶段 C：实现与回归
+- [x] 修复本轮首批高价值缺陷
+- [x] 补对应 server / web 回归测试
+- [x] 运行定向验证
+
+### 阶段 D：整轮验收与提交
+- [x] 视改动范围运行 `lint`
+- [x] 视改动范围运行 `typecheck`
+- [x] 运行 `smoke:server`
+- [x] 运行 `smoke:web-ui`
+- [x] 拉独立 judge 复核
+- [ ] 提交本轮修复
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 目标

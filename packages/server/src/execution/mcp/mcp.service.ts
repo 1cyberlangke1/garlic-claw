@@ -56,7 +56,12 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   async reloadServer(name: string): Promise<void> { const normalized = name.trim(); await this.syncServerRecord(normalized, this.requireServerConfig(normalized)); }
   async applyServerConfig(config: McpServerConfig, previousName?: string): Promise<void> { const previous = previousName?.trim(); if (previous && previous !== config.name) {await this.removeServer(previous);} await this.syncServerRecord(config.name, config); }
   async saveServer(server: McpServerConfig, previousName?: string): Promise<McpServerConfig> { return this.mcpConfigStoreService.saveServer(server, previousName); }
-  async removeServer(name: string): Promise<void> { const normalized = name.trim(); await this.disconnectServer(normalized); this.serverRecords.delete(normalized); }
+  async removeServer(name: string): Promise<void> {
+    const normalized = name.trim();
+    await this.disconnectServer(normalized);
+    this.serverRecords.delete(normalized);
+    this.toolManagementSettingsService.deleteSourceOverrides(`mcp:${normalized}`);
+  }
   async deleteServer(name: string): Promise<McpServerDeleteResult> { return this.mcpConfigStoreService.deleteServer(name); }
   async setServerEnabled(name: string, enabled: boolean): Promise<void> {
     const normalized = name.trim();

@@ -1,5 +1,70 @@
 # Progress
 
+## 2026-05-01 阶段 F：剩余中高优先级缺陷继续扫描与修复
+
+### 已开始
+- 已完成阶段 E 提交，当前工作树干净。
+- 已读取 `TODO.md`、`task_plan.md`、`progress.md`、`findings.md`，准备开启下一轮扫描。
+- 本轮先不扩散改动面，优先从 `findings.md` 尚未收口项与跨模块状态同步问题继续取证。
+
+### 本轮扫描分流
+- server：继续看 `automation / conversation / tool-registry / runtime host`
+- web：继续看配置联动、会话状态同步、统一工具入口刷新
+- plugin/runtime：继续看本地插件、远程插件离线态、清理与重建链路
+
+### 下一步
+- 派发三路只读子代理扫描
+- 汇总结果后确定首批修复项
+
+### 本轮已完成修复
+- `AutomationService.runRecord()` 现在把准备阶段异常也记入失败日志并持久化：
+  - `cron_child` 父会话缺失时，不再只打控制台错误
+  - `lastRunAt` 与 `logs` 都会留下失败痕迹
+- `/tools` 现在保留离线插件 source：
+  - source 仍可见
+  - tool 会被标成不可执行
+  - 不会重新把离线插件暴露进 executable tool set
+- 删除/重建清理链补齐：
+  - `PluginController.deletePlugin()` 会清理 `plugin:*` source/tool overrides
+  - `bootstrapHttpApp()` 启动期清理缺失本地插件时，会同步清理 runtime state、plugin conversation session 与 `plugin:*` overrides
+  - `McpService.removeServer()` 会清理 `mcp:*` source/tool overrides
+- 插件详情子面板状态收口：
+  - 切插件时，事件筛选会回到默认 `{ limit: 50 }`
+  - 切插件时，storage prefix 会回到空串
+  - 事件请求与 KV 请求都补了当前插件守卫和请求序号，旧响应不会覆盖当前插件
+
+### 本轮新增回归
+- server
+  - `tests/automation/automation.service.spec.ts`
+  - `tests/execution/tool/tool-registry.service.spec.ts`
+  - `tests/adapters/http/plugin/plugin.controller.spec.ts`
+  - `tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - `tests/execution/mcp/mcp.service.spec.ts`
+- web
+  - `tests/features/plugins/composables/use-plugin-management.spec.ts`
+  - `tests/features/plugins/composables/use-plugin-events.spec.ts`
+  - `tests/features/plugins/composables/use-plugin-storage.spec.ts`
+
+### 本轮验证
+- 定向验证已通过：
+  - `npm run test -w packages/server -- tests/automation/automation.service.spec.ts`
+  - `npm run test -w packages/server -- tests/execution/tool/tool-registry.service.spec.ts`
+  - `npm run test -w packages/server -- tests/adapters/http/plugin/plugin.controller.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts tests/execution/mcp/mcp.service.spec.ts`
+  - `npm run test:run -w packages/web -- tests/features/plugins/composables/use-plugin-management.spec.ts tests/features/plugins/composables/use-plugin-events.spec.ts tests/features/plugins/composables/use-plugin-storage.spec.ts`
+- 完整验证已通过：
+  - `npm run lint`
+  - `npm run typecheck -w packages/server`
+  - `npm run typecheck -w packages/web`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 当前状态
+- 独立 judge 已判 `PASS`。
+- judge 认为本轮目标成立，可以提交。
+- judge 同时提示两个后续注意点：
+  - `McpService.deleteServer()` 本体还没有直接清 override，当前依赖后续 `removeServer()` 调用
+  - 启动期缺失本地插件清理依赖 `bootstrapHttpApp()` 传入 `onDrop`
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

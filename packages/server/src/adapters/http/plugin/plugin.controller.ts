@@ -2,6 +2,7 @@ import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActi
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/http-auth';
+import { ToolManagementSettingsService } from '../../../execution/tool/tool-management-settings.service';
 import { buildPluginInfo } from '../../../plugin/persistence/plugin-read-model';
 import { PluginPersistenceService } from '../../../plugin/persistence/plugin-persistence.service';
 import { buildRemotePluginConnectionInfo, PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
@@ -30,7 +31,7 @@ interface PluginEventQueryInput { limit?: string; level?: string; type?: string;
 
 @Controller()
 export class PluginController {
-  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService) {}
+  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService, private readonly toolManagementSettingsService: ToolManagementSettingsService) {}
 
   @Get('plugins')
   listPlugins() { return this.runtimePluginGovernanceService.listPlugins().map((plugin) => buildPluginInfo(plugin, this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId))); }
@@ -69,6 +70,7 @@ export class PluginController {
     this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
     this.runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
     this.runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
+    this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
     return deleted;
   }
 

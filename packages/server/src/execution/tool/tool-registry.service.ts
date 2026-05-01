@@ -231,7 +231,7 @@ export class ToolRegistryService {
   }
 
   private buildPluginSources(): Array<{ source: ToolSourceInfo; tools: ToolInfo[] }> {
-    return this.runtimePluginGovernanceService.listPlugins().filter((plugin) => plugin.connected && plugin.manifest.tools.length > 0).map((plugin) => {
+    return this.runtimePluginGovernanceService.listPlugins().filter((plugin) => plugin.manifest.tools.length > 0).map((plugin) => {
       const sourceEnabled = this.toolManagementSettingsService.readSourceEnabledOverride(`plugin:${plugin.pluginId}`) ?? plugin.defaultEnabled;
       const healthSnapshot = this.runtimePluginGovernanceService.readStoredPluginHealthSnapshot(plugin.pluginId);
       const source: ToolSourceInfo = {
@@ -250,7 +250,12 @@ export class ToolRegistryService {
         runtimeKind: plugin.manifest.runtime,
         supportedActions: this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId) as PluginActionName[],
       };
-      const tools = plugin.manifest.tools.map((tool) => createPluginToolInfo(plugin, source, tool, this.toolManagementSettingsService.readToolEnabledOverride(`plugin:${plugin.pluginId}:${tool.name}`) ?? sourceEnabled));
+      const tools = plugin.manifest.tools.map((tool) => createPluginToolInfo(
+        plugin,
+        source,
+        tool,
+        plugin.connected && (this.toolManagementSettingsService.readToolEnabledOverride(`plugin:${plugin.pluginId}:${tool.name}`) ?? sourceEnabled),
+      ));
       source.enabledTools = tools.filter((tool) => tool.enabled).length;
       return { source, tools };
     });
@@ -265,7 +270,7 @@ export class ToolRegistryService {
     const plugin = this.runtimePluginGovernanceService.listPlugins().find((entry) => entry.pluginId === tool.pluginId);
     if (!plugin) {return false;}
     const sourceEnabled = this.toolManagementSettingsService.readSourceEnabledOverride(`plugin:${plugin.pluginId}`) ?? isPluginEnabledForContext({ conversations: { ...(plugin.conversationScopes ?? {}) }, defaultEnabled: plugin.defaultEnabled }, context);
-    return sourceEnabled && (this.toolManagementSettingsService.readToolEnabledOverride(tool.toolId) ?? true);
+    return plugin.connected && sourceEnabled && (this.toolManagementSettingsService.readToolEnabledOverride(tool.toolId) ?? true);
   }
 
   private buildInternalSources(): Array<{ source: ToolSourceInfo; tools: ToolInfo[] }> {

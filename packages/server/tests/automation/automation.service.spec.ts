@@ -638,6 +638,48 @@ describe('AutomationService', () => {
     expect(automation.logs).toHaveLength(3);
   });
 
+  it('records failed cron child preparation when the parent conversation is missing', async () => {
+    const { conversationMessageService, conversationRecordService } = createConversationServices();
+    const parentConversation = conversationRecordService.createConversation({
+      title: '待删除父会话',
+      userId: 'user-1',
+    }) as { id: string };
+    service = createService({
+      conversationMessageService,
+      conversationRecordService,
+    });
+
+    service.create('user-1', {
+      actions: [
+        {
+          type: 'ai_message',
+          message: '这次会失败',
+          target: {
+            type: 'conversation',
+            id: parentConversation.id,
+            conversationMode: 'cron_child',
+            maxHistoryConversations: 2,
+          },
+        },
+      ],
+      name: '失效父会话自动化',
+      trigger: { type: 'cron', cron: '10s' },
+    });
+    await conversationRecordService.deleteConversation(parentConversation.id, 'user-1');
+
+    await jest.advanceTimersByTimeAsync(10000);
+
+    expect(service.getLogs('user-1', 'automation-1')).toEqual([
+      expect.objectContaining({
+        status: 'error',
+        result: expect.stringContaining('Conversation not found'),
+      }),
+    ]);
+    expect(service.getById('user-1', 'automation-1')).toEqual(expect.objectContaining({
+      lastRunAt: expect.any(String),
+    }));
+  });
+
   it('persists automations and keeps sequence after restart', async () => {
     service.create(SINGLE_USER_ID, {
       actions: [],

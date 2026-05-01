@@ -61,7 +61,7 @@ export class PluginBootstrapService {
     return this.builtinPluginRegistryService.listDefinitions().map((definition) => this.registerBuiltinDefinition(definition).pluginId);
   }
 
-  bootstrapProjectPlugins(): string[] {
+  bootstrapProjectPlugins(onDrop?: (pluginId: string) => void): string[] {
     if (!this.projectPluginRegistryService) {
       return [];
     }
@@ -70,7 +70,7 @@ export class PluginBootstrapService {
     const builtinPluginIds = new Set(
       this.builtinPluginRegistryService?.listDefinitions().map((definition) => definition.manifest.id) ?? [],
     );
-    this.pluginPersistenceService.dropPluginRecords(
+    const droppedPluginIds = this.pluginPersistenceService.dropPluginRecords(
       this.pluginPersistenceService
         .listPlugins()
         .filter((plugin) => plugin.manifest.runtime === 'local')
@@ -78,6 +78,9 @@ export class PluginBootstrapService {
         .filter((plugin) => !loadedPluginIds.has(plugin.pluginId))
         .map((plugin) => plugin.pluginId),
     );
+    for (const pluginId of droppedPluginIds) {
+      onDrop?.(pluginId);
+    }
     return definitions.map((definition) => this.registerProjectDefinition(definition).pluginId);
   }
 

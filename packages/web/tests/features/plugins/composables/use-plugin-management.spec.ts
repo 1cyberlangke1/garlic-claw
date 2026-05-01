@@ -502,4 +502,51 @@ describe('usePluginManagement', () => {
     expect(state.healthSnapshot.value).toEqual(betaHealth)
     expect(state.selectedPlugin.value?.name).toBe('builtin.beta')
   })
+
+  it('resets event query and storage prefix before loading another plugin detail snapshot', async () => {
+    const alpha = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.alpha',
+      displayName: 'Alpha Plugin',
+    })
+    const beta = createPlugin({
+      id: 'plugin-2',
+      name: 'builtin.beta',
+      displayName: 'Beta Plugin',
+    })
+
+    vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([alpha, beta])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot).mockResolvedValue(
+      createDetailSnapshot({}),
+    )
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    vi.clearAllMocks()
+
+    state.eventQuery.value = {
+      limit: 50,
+      keyword: 'error',
+    }
+    state.storagePrefix.value = 'cursor.'
+
+    await state.selectPlugin('builtin.beta')
+    await flushPromises()
+
+    expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
+      'builtin.beta',
+      { limit: 50 },
+      '',
+    )
+    expect(state.eventQuery.value).toEqual({ limit: 50 })
+    expect(state.storagePrefix.value).toBe('')
+  })
 })

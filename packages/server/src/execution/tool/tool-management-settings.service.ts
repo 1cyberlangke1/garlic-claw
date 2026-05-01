@@ -26,6 +26,23 @@ export class ToolManagementSettingsService {
     persistToolManagementConfig(this.configPath, this.config);
   }
 
+  deleteSourceOverrides(sourceKey: string): void {
+    let changed = false;
+    if (sourceKey in this.config.sourceEnabled) {
+      delete this.config.sourceEnabled[sourceKey];
+      changed = true;
+    }
+    for (const toolKey of Object.keys(this.config.toolEnabled)) {
+      if (toolKey.startsWith(`${sourceKey}:`)) {
+        delete this.config.toolEnabled[toolKey];
+        changed = true;
+      }
+    }
+    if (changed) {
+      persistToolManagementConfig(this.configPath, this.config);
+    }
+  }
+
   readToolEnabledOverride(key: string): boolean | undefined {
     return this.config.toolEnabled[key];
   }

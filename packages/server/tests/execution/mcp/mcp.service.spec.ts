@@ -347,6 +347,19 @@ describe('McpService', () => {
     expect(disconnectAllSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('clears persisted MCP source and tool overrides when a server is removed', async () => {
+    await service.saveServer(createServer('weather'));
+    await service.setServerEnabled('weather', false);
+    ((service as any).toolManagementSettingsService as ToolManagementSettingsService)
+      .writeToolEnabledOverride('mcp:weather:get_forecast', false);
+
+    await service.removeServer('weather');
+
+    const reloadedSettings = new ToolManagementSettingsService();
+    expect(reloadedSettings.readSourceEnabledOverride('mcp:weather')).toBeUndefined();
+    expect(reloadedSettings.readToolEnabledOverride('mcp:weather:get_forecast')).toBeUndefined();
+  });
+
   it('runs a real probe when executing health-check governance action', async () => {
     const weather = createServer('weather');
     const staleClient = { callTool: jest.fn(), close: jest.fn() };

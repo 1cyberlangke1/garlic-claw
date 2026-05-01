@@ -44,6 +44,9 @@ describe('PluginController', () => {
     deletePluginRuntimeState: jest.fn(),
     runPluginAction: jest.fn(),
   };
+  const toolManagementSettingsService = {
+    deleteSourceOverrides: jest.fn(),
+  };
 
   let controller: PluginController;
 
@@ -56,6 +59,7 @@ describe('PluginController', () => {
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
       runtimePluginGovernanceService as never,
+      toolManagementSettingsService as never,
     );
   });
 
@@ -547,6 +551,7 @@ describe('PluginController', () => {
     expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
     expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('remote.echo');
     expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
+    expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:remote.echo');
     expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('remote.echo', {
       level: 'warn',
       message: 'Deleted plugin remote.echo',

@@ -508,6 +508,71 @@ describe('ToolRegistryService', () => {
     ]));
   });
 
+  it('keeps offline plugin sources visible in overview but excludes them from executable tools', async () => {
+    const { pluginBootstrapService, service } = createFixture();
+    pluginBootstrapService.registerPlugin({
+      connected: false,
+      fallback: {
+        id: 'remote.weather',
+        name: 'Remote Weather',
+        runtime: 'remote',
+      },
+      manifest: {
+        id: 'remote.weather',
+        name: 'Remote Weather',
+        permissions: [],
+        runtime: 'remote',
+        tools: [
+          {
+            description: 'Get forecast',
+            name: 'get_forecast',
+            parameters: {},
+          },
+        ],
+        version: '1.0.0',
+      } as never,
+      remote: {
+        access: { accessKey: 'key', serverUrl: 'https://example.com/plugin' },
+        descriptor: {
+          auth: { mode: 'required' },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+        metadataCache: {
+          lastSyncedAt: '2026-05-01T00:00:00.000Z',
+          manifestHash: 'hash-1',
+          status: 'cached',
+        },
+      },
+    });
+
+    const overview = await service.listOverview();
+    const source = overview.sources.find((entry) => entry.kind === 'plugin' && entry.id === 'remote.weather');
+    const tool = overview.tools.find((entry) => entry.toolId === 'plugin:remote.weather:get_forecast');
+
+    expect(source).toEqual(expect.objectContaining({
+      kind: 'plugin',
+      id: 'remote.weather',
+      totalTools: 1,
+      enabledTools: 0,
+    }));
+    expect(tool).toEqual(expect.objectContaining({
+      toolId: 'plugin:remote.weather:get_forecast',
+      enabled: false,
+      sourceKind: 'plugin',
+    }));
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+
+    expect(Object.keys(toolSet ?? {})).not.toContain('get_forecast');
+  });
+
   it('filters out tools disabled for the current conversation scope', async () => {
     const { pluginBootstrapService, service } = createFixture();
     const builtinPersisted = (pluginBootstrapService as unknown as {

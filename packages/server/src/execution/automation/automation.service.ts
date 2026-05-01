@@ -75,7 +75,8 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
       try {
         await this.runRecord(automation, 'event');
       } catch (error) {
-        this.recordUnexpectedRunFailure(automation, error);
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`自动化 ${automation.id} 执行失败，但事件广播继续: ${message}`);
       }
     }
     return { event, matchedAutomationIds };
@@ -114,11 +115,16 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     const startedAt = new Date().toISOString();
     automation.lastRunAt = startedAt;
     automation.updatedAt = startedAt;
-    const executionAutomation = await this.prepareExecutionAutomation(automation, runSource, startedAt);
-    const result = await this.automationExecutionService.executeAutomation(executionAutomation);
-    automation.logs.unshift(createAutomationLog(automation, startedAt, result));
-    this.persist();
-    return result;
+    try {
+      const executionAutomation = await this.prepareExecutionAutomation(automation, runSource, startedAt);
+      const result = await this.automationExecutionService.executeAutomation(executionAutomation);
+      automation.logs.unshift(createAutomationLog(automation, startedAt, result));
+      this.persist();
+      return result;
+    } catch (error) {
+      this.recordRunFailure(automation, startedAt, error);
+      throw error;
+    }
   }
 
   private async prepareExecutionAutomation(
@@ -225,9 +231,8 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     }
   }
 
-  private recordUnexpectedRunFailure(automation: RuntimeAutomationRecord, error: unknown): void {
+  private recordRunFailure(automation: RuntimeAutomationRecord, startedAt: string, error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
-    const startedAt = automation.lastRunAt ?? new Date().toISOString();
     automation.updatedAt = new Date().toISOString();
     automation.logs.unshift(createAutomationLog(automation, startedAt, {
       results: [{
@@ -237,7 +242,6 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
       status: 'error',
     }));
     this.persist();
-    this.logger.error(`自动化 ${automation.id} 执行失败，但事件广播继续: ${message}`);
   }
 }
 

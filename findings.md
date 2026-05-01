@@ -1,5 +1,46 @@
 # Findings
 
+## 2026-05-01 阶段 F：继续扫描记录
+
+### 当前扫描优先级
+- 优先继续核对这些尚未收口或只部分覆盖的问题：
+  - `packages/server/src/execution/automation/automation.service.ts` 准备阶段失败日志与持久化
+  - `packages/server/src/execution/tool/tool-registry.service.ts` 离线插件工具源可见性
+  - 配置修改后的跨页面状态同步是否仍有漏刷
+  - plugin/runtime 删除、重建、reload、离线恢复链路是否还有残留状态
+
+### 当前约束
+- 本轮继续只记录真实行为缺陷，不记录风格或纯重构建议。
+- 若发现可复现 bug，会补充影响、复现路径、文件位置与测试缺口。
+
+### 本轮已收口
+- `packages/server/src/execution/automation/automation.service.ts`
+  - `runRecord()` 现在会把准备阶段异常记成失败日志并持久化，`cron_child` 父会话缺失不再静默丢失运行痕迹。
+- `packages/server/src/execution/tool/tool-registry.service.ts`
+  - 离线插件 source 现在会继续出现在 `/tools` 总览里，但对应 tool 不会进入 executable tool set。
+- `packages/server/src/adapters/http/plugin/plugin.controller.ts`
+  - 删除插件会同步清理 `plugin:${pluginId}` source/tool overrides。
+- `packages/server/src/core/bootstrap/bootstrap-http-app.ts`
+  - 启动期清理缺失本地插件时，会一并清理 runtime state、plugin conversation session 与 `plugin:${pluginId}` overrides。
+- `packages/server/src/execution/mcp/mcp.service.ts`
+  - 删除 MCP server runtime 记录时，会同步清理 `mcp:${name}` source/tool overrides。
+- `packages/web/src/features/plugins/composables/use-plugin-events.ts`
+  - 切插件时会重置事件查询，并忽略旧插件慢响应。
+- `packages/web/src/features/plugins/composables/use-plugin-storage.ts`
+  - 切插件时会重置 storage prefix，并忽略旧插件慢响应。
+
+### 阶段 F 剩余待处理 findings
+- `packages/server/src/conversation/conversation-task.service.ts`
+  - 已完成回复若在 `onSent / after-send` 附带动作失败，主消息状态会被反写成 `error`。
+- `packages/server/src/adapters/http/conversation/conversation.controller.ts`
+  - 删除会话前不会先终止正在运行的主任务或子代理。
+- `packages/server/src/conversation/conversation-message-lifecycle.service.ts`
+  - `display` 命令消息仍绕过单飞约束，且 stop API 不能按正式消息语义停止它。
+- `packages/web/src/features/ai-settings/components/ContextGovernanceSettingsPanel.vue`
+  - 自动保存失败后，纯 schema 改动可能不再自动重试。
+- `packages/web/src/components/ModelQuickInput.vue`
+  - 模型候选加载还没有并发保护，旧请求可能覆盖新配置快照。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级
