@@ -6,6 +6,7 @@ import { ToolManagementSettingsService } from '../../execution/tool/tool-managem
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
 import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginRuntimeService } from '../../runtime/host/runtime-host-plugin-runtime.service';
+import { RuntimePluginGovernanceService } from '../../runtime/kernel/runtime-plugin-governance.service';
 
 const DEFAULT_GLOBAL_PREFIX = 'api';
 const DEFAULT_HTTP_PORT = 23330;
@@ -26,11 +27,13 @@ export async function bootstrapHttpApp(): Promise<void> {
   const pluginBootstrapService = app.get(PluginBootstrapService);
   const runtimeHostConversationRecordService = app.get(RuntimeHostConversationRecordService);
   const runtimeHostPluginRuntimeService = app.get(RuntimeHostPluginRuntimeService);
+  const runtimePluginGovernanceService = app.get(RuntimePluginGovernanceService);
   const toolManagementSettingsService = app.get(ToolManagementSettingsService);
   pluginBootstrapService.bootstrapBuiltins();
   pluginBootstrapService.bootstrapProjectPlugins((pluginId) => {
     runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
     runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+    runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
     toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
   });
 

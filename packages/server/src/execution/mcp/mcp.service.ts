@@ -140,6 +140,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      await this.closeClient(input.serverName);
       this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastCheckedAt: new Date().toISOString(), lastError: message });
       this.recordServerEvent(input.serverName, { level: 'error', message, metadata: { toolName: input.toolName }, type: 'tool:error' });
       throw error;

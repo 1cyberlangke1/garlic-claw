@@ -120,6 +120,32 @@
   - `plugin:*` source/tool overrides
 - 启动期缺失本地插件的 drop 分支还没有顺手清健康态缓存；这不影响本轮 judge 通过，但可作为下一轮后端收尾项继续处理。
 
+## 2026-05-01 阶段 J 新增收口
+
+### `packages/server/src/core/bootstrap/bootstrap-http-app.ts`
+- 启动期 `bootstrapProjectPlugins(onDrop)` 现在会和其余真实入口保持同一清理口径：
+  - runtime state
+  - plugin conversation sessions
+  - `plugin:*` source/tool overrides
+  - plugin 健康态缓存
+
+### `packages/server/src/execution/mcp/mcp.service.ts`
+- 已连接 MCP client 的 tool call 失败后，不再只改状态不回收 client。
+- 当前行为改为：
+  - 先关闭并移除旧 client
+  - 再把 source 标成 `connected: false / health: error`
+  - 保留 tool source 可见，但 executable client 不再残留
+
+## 2026-05-01 阶段 J 待处理 findings
+
+### `packages/server/src/plugin/persistence/plugin-persistence.service.ts`
+- 删除本地/远程插件后，事件日志文件仍会残留在 `log/plugins/<pluginId>/events.json`。
+- 由于日志路径只有 `pluginId` 没有代际概念，同 ID 重建后会继承旧日志。
+- 更合适的 owner 在 `PluginPersistenceService`：
+  - 统一接管 delete / drop / detached event 的生命周期
+  - `RuntimeEventLogService` 只提供底层删日志或归档原语
+- 若要保留删除审计，最小可行方向应是“删除审计与活跃插件日志分仓”，不能继续把 detached delete/reload 事件写回活跃插件日志路径。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

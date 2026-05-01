@@ -27,6 +27,9 @@ describe('bootstrapHttpApp', () => {
     const runtimeHostConversationRecordService = {
       deletePluginConversationSessions: jest.fn(),
     };
+    const runtimePluginGovernanceService = {
+      deletePluginRuntimeState: jest.fn(),
+    };
     const toolManagementSettingsService = {
       deleteSourceOverrides: jest.fn(),
     };
@@ -42,6 +45,9 @@ describe('bootstrapHttpApp', () => {
         }
         if (token?.name === 'RuntimeHostConversationRecordService') {
           return runtimeHostConversationRecordService;
+        }
+        if (token?.name === 'RuntimePluginGovernanceService') {
+          return runtimePluginGovernanceService;
         }
         if (token?.name === 'ToolManagementSettingsService') {
           return toolManagementSettingsService;
@@ -67,6 +73,7 @@ describe('bootstrapHttpApp', () => {
     expect(pluginBootstrapService.bootstrapProjectPlugins).toHaveBeenCalledTimes(1);
     expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('local.removed');
     expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('local.removed');
+    expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('local.removed');
     expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:local.removed');
     expect(app.listen).toHaveBeenCalledTimes(1);
     expect(bootstrapUserService.runStartupWarmup).toHaveBeenCalledTimes(1);

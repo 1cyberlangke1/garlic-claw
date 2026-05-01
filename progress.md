@@ -260,6 +260,41 @@
 - judge 留下的后续风险：
   - 启动期 `bootstrapProjectPlugins(onDrop)` 的缺失本地插件清理，当前还没顺手清健康态缓存
 
+## 2026-05-01 阶段 J：阶段 I 提交后继续扫错
+
+### 已开始
+- 已提交阶段 I：
+  - commit: `394ec2a` `修复: 收口阶段I本地插件reload与上下文重试缺陷`
+- 当前继续按你的要求派新一轮只读扫描，重点先看：
+  - 启动期缺失本地插件 drop 是否还漏清健康态缓存
+  - 插件删除后的事件日志残留与同 ID 重建污染
+  - MCP 失败重试 / tool call 失败后的资源回收
+
+### 本轮已完成修复
+- 启动期缺失本地插件 drop 现在会顺手清理健康态缓存：
+  - `bootstrapHttpApp()` 的 `bootstrapProjectPlugins(onDrop)` 分支新增 `runtimePluginGovernanceService.deletePluginRuntimeState(pluginId)`
+- MCP 已连接 client 的 tool call 失败后，现在会立即关闭并移除旧 client：
+  - `McpService.callTool()` catch 分支改为先 `closeClient(serverName)`，再更新 error 状态
+  - 避免 stdio client / 子进程在失败后继续挂到下一次 reload 或进程退出
+
+### 本轮新增回归
+- `tests/core/bootstrap/bootstrap-http-app.spec.ts`
+  - 启动期 drop 本地插件时也会清理健康态缓存
+- `tests/execution/mcp/mcp.service.spec.ts`
+  - 已连接 MCP client 的 tool call 失败后，会 close 并从 `clients` map 移除
+
+### 本轮验证
+- 已通过：
+  - `npm run test -w packages/server -- tests/core/bootstrap/bootstrap-http-app.spec.ts tests/execution/mcp/mcp.service.spec.ts`
+  - `npm run typecheck -w packages/server`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 当前未收口
+- 插件删除后的事件日志文件仍会残留，并在同 ID 重建后被复用：
+  - 当前结论是 owner 应收回 `PluginPersistenceService`
+  - 若要保留删除审计，需要和活跃插件日志分仓，不能继续写回 `log/plugins/<pluginId>/events.json`
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

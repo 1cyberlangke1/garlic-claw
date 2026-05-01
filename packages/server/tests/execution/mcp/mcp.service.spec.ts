@@ -299,6 +299,69 @@ describe('McpService', () => {
     expect(client.callTool).not.toHaveBeenCalled();
   });
 
+  it('closes and evicts a connected MCP client after tool call failure', async () => {
+    const weather = createServer('weather');
+    const client = {
+      callTool: jest.fn().mockRejectedValue(new Error('tool crashed')),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await service.saveServer(weather);
+    (service as any).clients.set('weather', client);
+    (service as any).serverRecords.set('weather', {
+      status: {
+        name: 'weather',
+        connected: true,
+        enabled: true,
+        health: 'healthy',
+        lastError: null,
+        lastCheckedAt: '2026-04-03T10:00:00.000Z',
+      },
+      tools: [
+        { serverName: 'weather', name: 'get_forecast', description: 'Get forecast', inputSchema: null },
+      ],
+    });
+
+    await expect(service.callTool({
+      serverName: 'weather',
+      toolName: 'get_forecast',
+      arguments: {},
+    })).rejects.toThrow('tool crashed');
+
+    expect(client.callTool).toHaveBeenCalledTimes(1);
+    expect(client.close).toHaveBeenCalledTimes(1);
+    expect((service as any).clients.has('weather')).toBe(false);
+    expect(service.getToolingSnapshot()).toEqual({
+      statuses: [
+        expect.objectContaining({
+          name: 'weather',
+          connected: false,
+          health: 'error',
+          lastError: 'tool crashed',
+          lastCheckedAt: expect.any(String),
+        }),
+      ],
+      tools: [],
+    });
+    expect(service.listToolSources()).toEqual([
+      expect.objectContaining({
+        source: expect.objectContaining({
+          id: 'weather',
+          enabled: true,
+          totalTools: 1,
+          enabledTools: 0,
+          health: 'error',
+        }),
+        tools: [
+          expect.objectContaining({
+            toolId: 'mcp:weather:get_forecast',
+            enabled: false,
+          }),
+        ],
+      }),
+    ]);
+  });
+
   it('applies tool-level enabled overrides when listing MCP tools', async () => {
     (service as any).serverRecords.set('weather', {
       status: {

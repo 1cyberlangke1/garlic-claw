@@ -96,6 +96,20 @@
 - [x] 删除 `RuntimePluginGovernanceService -> RuntimeHostService` 注册式本地 reload 清理回调，清理 owner 只保留真实入口
 - [x] `ProjectPluginRegistryService` 对重复 `manifest.id` 的本地插件目录不再静默覆盖
 
+## 2026-05-01 阶段 J：阶段 I 提交后继续扫错
+
+### 目标
+- [ ] 派新一轮 subagent 继续扫描 server / web / plugin-runtime 真实行为缺陷
+- [ ] 优先核对阶段 I judge 残余风险与已知未收口项
+- [ ] 汇总下一批高价值问题并选定首修项
+
+### 当前进展
+- [x] 扫描确认启动期本地插件 drop 漏清健康态缓存
+- [x] 扫描确认 MCP 已连接 client 的 tool call 失败后未回收
+- [x] 修复并验证上述两项
+- [x] 扫描确认插件删除后的事件日志残留与同 ID 重建污染
+- [ ] 处理插件删除后的事件日志生命周期 owner
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 目标
