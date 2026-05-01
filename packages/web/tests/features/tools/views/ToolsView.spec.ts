@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
 import ToolsView from '@/features/tools/views/ToolsView.vue'
 import * as toolData from '@/features/tools/composables/tool-management.data'
 
@@ -72,6 +73,7 @@ describe('ToolsView', () => {
     expect(wrapper.text()).toContain('子代理工具管理|internal|subagent')
     expect(wrapper.text()).toContain('插件工具管理|plugin|builtin.demo')
     expect(wrapper.text()).not.toContain('MCP 工具管理|mcp|all')
+    wrapper.unmount()
   })
 
   it('shows an empty hint when no actual tool source exists', async () => {
@@ -106,5 +108,31 @@ describe('ToolsView', () => {
     expect(wrapper.text()).not.toContain('子代理工具管理|internal|subagent')
     expect(wrapper.text()).not.toContain('MCP 工具管理|mcp|all')
     expect(wrapper.text()).not.toContain('插件工具管理|plugin|builtin.demo')
+    wrapper.unmount()
+  })
+
+  it('refreshes overview when runtime tool config changes', async () => {
+    const wrapper = mount(ToolsView, {
+      global: {
+        stubs: {
+          ToolGovernancePanel: {
+            props: ['sourceKind', 'sourceId', 'title'],
+            template: '<div>{{ title }}|{{ sourceKind }}|{{ sourceId || "all" }}</div>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+    const callCountBeforeEvent = vi.mocked(toolData.loadToolOverview).mock.calls.length
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'runtime-tools',
+      },
+    }))
+    await flushPromises()
+
+    expect(vi.mocked(toolData.loadToolOverview).mock.calls.length).toBeGreaterThan(callCountBeforeEvent)
+    wrapper.unmount()
   })
 })

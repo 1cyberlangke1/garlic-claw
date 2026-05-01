@@ -1,5 +1,26 @@
 # Findings
 
+## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
+
+### MCP 工具源启用状态残留缺口
+- 之前工具管理持久化只覆盖了 `internal` 和 `plugin` source。
+- `mcp` source 的启用/禁用走的是 `ToolRegistryService -> McpService.setServerEnabled()`，但不会写 `config/tool-management.json`。
+- 结果是：
+  - 当前进程里看起来禁用了
+  - `reloadServersFromConfig()` 或服务重启后又回到默认启用
+- 更合适的 owner 在 `McpService` 本身：
+  - 它负责 source 连接态
+  - 也最适合在 `prime / reload / set enabled` 三个时机统一吃持久化开关
+
+### `/tools` 统一入口刷新缺口
+- `ToolsView` 和 `ToolGovernancePanel` 都是各自直接拉 `/tools/overview`。
+- 之前只有聊天、插件、Schema 之类页面订阅了内部配置变更事件，`/tools` 自己没有。
+- 因此在 AI 设置里改：
+  - 执行工具运行参数
+  - 子代理配置
+ 之后，统一入口会继续停留在旧快照，直到手动刷新页面。
+- 对这类“统一入口”页面，不能只靠 `onMounted()` 首次拉取；需要订阅内部配置事件，把页级 overview 和具体 panel 一起刷新。
+
 ## 2026-05-01 前端配置联动刷新与本地插件目录收口
 
 ### 独立 judge 复核结论

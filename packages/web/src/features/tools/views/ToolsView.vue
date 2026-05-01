@@ -64,8 +64,9 @@
 
 <script setup lang="ts">
 import type { ToolSourceInfo } from '@garlic-claw/shared'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { subscribeInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 import ToolGovernancePanel from '@/features/tools/components/ToolGovernancePanel.vue'
 import { loadToolOverview, toErrorMessage } from '@/features/tools/composables/tool-management.data'
 
@@ -112,9 +113,20 @@ const visibleSections = computed(() => [
   hasMcpTools.value,
   hasPluginTools.value,
 ].filter(Boolean))
+let removeInternalConfigChangedListener = () => {}
 
 onMounted(() => {
+  removeInternalConfigChangedListener = subscribeInternalConfigChanged(({ scope }) => {
+    if (scope !== 'runtime-tools' && scope !== 'subagent') {
+      return
+    }
+    void refresh()
+  })
   void refresh()
+})
+
+onUnmounted(() => {
+  removeInternalConfigChangedListener()
 })
 
 async function refresh() {

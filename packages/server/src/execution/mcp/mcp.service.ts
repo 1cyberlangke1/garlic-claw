@@ -7,6 +7,7 @@ import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } 
 import { ConfigService } from '@nestjs/config';
 import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
 import { McpConfigStoreService } from './mcp-config-store.service';
+import { ToolManagementSettingsService } from '../tool/tool-management-settings.service';
 
 type McpServerHealthStatus = 'healthy' | 'error' | 'unknown';
 type McpServerStatus = { name: string; connected: boolean; enabled: boolean; health: McpServerHealthStatus; lastError: string | null; lastCheckedAt: string | null };
@@ -26,7 +27,12 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   readonly serverRecords = new Map<string, McpRecord>();
   private readonly logger = new Logger(McpService.name);
 
-  constructor(private readonly configService: ConfigService, private readonly mcpConfigStoreService: McpConfigStoreService, private readonly runtimeEventLogService: RuntimeEventLogService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly mcpConfigStoreService: McpConfigStoreService,
+    private readonly runtimeEventLogService: RuntimeEventLogService,
+    private readonly toolManagementSettingsService: ToolManagementSettingsService,
+  ) {}
 
   onModuleInit(): void {
     this.primeServerRecords(this.getSnapshot().servers);
@@ -41,7 +47,9 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   async reloadServersFromConfig(): Promise<void> {
     await this.disconnectAllClients();
     this.serverRecords.clear();
-    for (const server of this.getSnapshot().servers) {await this.syncServerRecord(server.name, server);}
+    for (const server of this.getSnapshot().servers) {
+      await this.syncServerRecord(server.name, server, this.readSourceEnabled(server.name));
+    }
   }
 
   async reloadServer(name: string): Promise<void> { const normalized = name.trim(); await this.syncServerRecord(normalized, this.requireServerConfig(normalized)); }
@@ -49,7 +57,11 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   async saveServer(server: McpServerConfig, previousName?: string): Promise<McpServerConfig> { return this.mcpConfigStoreService.saveServer(server, previousName); }
   async removeServer(name: string): Promise<void> { const normalized = name.trim(); await this.disconnectServer(normalized); this.serverRecords.delete(normalized); }
   async deleteServer(name: string): Promise<McpServerDeleteResult> { return this.mcpConfigStoreService.deleteServer(name); }
-  async setServerEnabled(name: string, enabled: boolean): Promise<void> { const normalized = name.trim(); await this.syncServerRecord(normalized, this.requireServerConfig(normalized), enabled); }
+  async setServerEnabled(name: string, enabled: boolean): Promise<void> {
+    const normalized = name.trim();
+    this.toolManagementSettingsService.writeSourceEnabledOverride(`mcp:${normalized}`, enabled);
+    await this.syncServerRecord(normalized, this.requireServerConfig(normalized), enabled);
+  }
   async listServerEvents(name: string, query: EventLogQuery = {}): Promise<EventLogListResult> { this.requireServerConfig(name.trim()); return this.runtimeEventLogService.listLogs('mcp', name.trim(), query); }
 
   async runGovernanceAction(sourceId: string, action: 'health-check' | 'reconnect' | 'reload'): Promise<ToolSourceActionResult> {
@@ -124,11 +136,14 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   private primeServerRecords(servers: McpServerConfig[]): void {
     this.serverRecords.clear();
     for (const server of servers) {
-      this.serverRecords.set(server.name, createMcpRecord(server.name, { enabled: true }, []));
+      this.serverRecords.set(server.name, createMcpRecord(server.name, { enabled: this.readSourceEnabled(server.name) }, []));
     }
   }
-  private async syncServerRecord(name: string, config: McpServerConfig, enabled = true): Promise<void> { this.serverRecords.set(name, createMcpRecord(name, { enabled }, [])); await this.closeClient(name); this.updateServerStatus(name, { connected: false, health: 'unknown', lastError: null }); if (enabled) {await this.connectMcpServer(name, config);} }
+  private async syncServerRecord(name: string, config: McpServerConfig, enabled = this.readSourceEnabled(name)): Promise<void> { this.serverRecords.set(name, createMcpRecord(name, { enabled }, [])); await this.closeClient(name); this.updateServerStatus(name, { connected: false, health: 'unknown', lastError: null }); if (enabled) {await this.connectMcpServer(name, config);} }
   private updateServerStatus(name: string, patch: Partial<McpServerStatus>): void { const record = this.serverRecords.get(name); if (record) {record.status = { ...record.status, ...patch };} }
+  private readSourceEnabled(name: string): boolean {
+    return this.toolManagementSettingsService.readSourceEnabledOverride(`mcp:${name}`) ?? true;
+  }
   private async closeClient(name: string): Promise<void> {
     const client = this.clients.get(name);
     if (client) {try { await client.close(); } catch { void client; }}

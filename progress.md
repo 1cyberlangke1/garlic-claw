@@ -1,5 +1,38 @@
 # Progress
 
+## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
+
+### 已确认现状
+- `ToolRegistryService.setSourceEnabled('mcp', ...)` 当前只改进程内 `McpService` 状态，没有把启用标记写入 `config/tool-management.json`。
+- `McpService.reloadServersFromConfig()` 与 `onModuleInit()` 会把 MCP source 重新按默认启用态拉起，导致重启后禁用状态丢失。
+- `packages/web/src/features/tools/views/ToolsView.vue` 当前只在 `onMounted()` 拉一次 `/tools/overview`，没有订阅内部配置变更事件。
+- 结果是：
+  - MCP 工具源禁用状态跨重启不可靠
+  - `/tools` 统一入口在 AI 设置里改执行工具/子代理运行参数后，页面不会自动刷新
+
+### 本轮实现
+- `McpService` 已接入 `ToolManagementSettingsService`：
+  - `setServerEnabled()` 会把 `mcp:<serverName>` 写入 `config/tool-management.json`
+  - `primeServerRecords()`、`reloadServersFromConfig()`、`syncServerRecord()` 都会读取持久化启用状态
+  - 重启或配置重载后，已禁用的 MCP source 不会被默认重新拉起
+- `/tools` 页与 `ToolGovernancePanel` 都补上了内部配置变更订阅：
+  - `runtime-tools` 变更会刷新执行工具面板和页级 overview
+  - `subagent` 变更会刷新子代理工具面板和页级 overview
+- 新增回归测试：
+  - `packages/server/tests/execution/mcp/mcp.service.spec.ts`
+  - `packages/web/tests/features/tools/views/ToolsView.spec.ts`
+  - `packages/web/tests/features/tools/components/ToolGovernancePanel.spec.ts`
+
+### 本轮验证
+- `npm run test -w packages/server -- tests/execution/mcp/mcp.service.spec.ts` ✅
+- `npm run test:run -w packages/web -- tests/features/tools/views/ToolsView.spec.ts tests/features/tools/components/ToolGovernancePanel.spec.ts` ✅
+- `npm run typecheck -w packages/server` ✅
+- `npm run typecheck -w packages/web` ✅
+- `npm run smoke:server` ✅
+- `npm run smoke:web-ui` ✅
+  - 首轮失败为浏览器链路等待 `/compact` 结果写入超时
+  - 复跑后通过；同轮后端启动、HTTP 健康与服务拉起均正常，未见后端异常日志
+
 ## 2026-05-01 前端配置联动刷新 + 本地插件目录迁到 config/plugins
 
 ### 已确认现状

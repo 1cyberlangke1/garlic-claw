@@ -1,5 +1,28 @@
 # Task Plan
 
+## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
+
+### 目标
+- [ ] MCP 工具源启用/禁用状态写入统一工具管理配置，服务重启后不丢失
+- [ ] MCP 配置重载与模块启动预热时恢复已持久化的启用状态
+- [ ] `/tools` 统一入口在运行参数变更后自动刷新，不停留在旧快照
+- [ ] 补前后端回归测试并完成最小必要验证
+
+### 阶段 A：取证
+- [x] 确认 `ToolRegistryService.setSourceEnabled('mcp')` 只调用 `McpService.setServerEnabled(...)`，没有写 `tool-management.json`
+- [x] 确认 `McpService.reloadServersFromConfig()` 与 `onModuleInit()` 默认把所有 MCP source 重新视为启用
+- [x] 确认 `ToolsView` 未订阅内部配置变更事件，统一入口会停留在旧工具总览
+
+### 阶段 B：实现
+- [x] 为 MCP source 启用状态补持久化读写与启动恢复
+- [x] 为 `/tools` 页补内部配置变更订阅与自动刷新
+- [x] 补对应前后端回归测试
+
+### 阶段 C：验证
+- [x] 跑相关 server / web 回归测试
+- [x] 跑相关 typecheck
+- [x] 跑 `smoke:server` 与 `smoke:web-ui`
+
 ## 2026-05-01 前端配置联动刷新 + 本地插件目录迁到 config/plugins
 
 ### 目标
