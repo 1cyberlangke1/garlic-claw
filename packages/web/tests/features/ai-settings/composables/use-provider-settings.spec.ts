@@ -118,6 +118,17 @@ function createDefaultSelection(
   }
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return {
+    promise,
+    resolve,
+  }
+}
+
 async function mountProviderSettingsHarness() {
   let state!: ReturnType<typeof useProviderSettings>
   const Harness = defineComponent({
@@ -356,6 +367,107 @@ describe('useProviderSettings', () => {
     })
     expect(state.hostModelRoutingConfig.value.utilityModelRoles.conversationTitle?.modelId)
       .toBe('provider-a-model')
+  })
+
+  it('keeps the latest host model routing save result when an older request resolves later', async () => {
+    vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
+      catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
+      providers: [createProviderSummary('provider-a', 'Provider A')],
+      visionConfig: { enabled: false },
+      hostModelRoutingConfig: {
+        fallbackChatModels: [],
+        utilityModelRoles: {},
+      },
+    })
+    vi.mocked(providerData.loadProviderSelectionData).mockResolvedValue(
+      createSelectionData('provider-a'),
+    )
+    vi.mocked(providerData.loadProviderModelOptions).mockResolvedValue({
+      visionOptions: [],
+      hostModelRoutingOptions: [],
+      modelsByProviderId: {},
+    })
+    const firstSave = createDeferred({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    const secondSave = createDeferred({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-b',
+          modelId: 'provider-b-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    vi.mocked(providerData.saveHostModelRouting)
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise)
+
+    const state = await mountProviderSettingsHarness()
+    const firstPromise = state.saveHostModelRoutingConfig({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    expect(state.savingHostModelRoutingConfig.value).toBe(true)
+    const secondPromise = state.saveHostModelRoutingConfig({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-b',
+          modelId: 'provider-b-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+
+    secondSave.resolve({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-b',
+          modelId: 'provider-b-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    await secondPromise
+
+    expect(state.hostModelRoutingConfig.value.fallbackChatModels).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+      },
+    ])
+    expect(state.savingHostModelRoutingConfig.value).toBe(false)
+
+    firstSave.resolve({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    await firstPromise
+
+    expect(state.hostModelRoutingConfig.value.fallbackChatModels).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+      },
+    ])
+    expect(state.savingHostModelRoutingConfig.value).toBe(false)
   })
 
   it('updates the explicit global default locally without reloading provider detail', async () => {

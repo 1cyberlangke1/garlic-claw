@@ -32,6 +32,17 @@ const contextWindowPreviewState = vi.hoisted(() => ({
     | null,
 }))
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return {
+    promise,
+    resolve,
+  }
+}
+
 vi.stubGlobal('fetch', mockFetch)
 
 vi.mock('@/features/chat/store/chat', () => ({
@@ -362,5 +373,57 @@ describe('ChatView', () => {
 
     expect(wrapper.findAll('.chat-tab')).toHaveLength(2)
     expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the latest subagent tabs when an older polling request resolves later', async () => {
+    vi.useFakeTimers()
+    const childConversationId = '019dd900-1234-7abc-8def-1234567890ab'
+    const firstTabs = createDeferred<Array<Record<string, unknown>>>()
+    const secondTabs = createDeferred<Array<Record<string, unknown>>>()
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockImplementation(() => firstTabs.promise),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockImplementation(() => secondTabs.promise),
+      })
+
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    secondTabs.resolve([
+      {
+        id: childConversationId,
+        title: '子代理窗口',
+        createdAt: '2026-04-29T00:00:00.000Z',
+        updatedAt: '2026-04-29T00:00:00.000Z',
+        _count: { messages: 1 },
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.findAll('.chat-tab')).toHaveLength(2)
+
+    firstTabs.resolve([])
+    await flushPromises()
+
+    expect(wrapper.findAll('.chat-tab')).toHaveLength(2)
   })
 })

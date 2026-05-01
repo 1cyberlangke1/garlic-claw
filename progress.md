@@ -421,6 +421,46 @@
 - 独立 judge 已复核 `PASS`。
 - 下一步是提交阶段 L，并继续扫描剩余“配置改动后其他地方不更新 / 旧请求覆盖新状态”缺陷。
 
+### 已提交
+- commit: `153e08d` `修复: 收口阶段L视觉回退配置联动`
+
+## 2026-05-01 阶段 M：host routing 保存竞态与子代理标签轮询乱序
+
+### 已开始
+- 阶段 L 提交后，继续围绕“配置保存乱序覆盖”和“后台轮询旧响应覆盖新状态”取证。
+- 当前锁定两条真实缺陷：
+  - Host model routing 保存时，视图层没有接保存态，旧请求晚回包会覆盖新配置
+  - 聊天页子代理标签轮询没有请求序号守卫，旧响应会覆盖较新的标签列表
+
+### 本轮已完成修复
+- `use-provider-settings.saveHostModelRoutingConfig()` 现在补了 `requestId + saving` 守卫：
+  - 保存中的旧请求晚回包时，不再覆盖最新 routing 配置
+  - `savingHostModelRoutingConfig` 会和真实保存过程同步
+- `ProviderSettings.vue` 现在把 `savingHostModelRoutingConfig` 传给 `HostModelRoutingPanel`，保存按钮不再永远可点
+- `ChatView.vue` 的 `refreshSubagentTabs()` 现在补了请求序号守卫：
+  - 同一会话的旧轮询响应不会再覆盖最新标签列表
+  - 失败清空也只允许当前最新请求生效
+
+### 本轮新增回归
+- `tests/features/ai-settings/composables/use-provider-settings.spec.ts`
+  - host routing 两次保存乱序返回时，只保留最新结果
+- `tests/features/ai-settings/components/HostModelRoutingPanel.spec.ts`
+  - 保存中会禁用保存按钮
+- `tests/features/chat/views/ChatView.spec.ts`
+  - 子代理标签轮询旧请求晚回包时，不得覆盖最新标签
+
+### 本轮验证
+- 已通过：
+  - `npm run test:run -w packages/web -- tests/features/ai-settings/composables/use-provider-settings.spec.ts tests/features/ai-settings/components/HostModelRoutingPanel.spec.ts tests/features/chat/views/ChatView.spec.ts`
+  - `npm run typecheck -w packages/web`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 当前状态
+- 独立 judge 已复核 `PASS`。
+- 下一步是提交阶段 M，并继续处理 `/tools` 跨页不刷新、MCP/Provider 全量刷新旧快照回写等剩余配置联动缺陷。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

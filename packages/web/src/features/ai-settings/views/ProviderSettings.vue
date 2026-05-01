@@ -168,7 +168,7 @@
         v-if="activeSection === 'routing'"
         :config="hostModelRoutingConfig"
         :options="hostModelRoutingOptions"
-        :saving="false"
+        :saving="savingHostModelRoutingConfig"
         @save="saveHostModelRoutingConfig"
       />
 
@@ -268,6 +268,7 @@ const navItems: Array<{ id: string; label: string; icon: IconifyIcon; divided?: 
 const {
   loadingProviders,
   savingVision,
+  savingHostModelRoutingConfig,
   savingRuntimeToolsConfig,
   savingSubagentConfig,
   savingContextGovernanceConfig,

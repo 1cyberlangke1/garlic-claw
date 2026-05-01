@@ -54,6 +54,7 @@ export function useProviderSettings() {
   const error = providerRequestState.error
   const appError = providerRequestState.appError
   const savingVision = ref(false)
+  const savingHostModelRoutingConfig = ref(false)
   const savingRuntimeToolsConfig = ref(false)
   const savingSubagentConfig = ref(false)
   const savingContextGovernanceConfig = ref(false)
@@ -88,6 +89,7 @@ export function useProviderSettings() {
   let providerSelectionRequestId = 0
   let discoveryRequestId = 0
   let connectionTestRequestId = 0
+  let hostModelRoutingRequestId = 0
 
   function emitProviderModelsChanged() {
     emitInternalConfigChanged({ scope: 'provider-models' })
@@ -411,7 +413,19 @@ export function useProviderSettings() {
   }
 
   async function saveHostModelRoutingConfig(config: AiHostModelRoutingConfig) {
-    hostModelRoutingConfig.value = await saveHostModelRouting(config)
+    const requestId = ++hostModelRoutingRequestId
+    savingHostModelRoutingConfig.value = true
+    try {
+      const nextConfig = await saveHostModelRouting(config)
+      if (requestId !== hostModelRoutingRequestId) {
+        return
+      }
+      hostModelRoutingConfig.value = nextConfig
+    } finally {
+      if (requestId === hostModelRoutingRequestId) {
+        savingHostModelRoutingConfig.value = false
+      }
+    }
   }
 
   async function saveRuntimeToolsConfig(values: PluginConfigSnapshot['values']) {
@@ -482,6 +496,7 @@ export function useProviderSettings() {
   return {
     loadingProviders,
     savingVision,
+    savingHostModelRoutingConfig,
     savingRuntimeToolsConfig,
     savingSubagentConfig,
     savingContextGovernanceConfig,

@@ -191,6 +191,21 @@
 - 聊天页现在会订阅 `vision-fallback` scope，并立即刷新当前开关。
 - 这样从 AI 设置切回聊天页时，不需要等下一次失败重试才发现开关已变化。
 
+## 2026-05-01 阶段 M 新增收口
+
+### `packages/web/src/features/ai-settings/views/ProviderSettings.vue`
+- `HostModelRoutingPanel` 之前一直拿 `saving=false`，保存按钮不会进入禁用态。
+- 这会让用户在第一次保存尚未返回时继续点第二次保存，放大后端慢响应覆盖新配置的问题。
+
+### `packages/web/src/features/ai-settings/composables/use-provider-settings.ts`
+- `saveHostModelRoutingConfig()` 之前没有请求序号守卫。
+- 当前行为已改为只让最新一次保存回包落本地状态；旧请求晚回包时直接丢弃。
+
+### `packages/web/src/features/chat/views/ChatView.vue`
+- 子代理标签轮询之前只校验 `workspaceConversationId`，没有校验请求先后。
+- 同一会话下两次轮询若旧请求更晚返回，旧标签列表会覆盖较新的结果。
+- 当前已补请求序号守卫，只有最新轮询结果允许写回页面。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

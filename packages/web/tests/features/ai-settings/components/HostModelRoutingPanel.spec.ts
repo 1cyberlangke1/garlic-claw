@@ -46,4 +46,19 @@ describe('HostModelRoutingPanel', () => {
       ],
     ])
   })
+
+  it('保存中会禁用保存按钮', () => {
+    const wrapper = mount(HostModelRoutingPanel, {
+      props: {
+        saving: true,
+        config: {
+          fallbackChatModels: [],
+          utilityModelRoles: {},
+        },
+        options: [],
+      },
+    })
+
+    expect(wrapper.get('[data-test="host-routing-save"]').attributes('disabled')).toBeDefined()
+  })
 })

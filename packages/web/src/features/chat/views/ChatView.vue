@@ -129,6 +129,7 @@ const currentConversationId = computed(() => chat.currentConversationId ?? null)
 const SUBAGENT_TAB_POLL_INTERVAL_MS = 2000
 
 let subagentTabPollTimer: ReturnType<typeof setInterval> | null = null
+let subagentTabRequestId = 0
 
 onMounted(() => {
   subagentTabPollTimer = setInterval(() => {
@@ -186,15 +187,20 @@ function switchToSubagent(conversationId: string) {
 }
 
 async function refreshSubagentTabs(conversationId: string) {
+  const requestId = ++subagentTabRequestId
   try {
     const token = localStorage.getItem('accessToken')
     const resp = await fetch(`/api/chat/conversations/${conversationId}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-    if (!resp.ok || workspaceConversationId.value !== conversationId) {
+    if (!resp.ok || workspaceConversationId.value !== conversationId || requestId !== subagentTabRequestId) {
       return
     }
-    subagentTabs.value = await resp.json()
+    const nextTabs = await resp.json()
+    if (workspaceConversationId.value !== conversationId || requestId !== subagentTabRequestId) {
+      return
+    }
+    subagentTabs.value = nextTabs
   } catch {
-    if (workspaceConversationId.value === conversationId) {
+    if (workspaceConversationId.value === conversationId && requestId === subagentTabRequestId) {
       subagentTabs.value = []
     }
   }
