@@ -124,6 +124,13 @@
 - [x] `packages/server/src/execution/tool/tool-registry.service.ts` source 禁用后 tool 总览 enabled 状态仍错
 - [x] `packages/server/src/runtime/host/runtime-host-subagent-runner.service.ts` `waitSubagent()` 丢通知竞态
 
+## 2026-05-01 阶段 L：Vision Fallback 配置联动补漏
+
+### 目标
+- [x] `vision-fallback` 配置变更后，聊天页实时刷新当前开关
+- [x] 补聊天页与发送端回归测试
+- [x] 跑完整验证后提交
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 目标

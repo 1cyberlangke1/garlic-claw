@@ -390,6 +390,37 @@
 - 独立 judge 已复核 `PASS`。
 - 下一步是提交当前批次，并继续扫描剩余高优先级缺陷。
 
+## 2026-05-01 阶段 L：Vision Fallback 配置联动补漏
+
+### 已开始
+- 继续收“配置改了别处不刷新”的残余缺口。
+- 当前锁定问题：
+  - Vision Fallback 配置改动后，聊天页不会实时刷新当前开关
+
+### 本轮已完成修复
+- `internal-config-change` 新增 `vision-fallback` scope。
+- `use-provider-settings.saveVisionConfig()` 保存成功后会发出 `vision-fallback` 内部配置变更事件。
+- `chat-view.module.ts` 订阅该事件后会立即重拉 `loadVisionFallbackEnabled()`，聊天页不再继续吃旧开关。
+
+### 本轮新增回归
+- `tests/features/chat/composables/use-chat-view.spec.ts`
+  - Vision Fallback 配置变更事件发出后，聊天页下一次发送图片会立刻进入 `transcribing` 乐观状态
+- `tests/features/ai-settings/composables/use-provider-settings.spec.ts`
+  - 保存 Vision Fallback 后会发出 `vision-fallback` 内部配置变更事件
+
+### 本轮验证
+- 已通过：
+  - `npm run test:run -w packages/web -- tests/features/ai-settings/composables/use-provider-settings.spec.ts tests/features/chat/composables/use-chat-view.spec.ts`
+  - `npm run typecheck -w packages/web`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 当前状态
+- judge 首轮指出的“发送端测试缺失”和“验证未写回磁盘”已补齐。
+- 独立 judge 已复核 `PASS`。
+- 下一步是提交阶段 L，并继续扫描剩余“配置改动后其他地方不更新 / 旧请求覆盖新状态”缺陷。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

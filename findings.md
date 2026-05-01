@@ -182,6 +182,15 @@
 - `waitSubagent()` 已补“先挂 waiter，再立即复核状态”的竞态保护。
 - 子代理若在 waiter 建立前瞬时完成，不会再把 HTTP 等待链挂死。
 
+## 2026-05-01 阶段 L 新增收口
+
+### `packages/web/src/features/ai-settings/composables/use-provider-settings.ts`
+- Vision Fallback 保存成功后，现在会发出 `vision-fallback` 内部配置变更事件。
+
+### `packages/web/src/features/chat/modules/chat-view.module.ts`
+- 聊天页现在会订阅 `vision-fallback` scope，并立即刷新当前开关。
+- 这样从 AI 设置切回聊天页时，不需要等下一次失败重试才发现开关已变化。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

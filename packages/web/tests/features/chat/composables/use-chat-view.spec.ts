@@ -410,4 +410,48 @@ describe('useChatView', () => {
     )
     expect(state.selectedCapabilities.value?.input.image).toBe(false)
   })
+
+  it('reloads vision fallback availability after vision-fallback config changes', async () => {
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    vi.mocked(chatViewData.loadVisionFallbackEnabled).mockResolvedValue(true)
+    vi.clearAllMocks()
+    state.pendingImages.value.push({
+      id: 'image-1',
+      name: 'demo.png',
+      image: 'data:image/png;base64,Zm9v',
+      mimeType: 'image/png',
+    })
+    await nextTick()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'vision-fallback',
+      },
+    }))
+    await flushPromises()
+
+    expect(chatViewData.loadVisionFallbackEnabled).toHaveBeenCalled()
+    await state.send()
+
+    expect(chat.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        optimisticAssistantMetadata: {
+          visionFallback: {
+            state: 'transcribing',
+            entries: [],
+          },
+        },
+      }),
+    )
+  })
 })

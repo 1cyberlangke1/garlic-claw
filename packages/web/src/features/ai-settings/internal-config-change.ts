@@ -1,7 +1,7 @@
 export const INTERNAL_CONFIG_CHANGED_EVENT = 'garlic-claw:internal-config-changed'
 
 export interface InternalConfigChangedDetail {
-  scope: 'context-governance' | 'provider-models' | 'runtime-tools' | 'subagent'
+  scope: 'context-governance' | 'provider-models' | 'runtime-tools' | 'subagent' | 'vision-fallback'
 }
 
 export function emitInternalConfigChanged(detail: InternalConfigChangedDetail) {

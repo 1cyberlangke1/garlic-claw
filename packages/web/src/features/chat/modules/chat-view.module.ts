@@ -179,10 +179,13 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   )
   const removeInternalConfigChangedListener = subscribeInternalConfigChanged(
     ({ scope }) => {
-      if (scope !== 'provider-models') {
+      if (scope === 'provider-models') {
+        void refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
         return
       }
-      void refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
+      if (scope === 'vision-fallback') {
+        void refreshVisionFallbackAvailability()
+      }
     },
   )
   if (getCurrentScope()) {

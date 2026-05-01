@@ -404,6 +404,54 @@ describe('useProviderSettings', () => {
     })
   })
 
+  it('emits a vision-fallback config change event after saving vision fallback settings', async () => {
+    vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
+      catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
+      providers: [createProviderSummary('provider-a', 'Provider A')],
+      visionConfig: { enabled: false },
+      hostModelRoutingConfig: {
+        fallbackChatModels: [],
+        utilityModelRoles: {},
+      },
+    })
+    vi.mocked(providerData.loadProviderSelectionData).mockResolvedValue(
+      createSelectionData('provider-a'),
+    )
+    vi.mocked(providerData.loadProviderModelOptions).mockResolvedValue({
+      visionOptions: [],
+      hostModelRoutingOptions: [],
+      modelsByProviderId: {},
+    })
+    vi.mocked(providerData.saveVisionFallbackConfig).mockResolvedValue({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+    const emitSpy = vi.spyOn(internalConfigChange, 'emitInternalConfigChanged')
+
+    const state = await mountProviderSettingsHarness()
+    await state.saveVisionConfig({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+
+    expect(providerData.saveVisionFallbackConfig).toHaveBeenCalledWith({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+    expect(state.visionConfig.value).toEqual({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+    expect(emitSpy).toHaveBeenCalledWith({
+      scope: 'vision-fallback',
+    })
+  })
+
   it('keeps the current provider detail visible while the same provider reloads', async () => {
     let resolveReload!: (value: ReturnType<typeof createSelectionData>) => void
     const pendingReload = new Promise<ReturnType<typeof createSelectionData>>((resolve) => {

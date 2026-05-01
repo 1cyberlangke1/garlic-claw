@@ -404,6 +404,7 @@ export function useProviderSettings() {
     savingVision.value = true
     try {
       visionConfig.value = await saveVisionFallbackConfig(config)
+      emitInternalConfigChanged({ scope: 'vision-fallback' })
     } finally {
       savingVision.value = false
     }
