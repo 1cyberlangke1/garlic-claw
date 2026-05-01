@@ -225,6 +225,33 @@
 - 旧 `loadProviderSettingsBaseData()` 慢返回时，会把 provider/default/vision/host routing 基线重新盖回旧快照。
 - 当前已补 `refreshAllRequestId`，只允许最新一轮基线刷新写回这些字段。
 
+## 2026-05-01 阶段 O 新增收口
+
+### `packages/web/src/features/chat/store/chat-store.helpers.ts`
+- 活跃回复识别现在统一抽成 `isStoppableResponseMessage()`。
+- `display result` 不再只是“会卡住 streaming 的活跃消息”，同时也进入可停止语义。
+
+### `packages/web/src/features/chat/modules/chat-store.module.ts`
+- `stopStreaming()` 之前会直接拒绝 `display result`，导致命令消息挂起时只能继续卡队列。
+- 当前已改为对可停止回复统一走 `stopConversationMessageRecord()`，然后本地标记 `stopped` 并继续 drain 队列。
+- `selectConversation()` 之前先清空当前会话再并发加载新会话；只要其中一个请求失败，就会停在半切换状态。
+- 当前已补上一会话快照回滚：新会话加载失败时会恢复旧消息、todo、模型选择与上下文预览。
+
+### `packages/server/src/conversation/conversation-message-lifecycle.service.ts`
+- 阶段 O 首轮 judge 暴露的真实缺口是“前端 stop 语义已放宽，后端仍只认 assistant”。
+- 当前已把三处判定收口到同一语义：
+  - `stopMessageGeneration()` 允许 `assistant` 与 `display result`
+  - `startMessageGeneration()` 遇到活跃 `display result` 时同样禁止第二条生成
+  - `retryMessageGeneration()` 遇到活跃 `display result` 时同样禁止重试并发
+- 因此 `/compact` 这类命令现在不再出现“前端显示可停、后端实际拒绝 stop”的前后端分叉。
+
+### `packages/web/src/features/chat/modules/chat-store.module.ts`
+- 阶段 O 第二轮 judge 暴露的真实缺口是“回滚快照取自当前半切换态”。
+- 当前已补两层保护：
+  - `stableConversationState` 只在 `loading=false` 时记录最后一份稳定会话状态
+  - `selectConversation()` 新增请求代次守卫，旧切换的完成/失败不会再回写新切换后的页面
+- 因此“旧切换未完成 -> 新切换失败”的并发场景，现在会回到最后稳定会话，而不是回到空消息/空待办/空权限的半切换壳。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

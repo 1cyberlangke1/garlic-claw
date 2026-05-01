@@ -318,6 +318,41 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenLastCalledWith(conversationId, 'user-1');
   });
 
+  it('forwards main-conversation display result stop requests to the lifecycle service', () => {
+    conversationMessageLifecycleService.stopMessageGeneration.mockReturnValue({ message: 'Generation stopped' });
+    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'main',
+      messages: [
+        {
+          id: 'display-result-1',
+          role: 'display',
+          status: 'pending',
+          metadata: {
+            annotations: [
+              {
+                data: { variant: 'result' },
+                owner: 'conversation.display-message',
+                type: 'display-message',
+                version: '1',
+              },
+            ],
+          },
+        },
+      ],
+      title: 'New Chat',
+      updatedAt: '2026-04-11T00:00:00.000Z',
+    });
+
+    expect(controller.stopMessage('user-1', conversationId, 'display-result-1')).toEqual({ message: 'Generation stopped' });
+    expect(conversationMessageLifecycleService.stopMessageGeneration).toHaveBeenCalledWith(
+      conversationId,
+      'display-result-1',
+      'user-1',
+    );
+  });
+
   it('does not interrupt the current subagent run when stop targets a stale or non-assistant message', () => {
     runtimeHostConversationRecordService.requireConversation.mockReturnValue({
       createdAt: '2026-04-11T00:00:00.000Z',

@@ -398,6 +398,30 @@ describe('ConversationMessageLifecycleService', () => {
     ).rejects.toThrow('当前仍有回复在生成中，请先停止或等待完成');
   });
 
+  it('blocks starting a second generation when a display result is still active', async () => {
+    runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '命令执行中',
+      metadata: {
+        annotations: [
+          {
+            data: {
+              variant: 'result',
+            },
+            owner: 'conversation.display-message',
+            type: 'display-message',
+            version: '1',
+          },
+        ],
+      },
+      role: 'display',
+      status: 'pending',
+    });
+
+    await expect(
+      service.startMessageGeneration(conversationId, { content: '第二条消息', model: 'gpt-5.4', provider: 'openai' }, 'user-1'),
+    ).rejects.toThrow('当前仍有回复在生成中，请先停止或等待完成');
+  });
+
   it('rejects retrying a non-assistant message', async () => {
     const userMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
       content: '普通用户消息',
@@ -432,6 +456,80 @@ describe('ConversationMessageLifecycleService', () => {
     await expect(
       service.retryMessageGeneration(conversationId, String(activeAssistantMessage.id), { model: 'gpt-5.4', provider: 'openai' }, 'user-1'),
     ).rejects.toThrow('当前仍有回复在生成中，请先停止或等待完成');
+  });
+
+  it('blocks retry when the conversation already has an active display result reply', async () => {
+    runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '已完成回复',
+      model: 'gpt-5.4',
+      parts: [{ text: '已完成回复', type: 'text' }],
+      provider: 'openai',
+      role: 'assistant',
+      status: 'completed',
+    });
+    const assistantMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '可重试的回复',
+      model: 'gpt-5.4',
+      parts: [{ text: '可重试的回复', type: 'text' }],
+      provider: 'openai',
+      role: 'assistant',
+      status: 'completed',
+    });
+    runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '命令执行中',
+      metadata: {
+        annotations: [
+          {
+            data: {
+              variant: 'result',
+            },
+            owner: 'conversation.display-message',
+            type: 'display-message',
+            version: '1',
+          },
+        ],
+      },
+      role: 'display',
+      status: 'pending',
+    });
+
+    await expect(
+      service.retryMessageGeneration(conversationId, String(assistantMessage.id), { model: 'gpt-5.4', provider: 'openai' }, 'user-1'),
+    ).rejects.toThrow('当前仍有回复在生成中，请先停止或等待完成');
+  });
+
+  it('stops a display result message and writes back stopped when runtime task is already gone', async () => {
+    const displayResultMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '命令执行中',
+      metadata: {
+        annotations: [
+          {
+            data: {
+              variant: 'result',
+            },
+            owner: 'conversation.display-message',
+            type: 'display-message',
+            version: '1',
+          },
+        ],
+      },
+      role: 'display',
+      status: 'pending',
+    });
+
+    await expect(
+      service.stopMessageGeneration(conversationId, String(displayResultMessage.id), 'user-1'),
+    ).resolves.toEqual({ message: 'Generation stopped' });
+
+    expect(readConversation(runtimeHostConversationRecordService).messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: String(displayResultMessage.id),
+          role: 'display',
+          status: 'stopped',
+        }),
+      ]),
+    );
   });
 
   it('includes user and active persona in hook context payloads', async () => {

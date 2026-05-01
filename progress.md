@@ -528,6 +528,97 @@
   - `npm run smoke:web-ui`
 - 第三轮独立 judge 已复核 `PASS`。
 
+### 已提交
+- commit: `0a09aab` `修复: 收口阶段N工具总览与全量刷新竞态`
+
+## 2026-05-01 阶段 O：聊天状态机停止与切会话失败回滚
+
+### 已开始
+- 阶段 N 提交后，继续转到聊天状态机高危行为。
+- 当前锁定两条真实缺陷：
+  - `display result` 处于 `pending/streaming` 时会把发送队列卡在 streaming 态，但前端又不给停止
+  - 切会话过程中任一详情请求失败，会把当前页停在“已切换到新会话，但消息/权限/todo 已被清空”的半切换状态
+
+### 本轮已完成修复
+- `chat-store.helpers.ts` 现在把可停止的活跃回复语义统一成 `isStoppableResponseMessage()`：
+  - `assistant`
+  - `display result`
+- `chat-store.module.ts`
+  - `canStopStreaming` 与 `stopStreaming()` 现在都接受 `display result`
+  - 因此命令展示消息挂起时，停止按钮会真的停止后端任务并释放前端发送队列
+  - `selectConversation()` 现在会先保存上一会话快照
+  - 若新会话的详情加载失败，会失效本轮请求并恢复上一会话状态，不再留下半切换空壳
+
+### 本轮新增回归
+- `tests/features/chat/store/chat-store.module.spec.ts`
+  - `display result` 处于 streaming 时可以停止，并在停止后释放排队消息
+  - 切会话失败时，会回滚到上一会话的消息、待办和模型选择
+
+### 本轮验证
+- 已通过：
+  - `npm run test:run -w packages/web -- tests/features/chat/store/chat-store.module.spec.ts`
+  - `npm run typecheck -w packages/web`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 验收备注
+- `smoke:web-ui` 首次失败在浏览器链路：
+  - `runChatFlow` 等待 `requestfinished` 超时
+  - 同一轮里前端回复已经出现，后端也已恢复空闲，更像 Playwright 事件层偶发漏抓，不像本轮聊天 store 逻辑回归
+  - 随后按同一脚本口径直接复跑，`smoke:web-ui` 通过
+
+### 当前状态
+- 下一步是拉独立 judge 复核阶段 O，通过后提交。
+
+### judge 补口
+- 阶段 O 首轮独立 judge 判 `FAIL`：
+  - 前端已允许停止 `display result`
+  - 但后端 `ConversationMessageLifecycleService.stopMessageGeneration()` 仍只接受 `assistant`
+  - 真实 stop 请求会落到 `Only assistant messages can be stopped`
+- 已补后端语义对齐：
+  - `conversation-message-lifecycle.service.ts` 现在把 `display result` 也纳入可停止回复
+  - `startMessageGeneration()` / `retryMessageGeneration()` 的单飞判定也同步纳入活跃 `display result`
+  - 当 runtime 任务已结束但消息仍是 `pending/streaming` 时，后端也会把 `display result` 本地回写成 `stopped`
+- 已补后端回归：
+  - `tests/conversation/conversation-message-lifecycle.service.spec.ts`
+    - 活跃 `display result` 时继续发送会被阻止
+    - `display result` stop 时会真正落成 `stopped`
+- 已重新验证通过：
+  - `npm run test -w packages/server -- tests/conversation/conversation-message-lifecycle.service.spec.ts`
+  - `npm run test:run -w packages/web -- tests/features/chat/store/chat-store.module.spec.ts`
+  - `npm run lint`
+  - `npm run typecheck -w packages/web`
+  - `npm run typecheck -w packages/server`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+- 第二轮独立 judge 再判 `FAIL`：
+  - 切会话失败回滚仍可能回到“半切换空壳”，因为快照取自当前响应式状态，不是最后一份稳定状态
+  - 后端回归少了 `retry + active display result`，主会话 HTTP stop 入口也没单独验
+- 已继续补齐：
+  - `chat-store.module.ts`
+    - 新增 `stableConversationState`
+    - 只在 `loading=false` 时同步最后一份稳定会话快照
+    - `selectConversation()` 新增请求代次守卫，旧切换完成或失败都不会再干扰新切换
+  - `chat-store.module.spec.ts`
+    - 新增“旧切换未完成时，新切换失败仍回到最后稳定会话”的并发回滚用例
+  - `conversation-message-lifecycle.service.spec.ts`
+    - 新增 `retry + active display result` 阻止并发用例
+  - `conversation.controller.spec.ts`
+    - 新增主会话 `display result` stop 路由入口透传用例
+- 第二轮补口后已重新验证通过：
+  - `npm run test -w packages/server -- tests/conversation/conversation-message-lifecycle.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run test:run -w packages/web -- tests/features/chat/store/chat-store.module.spec.ts`
+  - `npm run lint`
+  - `npm run typecheck -w packages/web`
+  - `npm run typecheck -w packages/server`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+- 第三轮独立 judge 已判 `PASS`：
+  - 并发切会话失败回滚已基于最后稳定快照
+  - `display result` 的主会话 `start / retry / stop` 语义与回归覆盖已补齐
+- 阶段 O 当前可以提交。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

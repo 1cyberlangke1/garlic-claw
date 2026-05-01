@@ -19,7 +19,7 @@ export class ConversationMessageLifecycleService {
     const message = conversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
     if (message.role !== 'assistant') {throw new BadRequestException('Only assistant messages can be retried');}
-    if (conversation.messages.some(isActiveAssistantMessage)) {
+    if (conversation.messages.some(isActiveResponseMessage)) {
       throw new BadRequestException('当前仍有回复在生成中，请先停止或等待完成');
     }
 
@@ -51,7 +51,7 @@ export class ConversationMessageLifecycleService {
 
   async startMessageGeneration(conversationId: string, dto: SendMessagePayload, userId?: string) {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
-    if (conversation.messages.some(isActiveAssistantMessage)) {
+    if (conversation.messages.some(isActiveResponseMessage)) {
       throw new BadRequestException('当前仍有回复在生成中，请先停止或等待完成');
     }
     const messageText = dto.content ?? dto.parts?.find((part) => part.type === 'text')?.text ?? '';
@@ -115,10 +115,10 @@ export class ConversationMessageLifecycleService {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
     const message = conversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
-    if (message.role !== 'assistant') {throw new BadRequestException('Only assistant messages can be stopped');}
+    if (!isStoppableResponseMessage(message)) {throw new BadRequestException('Only assistant or display result messages can be stopped');}
 
     const stopped = await this.conversationTaskService.stopTask(messageId);
-    if (!stopped && isActiveAssistantMessage(message)) {this.runtimeHostConversationMessageService.writeMessage(conversationId, messageId, { status: 'stopped' });}
+    if (!stopped && isActiveResponseMessage(message)) {this.runtimeHostConversationMessageService.writeMessage(conversationId, messageId, { status: 'stopped' });}
     return { message: 'Generation stopped' };
   }
 
@@ -198,8 +198,42 @@ function readMessageId(message: { id?: unknown }): string {
 
 function readOptionalMessageField(message: Record<string, unknown>, key: 'model' | 'provider'): string { return typeof message[key] === 'string' ? message[key] : key === 'model' ? DEFAULT_PROVIDER_MODEL_ID : DEFAULT_PROVIDER_ID; }
 
-function isActiveAssistantMessage(message: Record<string, unknown>): boolean {
-  return message.role === 'assistant' && (message.status === 'pending' || message.status === 'streaming');
+function isActiveResponseMessage(message: Record<string, unknown>): boolean {
+  return isStoppableResponseMessage(message) && (message.status === 'pending' || message.status === 'streaming');
+}
+
+function isStoppableResponseMessage(message: Record<string, unknown>): boolean {
+  return message.role === 'assistant' || isDisplayResultMessage(message);
+}
+
+function isDisplayResultMessage(message: Record<string, unknown>): boolean {
+  if (message.role !== 'display') {return false;}
+  const annotations = readMessageAnnotations(message);
+  return annotations.some((annotation) => (
+    annotation.owner === 'conversation.display-message'
+    && annotation.type === 'display-message'
+    && isRecord(annotation.data)
+    && annotation.data.variant === 'result'
+  ));
+}
+
+function readMessageAnnotations(message: Record<string, unknown>): Array<Record<string, unknown>> {
+  if (isRecord(message.metadata) && Array.isArray(message.metadata.annotations)) {
+    return message.metadata.annotations.filter(isRecord);
+  }
+  if (typeof message.metadataJson !== 'string' || !message.metadataJson.trim()) {return [];}
+  try {
+    const parsed = JSON.parse(message.metadataJson) as unknown;
+    return isRecord(parsed) && Array.isArray(parsed.annotations)
+      ? parsed.annotations.filter(isRecord)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 
