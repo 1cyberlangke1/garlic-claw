@@ -11,21 +11,25 @@ import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runt
 
 describe('RuntimeHostConversationRecordService', () => {
   const conversationsEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
+  const conversationTodosEnvKey = 'GARLIC_CLAW_CONVERSATION_TODOS_PATH';
   const runtimeWorkspaceEnvKey = 'GARLIC_CLAW_RUNTIME_WORKSPACES_PATH';
   const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   let storagePath: string;
+  let todoStoragePath: string;
   let runtimeWorkspaceRoot: string;
 
   beforeEach(() => {
     storagePath = path.join(os.tmpdir(), `runtime-host-conversation-record.service.spec-${Date.now()}-${Math.random()}.json`);
+    todoStoragePath = path.join(os.tmpdir(), `runtime-host-conversation-todo.service.spec-${Date.now()}-${Math.random()}.json`);
     runtimeWorkspaceRoot = path.join(os.tmpdir(), `runtime-host-conversation-record.workspace-${Date.now()}-${Math.random()}`);
   });
 
   afterEach(() => {
     delete process.env[conversationsEnvKey];
+    delete process.env[conversationTodosEnvKey];
     delete process.env[runtimeWorkspaceEnvKey];
     try {
-      for (const filePath of [storagePath]) {
+      for (const filePath of [storagePath, todoStoragePath]) {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
@@ -628,6 +632,35 @@ describe('RuntimeHostConversationRecordService', () => {
     expect(() => service.requireConversation(parentConversationId, 'user-1')).toThrow(NotFoundException);
     expect(() => service.requireConversation(childConversationId, 'user-1')).toThrow(NotFoundException);
     expect(service.listSubagentConversations('user-1')).toEqual([]);
+  });
+
+  it('deletes todos for the whole conversation tree inside the record owner', async () => {
+    process.env[conversationsEnvKey] = storagePath;
+    process.env[conversationTodosEnvKey] = todoStoragePath;
+    const service = new RuntimeHostConversationRecordService();
+    const todoService = new RuntimeHostConversationTodoService(service);
+    Object.assign(service as unknown as { runtimeHostConversationTodoService?: RuntimeHostConversationTodoService }, {
+      runtimeHostConversationTodoService: todoService,
+    });
+    const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
+    const childConversationId = (service.createConversation({
+      parentId: parentConversationId,
+      title: 'Child Chat',
+      userId: 'user-1',
+    }) as { id: string }).id;
+
+    todoService.replaceSessionTodo(parentConversationId, [
+      { content: 'parent todo', priority: 'high', status: 'pending' },
+    ], 'user-1');
+    todoService.replaceSessionTodo(childConversationId, [
+      { content: 'child todo', priority: 'medium', status: 'in_progress' },
+    ], 'user-1');
+
+    await expect(service.deleteConversation(parentConversationId, 'user-1')).resolves.toEqual({ message: 'Conversation deleted' });
+
+    expect(() => service.requireConversation(parentConversationId, 'user-1')).toThrow(NotFoundException);
+    expect(() => service.requireConversation(childConversationId, 'user-1')).toThrow(NotFoundException);
+    expect(JSON.parse(fs.readFileSync(todoStoragePath, 'utf-8'))).toEqual({});
   });
 
   it('lists only true subagent child conversations for a parent conversation', () => {

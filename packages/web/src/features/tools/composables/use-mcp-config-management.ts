@@ -155,18 +155,18 @@ export function useMcpConfigManagement() {
     query: EventLogQuery = eventQuery.value,
     serverName = selectedServerName.value,
   ) {
+    const baseQuery = readBaseMcpEventQuery(query)
     if (!serverName) {
       clearServerEvents()
-      eventQuery.value = normalizeMcpEventQuery(query)
+      eventQuery.value = baseQuery
       return
     }
 
     eventLoading.value = true
     requestState.clearError()
     try {
-      const normalized = normalizeMcpEventQuery(query)
-      const result = await loadMcpServerEvents(serverName, normalized)
-      eventQuery.value = normalized
+      const result = await loadMcpServerEvents(serverName, baseQuery)
+      eventQuery.value = baseQuery
       eventLogs.value = result.items
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
@@ -180,7 +180,7 @@ export function useMcpConfigManagement() {
     query?: EventLogQuery,
     serverName = selectedServerName.value,
   ) {
-    const normalized = normalizeMcpEventQuery(query ?? eventQuery.value)
+    const baseQuery = readBaseMcpEventQuery(query ?? eventQuery.value)
     const cursor = query?.cursor ?? eventNextCursor.value
     if (!serverName || !cursor) {
       return
@@ -190,10 +190,10 @@ export function useMcpConfigManagement() {
     requestState.clearError()
     try {
       const result = await loadMcpServerEvents(serverName, {
-        ...normalized,
+        ...baseQuery,
         cursor,
       })
-      eventQuery.value = normalized
+      eventQuery.value = baseQuery
       eventLogs.value = dedupeMcpEventLogs([...eventLogs.value, ...result.items])
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
@@ -233,4 +233,10 @@ export function useMcpConfigManagement() {
     refreshServerEvents,
     loadMoreServerEvents,
   }
+}
+
+function readBaseMcpEventQuery(query: EventLogQuery): EventLogQuery {
+  const normalized = normalizeMcpEventQuery(query)
+  const { cursor: _cursor, ...baseQuery } = normalized
+  return baseQuery
 }

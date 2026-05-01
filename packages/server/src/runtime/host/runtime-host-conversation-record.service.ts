@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ChatMessageMetadata, ChatMessagePart, ConversationKind, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../conversation/conversation-history-signature';
@@ -10,6 +10,7 @@ import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtim
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
+import { RuntimeHostConversationTodoService } from './runtime-host-conversation-todo.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
 
 export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; id: string; kind?: ConversationKind; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; subagent?: ConversationSubagentState; title: string; updatedAt: string; userId: string; }
@@ -27,6 +28,7 @@ export class RuntimeHostConversationRecordService {
   constructor(
     @Optional() private readonly runtimeHostPluginDispatchService?: RuntimeHostPluginDispatchService,
     @Optional() private readonly runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
+    @Optional() @Inject(forwardRef(() => RuntimeHostConversationTodoService)) private readonly runtimeHostConversationTodoService?: RuntimeHostConversationTodoService,
   ) {
     const stored = this.readStoredConversations();
     this.conversationSessions = stored.sessions;
@@ -61,6 +63,7 @@ export class RuntimeHostConversationRecordService {
     this.requireConversation(conversationId, userId);
     const conversationIds = this.collectConversationTreeIds(conversationId, userId);
     for (const currentConversationId of conversationIds) {
+      this.runtimeHostConversationTodoService?.deleteSessionTodo(currentConversationId);
       this.conversations.delete(currentConversationId);
       this.removeConversationSessions(currentConversationId);
       await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(currentConversationId);

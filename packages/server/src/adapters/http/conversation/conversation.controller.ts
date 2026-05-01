@@ -75,9 +75,6 @@ export class ConversationController {
       this.conversationTaskService,
       this.runtimeHostSubagentRunnerService,
     );
-    for (const conversation of conversationTree) {
-      this.runtimeHostConversationTodoService.deleteSessionTodo(conversation.id);
-    }
     return await this.runtimeHostConversationRecordService.deleteConversation(id, userId);
   }
 

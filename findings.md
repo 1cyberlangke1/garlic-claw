@@ -65,6 +65,18 @@
 - 已修复插件删除失败时误写 `plugin:deleted` 审计。
 - 成功删除后改为按删除前缓存的 eventLog 设置写删除事件，避免记录删除后再读 owner 导致 404。
 
+### `packages/server/src/runtime/host/runtime-host-conversation-record.service.ts`
+- 已把“删除整棵会话树时一并删除 todo”收回 record owner。
+- 直接调用 `deleteConversation()` 的路径现在也会同步清理父/子会话 todo，不再依赖 controller 表层补动作。
+
+### `packages/web/src/features/plugins/composables/use-plugin-events.ts`
+- 已把事件日志基础查询与分页 cursor 分离。
+- “加载更多”不会再把 cursor 写回常驻查询状态，普通刷新始终从基础查询重新拉第一页。
+
+### `packages/web/src/features/tools/composables/use-mcp-config-management.ts`
+- MCP 事件日志已做同样收口。
+- 普通刷新不再继承上一轮“加载更多”的 cursor，避免刷新后空页或跳页。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

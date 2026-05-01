@@ -40,10 +40,11 @@ export function usePluginEvents(options: UsePluginEventsOptions) {
   }
 
   async function refreshPluginEvents(query: PluginEventQuery = eventQuery.value) {
+    const baseQuery = readBasePluginEventQuery(query)
     const pluginName = options.selectedPlugin.value?.name ?? null
     if (!pluginName) {
       eventLogs.value = []
-      eventQuery.value = normalizeEventQuery(query)
+      eventQuery.value = baseQuery
       eventNextCursor.value = null
       return
     }
@@ -52,12 +53,11 @@ export function usePluginEvents(options: UsePluginEventsOptions) {
     eventLoading.value = true
     options.error.value = null
     try {
-      const normalized = normalizeEventQuery(query)
-      const result = await loadPluginEvents(pluginName, normalized)
+      const result = await loadPluginEvents(pluginName, baseQuery)
       if (requestId !== activeEventRequestId || options.selectedPlugin.value?.name !== pluginName) {
         return
       }
-      eventQuery.value = normalized
+      eventQuery.value = baseQuery
       eventLogs.value = result.items
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
@@ -73,7 +73,7 @@ export function usePluginEvents(options: UsePluginEventsOptions) {
   }
 
   async function loadMorePluginEvents(query?: PluginEventQuery) {
-    const normalized = normalizeEventQuery(query ?? eventQuery.value)
+    const baseQuery = readBasePluginEventQuery(query ?? eventQuery.value)
     const cursor = query?.cursor ?? eventNextCursor.value
     const pluginName = options.selectedPlugin.value?.name ?? null
     if (!pluginName || !cursor) {
@@ -85,13 +85,13 @@ export function usePluginEvents(options: UsePluginEventsOptions) {
     options.error.value = null
     try {
       const result = await loadPluginEvents(pluginName, {
-        ...normalized,
+        ...baseQuery,
         cursor,
       })
       if (requestId !== activeEventRequestId || options.selectedPlugin.value?.name !== pluginName) {
         return
       }
-      eventQuery.value = normalized
+      eventQuery.value = baseQuery
       eventLogs.value = dedupeEventLogs([...eventLogs.value, ...result.items])
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
@@ -116,4 +116,10 @@ export function usePluginEvents(options: UsePluginEventsOptions) {
     refreshPluginEvents,
     loadMorePluginEvents,
   }
+}
+
+function readBasePluginEventQuery(query: PluginEventQuery): PluginEventQuery {
+  const normalized = normalizeEventQuery(query)
+  const { cursor: _cursor, ...baseQuery } = normalized
+  return baseQuery
 }

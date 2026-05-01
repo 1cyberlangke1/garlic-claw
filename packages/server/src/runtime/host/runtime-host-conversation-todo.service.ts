@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ConversationTodoItem, JsonValue } from '@garlic-claw/shared';
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { asJsonValue, cloneJsonValue } from './runtime-host-values';
 import {
@@ -30,6 +30,7 @@ export class RuntimeHostConversationTodoService {
   private readonly listeners = new Map<string, Set<(event: RuntimeHostConversationTodoEvent) => void>>();
 
   constructor(
+    @Inject(forwardRef(() => RuntimeHostConversationRecordService))
     private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
   ) {
     const { migrated, todos } = this.readStoredTodos();

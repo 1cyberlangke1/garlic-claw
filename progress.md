@@ -161,8 +161,34 @@
 ### 当前状态
 - 阶段 H 尚未结束。
 - 仍待继续确认的 owner 缺口：
-  - `RuntimeHostConversationRecordService.deleteConversation()` 直调路径仍不负责 todo 清理
-  - 插件 / MCP 事件日志分页 cursor 仍有一条高优先级待收口
+  - 当前正在补完整体验证与独立 judge；通过后可结束阶段 H。
+
+### 阶段 H 补充修复
+- `RuntimeHostConversationRecordService.deleteConversation()` 现在会在删除整棵会话树时逐个清理对应 todo：
+  - `AutomationService` 这类直接调用 record owner 的路径不再漏删子会话 todo
+  - `ConversationController` 不再自己重复删 todo，删除职责回到 record owner
+- 插件 / MCP 事件日志查询状态已拆成“基础查询”和“分页 cursor”两层：
+  - `loadMore*()` 只把 cursor 临时拼到请求里
+  - 后续 `refresh*()` 不会再沿用旧 cursor 从半页位置刷新
+
+### 阶段 H 补充验证
+- 已通过：
+  - `npm run test -w packages/server -- tests/runtime/host/runtime-host-conversation-record.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run test:run -w packages/web -- tests/features/plugins/composables/use-plugin-events.spec.ts tests/features/tools/composables/use-mcp-config-management.spec.ts`
+  - `npm run lint`
+  - `npm run typecheck -w packages/server`
+  - `npm run typecheck -w packages/web`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 阶段 H 当前结论
+- 独立 judge 已给出 `PASS`。
+- judge 认可这批修复不是表层补丁：
+  - 会话树 todo 清理 owner 已回到 `RuntimeHostConversationRecordService`
+  - 插件 / MCP 事件日志普通刷新不再继承旧分页 cursor
+- judge 同时留下两条后续风险提示：
+  - `RuntimeHostConversationRecordService <-> RuntimeHostConversationTodoService` 的循环依赖目前主要靠 smoke 兜住，缺单独 DI 级回归
+  - MCP 事件日志还没有请求序号守卫，后续仍可继续看并发乱序覆盖
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

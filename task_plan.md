@@ -59,13 +59,21 @@
 ## 2026-05-01 阶段 H：删除链残余 + 新一轮并行扫错
 
 ### 目标
-- [ ] 修复删除整棵会话树时子会话 todo 可能残留为孤儿数据的问题
+- [x] 修复删除整棵会话树时子会话 todo 可能残留为孤儿数据的问题
 - [x] 补 `subagent queued` 删除前中断分支回归
 - [x] 修复发送等待模型选择时切会话导致旧草稿进新会话
 - [x] 修复 `ModelQuickInput` 候选刷新被旧请求覆盖
 - [x] 修复插件删除失败时误记 `plugin:deleted` 审计
-- [ ] 并行扫描 server / web / plugin-runtime 下一批真实行为缺陷
-- [ ] 选定下一组高价值问题继续修复、验证与提交
+- [x] 并行扫描 server / web / plugin-runtime 下一批真实行为缺陷
+- [x] 选定下一组高价值问题继续修复、验证与提交
+
+### 阶段 H 补充：todo owner 与事件日志分页状态收口
+- [x] `RuntimeHostConversationRecordService.deleteConversation()` 自身负责整棵会话树 todo 清理
+- [x] 删除 `ConversationController` 里的重复 todo 清理，避免 owner 分散
+- [x] 插件事件日志“加载更多”不再把分页 cursor 污染后续普通刷新
+- [x] MCP 事件日志“加载更多”不再把分页 cursor 污染后续普通刷新
+- [x] 补对应 server / web 回归测试
+- [x] 跑完整验证并补独立 judge
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

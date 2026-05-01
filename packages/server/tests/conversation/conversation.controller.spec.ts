@@ -104,9 +104,6 @@ describe('ConversationController', () => {
     expect(conversationTaskService.stopTask).toHaveBeenNthCalledWith(2, '55555555-5555-4555-8555-555555555555');
     expect(conversationTaskService.stopTask).toHaveBeenNthCalledWith(3, '44444444-4444-4444-8444-444444444444');
     expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledWith('plugin-a', '33333333-3333-4333-8333-333333333333', 'user-1');
-    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenCalledTimes(2);
-    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenNthCalledWith(1, conversationId);
-    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenNthCalledWith(2, '33333333-3333-4333-8333-333333333333');
     expect(runtimeHostConversationRecordService.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(runtimeHostConversationRecordService.requireConversation.mock.invocationCallOrder[0]).toBeLessThan(
       runtimeHostConversationRecordService.listConversationTreeRecords.mock.invocationCallOrder[0],
@@ -118,11 +115,9 @@ describe('ConversationController', () => {
       runtimeHostSubagentRunnerService.interruptSubagent.mock.invocationCallOrder[0],
     );
     expect(runtimeHostSubagentRunnerService.interruptSubagent.mock.invocationCallOrder[0]).toBeLessThan(
-      runtimeHostConversationTodoService.deleteSessionTodo.mock.invocationCallOrder[0],
-    );
-    expect(runtimeHostConversationTodoService.deleteSessionTodo.mock.invocationCallOrder[1]).toBeLessThan(
       runtimeHostConversationRecordService.deleteConversation.mock.invocationCallOrder[0],
     );
+    expect(runtimeHostConversationTodoService.deleteSessionTodo).not.toHaveBeenCalled();
   });
 
   it('interrupts queued subagent conversations before deleting the conversation tree', async () => {
