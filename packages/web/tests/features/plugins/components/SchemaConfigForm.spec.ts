@@ -1,8 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import SchemaConfigForm from '@/features/config/components/SchemaConfigForm.vue'
+import SchemaConfigForm from '@/modules/config/components/SchemaConfigForm.vue'
 
-vi.mock('@/features/ai-settings/api/ai', () => ({
+vi.mock('@/modules/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn().mockResolvedValue([
     {
       id: 'openai',
@@ -11,7 +11,7 @@ vi.mock('@/features/ai-settings/api/ai', () => ({
   ]),
 }))
 
-vi.mock('@/features/personas/api/personas', () => ({
+vi.mock('@/modules/personas/api/personas', () => ({
   listPersonas: vi.fn().mockResolvedValue([
     {
       id: 'builtin.default-assistant',
@@ -24,7 +24,7 @@ vi.mock('@/features/personas/api/personas', () => ({
   ]),
 }))
 
-vi.mock('@/features/plugins/api/plugins', () => ({
+vi.mock('@/modules/plugins/api/plugins', () => ({
   listSubagentTypes: vi.fn().mockResolvedValue([
     {
       id: 'general',

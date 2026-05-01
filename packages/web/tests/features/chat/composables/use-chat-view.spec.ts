@@ -1,15 +1,15 @@
 import { defineComponent, nextTick, reactive, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import * as chatViewData from '@/features/chat/composables/chat-view.data'
-import { useChatView } from '@/features/chat/composables/use-chat-view'
+import * as chatViewData from '@/modules/chat/composables/chat-view.data'
+import { useChatView } from '@/modules/chat/composables/use-chat-view'
 
-vi.mock('@/features/chat/composables/chat-view.data', () => ({
+vi.mock('@/modules/chat/composables/chat-view.data', () => ({
   loadModelCapabilities: vi.fn(),
   loadVisionFallbackEnabled: vi.fn(),
 }))
 
-vi.mock('@/features/chat/composables/chat-command-catalog.data', () => ({
+vi.mock('@/modules/chat/composables/chat-command-catalog.data', () => ({
   loadChatCommandCatalog: vi.fn().mockResolvedValue({
     version: 'catalog-v1',
     commands: [

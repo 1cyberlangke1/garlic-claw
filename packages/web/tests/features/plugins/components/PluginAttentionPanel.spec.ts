@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { PluginActionName, PluginInfo } from '@garlic-claw/shared'
-import PluginAttentionPanel from '@/features/plugins/components/PluginAttentionPanel.vue'
+import PluginAttentionPanel from '@/modules/plugins/components/PluginAttentionPanel.vue'
 
 function createPlugin(input: Partial<PluginInfo> & Pick<PluginInfo, 'id' | 'name'>): PluginInfo {
   return {

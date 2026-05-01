@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { PluginCronJobSummary } from '@garlic-claw/shared'
-import PluginCronList from '@/features/plugins/components/PluginCronList.vue'
+import PluginCronList from '@/modules/plugins/components/PluginCronList.vue'
 
 describe('PluginCronList', () => {
   it('only exposes delete action for host cron jobs and emits the selected job id', async () => {

@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { PluginInfo } from '@garlic-claw/shared'
-import PluginSidebar from '@/features/plugins/components/PluginSidebar.vue'
+import PluginSidebar from '@/modules/plugins/components/PluginSidebar.vue'
 
 function createPlugin(
   input: Partial<PluginInfo> & Pick<PluginInfo, 'id' | 'name'>,

@@ -1,13 +1,13 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { resolveChatModelSelection } from '@/features/chat/modules/chat-model-selection'
+import { resolveChatModelSelection } from '@/modules/chat/modules/chat-model-selection'
 
-vi.mock('@/features/ai-settings/api/ai', () => ({
+vi.mock('@/modules/ai-settings/api/ai', () => ({
   getAiDefaultSelection: vi.fn(),
   listAiModels: vi.fn(),
   listAiProviders: vi.fn(),
 }))
 
-import * as aiApi from '@/features/ai-settings/api/ai'
+import * as aiApi from '@/modules/ai-settings/api/ai'
 
 describe('resolveChatModelSelection', () => {
   beforeEach(() => {

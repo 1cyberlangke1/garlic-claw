@@ -6,7 +6,7 @@ import {
   createProviderFormState,
   getProviderDriverHint,
   syncProviderFormState,
-} from '@/features/ai-settings/components/provider-editor-form'
+} from '@/modules/ai-settings/components/provider-editor-form'
 import { coreProviderCatalogFixture } from './provider-test.fixtures'
 
 const catalog: AiProviderCatalogItem[] = coreProviderCatalogFixture

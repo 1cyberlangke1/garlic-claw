@@ -5,11 +5,11 @@ const authState = vi.hoisted(() => ({
   ensureInitialized: vi.fn(async () => undefined),
 }))
 
-vi.mock('@/stores/auth', () => ({
+vi.mock('@/shared/stores/auth', () => ({
   useAuthStore: () => authState,
 }))
 
-import router from '@/router/index'
+import router from '@/app/router/index'
 
 describe('router', () => {
   beforeEach(() => {

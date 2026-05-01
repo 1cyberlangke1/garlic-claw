@@ -7,11 +7,11 @@ import type {
   PluginHealthSnapshot,
   PluginInfo,
 } from '@garlic-claw/shared'
-import * as pluginManagementData from '@/features/plugins/composables/plugin-management.data'
-import { usePluginManagement } from '@/features/plugins/composables/use-plugin-management'
+import * as pluginManagementData from '@/modules/plugins/composables/plugin-management.data'
+import { usePluginManagement } from '@/modules/plugins/composables/use-plugin-management'
 
-vi.mock('@/features/plugins/composables/plugin-management.data', async () => {
-  const actual = await vi.importActual<typeof import('@/features/plugins/composables/plugin-management.data')>('@/features/plugins/composables/plugin-management.data')
+vi.mock('@/modules/plugins/composables/plugin-management.data', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/plugins/composables/plugin-management.data')>('@/modules/plugins/composables/plugin-management.data')
   return {
     ...actual,
     loadPlugins: vi.fn(),

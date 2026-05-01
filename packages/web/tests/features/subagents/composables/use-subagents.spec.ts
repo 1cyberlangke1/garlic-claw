@@ -1,10 +1,10 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSubagents } from '@/features/subagents/composables/use-subagents'
-import * as subagentData from '@/features/subagents/composables/subagents.data'
+import { useSubagents } from '@/modules/subagents/composables/use-subagents'
+import * as subagentData from '@/modules/subagents/composables/subagents.data'
 
-vi.mock('@/features/subagents/composables/subagents.data', () => ({
+vi.mock('@/modules/subagents/composables/subagents.data', () => ({
   closePluginSubagentConversation: vi.fn(),
   loadPluginSubagentDetail: vi.fn(),
   loadPluginSubagentOverview: vi.fn(),

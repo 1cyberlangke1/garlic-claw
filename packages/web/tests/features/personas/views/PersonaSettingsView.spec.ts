@@ -2,8 +2,8 @@ import { computed, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import type { PluginPersonaCurrentInfo, PluginPersonaDetail, PluginPersonaSummary } from '@garlic-claw/shared'
-import PersonaSettingsView from '@/features/personas/views/PersonaSettingsView.vue'
-import type { PersonaEditorDraft } from '@/features/personas/composables/use-persona-settings'
+import PersonaSettingsView from '@/modules/personas/views/PersonaSettingsView.vue'
+import type { PersonaEditorDraft } from '@/modules/personas/composables/use-persona-settings'
 
 const selectedPersona = ref<PluginPersonaDetail | null>({
   avatar: 'https://example.com/writer.png',
@@ -48,7 +48,7 @@ const editorDraft = ref<PersonaEditorDraft>({
   toolInput: 'memory.search',
 })
 
-vi.mock('@/features/personas/composables/use-persona-settings', () => ({
+vi.mock('@/modules/personas/composables/use-persona-settings', () => ({
   usePersonaSettings: () => ({
     loading: ref(false),
     loadingCurrentPersona: ref(false),

@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import ChatRuntimePermissionPanel from '@/features/chat/components/ChatRuntimePermissionPanel.vue'
+import ChatRuntimePermissionPanel from '@/modules/chat/components/ChatRuntimePermissionPanel.vue'
 
 describe('ChatRuntimePermissionPanel', () => {
   it('renders pending runtime requests and emits reply decisions', async () => {

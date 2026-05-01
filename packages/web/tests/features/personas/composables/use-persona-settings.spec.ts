@@ -2,8 +2,8 @@ import { defineComponent, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginPersonaCurrentInfo, PluginPersonaDetail, PluginPersonaSummary } from '@garlic-claw/shared'
-import { usePersonaSettings } from '@/features/personas/composables/use-persona-settings'
-import * as personaData from '@/features/personas/composables/persona-settings.data'
+import { usePersonaSettings } from '@/modules/personas/composables/use-persona-settings'
+import * as personaData from '@/modules/personas/composables/persona-settings.data'
 
 const mockCurrentConversationId = ref<string | null>('conversation-1')
 const mockConversations = ref([
@@ -15,7 +15,7 @@ const mockConversations = ref([
   },
 ])
 
-vi.mock('@/features/personas/composables/persona-settings.data', () => ({
+vi.mock('@/modules/personas/composables/persona-settings.data', () => ({
   loadPersonas: vi.fn(),
   loadPersona: vi.fn(),
   createPersona: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock('@/features/personas/composables/persona-settings.data', () => ({
   toErrorMessage: vi.fn((error: Error | undefined, fallback: string) => error?.message ?? fallback),
 }))
 
-vi.mock('@/features/chat/store/chat', () => ({
+vi.mock('@/modules/chat/store/chat', () => ({
   useChatStore: () => ({
     currentConversationId: mockCurrentConversationId,
     conversations: mockConversations,

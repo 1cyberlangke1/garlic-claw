@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import AiProviderEditorDialog from '@/features/ai-settings/components/AiProviderEditorDialog.vue'
+import AiProviderEditorDialog from '@/modules/ai-settings/components/AiProviderEditorDialog.vue'
 
 describe('AiProviderEditorDialog', () => {
   it('does not close when clicking the overlay', async () => {

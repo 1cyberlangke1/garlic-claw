@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { AiProviderCatalogItem, AiProviderSummary } from '@garlic-claw/shared'
-import AiProviderSidebar from '@/features/ai-settings/components/AiProviderSidebar.vue'
+import AiProviderSidebar from '@/modules/ai-settings/components/AiProviderSidebar.vue'
 import { coreProviderCatalogFixture } from './provider-test.fixtures'
 
 const catalog: AiProviderCatalogItem[] = coreProviderCatalogFixture

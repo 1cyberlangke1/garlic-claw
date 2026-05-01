@@ -1,9 +1,9 @@
 import { computed, ref, shallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import CommandsView from '@/features/commands/views/CommandsView.vue'
+import CommandsView from '@/modules/commands/views/CommandsView.vue'
 
-vi.mock('@/features/commands/composables/use-plugin-command-management', () => ({
+vi.mock('@/modules/commands/composables/use-plugin-command-management', () => ({
   usePluginCommandManagement: () => ({
     loading: ref(false),
     error: ref(null),

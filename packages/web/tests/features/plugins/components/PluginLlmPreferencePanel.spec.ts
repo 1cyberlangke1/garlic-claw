@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import PluginLlmPreferencePanel from '@/features/plugins/components/PluginLlmPreferencePanel.vue'
+import PluginLlmPreferencePanel from '@/modules/plugins/components/PluginLlmPreferencePanel.vue'
 
 describe('PluginLlmPreferencePanel', () => {
   it('emits override preference when provider and model are selected', async () => {

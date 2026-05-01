@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
+import postcssCustomMedia from 'postcss-custom-media'
 import { defineConfig } from 'vite'
 
 const webSourceRoot = fileURLToPath(new URL('./src', import.meta.url))
@@ -7,6 +8,11 @@ const sharedSourceRoot = fileURLToPath(new URL('../shared/src', import.meta.url)
 
 export default defineConfig({
   plugins: [vue()],
+  css: {
+    postcss: {
+      plugins: [postcssCustomMedia()],
+    },
+  },
   resolve: {
     alias: [
       {

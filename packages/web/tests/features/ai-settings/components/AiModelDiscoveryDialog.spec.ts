@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import AiModelDiscoveryDialog from '@/features/ai-settings/components/AiModelDiscoveryDialog.vue'
+import AiModelDiscoveryDialog from '@/modules/ai-settings/components/AiModelDiscoveryDialog.vue'
 
 function createModels(count: number) {
   return Array.from({ length: count }, (_, index) => ({

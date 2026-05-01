@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { PluginStorageEntry } from '@garlic-claw/shared'
-import PluginStoragePanel from '@/features/plugins/components/PluginStoragePanel.vue'
+import PluginStoragePanel from '@/modules/plugins/components/PluginStoragePanel.vue'
 
 describe('PluginStoragePanel', () => {
   it('renders plugin storage entries and emits parsed save/delete actions', async () => {

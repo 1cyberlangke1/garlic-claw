@@ -2,10 +2,10 @@ import { computed, defineComponent, ref, shallowRef } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginInfo } from '@garlic-claw/shared'
-import { usePluginEvents } from '@/features/plugins/composables/use-plugin-events'
-import * as pluginData from '@/features/plugins/composables/plugin-management.data'
+import { usePluginEvents } from '@/modules/plugins/composables/use-plugin-events'
+import * as pluginData from '@/modules/plugins/composables/plugin-management.data'
 
-vi.mock('@/features/plugins/composables/plugin-management.data', () => ({
+vi.mock('@/modules/plugins/composables/plugin-management.data', () => ({
   dedupeEventLogs: vi.fn((items) => items),
   loadPluginEvents: vi.fn(),
   normalizeEventQuery: vi.fn((query) => ({

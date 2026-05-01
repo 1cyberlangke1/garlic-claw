@@ -1,9 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
-import { useThemeStore } from '@/stores/theme'
-import ConsoleSettingsView from '@/features/settings/views/ConsoleSettingsView.vue'
+import { useAdminShellPreferences } from '@/modules/admin/modules/admin-shell-preferences'
+import { useThemeStore } from '@/shared/stores/theme'
+import ConsoleSettingsView from '@/modules/settings/views/ConsoleSettingsView.vue'
 
 describe('ConsoleSettingsView', () => {
   let pinia: ReturnType<typeof createPinia>

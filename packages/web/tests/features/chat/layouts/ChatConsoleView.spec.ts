@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import ChatConsoleView from '@/features/chat/layouts/ChatConsoleView.vue'
+import ChatConsoleView from '@/modules/chat/layouts/ChatConsoleView.vue'
 
 const authState = vi.hoisted(() => ({
   user: {
@@ -32,11 +32,11 @@ const chatState = vi.hoisted(() => ({
   deleteConversation: vi.fn(),
 }))
 
-vi.mock('@/features/chat/store/chat', () => ({
+vi.mock('@/modules/chat/store/chat', () => ({
   useChatStore: () => chatState,
 }))
 
-vi.mock('@/stores/auth', () => ({
+vi.mock('@/shared/stores/auth', () => ({
   useAuthStore: () => authState,
 }))
 

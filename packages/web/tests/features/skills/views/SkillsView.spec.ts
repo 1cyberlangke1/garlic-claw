@@ -1,15 +1,15 @@
 import { computed, ref, shallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import SkillsView from '@/features/skills/views/SkillsView.vue'
+import SkillsView from '@/modules/skills/views/SkillsView.vue'
 
-vi.mock('@/features/chat/store/chat', () => ({
+vi.mock('@/modules/chat/store/chat', () => ({
   useChatStore: () => ({
     currentConversationId: 'conversation-1',
   }),
 }))
 
-vi.mock('@/features/skills/composables/use-skill-management', () => ({
+vi.mock('@/modules/skills/composables/use-skill-management', () => ({
   useSkillManagement: () => ({
     loading: ref(false),
     error: ref(null),
