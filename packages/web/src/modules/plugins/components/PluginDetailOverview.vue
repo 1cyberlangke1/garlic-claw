@@ -47,42 +47,42 @@
       </div>
     </div>
 
-    <div class="summary-grid">
-      <article class="summary-card">
-        <div class="summary-card-head">
+    <div class="summary-bar">
+      <div class="summary-item">
+        <div class="summary-item-head">
           <span class="summary-label">连接状态</span>
           <strong>{{ plugin.connected ? '在线' : '离线' }}</strong>
         </div>
         <p>最后活跃：{{ formatTime(plugin.lastSeenAt) }}</p>
         <span class="summary-foot">{{ runtimeKindLabel(plugin) }}</span>
-      </article>
-      <article class="summary-card">
-        <div class="summary-card-head">
+      </div>
+      <div class="summary-item">
+        <div class="summary-item-head">
           <span class="summary-label">健康</span>
           <strong>{{ healthText(health) }}</strong>
         </div>
         <p v-if="health?.lastSuccessAt">最后成功：{{ formatTime(health.lastSuccessAt) }}</p>
         <p v-if="health?.lastCheckedAt">最后检查：{{ formatTime(health.lastCheckedAt) }}</p>
         <p>并发：{{ formatRuntimePressure(health) }}</p>
-      </article>
-      <article class="summary-card">
-        <div class="summary-card-head">
+      </div>
+      <div class="summary-item">
+        <div class="summary-item-head">
           <span class="summary-label">失败统计</span>
           <strong>{{ health?.failureCount ?? 0 }}</strong>
         </div>
         <p>连续失败：{{ health?.consecutiveFailures ?? 0 }}</p>
-      </article>
-      <article class="summary-card">
-        <div class="summary-card-head">
+      </div>
+      <div class="summary-item">
+        <div class="summary-item-head">
           <span class="summary-label">能力概览</span>
           <strong>{{ plugin.manifest.tools.length }} 个工具</strong>
         </div>
         <p>{{ plugin.manifest.hooks?.length ?? 0 }} 个钩子 / {{ cronCount }} 个定时任务 / {{ plugin.manifest.routes?.length ?? 0 }} 条路由 / {{ plugin.manifest.permissions.length }} 项权限</p>
-      </article>
+      </div>
     </div>
 
     <div class="tag-panel">
-      <article class="tag-group">
+      <div class="tag-group">
         <div class="tag-group-head">
           <span class="tag-label">权限</span>
           <span class="tag-count">{{ plugin.manifest.permissions.length }}</span>
@@ -93,8 +93,8 @@
           </span>
           <span v-if="plugin.manifest.permissions.length === 0" class="token muted-token">无</span>
         </div>
-      </article>
-      <article class="tag-group">
+      </div>
+      <div class="tag-group">
         <div class="tag-group-head">
           <span class="tag-label">钩子</span>
           <span class="tag-count">{{ plugin.manifest.hooks?.length ?? 0 }}</span>
@@ -105,8 +105,8 @@
           </span>
           <span v-if="!(plugin.manifest.hooks?.length)" class="token muted-token">无</span>
         </div>
-      </article>
-      <article class="tag-group">
+      </div>
+      <div class="tag-group">
         <div class="tag-group-head">
           <span class="tag-label">扩展面</span>
           <span class="tag-count">{{ highlights.length }}</span>
@@ -117,8 +117,8 @@
           </span>
           <span v-if="highlights.length === 0" class="token muted-token">基础工具插件</span>
         </div>
-      </article>
-      <article class="tag-group">
+      </div>
+      <div class="tag-group">
         <div class="tag-group-head">
           <span class="tag-label">工具</span>
           <span class="tag-count">{{ plugin.manifest.tools.length }}</span>
@@ -129,7 +129,7 @@
           </span>
           <span v-if="plugin.manifest.tools.length === 0" class="token muted-token">无</span>
         </div>
-      </article>
+      </div>
     </div>
 
     <div v-if="health?.lastError" class="error-card">

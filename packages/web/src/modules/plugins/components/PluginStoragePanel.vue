@@ -249,18 +249,20 @@ function parseStorageValue(raw: string): JsonValue {
 
 .storage-list {
   display: grid;
-  gap: 10px;
+  gap: 0;
   max-height: 420px;
   overflow-y: auto;
 }
 
 .storage-item {
   display: grid;
-  gap: 10px;
-  padding: 0.9rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  gap: 8px;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid rgba(133, 163, 199, 0.1);
+}
+
+.storage-item:last-child {
+  border-bottom: none;
 }
 
 .storage-top {

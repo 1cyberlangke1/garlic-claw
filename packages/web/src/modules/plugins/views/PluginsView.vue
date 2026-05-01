@@ -18,138 +18,154 @@
     />
 
     <div class="plugins-layout">
-      <PluginSidebar
-        v-model:active-filter="activeFilter"
-        :filter-options="filterOptions"
-        :plugins="plugins"
-        :loading="loading"
-        :selected-plugin-name="selectedPluginName"
-        :error="null"
-        @refresh="refreshAll"
-        @select="selectPlugin"
-      />
+      <nav v-if="currentView === 'manage'" class="detail-nav" aria-label="详情面板切换">
+        <button
+          v-for="panel in availablePanels"
+          :key="panel.value"
+          type="button"
+          :class="{ active: activePanel === panel.value }"
+          @click="activePanel = panel.value"
+        >
+          {{ panel.label }}
+        </button>
+      </nav>
 
-      <section v-if="selectedPlugin" class="plugin-detail">
-        <PluginDetailOverview
-          :plugin="selectedPlugin"
-          :health="selectedPluginHealth"
-          :actions="selectedPluginActions"
-          :running-action="runningAction"
-          :detail-loading="detailLoading"
-          :deleting="deleting"
-          :can-delete="canDeleteSelected"
-          :cron-count="selectedCronJobs.length"
-          :highlights="selectedPluginHighlights"
-          @refresh-details="refreshSelectedDetails()"
-          @run-action="runAction"
-          @delete-selected="deleteSelectedPlugin"
+      <section class="plugin-detail">
+        <PluginSidebar
+          v-show="activePanel === 'plugins' && currentView === 'manage'"
+          v-model:active-filter="activeFilter"
+          :filter-options="filterOptions"
+          :plugins="plugins"
+          :loading="loading"
+          :selected-plugin-name="selectedPluginName"
+          :error="null"
+          @refresh="refreshAll"
+          @select="handleSelectPlugin"
         />
 
-        <div v-if="currentView === 'manage'" class="detail-grid">
-          <PluginRemoteSummaryPanel
-            v-if="selectedPlugin.remote"
+        <template v-if="selectedPlugin">
+          <PluginDetailOverview
+            v-show="activePanel === 'overview'"
             :plugin="selectedPlugin"
+            :health="selectedPluginHealth"
+            :actions="selectedPluginActions"
+            :running-action="runningAction"
+            :detail-loading="detailLoading"
+            :deleting="deleting"
+            :can-delete="canDeleteSelected"
+            :cron-count="selectedCronJobs.length"
+            :highlights="selectedPluginHighlights"
+            @refresh-details="refreshSelectedDetails()"
+            @run-action="runAction"
+            @delete-selected="deleteSelectedPlugin"
           />
-          <PluginRemoteAccessPanel
-            v-if="selectedPlugin.remote"
-            :plugin="selectedPlugin"
-            :saving="savingRemoteAccess"
-            @save="saveRemoteAccess"
-          />
-          <SchemaConfigForm
-            :snapshot="configSnapshot"
-            :saving="savingConfig"
-            title="插件配置"
-            description="宿主按插件声明的配置元数据统一渲染，不再依赖扁平字段表单。"
-            empty-text="插件没有声明配置元数据。"
-            @save="saveConfig"
-          />
-          <PluginLlmPreferencePanel
-            v-if="selectedPluginUsesLlm"
-            :preference="llmPreference"
-            :providers="llmProviders"
-            :options="llmOptions"
-            :saving="savingLlmPreference"
-            @save="saveLlmPreference"
-          />
-          <PluginScopeEditor
-            :plugin="selectedPlugin"
-            :scope="scopeSettings"
-            :saving="savingScope"
-            @save="saveScope"
-          />
-          <EventLogSettingsPanel
-            :settings="selectedPlugin.eventLog"
-            :saving="savingEventLog"
-            title="插件日志设置"
-            description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
-            @save="saveEventLog"
-          />
-          <article class="detail-span tool-management-entry">
-            <div class="tool-management-entry-copy">
-              <h3>工具管理入口</h3>
-              <p>插件工具启用/禁用已统一移到工具管理页。当前页继续处理配置、作用域、日志和远程接入。</p>
-            </div>
-            <a class="tool-management-entry-link" :href="selectedPluginToolManagementHref">
-              打开工具管理
-            </a>
-          </article>
-          <PluginStoragePanel
-            class="detail-span"
-            :entries="storageEntries"
-            :prefix="storagePrefix"
-            :loading="detailLoading"
-            :saving="savingStorage"
-            :deleting-key="deletingStorageKey"
-            @refresh="refreshPluginStorage"
-            @save="saveStorageEntry"
-            @delete="deleteStorageEntry"
-          />
-          <PluginCronList
-            class="detail-span"
-            :jobs="selectedCronJobs"
-            :deleting-job-id="deletingCronJobId"
-            @delete="deleteCronJob"
-          />
-          <PluginConversationSessionList
-            class="detail-span"
-            :sessions="selectedConversationSessions"
-            :finishing-conversation-id="finishingConversationId"
-            @finish="finishConversationSession"
-          />
-          <PluginRouteList
-            class="detail-span"
-            :plugin-name="selectedPlugin.name"
-            :routes="selectedPlugin.manifest.routes ?? []"
-          />
-        </div>
 
-        <div v-else class="plugin-log-section">
-          <PluginEventLog
-            :events="eventLogs"
-            :loading="detailLoading || eventLoading"
-            :query="eventQuery"
-            :next-cursor="eventNextCursor"
-            @refresh="refreshPluginEvents"
-            @load-more="loadMorePluginEvents"
-          />
-        </div>
-      </section>
+          <div v-show="activePanel !== 'plugins' && currentView === 'manage'" class="detail-content">
+            <PluginRemoteSummaryPanel
+              v-show="activePanel === 'remote-summary'"
+              :plugin="selectedPlugin"
+            />
+            <PluginRemoteAccessPanel
+              v-show="activePanel === 'remote-access'"
+              :plugin="selectedPlugin"
+              :saving="savingRemoteAccess"
+              @save="saveRemoteAccess"
+            />
+            <SchemaConfigForm
+              v-show="activePanel === 'config'"
+              :snapshot="configSnapshot"
+              :saving="savingConfig"
+              title="插件配置"
+              description="宿主按插件声明的配置元数据统一渲染，不再依赖扁平字段表单。"
+              empty-text="插件没有声明配置元数据。"
+              @save="saveConfig"
+            />
+            <PluginLlmPreferencePanel
+              v-show="activePanel === 'llm-preference'"
+              :preference="llmPreference"
+              :providers="llmProviders"
+              :options="llmOptions"
+              :saving="savingLlmPreference"
+              @save="saveLlmPreference"
+            />
+            <PluginScopeEditor
+              v-show="activePanel === 'scope'"
+              :plugin="selectedPlugin"
+              :scope="scopeSettings"
+              :saving="savingScope"
+              @save="saveScope"
+            />
+            <EventLogSettingsPanel
+              v-show="activePanel === 'event-log'"
+              :settings="selectedPlugin.eventLog"
+              :saving="savingEventLog"
+              title="插件日志设置"
+              description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
+              @save="saveEventLog"
+            />
+            <article v-show="activePanel === 'tools'" class="tool-management-entry">
+              <div class="tool-management-entry-copy">
+                <h3>工具管理入口</h3>
+                <p>插件工具启用/禁用已统一移到工具管理页。当前页继续处理配置、作用域、日志和远程接入。</p>
+              </div>
+              <a class="tool-management-entry-link" :href="selectedPluginToolManagementHref">
+                打开工具管理
+              </a>
+            </article>
+            <PluginStoragePanel
+              v-show="activePanel === 'storage'"
+              :entries="storageEntries"
+              :prefix="storagePrefix"
+              :loading="detailLoading"
+              :saving="savingStorage"
+              :deleting-key="deletingStorageKey"
+              @refresh="refreshPluginStorage"
+              @save="saveStorageEntry"
+              @delete="deleteStorageEntry"
+            />
+            <PluginCronList
+              v-show="activePanel === 'cron'"
+              :jobs="selectedCronJobs"
+              :deleting-job-id="deletingCronJobId"
+              @delete="deleteCronJob"
+            />
+            <PluginConversationSessionList
+              v-show="activePanel === 'sessions'"
+              :sessions="selectedConversationSessions"
+              :finishing-conversation-id="finishingConversationId"
+              @finish="finishConversationSession"
+            />
+            <PluginRouteList
+              v-show="activePanel === 'routes'"
+              :plugin-name="selectedPlugin.name"
+              :routes="selectedPlugin.manifest.routes ?? []"
+            />
+          </div>
 
-      <section v-else class="plugin-empty">
-        <h2>暂无插件</h2>
-        <p>启动本地插件或远程插件后，就可以在这里统一查看扩展面和健康快照。</p>
+          <div v-if="currentView !== 'manage'" class="plugin-log-section">
+            <PluginEventLog
+              :events="eventLogs"
+              :loading="detailLoading || eventLoading"
+              :query="eventQuery"
+              :next-cursor="eventNextCursor"
+              @refresh="refreshPluginEvents"
+              @load-more="loadMorePluginEvents"
+            />
+          </div>
+        </template>
+
+        <section v-else-if="activePanel !== 'plugins'" class="plugin-empty">
+          <h2>暂无插件</h2>
+          <p>启动本地插件或远程插件后，就可以在这里统一查看扩展面和健康快照。</p>
+        </section>
       </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic-claw/shared'
-import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import PluginAttentionPanel from '@/modules/plugins/components/PluginAttentionPanel.vue'
 import SchemaConfigForm from '@/modules/config/components/SchemaConfigForm.vue'
+import PluginAttentionPanel from '@/modules/plugins/components/PluginAttentionPanel.vue'
 import PluginConversationSessionList from '@/modules/plugins/components/PluginConversationSessionList.vue'
 import PluginCronList from '@/modules/plugins/components/PluginCronList.vue'
 import PluginDetailOverview from '@/modules/plugins/components/PluginDetailOverview.vue'
@@ -162,16 +178,33 @@ import PluginRouteList from '@/modules/plugins/components/PluginRouteList.vue'
 import PluginScopeEditor from '@/modules/plugins/components/PluginScopeEditor.vue'
 import PluginSidebar from '@/modules/plugins/components/PluginSidebar.vue'
 import PluginStoragePanel from '@/modules/plugins/components/PluginStoragePanel.vue'
-import EventLogSettingsPanel from '@/modules/tools/components/EventLogSettingsPanel.vue'
 import {
   hasPluginIssue,
   pluginAttentionWeight,
   pluginUsesHostLlm,
 } from '@/modules/plugins/composables/plugin-management.helpers'
 import { usePluginManagement } from '@/modules/plugins/composables/use-plugin-management'
+import EventLogSettingsPanel from '@/modules/tools/components/EventLogSettingsPanel.vue'
+import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic-claw/shared'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 type PluginsPageView = 'manage' | 'logs'
 type PluginFilterValue = 'all' | 'attention' | 'local' | 'remote'
+type DetailPanelId =
+  | 'plugins'
+  | 'overview'
+  | 'remote-summary'
+  | 'remote-access'
+  | 'config'
+  | 'llm-preference'
+  | 'scope'
+  | 'event-log'
+  | 'tools'
+  | 'storage'
+  | 'cron'
+  | 'sessions'
+  | 'routes'
 
 const route = useRoute()
 const currentView = ref<PluginsPageView>('manage')
@@ -259,6 +292,39 @@ const selectedPluginActions = computed(() =>
 const selectedPluginUsesLlm = computed(() =>
   selectedPlugin.value ? pluginUsesHostLlm(selectedPlugin.value) : false,
 )
+
+const activePanel = ref<DetailPanelId>('plugins')
+
+const availablePanels = computed(() => {
+  const panels: Array<{ label: string; value: DetailPanelId }> = []
+  panels.push({ label: '插件列表', value: 'plugins' })
+  if (selectedPlugin.value) {
+    panels.push({ label: '插件概览', value: 'overview' })
+    if (selectedPlugin.value.remote) {
+      panels.push({ label: '远程摘要', value: 'remote-summary' })
+      panels.push({ label: '远程接入', value: 'remote-access' })
+    }
+    panels.push({ label: '插件配置', value: 'config' })
+    if (selectedPluginUsesLlm.value) {
+      panels.push({ label: '模型偏好', value: 'llm-preference' })
+    }
+    panels.push({ label: '作用域', value: 'scope' })
+    panels.push({ label: '日志设置', value: 'event-log' })
+    panels.push({ label: '工具管理', value: 'tools' })
+    panels.push({ label: '持久化 KV', value: 'storage' })
+    panels.push({ label: '定时任务', value: 'cron' })
+    panels.push({ label: '会话等待态', value: 'sessions' })
+    panels.push({ label: 'Web 路由', value: 'routes' })
+  }
+  return panels
+})
+
+watch(availablePanels, (panels) => {
+  if (!panels.some((p) => p.value === activePanel.value)) {
+    activePanel.value = panels[0]?.value ?? 'plugins'
+  }
+}, { immediate: true })
+
 const selectedPluginToolManagementHref = computed(() => {
   const params = new URLSearchParams({ kind: 'plugin' })
   if (selectedPlugin.value?.name) {
@@ -532,12 +598,17 @@ function pluginActions(plugin: PluginInfo): Array<{
   }))
 }
 
+async function handleSelectPlugin(pluginName: string) {
+  await selectPlugin(pluginName)
+  activePanel.value = 'overview'
+}
+
 async function runActionForPlugin(input: {
   pluginName: string
   action: PluginActionName
 }) {
   if (selectedPluginName.value !== input.pluginName) {
-    await selectPlugin(input.pluginName)
+    await handleSelectPlugin(input.pluginName)
   }
 
   await runAction(input.action)

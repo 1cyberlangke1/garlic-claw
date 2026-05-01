@@ -143,7 +143,7 @@ function formatMetadata(metadata: JsonValue): string {
 
 .session-list {
   display: grid;
-  gap: 12px;
+  gap: 0;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -151,11 +151,13 @@ function formatMetadata(metadata: JsonValue): string {
 
 .session-item {
   display: grid;
-  gap: 10px;
-  padding: 0.95rem;
-  border-radius: 12px;
-  border: 1px solid rgba(133, 163, 199, 0.14);
-  background: var(--surface-panel-muted-strong);
+  gap: 8px;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid rgba(133, 163, 199, 0.1);
+}
+
+.session-item:last-child {
+  border-bottom: none;
 }
 
 .session-topline {

@@ -206,7 +206,7 @@ const {
   resetPage,
   goPrevPage,
   goNextPage,
-} = usePagination(orderedPlugins, 4)
+} = usePagination(orderedPlugins, 8)
 const onlineCount = computed(() =>
   listedPlugins.value.filter((plugin) => plugin.connected).length,
 )

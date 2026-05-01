@@ -83,7 +83,7 @@ function handleViewUpdate(value: string) {
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
 }
 
 .overview-card-head {
@@ -95,16 +95,16 @@ function handleViewUpdate(value: string) {
 
 .overview-card {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
-  padding: 1.05rem 1.1rem;
+  padding: 0.7rem 0.85rem;
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 12px;
   background: var(--surface-card-gradient);
 }
 
 .overview-card strong {
-  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  font-size: clamp(1.15rem, 1.6vw, 1.55rem);
   line-height: 1.08;
   overflow-wrap: anywhere;
 }
@@ -115,7 +115,7 @@ function handleViewUpdate(value: string) {
 
 .overview-card p {
   color: var(--text-muted);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
 }
 
 .overview-card.warning {
