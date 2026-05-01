@@ -3,7 +3,9 @@ import { PluginController } from '../../../../src/adapters/http/plugin/plugin.co
 
 describe('PluginController', () => {
   const pluginBootstrapService = {
+    canReloadLocal: jest.fn(),
     getPlugin: jest.fn(),
+    reloadLocal: jest.fn(),
     upsertRemotePlugin: jest.fn(),
   };
   const pluginPersistenceService = {
@@ -411,6 +413,50 @@ describe('PluginController', () => {
       message: '已刷新远程插件元数据缓存',
       type: 'governance:refresh-metadata',
     });
+  });
+
+  it('cleans current plugin runtime state when local reload finds that the directory was removed', async () => {
+    pluginPersistenceService.getPluginEventLog.mockReturnValue({
+      enabled: true,
+      maxFileSizeMb: 10,
+      maxFiles: 5,
+    });
+    pluginBootstrapService.getPlugin.mockReturnValue({
+      manifest: {
+        runtime: 'local',
+      },
+      pluginId: 'local.echo',
+    });
+    pluginBootstrapService.canReloadLocal.mockReturnValue(true);
+    pluginBootstrapService.reloadLocal.mockReturnValue({
+      pluginId: 'local.echo',
+      removed: true,
+    });
+
+    await expect(
+      controller.runPluginAction('local.echo', 'reload'),
+    ).resolves.toEqual({
+      accepted: true,
+      action: 'reload',
+      pluginId: 'local.echo',
+      message: '本地插件目录已删除，已清理旧记录',
+    });
+
+    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('local.echo');
+    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('local.echo');
+    expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('local.echo');
+    expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:local.echo');
+    expect(runtimePluginGovernanceService.runPluginAction).not.toHaveBeenCalled();
+    expect(pluginPersistenceService.recordDetachedPluginEvent).toHaveBeenCalledWith('local.echo', {
+      enabled: true,
+      maxFileSizeMb: 10,
+      maxFiles: 5,
+    }, {
+      level: 'info',
+      message: '本地插件目录已删除，已清理旧记录',
+      type: 'governance:reload',
+    });
+    expect(pluginPersistenceService.recordPluginEvent).not.toHaveBeenCalled();
   });
 
   it('delegates config and scope routes to the plugin http mutation owner', async () => {

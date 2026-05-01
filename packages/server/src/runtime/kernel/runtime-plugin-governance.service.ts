@@ -62,7 +62,10 @@ export class RuntimePluginGovernanceService {
       return createAcceptedActionResult(input.pluginId, input.action, snapshot.status === 'healthy' ? '插件健康检查通过' : '插件健康检查失败');
     }
     if (input.action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(input.pluginId)) {
-      this.pluginBootstrapService.reloadLocal(input.pluginId);
+      const reloaded = this.pluginBootstrapService.reloadLocal(input.pluginId);
+      if (reloaded.removed) {
+        return createAcceptedActionResult(input.pluginId, input.action, '本地插件目录已删除，已清理旧记录');
+      }
       return createAcceptedActionResult(input.pluginId, input.action, '已重新装载本地插件');
     }
     if (plugin.manifest.runtime !== 'remote' || (input.action !== 'reload' && input.action !== 'reconnect' && input.action !== 'refresh-metadata')) {

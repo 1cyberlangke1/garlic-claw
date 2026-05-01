@@ -60,6 +60,12 @@ export class ProjectPluginRegistryService {
         if (!loaded) {
           continue;
         }
+        const existing = nextDefinitions.get(loaded.definition.manifest.id);
+        if (existing) {
+          throw new Error(
+            `本地插件 manifest.id 冲突: ${loaded.definition.manifest.id} 已被目录 ${existing.directoryPath} 使用，当前目录 ${directoryPath}`,
+          );
+        }
         nextDefinitions.set(loaded.definition.manifest.id, loaded);
       } catch (error) {
         this.logger.warn(readProjectPluginLoadErrorMessage(directoryPath, error));

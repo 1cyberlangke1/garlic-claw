@@ -77,6 +77,49 @@
 - MCP 事件日志已做同样收口。
 - 普通刷新不再继承上一轮“加载更多”的 cursor，避免刷新后空页或跳页。
 
+## 2026-05-01 阶段 I 新增收口
+
+### `packages/web/src/features/ai-settings/components/ContextGovernanceSettingsPanel.vue`
+- 已修自动保存失败后的纯 schema 重试缺口。
+- 组件现在区分已提交签名与待提交签名；保存失败时不会把失败请求误记成“已提交”。
+
+### `packages/server/src/plugin/bootstrap/plugin-bootstrap.service.ts`
+- 本地插件 `reload` 在项目定义已经消失时，不再只抛错。
+- 现在会把对应 plugin record 从持久化列表里移除，并把“已删除”状态返回给上层治理动作。
+
+### `packages/server/src/runtime/kernel/runtime-plugin-governance.service.ts`
+- 本地插件 `reload` 的“目录已删除”分支不再承载当前单例清理 owner。
+- 该 service 现在只负责：
+  - health snapshot / failure count
+  - 支持动作判定
+  - remote reconnect / refresh-metadata
+- 这样可以避免通过额外 callback 落成“清了磁盘、没清当前服务单例”的假成功。
+
+### `packages/server/src/adapters/http/plugin/plugin.controller.ts`
+- 本地插件 `reload` 命中“目录已删除”时，controller 入口会直接清理当前进程单例状态：
+  - runtime state
+  - plugin conversation sessions
+  - `plugin:*` tool/source overrides
+  - plugin 健康态缓存
+
+### `packages/server/src/execution/tool/tool-registry.service.ts`
+- `/tools` 统一入口触发本地插件 `reload` 命中“目录已删除”时，也会执行与 controller 相同的当前单例清理链。
+- 这条路径现在与插件页按钮语义对齐，不会再出现“插件页 reload 清了，统一工具入口 reload 没清”的双口径。
+
+### `packages/server/src/plugin/project/project-plugin-registry.service.ts`
+- `config/plugins` 下若两个目录导出相同 `manifest.id`，现在不会再由后加载目录静默覆盖前者。
+- 当前行为改为：
+  - 保留按目录排序先加载的定义
+  - 对冲突目录记明确 warning，并跳过该目录
+- 这样至少不会在无提示情况下把本地插件实现换成另一份目录内容。
+
+### 阶段 I judge 残余风险
+- `bootstrapProjectPlugins(onDrop)` 当前只清理：
+  - runtime state
+  - plugin conversation sessions
+  - `plugin:*` source/tool overrides
+- 启动期缺失本地插件的 drop 分支还没有顺手清健康态缓存；这不影响本轮 judge 通过，但可作为下一轮后端收尾项继续处理。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

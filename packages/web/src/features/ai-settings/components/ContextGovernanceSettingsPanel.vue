@@ -70,6 +70,7 @@ const compressionModel = ref<{ modelId: string; providerId: string } | null>(nul
 const schemaDraftValues = ref<JsonObject>({})
 const autoSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const committedSignature = ref('{}')
+const pendingSignature = ref<string | null>(null)
 const CONTEXT_GOVERNANCE_AUTO_SAVE_DEBOUNCE_MS = 500
 
 watch(
@@ -77,9 +78,13 @@ watch(
   (snapshot) => {
     compressionModel.value = readCompressionModel(snapshot?.values)
     schemaDraftValues.value = cloneJsonObject(snapshot?.values ?? {})
-    committedSignature.value = JSON.stringify(
+    const snapshotSignature = JSON.stringify(
       mergeCompressionModel(schemaDraftValues.value, compressionModel.value),
     )
+    committedSignature.value = snapshotSignature
+    pendingSignature.value = pendingSignature.value === snapshotSignature
+      ? null
+      : pendingSignature.value
   },
   { immediate: true },
 )
@@ -87,7 +92,15 @@ watch(
 watch(
   () => props.saving,
   (saving) => {
-    if (!saving && !isSameCompressionModel(compressionModel.value, readCompressionModel(props.snapshot?.values))) {
+    if (saving) {
+      return
+    }
+    if (pendingSignature.value && pendingSignature.value !== committedSignature.value) {
+      pendingSignature.value = null
+      scheduleAutoSave(0)
+      return
+    }
+    if (readDraftSignature() !== committedSignature.value) {
       scheduleAutoSave(0)
     }
   },
@@ -121,10 +134,13 @@ function scheduleAutoSave(delayMs = CONTEXT_GOVERNANCE_AUTO_SAVE_DEBOUNCE_MS) {
     }
     const nextValues = mergeCompressionModel(schemaDraftValues.value, compressionModel.value)
     const nextSignature = JSON.stringify(nextValues)
-    if (nextSignature === committedSignature.value) {
+    if (
+      nextSignature === committedSignature.value
+      || nextSignature === pendingSignature.value
+    ) {
       return
     }
-    committedSignature.value = nextSignature
+    pendingSignature.value = nextSignature
     emit('save', nextValues)
   }, delayMs)
 }
@@ -170,18 +186,12 @@ function mergeCompressionModel(
   return nextValues
 }
 
-function isSameCompressionModel(
-  left: { modelId: string; providerId: string } | null,
-  right: { modelId: string; providerId: string } | null,
-): boolean {
-  if (!left || !right) {
-    return left === right
-  }
-  return left.providerId === right.providerId && left.modelId === right.modelId
-}
-
 function cloneJsonObject(value: PluginConfigSnapshot['values']): JsonObject {
   return JSON.parse(JSON.stringify(value ?? {})) as JsonObject
+}
+
+function readDraftSignature(): string {
+  return JSON.stringify(mergeCompressionModel(schemaDraftValues.value, compressionModel.value))
 }
 
 function readJsonObject(value: unknown): JsonObject | null {

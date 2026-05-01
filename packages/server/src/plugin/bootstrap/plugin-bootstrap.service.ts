@@ -9,7 +9,7 @@ import type {
   PluginAuthorTransportGovernanceHandlers,
 } from '@garlic-claw/plugin-sdk/authoring';
 import type { PluginHostFacadeMethods } from '@garlic-claw/plugin-sdk/host';
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { BuiltinPluginRegistryService } from '../builtin/builtin-plugin-registry.service';
 import { PluginGovernanceService, type PluginGovernanceOverrides } from '../governance/plugin-governance.service';
 import { PluginPersistenceService, type RegisteredPluginRecord, type RegisteredPluginRemoteRecord } from '../persistence/plugin-persistence.service';
@@ -38,6 +38,11 @@ export interface LocalPluginDefinitionRecord {
   definition: PluginAuthorDefinition<PluginHostFacadeMethods>;
   source: 'builtin' | 'project';
   transportGovernance?: PluginAuthorTransportGovernanceHandlers;
+}
+
+export interface ReloadLocalPluginResult {
+  pluginId: string;
+  removed: boolean;
 }
 
 @Injectable()
@@ -115,14 +120,22 @@ export class PluginBootstrapService {
     throw new Error(`Local plugin definition not found: ${pluginId}`);
   }
 
-  reloadLocal(pluginId: string): string {
+  reloadLocal(pluginId: string): ReloadLocalPluginResult {
     if (this.builtinPluginRegistryService?.hasDefinition(pluginId)) {
-      return this.registerBuiltinDefinition(this.builtinPluginRegistryService.getDefinition(pluginId)).pluginId;
+      return { pluginId: this.registerBuiltinDefinition(this.builtinPluginRegistryService.getDefinition(pluginId)).pluginId, removed: false };
     }
     if (!this.projectPluginRegistryService) {
       throw new Error('Project plugin registry is unavailable');
     }
-    return this.registerProjectDefinition(this.projectPluginRegistryService.reloadDefinition(pluginId)).pluginId;
+    try {
+      return { pluginId: this.registerProjectDefinition(this.projectPluginRegistryService.reloadDefinition(pluginId)).pluginId, removed: false };
+    } catch (error) {
+      if (!isMissingProjectPluginDefinitionError(error)) {
+        throw error;
+      }
+      this.pluginPersistenceService.dropPluginRecords([pluginId]);
+      return { pluginId, removed: true };
+    }
   }
 
   registerPlugin(input: RegisterPluginInput): RegisteredPluginRecord {
@@ -336,4 +349,9 @@ function readLiteral<T extends string>(value: unknown, allowed: readonly T[]): T
 
 function readArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? [...value] as T[] : [];
+}
+
+function isMissingProjectPluginDefinitionError(error: unknown): boolean {
+  return error instanceof NotFoundException
+    || (error instanceof Error && error.message.includes('Project plugin definition not found'));
 }

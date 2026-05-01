@@ -206,6 +206,64 @@ describe('ProjectPluginRegistryService', () => {
       echoed: 'second',
     });
   });
+
+  it('keeps the first local plugin when two directories export the same manifest id', () => {
+    writePluginPackage(projectRootPath, 'local-echo-a', {
+      garlicClaw: {
+        runtime: 'local',
+      },
+      main: 'dist/index.js',
+      name: '@garlic-claw/local-echo-a',
+    }, [
+      'module.exports.definition = {',
+      "  manifest: {",
+      "    id: 'local.echo',",
+      "    name: 'Local Echo A',",
+      "    version: '1.0.0',",
+      "    runtime: 'local',",
+      '    permissions: [],',
+      '    tools: [{ name: \'echo\', description: \'echo\', parameters: {} }],',
+      '  },',
+      '};',
+    ]);
+    writePluginPackage(projectRootPath, 'local-echo-b', {
+      garlicClaw: {
+        runtime: 'local',
+      },
+      main: 'dist/index.js',
+      name: '@garlic-claw/local-echo-b',
+    }, [
+      'module.exports.definition = {',
+      "  manifest: {",
+      "    id: 'local.echo',",
+      "    name: 'Local Echo B',",
+      "    version: '1.0.0',",
+      "    runtime: 'local',",
+      '    permissions: [],',
+      '    tools: [{ name: \'echo\', description: \'echo\', parameters: {} }],',
+      '  },',
+      '};',
+    ]);
+
+    const service = new ProjectPluginRegistryService(
+      new ProjectWorktreeRootService(),
+    );
+    const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
+
+    expect(service.loadDefinitions()).toEqual([
+      expect.objectContaining({
+        definition: expect.objectContaining({
+          manifest: expect.objectContaining({
+            id: 'local.echo',
+            name: 'Local Echo A',
+          }),
+        }),
+        directoryPath: path.join(projectRootPath, 'config', 'plugins', 'local-echo-a'),
+      }),
+    ]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('本地插件 manifest.id 冲突: local.echo'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(path.join(projectRootPath, 'config', 'plugins', 'local-echo-b')));
+  });
 });
 
 function writePluginPackage(

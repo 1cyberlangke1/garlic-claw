@@ -190,6 +190,76 @@
   - `RuntimeHostConversationRecordService <-> RuntimeHostConversationTodoService` 的循环依赖目前主要靠 smoke 兜住，缺单独 DI 级回归
   - MCP 事件日志还没有请求序号守卫，后续仍可继续看并发乱序覆盖
 
+### 已提交
+- commit: `c604548` `修复: 收口阶段H删除链与事件分页状态`
+
+## 2026-05-01 阶段 I：提交后继续并行扫错
+
+### 已开始
+- 阶段 H 已提交，当前进入下一轮并行扫描。
+- 本轮先按你要求复用 subagent 做只读扫错，再挑一组高价值问题继续本地修复。
+- 当前优先入口：
+  - MCP 事件日志刷新并发乱序
+  - 离线插件工具源可见性
+  - 本地插件 reload 传递依赖缓存
+  - MCP 失败重试回收链复核
+
+### 阶段 I 当前进展
+- 已修 `ContextGovernanceSettingsPanel` 自动保存失败后的纯 schema 重试缺口：
+  - 组件不再把待保存签名提前写成 committed
+  - 现在区分 `committedSignature` 与 `pendingSignature`
+  - 保存失败且 snapshot 未追上时，`saving=false` 会立即重试
+- 已补前端回归：
+  - `tests/features/ai-settings/components/ContextGovernanceSettingsPanel.spec.ts`
+- 已通过：
+  - `npm run test:run -w packages/web -- tests/features/ai-settings/components/ContextGovernanceSettingsPanel.spec.ts`
+  - `npm run typecheck -w packages/web`
+
+### 阶段 I 子代理扫描新结果
+- 本地插件链路高优先级：
+  - 运行中删除 `config/plugins/<plugin>` 后只点 `reload`，不会走 drop 清理链，旧记录与 runtime 状态会残留
+  - `config/plugins` 下两个目录若导出相同 `manifest.id`，后者会静默覆盖前者
+  - 删除本地插件后事件日志文件不会清，重建同 `pluginId` 会继承旧日志
+
+### 阶段 I 新增修复
+- 已修本地插件目录删除后的 `reload` 清理链：
+  - `PluginBootstrapService.reloadLocal()` 在项目定义已消失时会删除对应 plugin record，而不是只抛错
+  - 清理已收口到真实入口：
+    - `PluginController.runPluginAction('reload')`
+    - `ToolRegistryService.runSourceAction('plugin', ..., 'reload')`
+  - 两条入口都会在“目录已删除”时同步清理 runtime state、plugin conversation sessions、`plugin:*` tool/source overrides，以及健康态缓存
+- 已删除 `RuntimePluginGovernanceService <-> RuntimeHostService` 之间那条注册式本地 reload 清理回调：
+  - 不再通过额外 callback 间接清理当前单例
+  - 避免“治理 service 看似处理了 reload，实际只有磁盘状态变了”的假收口
+- 已补 server 回归：
+  - `tests/runtime/kernel/runtime-kernel.service.spec.ts`
+  - `tests/execution/tool/tool-registry.service.spec.ts`
+  - `tests/adapters/http/plugin/plugin.controller.spec.ts`
+  - `tests/runtime/host/runtime-host.service.spec.ts`
+  - `tests/plugin/project/project-plugin-registry.service.spec.ts`
+  - `tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+- 已修本地项目插件 `manifest.id` 冲突静默覆盖：
+  - `ProjectPluginRegistryService.loadDefinitions()` 发现重复 `manifest.id` 时，保留按目录排序先加载的定义
+  - 冲突目录会记明确 warning，不再把前一个目录静默顶掉
+- 已通过：
+  - `npm run test -w packages/server -- tests/adapters/http/plugin/plugin.controller.spec.ts tests/execution/tool/tool-registry.service.spec.ts tests/runtime/kernel/runtime-kernel.service.spec.ts`
+  - `npm run test -w packages/server -- tests/runtime/host/runtime-host.service.spec.ts`
+  - `npm run test -w packages/server -- tests/plugin/project/project-plugin-registry.service.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+  - `npm run typecheck -w packages/server`
+  - `npm run lint`
+  - `npm run typecheck -w packages/web`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 阶段 I 当前结论
+- 独立 judge 已给出 `PASS`。
+- judge 认可本轮三项关键目标都成立：
+  - `ContextGovernanceSettingsPanel` 失败后纯 schema 改动会自动重试
+  - `PluginController` 与 `ToolRegistryService` 两个真实入口在本地插件目录删除后 reload 都会清当前单例状态
+  - `ProjectPluginRegistryService` 对重复 `manifest.id` 不再静默覆盖
+- judge 留下的后续风险：
+  - 启动期 `bootstrapProjectPlugins(onDrop)` 的缺失本地插件清理，当前还没顺手清健康态缓存
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

@@ -42,7 +42,9 @@ export class RuntimeHostService implements OnModuleInit {
   constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly automationService: AutomationService, private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiManagementService: AiManagementService, private readonly runtimeHostKnowledgeService: RuntimeHostKnowledgeService, private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimeHostRuntimeToolService: RuntimeHostRuntimeToolService, private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService, private readonly runtimeHostUserContextService: RuntimeHostUserContextService, private readonly personaService: PersonaService) {
     this.callHandlers = this.buildCallHandlers();
   }
-  onModuleInit(): void { this.runtimeHostPluginDispatchService.registerHostCaller((input) => this.call(input)); }
+  onModuleInit(): void {
+    this.runtimeHostPluginDispatchService.registerHostCaller((input) => this.call(input));
+  }
 
   async call(input: {
     context: PluginCallContext;

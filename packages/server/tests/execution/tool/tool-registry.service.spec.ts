@@ -278,6 +278,65 @@ describe('ToolRegistryService', () => {
     ).rejects.toThrow('工具源 plugin:builtin.memory 不支持治理动作 reload');
   });
 
+  it('cleans current plugin source state when local reload finds that the directory was removed', async () => {
+    const {
+      pluginBootstrapService,
+      runtimeHostConversationRecordService,
+      runtimeHostPluginRuntimeService,
+      runtimePluginGovernanceService,
+      service,
+      toolManagementSettingsService,
+    } = createFixture();
+    jest.spyOn(pluginBootstrapService, 'getPlugin').mockReturnValue({
+      connected: true,
+      defaultEnabled: true,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'builtin.memory',
+        name: 'Memory',
+        permissions: [],
+        runtime: 'local',
+        tools: [
+          {
+            description: 'save',
+            name: 'save_memory',
+            parameters: {},
+          },
+        ],
+        version: '1.0.0',
+      },
+      pluginId: 'builtin.memory',
+      status: 'online',
+    } as never);
+    jest.spyOn(pluginBootstrapService, 'canReloadLocal').mockReturnValue(true);
+    jest.spyOn(pluginBootstrapService, 'reloadLocal').mockReturnValue({
+      pluginId: 'builtin.memory',
+      removed: true,
+    });
+    const deletePluginRuntimeStateSpy = jest.spyOn(runtimeHostPluginRuntimeService, 'deletePluginRuntimeState');
+    const deletePluginConversationSessionsSpy = jest.spyOn(runtimeHostConversationRecordService, 'deletePluginConversationSessions');
+    const deleteGovernanceRuntimeStateSpy = jest.spyOn(runtimePluginGovernanceService, 'deletePluginRuntimeState');
+    toolManagementSettingsService.writeSourceEnabledOverride('plugin:builtin.memory', false);
+    toolManagementSettingsService.writeToolEnabledOverride('plugin:builtin.memory:save_memory', false);
+
+    await expect(
+      service.runSourceAction('plugin', 'builtin.memory', 'reload'),
+    ).resolves.toEqual({
+      accepted: true,
+      action: 'reload',
+      sourceKind: 'plugin',
+      sourceId: 'builtin.memory',
+      message: '本地插件目录已删除，已清理旧记录',
+    });
+
+    expect(deletePluginRuntimeStateSpy).toHaveBeenCalledWith('builtin.memory');
+    expect(deletePluginConversationSessionsSpy).toHaveBeenCalledWith('builtin.memory');
+    expect(deleteGovernanceRuntimeStateSpy).toHaveBeenCalledWith('builtin.memory');
+    expect(toolManagementSettingsService.readSourceEnabledOverride('plugin:builtin.memory')).toBeUndefined();
+    expect(toolManagementSettingsService.readToolEnabledOverride('plugin:builtin.memory:save_memory')).toBeUndefined();
+  });
+
   it('persists source and tool enabled overrides across service reload', async () => {
     const fixture = createFixture();
 
@@ -8342,6 +8401,11 @@ function createFixture(options: {
     writeToolService,
     projectWorktreeSearchOverlayService,
   );
+  const runtimeHostPluginRuntimeService = new RuntimeHostPluginRuntimeService();
+  const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
+    pluginBootstrapService,
+    runtimeGatewayConnectionLifecycleService,
+  );
   const runtimeHostService = new RuntimeHostService(
     pluginBootstrapService,
     runtimeHostAutomationService,
@@ -8351,17 +8415,13 @@ function createFixture(options: {
     aiManagementService,
     new RuntimeHostKnowledgeService(),
     runtimeHostPluginDispatchService,
-    new RuntimeHostPluginRuntimeService(),
+    runtimeHostPluginRuntimeService,
     runtimeHostRuntimeToolService,
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
     new PersonaService(new PersonaStoreService(projectWorktreeRootService), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();
-  const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
-    pluginBootstrapService,
-    runtimeGatewayConnectionLifecycleService,
-  );
   const invalidToolService = new InvalidToolService();
   const todoToolService = new TodoToolService(runtimeHostConversationTodoService);
   const webFetchService = {
@@ -8380,6 +8440,7 @@ function createFixture(options: {
     mcpService,
     pluginBootstrapService,
     runtimeHostConversationRecordService,
+    runtimeHostPluginRuntimeService,
     runtimeHostConversationTodoService,
     runtimeHostPluginDispatchService,
     runtimePluginGovernanceService,
@@ -8402,6 +8463,9 @@ function createFixture(options: {
       runtimeToolPermissionService,
       runtimeToolsSettingsService,
       toolManagementSettingsService,
+      pluginBootstrapService,
+      runtimeHostConversationRecordService,
+      runtimeHostPluginRuntimeService,
       subagentToolService,
       todoToolService,
       webFetchToolService,

@@ -164,4 +164,82 @@ describe('ContextGovernanceSettingsPanel', () => {
       ],
     ])
   })
+
+  it('retries pure schema changes after a failed auto-save', async () => {
+    const wrapper = mount(ContextGovernanceSettingsPanel, {
+      props: {
+        saving: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              contextCompaction: {
+                type: 'object',
+                items: {
+                  enabled: {
+                    type: 'bool',
+                  },
+                },
+              },
+            },
+          },
+          values: {
+            contextCompaction: {
+              enabled: true,
+            },
+          },
+        },
+      },
+      global: {
+        stubs: {
+          ModelQuickInput: ModelQuickInputStub,
+          SchemaConfigForm: defineComponent({
+            name: 'SchemaConfigForm',
+            props: {
+              snapshot: {
+                type: Object,
+                required: false,
+                default: null,
+              },
+            },
+            emits: ['draft-change'],
+            template: '<button data-test="schema-save" @click="$emit(\'draft-change\', { contextCompaction: { enabled: false } })">save</button>',
+          }),
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="schema-save"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(500)
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          contextCompaction: {
+            enabled: false,
+          },
+        },
+      ],
+    ])
+
+    await wrapper.setProps({ saving: true })
+    await wrapper.setProps({ saving: false })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          contextCompaction: {
+            enabled: false,
+          },
+        },
+      ],
+      [
+        {
+          contextCompaction: {
+            enabled: false,
+          },
+        },
+      ],
+    ])
+  })
 })

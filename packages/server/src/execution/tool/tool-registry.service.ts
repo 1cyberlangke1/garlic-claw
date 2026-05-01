@@ -15,7 +15,10 @@ import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import { RuntimeToolPermissionService } from '../runtime/runtime-tool-permission.service';
 import { RuntimeToolsSettingsService } from '../runtime/runtime-tools-settings.service';
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
+import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
+import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from '../../runtime/host/runtime-host-plugin-dispatch.service';
+import { RuntimeHostPluginRuntimeService } from '../../runtime/host/runtime-host-plugin-runtime.service';
 import { isPluginEnabledForContext } from '../../runtime/kernel/runtime-plugin-hook-governance';
 import { RuntimePluginGovernanceService } from '../../runtime/kernel/runtime-plugin-governance.service';
 import { McpService } from '../mcp/mcp.service';
@@ -53,6 +56,9 @@ export class ToolRegistryService {
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
     private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
+    private readonly pluginBootstrapService: PluginBootstrapService,
+    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService,
     @Inject(forwardRef(() => SubagentToolService)) private readonly subagentToolService: SubagentToolService,
     private readonly todoToolService: TodoToolService,
     private readonly webFetchToolService: WebFetchToolService,
@@ -86,6 +92,18 @@ export class ToolRegistryService {
     if (kind !== 'plugin') {throw new BadRequestException(`工具源 ${kind}:${sourceId} 不支持治理动作 ${action}`);}
     const source = readToolSource(await this.listOverview(), kind, sourceId);
     if (!(source.supportedActions ?? []).includes(action)) {throw new BadRequestException(`工具源 ${kind}:${sourceId} 不支持治理动作 ${action}`);}
+    const plugin = this.pluginBootstrapService.getPlugin(sourceId);
+    if (action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(sourceId)) {
+      const reloaded = this.pluginBootstrapService.reloadLocal(sourceId);
+      if (reloaded.removed) {
+        this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(sourceId);
+        this.runtimeHostConversationRecordService.deletePluginConversationSessions(sourceId);
+        this.runtimePluginGovernanceService.deletePluginRuntimeState(sourceId);
+        this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${sourceId}`);
+        return { accepted: true, action, sourceKind: source.kind, sourceId, message: '本地插件目录已删除，已清理旧记录' };
+      }
+      return { accepted: true, action, sourceKind: source.kind, sourceId, message: '已重新装载本地插件' };
+    }
     const result = await this.runtimePluginGovernanceService.runPluginAction({ action, pluginId: sourceId });
     return { accepted: result.accepted, action: result.action, sourceKind: source.kind, sourceId: result.pluginId, message: result.message };
   }

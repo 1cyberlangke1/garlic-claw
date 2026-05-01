@@ -75,6 +75,27 @@
 - [x] 补对应 server / web 回归测试
 - [x] 跑完整验证并补独立 judge
 
+## 2026-05-01 阶段 I：提交后继续并行扫错
+
+### 目标
+- [x] 提交阶段 H 当前修复
+- [x] 派多路 subagent 继续扫描 server / web / plugin-runtime 剩余真实 bug
+- [x] 汇总下一批高价值问题，优先挑 owner 错位、状态错乱、数据残留与并发乱序
+- [x] 选一组问题继续修复、验证与提交
+
+### 已知优先入口
+- [ ] `packages/web/src/features/tools/composables/use-mcp-config-management.ts` 事件刷新并发乱序守卫
+- [x] `packages/web/src/features/ai-settings/components/ContextGovernanceSettingsPanel.vue` 自动保存失败后纯 schema 改动重试
+- [ ] `packages/server/src/execution/tool/tool-registry.service.ts` 离线插件工具源可见性对齐
+- [ ] `packages/server/src/plugin/project/project-plugin-registry.service.ts` 本地插件 reload 传递依赖缓存
+- [ ] `packages/server/src/execution/mcp/mcp.service.ts` 失败重试后的客户端/子进程回收余项复核
+
+### 当前锁定修复
+- [x] `ContextGovernanceSettingsPanel` 保存失败后按真实 snapshot / pending 状态决定是否重试
+- [x] 运行中删除本地插件目录后，只点 `reload` 也要走完整清理链
+- [x] 删除 `RuntimePluginGovernanceService -> RuntimeHostService` 注册式本地 reload 清理回调，清理 owner 只保留真实入口
+- [x] `ProjectPluginRegistryService` 对重复 `manifest.id` 的本地插件目录不再静默覆盖
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 目标

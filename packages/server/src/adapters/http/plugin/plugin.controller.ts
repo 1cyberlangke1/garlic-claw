@@ -120,8 +120,32 @@ export class PluginController {
 
   @Post('plugins/:pluginId/actions/:action')
   async runPluginAction(@Param('pluginId') pluginId: string, @Param('action') action: string) {
-    const result = await this.runtimePluginGovernanceService.runPluginAction({ action: readPluginActionName(action), pluginId });
-    this.recordPluginEvent(pluginId, { level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info', message: result.message, type: `governance:${result.action}` });
+    const actionName = readPluginActionName(action);
+    const plugin = this.pluginBootstrapService.getPlugin(pluginId);
+    const eventLog = this.pluginPersistenceService.getPluginEventLog(pluginId);
+    let detachedAfterAction = false;
+    let result;
+    if (actionName === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(pluginId)) {
+      const reloaded = this.pluginBootstrapService.reloadLocal(pluginId);
+      if (reloaded.removed) {
+        cleanupDetachedLocalPluginState(pluginId, this.runtimeHostPluginRuntimeService, this.runtimeHostConversationRecordService, this.runtimePluginGovernanceService, this.toolManagementSettingsService);
+        detachedAfterAction = true;
+        result = { accepted: true, action: actionName, pluginId, message: '本地插件目录已删除，已清理旧记录' };
+      } else {
+        result = { accepted: true, action: actionName, pluginId, message: '已重新装载本地插件' };
+      }
+    } else {
+      result = await this.runtimePluginGovernanceService.runPluginAction({ action: actionName, pluginId });
+    }
+    if (detachedAfterAction) {
+      this.pluginPersistenceService.recordDetachedPluginEvent(pluginId, eventLog, {
+        level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info',
+        message: result.message,
+        type: `governance:${result.action}`,
+      });
+    } else {
+      this.recordPluginEvent(pluginId, { level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info', message: result.message, type: `governance:${result.action}` });
+    }
     return result;
   }
 
@@ -179,4 +203,17 @@ export class PluginController {
 function readPluginActionName(action: string): PluginActionName {
   if (action === 'health-check' || action === 'reload' || action === 'reconnect' || action === 'refresh-metadata') {return action;}
   throw new BadRequestException('action 必须是 reload / reconnect / health-check / refresh-metadata');
+}
+
+function cleanupDetachedLocalPluginState(
+  pluginId: string,
+  runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService,
+  runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+  runtimePluginGovernanceService: RuntimePluginGovernanceService,
+  toolManagementSettingsService: ToolManagementSettingsService,
+): void {
+  runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
+  runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+  runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
+  toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
 }
