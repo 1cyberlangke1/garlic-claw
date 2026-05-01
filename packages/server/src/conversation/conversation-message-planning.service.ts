@@ -79,7 +79,7 @@ export class ConversationMessagePlanningService {
     const historyMessages = await this.buildModelMessages(input.conversationId, input.messageId);
     const internalBeforeModel = await this.contextGovernanceService.applyBeforeModel({ conversationId: input.conversationId, messages: [...persona.beginDialogs, ...historyMessages], modelId: input.modelId, providerId: input.providerId, systemPrompt: persona.prompt, userId: input.userId });
     if (internalBeforeModel.action === 'short-circuit') {return createShortCircuitPlan(internalBeforeModel);}
-    const historySignature = createConversationHistorySignatureFromModelMessages(
+    const requestHistorySignature = createConversationHistorySignatureFromModelMessages(
       internalBeforeModel.messages.slice(persona.beginDialogs.length),
     );
     const beforeModel = await this.applyBeforeModel({ action: 'continue', activePersonaId: persona.personaId, conversationId: input.conversationId, messages: internalBeforeModel.messages, modelId: internalBeforeModel.modelId, providerId: internalBeforeModel.providerId, systemPrompt: internalBeforeModel.systemPrompt, userId: input.userId });
@@ -95,7 +95,7 @@ export class ConversationMessagePlanningService {
       ...(beforeModel.systemPrompt ? { system: beforeModel.systemPrompt } : {}),
       ...(tools ? { tools } : {}),
     });
-    return { historySignature, modelId: stream.modelId, providerId: stream.providerId, responseSource: 'model', shortCircuitParts: null, stream: { finishReason: stream.finishReason, fullStream: stream.fullStream } };
+    return { requestHistorySignature, modelId: stream.modelId, providerId: stream.providerId, responseSource: 'model', shortCircuitParts: null, stream: { finishReason: stream.finishReason, fullStream: stream.fullStream } };
   }
 
   async finalizeTaskResult(result: CompletedConversationTaskResult, responseSource: ConversationResponseSource, shortCircuitParts: ChatMessagePart[] | null): Promise<CompletedConversationTaskResult> {

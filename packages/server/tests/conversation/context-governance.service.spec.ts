@@ -334,11 +334,11 @@ describe('ContextGovernanceService', () => {
           annotations: [
             {
               data: {
-                historySignature: staleSignature,
                 inputTokens: 8,
                 modelId: 'gpt-oss-20b',
                 outputTokens: 2,
                 providerId: 'nvidia',
+                responseHistorySignature: staleSignature,
                 source: 'provider',
                 totalTokens: 10,
               },

@@ -25,6 +25,31 @@
 - [x] 视改动范围决定是否补 smoke
 - [x] 通过独立 judge 复核
 
+## 2026-05-01 上下文统计与压缩只认回复后 totalTokens
+
+### 目标
+- [ ] 顶部上下文统计与自动压缩阈值判断只在“当前历史快照匹配真实回复快照”时复用真实 `totalTokens`
+- [ ] 不再把请求前 `inputTokens` 拿来充当当前历史占用
+- [ ] 回复完成写回历史后，给该条 `conversation.model-usage` 补上回复后历史快照签名
+- [ ] 当前历史拿不到匹配的真实 `totalTokens` 时，回退当前历史估算
+- [ ] 补回归测试、完整 smoke 与独立 judge
+
+### 阶段 A：取证
+- [x] 核对 `other/opencode` 的 overflow 判断优先读取真实 `totalTokens`
+- [x] 确认本仓库当前缺口是“回复完成后当前历史没有绑定自己的真实 total 快照”
+- [x] 记录用户最新约束：上下文统计与自动压缩只看 `totalTokens`
+
+### 阶段 B：实现
+- [x] `conversation.model-usage` 注解改为支持 `requestHistorySignature / responseHistorySignature`
+- [x] 任务完成写回后补记 `responseHistorySignature`
+- [x] preview / 自动压缩只在 `responseHistorySignature` 匹配时复用 `totalTokens`
+
+### 阶段 C：验证
+- [x] 跑相关后端回归测试
+- [x] 跑 `lint` 与 `typecheck`
+- [x] 跑 `smoke:server` 与 `smoke:web-ui`
+- [x] 通过独立 judge 复核
+
 ## 2026-05-01 回复完成后立即检查上下文压缩
 
 ### 目标

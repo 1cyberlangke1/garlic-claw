@@ -6,9 +6,10 @@ import type {
 } from '@garlic-claw/shared';
 
 export interface ConversationModelUsageAnnotationData extends AiModelUsage {
-  historySignature?: string;
   modelId: string;
   providerId: string;
+  requestHistorySignature?: string;
+  responseHistorySignature?: string;
 }
 
 const CONVERSATION_MODEL_USAGE_OWNER = 'conversation.model-usage';
@@ -44,7 +45,7 @@ export function readConversationModelUsageAnnotation(
       continue;
     }
     if (data.modelId === target.modelId && data.providerId === target.providerId) {
-      return data;
+      return normalizeConversationModelUsageAnnotationData(data);
     }
   }
   return null;
@@ -66,11 +67,12 @@ function serializeConversationModelUsageAnnotationData(
 ): JsonObject {
   return {
     ...(data.cachedInputTokens === undefined ? {} : { cachedInputTokens: data.cachedInputTokens }),
-    ...(data.historySignature ? { historySignature: data.historySignature } : {}),
     inputTokens: data.inputTokens,
     modelId: data.modelId,
     outputTokens: data.outputTokens,
     providerId: data.providerId,
+    ...(data.requestHistorySignature ? { requestHistorySignature: data.requestHistorySignature } : {}),
+    ...(data.responseHistorySignature ? { responseHistorySignature: data.responseHistorySignature } : {}),
     source: data.source,
     totalTokens: data.totalTokens,
   };
@@ -94,11 +96,26 @@ function isConversationModelUsageAnnotationData(
   return typeof value.modelId === 'string'
     && typeof value.providerId === 'string'
     && (value.historySignature === undefined || typeof value.historySignature === 'string')
+    && (value.requestHistorySignature === undefined || typeof value.requestHistorySignature === 'string')
+    && (value.responseHistorySignature === undefined || typeof value.responseHistorySignature === 'string')
     && isTokenCount(value.inputTokens)
     && (value.cachedInputTokens === undefined || isTokenCount(value.cachedInputTokens))
     && isTokenCount(value.outputTokens)
     && isTokenCount(value.totalTokens)
     && (value.source === 'provider' || value.source === 'estimated');
+}
+
+function normalizeConversationModelUsageAnnotationData(
+  data: ConversationModelUsageAnnotationData & { historySignature?: string },
+): ConversationModelUsageAnnotationData {
+  return {
+    ...data,
+    ...(data.requestHistorySignature
+      ? {}
+      : data.historySignature
+        ? { requestHistorySignature: data.historySignature }
+        : {}),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,18 +1,20 @@
 import type { AiModelUsage, ChatMessageCustomBlock, ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonValue, PluginSubagentToolCall, PluginSubagentToolResult, SSEEvent } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
+import { createConversationHistorySignatureFromHistoryMessages } from './conversation-history-signature';
+import { appendConversationModelUsageMetadata, readConversationModelUsageAnnotation } from './conversation-model-usage.annotation';
 import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
 import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-host-conversation-message.service';
+import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostConversationTodoService } from '../runtime/host/runtime-host-conversation-todo.service';
 import { cloneJsonValue, readAssistantRawCustomBlocks, readAssistantStreamPart } from '../runtime/host/runtime-host-values';
-import { appendConversationModelUsageMetadata } from './conversation-model-usage.annotation';
 
 export type ConversationTaskToolCall = PluginSubagentToolCall & Record<string, JsonValue>;
 export type ConversationTaskToolResult = PluginSubagentToolResult & Record<string, JsonValue>;
 export type ConversationTaskEvent = Extract<SSEEvent, { type: 'finish' | 'message-metadata' | 'message-patch' | 'permission-request' | 'permission-resolved' | 'status' | 'todo-updated' | 'text-delta' | 'tool-call' | 'tool-result' }>;
 export type ResolvedConversationTaskStreamSource = {
-  historySignature?: string;
   modelId: string;
   providerId: string;
+  requestHistorySignature?: string;
   stream: { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; usage?: Promise<AiModelUsage | undefined> };
 };
 
@@ -48,7 +50,7 @@ type ConversationTaskCustomBlockUpdate = { key: string; kind: 'json'; value: Jso
 type ConversationTaskOutcome = { status: 'completed' | 'stopped' } | { error: string; status: 'error' };
 type ConversationTaskSnapshot = Omit<CompletedConversationTaskResult, 'assistantMessageId' | 'conversationId'>;
 type ConversationTaskRuntime = Omit<StartConversationTaskInput, 'createStream'> & {
-  historySignature?: string;
+  requestHistorySignature?: string;
   state: { content: string; metadata?: ChatMessageMetadata; toolCalls: ConversationTaskToolCall[]; toolResults: ConversationTaskToolResult[] };
 };
 
@@ -64,6 +66,7 @@ export class ConversationTaskService {
 
   constructor(
     private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
+    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
     private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
   ) {}
@@ -105,7 +108,7 @@ export class ConversationTaskService {
     try {
       const streamSource = await input.createStream(task.abortController.signal);
       const stream = normalizeConversationTaskStream(streamSource.stream);
-      runtime.historySignature = streamSource.historySignature;
+      runtime.requestHistorySignature = streamSource.requestHistorySignature;
       runtime.modelId = streamSource.modelId;
       runtime.providerId = streamSource.providerId;
       await this.writeTaskSnapshot(runtime, 'streaming');
@@ -122,9 +125,9 @@ export class ConversationTaskService {
       if (usage) {
         runtime.state.metadata = appendConversationModelUsageMetadata(runtime.state.metadata, {
           ...usage,
-          ...(runtime.historySignature ? { historySignature: runtime.historySignature } : {}),
           modelId: runtime.modelId,
           providerId: runtime.providerId,
+          ...(runtime.requestHistorySignature ? { requestHistorySignature: runtime.requestHistorySignature } : {}),
         });
       }
       await this.finishTask(task, runtime, { status: task.abortController.signal.aborted ? 'stopped' : 'completed' });
@@ -148,12 +151,14 @@ export class ConversationTaskService {
 
     const completed: CompletedConversationTaskResult = { assistantMessageId: runtime.assistantMessageId, conversationId: runtime.conversationId, ...snapshot };
     const patched = await runtime.onComplete?.(completed);
-    const finalResult = patched ?? completed;
+    let finalResult = patched ?? completed;
 
     if (patched && hasPatchedTaskResult(completed, patched)) {
       await this.runtimeHostConversationMessageService.writeMessage(runtime.conversationId, runtime.assistantMessageId, readConversationTaskMessageBody(patched, 'completed'));
       this.emit(task, { content: patched.content, messageId: runtime.assistantMessageId, ...(patched.parts.length > 0 ? { parts: patched.parts } : {}), type: 'message-patch' });
     }
+
+    finalResult = await this.attachResponseHistoryUsageSignature(runtime, finalResult);
     this.emit(task, { messageId: runtime.assistantMessageId, status: 'completed', type: 'finish' });
     await runtime.onSent?.(finalResult);
   }
@@ -174,6 +179,45 @@ export class ConversationTaskService {
 
   private emit(task: ConversationTaskHandle, event: ConversationTaskEvent): void { for (const listener of task.listeners) {listener(event);} }
   private emitAll(task: ConversationTaskHandle, events: readonly ConversationTaskEvent[]): void { events.forEach((event) => this.emit(task, event)); }
+
+  private async attachResponseHistoryUsageSignature(
+    runtime: ConversationTaskRuntime,
+    result: CompletedConversationTaskResult,
+  ): Promise<CompletedConversationTaskResult> {
+    const usage = readConversationModelUsageAnnotation(result.metadata, {
+      modelId: result.modelId,
+      providerId: result.providerId,
+    });
+    if (!usage) {
+      return result;
+    }
+    const history = this.runtimeHostConversationRecordService.readConversationHistory(
+      runtime.conversationId,
+    ) as { messages?: unknown };
+    if (!Array.isArray(history.messages)) {
+      return result;
+    }
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(
+      history.messages as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0],
+    );
+    const metadata = appendConversationModelUsageMetadata(result.metadata, {
+      ...usage,
+      modelId: result.modelId,
+      providerId: result.providerId,
+      ...(runtime.requestHistorySignature ? { requestHistorySignature: runtime.requestHistorySignature } : {}),
+      responseHistorySignature,
+    });
+    if (JSON.stringify(result.metadata ?? null) === JSON.stringify(metadata)) {
+      return result;
+    }
+    const nextResult = { ...result, metadata };
+    await this.runtimeHostConversationMessageService.writeMessage(
+      runtime.conversationId,
+      runtime.assistantMessageId,
+      readConversationTaskMessageBody(nextResult, 'completed'),
+    );
+    return nextResult;
+  }
 }
 
 function toConversationTaskPermissionEvent(event: ConversationTaskPermissionEvent, assistantMessageId: string): ConversationTaskEvent {

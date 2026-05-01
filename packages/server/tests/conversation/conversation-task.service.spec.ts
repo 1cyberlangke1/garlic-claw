@@ -1,3 +1,4 @@
+import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
 import {
   RuntimeHostConversationRecordService,
@@ -20,7 +21,7 @@ describe('ConversationTaskService', () => {
     runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(runtimeHostConversationRecordService);
     runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(runtimeHostConversationRecordService);
     runtimeToolPermissionService = new RuntimeToolPermissionService();
-    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeToolPermissionService, runtimeHostConversationTodoService);
+    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeHostConversationRecordService, runtimeToolPermissionService, runtimeHostConversationTodoService);
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1' }) as { id: string }).id;
   });
 
@@ -33,9 +34,9 @@ describe('ConversationTaskService', () => {
       assistantMessageId: String(assistantMessage.id),
       conversationId,
       createStream: async () => ({
-        historySignature: 'history-signature-1',
         modelId: 'gpt-5.4',
         providerId: 'openai',
+        requestHistorySignature: 'history-signature-1',
         stream: {
           fullStream: (async function* () {
             yield rawCustomFieldChunk('reasoning_content', '先检查');
@@ -111,6 +112,11 @@ describe('ConversationTaskService', () => {
 
     const conversation = runtimeHostConversationRecordService.requireConversation(conversationId);
     const persistedMetadata = JSON.parse(String(conversation.messages[0].metadataJson));
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(
+      (runtimeHostConversationRecordService.readConversationHistory(conversationId) as unknown as {
+        messages: Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0];
+      }).messages,
+    );
     expect(conversation.messages[0]).toMatchObject({
       content: '最终回复',
       model: 'gpt-5.4',
@@ -124,11 +130,12 @@ describe('ConversationTaskService', () => {
       annotations: [
         {
           data: {
-            historySignature: 'history-signature-1',
             inputTokens: 21,
             modelId: 'gpt-5.4',
             outputTokens: 9,
             providerId: 'openai',
+            requestHistorySignature: 'history-signature-1',
+            responseHistorySignature,
             source: 'provider',
             totalTokens: 30,
           },

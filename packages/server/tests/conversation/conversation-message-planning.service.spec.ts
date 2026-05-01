@@ -246,8 +246,8 @@ describe('ConversationMessagePlanningService', () => {
     }));
   });
 
-  it('prefers the last matching provider usage annotation for context window preview tokens', async () => {
-    const historySignature = createConversationHistorySignatureFromHistoryMessages([
+  it('prefers the last matching response usage annotation for context window preview tokens', async () => {
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages([
       {
         content: '第一条消息',
         createdAt: '2026-04-25T00:00:00.000Z',
@@ -272,11 +272,11 @@ describe('ConversationMessagePlanningService', () => {
       createMessage('history-2', 'assistant', '第二条消息', {
         annotations: [{
           data: {
-            historySignature,
             inputTokens: 88,
             modelId: 'gpt-5.4',
             outputTokens: 12,
             providerId: 'openai',
+            responseHistorySignature,
             source: 'provider',
             totalTokens: 100,
           },
@@ -293,7 +293,7 @@ describe('ConversationMessagePlanningService', () => {
       providerId: 'openai',
       userId: 'user-1',
     })).resolves.toEqual(expect.objectContaining({
-      estimatedTokens: 88,
+      estimatedTokens: 100,
       includedMessageIds: ['history-1', 'history-2'],
     }));
   });
@@ -315,11 +315,11 @@ describe('ConversationMessagePlanningService', () => {
       createMessage('history-2', 'assistant', '现在的第二条消息', {
         annotations: [{
           data: {
-            historySignature: staleSignature,
             inputTokens: 88,
             modelId: 'gpt-5.4',
             outputTokens: 12,
             providerId: 'openai',
+            responseHistorySignature: staleSignature,
             source: 'provider',
             totalTokens: 100,
           },

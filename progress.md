@@ -1,5 +1,46 @@
 # Progress
 
+## 2026-05-01 上下文统计与压缩只认回复后 totalTokens
+
+### 已确认现状
+- `7c4d45c` 只解决了“旧 usage 不能乱复用”，但仍然会把请求前 `inputTokens` 当成当前历史占用。
+- 这会漏掉“assistant 刚回复完并写回历史”的输出 token；长回复场景下，顶部统计和自动压缩都可能少算。
+- `other/opencode` 的 overflow 判断优先吃真实 `totalTokens`，只有拿不到时才退回本地拼装值。
+
+### 本轮实现
+- `conversation.model-usage` 注解扩成：
+  - `requestHistorySignature`
+  - `responseHistorySignature`
+- `ConversationTaskService` 在流结束并把最终 assistant 消息写回历史后，会再读取当前会话历史，为这条 usage 补上 `responseHistorySignature`。
+- `RuntimeHostConversationRecordService.readConversationHistoryPreviewTokens(...)` 现在只会在：
+  - `providerId/modelId` 匹配
+  - `source === 'provider'`
+  - `responseHistorySignature` 与当前历史快照一致
+  时复用真实 `totalTokens`。
+- 当前历史如果没有匹配到真实回复快照，就直接回退当前历史估算，不再复用请求前 `inputTokens`。
+- `requestHistorySignature` 仍保留在注解里，作为历史兼容与排查信息；但上下文统计和自动压缩判断不再消费它。
+
+### 已补验证
+- `npm run test -w packages/server -- tests/runtime/host/runtime-host-conversation-record.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/conversation-task.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/conversation-message-planning.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/context-governance.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/conversation-message-lifecycle.service.spec.ts` ✅
+- `npm run typecheck -w packages/server` ✅
+- `npm run lint` ✅
+- `npm run smoke:server` ✅
+- `npm run smoke:web-ui` ✅
+
+### 独立 judge
+- 独立 judge 结论：`PASS`
+- 复核确认：
+  - assistant 最终消息写回后，才补 `responseHistorySignature`
+  - preview / 自动压缩只在 `responseHistorySignature` 命中时复用真实 `totalTokens`
+  - 没发现继续把请求前 `inputTokens` 当成当前历史占用的旁路
+- judge 提醒的剩余风险：
+  - 旧会话若只有旧版 `historySignature`，会回退估算，不再复用旧 usage
+  - 后续若还有别的链路再改写历史，也会保守退回估算
+
 ## 2026-05-01 上下文 preview 与自动压缩 token 口径对齐
 
 ### 已确认现状

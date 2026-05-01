@@ -95,6 +95,7 @@ describe('ConversationMessageLifecycleService', () => {
     );
     conversationTaskService = new ConversationTaskService(
       runtimeHostConversationMessageService,
+      runtimeHostConversationRecordService,
       new RuntimeToolPermissionService(),
       runtimeHostConversationTodoService,
     );

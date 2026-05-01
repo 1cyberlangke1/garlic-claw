@@ -434,7 +434,7 @@ function readConversationHistoryMessageText(message: JsonObject): string {
 function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): number {
   if (input.modelId && input.providerId) {for (let index = messages.length - 1; index >= 0; index -= 1) {
     const usage = readConversationModelUsageAnnotation(readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined, { modelId: input.modelId, providerId: input.providerId });
-    if (usage?.source === 'provider' && usage.historySignature === input.historySignature) {return usage.inputTokens;}
+    if (usage?.source === 'provider' && usage.responseHistorySignature === input.historySignature) {return usage.totalTokens;}
   }}
   return Math.ceil(input.textBytes / 4);
 }

@@ -1,5 +1,23 @@
 # Findings
 
+## 2026-05-01 上下文统计与压缩应只认回复后 totalTokens
+
+### 当前关键事实
+- 请求前 `inputTokens` 只能说明“那次送模输入用了多少 token”，不能说明“当前会话历史现在占了多少 token”。
+- 一旦 assistant 回复已经完成并写回历史，当前历史占用要优先看这次真实回复对应的 `totalTokens`。
+- 如果还拿请求前 `inputTokens` 去做顶部统计或自动压缩判断，长回复场景会系统性少算。
+
+### 对照 `other/opencode`
+- `other/opencode/packages/opencode/src/session/overflow.ts` 的 overflow 判断优先读 `tokens.total`。
+- `other/opencode/packages/opencode/src/session/processor.ts` 会在每次 assistant step 完成时，把真实 usage 写回当前 assistant message，再立刻据此决定是否需要 compaction。
+- 因此它的压缩判断吃的是“最后一个已完成回复对应的真实总占用”，不是“上一轮请求前输入占用”。
+
+### 本轮结论
+- 本仓库要对齐的不是“双口径并行”，而是：
+  - 有匹配当前历史快照的真实回复 usage 时，用 `totalTokens`
+  - 没有时，再回退估算
+- 请求前签名可以保留在注解里，但上下文统计与自动压缩判断不该继续消费 `inputTokens`。
+
 ## 2026-05-01 上下文 preview 与自动压缩 token 口径失真
 
 ### 当前错误口径

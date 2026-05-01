@@ -383,7 +383,7 @@ describe('RuntimeHostConversationRecordService', () => {
     ]);
   });
 
-  it('prefers the latest matching provider usage annotation when previewing history tokens', () => {
+  it('prefers the latest matching response usage annotation when previewing history tokens', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new RuntimeHostConversationRecordService();
     const conversationId = (service.createConversation({ title: 'Usage Preview Chat' }) as { id: string }).id;
@@ -408,7 +408,7 @@ describe('RuntimeHostConversationRecordService', () => {
         updatedAt: '2026-04-19T10:01:00.000Z',
       },
     ];
-    const historySignature = createConversationHistorySignatureFromHistoryMessages(previewMessages);
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(previewMessages);
 
     service.replaceConversationHistory(conversationId, {
       expectedRevision: initialHistory.revision,
@@ -422,11 +422,11 @@ describe('RuntimeHostConversationRecordService', () => {
             annotations: [
               {
                 data: {
-                  historySignature,
                   inputTokens: 77,
                   modelId: 'gpt-5.4',
                   outputTokens: 13,
                   providerId: 'openai',
+                  responseHistorySignature,
                   source: 'provider',
                   totalTokens: 90,
                 },
@@ -448,7 +448,7 @@ describe('RuntimeHostConversationRecordService', () => {
       modelId: 'gpt-5.4',
       providerId: 'openai',
     })).toEqual({
-      estimatedTokens: 77,
+      estimatedTokens: 90,
       messageCount: 2,
       textBytes: Buffer.byteLength('user\n你好\nassistant\n世界', 'utf8'),
     });
@@ -491,11 +491,11 @@ describe('RuntimeHostConversationRecordService', () => {
             annotations: [
               {
                 data: {
-                  historySignature: staleSignature,
                   inputTokens: 77,
                   modelId: 'gpt-5.4',
                   outputTokens: 13,
                   providerId: 'openai',
+                  responseHistorySignature: staleSignature,
                   source: 'provider',
                   totalTokens: 90,
                 },
@@ -529,7 +529,7 @@ describe('RuntimeHostConversationRecordService', () => {
     const service = new RuntimeHostConversationRecordService();
     const conversationId = (service.createConversation({ title: 'Model Switch Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
-    const historySignature = createConversationHistorySignatureFromHistoryMessages([
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages([
       {
         content: '你好',
         createdAt: '2026-04-19T10:00:00.000Z',
@@ -552,11 +552,11 @@ describe('RuntimeHostConversationRecordService', () => {
             annotations: [
               {
                 data: {
-                  historySignature,
                   inputTokens: 77,
                   modelId: 'gpt-5.4',
                   outputTokens: 13,
                   providerId: 'openai',
+                  responseHistorySignature,
                   source: 'provider',
                   totalTokens: 90,
                 },
