@@ -2,6 +2,7 @@ import type { JsonObject } from '@garlic-claw/shared';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
@@ -301,6 +302,72 @@ describe('ContextGovernanceService', () => {
       providerId: 'nvidia',
       reason: 'context-compaction:auto-stop',
     });
+  });
+
+  it('does not let stale provider usage suppress auto compaction threshold checks', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 50,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-26T00:00:00.000Z',
+        id: 'stale-history',
+        parts: [{ text: '旧历史', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-26T00:00:00.000Z',
+      },
+    ]);
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来确保当前真实历史已经超过自动压缩阈值。'.repeat(8)),
+      {
+        ...createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，附带的是上一轮旧 usage，不应该继续参与这轮阈值判断。'.repeat(8)),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                historySignature: staleSignature,
+                inputTokens: 8,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 2,
+                providerId: 'nvidia',
+                source: 'provider',
+                totalTokens: 10,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+      createHistoryMessage('message-3', 'user', '第三段消息保留给最近窗口。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '自动压缩摘要：当前历史过长，旧 usage 已失效。',
+    });
+
+    await service.rewriteHistoryBeforeModel({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages.some((message) => message.content === '自动压缩摘要：当前历史过长，旧 usage 已失效。')).toBe(true);
   });
 
   it('uses the configured compression model while keeping context window budget bound to the active chat model', async () => {

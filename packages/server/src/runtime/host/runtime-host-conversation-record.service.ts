@@ -4,6 +4,7 @@ import type { ChatMessageMetadata, ChatMessagePart, ConversationKind, Conversati
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
+import { createConversationHistorySignatureFromHistoryMessages } from '../../conversation/conversation-history-signature';
 import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
@@ -126,7 +127,7 @@ export class RuntimeHostConversationRecordService {
 
   previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
     const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages), textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
-    return asJsonValue({ estimatedTokens: readConversationHistoryPreviewTokens(messages, { modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes }), messageCount: messages.length, textBytes });
+    return asJsonValue({ estimatedTokens: readConversationHistoryPreviewTokens(messages, { historySignature: createConversationHistorySignatureFromHistoryMessages(messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0]), modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes }), messageCount: messages.length, textBytes });
   }
 
   replaceConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
@@ -430,10 +431,10 @@ function readConversationHistoryMessageText(message: JsonObject): string {
   return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : ''), Array.isArray(message.toolCalls) ? JSON.stringify(message.toolCalls) : '', Array.isArray(message.toolResults) ? JSON.stringify(message.toolResults) : ''].filter(Boolean).join('\n');
 }
 
-function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { modelId: string | null; providerId: string | null; textBytes: number }): number {
+function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): number {
   if (input.modelId && input.providerId) {for (let index = messages.length - 1; index >= 0; index -= 1) {
     const usage = readConversationModelUsageAnnotation(readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined, { modelId: input.modelId, providerId: input.providerId });
-    if (usage?.source === 'provider') {return usage.inputTokens;}
+    if (usage?.source === 'provider' && usage.historySignature === input.historySignature) {return usage.inputTokens;}
   }}
   return Math.ceil(input.textBytes / 4);
 }

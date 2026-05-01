@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
@@ -246,11 +247,32 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   it('prefers the last matching provider usage annotation for context window preview tokens', async () => {
+    const historySignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '第一条消息',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-1',
+        parts: [{ text: '第一条消息', type: 'text' }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '第二条消息',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-2',
+        parts: [{ text: '第二条消息', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+    ]);
     runtimeHostConversationRecordService.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条消息'),
       createMessage('history-2', 'assistant', '第二条消息', {
         annotations: [{
           data: {
+            historySignature,
             inputTokens: 88,
             modelId: 'gpt-5.4',
             outputTokens: 12,
@@ -272,6 +294,50 @@ describe('ConversationMessagePlanningService', () => {
       userId: 'user-1',
     })).resolves.toEqual(expect.objectContaining({
       estimatedTokens: 88,
+      includedMessageIds: ['history-1', 'history-2'],
+    }));
+  });
+
+  it('falls back to current history estimation when provider usage belongs to an old history snapshot', async () => {
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧消息',
+        createdAt: '2026-04-24T00:00:00.000Z',
+        id: 'stale-history',
+        parts: [{ text: '旧消息', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-24T00:00:00.000Z',
+      },
+    ]);
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '现在的第一条消息'),
+      createMessage('history-2', 'assistant', '现在的第二条消息', {
+        annotations: [{
+          data: {
+            historySignature: staleSignature,
+            inputTokens: 88,
+            modelId: 'gpt-5.4',
+            outputTokens: 12,
+            providerId: 'openai',
+            source: 'provider',
+            totalTokens: 100,
+          },
+          owner: 'conversation.model-usage',
+          type: 'model-usage',
+          version: '1',
+        }],
+      }),
+    ]);
+
+    const expectedTextBytes = Buffer.byteLength('user\n现在的第一条消息\nassistant\n现在的第二条消息', 'utf8');
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: Math.ceil(expectedTextBytes / 4),
       includedMessageIds: ['history-1', 'history-2'],
     }));
   });

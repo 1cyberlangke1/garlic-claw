@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../../src/auth/single-user-auth';
+import { createConversationHistorySignatureFromHistoryMessages } from '../../../src/conversation/conversation-history-signature';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostConversationTodoService } from '../../../src/runtime/host/runtime-host-conversation-todo.service';
@@ -387,19 +388,32 @@ describe('RuntimeHostConversationRecordService', () => {
     const service = new RuntimeHostConversationRecordService();
     const conversationId = (service.createConversation({ title: 'Usage Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+    const previewMessages = [
+      {
+        content: '你好',
+        createdAt: '2026-04-19T10:00:00.000Z',
+        id: 'user-message',
+        parts: [{ text: '你好', type: 'text' as const }],
+        role: 'user' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-19T10:00:00.000Z',
+      },
+      {
+        content: '世界',
+        createdAt: '2026-04-19T10:01:00.000Z',
+        id: 'assistant-message',
+        parts: [{ text: '世界', type: 'text' as const }],
+        role: 'assistant' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-19T10:01:00.000Z',
+      },
+    ];
+    const historySignature = createConversationHistorySignatureFromHistoryMessages(previewMessages);
 
     service.replaceConversationHistory(conversationId, {
       expectedRevision: initialHistory.revision,
       messages: [
-        {
-          content: '你好',
-          createdAt: '2026-04-19T10:00:00.000Z',
-          id: 'user-message',
-          parts: [{ text: '你好', type: 'text' }],
-          role: 'user',
-          status: 'completed',
-          updatedAt: '2026-04-19T10:00:00.000Z',
-        },
+        previewMessages[0],
         {
           content: '世界',
           createdAt: '2026-04-19T10:01:00.000Z',
@@ -408,6 +422,7 @@ describe('RuntimeHostConversationRecordService', () => {
             annotations: [
               {
                 data: {
+                  historySignature,
                   inputTokens: 77,
                   modelId: 'gpt-5.4',
                   outputTokens: 13,
@@ -439,11 +454,92 @@ describe('RuntimeHostConversationRecordService', () => {
     });
   });
 
+  it('falls back to estimated history tokens when provider usage does not match the current history snapshot', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'Stale Usage Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-19T09:59:00.000Z',
+        id: 'stale-message',
+        parts: [{ text: '旧历史', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-19T09:59:00.000Z',
+      },
+    ]);
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '现在的第一条消息',
+          createdAt: '2026-04-19T10:00:00.000Z',
+          id: 'user-message',
+          parts: [{ text: '现在的第一条消息', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:00:00.000Z',
+        },
+        {
+          content: '现在的第二条消息',
+          createdAt: '2026-04-19T10:01:00.000Z',
+          id: 'assistant-message',
+          metadata: {
+            annotations: [
+              {
+                data: {
+                  historySignature: staleSignature,
+                  inputTokens: 77,
+                  modelId: 'gpt-5.4',
+                  outputTokens: 13,
+                  providerId: 'openai',
+                  source: 'provider',
+                  totalTokens: 90,
+                },
+                owner: 'conversation.model-usage',
+                type: 'model-usage',
+                version: '1',
+              },
+            ],
+          },
+          parts: [{ text: '现在的第二条消息', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          updatedAt: '2026-04-19T10:01:00.000Z',
+        },
+      ],
+    });
+
+    const expectedTextBytes = Buffer.byteLength('user\n现在的第一条消息\nassistant\n现在的第二条消息', 'utf8');
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).toEqual({
+      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+      messageCount: 2,
+      textBytes: expectedTextBytes,
+    });
+  });
+
   it('falls back to estimated history tokens when the preview model changes', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new RuntimeHostConversationRecordService();
     const conversationId = (service.createConversation({ title: 'Model Switch Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+    const historySignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '你好',
+        createdAt: '2026-04-19T10:00:00.000Z',
+        id: 'assistant-message',
+        parts: [{ text: '你好', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-19T10:00:00.000Z',
+      },
+    ]);
 
     service.replaceConversationHistory(conversationId, {
       expectedRevision: initialHistory.revision,
@@ -456,6 +552,7 @@ describe('RuntimeHostConversationRecordService', () => {
             annotations: [
               {
                 data: {
+                  historySignature,
                   inputTokens: 77,
                   modelId: 'gpt-5.4',
                   outputTokens: 13,

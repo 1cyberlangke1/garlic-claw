@@ -1,5 +1,56 @@
 # Progress
 
+## 2026-05-01 上下文 preview 与自动压缩 token 口径对齐
+
+### 已确认现状
+- 当前顶部 `contextWindowPreview` 和自动压缩阈值判断都走 `RuntimeHostConversationRecordService.readConversationHistoryPreviewTokens(...)`。
+- 这条链路现在会无条件复用最近一条匹配 `providerId/modelId` 的 `conversation.model-usage.inputTokens`。
+- 因为它没有校验“这条 usage 对应的是哪一版历史”，所以历史已经被 summary、covered、新消息改写后，preview 和压缩判断仍可能继续吃旧 usage。
+
+### 对照 `other/opencode`
+- `opencode` 的界面上下文占用直接读取“最后一个已完成 assistant turn 的真实 tokens”。
+- 它的压缩溢出判断也直接吃该 turn 的真实 tokens，不会把旧 usage 伪装成当前历史 preview。
+- 它的结构分段展示才使用字符数估算，因此“真实 usage”与“估算明细”是分层使用，不会混成一条 stale 口径。
+
+### 本轮修正方向
+- 保留“真实 provider usage 优先”的语义。
+- 但要把 usage 绑定到当次真实送模对应的历史快照。
+- 只有当前 preview 历史快照与 usage 记录快照一致时，才复用真实 `inputTokens`；否则回退当前历史估算。
+
+### 已完成修改
+- 新增 `packages/server/src/conversation/conversation-history-signature.ts`：
+  - 统一生成历史快照签名
+  - `createStreamPlan()` 与 preview 读取都复用同一份签名算法
+- `conversation-model-usage.annotation.ts` 新增可选 `historySignature`
+- `ConversationMessagePlanningService.createStreamPlan()` 现在会为本次真实送模对应的历史消息生成签名，并随 stream source 下发
+- `ConversationTaskService` 现在会把该签名和真实 usage 一起写入 `conversation.model-usage`
+- `RuntimeHostConversationRecordService.readConversationHistoryPreviewTokens(...)` 现在只有在：
+  - `providerId/modelId` 匹配
+  - `source === 'provider'`
+  - `historySignature` 与当前历史快照签名一致
+  才会复用真实 `inputTokens`
+- 一旦历史已变化，即使 provider/model 没变，也会退回当前历史估算
+
+### 本轮验证
+- `npm run test -w packages/server -- tests/runtime/host/runtime-host-conversation-record.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/conversation-message-planning.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/context-governance.service.spec.ts` ✅
+- `npm run test -w packages/server -- tests/conversation/conversation-task.service.spec.ts` ✅
+- `npm run typecheck -w packages/server` ✅
+- `npm run smoke:server` ✅
+- `npm run smoke:web-ui` ✅
+
+### 独立 judge
+- 独立 judge 结论：`PASS`
+- 复核确认：
+  - `conversation.model-usage` 已记录 `historySignature`
+  - 真实送模链路会把该签名落进 usage 注解
+  - 顶部 preview 与自动压缩阈值判断共用同一套“签名匹配才复用 usage”的逻辑
+  - 没发现仍会在“同 provider/model 但历史已变”时误复用旧 usage 的旁路
+- judge 提醒的剩余风险：
+  - 当前签名生成发生在 `chat:before-model` hook 之前；本轮目标是“历史快照一致性”，已满足
+  - 若未来还要把 hook 注入内容也纳入“真实 usage 可复用快照”，需要单独扩展签名边界
+
 ## 2026-05-01 回复完成后立即检查上下文压缩
 
 ### 已确认现状

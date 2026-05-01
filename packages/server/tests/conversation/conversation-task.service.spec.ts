@@ -33,6 +33,7 @@ describe('ConversationTaskService', () => {
       assistantMessageId: String(assistantMessage.id),
       conversationId,
       createStream: async () => ({
+        historySignature: 'history-signature-1',
         modelId: 'gpt-5.4',
         providerId: 'openai',
         stream: {
@@ -123,6 +124,7 @@ describe('ConversationTaskService', () => {
       annotations: [
         {
           data: {
+            historySignature: 'history-signature-1',
             inputTokens: 21,
             modelId: 'gpt-5.4',
             outputTokens: 9,

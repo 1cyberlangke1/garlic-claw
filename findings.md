@@ -1,5 +1,21 @@
 # Findings
 
+## 2026-05-01 上下文 preview 与自动压缩 token 口径失真
+
+### 当前错误口径
+- `RuntimeHostConversationRecordService.readConversationHistoryPreviewTokens(...)` 当前不是在读“当前历史的 token”，而是在读“最近一条匹配 provider/model 的 usage.inputTokens”。
+- 这会把“上一轮真实请求的输入 token”直接拿来冒充“当前历史 preview / 自动压缩判断 token”。
+
+### 直接后果
+- 顶部 `100% / 14460 / 10000` 可能只是上一轮请求的 usage，不一定对应当前历史。
+- 当前历史一旦被 summary、covered 或新消息改变，preview 仍可能显示旧 usage。
+- 自动压缩触发判断也走同一 owner，因此会和顶部一起失真。
+
+### 对照 `other/opencode` 的结论
+- `opencode` 把真实 tokens 绑定在具体已完成 assistant turn 上。
+- 它不会把旧 turn 的 usage 直接拿来充当当前历史 preview。
+- 因此要对齐的不是“全退回估算”，而是“真实 usage 只在对应历史快照未变时复用”。
+
 ## 2026-05-01 回复完成后的压缩检查
 
 ### 当前缺口

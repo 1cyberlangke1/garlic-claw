@@ -10,6 +10,7 @@ export type ConversationTaskToolCall = PluginSubagentToolCall & Record<string, J
 export type ConversationTaskToolResult = PluginSubagentToolResult & Record<string, JsonValue>;
 export type ConversationTaskEvent = Extract<SSEEvent, { type: 'finish' | 'message-metadata' | 'message-patch' | 'permission-request' | 'permission-resolved' | 'status' | 'todo-updated' | 'text-delta' | 'tool-call' | 'tool-result' }>;
 export type ResolvedConversationTaskStreamSource = {
+  historySignature?: string;
   modelId: string;
   providerId: string;
   stream: { finishReason?: Promise<unknown> | unknown; fullStream: AsyncIterable<unknown>; usage?: Promise<AiModelUsage | undefined> };
@@ -47,6 +48,7 @@ type ConversationTaskCustomBlockUpdate = { key: string; kind: 'json'; value: Jso
 type ConversationTaskOutcome = { status: 'completed' | 'stopped' } | { error: string; status: 'error' };
 type ConversationTaskSnapshot = Omit<CompletedConversationTaskResult, 'assistantMessageId' | 'conversationId'>;
 type ConversationTaskRuntime = Omit<StartConversationTaskInput, 'createStream'> & {
+  historySignature?: string;
   state: { content: string; metadata?: ChatMessageMetadata; toolCalls: ConversationTaskToolCall[]; toolResults: ConversationTaskToolResult[] };
 };
 
@@ -103,6 +105,7 @@ export class ConversationTaskService {
     try {
       const streamSource = await input.createStream(task.abortController.signal);
       const stream = normalizeConversationTaskStream(streamSource.stream);
+      runtime.historySignature = streamSource.historySignature;
       runtime.modelId = streamSource.modelId;
       runtime.providerId = streamSource.providerId;
       await this.writeTaskSnapshot(runtime, 'streaming');
@@ -119,6 +122,7 @@ export class ConversationTaskService {
       if (usage) {
         runtime.state.metadata = appendConversationModelUsageMetadata(runtime.state.metadata, {
           ...usage,
+          ...(runtime.historySignature ? { historySignature: runtime.historySignature } : {}),
           modelId: runtime.modelId,
           providerId: runtime.providerId,
         });

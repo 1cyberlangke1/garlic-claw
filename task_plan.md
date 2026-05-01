@@ -1,5 +1,30 @@
 # Task Plan
 
+## 2026-05-01 上下文 preview 与自动压缩 token 口径对齐
+
+### 目标
+- [ ] 顶部上下文 preview 与后端自动压缩阈值判断使用同一份 token 口径
+- [ ] 有真实 provider usage 时优先复用真实 `inputTokens`
+- [ ] 仅当当前历史快照与该次真实请求对应快照一致时才复用 usage
+- [ ] 历史已变化时回退到当前历史估算，不能继续吃旧 usage
+- [ ] 补回归测试并完成最小必要验证
+
+### 阶段 A：取证
+- [x] 确认当前 preview 与压缩判断共同依赖 `readConversationHistoryPreviewTokens(...)`
+- [x] 确认当前实现会无条件复用最近一条匹配 provider/model 的 `conversation.model-usage`
+- [x] 对照 `other/opencode`，确认它把真实 tokens 绑定在具体已完成 turn 上，压缩判断不会把旧 turn usage 冒充成当前历史
+
+### 阶段 B：实现
+- [x] 为 usage 注解增加历史快照签名
+- [x] 在真实送模链路写入该签名
+- [x] preview / 压缩判断只在签名匹配时复用真实 usage
+
+### 阶段 C：验证
+- [x] 补 record / planning / governance 回归测试
+- [x] 跑相关后端测试与 typecheck
+- [x] 视改动范围决定是否补 smoke
+- [x] 通过独立 judge 复核
+
 ## 2026-05-01 回复完成后立即检查上下文压缩
 
 ### 目标

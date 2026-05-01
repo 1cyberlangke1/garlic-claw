@@ -8,6 +8,7 @@ import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-ho
 import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-plugin-dispatch.service';
 import { asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/runtime-host-values';
 import { AiVisionService } from '../vision/ai-vision.service';
+import { createConversationHistorySignatureFromModelMessages } from './conversation-history-signature';
 import { ContextGovernanceService, type DeferredInternalCommandAction } from './context-governance.service';
 import type { CompletedConversationTaskResult, ResolvedConversationTaskStreamSource } from './conversation-task.service';
 
@@ -75,8 +76,12 @@ export class ConversationMessagePlanningService {
     const persona = input.persona ?? this.personaService.readCurrentPersona({ context: createConversationHookContext({ activePersonaId: input.activePersonaId, conversationId: input.conversationId, userId: input.userId }), conversationId: input.conversationId });
     await this.contextGovernanceService.rewriteHistoryBeforeModel({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, userId: input.userId });
     await this.runConversationHistoryRewrite({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, userId: input.userId });
-    const internalBeforeModel = await this.contextGovernanceService.applyBeforeModel({ conversationId: input.conversationId, messages: [...persona.beginDialogs, ...await this.buildModelMessages(input.conversationId, input.messageId)], modelId: input.modelId, providerId: input.providerId, systemPrompt: persona.prompt, userId: input.userId });
+    const historyMessages = await this.buildModelMessages(input.conversationId, input.messageId);
+    const internalBeforeModel = await this.contextGovernanceService.applyBeforeModel({ conversationId: input.conversationId, messages: [...persona.beginDialogs, ...historyMessages], modelId: input.modelId, providerId: input.providerId, systemPrompt: persona.prompt, userId: input.userId });
     if (internalBeforeModel.action === 'short-circuit') {return createShortCircuitPlan(internalBeforeModel);}
+    const historySignature = createConversationHistorySignatureFromModelMessages(
+      internalBeforeModel.messages.slice(persona.beginDialogs.length),
+    );
     const beforeModel = await this.applyBeforeModel({ action: 'continue', activePersonaId: persona.personaId, conversationId: input.conversationId, messages: internalBeforeModel.messages, modelId: internalBeforeModel.modelId, providerId: internalBeforeModel.providerId, systemPrompt: internalBeforeModel.systemPrompt, userId: input.userId });
     if (beforeModel.action === 'short-circuit') {return createShortCircuitPlan(beforeModel);}
     const context = createConversationHookContext({ activePersonaId: persona.personaId, conversationId: input.conversationId, modelId: beforeModel.modelId, providerId: beforeModel.providerId, userId: input.userId });
@@ -90,7 +95,7 @@ export class ConversationMessagePlanningService {
       ...(beforeModel.systemPrompt ? { system: beforeModel.systemPrompt } : {}),
       ...(tools ? { tools } : {}),
     });
-    return { modelId: stream.modelId, providerId: stream.providerId, responseSource: 'model', shortCircuitParts: null, stream: { finishReason: stream.finishReason, fullStream: stream.fullStream } };
+    return { historySignature, modelId: stream.modelId, providerId: stream.providerId, responseSource: 'model', shortCircuitParts: null, stream: { finishReason: stream.finishReason, fullStream: stream.fullStream } };
   }
 
   async finalizeTaskResult(result: CompletedConversationTaskResult, responseSource: ConversationResponseSource, shortCircuitParts: ChatMessagePart[] | null): Promise<CompletedConversationTaskResult> {

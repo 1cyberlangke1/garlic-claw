@@ -6,6 +6,7 @@ import type {
 } from '@garlic-claw/shared';
 
 export interface ConversationModelUsageAnnotationData extends AiModelUsage {
+  historySignature?: string;
   modelId: string;
   providerId: string;
 }
@@ -65,6 +66,7 @@ function serializeConversationModelUsageAnnotationData(
 ): JsonObject {
   return {
     ...(data.cachedInputTokens === undefined ? {} : { cachedInputTokens: data.cachedInputTokens }),
+    ...(data.historySignature ? { historySignature: data.historySignature } : {}),
     inputTokens: data.inputTokens,
     modelId: data.modelId,
     outputTokens: data.outputTokens,
@@ -91,6 +93,7 @@ function isConversationModelUsageAnnotationData(
   }
   return typeof value.modelId === 'string'
     && typeof value.providerId === 'string'
+    && (value.historySignature === undefined || typeof value.historySignature === 'string')
     && isTokenCount(value.inputTokens)
     && (value.cachedInputTokens === undefined || isTokenCount(value.cachedInputTokens))
     && isTokenCount(value.outputTokens)
