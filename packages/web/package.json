@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "smoke:browser": "node tests/smoke/browser-smoke.mjs"
+    "smoke:browser": "node tests/smoke/browser-smoke.mjs",
+    "smoke:browser:artifacts": "node tests/smoke/browser-smoke.mjs --artifact-mode always"
   },
   "dependencies": {
     "@garlic-claw/shared": "*",

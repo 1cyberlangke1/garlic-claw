@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
@@ -14,7 +13,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const WEB_DIR = path.resolve(__dirname, '..', '..');
 const PROJECT_ROOT = path.resolve(WEB_DIR, '..', '..');
-const STATE_FILE = path.join(PROJECT_ROOT, 'other', 'dev-processes.json');
 
 const DEFAULT_WEB_ORIGIN = 'http://127.0.0.1:23333';
 const API_ORIGIN = 'http://127.0.0.1:23330/api';
@@ -42,19 +40,25 @@ let browserSmokeCompleted = false;
 let webOrigin = process.env.GARLIC_CLAW_WEB_ORIGIN || DEFAULT_WEB_ORIGIN;
 
 async function main() {
-  const fakeOpenAi = await startFakeOpenAiServer();
-  const tempRoot = path.join(PROJECT_ROOT, 'other', 'tmp');
+  const cli = parseCliArgs(process.argv.slice(2));
+  const tempRoot = path.join(PROJECT_ROOT, 'workspace', 'test-artifacts', 'browser-smoke');
   await fsPromises.mkdir(tempRoot, { recursive: true });
   const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'browser-smoke-'));
   const remotePluginScriptPath = path.join(tempDir, 'remote-plugin.cjs');
-  await prepareRemotePluginScript(remotePluginScriptPath);
-  const serviceSession = await ensureDevServices();
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    baseURL: webOrigin,
-  });
-  const page = await context.newPage();
+  let fakeOpenAi = null;
+  let serviceSession = {
+    mode: 'uninitialized',
+    async stop() {},
+  };
+  let browser = null;
+  let context = null;
+  let page = null;
+  let tracingStarted = false;
+  let runError = null;
+  const pageErrors = [];
+  const consoleErrors = [];
   const handlePageError = (error) => {
+    pageErrors.push(serializeError(error));
     console.error('[browser-smoke:pageerror]', error);
   };
   const handlePageConsole = (message) => {
@@ -66,11 +70,14 @@ async function main() {
       return;
     }
     if (message.type() === 'error') {
+      consoleErrors.push({
+        location: message.location(),
+        text: message.text(),
+        type: message.type(),
+      });
       console.error('[browser-smoke:console]', message.text());
     }
   };
-  page.on('pageerror', handlePageError);
-  page.on('console', handlePageConsole);
   let accessToken = '';
   let createdConversationId = null;
   const createdConversationIds = new Set();
@@ -78,6 +85,23 @@ async function main() {
   let remotePluginHandle = null;
 
   try {
+    fakeOpenAi = await startFakeOpenAiServer();
+    await prepareRemotePluginScript(remotePluginScriptPath);
+    serviceSession = await ensureDevServices();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({
+      baseURL: webOrigin,
+    });
+    await context.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    tracingStarted = true;
+    page = await context.newPage();
+    page.on('pageerror', handlePageError);
+    page.on('console', handlePageConsole);
+
     accessToken = await loginBrowserSmokeAdmin();
     await page.addInitScript((token) => {
       try {
@@ -123,18 +147,41 @@ async function main() {
     browserSmokeCompleted = true;
     page.off('pageerror', handlePageError);
     page.off('console', handlePageConsole);
+  } catch (error) {
+    runError = error;
+    throw error;
   } finally {
+    const keepArtifacts = shouldKeepSmokeArtifacts(cli.artifactMode, !browserSmokeCompleted);
     suppressExpectedTeardownConsoleErrors = true;
-    await page.evaluate(() => {
+    await page?.evaluate(() => {
       window.__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ = true;
     }).catch(() => undefined);
-    if (!browserSmokeCompleted) {
+    if (!browserSmokeCompleted && page) {
       page.off('pageerror', handlePageError);
       page.off('console', handlePageConsole);
     }
+    if (context && tracingStarted) {
+      if (keepArtifacts) {
+        await context.tracing.stop({
+          path: path.join(tempDir, 'playwright-trace.zip'),
+        }).catch(() => undefined);
+      } else {
+        await context.tracing.stop().catch(() => undefined);
+      }
+    }
+    if (keepArtifacts) {
+      await persistBrowserSmokeArtifacts(tempDir, {
+        consoleErrors,
+        error: runError,
+        page,
+        pageErrors,
+        serviceMode: serviceSession.mode,
+        webOrigin,
+      });
+    }
     await Promise.allSettled([
-      context.close(),
-      browser.close(),
+      context?.close?.() ?? Promise.resolve(),
+      browser?.close?.() ?? Promise.resolve(),
     ]);
     await Promise.allSettled([
       cleanupSmokeArtifacts(accessToken, {
@@ -145,9 +192,16 @@ async function main() {
         providerId: PROVIDER_ID,
       }),
       remotePluginHandle?.stop?.() ?? Promise.resolve(),
-      fakeOpenAi.close(),
-      fsPromises.rm(tempDir, { recursive: true, force: true }),
+      fakeOpenAi?.close?.() ?? Promise.resolve(),
+      keepArtifacts
+        ? Promise.resolve()
+        : fsPromises.rm(tempDir, { recursive: true, force: true }),
     ]);
+    if (!keepArtifacts) {
+      await removeEmptyDirectoryChain(tempRoot, path.join(PROJECT_ROOT, 'workspace'));
+    } else {
+      console.error(`[browser-smoke] 已保留${browserSmokeCompleted ? '运行' : '失败'}产物: ${tempDir}`);
+    }
     await serviceSession.stop();
   }
 }
@@ -225,28 +279,6 @@ async function ensureDevServices() {
       });
     },
   };
-}
-
-async function isManagedDevEnvironmentReady() {
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      const payload = JSON.parse(await fsPromises.readFile(STATE_FILE, 'utf8'));
-      const services = payload?.services;
-      if (services && typeof services === 'object') {
-        return await Promise.all([
-          isPortListening(23330),
-          isPortListening(23333),
-        ]).then((values) => values.every(Boolean));
-      }
-    }
-
-    return await Promise.all([
-      isPortListening(23330),
-      isPortListening(23333),
-    ]).then((values) => values.every(Boolean));
-  } catch {
-    return false;
-  }
 }
 
 async function isGarlicWebApp(origin) {
@@ -884,6 +916,48 @@ async function cleanupSmokeArtifacts(accessToken, input) {
   );
 }
 
+async function persistBrowserSmokeArtifacts(tempDir, input) {
+  const summary = {
+    capturedAt: new Date().toISOString(),
+    consoleErrors: input.consoleErrors,
+    error: serializeError(input.error),
+    pageErrors: input.pageErrors,
+    pageUrl: input.page?.url?.() ?? null,
+    serviceMode: input.serviceMode,
+    status: input.error ? 'failed' : 'completed',
+    webOrigin: input.webOrigin,
+  };
+  await fsPromises.writeFile(path.join(tempDir, 'smoke-summary.json'), `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+
+  if (input.page) {
+    await input.page.screenshot({
+      fullPage: true,
+      path: path.join(tempDir, 'page.png'),
+    }).catch(() => undefined);
+    const pageContent = await input.page.content().catch(() => null);
+    if (typeof pageContent === 'string') {
+      await fsPromises.writeFile(path.join(tempDir, 'page.html'), pageContent, 'utf8');
+    }
+  }
+}
+
+async function removeEmptyDirectoryChain(startPath, stopPath) {
+  let currentPath = path.resolve(startPath);
+  const resolvedStopPath = path.resolve(stopPath);
+  while (currentPath.startsWith(resolvedStopPath) && currentPath !== resolvedStopPath) {
+    try {
+      const entries = await fsPromises.readdir(currentPath);
+      if (entries.length > 0) {
+        return;
+      }
+      await fsPromises.rmdir(currentPath);
+      currentPath = path.dirname(currentPath);
+    } catch {
+      return;
+    }
+  }
+}
+
 async function findSmokeConversationIds(headers, smokePrefixRoot) {
   const conversations = await requestJson('/chat/conversations', { headers }).catch(() => []);
   const conversationIds = new Set();
@@ -1056,6 +1130,42 @@ async function waitForHttpReady(url) {
   throw new Error(`等待服务就绪超时: ${url}`);
 }
 
+function parseCliArgs(args) {
+  const config = {
+    artifactMode: normalizeSmokeArtifactMode(
+      process.env.GARLIC_CLAW_BROWSER_SMOKE_ARTIFACT_MODE ?? process.env.GARLIC_CLAW_SMOKE_ARTIFACT_MODE,
+    ),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--artifact-mode') {
+      config.artifactMode = normalizeSmokeArtifactMode(args[index + 1]);
+      index += 1;
+    }
+  }
+
+  return config;
+}
+
+function normalizeSmokeArtifactMode(value) {
+  const normalizedValue = (value ?? 'on-failure').trim().toLowerCase();
+  if (normalizedValue === 'always' || normalizedValue === 'on-failure' || normalizedValue === 'never') {
+    return normalizedValue;
+  }
+  throw new Error('browser smoke artifact mode must be always, on-failure, or never');
+}
+
+function shouldKeepSmokeArtifacts(artifactMode, smokeFailed) {
+  if (artifactMode === 'always') {
+    return true;
+  }
+  if (artifactMode === 'never') {
+    return false;
+  }
+  return smokeFailed;
+}
+
 function resolvePythonCommand() {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
@@ -1100,6 +1210,21 @@ function parseMaybeJson(text) {
   } catch {
     return text;
   }
+}
+
+function serializeError(error) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack ?? null,
+    };
+  }
+  return {
+    message: error ? String(error) : null,
+    name: error ? 'NonError' : null,
+    stack: null,
+  };
 }
 
 async function runCommand(command, args, options) {
