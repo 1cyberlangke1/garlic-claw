@@ -638,7 +638,7 @@ async function verifyMcpPage(page) {
 async function verifyPersonasPage(page) {
   await page.goto('/personas', { waitUntil: 'load' });
   await expectText(page, '人设管理');
-  await expectText(page, '人设索引');
+  await expectText(page, '可用人设');
   await expectText(page, '可用人设');
   await page.getByRole('button', { name: '新建人设' }).click();
   await page.locator('input[placeholder="persona.writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });

@@ -42,7 +42,6 @@
       <section v-if="currentView === 'directory'" class="command-list-panel">
         <div class="panel-header">
           <div>
-            <span class="panel-kicker">Command Directory</span>
             <h2>命令目录</h2>
             <p>按插件查看 slash 命令、别名、保护状态和冲突提示。</p>
           </div>
@@ -146,7 +145,6 @@
       <aside v-else class="command-conflict-panel is-full">
         <div class="panel-header">
           <div>
-            <span class="panel-kicker">Conflict Radar</span>
             <h2>冲突触发词</h2>
             <p>同一触发词命中多个插件时，在这里查看，到对应插件页处理。</p>
           </div>
@@ -318,13 +316,6 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-}
-
-.panel-kicker {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .overview-grid {

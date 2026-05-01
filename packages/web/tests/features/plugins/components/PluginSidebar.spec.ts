@@ -263,7 +263,7 @@ describe('PluginSidebar', () => {
       },
     })
 
-    await wrapper.get('[data-test="plugin-sidebar-filter-attention"]').trigger('click')
+    await wrapper.get('[data-test="plugin-sidebar-filter-attention"] input').setValue(true)
     let titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
     expect(titles).toEqual(['Error Plugin'])
 
@@ -272,7 +272,7 @@ describe('PluginSidebar', () => {
     expect(titles).toEqual([])
     expect(wrapper.text()).toContain('当前筛选下没有匹配插件。')
 
-    await wrapper.get('[data-test="plugin-sidebar-filter-all"]').trigger('click')
+    await wrapper.get('[data-test="plugin-sidebar-filter-all"] input').setValue(true)
     titles = wrapper.findAll('.plugin-item strong').map((node) => node.text())
     expect(titles).toEqual(['Alpha Plugin'])
   })
@@ -343,7 +343,7 @@ describe('PluginSidebar', () => {
 
     expect(wrapper.text()).toContain('匹配 2 / 2')
 
-    await wrapper.get('[data-test="plugin-sidebar-filter-attention"]').trigger('click')
+    await wrapper.get('[data-test="plugin-sidebar-filter-attention"] input').setValue(true)
     expect(wrapper.text()).toContain('匹配 1 / 2')
     expect(wrapper.text()).toContain('当前详情插件未命中筛选条件。')
 

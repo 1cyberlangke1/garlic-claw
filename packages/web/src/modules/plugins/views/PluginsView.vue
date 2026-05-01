@@ -135,7 +135,6 @@
       </section>
 
       <section v-else class="plugin-empty">
-        <span class="empty-kicker">等待插件接入</span>
         <h2>暂无插件</h2>
         <p>启动本地插件或远程插件后，就可以在这里统一查看扩展面和健康快照。</p>
       </section>

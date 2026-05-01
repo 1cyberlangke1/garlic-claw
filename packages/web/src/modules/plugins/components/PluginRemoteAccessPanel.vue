@@ -6,7 +6,6 @@
   >
     <div class="panel-header">
       <div>
-        <span class="panel-kicker">Remote Access</span>
         <h3>远程接入配置</h3>
       </div>
       <ElButton
@@ -196,13 +195,6 @@ function handleSave() {
 .panel-note,
 .validation-error {
   margin: 0;
-}
-
-.panel-kicker {
-  font-size: 0.76rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .panel-note {

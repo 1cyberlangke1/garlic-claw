@@ -2,7 +2,6 @@
   <section class="tool-governance-panel">
     <header class="panel-header">
       <div>
-        <span class="panel-kicker">{{ kicker }}</span>
         <h2>{{ title }}</h2>
         <p>{{ description }}</p>
       </div>
@@ -46,7 +45,6 @@
       <article class="panel-card">
         <div class="panel-card-header">
         <div>
-            <span class="panel-kicker">工具源</span>
             <h3>{{ selectedSource.label }}</h3>
             <p>{{ sourceKindLabel(selectedSource.kind) }} · {{ selectedSource.id }}</p>
           </div>
@@ -93,7 +91,6 @@
       <article class="panel-card">
         <div class="panel-card-header">
           <div>
-            <span class="panel-kicker">工具</span>
             <h3>工具列表</h3>
             <p>按 source 查看并覆盖单个工具的启用状态。</p>
           </div>
@@ -174,14 +171,12 @@ const props = withDefaults(defineProps<{
   sourceKind: ToolSourceKind
   title: string
   description: string
-  kicker?: string
   sourceId?: string | null
   showSourceList?: boolean
   emptyTitle?: string
   emptyDescription?: string
   sourcePlaceholder?: string
 }>(), {
-  kicker: '工具管理',
   sourceId: null,
   showSourceList: true,
   emptyTitle: '暂无工具源',
@@ -458,17 +453,10 @@ defineExpose({
   margin: 0;
 }
 
-.panel-kicker,
 .panel-header p,
 .field span,
 .tool-id {
   color: var(--text-muted);
-}
-
-.panel-kicker {
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .source-list,

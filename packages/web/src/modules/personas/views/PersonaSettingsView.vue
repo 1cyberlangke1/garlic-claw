@@ -97,7 +97,6 @@ function readPersonaAvatarAlt(name?: string | null) {
 
     <section class="hero-grid">
       <article class="hero-card">
-        <span class="hero-kicker">Current Conversation</span>
         <div v-if="currentPersona" class="persona-identity">
           <div class="persona-avatar persona-avatar-large" data-persona-avatar="current">
             <img v-if="currentPersona.avatar" :src="currentPersona.avatar" :alt="readPersonaAvatarAlt(currentPersona.name)" class="persona-avatar-image" />
@@ -134,7 +133,6 @@ function readPersonaAvatarAlt(name?: string | null) {
       <section class="persona-list-card">
         <div class="section-header">
           <div>
-            <span class="section-kicker">人设索引</span>
             <h2>可用人设</h2>
           </div>
           <span class="section-meta">{{ personas.length }} 个</span>
@@ -180,7 +178,6 @@ function readPersonaAvatarAlt(name?: string | null) {
             </div>
             <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
             <div class="persona-heading-copy">
-              <span class="section-kicker">{{ editorMode === 'create' ? '新建人设' : '编辑人设' }}</span>
               <h2>{{ editorMode === 'create' ? '新建人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
             </div>
           </div>
@@ -462,17 +459,10 @@ function readPersonaAvatarAlt(name?: string | null) {
   background: var(--surface-hero-gradient);
 }
 
-.hero-kicker,
-.section-kicker,
 .summary-label {
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.hero-kicker,
-.section-kicker {
-  color: var(--accent);
 }
 
 .persona-source,

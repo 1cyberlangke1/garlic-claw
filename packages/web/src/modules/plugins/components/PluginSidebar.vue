@@ -2,7 +2,6 @@
   <section class="plugin-sidebar">
     <div class="sidebar-header">
       <div class="sidebar-header-copy">
-        <span class="sidebar-kicker">插件索引</span>
         <h2>插件</h2>
         <p>默认聚焦用户可感知插件，系统本地插件按需展开。</p>
       </div>

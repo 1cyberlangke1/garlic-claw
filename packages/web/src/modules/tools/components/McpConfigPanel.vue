@@ -2,7 +2,6 @@
   <section class="panel-section mcp-config-panel">
     <div class="mcp-config-header">
       <div>
-        <span class="panel-kicker">{{ view === 'manage' ? 'MCP Config' : 'MCP Logs' }}</span>
         <h3>{{ view === 'manage' ? 'MCP 配置' : 'MCP 事件日志' }}</h3>
         <p v-if="view === 'manage'">管理 `mcp/servers/` 目录中的 server 定义，保存后会自动重载运行时。</p>
         <p v-else>按 server 查看最近事件记录，避免和配置编辑区同时堆叠展示。</p>

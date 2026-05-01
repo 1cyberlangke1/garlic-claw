@@ -13,7 +13,6 @@
           :class="{ active: capabilities.reasoning }"
         >
           <ElCheckbox :model-value="capabilities.reasoning" @change="toggleReasoning" />
-          <span class="card-kicker">Thinking</span>
           <strong>推理</strong>
           <small>标记该模型具备推理能力。</small>
           <span class="state-pill">{{ capabilities.reasoning ? '已标记' : '未标记' }}</span>
@@ -24,7 +23,6 @@
           :class="{ active: capabilities.toolCall }"
         >
           <ElCheckbox :model-value="capabilities.toolCall" @change="toggleToolCall" />
-          <span class="card-kicker">Tools</span>
           <strong>工具调用</strong>
           <small>标记该模型支持工具调用。</small>
           <span class="state-pill">{{ capabilities.toolCall ? '已标记' : '未标记' }}</span>
@@ -45,7 +43,6 @@
           :class="{ active: capabilities.input.image }"
         >
           <ElCheckbox :model-value="capabilities.input.image" @change="toggleImageInput" />
-          <span class="card-kicker">Input</span>
           <strong>输入图片</strong>
           <small>标记该模型可直接读取用户上传的图片内容。</small>
           <span class="state-pill">{{ capabilities.input.image ? '已标记' : '未标记' }}</span>
@@ -56,7 +53,6 @@
           :class="{ active: capabilities.output.image }"
         >
           <ElCheckbox :model-value="capabilities.output.image" @change="toggleImageOutput" />
-          <span class="card-kicker">Output</span>
           <strong>输出图片</strong>
           <small>标记该模型声明支持图片输出。</small>
           <span class="state-pill">{{ capabilities.output.image ? '已标记' : '未标记' }}</span>
@@ -226,14 +222,6 @@ function toggleImageOutput() {
 .capability-card small {
   color: var(--text-muted);
   line-height: 1.5;
-}
-
-.card-kicker {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
 }
 
 .state-pill {

@@ -37,7 +37,8 @@ describe('McpConfigPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('MCP Config')
+    expect(wrapper.text()).toContain('MCP 配置')
+    expect(wrapper.text()).not.toContain('MCP Config')
     expect(wrapper.text()).toContain('mcp/servers')
     expect(wrapper.text()).toContain('weather-server')
     expect(wrapper.find('[data-test="mcp-name-input"]').element).toHaveProperty('value', 'weather-server')
@@ -130,8 +131,8 @@ describe('McpConfigPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('MCP Logs')
     expect(wrapper.text()).toContain('MCP 事件日志')
+    expect(wrapper.text()).not.toContain('MCP Logs')
     expect(wrapper.find('[data-test="mcp-name-input"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('MCP 日志设置')
   })

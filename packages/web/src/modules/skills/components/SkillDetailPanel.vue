@@ -3,7 +3,6 @@
     <article v-if="skill" class="skill-preview">
       <header class="preview-header">
         <div>
-          <span class="panel-kicker">预览</span>
           <h3>{{ skill.name }}</h3>
         </div>
         <div class="meta-row">
@@ -48,7 +47,6 @@
       <section class="asset-section">
         <header class="asset-header">
           <div>
-            <span class="panel-kicker">资产包</span>
             <h4>目录资产</h4>
           </div>
           <span class="meta-chip">{{ skill.assets.length }} 项</span>

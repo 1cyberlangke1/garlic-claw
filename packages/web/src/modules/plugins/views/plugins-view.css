@@ -75,13 +75,6 @@
   color: var(--text-muted);
 }
 
-.empty-kicker {
-  font-size: 0.76rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--warning);
-}
-
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

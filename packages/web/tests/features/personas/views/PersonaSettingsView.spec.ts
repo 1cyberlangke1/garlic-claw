@@ -106,6 +106,6 @@ describe('PersonaSettingsView', () => {
     expect(wrapper.find('[data-persona-avatar="current"] img').attributes('src')).toBe('https://example.com/default.png')
     expect(wrapper.find('[data-persona-avatar="selected-detail"] img').attributes('src')).toBe('https://example.com/writer.png')
     expect(wrapper.find('[data-persona-avatar="list-persona.writer"] img').attributes('src')).toBe('https://example.com/writer.png')
-    expect((wrapper.find('textarea.prompt-textarea').element as HTMLTextAreaElement).value).toBe('writer prompt')
+    expect((wrapper.find('.prompt-textarea textarea').element as HTMLTextAreaElement).value).toBe('writer prompt')
   })
 })

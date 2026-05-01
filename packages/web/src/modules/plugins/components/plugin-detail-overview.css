@@ -24,15 +24,10 @@
   gap: 10px;
 }
 
-.detail-kicker,
 .tag-label {
   font-size: 0.76rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-}
-
-.detail-kicker {
-  color: var(--accent);
 }
 
 .detail-header h2 {

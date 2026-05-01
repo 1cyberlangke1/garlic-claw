@@ -2,7 +2,6 @@
   <section class="detail-overview">
     <div class="detail-header">
       <div class="detail-copy">
-        <span class="detail-kicker">{{ runtimeKindLabel(plugin) }}</span>
         <h2>{{ plugin.displayName ?? plugin.name }}</h2>
         <p>{{ plugin.description ?? '当前插件没有额外描述。' }}</p>
         <div class="detail-identity">

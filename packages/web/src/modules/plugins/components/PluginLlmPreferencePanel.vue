@@ -2,7 +2,6 @@
   <section class="plugin-llm-panel">
     <div class="panel-header">
       <div>
-        <span class="panel-kicker">LLM Routing</span>
         <h3>插件模型策略</h3>
         <p>默认继承主对话当前使用的 provider / model；如果没有对话上下文，则回退到系统默认模型。</p>
       </div>
@@ -175,16 +174,9 @@ function submit() {
 }
 
 .panel-header p,
-.panel-kicker,
 .field span,
 .panel-note {
   color: var(--text-muted);
-}
-
-.panel-kicker {
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .field-grid,

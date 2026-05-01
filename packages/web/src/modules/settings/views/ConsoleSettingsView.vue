@@ -105,17 +105,6 @@ function handleToggleDarkMode() {
   max-width: 720px;
 }
 
-.settings-kicker,
-.settings-section-kicker {
-  display: inline-block;
-  margin-bottom: 8px;
-  color: var(--shell-active);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .hero-icon {
   vertical-align: -0.15em;
   margin-right: 6px;
