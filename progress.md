@@ -290,10 +290,40 @@
   - `npm run smoke:server`
   - `npm run smoke:web-ui`
 
-### 当前未收口
-- 插件删除后的事件日志文件仍会残留，并在同 ID 重建后被复用：
-  - 当前结论是 owner 应收回 `PluginPersistenceService`
-  - 若要保留删除审计，需要和活跃插件日志分仓，不能继续写回 `log/plugins/<pluginId>/events.json`
+### 阶段 J 补充修复
+- 插件事件日志生命周期已收口到 `PluginPersistenceService`：
+  - `deletePlugin()` 会删除活跃插件日志目录，并由 persistence owner 自己补记 `plugin:deleted` detached audit
+  - `dropPluginRecords()` 会同步删除对应活跃插件日志目录
+  - `recordDetachedPluginEvent()` 改为写入独立删除审计路径，不再写回活跃插件日志
+  - detached audit 不再受活跃日志 `maxFileSizeMb = 0` 开关影响
+- `RuntimeEventLogService` 现在提供两类底层原语：
+  - `deleteLogs('plugin', pluginId)` 负责删除活跃日志目录
+  - `appendDetachedPluginAudit(pluginId, ...)` 负责把删除审计写到 `log/deleted-plugins/<pluginId>/events.json`
+- 当前行为对齐目标：
+  - 删除或掉盘后不会再让同 `pluginId` 重建继承旧活跃日志
+  - 删除审计仍然保留，但与活跃插件日志分仓
+
+### 阶段 J 补充回归
+- `tests/plugin/persistence/plugin-persistence.service.spec.ts`
+  - 删除插件后，活跃日志会被清空；即使活跃日志已禁用，删除审计仍写入独立路径，同 ID 重建不会继承旧日志
+  - `dropPluginRecords()` 后，活跃日志会被清空，同 ID 重建不会继承旧日志
+- `tests/adapters/http/plugin/plugin.controller.spec.ts`
+  - controller 删除插件时不再自己补 detached audit，删除审计 owner 已回到 persistence
+
+### 阶段 J 补充验证
+- 已通过：
+  - `npm run test -w packages/server -- tests/plugin/persistence/plugin-persistence.service.spec.ts tests/adapters/http/plugin/plugin.controller.spec.ts tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts`
+  - `npm run typecheck -w packages/server`
+  - `npm run lint`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 阶段 J 当前状态
+- 第一轮独立 judge 先判 `FAIL`：
+  - detached audit 仍受活跃日志开关影响
+  - 显式删除审计还停在 controller 手工编排
+- 已按 judge 意见修正后复跑验证，并由独立 judge 复核 `PASS`。
+- 阶段 J 现在可以提交。
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

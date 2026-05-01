@@ -65,13 +65,11 @@ export class PluginController {
 
   @Delete('plugins/:pluginId')
   deletePlugin(@Param('pluginId') pluginId: string) {
-    const eventLog = this.pluginPersistenceService.getPluginEventLog(pluginId);
     const deleted = this.pluginPersistenceService.deletePlugin(pluginId);
     this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
     this.runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
     this.runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
     this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
-    this.pluginPersistenceService.recordDetachedPluginEvent(pluginId, eventLog, { level: 'warn', message: `Deleted plugin ${pluginId}`, type: 'plugin:deleted' });
     return deleted;
   }
 

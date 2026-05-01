@@ -136,15 +136,29 @@
   - 再把 source 标成 `connected: false / health: error`
   - 保留 tool source 可见，但 executable client 不再残留
 
-## 2026-05-01 阶段 J 待处理 findings
+### `packages/server/src/plugin/persistence/plugin-persistence.service.ts`
+- 插件事件日志生命周期 owner 已收回 `PluginPersistenceService`。
+- 当前行为改为：
+  - `deletePlugin()` 删除活跃插件日志目录，并由 persistence owner 自己补记 `plugin:deleted` detached audit
+  - `dropPluginRecords()` 删除对应活跃插件日志目录
+  - `recordDetachedPluginEvent()` 只写入 detached 审计路径，不再写回活跃插件日志
+  - detached audit 至少保留 `1 MB` 审计空间，不再受活跃日志关闭开关影响
+
+### `packages/server/src/runtime/log/runtime-event-log.service.ts`
+- `RuntimeEventLogService` 现在只负责底层日志原语，不再隐式承担插件删除代际语义。
+- 新增两个清晰原语：
+  - `deleteLogs(kind, entityId)` 删除活跃日志目录
+  - `appendDetachedPluginAudit(pluginId, ...)` 把删除审计写到 `log/deleted-plugins/<pluginId>/events.json`
+- 这样删除审计与活跃插件日志分仓后，同 `pluginId` 重建不会再继承旧活跃日志。
+
+## 2026-05-01 阶段 J 事件日志生命周期结论
 
 ### `packages/server/src/plugin/persistence/plugin-persistence.service.ts`
-- 删除本地/远程插件后，事件日志文件仍会残留在 `log/plugins/<pluginId>/events.json`。
-- 由于日志路径只有 `pluginId` 没有代际概念，同 ID 重建后会继承旧日志。
-- 更合适的 owner 在 `PluginPersistenceService`：
-  - 统一接管 delete / drop / detached event 的生命周期
-  - `RuntimeEventLogService` 只提供底层删日志或归档原语
-- 若要保留删除审计，最小可行方向应是“删除审计与活跃插件日志分仓”，不能继续把 detached delete/reload 事件写回活跃插件日志路径。
+- 删除本地/远程插件后，事件日志生命周期现在由 `PluginPersistenceService` 统一接管。
+- 删除审计与活跃插件日志已经分仓：
+  - 活跃日志：`log/plugins/<pluginId>/events.json`
+  - 删除审计：`log/deleted-plugins/<pluginId>/events.json`
+- 因为代际隔离已回到真实 owner，同 `pluginId` 重建不会再继承旧活跃日志。
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

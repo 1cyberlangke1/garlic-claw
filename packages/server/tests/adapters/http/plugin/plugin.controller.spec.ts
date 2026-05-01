@@ -587,12 +587,7 @@ describe('PluginController', () => {
     ).toThrow(BadRequestException);
   });
 
-  it('deletes plugins through persistence owner and records plugin deletion events', async () => {
-    pluginPersistenceService.getPluginEventLog.mockReturnValue({
-      enabled: true,
-      maxFileSizeMb: 10,
-      maxFiles: 5,
-    });
+  it('deletes plugins through persistence owner and cleans current runtime state', async () => {
     pluginPersistenceService.deletePlugin.mockReturnValue({
       pluginId: 'remote.echo',
     });
@@ -605,19 +600,7 @@ describe('PluginController', () => {
     expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('remote.echo');
     expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
     expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:remote.echo');
-    expect(pluginPersistenceService.recordDetachedPluginEvent).toHaveBeenCalledWith(
-      'remote.echo',
-      {
-        enabled: true,
-        maxFileSizeMb: 10,
-        maxFiles: 5,
-      },
-      {
-        level: 'warn',
-        message: 'Deleted plugin remote.echo',
-        type: 'plugin:deleted',
-      },
-    );
+    expect(pluginPersistenceService.recordDetachedPluginEvent).not.toHaveBeenCalled();
   });
 
   it('does not record plugin deleted events when the delete request is rejected', () => {
