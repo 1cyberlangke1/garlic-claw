@@ -13,6 +13,14 @@ interface ConversationProviderSummary {
   defaultModel?: string
 }
 
+export type ChatModelSelectionSource = 'default' | 'fallback' | 'history' | 'manual'
+
+export interface ResolvedChatModelSelection {
+  providerId: string
+  modelId: string
+  source: ChatModelSelectionSource
+}
+
 export function findLatestAssistantSelection(messages: ChatMessage[]) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -33,27 +41,45 @@ export function findLatestAssistantSelection(messages: ChatMessage[]) {
 export async function ensureChatModelSelection(params: {
   selectedProvider: Ref<string | null>
   selectedModel: Ref<string | null>
+  selectedSource?: Ref<ChatModelSelectionSource | null>
   messages: ChatMessage[]
+  force?: boolean
+  preferred?: {
+    providerId?: string | null
+    modelId?: string | null
+  }
+  preferredSource?: ChatModelSelectionSource
 }) {
-  if (params.selectedProvider.value && params.selectedModel.value) {
+  if (!params.force && params.selectedProvider.value && params.selectedModel.value) {
     return
   }
 
   const resolved = await resolveChatModelSelection(
-    findLatestAssistantSelection(params.messages),
+    params.preferred ?? findLatestAssistantSelection(params.messages),
+    params.preferredSource,
   )
   if (!resolved) {
+    if (params.force) {
+      params.selectedProvider.value = null
+      params.selectedModel.value = null
+      if (params.selectedSource) {
+        params.selectedSource.value = null
+      }
+    }
     return
   }
 
   params.selectedProvider.value = resolved.providerId
   params.selectedModel.value = resolved.modelId
+  if (params.selectedSource) {
+    params.selectedSource.value = resolved.source
+  }
 }
 
 export async function resolveChatModelSelection(preferred: {
   providerId?: string | null
   modelId?: string | null
-}): Promise<{ providerId: string; modelId: string } | null> {
+}, preferredSource: ChatModelSelectionSource = 'history'): Promise<ResolvedChatModelSelection | null> {
   const providers = await listAvailableProvidersSafely()
 
   if (preferred.providerId && preferred.modelId) {
@@ -64,6 +90,7 @@ export async function resolveChatModelSelection(preferred: {
         return {
           providerId: preferred.providerId,
           modelId: preferred.modelId,
+          source: preferredSource,
         }
       }
     }
@@ -75,6 +102,7 @@ export async function resolveChatModelSelection(preferred: {
       return {
         providerId: matchedProviders[0].id,
         modelId: preferred.modelId,
+        source: preferredSource,
       }
     }
   }
@@ -92,6 +120,7 @@ export async function resolveChatModelSelection(preferred: {
       return {
         providerId: provider.id,
         modelId: provider.defaultModel,
+        source: 'fallback',
       }
     }
 
@@ -100,6 +129,7 @@ export async function resolveChatModelSelection(preferred: {
       return {
         providerId: provider.id,
         modelId: models[0].id,
+        source: 'fallback',
       }
     }
   }
@@ -130,7 +160,7 @@ async function findProvidersByModelId(
 async function resolveProviderSelection(
   providers: ConversationProviderSummary[],
   selection: Pick<AiDefaultProviderSelection, 'providerId' | 'modelId'>,
-): Promise<{ providerId: string; modelId: string } | null> {
+): Promise<ResolvedChatModelSelection | null> {
   if (!selection.providerId || !selection.modelId) {
     return null
   }
@@ -148,6 +178,7 @@ async function resolveProviderSelection(
   return {
     providerId: provider.id,
     modelId: selection.modelId,
+    source: 'default',
   }
 }
 

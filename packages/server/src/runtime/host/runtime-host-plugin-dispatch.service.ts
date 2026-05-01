@@ -87,12 +87,17 @@ export class RuntimeHostPluginDispatchService {
   }
 
   private createPluginTransport(plugin: RegisteredPluginRecord, context: PluginCallContext) {
-    return plugin.manifest.runtime === 'local'
-      ? createPluginAuthorTransportExecutor({
-          createExecutionContext: () => ({ callContext: context, host: this.createBuiltinHostFacade(plugin.pluginId, context) }),
-          definition: this.builtinPluginRegistryService.getDefinition(plugin.pluginId),
-        })
-      : this.runtimeGatewayRemoteTransportService.createRemoteTransport(plugin.pluginId);
+    if (plugin.manifest.runtime !== 'local') {
+      return this.runtimeGatewayRemoteTransportService.createRemoteTransport(plugin.pluginId);
+    }
+    const localDefinition = this.pluginBootstrapService.getLocalDefinition(plugin.pluginId);
+    return createPluginAuthorTransportExecutor({
+      createExecutionContext: () => ({ callContext: context, host: this.createBuiltinHostFacade(plugin.pluginId, context) }),
+      definition: localDefinition.definition,
+      ...(localDefinition.transportGovernance
+        ? { governance: localDefinition.transportGovernance }
+        : {}),
+    });
   }
 
   private createBuiltinHostFacade(pluginId: string, context: PluginCallContext) {

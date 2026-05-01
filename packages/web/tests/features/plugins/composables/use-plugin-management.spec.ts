@@ -1,6 +1,7 @@
 import { defineComponent, ref } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
 import type {
   PluginLlmPreference,
   PluginConversationSessionInfo,
@@ -9,6 +10,8 @@ import type {
 } from '@garlic-claw/shared'
 import * as pluginManagementData from '@/features/plugins/composables/plugin-management.data'
 import { usePluginManagement } from '@/features/plugins/composables/use-plugin-management'
+
+enableAutoUnmount(afterEach)
 
 vi.mock('@/features/plugins/composables/plugin-management.data', async () => {
   const actual = await vi.importActual<typeof import('@/features/plugins/composables/plugin-management.data')>('@/features/plugins/composables/plugin-management.data')
@@ -94,6 +97,7 @@ function createDetailSnapshot(input: {
 
 describe('usePluginManagement', () => {
   beforeEach(() => {
+    vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
 
@@ -388,5 +392,44 @@ describe('usePluginManagement', () => {
         'conversation-1': false,
       },
     })
+  })
+
+  it('refreshes selected plugin llm route details after provider-model config changes', async () => {
+    const initialPlugin: PluginInfo = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.demo',
+      displayName: 'Demo Plugin',
+    })
+
+    vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([initialPlugin])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot)
+      .mockResolvedValueOnce(createDetailSnapshot({}))
+      .mockResolvedValueOnce(createDetailSnapshot({}))
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await flushPromises()
+
+    expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
+      'builtin.demo',
+      { limit: 50 },
+      '',
+    )
+    expect(state.selectedPluginName.value).toBe('builtin.demo')
   })
 })

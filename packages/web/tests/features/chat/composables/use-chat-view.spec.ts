@@ -1,6 +1,7 @@
 import { defineComponent, nextTick, reactive, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
 import * as chatViewData from '@/features/chat/composables/chat-view.data'
 import { useChatView } from '@/features/chat/composables/use-chat-view'
 
@@ -326,5 +327,33 @@ describe('useChatView', () => {
     await flushPromises()
 
     expect(state.retryActionLabel.value).toBe('发送')
+  })
+
+  it('reloads current model capabilities after provider-model config changes', async () => {
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await flushPromises()
+
+    expect(chatViewData.loadModelCapabilities).toHaveBeenCalledWith(
+      'demo-provider',
+      'text-only-model',
+    )
+    expect(state.selectedCapabilities.value?.input.image).toBe(false)
   })
 })

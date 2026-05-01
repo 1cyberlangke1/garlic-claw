@@ -20,7 +20,9 @@ export async function bootstrapHttpApp(): Promise<void> {
       transform: true,
     }),
   );
-  app.get(PluginBootstrapService).bootstrapBuiltins();
+  const pluginBootstrapService = app.get(PluginBootstrapService);
+  pluginBootstrapService.bootstrapBuiltins();
+  pluginBootstrapService.bootstrapProjectPlugins();
 
   await app.listen(port);
   void app.get(BootstrapUserService).runStartupWarmup();

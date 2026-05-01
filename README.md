@@ -28,7 +28,7 @@ packages/
   web/         Vue 3 前端，开发 :23333
   shared/      共享类型
   plugin-sdk/  插件 SDK
-  plugins/     示例插件
+  config/plugins/     本地/示例插件
 config/
   ai/          AI provider 配置
   mcp/         MCP 配置

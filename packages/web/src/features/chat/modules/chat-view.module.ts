@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, ref, watch } from 'vue'
 import type {
   AiModelCapabilities,
   ChatMessagePart,
@@ -9,6 +9,7 @@ import {
   loadModelCapabilities,
   loadVisionFallbackEnabled,
 } from '@/features/chat/composables/chat-view.data'
+import { subscribeInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 
 import type { useChatStore } from '@/features/chat/store/chat'
 import {
@@ -146,6 +147,19 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     },
     { immediate: true },
   )
+  const removeInternalConfigChangedListener = subscribeInternalConfigChanged(
+    ({ scope }) => {
+      if (scope !== 'provider-models') {
+        return
+      }
+      void refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
+    },
+  )
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
+      removeInternalConfigChangedListener()
+    })
+  }
   void refreshVisionFallbackAvailability()
 
   /**

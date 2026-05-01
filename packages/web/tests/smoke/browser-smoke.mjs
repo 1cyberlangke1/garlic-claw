@@ -649,12 +649,8 @@ async function verifyRuntimeToolsSettingsPage(page) {
   await page.getByRole('button', { exact: true, name: '执行工具' }).click();
   await page.getByRole('heading', { name: '执行工具' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'bash 执行后端');
-  const collapsedToggle = page.locator('button.collapsed-toggle').first();
-  if (await collapsedToggle.count() > 0) {
-    await collapsedToggle.click();
-    await expectText(page, '收起高级配置');
-    await expectText(page, 'bash 输出');
-  }
+  assert.equal(await page.locator('button.collapsed-toggle').count(), 0, '执行工具设置不应再出现高级配置折叠按钮');
+  await expectText(page, 'bash 输出');
   await expectText(page, '工具启用状态');
   await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }

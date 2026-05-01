@@ -89,6 +89,10 @@ export function useProviderSettings() {
   let discoveryRequestId = 0
   let connectionTestRequestId = 0
 
+  function emitProviderModelsChanged() {
+    emitInternalConfigChanged({ scope: 'provider-models' })
+  }
+
   onMounted(() => {
     void refreshAll()
   })
@@ -194,6 +198,7 @@ export function useProviderSettings() {
     showProviderDialog.value = false
     await saveProviderConfig(provider)
     await refreshAll(provider.id)
+    emitProviderModelsChanged()
   }
 
   async function deleteSelectedProvider() {
@@ -202,6 +207,7 @@ export function useProviderSettings() {
     }
     await deleteProviderConfig(selectedProvider.value.id)
     await refreshAll()
+    emitProviderModelsChanged()
   }
 
   async function addModel(payload: { modelId: string; name?: string }) {
@@ -210,6 +216,7 @@ export function useProviderSettings() {
     }
     await addProviderModel(selectedProvider.value.id, payload.modelId, payload.name)
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitProviderModelsChanged()
   }
 
   /**
@@ -271,6 +278,7 @@ export function useProviderSettings() {
       modelIds,
     )
     await reloadSelectedProvider(providerId)
+    emitProviderModelsChanged()
   }
 
   async function deleteModel(modelId: string) {
@@ -279,6 +287,7 @@ export function useProviderSettings() {
     }
     await deleteProviderModel(selectedProvider.value.id, modelId)
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitProviderModelsChanged()
   }
 
   async function setDefaultModel(modelId: string) {
@@ -303,6 +312,7 @@ export function useProviderSettings() {
           }
         : provider,
     )
+    emitProviderModelsChanged()
   }
 
   /**
@@ -323,6 +333,7 @@ export function useProviderSettings() {
       payload.capabilities,
     )
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitProviderModelsChanged()
   }
 
   async function updateContextLength(payload: {
@@ -339,7 +350,7 @@ export function useProviderSettings() {
       payload.contextLength,
     )
     await reloadSelectedProvider(selectedProvider.value.id)
-    emitInternalConfigChanged({ scope: 'provider-models' })
+    emitProviderModelsChanged()
   }
 
   /**

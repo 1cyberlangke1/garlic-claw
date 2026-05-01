@@ -1,5 +1,7 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
+import * as aiApi from '@/features/ai-settings/api/ai'
 import SchemaConfigForm from '@/features/config/components/SchemaConfigForm.vue'
 
 vi.mock('@/features/ai-settings/api/ai', () => ({
@@ -38,7 +40,13 @@ vi.mock('@/features/plugins/api/plugins', () => ({
   ]),
 }))
 
+enableAutoUnmount(afterEach)
+
 describe('SchemaConfigForm', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('emits nested config values from object-tree schema', async () => {
     const wrapper = mount(SchemaConfigForm, {
       props: {
@@ -321,10 +329,6 @@ describe('SchemaConfigForm', () => {
 
     await wrapper.get('select').setValue('advanced')
 
-    expect(wrapper.text()).toContain('展开高级配置')
-
-    await wrapper.get('button.collapsed-toggle').trigger('click')
-
     expect(wrapper.text()).toContain('高级设置')
     expect(wrapper.text()).toContain('注意：')
     expect(wrapper.text()).toContain('谨慎修改')
@@ -425,12 +429,9 @@ describe('SchemaConfigForm', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('展开高级配置')
     const backendInput = wrapper.get('select.config-input')
     expect((backendInput.element as HTMLSelectElement).value).toBe('native-shell')
     await backendInput.setValue(process.platform === 'win32' ? 'just-bash' : 'native-shell')
-
-    await wrapper.get('button.collapsed-toggle').trigger('click')
 
     expect(wrapper.text()).toContain('bash 输出治理')
     await wrapper.get('button').trigger('click')
@@ -447,5 +448,58 @@ describe('SchemaConfigForm', () => {
         },
       ],
     ])
+  })
+
+  it('refreshes provider selector options after provider-model config changes', async () => {
+    vi.mocked(aiApi.listAiProviders)
+      .mockResolvedValueOnce([
+        {
+          id: 'openai',
+          name: 'OpenAI',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'openai',
+          name: 'OpenAI',
+        },
+        {
+          id: 'deepseek',
+          name: 'DeepSeek',
+        },
+      ])
+
+    const wrapper = mount(SchemaConfigForm, {
+      props: {
+        saving: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              targetProviderId: {
+                type: 'string',
+                specialType: 'selectProvider',
+              },
+            },
+          },
+          values: {
+            targetProviderId: 'openai',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPromises()
+
+    const options = wrapper.findAll('option').map((node) => node.text())
+    expect(options).toContain('OpenAI')
+    expect(options).toContain('DeepSeek')
   })
 })

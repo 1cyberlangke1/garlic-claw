@@ -1,12 +1,15 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ModelQuickInput from '@/components/ModelQuickInput.vue'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
 import * as aiApi from '@/features/ai-settings/api/ai'
 
 vi.mock('@/features/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn(),
   listAiModels: vi.fn(),
 }))
+
+enableAutoUnmount(afterEach)
 
 function createProvider(id: string, available = true) {
   return {
@@ -88,5 +91,30 @@ describe('ModelQuickInput', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.suggestion-item')).toHaveLength(0)
+  })
+
+  it('reloads suggestions after provider-model config changes', async () => {
+    vi.mocked(aiApi.listAiProviders)
+      .mockResolvedValueOnce([createProvider('provider-a')])
+      .mockResolvedValueOnce([createProvider('provider-b')])
+    vi.mocked(aiApi.listAiModels)
+      .mockResolvedValueOnce([createModel('provider-a', 'model-a')])
+      .mockResolvedValueOnce([createModel('provider-b', 'model-b')])
+
+    const wrapper = mount(ModelQuickInput)
+
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await flushPromises()
+    await wrapper.find('input').trigger('focus')
+    await flushPromises()
+
+    expect(vi.mocked(aiApi.listAiProviders).mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.text()).toContain('provider-b')
+    expect(wrapper.text()).toContain('model-b')
   })
 })

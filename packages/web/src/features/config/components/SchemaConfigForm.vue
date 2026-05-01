@@ -50,6 +50,7 @@ import type {
   PluginSubagentTypeSummary,
 } from '@garlic-claw/shared'
 import { listAiProviders } from '@/features/ai-settings/api/ai'
+import { subscribeInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 import SchemaConfigNodeRenderer from '@/features/config/components/SchemaConfigNodeRenderer.vue'
 import { listPersonas } from '@/features/personas/api/personas'
 import { listSubagentTypes } from '@/features/plugins/api/plugins'
@@ -101,6 +102,12 @@ const headerClass = computed(() =>
 )
 const committedDraftSignature = ref('{}')
 const draftChangeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const unsubscribeInternalConfigChanged = subscribeInternalConfigChanged(({ scope }) => {
+  if (scope !== 'provider-models' || !rootSchema.value || !schemaNeedsProviderOptions(rootSchema.value)) {
+    return
+  }
+  void refreshSpecialOptions(rootSchema.value)
+})
 
 watch(
   () => props.snapshot,
@@ -144,37 +151,42 @@ watch(
 
 onBeforeUnmount(() => {
   clearDraftChangeTimer()
+  unsubscribeInternalConfigChanged()
 })
 
 watch(
   rootSchema,
   async (nextSchema) => {
-    sourceError.value = null
-    if (!nextSchema) {
-      specialOptions.providers = []
-      specialOptions.personas = []
-      specialOptions.subagentTypes = []
-      return
-    }
-
-    try {
-      const [providers, personas, subagentTypes] = await Promise.all([
-        schemaNeedsProviderOptions(nextSchema) ? listAiProviders() : Promise.resolve([]),
-        schemaNeedsPersonaOptions(nextSchema) ? listPersonas() : Promise.resolve([]),
-        schemaNeedsSubagentTypeOptions(nextSchema) ? listSubagentTypes() : Promise.resolve([]),
-      ])
-      specialOptions.providers = providers
-      specialOptions.personas = personas
-      specialOptions.subagentTypes = subagentTypes
-    } catch (error) {
-      specialOptions.providers = []
-      specialOptions.personas = []
-      specialOptions.subagentTypes = []
-      sourceError.value = error instanceof Error ? error.message : '加载配置选择器数据失败'
-    }
+    await refreshSpecialOptions(nextSchema)
   },
   { immediate: true },
 )
+
+async function refreshSpecialOptions(nextSchema: PluginConfigSchema | undefined) {
+  sourceError.value = null
+  if (!nextSchema) {
+    specialOptions.providers = []
+    specialOptions.personas = []
+    specialOptions.subagentTypes = []
+    return
+  }
+
+  try {
+    const [providers, personas, subagentTypes] = await Promise.all([
+      schemaNeedsProviderOptions(nextSchema) ? listAiProviders() : Promise.resolve([]),
+      schemaNeedsPersonaOptions(nextSchema) ? listPersonas() : Promise.resolve([]),
+      schemaNeedsSubagentTypeOptions(nextSchema) ? listSubagentTypes() : Promise.resolve([]),
+    ])
+    specialOptions.providers = providers
+    specialOptions.personas = personas
+    specialOptions.subagentTypes = subagentTypes
+  } catch (error) {
+    specialOptions.providers = []
+    specialOptions.personas = []
+    specialOptions.subagentTypes = []
+    sourceError.value = error instanceof Error ? error.message : '加载配置选择器数据失败'
+  }
+}
 
 function applyDraft(nextValue: JsonValue | undefined) {
   draft.value = isJsonObject(nextValue) ? copyJsonObject(nextValue) : {}

@@ -1,4 +1,4 @@
-import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef, triggerRef } from "vue";
+import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef, triggerRef, watch } from "vue";
 import type {
   ChatMessagePart,
   Conversation,
@@ -30,7 +30,11 @@ import {
   stopConversationMessageRecord,
   updateConversationMessageRecord,
 } from "@/features/chat/modules/chat-conversation.data";
-import { ensureChatModelSelection } from "@/features/chat/modules/chat-model-selection";
+import {
+  ensureChatModelSelection,
+  findLatestAssistantSelection,
+  type ChatModelSelectionSource,
+} from "@/features/chat/modules/chat-model-selection";
 import {
   getRetryableMessageId,
   removeMessage,
@@ -38,7 +42,7 @@ import {
   replaceOrAppendMessage,
 } from "@/features/chat/store/chat-store.runtime";
 import {
-  INTERNAL_CONFIG_CHANGED_EVENT,
+  subscribeInternalConfigChanged,
   type InternalConfigChangedDetail,
 } from "@/features/ai-settings/internal-config-change";
 import type {
@@ -75,6 +79,7 @@ export function createChatStoreModule() {
   const recoveryTimer = ref<number | null>(null);
   const selectedProvider = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
+  const selectedModelSource = ref<ChatModelSelectionSource | null>(null);
   const queuedSendRequestsByConversation = shallowRef<Record<string, QueuedChatSendRequest[]>>({});
   const streamState = {
     currentConversationId,
@@ -94,7 +99,10 @@ export function createChatStoreModule() {
   let conversationContextWindowRequestId = 0;
   let conversationRuntimePermissionRequestId = 0;
   let conversationTodoRequestId = 0;
-  let pendingContextWindowRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingConfigRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingConfigRefreshScope: InternalConfigChangedDetail["scope"] | null = null;
+  let bufferedConfigRefreshConversationId: string | null = null;
+  let bufferedConfigRefreshScope: InternalConfigChangedDetail["scope"] | null = null;
 
   const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
   const retryableMessageId = computed(() =>
@@ -148,6 +156,9 @@ export function createChatStoreModule() {
     contextWindowPreview.value = null;
     selectedProvider.value = null;
     selectedModel.value = null;
+    selectedModelSource.value = null;
+    bufferedConfigRefreshConversationId = null;
+    bufferedConfigRefreshScope = null;
     pendingRuntimePermissions.value = [];
     todoItems.value = [];
     replaceMessages([]);
@@ -176,42 +187,57 @@ export function createChatStoreModule() {
       : nextMessages;
   }
 
-  function handleInternalConfigChanged(rawEvent: Event) {
-    if (!(rawEvent instanceof CustomEvent)) {
+  function handleInternalConfigChanged(detail: InternalConfigChangedDetail) {
+    if (detail.scope !== "context-governance" && detail.scope !== "provider-models") {
       return;
     }
-    const event = rawEvent as CustomEvent<InternalConfigChangedDetail>;
-    if (
-      event.detail.scope !== "context-governance" &&
-      event.detail.scope !== "provider-models"
-    ) {
+    if (!currentConversationId.value) {
       return;
     }
-    if (!currentConversationId.value || streaming.value) {
+    if (streaming.value) {
+      bufferedConfigRefreshConversationId = currentConversationId.value;
+      bufferedConfigRefreshScope = (
+        detail.scope === "provider-models" || bufferedConfigRefreshScope === "provider-models"
+      )
+        ? "provider-models"
+        : "context-governance";
       return;
     }
-    scheduleContextWindowRefresh(currentConversationId.value);
+    scheduleConfigRefresh(currentConversationId.value, detail.scope);
   }
 
   if (typeof window !== "undefined") {
     removeGlobalInternalConfigChangedListener?.();
-    window.addEventListener(INTERNAL_CONFIG_CHANGED_EVENT, handleInternalConfigChanged);
+    const removeListener = subscribeInternalConfigChanged(handleInternalConfigChanged);
     removeGlobalInternalConfigChangedListener = () => {
-      window.removeEventListener(
-        INTERNAL_CONFIG_CHANGED_EVENT,
-        handleInternalConfigChanged,
-      );
+      removeListener();
       if (removeGlobalInternalConfigChangedListener) {
         removeGlobalInternalConfigChangedListener = null;
       }
     };
     if (getCurrentScope()) {
       onScopeDispose(() => {
-        clearPendingContextWindowRefreshTimer();
+        clearPendingConfigRefreshTimer();
         removeGlobalInternalConfigChangedListener?.();
       });
     }
   }
+
+  watch(streaming, (isStreaming) => {
+    if (
+      isStreaming ||
+      !bufferedConfigRefreshConversationId ||
+      currentConversationId.value !== bufferedConfigRefreshConversationId ||
+      !bufferedConfigRefreshScope
+    ) {
+      return;
+    }
+    const conversationId = bufferedConfigRefreshConversationId;
+    const scope = bufferedConfigRefreshScope;
+    bufferedConfigRefreshConversationId = null;
+    bufferedConfigRefreshScope = null;
+    scheduleConfigRefresh(conversationId, scope);
+  });
 
   function invalidateConversationRequests() {
     conversationListRequestId += 1;
@@ -221,23 +247,37 @@ export function createChatStoreModule() {
     conversationTodoRequestId += 1;
   }
 
-  function scheduleContextWindowRefresh(conversationId: string) {
-    clearPendingContextWindowRefreshTimer();
-    pendingContextWindowRefreshTimer = setTimeout(() => {
-      pendingContextWindowRefreshTimer = null;
+  function scheduleConfigRefresh(
+    conversationId: string,
+    scope: InternalConfigChangedDetail["scope"],
+  ) {
+    pendingConfigRefreshScope = (
+      scope === "provider-models" || pendingConfigRefreshScope === "provider-models"
+    )
+      ? "provider-models"
+      : "context-governance";
+    clearPendingConfigRefreshTimer();
+    pendingConfigRefreshTimer = setTimeout(() => {
+      const refreshScope = pendingConfigRefreshScope;
+      pendingConfigRefreshTimer = null;
+      pendingConfigRefreshScope = null;
       if (currentConversationId.value !== conversationId || streaming.value) {
+        return;
+      }
+      if (refreshScope === "provider-models") {
+        void refreshConversationProviderModelState(conversationId);
         return;
       }
       void tryLoadConversationContextWindow(conversationId);
     }, 300);
   }
 
-  function clearPendingContextWindowRefreshTimer() {
-    if (!pendingContextWindowRefreshTimer) {
+  function clearPendingConfigRefreshTimer() {
+    if (!pendingConfigRefreshTimer) {
       return;
     }
-    clearTimeout(pendingContextWindowRefreshTimer);
-    pendingContextWindowRefreshTimer = null;
+    clearTimeout(pendingConfigRefreshTimer);
+    pendingConfigRefreshTimer = null;
   }
 
   async function refreshConversationSummary(
@@ -258,6 +298,24 @@ export function createChatStoreModule() {
     }
 
     await loadConversations();
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
+
+    await tryLoadConversationContextWindow(conversationId);
+  }
+
+  async function refreshConversationProviderModelState(
+    conversationId: string | null = currentConversationId.value,
+  ) {
+    if (!conversationId) {
+      return;
+    }
+
+    await ensureModelSelection(messages.value, {
+      force: true,
+      ...readModelSelectionRefreshInput(messages.value),
+    });
     if (currentConversationId.value !== conversationId) {
       return;
     }
@@ -363,6 +421,7 @@ export function createChatStoreModule() {
     contextWindowPreview.value = null;
     selectedProvider.value = null;
     selectedModel.value = null;
+    selectedModelSource.value = null;
     pendingRuntimePermissions.value = [];
     todoItems.value = [];
     loading.value = true;
@@ -372,7 +431,10 @@ export function createChatStoreModule() {
         loadConversationRuntimePermissions(id),
         loadConversationTodo(id),
       ]);
-      await ensureModelSelection(messages.value);
+      await ensureModelSelection(messages.value, {
+        force: true,
+        ...readModelSelectionRefreshInput(messages.value),
+      });
       await tryLoadConversationContextWindow(id);
       scheduleChatRecoveryWithState(streamState, loadConversationWindowSnapshot);
       await drainQueuedSendRequests();
@@ -398,6 +460,9 @@ export function createChatStoreModule() {
       contextWindowPreview.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
+      selectedModelSource.value = null;
+      bufferedConfigRefreshConversationId = null;
+      bufferedConfigRefreshScope = null;
       pendingRuntimePermissions.value = [];
       todoItems.value = [];
       replaceMessages([]);
@@ -412,16 +477,35 @@ export function createChatStoreModule() {
   }) {
     selectedProvider.value = selection.provider;
     selectedModel.value = selection.model;
+    selectedModelSource.value = (
+      selection.provider && selection.model
+        ? "manual"
+        : null
+    );
     if (currentConversationId.value && !streaming.value) {
       void tryLoadConversationContextWindow(currentConversationId.value);
     }
   }
 
-  async function ensureModelSelection(existingMessages: ChatMessage[] = []) {
+  async function ensureModelSelection(
+    existingMessages: ChatMessage[] = [],
+    input: {
+      force?: boolean;
+      preferred?: {
+        providerId?: string | null;
+        modelId?: string | null;
+      };
+      preferredSource?: ChatModelSelectionSource;
+    } = {},
+  ) {
     await ensureChatModelSelection({
       selectedProvider,
       selectedModel,
+      selectedSource: selectedModelSource,
       messages: existingMessages,
+      force: input.force,
+      preferred: input.preferred,
+      preferredSource: input.preferredSource,
     });
   }
 
@@ -755,6 +839,31 @@ export function createChatStoreModule() {
       ...queuedSendRequestsByConversation.value,
       [conversationId]: requests,
     };
+  }
+
+  function readModelSelectionRefreshInput(existingMessages: ChatMessage[]) {
+    if (
+      selectedModelSource.value === "manual" &&
+      selectedProvider.value &&
+      selectedModel.value
+    ) {
+      return {
+        preferred: {
+          providerId: selectedProvider.value,
+          modelId: selectedModel.value,
+        },
+        preferredSource: "manual" as const,
+      };
+    }
+
+    if (selectedModelSource.value === "history") {
+      return {
+        preferred: findLatestAssistantSelection(existingMessages),
+        preferredSource: "history" as const,
+      };
+    }
+
+    return {};
   }
 }
 

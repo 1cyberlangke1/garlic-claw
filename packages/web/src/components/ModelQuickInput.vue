@@ -38,6 +38,7 @@ import {
   listAiModels,
   listAiProviders,
 } from '@/features/ai-settings/api/ai'
+import { subscribeInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 
 /**
  * 自动补全建议项。
@@ -70,6 +71,7 @@ const selectedIndex = ref(0)
 const containerRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLInputElement | null>(null)
 const allSuggestions = ref<SuggestionItem[]>([])
+let removeInternalConfigChangedListener = () => {}
 
 const filteredSuggestions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -203,10 +205,17 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   void loadAllModels()
+  removeInternalConfigChangedListener = subscribeInternalConfigChanged(({ scope }) => {
+    if (scope !== 'provider-models') {
+      return
+    }
+    void loadAllModels()
+  })
   document.addEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {
+  removeInternalConfigChangedListener()
   document.removeEventListener('click', handleClickOutside)
 })
 

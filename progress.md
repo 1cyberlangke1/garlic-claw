@@ -1,5 +1,69 @@
 # Progress
 
+## 2026-05-01 前端配置联动刷新 + 本地插件目录迁到 config/plugins
+
+### 已确认现状
+- AI 设置里的 provider/model 变更事件此前只零散发出，聊天页、模型输入、Schema provider 选择器、插件 LLM 路由详情不会统一刷新。
+- `SchemaConfigNodeRenderer` 已经不再真正折叠高级项，但测试口径还停留在“展开高级配置”按钮。
+- 本地插件目录迁移过程中，代码、workspace 与 lockfile 仍残留旧 `packages/plugins` / 根 `plugins` 路径。
+
+### 本轮实现
+- `use-provider-settings` 对以下结构性变更统一发 `provider-models`：
+  - provider 新增/更新/删除
+  - model 新增/导入/删除
+  - default model 更新
+  - model capabilities / contextLength 更新
+- `chat-store` 新增 `selectedModelSource`，在 `provider-models` 事件后会按来源重算当前选择：
+  - `manual` 先保显式选择，失效再回退
+  - `history` 重新按最近 assistant 选择解析
+  - `default/fallback` 直接按最新默认配置重算
+  - 重算后再刷新上下文窗口 preview
+- `chat-view`、`ModelQuickInput`、`SchemaConfigForm`、插件管理页统一订阅 `provider-models`，分别刷新：
+  - 当前模型 capabilities
+  - provider/model 快速输入候选
+  - schema provider 选项
+  - 插件详情里的 `llmProviders / llmOptions`
+- `config/plugins` 迁移已完成：
+  - root workspace 改为 `config/plugins/*`
+  - `tools/build-project-plugins.mjs` 改为扫描 `config/plugins`
+  - `ProjectPluginRegistryService` 改为扫描 `config/plugins`
+  - `PluginModule` 补导入 `ProjectWorktreeOverlayModule`，修复 smoke 暴露的 Nest 注入缺口
+  - `package-lock.json` 已收口到 `config/plugins/plugin-pc`
+
+### 已补验证
+- `npm run test:run -w packages/web -- tests/features/ai-settings/composables/use-provider-settings.spec.ts tests/features/chat/store/chat-store.module.spec.ts tests/features/chat/composables/use-chat-view.spec.ts tests/components/ModelQuickInput.spec.ts tests/features/plugins/components/SchemaConfigForm.spec.ts tests/features/plugins/composables/use-plugin-management.spec.ts` ✅
+- `npm run typecheck -w packages/web` ✅
+- `npm run build:plugins` ✅
+- `npm run test -w packages/server -- tests/plugin/project/project-plugin-registry.service.spec.ts tests/runtime/host/runtime-host-plugin-dispatch.service.spec.ts tests/core/bootstrap/bootstrap-http-app.spec.ts` ✅
+- `npm run typecheck -w packages/server` ✅
+- `npm run lint` ✅
+- `npm run smoke:server` ✅
+- `npm run smoke:web-ui` ✅
+
+### 独立 judge
+- 独立 judge 结论：`PASS`
+- 复核确认：
+  - `provider-models` 在 `streaming` 期间不再丢刷新，而是缓存后补刷
+  - 高级配置取消折叠已进入浏览器 smoke 硬断言
+  - `smoke:server` 已临时创建 `config/plugins` 本地项目插件并校验列表、`health`、`reload`
+
+### 独立 judge 复核
+- 结论：`FAIL`
+- 通过项：
+  - `use-provider-settings` 已把 provider / model 结构性变更统一收口到 `provider-models` 事件
+  - `ModelQuickInput`、`SchemaConfigForm`、插件详情页 LLM 选项、聊天能力展示都已订阅刷新
+  - `SchemaConfigNodeRenderer` 已不再提供折叠切换，`collapsed` 字段只做分组显示
+  - 代码与构建入口已从旧 `packages/plugins` / 根 `plugins` 收口到 `config/plugins`
+- 未通过项：
+  - `chat-store` 在流式生成期间遇到 `provider-models` 事件会直接 `return`，事件不会排队补刷；这与“聊天统一实时刷新”不一致
+  - 两条 smoke 都没有真正验证 `config/plugins` 下“本地项目插件”链路：
+    - `smoke:server` 只校验 `/plugins` 与 `/plugins/connected` 返回数组
+    - `smoke:web-ui` 只构造远程插件 fixture
+    - 当前仓库 `config/plugins/plugin-pc` 还是 `runtime: remote`，实际 smoke 没有任何本地项目插件样本
+- 额外风险：
+  - 浏览器 smoke 对“高级配置不再折叠”只做可选点击，不会阻止折叠按钮回归
+  - 当前 `config/plugins/` 在 worktree 里仍是未跟踪目录，提交时若漏加会直接丢失迁移结果
+
 ## 2026-05-01 上下文统计与压缩只认回复后 totalTokens
 
 ### 已确认现状

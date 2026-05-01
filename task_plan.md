@@ -1,5 +1,36 @@
 # Task Plan
 
+## 2026-05-01 前端配置联动刷新 + 本地插件目录迁到 config/plugins
+
+### 目标
+- [x] AI provider / model 相关配置变更后，聊天、模型输入、Schema 选择器、插件 LLM 选项统一实时刷新
+- [x] 去掉前端“展开高级配置”折叠交互，默认直接展开
+- [x] 本地插件目录从根 `plugins/` 收口到 `config/plugins/`
+- [x] 本地/远程插件加载、reload、runtime dispatch 在新目录下保持可用
+- [x] 补前后端回归测试、完整 smoke 与独立 judge
+
+### 阶段 A：取证
+- [x] 核对 `provider-models` 事件当前只局部消费，聊天和插件详情未统一刷新
+- [x] 核对本地插件扫描、workspace、构建脚本仍残留旧 `packages/plugins` / 根 `plugins` 路径
+- [x] 确认本轮不做兼容层，只保留 `config/plugins`
+
+### 阶段 B：实现
+- [x] `use-provider-settings` 对 provider/model 结构性变更统一发 `provider-models`
+- [x] `chat-store / chat-view / ModelQuickInput / SchemaConfigForm / plugin management` 统一订阅并刷新派生状态
+- [x] `SchemaConfigNodeRenderer` 继续保持高级项默认展开，移除旧折叠测试口径
+- [x] 后端 project plugin registry / bootstrap / runtime dispatch 改到 `config/plugins`
+- [x] workspace、构建脚本、锁文件路径全部收敛到 `config/plugins`
+
+### 阶段 C：验证
+- [x] 跑前端回归测试
+- [x] 跑 server plugin 相关回归
+- [x] 跑 `typecheck` / `lint`
+- [x] 跑 `smoke:server` 与 `smoke:web-ui`
+- [x] 通过独立 judge 复核
+  - 2026-05-01 judge 结果：`FAIL`
+  - 缺口 1：`chat-store` 在 `streaming` 时直接丢弃 `provider-models` 事件，聊天页不是全时段实时刷新
+  - 缺口 2：`smoke:server` / `smoke:web-ui` 都没有真正覆盖 `config/plugins` 下本地项目插件的 bootstrap -> dispatch 链路
+
 ## 2026-05-01 上下文 preview 与自动压缩 token 口径对齐
 
 ### 目标

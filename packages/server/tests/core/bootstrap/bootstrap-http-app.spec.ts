@@ -19,7 +19,10 @@ describe('bootstrapHttpApp', () => {
       enableShutdownHooks: jest.fn(),
       get: jest.fn((token: { name?: string }) => {
         if (token?.name === 'PluginBootstrapService') {
-          return { bootstrapBuiltins: jest.fn() };
+          return {
+            bootstrapBuiltins: jest.fn(),
+            bootstrapProjectPlugins: jest.fn(),
+          };
         }
         if (token?.name === 'BootstrapUserService') {
           return { runStartupWarmup: jest.fn() };

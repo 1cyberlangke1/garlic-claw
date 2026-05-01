@@ -5,7 +5,7 @@
         "packages/server/src",
         "packages/web/src",
         "packages/plugin-sdk/src",
-        "packages/plugins/plugin-pc/src"
+        "config/plugins/plugin-pc/src"
       ],
       "extensions": [".ts", ".tsx", ".js", ".jsx", ".vue", ".mjs", ".cjs"],
       "excludeSuffixes": [".spec.ts", ".e2e-spec.ts", ".spec-fixture.ts"],
@@ -65,7 +65,7 @@
       "scanRoots": [
         "packages/server/src",
         "packages/web/src",
-        "packages/plugins/plugin-pc/src"
+        "config/plugins/plugin-pc/src"
       ],
       "extensions": [".ts", ".tsx", ".js", ".jsx", ".vue", ".mjs", ".cjs"],
       "excludeSuffixes": [".spec.ts", ".e2e-spec.ts", ".spec-fixture.ts"],

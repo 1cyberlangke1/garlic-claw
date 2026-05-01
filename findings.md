@@ -1,5 +1,62 @@
 # Findings
 
+## 2026-05-01 前端配置联动刷新与本地插件目录收口
+
+### 独立 judge 复核结论
+- 当前轮次不能判 `PASS`。
+- 主要不是“改动没做”，而是还有两类真实缺口：
+  - 聊天页在 `streaming` 时会漏掉 `provider-models` 事件，配置变更不是全时段实时生效
+  - `config/plugins` 的本地项目插件链路虽然在代码里改了，但现有 smoke 没有真正走到这条链
+
+### judge 重点挑刺
+- `chat-store` 当前监听内部配置事件时，遇到 `streaming` 直接返回，没有挂起刷新请求。
+  - 这意味着如果用户在一轮回复进行中改了 provider/default model/contextLength，当前聊天页不会在流结束后自动补刷新
+  - 现有回归测试只覆盖“非 streaming 时收到事件”的路径
+- `smoke:server` 现有插件步骤只确认插件接口能返回数组，没断言任何 `config/plugins` 中的本地项目插件已被发现、可 reload、可执行工具
+- `smoke:web-ui` 的插件验收只围绕远程插件 fixture 展开；当前仓库里的 `config/plugins/plugin-pc` 本身也是 `runtime: remote`
+- “高级配置不再折叠”这件事代码上已经成立，但 smoke 仍是“如果折叠按钮存在就点开”，没有把“折叠按钮必须不存在”固化成验收条件
+
+### 前端联动问题
+- 真正的问题不是某一个页面少刷一次，而是 `provider-models` 变更没有统一 owner：
+  - 事件发出不全
+  - 订阅方零散
+  - 聊天当前选择、provider/model 列表、Schema 选项、插件 LLM 路由各自缓存
+- 只修聊天页会继续漏掉：
+  - `ModelQuickInput`
+  - `SchemaConfigForm`
+  - 插件详情页 `llmProviders / llmOptions`
+- 因此本轮收口成“AI provider/model 结构性变更统一发 `provider-models`，消费方各自刷新派生状态”。
+
+### 聊天选择重算语义
+- 聊天当前模型选择不能只记 `provider/model`，还要记“它是怎么来的”：
+  - `manual`
+  - `history`
+  - `default`
+  - `fallback`
+- 只有带上 `selectedModelSource`，收到 `provider-models` 事件时才能区分：
+  - 是保留用户手选
+  - 还是按历史回复恢复
+  - 还是直接切到最新默认模型
+
+### 本地插件目录迁移
+- 用户要的是把本地插件放到 `config/plugins`，不是根 `plugins/`。
+- 这个迁移不能只改扫描目录，还要一起改：
+  - workspace
+  - build 脚本
+  - registry
+  - bootstrap
+  - runtime reload / dispatch
+  - lockfile
+- `smoke:server` 额外暴露出一个真实缺口：`ProjectPluginRegistryService` 进入 `PluginModule` 后，必须显式引入 `ProjectWorktreeOverlayModule`，否则 Nest 在启动期就会缺依赖。
+
+### judge 追打出的补口
+- 如果 `provider-models/context-governance` 变更发生在聊天 `streaming` 期间，不能直接丢掉；应缓存 scope，等流结束后补刷。
+- 浏览器 smoke 对“高级配置不再折叠”不能再用“有按钮就点开”的宽松口径，而要明确断言按钮不存在。
+- `config/plugins` 迁移不能只靠单测证明；server smoke 需要临时挂一个真实本地项目插件，至少验证：
+  - `/plugins` 能发现
+  - `/plugins/:id/health` 能读
+  - `/plugins/:id/actions/reload` 能执行
+
 ## 2026-05-01 上下文统计与压缩应只认回复后 totalTokens
 
 ### 当前关键事实

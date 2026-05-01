@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch, type Ref } from 'vue'
 import type {
   PluginActionName,
   PluginConversationSessionInfo,
@@ -7,6 +7,7 @@ import type {
   PluginInfo,
 } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/features/plugins/composables/plugin-management.data'
+import { subscribeInternalConfigChanged } from '@/features/ai-settings/internal-config-change'
 import {
   deletePluginRecord,
   finishPluginConversation,
@@ -58,6 +59,15 @@ export function usePluginList(options: UsePluginListOptions) {
 
   onMounted(() => {
     void refreshAll()
+  })
+  const unsubscribeInternalConfigChanged = subscribeInternalConfigChanged(({ scope }) => {
+    if (scope !== 'provider-models' || !selectedPluginName.value) {
+      return
+    }
+    void refreshSelectedDetails(selectedPluginName.value)
+  })
+  onUnmounted(() => {
+    unsubscribeInternalConfigChanged()
   })
 
   if (options.preferredPluginName) {

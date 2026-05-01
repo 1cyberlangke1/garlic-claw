@@ -12,6 +12,7 @@ import type {
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import { useProviderSettings } from '@/features/ai-settings/composables/use-provider-settings'
+import * as internalConfigChange from '@/features/ai-settings/internal-config-change'
 import * as providerData from '@/features/ai-settings/composables/provider-settings.data'
 
 vi.mock('@/features/ai-settings/composables/provider-settings.data', () => ({
@@ -381,6 +382,7 @@ describe('useProviderSettings', () => {
       modelId: 'provider-a-model',
       source: 'default',
     })
+    const emitSpy = vi.spyOn(internalConfigChange, 'emitInternalConfigChanged')
 
     const state = await mountProviderSettingsHarness()
     await state.setDefaultModel('provider-a-model')
@@ -396,6 +398,9 @@ describe('useProviderSettings', () => {
       providerId: 'provider-a',
       modelId: 'provider-a-model',
       source: 'default',
+    })
+    expect(emitSpy).toHaveBeenCalledWith({
+      scope: 'provider-models',
     })
   })
 

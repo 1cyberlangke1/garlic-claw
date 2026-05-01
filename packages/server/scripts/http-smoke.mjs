@@ -140,6 +140,12 @@ async function main() {
   const tempRoot = path.join(PROJECT_ROOT, 'workspace', 'test-artifacts', 'http-smoke');
   await fsPromises.mkdir(tempRoot, { recursive: true });
   const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'http-smoke-'));
+  const projectLocalPluginRootPath = path.join(
+    PROJECT_ROOT,
+    'config',
+    'plugins',
+    'smoke-local-echo',
+  );
   let port = null;
   let wsPort = null;
   const skillRoot = path.join(PROJECT_ROOT, 'config', 'skills', 'definitions', SKILL_DIR_NAME);
@@ -250,6 +256,7 @@ async function main() {
       await prepareCustomSubagentType(serverFiles.subagentPath);
       await prepareWorkingMcpScript(mcpScriptPath);
       await prepareRemoteRoutePluginScript(remotePluginScriptPath);
+      await prepareProjectLocalPlugin(projectLocalPluginRootPath);
     }
 
     if (cli.proxyOrigin) {
@@ -322,6 +329,7 @@ async function main() {
       state.remotePluginHandle?.stop?.() ?? Promise.resolve(),
       backend?.stop?.() ?? Promise.resolve(),
       fakeOpenAi?.close?.() ?? Promise.resolve(),
+      fsPromises.rm(projectLocalPluginRootPath, { recursive: true, force: true }),
       fsPromises.rm(skillRoot, { recursive: true, force: true }),
       fsPromises.rm(tempDir, { recursive: true, force: true }),
     ]);
@@ -2030,11 +2038,27 @@ async function runHttpFlow(apiBase, state, input) {
   await runStep('plugins.list', async () => {
     const plugins = await getJson(apiBase, '/plugins');
     ensure(Array.isArray(plugins), 'Expected plugin list payload');
+    const projectPlugin = plugins.find((entry) => entry.id === 'project.smoke-local-echo');
+    ensure(projectPlugin, 'Expected project local plugin from config/plugins to appear in plugin list');
+    ensure(projectPlugin.runtimeKind === 'local', 'Expected project local plugin to register as local runtime');
+    ensure(Array.isArray(projectPlugin.supportedActions) && projectPlugin.supportedActions.includes('reload'), 'Expected project local plugin to expose reload governance action');
   });
 
   await runStep('plugins.connected', async () => {
     const plugins = await getJson(apiBase, '/plugins/connected');
     ensure(Array.isArray(plugins), 'Expected connected plugin list payload');
+  });
+
+  await runStep('plugins.project-local.health', async () => {
+    const health = await getJson(apiBase, '/plugins/project.smoke-local-echo/health');
+    ensure(typeof health === 'object' && health !== null, 'Expected project local plugin health payload');
+  });
+
+  await runStep('plugins.project-local.reload', async () => {
+    const result = await postJson(apiBase, '/plugins/project.smoke-local-echo/actions/reload');
+    ensure(result.accepted === true, 'Expected project local plugin reload action to succeed');
+    const plugins = await getJson(apiBase, '/plugins');
+    ensure(plugins.some((entry) => entry.id === 'project.smoke-local-echo'), 'Expected project local plugin to remain registered after reload');
   });
 
   await runStep('ai.context-governance.get', async () => {
@@ -2906,6 +2930,36 @@ async function prepareCustomSubagentType(subagentTypesRoot) {
     toolNames: ['webfetch'],
   }, null, 2), 'utf8');
   await fsPromises.writeFile(path.join(reviewRoot, 'prompt.md'), '你是一个审阅子代理。\n优先指出风险、缺口与可疑点。', 'utf8');
+}
+
+async function prepareProjectLocalPlugin(pluginRootPath) {
+  await fsPromises.rm(pluginRootPath, { recursive: true, force: true });
+  await fsPromises.mkdir(pluginRootPath, { recursive: true });
+  await fsPromises.writeFile(path.join(pluginRootPath, 'package.json'), JSON.stringify({
+    name: '@garlic-claw/smoke-local-echo',
+    version: '1.0.0',
+    private: true,
+    main: 'index.js',
+    garlicClaw: {
+      runtime: 'local',
+    },
+  }, null, 2), 'utf8');
+  await fsPromises.writeFile(path.join(pluginRootPath, 'index.js'), [
+    'module.exports.definition = {',
+    "  manifest: {",
+    "    id: 'project.smoke-local-echo',",
+    "    name: 'Project Smoke Local Echo',",
+    "    version: '1.0.0',",
+    "    runtime: 'local',",
+    '    permissions: [],',
+    '    tools: [{ name: "echo", description: "echo", parameters: {} }],',
+    '  },',
+    '  tools: {',
+    '    echo: async (params) => ({ echoed: params?.text ?? null }),',
+    '  },',
+    '};',
+    '',
+  ].join('\n'), 'utf8');
 }
 
 async function prepareWorkingMcpScript(filePath) {

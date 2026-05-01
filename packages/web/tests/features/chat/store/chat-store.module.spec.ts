@@ -30,6 +30,10 @@ vi.mock('@/features/chat/modules/chat-stream.module', () => ({
 
 vi.mock('@/features/chat/modules/chat-model-selection', () => ({
   ensureChatModelSelection: vi.fn(),
+  findLatestAssistantSelection: vi.fn(() => ({
+    providerId: null,
+    modelId: null,
+  })),
 }))
 
 import * as chatConversationData from '@/features/chat/modules/chat-conversation.data'
@@ -1281,6 +1285,99 @@ describe('createChatStoreModule', () => {
       },
     )
     expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
+  })
+
+  it('recomputes selected provider and model after provider-model config changes', async () => {
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockImplementation(
+      async ({ selectedProvider, selectedModel, selectedSource, force }) => {
+        if (!force) {
+          return
+        }
+        selectedProvider.value = 'provider-b'
+        selectedModel.value = 'model-b'
+        if (selectedSource) {
+          selectedSource.value = 'default'
+        }
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.setModelSelection({
+      provider: 'provider-a',
+      model: 'model-a',
+    })
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(chatModelSelection.ensureChatModelSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        force: true,
+      }),
+    )
+    expect(store.selectedProvider.value).toBe('provider-b')
+    expect(store.selectedModel.value).toBe('model-b')
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        modelId: 'model-b',
+        providerId: 'provider-b',
+      },
+    )
+  })
+
+  it('replays provider-model refresh after streaming ends', async () => {
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockImplementation(
+      async ({ selectedProvider, selectedModel, selectedSource, force }) => {
+        if (!force) {
+          return
+        }
+        selectedProvider.value = 'provider-stream'
+        selectedModel.value = 'model-stream'
+        if (selectedSource) {
+          selectedSource.value = 'default'
+        }
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.streaming.value = true
+    store.setModelSelection({
+      provider: 'provider-a',
+      model: 'model-a',
+    })
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(chatModelSelection.ensureChatModelSelection).not.toHaveBeenCalled()
+    store.streaming.value = false
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(chatModelSelection.ensureChatModelSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        force: true,
+      }),
+    )
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        modelId: 'model-stream',
+        providerId: 'provider-stream',
+      },
+    )
   })
 })
 
