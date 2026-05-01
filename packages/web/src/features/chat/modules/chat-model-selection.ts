@@ -44,14 +44,19 @@ export async function ensureChatModelSelection(params: {
   selectedSource?: Ref<ChatModelSelectionSource | null>
   messages: ChatMessage[]
   force?: boolean
+  shouldApply?: () => boolean
   preferred?: {
     providerId?: string | null
     modelId?: string | null
   }
   preferredSource?: ChatModelSelectionSource
-}) {
+}): Promise<ResolvedChatModelSelection | null> {
   if (!params.force && params.selectedProvider.value && params.selectedModel.value) {
-    return
+    return {
+      providerId: params.selectedProvider.value,
+      modelId: params.selectedModel.value,
+      source: params.selectedSource?.value ?? 'manual',
+    }
   }
 
   const resolved = await resolveChatModelSelection(
@@ -60,13 +65,19 @@ export async function ensureChatModelSelection(params: {
   )
   if (!resolved) {
     if (params.force) {
-      params.selectedProvider.value = null
-      params.selectedModel.value = null
-      if (params.selectedSource) {
-        params.selectedSource.value = null
+      if (!params.shouldApply || params.shouldApply()) {
+        params.selectedProvider.value = null
+        params.selectedModel.value = null
+        if (params.selectedSource) {
+          params.selectedSource.value = null
+        }
       }
     }
-    return
+    return null
+  }
+
+  if (params.shouldApply && !params.shouldApply()) {
+    return resolved
   }
 
   params.selectedProvider.value = resolved.providerId
@@ -74,6 +85,7 @@ export async function ensureChatModelSelection(params: {
   if (params.selectedSource) {
     params.selectedSource.value = resolved.source
   }
+  return resolved
 }
 
 export async function resolveChatModelSelection(preferred: {

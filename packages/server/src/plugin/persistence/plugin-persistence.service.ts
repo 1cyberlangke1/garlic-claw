@@ -68,6 +68,9 @@ export class PluginPersistenceService {
   recordPluginEvent(pluginId: string, input: PluginEventInput): PluginEventRecord {
     return this.runtimeEventLogService.appendLog('plugin', pluginId, this.readPlugin(pluginId).eventLog, input) ?? createDisabledPluginEventRecord(input);
   }
+  recordDetachedPluginEvent(pluginId: string, eventLog: EventLogSettings, input: PluginEventInput): PluginEventRecord {
+    return this.runtimeEventLogService.appendLog('plugin', pluginId, eventLog, input) ?? createDisabledPluginEventRecord(input);
+  }
 
   setConnectionState(pluginId: string, connected: boolean): RegisteredPluginRecord {
     return this.updatePlugin(pluginId, (r, timestamp) => ({ ...r, connected, status: connected ? PLUGIN_STATUS.ONLINE : PLUGIN_STATUS.OFFLINE, updatedAt: timestamp }));

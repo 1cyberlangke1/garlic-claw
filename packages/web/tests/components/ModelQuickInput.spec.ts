@@ -117,4 +117,53 @@ describe('ModelQuickInput', () => {
     expect(wrapper.text()).toContain('provider-b')
     expect(wrapper.text()).toContain('model-b')
   })
+
+  it('keeps the latest suggestions when config refresh returns before an older request', async () => {
+    let resolveInitialProviders: ((value: ReturnType<typeof createProvider>[]) => void) | null = null
+    let resolveRefreshProviders: ((value: ReturnType<typeof createProvider>[]) => void) | null = null
+    let resolveInitialModels: ((value: ReturnType<typeof createModel>[]) => void) | null = null
+    let resolveRefreshModels: ((value: ReturnType<typeof createModel>[]) => void) | null = null
+
+    vi.mocked(aiApi.listAiProviders)
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveInitialProviders = resolve
+      }))
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRefreshProviders = resolve
+      }))
+    vi.mocked(aiApi.listAiModels).mockImplementation((providerId: string) => {
+      if (providerId === 'provider-a') {
+        return new Promise((resolve) => {
+          resolveInitialModels = resolve
+        })
+      }
+      return new Promise((resolve) => {
+        resolveRefreshModels = resolve
+      })
+    })
+
+    const wrapper = mount(ModelQuickInput)
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+
+    resolveRefreshProviders?.([createProvider('provider-b')])
+    await flushPromises()
+    resolveRefreshModels?.([createModel('provider-b', 'model-b')])
+    await flushPromises()
+    resolveInitialProviders?.([createProvider('provider-a')])
+    await flushPromises()
+    resolveInitialModels?.([createModel('provider-a', 'model-a')])
+    await flushPromises()
+    await wrapper.find('input').trigger('focus')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('provider-b')
+    expect(wrapper.text()).toContain('model-b')
+    expect(wrapper.text()).not.toContain('provider-a')
+    expect(wrapper.text()).not.toContain('model-a')
+  })
 })

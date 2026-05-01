@@ -9,10 +9,12 @@ describe('PluginController', () => {
   const pluginPersistenceService = {
     deletePlugin: jest.fn(),
     getPluginConfig: jest.fn(),
+    getPluginEventLog: jest.fn(),
     getPluginLlmPreference: jest.fn(),
     getPluginOrThrow: jest.fn(),
     getPluginScope: jest.fn(),
     listPluginEvents: jest.fn(),
+    recordDetachedPluginEvent: jest.fn(),
     recordPluginEvent: jest.fn(),
     updatePluginConfig: jest.fn(),
     updatePluginLlmPreference: jest.fn(),
@@ -540,6 +542,11 @@ describe('PluginController', () => {
   });
 
   it('deletes plugins through persistence owner and records plugin deletion events', async () => {
+    pluginPersistenceService.getPluginEventLog.mockReturnValue({
+      enabled: true,
+      maxFileSizeMb: 10,
+      maxFiles: 5,
+    });
     pluginPersistenceService.deletePlugin.mockReturnValue({
       pluginId: 'remote.echo',
     });
@@ -552,10 +559,31 @@ describe('PluginController', () => {
     expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('remote.echo');
     expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
     expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:remote.echo');
-    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('remote.echo', {
-      level: 'warn',
-      message: 'Deleted plugin remote.echo',
-      type: 'plugin:deleted',
+    expect(pluginPersistenceService.recordDetachedPluginEvent).toHaveBeenCalledWith(
+      'remote.echo',
+      {
+        enabled: true,
+        maxFileSizeMb: 10,
+        maxFiles: 5,
+      },
+      {
+        level: 'warn',
+        message: 'Deleted plugin remote.echo',
+        type: 'plugin:deleted',
+      },
+    );
+  });
+
+  it('does not record plugin deleted events when the delete request is rejected', () => {
+    pluginPersistenceService.deletePlugin.mockImplementation(() => {
+      throw new BadRequestException('Plugin remote.echo is still connected');
     });
+
+    expect(() => controller.deletePlugin('remote.echo')).toThrow('Plugin remote.echo is still connected');
+    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).not.toHaveBeenCalled();
+    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).not.toHaveBeenCalled();
+    expect(runtimePluginGovernanceService.deletePluginRuntimeState).not.toHaveBeenCalled();
+    expect(toolManagementSettingsService.deleteSourceOverrides).not.toHaveBeenCalled();
+    expect(pluginPersistenceService.recordPluginEvent).not.toHaveBeenCalled();
   });
 });

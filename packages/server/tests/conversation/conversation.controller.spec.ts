@@ -104,7 +104,9 @@ describe('ConversationController', () => {
     expect(conversationTaskService.stopTask).toHaveBeenNthCalledWith(2, '55555555-5555-4555-8555-555555555555');
     expect(conversationTaskService.stopTask).toHaveBeenNthCalledWith(3, '44444444-4444-4444-8444-444444444444');
     expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledWith('plugin-a', '33333333-3333-4333-8333-333333333333', 'user-1');
-    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenCalledWith(conversationId);
+    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenCalledTimes(2);
+    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenNthCalledWith(1, conversationId);
+    expect(runtimeHostConversationTodoService.deleteSessionTodo).toHaveBeenNthCalledWith(2, '33333333-3333-4333-8333-333333333333');
     expect(runtimeHostConversationRecordService.deleteConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(runtimeHostConversationRecordService.requireConversation.mock.invocationCallOrder[0]).toBeLessThan(
       runtimeHostConversationRecordService.listConversationTreeRecords.mock.invocationCallOrder[0],
@@ -118,8 +120,36 @@ describe('ConversationController', () => {
     expect(runtimeHostSubagentRunnerService.interruptSubagent.mock.invocationCallOrder[0]).toBeLessThan(
       runtimeHostConversationTodoService.deleteSessionTodo.mock.invocationCallOrder[0],
     );
-    expect(runtimeHostConversationTodoService.deleteSessionTodo.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(runtimeHostConversationTodoService.deleteSessionTodo.mock.invocationCallOrder[1]).toBeLessThan(
       runtimeHostConversationRecordService.deleteConversation.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('interrupts queued subagent conversations before deleting the conversation tree', async () => {
+    runtimeHostConversationRecordService.listConversationTreeRecords.mockReturnValue([
+      {
+        id: conversationId,
+        kind: 'main',
+        messages: [],
+      },
+      {
+        id: '77777777-7777-4777-8777-777777777777',
+        kind: 'subagent',
+        messages: [
+          { id: '88888888-8888-4888-8888-888888888888', role: 'assistant', status: 'pending' },
+        ],
+        subagent: { pluginId: 'plugin-b', status: 'queued' },
+      },
+    ]);
+    runtimeHostConversationRecordService.deleteConversation.mockResolvedValue({ message: 'Conversation deleted' });
+
+    await expect(controller.deleteConversation('user-1', conversationId)).resolves.toEqual({ message: 'Conversation deleted' });
+
+    expect(conversationTaskService.stopTask).toHaveBeenCalledWith('88888888-8888-4888-8888-888888888888');
+    expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledWith(
+      'plugin-b',
+      '77777777-7777-4777-8777-777777777777',
+      'user-1',
     );
   });
 
@@ -291,6 +321,50 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.stopMessage('user-1', conversationId, assistantMessageId)).toEqual({ message: 'Generation stopped' });
     expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenLastCalledWith(conversationId, 'user-1');
+  });
+
+  it('does not interrupt the current subagent run when stop targets a stale or non-assistant message', () => {
+    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'subagent',
+      messages: [
+        { id: 'old-assistant', role: 'assistant', status: 'completed' },
+        { id: 'user-message', role: 'user', status: 'completed' },
+        { id: 'active-assistant', role: 'assistant', status: 'streaming' },
+      ],
+      subagent: { activeAssistantMessageId: 'active-assistant', pluginId: 'plugin-a', status: 'running' },
+      title: 'Subagent',
+      updatedAt: '2026-04-11T00:00:00.000Z',
+    });
+    runtimeHostSubagentRunnerService.interruptSubagent.mockReturnValue({ message: 'stopped' });
+
+    expect(controller.stopMessage('user-1', conversationId, 'old-assistant')).toEqual({ message: 'Generation stopped' });
+    expect(() => controller.stopMessage('user-1', conversationId, 'user-message')).toThrow('Only assistant messages can be stopped');
+    expect(controller.stopMessage('user-1', conversationId, 'active-assistant')).toEqual({ message: 'stopped' });
+    expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledTimes(1);
+    expect(runtimeHostSubagentRunnerService.interruptSubagent).toHaveBeenCalledWith('plugin-a', conversationId, 'user-1');
+  });
+
+  it('returns SSE error instead of retrying a subagent user message', async () => {
+    const response = createResponseStub();
+    runtimeHostConversationRecordService.requireConversation.mockReturnValue({
+      createdAt: '2026-04-11T00:00:00.000Z',
+      id: conversationId,
+      kind: 'subagent',
+      messages: [
+        { content: '用户输入', id: 'user-message', role: 'user', status: 'completed' },
+      ],
+      subagent: { pluginId: 'plugin-a', status: 'completed' },
+      title: 'Subagent',
+      updatedAt: '2026-04-11T00:00:00.000Z',
+    });
+
+    await controller.retryMessage('user-1', conversationId, 'user-message', {} as never, response as never);
+
+    expect(runtimeHostSubagentRunnerService.sendInputSubagent).not.toHaveBeenCalled();
+    expect(response.write).toHaveBeenCalledWith(sse({ error: 'Only assistant messages can be retried', type: 'error' }));
+    expect(response.write).toHaveBeenLastCalledWith('data: [DONE]\n\n');
   });
 
   it('updates and deletes messages through the runtime conversation owner', async () => {

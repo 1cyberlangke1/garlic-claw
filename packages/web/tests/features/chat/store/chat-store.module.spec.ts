@@ -278,6 +278,51 @@ describe('createChatStoreModule', () => {
     expect(store.queuedSendCount.value).toBe(0)
   })
 
+  it('keeps a send request on the original conversation when model selection resolves after the user switches conversations', async () => {
+    let resolveSelection: (() => void) | null = null
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockImplementation(
+      async ({ selectedProvider, selectedModel, selectedSource, shouldApply }) =>
+        new Promise((resolve) => {
+          resolveSelection = () => {
+            if (!shouldApply || shouldApply()) {
+              selectedProvider.value = 'provider-a'
+              selectedModel.value = 'model-a'
+              if (selectedSource) {
+                selectedSource.value = 'default'
+              }
+            }
+            resolve({
+              modelId: 'model-a',
+              providerId: 'provider-a',
+              source: 'default',
+            })
+          }
+        }),
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+
+    const sendTask = store.sendMessage({
+      content: '旧会话消息',
+    })
+    store.currentConversationId.value = 'conversation-2'
+    resolveSelection?.()
+    await sendTask
+
+    expect(chatStreamModule.dispatchSendMessage).not.toHaveBeenCalled()
+    expect(store.selectedProvider.value).toBeNull()
+    expect(store.selectedModel.value).toBeNull()
+    expect(store.queuedSendCount.value).toBe(0)
+
+    store.currentConversationId.value = 'conversation-1'
+    expect(store.popQueuedSendRequestTail()).toEqual({
+      content: '旧会话消息',
+      model: 'model-a',
+      provider: 'provider-a',
+    })
+  })
+
   it('drains queued messages after the user stops the current reply', async () => {
     vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
       state.currentStreamingMessageId.value = null

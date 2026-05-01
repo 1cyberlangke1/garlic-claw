@@ -33,6 +33,7 @@ import {
 import {
   ensureChatModelSelection,
   findLatestAssistantSelection,
+  type ResolvedChatModelSelection,
   type ChatModelSelectionSource,
 } from "@/features/chat/modules/chat-model-selection";
 import {
@@ -511,35 +512,49 @@ export function createChatStoreModule() {
         modelId?: string | null;
       };
       preferredSource?: ChatModelSelectionSource;
+      shouldApply?: () => boolean;
     } = {},
   ) {
-    await ensureChatModelSelection({
+    return await ensureChatModelSelection({
       selectedProvider,
       selectedModel,
       selectedSource: selectedModelSource,
       messages: existingMessages,
       force: input.force,
+      shouldApply: input.shouldApply,
       preferred: input.preferred,
       preferredSource: input.preferredSource,
     });
   }
 
   async function sendMessage(input: ChatSendInput) {
-    await ensureModelSelection(messages.value);
     const conversationId = currentConversationId.value;
     if (!conversationId) {
       return;
     }
+    const messageSnapshot = [...messages.value];
+    const resolvedSelection = await ensureModelSelection(messageSnapshot, {
+      shouldApply: () => currentConversationId.value === conversationId,
+    });
+    const effectiveSelection = readQueuedSendSelection(
+      input,
+      resolvedSelection,
+      selectedProvider.value,
+      selectedModel.value,
+    );
 
     appendQueuedSendRequest(conversationId, {
       conversationId,
       id: `queued-send-${++queuedSendSequence}`,
       input: {
         ...input,
-        model: input.model ?? selectedModel.value,
-        provider: input.provider ?? selectedProvider.value,
+        model: effectiveSelection.modelId,
+        provider: effectiveSelection.providerId,
       },
     });
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
     await drainQueuedSendRequests();
   }
 
@@ -948,5 +963,23 @@ function buildEditedUserResendInput(
     ...(payload.parts ?? message.parts
       ? { parts: payload.parts ?? message.parts }
       : {}),
+  };
+}
+
+function readQueuedSendSelection(
+  input: ChatSendInput,
+  resolvedSelection: ResolvedChatModelSelection | null,
+  selectedProviderValue: string | null,
+  selectedModelValue: string | null,
+) {
+  return {
+    modelId: input.model
+      ?? resolvedSelection?.modelId
+      ?? selectedModelValue
+      ?? null,
+    providerId: input.provider
+      ?? resolvedSelection?.providerId
+      ?? selectedProviderValue
+      ?? null,
   };
 }

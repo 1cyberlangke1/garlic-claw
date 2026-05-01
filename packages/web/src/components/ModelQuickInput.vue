@@ -72,6 +72,7 @@ const containerRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLInputElement | null>(null)
 const allSuggestions = ref<SuggestionItem[]>([])
 let removeInternalConfigChangedListener = () => {}
+let loadRequestId = 0
 
 const filteredSuggestions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -95,6 +96,7 @@ watch(
 )
 
 async function loadAllModels() {
+  const requestId = ++loadRequestId
   try {
     const providers = await listAiProviders()
     const availableProviders = providers.filter((provider) => provider.available)
@@ -114,8 +116,14 @@ async function loadAllModels() {
       }),
     )
 
+    if (requestId !== loadRequestId) {
+      return
+    }
     allSuggestions.value = suggestionGroups.flat()
   } catch {
+    if (requestId !== loadRequestId) {
+      return
+    }
     allSuggestions.value = []
   }
 }

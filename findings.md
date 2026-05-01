@@ -51,6 +51,20 @@
 - 删除整棵会话树时，目前只显式删除根会话 todo；若子会话也持有 todo，会留下持久化孤儿数据。
 - `queued` 子代理分支已纳入实现条件，但测试仍未单独覆盖该分支。
 
+## 2026-05-01 阶段 H 新增收口
+
+### `packages/web/src/features/chat/modules/chat-store.module.ts`
+- 已修复发送前等待模型选择时切换会话导致旧草稿进入新会话的问题。
+- 当前行为改为：发送请求绑定原会话与原选择快照；若等待期间切到别的会话，不再把旧请求串发到新会话。
+
+### `packages/web/src/components/ModelQuickInput.vue`
+- 已为候选加载补请求序号守卫。
+- `provider-models` 刷新与挂载首刷乱序返回时，只保留最新请求结果。
+
+### `packages/server/src/adapters/http/plugin/plugin.controller.ts`
+- 已修复插件删除失败时误写 `plugin:deleted` 审计。
+- 成功删除后改为按删除前缓存的 eventLog 设置写删除事件，避免记录删除后再读 owner 导致 404。
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级

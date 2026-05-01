@@ -108,6 +108,62 @@
   - 删除整棵会话树时，目前只显式清理根会话 todo，子会话 todo 仍可能残留为孤儿数据
   - `subagent queued` 已在实现分支覆盖，但还没有单独测试把该分支钉死
 
+### 已提交
+- commit: `b75009f` `修复: 收口阶段G会话生命周期缺陷`
+
+## 2026-05-01 阶段 H：删除链残余 + 新一轮并行扫错
+
+### 已开始
+- 先处理 judge 留下的删除链残余：子会话 todo 孤儿数据。
+- 同时按 server / web / plugin-runtime 三路继续做只读扫描。
+
+### 本轮已完成修复
+- `ConversationController.deleteConversation()` 现在会对整棵会话树逐个执行 `deleteSessionTodo`：
+  - 根会话与子会话 todo 都会一起清理
+  - 同时补了 `subagent queued` 删除前中断分支回归
+- 子代理消息语义收紧：
+  - `stopMessage()` 在子代理会话里只允许命中当前活跃 assistant
+  - 旧 assistant / user message 不会再误中断当前子代理
+  - 子代理 `retry` 现在只接受 assistant message，错误目标会走 SSE 错误返回
+- 聊天发送链路收口：
+  - `sendMessage()` 会把发送时的会话与模型选择固定在本地快照里
+  - 等待模型选择期间若切会话，旧草稿不会再进入新会话队列
+- `ModelQuickInput` 新增请求序号守卫：
+  - `provider-models` 刷新先返回时，不会再被更早的挂载请求覆盖
+- 插件删除审计修正：
+  - 删除失败时不再提前写假 `plugin:deleted`
+  - 删除成功后改为使用缓存的 eventLog 设置记删除事件，不再因为记录已删而把接口打成 404
+
+### 本轮新增回归
+- server
+  - `tests/conversation/conversation.controller.spec.ts`
+    - 子会话 todo 清理
+    - `subagent queued` 删除前中断
+    - 子代理 stop/retry 的消息目标校验
+  - `tests/adapters/http/plugin/plugin.controller.spec.ts`
+    - 删除失败不得记 `plugin:deleted`
+- web
+  - `tests/features/chat/store/chat-store.module.spec.ts`
+    - 发送等待模型选择期间切会话，不得串发到新会话
+  - `tests/components/ModelQuickInput.spec.ts`
+    - 新旧候选请求乱序返回时保留最新结果
+
+### 本轮验证
+- 已通过：
+  - `npm run test -w packages/server -- tests/adapters/http/plugin/plugin.controller.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run test:run -w packages/web -- tests/features/chat/store/chat-store.module.spec.ts tests/components/ModelQuickInput.spec.ts`
+  - `npm run lint`
+  - `npm run typecheck -w packages/server`
+  - `npm run typecheck -w packages/web`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 当前状态
+- 阶段 H 尚未结束。
+- 仍待继续确认的 owner 缺口：
+  - `RuntimeHostConversationRecordService.deleteConversation()` 直调路径仍不负责 todo 清理
+  - 插件 / MCP 事件日志分页 cursor 仍有一条高优先级待收口
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成
