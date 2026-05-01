@@ -3,7 +3,7 @@
     <div class="mcp-config-header">
       <div>
         <h3>{{ view === 'manage' ? 'MCP 配置' : 'MCP 事件日志' }}</h3>
-        <p v-if="view === 'manage'">管理 `mcp/servers/` 目录中的 server 定义，保存后会自动重载运行时。</p>
+        <p v-if="view === 'manage'">管理 <code>{{ snapshot.configPath || 'mcp/servers/' }}</code> 目录中的 server 定义，保存后会自动重载运行时。</p>
         <p v-else>按 server 查看最近事件记录，避免和配置编辑区同时堆叠展示。</p>
       </div>
       <div class="mcp-config-actions">
@@ -16,6 +16,15 @@
           <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
         </ElButton>
         <ElButton
+          v-if="view === 'logs' && selectedServer"
+          class="action-icon-button"
+          :class="{ active: showLogSettings }"
+          title="日志设置"
+          @click="showLogSettings = !showLogSettings"
+        >
+          <Icon :icon="settingsBold" class="action-icon" aria-hidden="true" />
+        </ElButton>
+        <ElButton
           v-if="view === 'manage'"
           class="action-icon-button"
           data-test="mcp-new-button"
@@ -26,8 +35,6 @@
         </ElButton>
       </div>
     </div>
-
-    <p v-if="view === 'manage'" class="mcp-config-path">{{ snapshot.configPath || '尚未解析配置路径' }}</p>
     <p v-if="panelError" class="page-banner error">{{ panelError }}</p>
 
     <div :class="view === 'manage' ? 'mcp-config-layout' : 'mcp-log-layout'">
@@ -43,14 +50,12 @@
           @click="selectExisting(server.name)"
         >
           <strong>{{ server.name }}</strong>
-          <span>{{ server.command }}</span>
-          <small>{{ server.args.length }} 个参数 · {{ envCount(server.env) }} 个环境变量</small>
         </ElButton>
       </aside>
 
       <form v-if="view === 'manage'" class="mcp-editor" @submit.prevent="submitForm">
         <label class="mcp-field">
-          <span>Name</span>
+          <span>名称</span>
           <ElInput
             v-model="draftName"
             data-test="mcp-name-input"
@@ -58,15 +63,15 @@
           />
         </label>
         <label class="mcp-field">
-          <span>Command</span>
+          <span>命令</span>
           <ElInput
             v-model="draftCommand"
             data-test="mcp-command-input"
             placeholder="npx"
           />
         </label>
-        <label class="mcp-field mcp-field-span">
-          <span>Args</span>
+        <label class="mcp-field">
+          <span>参数</span>
           <ElInput
             v-model="draftArgsText"
             data-test="mcp-args-input"
@@ -80,7 +85,7 @@
         <section class="mcp-env-panel mcp-field-span">
           <div class="mcp-env-header">
             <div>
-              <span>Env</span>
+              <span>环境变量</span>
               <p>支持直接值或 `${VAR_NAME}` 占位符。</p>
             </div>
             <ElButton class="action-icon-button" title="新增变量" @click="addEnvRow">
@@ -146,6 +151,14 @@
       </form>
 
       <div v-else-if="selectedServer" class="mcp-log-panel">
+        <EventLogSettingsPanel
+          v-if="showLogSettings"
+          :settings="selectedServer.eventLog"
+          :saving="savingEventLog"
+          title="MCP 日志设置"
+          description="此 MCP server 的事件日志会写入 log/mcp/<serverName>/ 目录。"
+          @save="saveServerEventLog"
+        />
         <EventLogPanel
           title="MCP 事件日志"
           description="查看此 server 最近的事件记录。"
@@ -163,15 +176,6 @@
       </div>
     </div>
 
-    <div v-if="view === 'manage' && selectedServer" class="mcp-detail-panels">
-      <EventLogSettingsPanel
-        :settings="selectedServer.eventLog"
-        :saving="savingEventLog"
-        title="MCP 日志设置"
-        description="此 MCP server 的事件日志会写入 log/mcp/<serverName>/ 目录。"
-        @save="saveServerEventLog"
-      />
-    </div>
   </section>
 </template>
 
@@ -179,6 +183,7 @@
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
+import settingsBold from '@iconify-icons/solar/settings-bold'
 import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalistic-bold'
 import { Icon } from '@iconify/vue'
 import { ref, watch } from 'vue'
@@ -234,6 +239,7 @@ const draftArgsText = ref('')
 const envRows = ref<EnvRow[]>([])
 const panelError = ref<string | null>(null)
 const isCreating = ref(false)
+const showLogSettings = ref(false)
 let envRowId = 0
 
 watch(
@@ -278,6 +284,7 @@ function startCreate() {
 function selectExisting(name: string) {
   isCreating.value = false
   panelError.value = null
+  showLogSettings.value = false
   selectServer(name)
 }
 
@@ -337,10 +344,10 @@ function buildPayload(): McpServerConfig {
   const name = draftName.value.trim()
   const command = draftCommand.value.trim()
   if (!name) {
-    throw new Error('Name 不能为空')
+    throw new Error('名称不能为空')
   }
   if (!command) {
-    throw new Error('Command 不能为空')
+    throw new Error('命令不能为空')
   }
 
   return {
@@ -387,10 +394,6 @@ function createEnvRow(key = '', value = ''): EnvRow {
   }
 }
 
-function envCount(env: Record<string, string>): number {
-  return Object.keys(env).length
-}
-
 function handleRefresh() {
   if (props.view === 'logs') {
     void refreshServerEvents(undefined, selectedServerName.value)
@@ -412,7 +415,6 @@ function handleRefresh() {
 
 .mcp-config-layout,
 .mcp-log-layout,
-.mcp-detail-panels,
 .mcp-editor,
 .mcp-log-panel,
 .mcp-env-panel,
@@ -433,19 +435,13 @@ function handleRefresh() {
   justify-content: space-between;
 }
 
-.mcp-config-path {
-  font-size: 0.84rem;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
 .mcp-config-layout {
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
   align-items: start;
 }
 
 .mcp-log-layout {
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
   align-items: start;
 }
 
@@ -453,6 +449,11 @@ function handleRefresh() {
 .mcp-server-item {
   display: grid;
   gap: 10px;
+}
+
+.mcp-server-meta {
+  display: grid;
+  gap: 4px;
 }
 
 .mcp-log-empty {
@@ -464,12 +465,16 @@ function handleRefresh() {
 }
 
 .mcp-server-item {
+  height: auto;
+  min-height: 0;
   padding: 0.9rem 0.95rem;
   border: 1px solid rgba(133, 163, 199, 0.14);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--surface-panel-muted-strong);
   color: var(--text);
   text-align: left;
+  white-space: normal;
+  justify-items: start;
 }
 
 .mcp-server-item strong,
@@ -479,6 +484,14 @@ function handleRefresh() {
 
 .mcp-server-item small {
   color: var(--text-muted);
+}
+
+.mcp-server-item {
+  justify-content: flex-start;
+}
+
+.mcp-server-item :deep(.el-button__text) {
+  text-align: left;
 }
 
 .mcp-server-item.active {
@@ -496,6 +509,20 @@ function handleRefresh() {
   grid-column: 1 / -1;
 }
 
+.mcp-field :deep(.el-textarea__inner) {
+  width: 100%;
+  border: 1px solid var(--el-input-border-color, #dcdfe6);
+  border-radius: var(--el-input-border-radius, 4px);
+  background: var(--el-input-bg-color, #fff);
+  padding: 8px 12px;
+  box-shadow: none;
+  color: var(--el-input-text-color, #333);
+}
+
+.mcp-field :deep(.el-textarea__inner:focus) {
+  border-color: var(--el-input-focus-border-color, #409eff);
+}
+
 .mcp-field small,
 .mcp-env-header p {
   color: var(--text-muted);
@@ -503,7 +530,7 @@ function handleRefresh() {
 }
 
 .mcp-editor {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .mcp-env-panel {
@@ -574,6 +601,11 @@ function handleRefresh() {
   padding: 0;
   border-radius: 10px;
   flex-shrink: 0;
+}
+
+.action-icon-button.active {
+  border-color: rgba(103, 199, 207, 0.42);
+  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.2);
 }
 
 .hero-action .action-icon {
