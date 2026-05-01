@@ -1,9 +1,32 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { normalizePluginManifest, PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { BuiltinPluginRegistryService } from '../../../src/plugin/builtin/builtin-plugin-registry.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
 import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin-persistence.service';
+import type { ProjectPluginDefinitionRecord } from '../../../src/plugin/project/project-plugin-registry.service';
 
 describe('PluginBootstrapService', () => {
+  const envKey = 'GARLIC_CLAW_PLUGIN_STATE_PATH';
+  let originalPluginStatePath: string | undefined;
+  let tempRootPath: string;
+
+  beforeEach(() => {
+    originalPluginStatePath = process.env[envKey];
+    tempRootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-plugin-bootstrap-'));
+    process.env[envKey] = path.join(tempRootPath, 'plugins.server.json');
+  });
+
+  afterEach(() => {
+    if (originalPluginStatePath === undefined) {
+      delete process.env[envKey];
+    } else {
+      process.env[envKey] = originalPluginStatePath;
+    }
+    fs.rmSync(tempRootPath, { force: true, recursive: true });
+  });
+
   it('registers plugins and keeps plugin state readable through the real owners', () => {
     const service = new PluginBootstrapService(
       new PluginGovernanceService(),
@@ -294,5 +317,108 @@ describe('PluginBootstrapService', () => {
     ]);
     expect(service.canReloadBuiltin('builtin.automation')).toBe(true);
     expect(service.canReloadBuiltin('builtin.memory')).toBe(true);
+  });
+
+  it('drops deleted project-local plugin records while keeping current project and remote plugins', () => {
+    const persistence = new PluginPersistenceService();
+    persistence.upsertPlugin({
+      connected: false,
+      defaultEnabled: true,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'local.removed',
+        name: 'Removed Local Plugin',
+        permissions: [],
+        runtime: 'local',
+        tools: [],
+        version: '1.0.0',
+      },
+      pluginId: 'local.removed',
+    });
+    persistence.upsertPlugin({
+      connected: false,
+      defaultEnabled: false,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'remote.keep',
+        name: 'Remote Keep',
+        permissions: [],
+        runtime: 'remote',
+        tools: [],
+        version: '1.0.0',
+      },
+      pluginId: 'remote.keep',
+      remote: {
+        access: {
+          accessKey: null,
+          serverUrl: null,
+        },
+        descriptor: {
+          auth: {
+            mode: 'required',
+          },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+        metadataCache: {
+          lastSyncedAt: null,
+          manifestHash: null,
+          status: 'empty',
+        },
+      },
+    });
+    const definitions: ProjectPluginDefinitionRecord[] = [
+      {
+        definition: {
+          manifest: {
+            id: 'local.echo',
+            name: 'Local Echo',
+            permissions: [],
+            runtime: 'local',
+            tools: [],
+            version: '1.0.0',
+          },
+        },
+        directoryPath: 'config/plugins/local-echo',
+        entryFilePath: 'config/plugins/local-echo/dist/index.js',
+      },
+    ];
+    const projectPluginRegistryService = {
+      getDefinition: jest.fn((pluginId: string) => {
+        const definition = definitions.find((entry) => entry.definition.manifest.id === pluginId);
+        if (!definition) {
+          throw new Error(`Project plugin definition not found: ${pluginId}`);
+        }
+        return definition;
+      }),
+      hasDefinition: jest.fn((pluginId: string) => definitions.some((entry) => entry.definition.manifest.id === pluginId)),
+      loadDefinitions: jest.fn(() => definitions),
+      reloadDefinition: jest.fn((pluginId: string) => {
+        const definition = definitions.find((entry) => entry.definition.manifest.id === pluginId);
+        if (!definition) {
+          throw new Error(`Project plugin definition not found: ${pluginId}`);
+        }
+        return definition;
+      }),
+    };
+    const service = new PluginBootstrapService(
+      new PluginGovernanceService(),
+      persistence,
+      new BuiltinPluginRegistryService(),
+      projectPluginRegistryService as never,
+    );
+
+    expect(service.bootstrapProjectPlugins()).toEqual(['local.echo']);
+    expect(service.listPlugins()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        pluginId: 'local.echo',
+      }),
+      expect.objectContaining({
+        pluginId: 'remote.keep',
+      }),
+    ]));
+    expect(service.listPlugins().map((plugin) => plugin.pluginId)).not.toContain('local.removed');
   });
 });

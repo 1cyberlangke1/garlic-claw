@@ -479,6 +479,10 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
   await page.getByRole('link', { name: '前往 AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
   const composer = page.getByPlaceholder('输入消息，支持附带图片');
+  const firstSendFinished = page.waitForEvent('requestfinished', (request) =>
+    request.method() === 'POST'
+      && request.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
+  );
   await composer.fill(`${PREFIX} chat message`);
   await page.locator('.send-button').click();
   await waitFor(async () => {
@@ -503,16 +507,32 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
     }
     return await composer.isEnabled() ? true : null;
   }, '等待聊天恢复空闲');
+  await firstSendFinished;
 
   await composer.fill('/compact');
   await page.locator('.send-button').click();
-  await waitFor(async () => {
-    const detail = await getConversationDetail(accessToken, conversation.id);
-    const resultMessage = detail.messages.find((message) => hasDisplayMessageVariant(message, 'result'));
-    return resultMessage
-      ? true
-      : null;
-  }, '等待 /compact 的命令结果写入会话历史');
+  let lastCompactDetail = null;
+  try {
+    await waitFor(async () => {
+      const detail = await getConversationDetail(accessToken, conversation.id);
+      lastCompactDetail = detail;
+      const resultMessage = detail.messages.find((message) => hasDisplayMessageVariant(message, 'result'));
+      return resultMessage
+        ? true
+        : null;
+    }, '等待 /compact 的命令结果写入会话历史');
+  } catch (error) {
+    if (lastCompactDetail?.messages) {
+      console.error('[browser-smoke:/compact:detail]', JSON.stringify(lastCompactDetail.messages.map((message) => ({
+        content: message.content,
+        id: message.id,
+        metadata: readMessageMetadata(message),
+        role: message.role,
+        status: message.status,
+      })), null, 2));
+    }
+    throw error;
+  }
 
   await composer.fill(SUBAGENT_TRIGGER);
   await page.locator('.send-button').click();

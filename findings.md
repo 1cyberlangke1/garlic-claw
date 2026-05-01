@@ -1,5 +1,55 @@
 # Findings
 
+## 2026-05-01 subagent 并行扫描汇总
+
+### 聊天 / 上下文
+- `retryMessageGeneration()` 当前缺两个后端约束：
+  - 目标消息必须是 `assistant`
+  - 同会话存在活跃 `assistant(pending/streaming)` 时不能再启动另一条 retry
+- 当前聊天前端把 `display result` 也算作“活跃回复”，但停止动作只会真正停止 `assistant`
+  - 这会让 `/compact` 这类命令出现“看起来能停，实际上后端还在跑”的错觉
+- 会话切换期间若新会话详情加载较慢，旧消息会继续留在视图里，造成短暂串会话
+
+### 子代理 / 自动化
+- `queued` 子代理的调度是 `setTimeout(0)` 异步起跑；`interrupt` 只改状态，没有取消这次调度
+- 服务重启时，运行中的子代理 metadata 会被改成 `interrupted`，但对应会话内的活跃 assistant 消息没有同步收口
+- 聊天页“子代理标签”接口当前实际返回所有 child conversation，不只是真正的 subagent child
+- 自动化事件广播对命中的自动化是串行链路，前一条异常会截断后续全部执行
+
+### 工具 / MCP / 插件
+- MCP source 已修复“source 启用状态不持久化”，但单个 MCP tool 仍未吃 `tool-management.json` 的 tool 级覆盖
+- `/tools` 当前只显示 `totalTools > 0` 的 source，因此 MCP source 只要掉线或被禁用就会从统一入口消失
+- `config/plugins/*` 扫描时，单个坏本地插件目录的异常会直接抛出到 HTTP 启动链路
+- 本地项目插件 bootstrap 只会增量 upsert，不会清理已从磁盘删除的旧记录，因此会留下幽灵插件
+
+## 2026-05-01 `/compact` 浏览器 smoke 超时
+
+### 关键事实
+- 失败时 `/api/chat/conversations/:id` 历史里只有首条普通 user/assistant。
+- `/compact` 对应的 display command/result 根本不在后端历史里，说明不是“落库后注解丢失”，而是“前端还没把它发出去”。
+
+### 前端链路结论
+- 聊天发送按钮本来就允许在 `streaming` 时继续点；后续消息会先进当前会话待发送队列。
+- 队列 drain 当前按“上一条 `dispatchSendMessage()` Promise 完整结束”串行。
+- 旧实现里，这个 Promise 不只等待 SSE 结束，还会继续 await：
+  - `refreshConversationState`
+  - 对应的会话摘要/上下文窗口补刷新
+- 因此会出现一种真实时序：
+  - 第一条 assistant 内容已经回到界面，后端历史也已完成
+  - 但前端主发送 Promise 还没收口
+  - `/compact` 先入队，直到慢补刷新结束才会真正出队
+
+### 这和 smoke 为什么会撞上
+- 原 smoke 只等：
+  - 后端历史里上一条 assistant 已非 `pending/streaming`
+  - 输入框还能输入
+- 这不足以证明“前端发送主链已空闲”。
+- 因为发送按钮不看 `streaming`，所以 smoke 会在队列模式下提前点 `/compact`。
+
+### 修正方向
+- 队列串行只该依赖真正的流结束，不该再被补刷新拖住。
+- smoke 的等待条件也不能再拿 UI 层的 stop 按钮做代理信号；更可靠的是直接等待上一条 `/api/chat/conversations/:id/messages` SSE 请求 `requestfinished`。
+
 ## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
 
 ### MCP 工具源启用状态残留缺口

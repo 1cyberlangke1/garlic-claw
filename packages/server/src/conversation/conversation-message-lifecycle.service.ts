@@ -18,6 +18,10 @@ export class ConversationMessageLifecycleService {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
     const message = conversation.messages.find((entry) => entry.id === messageId);
     if (!message) {throw new NotFoundException(`Message not found: ${messageId}`);}
+    if (message.role !== 'assistant') {throw new BadRequestException('Only assistant messages can be retried');}
+    if (conversation.messages.some(isActiveAssistantMessage)) {
+      throw new BadRequestException('当前仍有回复在生成中，请先停止或等待完成');
+    }
 
     const resolvedMessageId = readMessageId(message);
     const modelId = dto.model ?? readOptionalMessageField(message, 'model');

@@ -87,6 +87,7 @@
       <ChatComposer
         v-model="inputText"
         :can-send="canSend"
+        :can-stop="chat.canStopStreaming"
         :command-suggestions="commandSuggestions"
         :pending-images="pendingImages"
         :queued-send-count="queuedSendCount"

@@ -71,8 +71,12 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
   async emitEvent(userId: string, event: string): Promise<AutomationEventDispatchInfo> {
     const matchedAutomationIds: string[] = [];
     for (const automation of readEventAutomations(readUserAutomations(this.automations, userId), event)) {
-      await this.runRecord(automation, 'event');
       matchedAutomationIds.push(automation.id);
+      try {
+        await this.runRecord(automation, 'event');
+      } catch (error) {
+        this.recordUnexpectedRunFailure(automation, error);
+      }
     }
     return { event, matchedAutomationIds };
   }
@@ -219,6 +223,21 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     } finally {
       this.syncCronJob(automationId, automation.trigger, automation.enabled);
     }
+  }
+
+  private recordUnexpectedRunFailure(automation: RuntimeAutomationRecord, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    const startedAt = automation.lastRunAt ?? new Date().toISOString();
+    automation.updatedAt = new Date().toISOString();
+    automation.logs.unshift(createAutomationLog(automation, startedAt, {
+      results: [{
+        action: 'automation',
+        error: message,
+      }],
+      status: 'error',
+    }));
+    this.persist();
+    this.logger.error(`自动化 ${automation.id} 执行失败，但事件广播继续: ${message}`);
   }
 }
 

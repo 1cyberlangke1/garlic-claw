@@ -74,6 +74,14 @@ export class RuntimeHostConversationRecordService {
   listConversations(userId?: string): JsonValue { return [...this.conversations.values()].filter((conversation) => !userId || conversation.userId === userId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((conversation) => readConversationRecordValue(conversation, 'overview')); }
 
   listChildConversations(parentId: string): JsonValue { return [...this.conversations.values()].filter(c => c.parentId === parentId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map(c => readConversationRecordValue(c, 'overview')); }
+  listChildSubagentConversations(parentId: string, userId?: string): JsonValue {
+    return [...this.conversations.values()]
+      .filter((conversation) => conversation.parentId === parentId)
+      .filter((conversation) => conversation.kind === 'subagent' && Boolean(conversation.subagent))
+      .filter((conversation) => !userId || conversation.userId === userId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map((conversation) => readConversationRecordValue(conversation, 'overview'));
+  }
   listSubagentConversations(userId?: string): JsonValue {
     return this.listSubagentConversationRecords(userId).map((conversation) => readConversationRecordValue(conversation, 'overview'));
   }

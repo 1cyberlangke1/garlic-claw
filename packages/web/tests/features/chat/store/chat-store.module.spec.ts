@@ -643,6 +643,49 @@ describe('createChatStoreModule', () => {
     ])
   })
 
+  it('keeps display result messages non-stoppable even when they keep the queue in streaming mode', async () => {
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.currentStreamingMessageId.value = 'display-result-1'
+    store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'display-result-1',
+        role: 'display',
+        content: '',
+        status: 'pending',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'system',
+        model: 'context-compaction-command',
+        metadata: {
+          annotations: [
+            {
+              data: { variant: 'result' },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+              version: '1',
+            },
+          ],
+        },
+      },
+    ]
+
+    expect(store.canStopStreaming.value).toBe(false)
+
+    await store.stopStreaming()
+
+    expect(chatConversationData.stopConversationMessageRecord).not.toHaveBeenCalled()
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'display-result-1',
+        status: 'pending',
+      }),
+    ])
+  })
+
   it('falls back to normal sending when editing the last user message after the last assistant was deleted', async () => {
     vi.mocked(chatConversationData.deleteConversationMessageRecord).mockResolvedValue(undefined)
     vi.mocked(chatStreamModule.dispatchSendMessage).mockResolvedValue(undefined)
@@ -1029,6 +1072,62 @@ describe('createChatStoreModule', () => {
         id: 'assistant-new',
         content: '新的详情',
         status: 'completed',
+      }),
+    ])
+  })
+
+  it('clears previous conversation messages immediately while the next conversation detail is still loading', async () => {
+    let resolveDetail: ((value: ChatMessage[]) => void) | null = null
+    vi.mocked(chatConversationData.loadConversationMessages).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDetail = resolve
+        }),
+    )
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockResolvedValue()
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.messages.value = [
+      {
+        id: 'assistant-old',
+        role: 'assistant',
+        content: '上一会话内容',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
+
+    const selectTask = store.selectConversation('conversation-2')
+
+    expect(store.currentConversationId.value).toBe('conversation-2')
+    expect(store.messages.value).toEqual([])
+
+    resolveDetail?.([
+      {
+        id: 'assistant-new',
+        role: 'assistant',
+        content: '当前会话内容',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ])
+    await selectTask
+
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'assistant-new',
+        content: '当前会话内容',
       }),
     ])
   })

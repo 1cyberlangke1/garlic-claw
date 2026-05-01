@@ -263,8 +263,64 @@ describe('McpService', () => {
       statuses: [expect.objectContaining({ name: 'weather', enabled: false, connected: false, health: 'unknown' })],
       tools: [],
     });
+    expect(service.listToolSources()).toEqual([
+      expect.objectContaining({
+        source: expect.objectContaining({
+          id: 'weather',
+          enabled: false,
+          totalTools: 1,
+          enabledTools: 0,
+        }),
+        tools: [
+          expect.objectContaining({
+            toolId: 'mcp:weather:get_forecast',
+            enabled: false,
+          }),
+        ],
+      }),
+    ]);
     await expect(service.callTool({ serverName: 'weather', toolName: 'get_forecast', arguments: {} })).rejects.toThrow('MCP 服务器 "weather" 已禁用');
     expect(client.callTool).not.toHaveBeenCalled();
+  });
+
+  it('applies tool-level enabled overrides when listing MCP tools', async () => {
+    (service as any).serverRecords.set('weather', {
+      status: {
+        name: 'weather',
+        connected: true,
+        enabled: true,
+        health: 'healthy',
+        lastError: null,
+        lastCheckedAt: '2026-04-03T10:00:00.000Z',
+      },
+      tools: [
+        { serverName: 'weather', name: 'get_forecast', description: 'Get forecast', inputSchema: null },
+        { serverName: 'weather', name: 'get_alerts', description: 'Get alerts', inputSchema: null },
+      ],
+    });
+    ((service as any).toolManagementSettingsService as ToolManagementSettingsService)
+      .writeToolEnabledOverride('mcp:weather:get_alerts', false);
+
+    const [entry] = service.listToolSources();
+
+    expect(entry).toEqual(expect.objectContaining({
+      source: expect.objectContaining({
+        id: 'weather',
+        enabled: true,
+        totalTools: 2,
+        enabledTools: 1,
+      }),
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          toolId: 'mcp:weather:get_forecast',
+          enabled: true,
+        }),
+        expect.objectContaining({
+          toolId: 'mcp:weather:get_alerts',
+          enabled: false,
+        }),
+      ]),
+    }));
   });
 
   it('disconnects all MCP clients when the module is destroyed', async () => {

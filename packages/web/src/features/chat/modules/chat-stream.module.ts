@@ -340,7 +340,7 @@ export async function dispatchSendMessage(
       state.streamController.value = null;
     }
 
-    await params?.refreshConversationState?.({
+    void params?.refreshConversationState?.({
       permissionStateChanged: didChangeRuntimePermissionsDuringStream,
       summaryRefreshed: didRefreshConversationStateDuringStream,
     }).catch(() => undefined);
@@ -455,7 +455,7 @@ export async function dispatchRetryMessage(
       state.streamController.value = null;
     }
 
-    await params?.refreshConversationState?.({
+    void params?.refreshConversationState?.({
       permissionStateChanged: didChangeRuntimePermissionsDuringStream,
       summaryRefreshed: didRefreshConversationStateDuringStream,
     }).catch(() => undefined);

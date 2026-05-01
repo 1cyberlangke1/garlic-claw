@@ -364,6 +364,150 @@ describe('ToolRegistryService', () => {
     expect(mcpService.setServerEnabled).toHaveBeenCalledWith('weather', false);
   });
 
+  it('applies MCP tool enabled overrides to overview and executable tool set', async () => {
+    const { mcpService, service, toolManagementSettingsService } = createFixture();
+    const buildOverview = () => {
+      const firstEnabled = toolManagementSettingsService.readToolEnabledOverride('mcp:weather:get_forecast') ?? true;
+      const secondEnabled = toolManagementSettingsService.readToolEnabledOverride('mcp:weather:get_alerts') ?? true;
+      return [{
+        source: {
+          kind: 'mcp' as const,
+          id: 'weather',
+          label: 'weather',
+          enabled: true,
+          health: 'healthy' as const,
+          lastError: null,
+          lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          totalTools: 2,
+          enabledTools: [firstEnabled, secondEnabled].filter(Boolean).length,
+          supportedActions: ['health-check', 'reconnect', 'reload'],
+        },
+        tools: [
+          {
+            toolId: 'mcp:weather:get_forecast',
+            name: 'get_forecast',
+            callName: 'weather__get_forecast',
+            description: 'Get forecast',
+            parameters: {},
+            enabled: firstEnabled,
+            sourceKind: 'mcp' as const,
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'healthy' as const,
+            lastError: null,
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+          {
+            toolId: 'mcp:weather:get_alerts',
+            name: 'get_alerts',
+            callName: 'weather__get_alerts',
+            description: 'Get alerts',
+            parameters: {},
+            enabled: secondEnabled,
+            sourceKind: 'mcp' as const,
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'healthy' as const,
+            lastError: null,
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+        ],
+      }];
+    };
+    mcpService.listToolSources.mockImplementation(buildOverview);
+
+    await expect(service.setToolEnabled('mcp:weather:get_alerts', false)).resolves.toEqual(
+      expect.objectContaining({
+        toolId: 'mcp:weather:get_alerts',
+        enabled: false,
+      }),
+    );
+
+    const overview = await service.listOverview();
+    const alertTool = overview.tools.find((entry) => entry.toolId === 'mcp:weather:get_alerts');
+    const source = overview.sources.find((entry) => entry.kind === 'mcp' && entry.id === 'weather');
+
+    expect(alertTool?.enabled).toBe(false);
+    expect(source).toEqual(expect.objectContaining({
+      totalTools: 2,
+      enabledTools: 1,
+    }));
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+
+    expect(toolSet).toBeDefined();
+    expect(Object.keys(toolSet ?? {})).toContain('weather__get_forecast');
+    expect(Object.keys(toolSet ?? {})).not.toContain('weather__get_alerts');
+  });
+
+  it('keeps MCP sources visible in overview when a source is disabled but still has known tools', async () => {
+    const { mcpService, service } = createFixture();
+    mcpService.listToolSources.mockReturnValue([
+      {
+        source: {
+          kind: 'mcp',
+          id: 'weather',
+          label: 'weather',
+          enabled: false,
+          health: 'error',
+          lastError: 'server offline',
+          lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          totalTools: 2,
+          enabledTools: 0,
+          supportedActions: ['health-check', 'reconnect', 'reload'],
+        },
+        tools: [
+          {
+            toolId: 'mcp:weather:get_forecast',
+            name: 'get_forecast',
+            callName: 'weather__get_forecast',
+            description: 'Get forecast',
+            parameters: {},
+            enabled: false,
+            sourceKind: 'mcp',
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'error',
+            lastError: 'server offline',
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+          {
+            toolId: 'mcp:weather:get_alerts',
+            name: 'get_alerts',
+            callName: 'weather__get_alerts',
+            description: 'Get alerts',
+            parameters: {},
+            enabled: false,
+            sourceKind: 'mcp',
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'error',
+            lastError: 'server offline',
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+        ],
+      },
+    ]);
+
+    const overview = await service.listOverview();
+
+    expect(overview.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'mcp',
+        id: 'weather',
+        enabled: false,
+        totalTools: 2,
+        enabledTools: 0,
+      }),
+    ]));
+  });
+
   it('filters out tools disabled for the current conversation scope', async () => {
     const { pluginBootstrapService, service } = createFixture();
     const builtinPersisted = (pluginBootstrapService as unknown as {

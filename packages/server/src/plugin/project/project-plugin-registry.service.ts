@@ -6,7 +6,7 @@ import type {
   PluginAuthorTransportGovernanceHandlers,
 } from '@garlic-claw/plugin-sdk/authoring';
 import type { PluginHostFacadeMethods } from '@garlic-claw/plugin-sdk/host';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../../execution/project/project-worktree-root.service';
 
 type ProjectPluginRuntime = 'local' | 'remote';
@@ -34,6 +34,7 @@ export interface ProjectPluginDefinitionRecord {
 @Injectable()
 export class ProjectPluginRegistryService {
   private readonly definitions = new Map<string, ProjectPluginDefinitionRecord>();
+  private readonly logger = new Logger(ProjectPluginRegistryService.name);
 
   constructor(
     private readonly projectWorktreeRootService: ProjectWorktreeRootService,
@@ -54,11 +55,15 @@ export class ProjectPluginRegistryService {
   loadDefinitions(): ProjectPluginDefinitionRecord[] {
     const nextDefinitions = new Map<string, ProjectPluginDefinitionRecord>();
     for (const directoryPath of this.listPluginDirectories()) {
-      const loaded = this.loadDefinitionFromDirectory(directoryPath);
-      if (!loaded) {
-        continue;
+      try {
+        const loaded = this.loadDefinitionFromDirectory(directoryPath);
+        if (!loaded) {
+          continue;
+        }
+        nextDefinitions.set(loaded.definition.manifest.id, loaded);
+      } catch (error) {
+        this.logger.warn(readProjectPluginLoadErrorMessage(directoryPath, error));
       }
-      nextDefinitions.set(loaded.definition.manifest.id, loaded);
     }
     this.definitions.clear();
     for (const [pluginId, definition] of nextDefinitions.entries()) {
@@ -225,4 +230,12 @@ function cloneProjectPluginDefinitionRecord(
       ? { transportGovernance: record.transportGovernance }
       : {}),
   };
+}
+
+function readProjectPluginLoadErrorMessage(
+  directoryPath: string,
+  error: unknown,
+): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `跳过损坏的本地项目插件目录 ${directoryPath}: ${message}`;
 }

@@ -65,9 +65,20 @@ export class PluginBootstrapService {
     if (!this.projectPluginRegistryService) {
       return [];
     }
-    return this.projectPluginRegistryService
-      .loadDefinitions()
-      .map((definition) => this.registerProjectDefinition(definition).pluginId);
+    const definitions = this.projectPluginRegistryService.loadDefinitions();
+    const loadedPluginIds = new Set(definitions.map((definition) => definition.definition.manifest.id));
+    const builtinPluginIds = new Set(
+      this.builtinPluginRegistryService?.listDefinitions().map((definition) => definition.manifest.id) ?? [],
+    );
+    this.pluginPersistenceService.dropPluginRecords(
+      this.pluginPersistenceService
+        .listPlugins()
+        .filter((plugin) => plugin.manifest.runtime === 'local')
+        .filter((plugin) => !builtinPluginIds.has(plugin.pluginId))
+        .filter((plugin) => !loadedPluginIds.has(plugin.pluginId))
+        .map((plugin) => plugin.pluginId),
+    );
+    return definitions.map((definition) => this.registerProjectDefinition(definition).pluginId);
   }
 
   canReloadBuiltin(pluginId: string): boolean {

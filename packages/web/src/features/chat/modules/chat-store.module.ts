@@ -123,6 +123,16 @@ export function createChatStoreModule() {
         preview: createQueuedSendPreview(entry.input),
       })),
   );
+  const canStopStreaming = computed(() => {
+    const messageId = currentStreamingMessageId.value;
+    if (!messageId) {
+      return false;
+    }
+    const message = messages.value.find((entry) => entry.id === messageId);
+    return message?.role === "assistant" && (
+      message.status === "pending" || message.status === "streaming"
+    );
+  });
   let drainingQueuedSendRequests = false;
   let queuedSendSequence = 0;
 
@@ -413,6 +423,7 @@ export function createChatStoreModule() {
       clearCurrentConversationState();
       return;
     }
+    const shouldClearMessages = currentConversationId.value !== id;
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
@@ -424,6 +435,10 @@ export function createChatStoreModule() {
     selectedModelSource.value = null;
     pendingRuntimePermissions.value = [];
     todoItems.value = [];
+    if (shouldClearMessages) {
+      replaceMessages([]);
+      syncChatStreamingState(streamState);
+    }
     loading.value = true;
     try {
       await Promise.all([
@@ -619,6 +634,9 @@ export function createChatStoreModule() {
       return;
     }
     const activeMessage = messages.value.find((entry) => entry.id === messageId);
+    if (activeMessage?.role !== "assistant") {
+      return;
+    }
 
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
@@ -779,6 +797,7 @@ export function createChatStoreModule() {
     todoItems,
     loading,
     streaming,
+    canStopStreaming,
     currentStreamingMessageId,
     queuedSendCount,
     queuedSendPreviewEntries,

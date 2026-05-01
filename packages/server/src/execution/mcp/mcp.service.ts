@@ -45,10 +45,11 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   getSnapshot(): McpConfigSnapshot { return this.mcpConfigStoreService.getSnapshot(); }
 
   async reloadServersFromConfig(): Promise<void> {
+    const previousRecords = new Map(this.serverRecords);
     await this.disconnectAllClients();
     this.serverRecords.clear();
     for (const server of this.getSnapshot().servers) {
-      await this.syncServerRecord(server.name, server, this.readSourceEnabled(server.name));
+      await this.syncServerRecord(server.name, server, this.readSourceEnabled(server.name), previousRecords.get(server.name)?.tools ?? []);
     }
   }
 
@@ -83,10 +84,38 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   listToolSources(): Array<{ source: ToolSourceInfo; tools: ToolInfo[] }> {
     return [...this.serverRecords.values()].map(({ status, tools }) => {
-      const visibleTools = status.connected && status.enabled ? tools : [];
+      const toolInfos = tools.map((tool) => {
+        const toolId = `mcp:${status.name}:${tool.name}`;
+        const enabledByOverride = this.toolManagementSettingsService.readToolEnabledOverride(toolId) ?? true;
+        return {
+          toolId,
+          name: tool.name,
+          callName: `${status.name}__${tool.name}`,
+          description: tool.description ?? tool.name,
+          parameters: readMcpToolParameters(tool.inputSchema),
+          enabled: status.connected && status.enabled && enabledByOverride,
+          sourceKind: 'mcp' as const,
+          sourceId: status.name,
+          sourceLabel: status.name,
+          health: status.health,
+          lastError: status.lastError,
+          lastCheckedAt: status.lastCheckedAt,
+        } satisfies ToolInfo;
+      });
       return {
-        source: { kind: 'mcp', id: status.name, label: status.name, enabled: status.enabled, health: status.health, lastError: status.lastError, lastCheckedAt: status.lastCheckedAt, totalTools: visibleTools.length, enabledTools: status.enabled ? visibleTools.length : 0, supportedActions: ['health-check', 'reconnect', 'reload'] },
-        tools: visibleTools.map((tool) => ({ toolId: `mcp:${status.name}:${tool.name}`, name: tool.name, callName: `${status.name}__${tool.name}`, description: tool.description ?? tool.name, parameters: readMcpToolParameters(tool.inputSchema), enabled: status.enabled, sourceKind: 'mcp', sourceId: status.name, sourceLabel: status.name, health: status.health, lastError: status.lastError, lastCheckedAt: status.lastCheckedAt })),
+        source: {
+          kind: 'mcp',
+          id: status.name,
+          label: status.name,
+          enabled: status.enabled,
+          health: status.health,
+          lastError: status.lastError,
+          lastCheckedAt: status.lastCheckedAt,
+          totalTools: toolInfos.length,
+          enabledTools: toolInfos.filter((tool) => tool.enabled).length,
+          supportedActions: ['health-check', 'reconnect', 'reload'],
+        },
+        tools: toolInfos,
       };
     });
   }
@@ -114,13 +143,14 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   async connectMcpServer(name: string, config: McpServerConfig): Promise<void> {
     const lastCheckedAt = new Date().toISOString();
+    const knownTools = this.serverRecords.get(name)?.tools ?? [];
     try {
       const connected = await this.connectClientSession({ name, config });
       this.clients.set(name, connected.client);
       this.serverRecords.set(name, createMcpRecord(name, { connected: true, health: 'healthy', lastCheckedAt }, connected.tools));
       this.recordServerEvent(name, { level: 'info', message: `Connected MCP server ${name}`, metadata: { toolCount: connected.tools.length }, type: 'connection:connected' }, config);
     } catch (error) {
-      this.serverRecords.set(name, createMcpRecord(name, { health: 'error', lastCheckedAt, lastError: error instanceof Error ? error.message : String(error) }, []));
+      this.serverRecords.set(name, createMcpRecord(name, { health: 'error', lastCheckedAt, lastError: error instanceof Error ? error.message : String(error) }, knownTools));
       this.recordServerEvent(name, { level: 'error', message: error instanceof Error ? error.message : String(error), type: 'connection:error' }, config);
     }
   }
@@ -139,7 +169,14 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       this.serverRecords.set(server.name, createMcpRecord(server.name, { enabled: this.readSourceEnabled(server.name) }, []));
     }
   }
-  private async syncServerRecord(name: string, config: McpServerConfig, enabled = this.readSourceEnabled(name)): Promise<void> { this.serverRecords.set(name, createMcpRecord(name, { enabled }, [])); await this.closeClient(name); this.updateServerStatus(name, { connected: false, health: 'unknown', lastError: null }); if (enabled) {await this.connectMcpServer(name, config);} }
+  private async syncServerRecord(name: string, config: McpServerConfig, enabled = this.readSourceEnabled(name), knownTools = this.serverRecords.get(name)?.tools ?? []): Promise<void> {
+    this.serverRecords.set(name, createMcpRecord(name, { enabled }, knownTools));
+    await this.closeClient(name);
+    this.updateServerStatus(name, { connected: false, health: 'unknown', lastError: null });
+    if (enabled) {
+      await this.connectMcpServer(name, config);
+    }
+  }
   private updateServerStatus(name: string, patch: Partial<McpServerStatus>): void { const record = this.serverRecords.get(name); if (record) {record.status = { ...record.status, ...patch };} }
   private readSourceEnabled(name: string): boolean {
     return this.toolManagementSettingsService.readSourceEnabledOverride(`mcp:${name}`) ?? true;

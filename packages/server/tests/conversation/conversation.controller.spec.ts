@@ -17,6 +17,7 @@ describe('ConversationController', () => {
     createConversation: jest.fn(),
     deleteConversation: jest.fn(),
     getConversation: jest.fn(),
+    listChildSubagentConversations: jest.fn(),
     listConversations: jest.fn(),
     requireConversation: jest.fn(),
   };
@@ -120,6 +121,17 @@ describe('ConversationController', () => {
     expect(runtimeHostConversationTodoService.readSessionTodo).toHaveBeenCalledWith(conversationId, 'user-1');
     expect(controller.updateSessionTodo('user-1', conversationId, { todos } as never)).toEqual(todos);
     expect(runtimeHostConversationTodoService.replaceSessionTodo).toHaveBeenCalledWith(conversationId, todos, 'user-1');
+  });
+
+  it('lists only subagent child conversations for the conversation tabs API', () => {
+    const subagentChildren = [
+      { id: '33333333-3333-4333-8333-333333333333', kind: 'subagent', title: 'Subagent Child' },
+    ];
+    runtimeHostConversationRecordService.listChildSubagentConversations.mockReturnValue(subagentChildren);
+
+    expect(controller.listConversationSubagents('user-1', conversationId)).toEqual(subagentChildren);
+    expect(runtimeHostConversationRecordService.requireConversation).toHaveBeenCalledWith(conversationId, 'user-1');
+    expect(runtimeHostConversationRecordService.listChildSubagentConversations).toHaveBeenCalledWith(conversationId, 'user-1');
   });
 
   it('lists and replies runtime permission requests through owned conversation APIs', () => {

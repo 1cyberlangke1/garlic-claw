@@ -124,6 +124,18 @@ describe('RuntimeHostSubagentRunnerService', () => {
 
   it('interrupts a queued subagent before it starts running', async () => {
     const fixture = createFixture();
+    const executeSubagent = jest.fn(async ({ request }) => ({
+      message: {
+        content: `Generated: ${readLatestPrompt(request.messages)}`,
+        role: 'assistant',
+      },
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: `Generated: ${readLatestPrompt(request.messages)}`,
+      toolCalls: [],
+      toolResults: [],
+    }));
+    Reflect.set(fixture.runner as object, 'executeSubagent', executeSubagent);
 
     const summary = await fixture.runner.spawnSubagent('builtin.memory', 'Memory', {
       conversationId: fixture.parentConversationId,
@@ -137,6 +149,15 @@ describe('RuntimeHostSubagentRunnerService', () => {
     const interrupted = await fixture.runner.interruptSubagent('builtin.memory', summary.conversationId, 'user-1');
     expect(interrupted).toMatchObject({
       conversationId: summary.conversationId,
+      status: 'interrupted',
+    });
+
+    await jest.runAllTimersAsync();
+
+    expect(executeSubagent).not.toHaveBeenCalled();
+    expect(fixture.runner.getSubagent('builtin.memory', summary.conversationId)).toMatchObject({
+      conversationId: summary.conversationId,
+      error: '子代理已被手动中断',
       status: 'interrupted',
     });
   });
@@ -222,6 +243,7 @@ describe('RuntimeHostSubagentRunnerService', () => {
       kind: 'subagent',
       parentId: fixture.parentConversationId,
       subagent: {
+        activeAssistantMessageId: 'running-assistant-1',
         pluginDisplayName: 'Memory',
         pluginId: 'builtin.memory',
         requestPreview: '重启中断',
@@ -235,6 +257,26 @@ describe('RuntimeHostSubagentRunnerService', () => {
       title: 'Running',
       userId: 'user-1',
     }) as { id: string }).id;
+    fixture.recordService.replaceMessages(runningConversationId, [
+      {
+        content: '重启中断',
+        createdAt: '2026-04-30T10:00:00.000Z',
+        id: 'running-user-1',
+        parts: [{ text: '重启中断', type: 'text' }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-30T10:00:00.000Z',
+      } as never,
+      {
+        content: '执行到一半…',
+        createdAt: '2026-04-30T10:00:01.000Z',
+        id: 'running-assistant-1',
+        parts: [{ text: '执行到一半…', type: 'text' }],
+        role: 'assistant',
+        status: 'streaming',
+        updatedAt: '2026-04-30T10:00:01.000Z',
+      } as never,
+    ], 'user-1');
 
     fixture.runner.resumePendingSubagents('builtin.memory');
     await jest.runAllTimersAsync();
@@ -247,6 +289,12 @@ describe('RuntimeHostSubagentRunnerService', () => {
       conversationId: runningConversationId,
       error: '服务重启时中断了正在运行的子代理',
       status: 'interrupted',
+    });
+    expect(fixture.recordService.requireConversation(runningConversationId, 'user-1').messages.at(-1)).toMatchObject({
+      error: '服务重启时中断了正在运行的子代理',
+      id: 'running-assistant-1',
+      role: 'assistant',
+      status: 'stopped',
     });
   });
 });

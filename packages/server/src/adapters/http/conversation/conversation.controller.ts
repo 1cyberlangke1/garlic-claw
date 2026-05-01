@@ -268,7 +268,7 @@ export class ConversationController {
   @Get('conversations/:id/subagents')
   listConversationSubagents(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
-    return this.runtimeHostConversationRecordService.listChildConversations(id);
+    return this.runtimeHostConversationRecordService.listChildSubagentConversations(id, userId);
   }
 
   @Delete('conversations/:id/messages/:messageId')

@@ -111,6 +111,38 @@ describe('ToolsView', () => {
     wrapper.unmount()
   })
 
+  it('keeps the MCP section visible when a disabled source still reports known tools', async () => {
+    vi.mocked(toolData.loadToolOverview).mockResolvedValueOnce({
+      sources: [
+        {
+          kind: 'mcp',
+          id: 'weather',
+          label: 'weather',
+          enabled: false,
+          totalTools: 2,
+          enabledTools: 0,
+        },
+      ],
+      tools: [],
+    })
+
+    const wrapper = mount(ToolsView, {
+      global: {
+        stubs: {
+          ToolGovernancePanel: {
+            props: ['sourceKind', 'sourceId', 'title'],
+            template: '<div>{{ title }}|{{ sourceKind }}|{{ sourceId || "all" }}</div>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('MCP 工具管理|mcp|all')
+    expect(wrapper.text()).not.toContain('当前还没有可管理的实际工具')
+    wrapper.unmount()
+  })
+
   it('refreshes overview when runtime tool config changes', async () => {
     const wrapper = mount(ToolsView, {
       global: {

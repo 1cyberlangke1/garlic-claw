@@ -93,6 +93,59 @@ describe('ProjectPluginRegistryService', () => {
 
     expect(service.loadDefinitions()).toEqual([]);
   });
+
+  it('skips broken local plugin directories without aborting other local plugins', () => {
+    writePluginPackage(projectRootPath, 'broken-local', {
+      garlicClaw: {
+        runtime: 'local',
+      },
+      main: 'dist/index.js',
+      name: '@garlic-claw/broken-local',
+    }, [
+      'module.exports = {',
+      "  invalid: true,",
+      '};',
+    ]);
+    fs.rmSync(
+      path.join(projectRootPath, 'config', 'plugins', 'broken-local', 'dist', 'index.js'),
+      { force: true },
+    );
+    writePluginPackage(projectRootPath, 'local-echo', {
+      garlicClaw: {
+        runtime: 'local',
+      },
+      main: 'dist/index.js',
+      name: '@garlic-claw/local-echo',
+    }, [
+      'module.exports.definition = {',
+      "  manifest: {",
+      "    id: 'local.echo',",
+      "    name: 'Local Echo',",
+      "    version: '1.0.0',",
+      "    runtime: 'local',",
+      '    permissions: [],',
+      '    tools: [{ name: \'echo\', description: \'echo\', parameters: {} }],',
+      '  },',
+      '  tools: {',
+      '    echo: async (params) => ({ echoed: params.text ?? null }),',
+      '  },',
+      '};',
+    ]);
+
+    const service = new ProjectPluginRegistryService(
+      new ProjectWorktreeRootService(),
+    );
+
+    expect(service.loadDefinitions()).toEqual([
+      expect.objectContaining({
+        definition: expect.objectContaining({
+          manifest: expect.objectContaining({
+            id: 'local.echo',
+          }),
+        }),
+      }),
+    ]);
+  });
 });
 
 function writePluginPackage(

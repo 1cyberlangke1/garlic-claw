@@ -374,6 +374,42 @@ describe('ConversationMessageLifecycleService', () => {
     ).rejects.toThrow('当前仍有回复在生成中，请先停止或等待完成');
   });
 
+  it('rejects retrying a non-assistant message', async () => {
+    const userMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '普通用户消息',
+      parts: [{ text: '普通用户消息', type: 'text' }],
+      role: 'user',
+      status: 'completed',
+    });
+
+    await expect(
+      service.retryMessageGeneration(conversationId, String(userMessage.id), { model: 'gpt-5.4', provider: 'openai' }, 'user-1'),
+    ).rejects.toThrow('Only assistant messages can be retried');
+  });
+
+  it('blocks retry when the conversation already has an active assistant reply', async () => {
+    runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '已完成回复',
+      model: 'gpt-5.4',
+      parts: [{ text: '已完成回复', type: 'text' }],
+      provider: 'openai',
+      role: 'assistant',
+      status: 'completed',
+    });
+    const activeAssistantMessage = runtimeHostConversationMessageService.createMessage(conversationId, {
+      content: '',
+      model: 'gpt-5.4',
+      parts: [],
+      provider: 'openai',
+      role: 'assistant',
+      status: 'pending',
+    });
+
+    await expect(
+      service.retryMessageGeneration(conversationId, String(activeAssistantMessage.id), { model: 'gpt-5.4', provider: 'openai' }, 'user-1'),
+    ).rejects.toThrow('当前仍有回复在生成中，请先停止或等待完成');
+  });
+
   it('includes user and active persona in hook context payloads', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
     runtimeHostConversationRecordService.rememberConversationActivePersona(conversationId, 'persona-1');

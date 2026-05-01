@@ -1,5 +1,42 @@
 # Task Plan
 
+## 2026-05-01 subagent 扫描后的高优先级缺陷清单
+
+### 目标
+- [ ] 先把本轮扫描出的真实 bug 落到规划文件，避免上下文漂移
+- [ ] 按优先级逐个修复高风险后端语义漏洞与前端状态错乱
+- [ ] 每修一组都补回归测试与必要验证
+
+### 阶段 A：记录扫描结果
+- [x] 记录 `retry` 并发与目标消息类型校验缺口
+- [x] 记录 `subagent interrupt / restart / child conversation` 相关缺口
+- [x] 记录 `MCP tool enable / source visibility / local project plugin bootstrap` 相关缺口
+- [x] 记录自动化事件串行失败截断与聊天切会话旧消息残留问题
+
+### 阶段 B：首批修复顺序
+- [x] 先修 `retry` 只能重试 assistant 且同会话不能并发两条活跃回复
+- [x] 再修 `queued subagent interrupt` 与重启后假 `streaming`
+- [x] 再修 MCP 单工具禁用无效与 source 隐身
+- [x] 再修本地项目插件坏目录拖死启动与幽灵插件记录
+
+### 阶段 C：继续收口剩余高优先级行为缺陷
+- [x] 修聊天页子代理标签混入普通 child conversation
+- [x] 修自动化同一事件命中多条时，前一条异常截断后续执行
+- [x] 修聊天页 `display result` 停止按钮不真正停止后端命令任务
+- [x] 修切会话时旧消息短暂残留
+
+### 阶段 D：整轮验收
+- [x] 跑 `lint`
+- [x] 跑 `smoke:server`
+- [x] 跑 `smoke:web-ui`
+- [x] 拉独立 judge 复核
+
+### 阶段 D 补充：`/compact` smoke 阻塞修复
+- [x] 复现 `smoke:web-ui` 的 `/compact` 超时，并确认不是后端落库缺失注解
+- [x] 查明真实阻塞在“前端待发送队列等待流结束后的补刷新”
+- [x] 让 `dispatchSendMessage / dispatchRetryMessage` 不再阻塞等待最终补刷新
+- [x] 调整 browser smoke 等待口径，改为等待上一条聊天 SSE 请求真正结束
+
 ## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
 
 ### 目标

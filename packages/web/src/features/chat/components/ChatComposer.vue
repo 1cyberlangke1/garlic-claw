@@ -89,7 +89,7 @@
         type="button"
         class="composer-button stop-button"
         title="停止"
-        :disabled="!streaming"
+        :disabled="!canStop"
         @click="$emit('stop')"
       >
         <Icon :icon="stopBold" class="button-icon" aria-hidden="true" />
@@ -116,6 +116,7 @@ const props = defineProps<{
   queuedSendCount: number
   queuedSendPreviewEntries: QueuedChatSendPreviewEntry[]
   canSend: boolean
+  canStop: boolean
   streaming: boolean
 }>()
 const {
@@ -126,7 +127,7 @@ const {
   queuedSendCount,
   queuedSendPreviewEntries,
   canSend,
-  streaming,
+  canStop,
 } = toRefs(props)
 
 const emit = defineEmits<{

@@ -1,5 +1,198 @@
 # Progress
 
+## 2026-05-01 subagent 扫描后的高优先级缺陷清单
+
+### 已收集问题
+- 聊天与上下文链路
+  - `retryMessageGeneration()` 没有限制“仅 assistant 可重试”，也没有复用“同会话只能有一个活跃 assistant”约束
+  - 聊天前端把 `display result` 也当成可停止回复，但点击停止不会真正停掉后端命令任务
+  - 会话切换时不会先清空旧消息，慢网络下会短暂显示上一会话内容
+- 子代理与自动化链路
+  - `queued` 子代理在 `interrupt` 后仍会继续跑
+  - 服务重启时运行中的子代理只改 metadata，不会同步把会话里的活跃 assistant 消息收口
+  - 聊天页子代理标签接口会把普通 child conversation 也混进来
+  - 同一事件命中多条自动化时，前一条抛错会截断后续全部执行
+- 工具 / MCP / 插件链路
+  - 单个 MCP 工具启用/禁用开关无效
+  - 被禁用或掉线的 MCP source 会从 `/tools` 隐身，无法在统一入口恢复
+  - 本地项目插件坏目录可拖死整个 HTTP 启动
+  - 删除本地插件目录后会残留幽灵插件记录
+
+### 当前执行顺序
+- 先把问题落到规划文件
+- 首修 `retry` 两个后端漏洞：
+  - 目标消息必须是 assistant
+  - 同会话存在活跃 assistant 时禁止再发起 retry
+
+### 已完成的首批修复
+- `ConversationMessageLifecycleService.retryMessageGeneration()` 现在会先校验：
+  - 目标消息 `role === 'assistant'`
+  - 当前会话不存在其他活跃 assistant 回复
+- 新增回归测试覆盖：
+  - 重试 `user` 消息被拒绝
+  - 会话已有活跃 assistant 时，`retry` 被拒绝
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/conversation/conversation-message-lifecycle.service.spec.ts` ✅
+  - `npm run typecheck -w packages/server` ✅
+
+### 下一步
+- 继续修 `queued subagent interrupt` 不生效
+- 同轮一起收口“服务重启后子代理会话残留假 streaming”
+
+### 第二批已完成修复
+- `RuntimeHostSubagentRunnerService` 现在会：
+  - 记录已排队的 `setTimeout` 调度句柄
+  - `interruptSubagent()` 时主动取消未开始执行的 queued 调度
+  - 执行入口遇到 `interrupted` 会直接短路，不再误跑
+- `resumePendingSubagents()` 现在会在把 stale `running` 子代理改成 `interrupted` 时，同步把对应 assistant 消息写成 `stopped`
+- 新增/补强回归测试覆盖：
+  - queued 子代理被 interrupt 后，跑完 timers 也不会继续执行
+  - 服务重启恢复 stale running 子代理时，对应 assistant 消息会被收成 `stopped`
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/runtime/host/runtime-host-subagent-runner.service.spec.ts` ✅
+  - `npm run typecheck -w packages/server` ✅
+
+### 下一步
+- 继续修 MCP 单工具启用/禁用无效
+- 再收口 MCP source 掉线/禁用后从 `/tools` 隐身的问题
+
+### 第三批已完成修复
+- `McpService.listToolSources()` 现在会把 `tool-management.json` 的 MCP tool 级 override 一起折算进总览：
+  - 单个 MCP tool 禁用后，`/tools/overview` 会立即反映 `tool.enabled = false`
+  - `ToolRegistryService.buildToolSet()` 也会同步排除该 MCP tool
+- MCP source 总览不再把 `totalTools` 绑定到“当前可执行工具数”：
+  - `source.totalTools` 改为已知工具总数
+  - `source.enabledTools` 只统计当前真正可执行的工具
+  - source 掉线或被禁用时，不会再因为 `totalTools = 0` 从 `/tools` 消失
+- `McpService` 在 reload / disable / reconnect 失败时会尽量保留已知工具描述，避免统一入口丢失 source 维度
+- 新增/补强回归测试覆盖：
+  - MCP tool 级 enabled override 会影响 overview 与 executable tool set
+  - disabled source 仍保留已知工具数与工具列表
+  - `/tools` 页在 disabled MCP source 仍有已知工具时继续展示 MCP 分区
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/execution/mcp/mcp.service.spec.ts` ✅
+  - `npm run test -w packages/server -- tests/execution/tool/tool-registry.service.spec.ts` ✅
+  - `npm run test:run -w packages/web -- tests/features/tools/views/ToolsView.spec.ts` ✅
+  - `npm run typecheck -w packages/server` ✅
+  - `npm run typecheck -w packages/web` ✅
+
+### 下一步
+- 继续修本地项目插件坏目录拖死启动
+- 同轮收口已删除目录的本地项目插件幽灵记录
+
+### 第四批已完成修复
+- `ProjectPluginRegistryService.loadDefinitions()` 现在按目录级容错：
+  - 单个损坏的本地项目插件目录只会记 warning 并跳过
+  - 其余健康插件仍会继续加载，不再把异常抛穿到 HTTP 启动链路
+- `PluginBootstrapService.bootstrapProjectPlugins()` 现在会先做本地项目插件清理：
+  - 对比 `config/plugins` 当前已加载 definition 集合
+  - 删除持久化里“不是 builtin 且已不在磁盘上的 local plugin”记录
+  - 保留 builtin local 与 remote plugin 记录
+- 新增/补强回归测试覆盖：
+  - registry 遇到损坏目录时仍能加载同目录下其他本地插件
+  - bootstrap 本地项目插件时会清理已删除目录的幽灵记录，但不会误删 remote 记录
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/plugin/project/project-plugin-registry.service.spec.ts` ✅
+  - `npm run test -w packages/server -- tests/plugin/bootstrap/plugin-bootstrap.service.spec.ts` ✅
+  - `npm run test -w packages/server -- tests/runtime/host/runtime-host-plugin-dispatch.service.spec.ts` ✅
+  - `npm run typecheck -w packages/server` ✅
+
+### 下一步
+- 继续修聊天页子代理标签混入普通 child conversation
+- 或自动化事件命中多条时前一条异常截断后续执行
+
+### 第五批已完成修复
+- `GET /api/chat/conversations/:id/subagents` 不再复用泛化的 `listChildConversations()`：
+  - 新增 `RuntimeHostConversationRecordService.listChildSubagentConversations()`
+  - 只返回 `kind === 'subagent'` 且带 `subagent` 元数据的真实子代理会话
+  - 普通 `parentId` 子会话，例如自动化 `cron child`，不会再混进聊天页子代理标签
+- 新增/补强回归测试覆盖：
+  - conversation controller 只调用新的 subagent child 列表 owner
+  - conversation record service 能区分“全部 child”与“仅 subagent child”
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/conversation/conversation.controller.spec.ts` ✅
+  - `npm run test -w packages/server -- tests/runtime/host/runtime-host-conversation-record.service.spec.ts` ✅
+  - `npm run typecheck -w packages/server` ✅
+
+### 下一步
+- 继续修自动化同一事件命中多条时前一条异常截断后续执行
+- 再处理聊天页 `display result` 停止按钮与切会话旧消息残留
+
+### 第六批已完成修复
+- `AutomationService.emitEvent()` 现在按“单条自动化”粒度吞住意外异常：
+  - 某条匹配自动化在 `runRecord()` 外层抛错时，会记录 error 日志并继续执行后续命中的自动化
+  - 同一事件的 `matchedAutomationIds` 不再因为前一条异常而提前截断
+- 新增回归测试覆盖：
+  - 第一条事件自动化抛出意外异常时，第二条仍会继续执行
+  - 第一条失败日志会落成 `status: error`
+- 本轮验证：
+  - `npm run test -w packages/server -- tests/automation/automation.service.spec.ts` ✅
+  - `npm run typecheck -w packages/server` ✅
+
+### 下一步
+- 继续修聊天页 `display result` 停止按钮不真正停止后端命令任务
+- 再修切会话时旧消息短暂残留
+
+### 第七批已完成修复
+- 聊天前端把“阻塞中”和“可停止”拆成了两层状态：
+  - `streaming` 继续表示当前会话仍在阻塞，会驱动待发送队列
+  - 新增 `canStopStreaming`，只在当前活跃消息确实是 `assistant(pending/streaming)` 时为真
+- `stopStreaming()` 现在也会二次校验当前活跃消息必须是 assistant：
+  - `display result` 不再被本地误标成 `stopped`
+  - 也不会再因为点了停止而只中断前端请求、却让后端命令继续跑
+- `ChatComposer` 的停止按钮现在只看 `canStop`，不再只看 `streaming`
+- 新增/补强回归测试覆盖：
+  - `display result` 维持队列阻塞时，停止按钮仍应禁用
+  - 对 `display result` 调 `stopStreaming()` 不会错误调用后端 stop 接口，也不会本地改写消息状态
+- 本轮验证：
+  - `npm run test:run -w packages/web -- tests/features/chat/store/chat-store.module.spec.ts` ✅
+  - `npm run test:run -w packages/web -- tests/features/chat/components/ChatComposer.spec.ts` ✅
+  - `npm run typecheck -w packages/web` ✅
+
+### 下一步
+- 继续修切会话时旧消息短暂残留
+
+### 第八批已完成修复
+- `selectConversation()` 现在在切到另一条会话时，会先清空旧消息视图：
+  - 慢网络下会先显示空白加载态
+  - 不再把上一会话的消息短暂留在当前会话里
+  - 对同一会话的重复刷新不额外清空，避免无意义闪烁
+- 新增回归测试覆盖：
+  - 切到另一会话且详情仍在加载时，旧消息会立即被清空
+  - 新会话详情返回后，再正常落入当前消息列表
+- 本轮验证：
+  - `npm run test:run -w packages/web -- tests/features/chat/store/chat-store.module.spec.ts` ✅
+  - `npm run typecheck -w packages/web` ✅
+
+### 下一步
+- 进入整轮验收：`lint`、`smoke:server`、`smoke:web-ui`、独立 judge
+
+### `/compact` 浏览器 smoke 超时补定位
+- 已复现 `smoke:web-ui` 卡在“等待 /compact 的命令结果写入会话历史”。
+- 失败时抓到的会话快照显示：
+  - 后端历史里只有首条普通 user/assistant
+  - `/compact` 的 display command/result 根本还没发到后端
+- 进一步顺着前端发送链路确认：
+  - `/compact` 点击时会先进当前会话待发送队列
+  - 队列 drain 会等待前一条 `dispatchSendMessage()` 整体返回
+  - 旧实现把“流结束后的会话摘要/上下文预览补刷新”也放在 `dispatchSendMessage()` 的 await 主链上
+  - 结果是：SSE 内容已经结束，但下一条排队消息仍可能被慢补刷新卡住
+- 已完成修复：
+  - `dispatchSendMessage / dispatchRetryMessage` 不再阻塞等待最终 `refreshConversationState`
+  - 补刷新改为后台执行，不再卡住下一条队列出队
+  - 浏览器 smoke 在发送 `/compact` 前，改为等待上一条聊天 POST SSE 请求 `requestfinished`
+  - smoke 失败时保留当前会话消息快照输出，便于后续再定位
+- 本轮验证：
+  - `npm run test:run -w packages/web -- tests/features/chat/store/chat-store.dispatch.spec.ts` ✅
+  - `npm run typecheck -w packages/web` ✅
+  - `npm run smoke:web-ui` ✅
+  - `npm run lint` ✅
+  - `npm run smoke:server` ✅
+  - `npm run smoke:web-ui` 复跑 ✅
+- 独立 judge：
+  - 首轮 `FAIL`：指出 smoke 不能拿 stop 按钮禁用冒充真实空闲
+  - 修正为等待上一条聊天 SSE 请求 `requestfinished` 后，复核 `PASS`
+
 ## 2026-05-01 工具管理刷新联动与 MCP 启用状态持久化
 
 ### 已确认现状

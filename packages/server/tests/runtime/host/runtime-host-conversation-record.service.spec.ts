@@ -630,6 +630,46 @@ describe('RuntimeHostConversationRecordService', () => {
     expect(service.listSubagentConversations('user-1')).toEqual([]);
   });
 
+  it('lists only true subagent child conversations for a parent conversation', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
+    const subagentChildId = (service.createConversation({
+      kind: 'subagent',
+      parentId: parentConversationId,
+      subagent: {
+        pluginDisplayName: 'Memory',
+        pluginId: 'builtin.memory',
+        requestPreview: '整理上下文',
+        requestedAt: '2026-04-25T00:00:00.000Z',
+        runtimeKind: 'local',
+        status: 'queued',
+        startedAt: null,
+        finishedAt: null,
+        closedAt: null,
+      },
+      title: 'Subagent Child',
+      userId: 'user-1',
+    }) as { id: string }).id;
+    service.createConversation({
+      parentId: parentConversationId,
+      title: 'Cron Child',
+      userId: 'user-1',
+    });
+
+    expect(service.listChildConversations(parentConversationId)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: subagentChildId }),
+      expect.objectContaining({ title: 'Cron Child' }),
+    ]));
+    expect(service.listChildSubagentConversations(parentConversationId, 'user-1')).toEqual([
+      expect.objectContaining({
+        id: subagentChildId,
+        kind: 'subagent',
+        title: 'Subagent Child',
+      }),
+    ]);
+  });
+
   it('persists plugin conversation sessions across service reloads', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new RuntimeHostConversationRecordService();
