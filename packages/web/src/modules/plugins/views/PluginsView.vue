@@ -1,9 +1,6 @@
 <template>
   <div class="plugins-page">
     <PluginPageHero
-      v-model:current-view="currentView"
-      :view-options="viewOptions"
-      :headline="heroHeadline"
       :cards="overviewCards"
       @refresh="refreshAll"
     />
@@ -18,21 +15,24 @@
     />
 
     <div class="plugins-layout">
-      <nav v-if="currentView === 'manage'" class="detail-nav" aria-label="详情面板切换">
-        <button
-          v-for="panel in availablePanels"
-          :key="panel.value"
-          type="button"
-          :class="{ active: activePanel === panel.value }"
-          @click="activePanel = panel.value"
-        >
-          {{ panel.label }}
-        </button>
+      <nav class="detail-nav" aria-label="插件详情面板切换">
+        <div class="detail-nav-group">
+          <button
+            v-for="panel in availablePanels"
+            :key="panel.value"
+            type="button"
+            :title="panel.label"
+            :class="{ active: activePanel === panel.value }"
+            @click="activePanel = panel.value"
+          >
+            {{ panel.label }}
+          </button>
+        </div>
       </nav>
 
       <section class="plugin-detail">
         <PluginSidebar
-          v-show="activePanel === 'plugins' && currentView === 'manage'"
+          v-show="activePanel === 'plugins'"
           v-model:active-filter="activeFilter"
           :filter-options="filterOptions"
           :plugins="plugins"
@@ -45,7 +45,7 @@
 
         <template v-if="selectedPlugin">
           <PluginDetailOverview
-            v-show="activePanel === 'overview'"
+            v-if="activePanel === 'overview'"
             :plugin="selectedPlugin"
             :health="selectedPluginHealth"
             :actions="selectedPluginActions"
@@ -60,19 +60,36 @@
             @delete-selected="deleteSelectedPlugin"
           />
 
-          <div v-show="activePanel !== 'plugins' && currentView === 'manage'" class="detail-content">
+          <div v-if="activePanel !== 'plugins'" class="detail-content">
+            <div v-if="activePanel === 'logs'" class="plugin-log-stack">
+              <PluginEventLog
+                :events="eventLogs"
+                :loading="detailLoading || eventLoading"
+                :query="eventQuery"
+                :next-cursor="eventNextCursor"
+                @refresh="refreshPluginEvents"
+                @load-more="loadMorePluginEvents"
+              />
+              <EventLogSettingsPanel
+                :settings="selectedPlugin.eventLog"
+                :saving="savingEventLog"
+                title="插件日志设置"
+                description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
+                @save="saveEventLog"
+              />
+            </div>
             <PluginRemoteSummaryPanel
-              v-show="activePanel === 'remote-summary'"
+              v-if="activePanel === 'remote-summary'"
               :plugin="selectedPlugin"
             />
             <PluginRemoteAccessPanel
-              v-show="activePanel === 'remote-access'"
+              v-if="activePanel === 'remote-access'"
               :plugin="selectedPlugin"
               :saving="savingRemoteAccess"
               @save="saveRemoteAccess"
             />
             <SchemaConfigForm
-              v-show="activePanel === 'config'"
+              v-if="activePanel === 'config'"
               :snapshot="configSnapshot"
               :saving="savingConfig"
               title="插件配置"
@@ -81,7 +98,7 @@
               @save="saveConfig"
             />
             <PluginLlmPreferencePanel
-              v-show="activePanel === 'llm-preference'"
+              v-if="selectedPluginUsesLlm && activePanel === 'llm-preference'"
               :preference="llmPreference"
               :providers="llmProviders"
               :options="llmOptions"
@@ -89,31 +106,14 @@
               @save="saveLlmPreference"
             />
             <PluginScopeEditor
-              v-show="activePanel === 'scope'"
+              v-if="activePanel === 'scope'"
               :plugin="selectedPlugin"
               :scope="scopeSettings"
               :saving="savingScope"
               @save="saveScope"
             />
-            <EventLogSettingsPanel
-              v-show="activePanel === 'event-log'"
-              :settings="selectedPlugin.eventLog"
-              :saving="savingEventLog"
-              title="插件日志设置"
-              description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
-              @save="saveEventLog"
-            />
-            <article v-show="activePanel === 'tools'" class="tool-management-entry">
-              <div class="tool-management-entry-copy">
-                <h3>工具管理入口</h3>
-                <p>插件工具启用/禁用已统一移到工具管理页。当前页继续处理配置、作用域、日志和远程接入。</p>
-              </div>
-              <a class="tool-management-entry-link" :href="selectedPluginToolManagementHref">
-                打开工具管理
-              </a>
-            </article>
             <PluginStoragePanel
-              v-show="activePanel === 'storage'"
+              v-if="activePanel === 'storage'"
               :entries="storageEntries"
               :prefix="storagePrefix"
               :loading="detailLoading"
@@ -124,32 +124,21 @@
               @delete="deleteStorageEntry"
             />
             <PluginCronList
-              v-show="activePanel === 'cron'"
+              v-if="activePanel === 'cron'"
               :jobs="selectedCronJobs"
               :deleting-job-id="deletingCronJobId"
               @delete="deleteCronJob"
             />
             <PluginConversationSessionList
-              v-show="activePanel === 'sessions'"
+              v-if="activePanel === 'sessions'"
               :sessions="selectedConversationSessions"
               :finishing-conversation-id="finishingConversationId"
               @finish="finishConversationSession"
             />
             <PluginRouteList
-              v-show="activePanel === 'routes'"
+              v-if="activePanel === 'routes'"
               :plugin-name="selectedPlugin.name"
               :routes="selectedPlugin.manifest.routes ?? []"
-            />
-          </div>
-
-          <div v-if="currentView !== 'manage'" class="plugin-log-section">
-            <PluginEventLog
-              :events="eventLogs"
-              :loading="detailLoading || eventLoading"
-              :query="eventQuery"
-              :next-cursor="eventNextCursor"
-              @refresh="refreshPluginEvents"
-              @load-more="loadMorePluginEvents"
             />
           </div>
         </template>
@@ -189,30 +178,23 @@ import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-type PluginsPageView = 'manage' | 'logs'
 type PluginFilterValue = 'all' | 'attention' | 'local' | 'remote'
 type DetailPanelId =
   | 'plugins'
   | 'overview'
+  | 'logs'
   | 'remote-summary'
   | 'remote-access'
   | 'config'
   | 'llm-preference'
   | 'scope'
-  | 'event-log'
-  | 'tools'
   | 'storage'
   | 'cron'
   | 'sessions'
   | 'routes'
 
 const route = useRoute()
-const currentView = ref<PluginsPageView>('manage')
 const activeFilter = ref<PluginFilterValue>('all')
-const viewOptions: ReadonlyArray<{ label: string; value: PluginsPageView }> = [
-  { label: '管理', value: 'manage' },
-  { label: '日志', value: 'logs' },
-]
 const filterOptions: ReadonlyArray<{ label: string; value: PluginFilterValue }> = [
   { label: '全部', value: 'all' },
   { label: '需关注', value: 'attention' },
@@ -300,6 +282,7 @@ const availablePanels = computed(() => {
   panels.push({ label: '插件列表', value: 'plugins' })
   if (selectedPlugin.value) {
     panels.push({ label: '插件概览', value: 'overview' })
+    panels.push({ label: '日志', value: 'logs' })
     if (selectedPlugin.value.remote) {
       panels.push({ label: '远程摘要', value: 'remote-summary' })
       panels.push({ label: '远程接入', value: 'remote-access' })
@@ -309,8 +292,6 @@ const availablePanels = computed(() => {
       panels.push({ label: '模型偏好', value: 'llm-preference' })
     }
     panels.push({ label: '作用域', value: 'scope' })
-    panels.push({ label: '日志设置', value: 'event-log' })
-    panels.push({ label: '工具管理', value: 'tools' })
     panels.push({ label: '持久化 KV', value: 'storage' })
     panels.push({ label: '定时任务', value: 'cron' })
     panels.push({ label: '会话等待态', value: 'sessions' })
@@ -325,14 +306,6 @@ watch(availablePanels, (panels) => {
   }
 }, { immediate: true })
 
-const selectedPluginToolManagementHref = computed(() => {
-  const params = new URLSearchParams({ kind: 'plugin' })
-  if (selectedPlugin.value?.name) {
-    params.set('source', selectedPlugin.value.name)
-  }
-
-  return `/tools?${params.toString()}`
-})
 const selectedCronJobs = computed(() =>
   cronJobs.value.length > 0 ? cronJobs.value : selectedPlugin.value?.crons ?? [],
 )
@@ -361,18 +334,6 @@ const remotePluginCount = computed(() =>
 const attentionPluginCount = computed(() =>
   plugins.value.filter((plugin) => needsAttention(plugin)).length,
 )
-const heroHeadline = computed(() => {
-  const total = plugins.value.length
-  const online = onlinePluginCount.value
-  if (total === 0) {
-    return '等待首个插件接入'
-  }
-  if (online === total) {
-    return `${online} / ${total} 在线`
-  }
-
-  return `${online} / ${total} 在线，${total - online} 个离线`
-})
 const overviewCards = computed(() => {
   const total = plugins.value.length
 

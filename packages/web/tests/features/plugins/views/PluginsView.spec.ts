@@ -180,7 +180,8 @@ describe('PluginsView', () => {
           SchemaConfigForm: { template: '<div />' },
           PluginLlmPreferencePanel: { template: '<div>插件模型策略</div>' },
           PluginScopeEditor: { template: '<div />' },
-          PluginEventLog: { template: '<div />' },
+          PluginEventLog: { template: '<div>插件事件日志</div>' },
+          EventLogSettingsPanel: { template: '<div>插件日志设置面板</div>' },
           PluginStoragePanel: {
             props: ['prefix'],
             template: '<div />',
@@ -191,6 +192,8 @@ describe('PluginsView', () => {
         },
       },
     })
+
+    await wrapper.get('.detail-nav button[title="插件概览"]').trigger('click')
 
     expect(wrapper.text()).toContain('可读取会话上下文')
     expect(wrapper.text()).toContain('可写入用户记忆')
@@ -214,17 +217,18 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('可消费并改写模型结果')
     expect(wrapper.text()).toContain('可定时执行任务')
     expect(wrapper.text()).toContain('可暴露宿主内 JSON 路由')
-    expect(wrapper.text()).toContain('插件模型策略')
-    expect(wrapper.text()).toContain('插件工具启用/禁用已统一移到工具管理页')
-    expect(wrapper.text()).toContain('打开工具管理')
     expect(wrapper.text()).toContain('最后检查')
     expect(wrapper.text()).toContain('并发')
     expect(wrapper.text()).toContain('2 / 6')
 
-    await wrapper.get('button[title="日志"]').trigger('click')
+    await wrapper.get('.detail-nav button[title="模型偏好"]').trigger('click')
+    expect(wrapper.text()).toContain('插件模型策略')
+    expect(wrapper.text()).not.toContain('工具管理')
 
-    expect(wrapper.text()).toContain('插件日志')
-    expect(wrapper.text()).not.toContain('打开工具管理')
+    await wrapper.get('.detail-nav button[title="日志"]').trigger('click')
+
+    expect(wrapper.text()).toContain('插件事件日志')
+    expect(wrapper.text()).toContain('插件日志设置面板')
   })
 
   it('only renders the plugin model panel for plugins that declare llm access', () => {
@@ -238,7 +242,8 @@ describe('PluginsView', () => {
           SchemaConfigForm: { template: '<div />' },
           PluginLlmPreferencePanel: { template: '<div>插件模型策略</div>' },
           PluginScopeEditor: { template: '<div />' },
-          PluginEventLog: { template: '<div />' },
+          PluginEventLog: { template: '<div>插件事件日志</div>' },
+          EventLogSettingsPanel: { template: '<div>插件日志设置面板</div>' },
           PluginStoragePanel: {
             props: ['prefix'],
             template: '<div />',

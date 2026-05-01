@@ -1,11 +1,7 @@
 <template>
   <ConsoleViewHeader
-    :model-value="currentView"
-    :title="currentView === 'manage' ? '插件管理' : '插件日志'"
-    :icon="currentView === 'manage' ? widgetBold : listCheckBold"
-    :view-options="viewOptions"
-    aria-label="插件管理视图切换"
-    @update:model-value="handleViewUpdate"
+    title="插件管理"
+    :icon="widgetBold"
   >
     <template #actions>
       <ElButton class="hero-action view-header-action" title="刷新全部" @click="$emit('refresh')">
@@ -31,20 +27,13 @@
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
-import listCheckBold from '@iconify-icons/solar/list-check-bold'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import widgetBold from '@iconify-icons/solar/widget-5-bold'
+import { Icon } from '@iconify/vue'
 import { ElButton } from 'element-plus'
-import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 
 defineProps<{
-  headline: string
-  currentView: string
-  viewOptions: ReadonlyArray<{
-    label: string
-    value: string
-  }>
   cards: Array<{
     label: string
     value: string
@@ -53,14 +42,9 @@ defineProps<{
   }>
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   (event: 'refresh'): void
-  (event: 'update:currentView', value: string): void
 }>()
-
-function handleViewUpdate(value: string) {
-  emit('update:currentView', value)
-}
 </script>
 
 <style scoped>
@@ -71,19 +55,26 @@ function handleViewUpdate(value: string) {
 }
 
 .hero-action {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
   border-radius: 10px;
-  background: linear-gradient(135deg, #63c7cd, #4f9ee8);
-  box-shadow: 0 12px 28px rgba(52, 116, 168, 0.28);
+  border: 1px solid var(--border);
+  background: var(--surface-panel-hover-soft);
+  color: var(--text);
 }
 
 .hero-action:hover:not(:disabled) {
-  background: linear-gradient(135deg, #7ad8dc, #6cb5f1);
+  background: var(--surface-panel-muted-strong);
 }
 
 .overview-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+  align-items: stretch;
 }
 
 .overview-card-head {
@@ -95,12 +86,15 @@ function handleViewUpdate(value: string) {
 
 .overview-card {
   display: grid;
+  grid-template-rows: auto 1fr;
   gap: 6px;
   min-width: 0;
+  height: 72px;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface-card-gradient);
+  overflow: hidden;
 }
 
 .overview-card strong {
@@ -116,6 +110,7 @@ function handleViewUpdate(value: string) {
 .overview-card p {
   color: var(--text-muted);
   font-size: 0.78rem;
+  overflow: hidden;
 }
 
 .overview-card.warning {

@@ -1,29 +1,11 @@
 .plugins-page {
-  position: relative;
-  isolation: isolate;
   display: grid;
   gap: 18px;
   height: 100%;
   min-width: 0;
   overflow-y: auto;
   padding: 1.4rem clamp(1rem, 2.5vw, 2rem);
-  background:
-    radial-gradient(circle at top right, rgba(103, 199, 207, 0.14), transparent 32%),
-    radial-gradient(circle at bottom left, rgba(240, 198, 118, 0.12), transparent 28%),
-    linear-gradient(180deg, var(--shell-bg), color-mix(in srgb, var(--shell-bg) 88%, black 12%));
-}
-
-.plugins-page::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 24px 24px;
-  mask-image: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 72%);
-  pointer-events: none;
-  z-index: -1;
+  background: var(--shell-bg);
 }
 
 .page-banner {
@@ -60,10 +42,6 @@
   min-width: 0;
 }
 
-.plugin-log-section {
-  min-width: 0;
-}
-
 .plugin-empty {
   align-content: start;
   padding: 2rem;
@@ -91,6 +69,11 @@
   border-radius: 14px;
   background: var(--surface-card-gradient);
   align-self: start;
+}
+
+.detail-nav-group {
+  display: grid;
+  gap: 6px;
 }
 
 .detail-nav button {
@@ -129,41 +112,9 @@
   min-width: 0;
 }
 
-.tool-management-entry {
+.plugin-log-stack {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
-  align-items: center;
-  padding: 1.2rem 1.3rem;
-  border: 1px solid var(--border);
-  border-radius: 22px;
-  background: var(--surface-card-gradient);
-}
-
-.tool-management-entry-copy {
-  display: grid;
-  gap: 6px;
-}
-
-.tool-management-entry-copy h3,
-.tool-management-entry-copy p {
-  margin: 0;
-}
-
-.tool-management-entry-copy p {
-  color: var(--text-muted);
-}
-
-.tool-management-entry-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--text);
-  text-decoration: none;
 }
 
 /* 统一给子面板换成本页局部控制台皮肤，避免逐个子组件重写。 */
@@ -199,16 +150,18 @@
     gap: 4px;
   }
 
+  .detail-nav-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
   .detail-nav button {
     flex: 1 1 auto;
     min-width: 80px;
     text-align: center;
     padding: 0.45rem 0.6rem;
     font-size: 0.8rem;
-  }
-
-  .tool-management-entry {
-    grid-template-columns: 1fr;
   }
 }
 
