@@ -203,6 +203,51 @@ describe('useChatView', () => {
     )
   })
 
+  it('restores the draft when sending fails before the request is queued', async () => {
+    const chat = createChatStub()
+    vi.mocked(chat.sendMessage).mockRejectedValue(new Error('send failed'))
+    vi.spyOn(chatImageUpload, 'prepareChatImageUpload').mockResolvedValue({
+      compressed: true,
+      compressedBytes: 128,
+      image: 'data:image/png;base64,Zm9v',
+      mimeType: 'image/png',
+      originalBytes: 512,
+    })
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    state.inputText.value = '发送失败后要恢复的草稿'
+    await state.handleFileChange({
+      target: {
+        files: [new File(['demo'], 'demo.png', { type: 'image/png' })],
+        value: 'demo.png',
+      },
+    } as unknown as Event)
+    await flushPromises()
+
+    await expect(state.send()).rejects.toThrow('send failed')
+
+    expect(state.inputText.value).toBe('发送失败后要恢复的草稿')
+    expect(state.pendingImages.value).toEqual([
+      expect.objectContaining({
+        name: 'demo.png',
+      }),
+    ])
+    expect(state.uploadNotices.value).toContainEqual(
+      expect.objectContaining({
+        text: expect.stringContaining('已压缩'),
+      }),
+    )
+  })
+
   it('marks matched slash commands as display messages before the server echoes them back', async () => {
     const chat = createChatStub()
     let state!: ReturnType<typeof useChatView>
@@ -343,6 +388,65 @@ describe('useChatView', () => {
     await nextTick()
 
     expect(state.pendingImages.value).toHaveLength(1)
+    expect(state.uploadNotices.value).toContainEqual(
+      expect.objectContaining({
+        text: expect.stringContaining('已压缩'),
+      }),
+    )
+  })
+
+  it('keeps uploaded images scoped to the original conversation when switching during compression', async () => {
+    let resolveUpload!: (value: Awaited<ReturnType<typeof chatImageUpload.prepareChatImageUpload>>) => void
+    vi.spyOn(chatImageUpload, 'prepareChatImageUpload').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve
+        }),
+    )
+
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    const uploadPromise = state.handleFileChange({
+      target: {
+        files: [new File(['demo'], 'demo.png', { type: 'image/png' })],
+        value: 'demo.png',
+      },
+    } as unknown as Event)
+
+    chat.currentConversationId = 'conversation-2'
+    await nextTick()
+
+    resolveUpload({
+      compressed: true,
+      compressedBytes: 128,
+      image: 'data:image/png;base64,Zm9v',
+      mimeType: 'image/png',
+      originalBytes: 512,
+    })
+    await uploadPromise
+    await flushPromises()
+
+    expect(state.pendingImages.value).toEqual([])
+    expect(state.uploadNotices.value).toEqual([])
+
+    chat.currentConversationId = 'conversation-1'
+    await nextTick()
+
+    expect(state.pendingImages.value).toEqual([
+      expect.objectContaining({
+        name: 'demo.png',
+      }),
+    ])
     expect(state.uploadNotices.value).toContainEqual(
       expect.objectContaining({
         text: expect.stringContaining('已压缩'),

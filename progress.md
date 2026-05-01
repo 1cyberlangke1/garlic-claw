@@ -619,6 +619,50 @@
   - `display result` 的主会话 `start / retry / stop` 语义与回归覆盖已补齐
 - 阶段 O 当前可以提交。
 
+### 已提交
+- commit: `1a601ad` `修复: 收口阶段O聊天停止与切会话回滚`
+
+## 2026-05-01 阶段 P：阶段 O 提交后继续并行扫错
+
+### 已开始
+- 阶段 O 已提交，当前工作树已回到干净状态。
+- 继续按用户要求做下一轮并行扫错。
+- 本轮仍优先：
+  - server 的会话 / 工具 / 插件 / 自动化 owner 缺口
+  - web 的状态同步、异步乱序与错误回滚
+  - plugin-runtime 的删除 / reload / 生命周期残留
+
+### 下一步
+- 派发 server / web / plugin-runtime 三路只读 subagent
+- 汇总下一批高优先级真实 bug，再选首修项
+
+### 本轮扫描汇总
+- web 高优先级：
+  - `chat-view.module.ts` 发送失败前先清草稿，异常时文本/图片/上传提示直接丢失
+  - `chat-view.module.ts` 图片压缩过程中切会话，结果会串到别的会话
+  - `use-plugin-list.ts` 列表刷新缺少 request guard
+- plugin/runtime 高优先级：
+  - 本地插件目录暂时损坏会被误当成“已删除”，`reload` 与启动期 `bootstrap` 都会直接 drop 全量持久化状态
+  - 插件删除后迟到的 storage 写请求会重新长出 runtime storage
+- server 高优先级：
+  - `ConversationMessageLifecycleService` 的 `start / retry` 入口仍有 check-then-act 并发窗
+  - auto-stop 状态消费过晚，短路决定后仍会继续执行后续副作用链
+
+### 当前首修项
+- 已先收口聊天页两条直接数据丢失/串会话问题：
+  - `send()` 现在按会话快照清理草稿；若 `chat.sendMessage()` 在真正入队前失败，会按原会话恢复文本、图片和上传提示
+  - `handleFileChange()` 现在锁定发起时 `conversationId`，压缩完成后的图片和提示只写回原会话
+- 已补前端回归：
+  - `tests/features/chat/composables/use-chat-view.spec.ts`
+    - 发送失败时恢复草稿
+    - 上传压缩中切会话时不串图
+- 已通过：
+  - `npm run test:run -w packages/web -- tests/features/chat/composables/use-chat-view.spec.ts`
+  - `npm run lint`
+  - `npm run typecheck -w packages/web`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成
@@ -1697,3 +1741,17 @@
   - `npm run typecheck -w packages/shared` ✅
   - `npm run typecheck -w packages/server` ✅
   - `npm run typecheck -w packages/web` ✅
+
+## 2026-05-01 plugin / runtime / config/plugins 只读扫描
+
+### 已完成
+- 已按 `packages/server/src/plugin`、`packages/server/src/runtime`、`config/plugins` 与对应 tests 做只读交叉审查。
+- 当前锁定 4 条真实生命周期缺陷：
+  - 本地插件“坏构建/坏目录”在 reload 与 bootstrap 里会被误判成“已删除”，直接丢持久化状态。
+  - 删除插件后，迟到的 storage 写请求会先把 runtime storage 写回，再因事件记录失败返回错误，形成重建污染。
+  - 远程插件重复认证时，旧 socket 只摘账本不主动关闭，会残留僵尸连接。
+  - 本地插件 `health-check` 只看 `connected`，目录掉盘或入口损坏仍会误报健康。
+
+### 当前结论
+- 本轮未改业务代码，只补充扫描记录。
+- 下一步是把上述 findings 按严重度整理给用户，并明确现有测试缺口。

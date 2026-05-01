@@ -163,6 +163,23 @@
 - [x] 补齐并发切会话失败回滚保护与追加回归
 - [x] 再拉独立 judge 复核后提交
 
+## 2026-05-01 阶段 P：阶段 O 提交后继续并行扫错
+
+### 目标
+- [ ] 继续派多路 subagent 只读扫描 server / web / plugin-runtime 剩余真实 bug
+- [ ] 优先找 owner 错位、并发乱序、状态残留、资源泄漏与缺失回归
+- [ ] 选一组高价值问题继续本地修复、验证与提交
+
+### 阶段 A：记录与派发
+- [x] 记录阶段 P 启动点与阶段 O 提交信息
+- [x] 按 server / web / plugin-runtime 三路派发只读扫描
+- [x] 汇总下一批高优先级问题
+
+### 当前锁定首修项
+- [x] `packages/web/src/features/chat/modules/chat-view.module.ts` 发送失败时恢复草稿，不再丢文本/图片/上传提示
+- [x] `packages/web/src/features/chat/modules/chat-view.module.ts` 上传压缩过程中切会话，不再把图片和提示串到别的会话
+- [x] 补回归并完成本轮完整验证
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 目标

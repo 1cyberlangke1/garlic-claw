@@ -252,6 +252,27 @@
   - `selectConversation()` 新增请求代次守卫，旧切换的完成/失败不会再回写新切换后的页面
 - 因此“旧切换未完成 -> 新切换失败”的并发场景，现在会回到最后稳定会话，而不是回到空消息/空待办/空权限的半切换壳。
 
+## 2026-05-01 阶段 P 扫描起点
+
+### 当前扫描方向
+- server：继续看 `conversation / execution / plugin / automation` 的 owner 和并发边界
+- web：继续看聊天、插件、工具、配置联动里的乱序与失败回滚
+- plugin-runtime：继续看本地插件 reload / delete / bootstrap 与 runtime 状态残留
+
+### 本轮已确认的高优先级问题
+- `packages/web/src/features/chat/modules/chat-view.module.ts`
+  - `send()` 在真正入队前就清空草稿；发送前置失败会直接丢文本、图片和上传提示
+  - `handleFileChange()` 压缩图片时没锁发起会话；切会话后会把图片和提示写到别的会话
+- `packages/server/src/plugin/bootstrap/plugin-bootstrap.service.ts`
+  - 本地插件目录仍存在但暂时损坏时，会被误当成“已删除”并直接 drop 持久化状态
+- `packages/server/src/conversation/conversation-message-lifecycle.service.ts`
+  - `start / retry` 入口仍有 check-then-act 并发窗
+
+### 本轮首批已收口
+- `packages/web/src/features/chat/modules/chat-view.module.ts`
+  - 发送失败后会按原会话恢复草稿文本、待发送图片与上传提示
+  - 图片压缩过程锁定原会话，切会话后不会再串图或串提示
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 高优先级
@@ -946,3 +967,31 @@
 - `packages/web` 的类型检查对共享包字段新增较敏感：
   - 即使 `packages/shared` 源码已更新，`web` 侧本地视图类型仍应把可选字段显式写明
   - 这样不会依赖共享构建产物刷新顺序
+
+## 2026-05-01 plugin / runtime / config/plugins 生命周期只读扫描
+
+### HIGH
+- `packages/server/src/plugin/bootstrap/plugin-bootstrap.service.ts`
+  - `reloadLocal()` 把 `ProjectPluginRegistryService.reloadDefinition()` 抛出的 `NotFoundException` 一律当成“目录已删除”，直接 `dropPluginRecords([pluginId])`。
+  - 但 `packages/server/src/plugin/project/project-plugin-registry.service.ts` 会把“目录还在、只是入口缺失 / 构建中断 / definition 无效”的本地插件同样降级成“跳过损坏目录”，最后 `getDefinition()` 也是 `NotFoundException`。
+  - 真实后果：本地插件只要在 reload 或启动期碰到临时坏构建，就会被当成已删除，插件配置、scope、LLM 偏好、事件日志，连带 runtime state / session / overrides 清理链都会被抹掉；修好构建后同 ID 重建只能拿到全新空状态。
+  - 现有测试只覆盖“坏目录会被跳过”和“真删除目录会 drop 记录”，没有覆盖“目录仍存在但暂时坏掉时必须保留现有记录”。
+
+### MEDIUM
+- `packages/server/src/adapters/http/plugin/plugin.controller.ts`
+  - `setPluginStorage()` 先调用 `runtimeHostPluginRuntimeService.setPluginStorage()` 写盘，再调用 `recordPluginEvent()`。
+  - 如果插件记录已经被删掉，后半段记事件会因为 `PluginPersistenceService.readPlugin()` 抛 `NotFoundException` 失败，但前半段写入的 runtime storage 已经落到 `plugin-runtime.server.json`。
+  - 真实后果：删除插件后，只要有一个迟到的 storage 写请求命中，就能在返回失败的同时把同 ID 的 runtime storage 重新种回去；后续同 ID 重建会继承这份“删不干净”的旧状态。
+  - 现有测试只覆盖正常 storage 委托和删除链清理，没有覆盖“插件已删除后 storage 写请求必须原子失败且不得留下新 runtime 数据”。
+
+### MEDIUM
+- `packages/server/src/runtime/gateway/runtime-gateway-connection-lifecycle.service.ts`
+  - `authenticateConnection()` 在同一远程插件重复认证时，只调用 `disconnectConnection(previousConnectionId)` 摘掉旧连接账本，没有像 `disconnectPlugin()` 那样触发 `connectionCloser`。
+  - 真实后果：旧 WebSocket 会一直留在进程里，直到对端自己断开或超时；频繁 reload / reconnect / 双端重连时会积累僵尸连接，远端也会继续误以为自己还在线。
+  - 现有测试只断言旧 connection record 和授权上下文被替换，没有断言旧 socket 会被立即关闭。
+
+### MEDIUM
+- `packages/server/src/runtime/kernel/runtime-plugin-governance.service.ts`
+  - 本地插件 `health-check` 的真实判断只有 `plugin.connected`，没有重新读 `config/plugins` 目录，也不会验证 definition 还能否重新装载。
+  - 真实后果：运行中把本地插件目录删掉、入口文件掉盘或构建产物损坏后，`health-check` 仍会继续报“插件健康检查通过”，直到用户手动点 `reload` 或进程重启才暴露异常。
+  - 现有测试只覆盖“手动 mark offline 的本地插件返回失败”和“远程插件走真实 probe”，没有覆盖“本地目录已失效但 connected 仍为 true”的掉盘场景。
