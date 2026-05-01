@@ -29,7 +29,32 @@
 - [x] 运行 `smoke:server`
 - [x] 运行 `smoke:web-ui`
 - [x] 拉独立 judge 复核
-- [ ] 提交本轮修复
+- [x] 提交本轮修复
+
+## 2026-05-01 阶段 G：会话生命周期剩余高危缺陷
+
+### 目标
+- [x] 修复主回复完成后，`onSent / after-send` 失败把消息反写成 `error`
+- [x] 修复删除会话时未先终止活跃主任务或子代理的问题
+- [ ] 视进度继续处理 `display` 命令单飞与 stop 语义
+- [x] 补对应回归测试、完整验证与独立 judge
+
+### 阶段 A：取证
+- [x] 复核 `conversation-task`、`conversation controller`、`subagent runner` 当前状态机
+- [x] 读取对应 tests，确认缺失覆盖
+- [x] 记录本轮实现边界
+
+### 阶段 B：实现
+- [x] 让附带动作失败不再污染已完成主回复状态
+- [x] 删除会话前主动终止活跃主任务与相关子代理
+- [ ] 视进度继续收口 `display` 命令生命周期
+
+### 阶段 C：验证
+- [x] 跑相关 server / web 回归测试
+- [x] 跑 `typecheck`
+- [x] 跑 `smoke:server`
+- [x] 跑 `smoke:web-ui`
+- [x] 拉独立 judge 复核
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

@@ -168,6 +168,45 @@ describe('ConversationTaskService', () => {
     expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ content: '最终回复' }));
   });
 
+  it('keeps the assistant message completed when onSent fails after the reply has finished', async () => {
+    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const events: ConversationTaskEvent[] = [];
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream: async () => ({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield delta('回复已完成');
+          })(),
+        },
+      }),
+      modelId: 'gpt-5.4',
+      onSent: async () => {
+        throw new Error('after-send 失败');
+      },
+      providerId: 'openai',
+    });
+    service.subscribe(String(assistantMessage.id), (event) => events.push(event));
+
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+      content: '回复已完成',
+      error: null,
+      role: 'assistant',
+      status: 'completed',
+    });
+    expect(events).toEqual([
+      { messageId: String(assistantMessage.id), status: 'streaming', type: 'status' },
+      { messageId: String(assistantMessage.id), text: '回复已完成', type: 'text-delta' },
+      { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
+    ]);
+  });
+
   it('stops an active task and leaves the assistant message in stopped state', async () => {
     const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
     const events: ConversationTaskEvent[] = [];

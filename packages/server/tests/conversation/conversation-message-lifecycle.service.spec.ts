@@ -299,6 +299,30 @@ describe('ConversationMessageLifecycleService', () => {
     await startAndWait(service, conversationTaskService, { content: '你好', model: 'gpt-5.4', provider: 'openai' });
   });
 
+  it('keeps the assistant message completed when response after-send hook fails', async () => {
+    aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型回复'));
+    runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.after-send-failure', ['response:after-send'])]);
+    runtimeHostPluginDispatchService.invokeHook.mockImplementation(async ({ hookName }: { hookName: string }) => {
+      if (hookName === 'response:after-send') {
+        throw new Error('after-send hook failed');
+      }
+      return null;
+    });
+
+    await startAndWait(service, conversationTaskService, { content: '你好', model: 'gpt-5.4', provider: 'openai' });
+
+    expect(readConversation(runtimeHostConversationRecordService).messages[1]).toMatchObject({
+      content: '模型回复',
+      error: null,
+      role: 'assistant',
+      status: 'completed',
+    });
+    expect(runtimeHostPluginDispatchService.invokeHook).toHaveBeenCalledWith(expect.objectContaining({
+      hookName: 'response:after-send',
+      pluginId: 'builtin.after-send-failure',
+    }));
+  });
+
   it('applies chat after-model hooks before response hooks', async () => {
     aiModelExecutionService.streamText.mockReturnValue(streamed('gpt-5.4', 'openai', '模型原始回复'));
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([plugin('builtin.after-model-recorder', ['chat:after-model', 'response:before-send'])]);

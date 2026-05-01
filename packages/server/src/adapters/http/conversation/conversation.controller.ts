@@ -68,6 +68,13 @@ export class ConversationController {
   @Delete('conversations/:id')
   async deleteConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
+    const conversationTree = this.runtimeHostConversationRecordService.listConversationTreeRecords(id, userId) as RuntimeConversationRecord[];
+    await stopActiveConversationTreeWork(
+      conversationTree,
+      userId,
+      this.conversationTaskService,
+      this.runtimeHostSubagentRunnerService,
+    );
     this.runtimeHostConversationTodoService.deleteSessionTodo(id);
     return await this.runtimeHostConversationRecordService.deleteConversation(id, userId);
   }
@@ -437,4 +444,34 @@ function readToolEntries(
       toolName: object.toolName,
     }];
   });
+}
+
+async function stopActiveConversationTreeWork(
+  conversations: RuntimeConversationRecord[],
+  userId: string,
+  conversationTaskService: ConversationTaskService,
+  runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService,
+) {
+  for (const conversation of conversations) {
+    for (const messageId of readActiveConversationTaskMessageIds(conversation)) {
+      await conversationTaskService.stopTask(messageId);
+    }
+    if (
+      conversation.kind === 'subagent'
+      && conversation.subagent
+      && (conversation.subagent.status === 'queued' || conversation.subagent.status === 'running')
+    ) {
+      await runtimeHostSubagentRunnerService.interruptSubagent(conversation.subagent.pluginId, conversation.id, userId);
+    }
+  }
+}
+
+function readActiveConversationTaskMessageIds(conversation: RuntimeConversationRecord): string[] {
+  return conversation.messages.flatMap((message) => (
+    (message.role === 'assistant' || message.role === 'display')
+      && typeof message.id === 'string'
+      && (message.status === 'pending' || message.status === 'streaming')
+      ? [message.id]
+      : []
+  ));
 }

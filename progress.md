@@ -65,6 +65,49 @@
   - `McpService.deleteServer()` 本体还没有直接清 override，当前依赖后续 `removeServer()` 调用
   - 启动期缺失本地插件清理依赖 `bootstrapHttpApp()` 传入 `onDrop`
 
+### 已提交
+- commit: `a4ec8ef` `修复: 收口阶段F清理链与插件详情串扰`
+
+## 2026-05-01 阶段 G：会话生命周期剩余高危缺陷
+
+### 已开始
+- 当前优先级转到会话生命周期：
+  - 已完成回复被附带动作失败反写成 `error`
+  - 删除会话前未先终止活跃主任务与子代理
+- 本轮先复核 `conversation-task / conversation controller / subagent runner` 与对应 tests。
+
+### 本轮已完成修复
+- `ConversationTaskService.finishTask()` 现在把 `runtime.onSent` 包在完成态后的独立异常分支里：
+  - 已落库为 `completed` 的 assistant 消息不会再被二次反写成 `error`
+  - SSE 也不会再多发一轮错误 finish/status
+  - 失败仅记日志，不污染主回复状态
+- `ConversationController.deleteConversation()` 现在会先读取整棵会话树，再按顺序清运行态：
+  - 对树上所有 `assistant(pending/streaming)` 逐个 `stopTask`
+  - 对 `subagent.status in queued/running` 的子代理会话执行 `interruptSubagent`
+  - 完成后才继续删 todo 与会话记录
+- `RuntimeHostConversationRecordService` 新增 `listConversationTreeRecords()`，把“整棵会话树”读取职责收回到后端 owner。
+
+### 本轮新增回归
+- `tests/conversation/conversation-task.service.spec.ts`
+  - 新增 `onSent` 失败后仍保持 `completed` 的用例
+- `tests/conversation/conversation.controller.spec.ts`
+  - 新增删除会话前先停活跃 assistant 与子代理的顺序断言
+
+### 本轮验证
+- 已通过：
+  - `npm run test -w packages/server -- tests/conversation/conversation-task.service.spec.ts tests/conversation/conversation.controller.spec.ts`
+  - `npm run lint`
+  - `npm run typecheck -w packages/server`
+  - `npm run typecheck -w packages/web`
+  - `npm run smoke:server`
+  - `npm run smoke:web-ui`
+
+### 当前状态
+- 独立 judge 已给出 `PASS`。
+- judge 留下两条后续风险提示：
+  - 删除整棵会话树时，目前只显式清理根会话 todo，子会话 todo 仍可能残留为孤儿数据
+  - `subagent queued` 已在实现分支覆盖，但还没有单独测试把该分支钉死
+
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
 ### 已完成

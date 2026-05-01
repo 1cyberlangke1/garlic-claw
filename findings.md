@@ -30,16 +30,26 @@
   - 切插件时会重置 storage prefix，并忽略旧插件慢响应。
 
 ### 阶段 F 剩余待处理 findings
-- `packages/server/src/conversation/conversation-task.service.ts`
-  - 已完成回复若在 `onSent / after-send` 附带动作失败，主消息状态会被反写成 `error`。
-- `packages/server/src/adapters/http/conversation/conversation.controller.ts`
-  - 删除会话前不会先终止正在运行的主任务或子代理。
 - `packages/server/src/conversation/conversation-message-lifecycle.service.ts`
   - `display` 命令消息仍绕过单飞约束，且 stop API 不能按正式消息语义停止它。
 - `packages/web/src/features/ai-settings/components/ContextGovernanceSettingsPanel.vue`
   - 自动保存失败后，纯 schema 改动可能不再自动重试。
 - `packages/web/src/components/ModelQuickInput.vue`
   - 模型候选加载还没有并发保护，旧请求可能覆盖新配置快照。
+
+## 2026-05-01 阶段 G 已收口
+
+### `packages/server/src/conversation/conversation-task.service.ts`
+- 已完成回复后，`onSent / after-send` 失败不再把 assistant 消息反写成 `error/stopped`。
+- 真实 owner 修复点在 `finishTask()` 完成态分支内部，不再依赖外层 `runTask()` 捕获兜底。
+
+### `packages/server/src/adapters/http/conversation/conversation.controller.ts`
+- 删除会话前会先读取整棵会话树，停止所有活跃 assistant 消息，并中断 `queued/running` 子代理。
+- 删除顺序已收口为：读取树 -> 停运行态 -> 删 todo -> 删会话记录。
+
+### 本轮 judge 剩余风险
+- 删除整棵会话树时，目前只显式删除根会话 todo；若子会话也持有 todo，会留下持久化孤儿数据。
+- `queued` 子代理分支已纳入实现条件，但测试仍未单独覆盖该分支。
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 
