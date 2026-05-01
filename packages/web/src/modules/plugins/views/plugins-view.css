@@ -59,6 +59,10 @@
   min-width: 0;
 }
 
+.plugin-log-section {
+  min-width: 0;
+}
+
 .plugin-empty {
   align-content: start;
   padding: 2rem;

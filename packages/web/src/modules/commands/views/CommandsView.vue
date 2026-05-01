@@ -1,16 +1,21 @@
 <template>
   <div class="plugins-page commands-page">
-    <section class="command-hero">
-      <header class="command-hero-header">
-        <h1><Icon :icon="keyboardBold" class="hero-icon" aria-hidden="true" />命令管理</h1>
-        <ElButton
-          class="hero-action icon-only"
-          title="刷新全部"
-          @click="refreshAll()"
-        >
-          <Icon :icon="refreshBold" class="hero-action-icon" aria-hidden="true" />
-        </ElButton>
-      </header>
+    <ConsoleViewHeader
+      v-model="currentView"
+      :title="currentView === 'directory' ? '命令管理' : '冲突触发词'"
+      :icon="currentView === 'directory' ? keyboardBold : listCheckBold"
+      :view-options="viewOptions"
+      aria-label="命令管理视图切换"
+    >
+      <template #actions>
+          <ElButton
+            class="hero-action icon-only view-header-action"
+            title="刷新全部"
+            @click="refreshAll()"
+          >
+            <Icon :icon="refreshBold" class="hero-action-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+      </template>
 
       <div class="overview-grid">
         <article class="overview-card accent">
@@ -29,12 +34,12 @@
           <p>{{ card.note }}</p>
         </article>
       </div>
-    </section>
+    </ConsoleViewHeader>
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
 
-    <div class="commands-layout">
-      <section class="command-list-panel">
+    <div class="commands-content">
+      <section v-if="currentView === 'directory'" class="command-list-panel">
         <div class="panel-header">
           <div>
             <span class="panel-kicker">Command Directory</span>
@@ -56,7 +61,12 @@
             data-test="command-search"
             placeholder="搜索插件、命令、别名或说明"
           />
-          <SegmentedSwitch v-model="filter" :options="filterOptions" />
+          <HeaderViewSwitch
+            v-model="filter"
+            :options="filterOptions"
+            aria-label="命令目录筛选"
+            size="small"
+          />
         </div>
 
         <div class="sidebar-results">
@@ -133,7 +143,7 @@
         </div>
       </section>
 
-      <aside class="command-conflict-panel">
+      <aside v-else class="command-conflict-panel is-full">
         <div class="panel-header">
           <div>
             <span class="panel-kicker">Conflict Radar</span>
@@ -172,13 +182,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
+import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import { ElButton, ElInput } from 'element-plus'
-import SegmentedSwitch from '@/shared/components/SegmentedSwitch.vue'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
+import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
 import { usePluginCommandManagement } from '../composables/use-plugin-command-management'
+
+type CommandsPageView = 'directory' | 'conflicts'
 
 const {
   loading,
@@ -201,6 +215,12 @@ const {
   attentionCommandCount,
   refreshAll,
 } = usePluginCommandManagement()
+
+const currentView = ref<CommandsPageView>('directory')
+const viewOptions: ReadonlyArray<{ label: string; value: CommandsPageView }> = [
+  { label: '目录', value: 'directory' },
+  { label: '冲突', value: 'conflicts' },
+]
 
 const heroHeadline = computed(() => {
   if (commandCount.value === 0) {
@@ -262,14 +282,6 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   padding: 1rem;
 }
 
-.command-hero {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.command-hero-header,
-.commands-layout,
 .panel-header,
 .command-card-top,
 .panel-controls,
@@ -279,24 +291,26 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   gap: 0.75rem;
 }
 
-.command-hero-header,
 .panel-header,
 .command-card-top {
   justify-content: space-between;
 }
 
-.commands-layout {
-  align-items: flex-start;
-}
-
 .command-list-panel {
-  flex: 1 1 0;
   min-width: 0;
 }
 
 .command-conflict-panel {
   width: 320px;
   flex-shrink: 0;
+}
+
+.commands-content {
+  min-height: 0;
+}
+
+.command-conflict-panel.is-full {
+  width: 100%;
 }
 
 .command-list,
@@ -306,12 +320,6 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   gap: 0.75rem;
 }
 
-.hero-icon {
-  vertical-align: -0.15em;
-  margin-right: 6px;
-}
-
-.hero-kicker,
 .panel-kicker {
   font-size: 0.75rem;
   letter-spacing: 0.08em;
@@ -398,27 +406,12 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   align-self: flex-start;
 }
 
-.hero-action.icon-only,
-.ghost-button.icon-only {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-}
-
-.hero-action-icon,
 .ghost-button-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 @media (max-width: 1100px) {
-  .commands-layout {
-    flex-direction: column;
-  }
-
   .command-conflict-panel {
     width: 100%;
   }
@@ -427,6 +420,12 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 @media (max-width: 720px) {
   .commands-page {
     padding: 1rem;
+  }
+
+  .panel-header,
+  .command-card-top {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

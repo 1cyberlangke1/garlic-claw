@@ -2,20 +2,22 @@
   <section class="panel-section mcp-config-panel">
     <div class="mcp-config-header">
       <div>
-        <span class="panel-kicker">MCP Config</span>
-        <h3>MCP 配置</h3>
-        <p>管理 `mcp/servers/` 目录中的 server 定义，保存后会自动重载运行时。</p>
+        <span class="panel-kicker">{{ view === 'manage' ? 'MCP Config' : 'MCP Logs' }}</span>
+        <h3>{{ view === 'manage' ? 'MCP 配置' : 'MCP 事件日志' }}</h3>
+        <p v-if="view === 'manage'">管理 `mcp/servers/` 目录中的 server 定义，保存后会自动重载运行时。</p>
+        <p v-else>按 server 查看最近事件记录，避免和配置编辑区同时堆叠展示。</p>
       </div>
       <div class="mcp-config-actions">
         <ElButton
           class="action-icon-button"
-          title="刷新配置"
+          :title="view === 'manage' ? '刷新配置' : '刷新日志'"
           :disabled="loading"
-          @click="refresh(selectedServerName)"
+          @click="handleRefresh"
         >
           <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
         </ElButton>
         <ElButton
+          v-if="view === 'manage'"
           class="action-icon-button"
           data-test="mcp-new-button"
           title="新增 Server"
@@ -26,10 +28,10 @@
       </div>
     </div>
 
-    <p class="mcp-config-path">{{ snapshot.configPath || '尚未解析配置路径' }}</p>
+    <p v-if="view === 'manage'" class="mcp-config-path">{{ snapshot.configPath || '尚未解析配置路径' }}</p>
     <p v-if="panelError" class="page-banner error">{{ panelError }}</p>
 
-    <div class="mcp-config-layout">
+    <div :class="view === 'manage' ? 'mcp-config-layout' : 'mcp-log-layout'">
       <aside class="mcp-server-sidebar">
         <div v-if="servers.length === 0" class="sidebar-state">
           还没有 MCP server 配置。
@@ -47,7 +49,7 @@
         </ElButton>
       </aside>
 
-      <form class="mcp-editor" @submit.prevent="submitForm">
+      <form v-if="view === 'manage'" class="mcp-editor" @submit.prevent="submitForm">
         <label class="mcp-field">
           <span>Name</span>
           <ElInput
@@ -143,25 +145,32 @@
           </ElButton>
         </div>
       </form>
+
+      <div v-else-if="selectedServer" class="mcp-log-panel">
+        <EventLogPanel
+          title="MCP 事件日志"
+          description="查看此 server 最近的事件记录。"
+          :events="eventLogs"
+          :loading="eventLoading"
+          :query="eventQuery"
+          :next-cursor="eventNextCursor"
+          @refresh="refreshServerEvents"
+          @load-more="loadMoreServerEvents"
+        />
+      </div>
+
+      <div v-else class="sidebar-state mcp-log-empty">
+        请先在管理视图中创建或选择一个 MCP server。
+      </div>
     </div>
 
-    <div v-if="selectedServer" class="mcp-detail-panels">
+    <div v-if="view === 'manage' && selectedServer" class="mcp-detail-panels">
       <EventLogSettingsPanel
         :settings="selectedServer.eventLog"
         :saving="savingEventLog"
         title="MCP 日志设置"
         description="此 MCP server 的事件日志会写入 log/mcp/<serverName>/ 目录。"
         @save="saveServerEventLog"
-      />
-      <EventLogPanel
-        title="MCP 事件日志"
-        description="查看此 server 最近的事件记录。"
-        :events="eventLogs"
-        :loading="eventLoading"
-        :query="eventQuery"
-        :next-cursor="eventNextCursor"
-        @refresh="refreshServerEvents"
-        @load-more="loadMoreServerEvents"
       />
     </div>
   </section>
@@ -180,9 +189,12 @@ import EventLogPanel from '@/modules/tools/components/EventLogPanel.vue'
 import EventLogSettingsPanel from '@/modules/tools/components/EventLogSettingsPanel.vue'
 import { useMcpConfigManagement } from '@/modules/tools/composables/use-mcp-config-management'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   preferredServerName?: string | null
-}>()
+  view?: 'manage' | 'logs'
+}>(), {
+  view: 'manage',
+})
 
 const emit = defineEmits<{
   changed: []
@@ -379,6 +391,14 @@ function createEnvRow(key = '', value = ''): EnvRow {
 function envCount(env: Record<string, string>): number {
   return Object.keys(env).length
 }
+
+function handleRefresh() {
+  if (props.view === 'logs') {
+    void refreshServerEvents(undefined, selectedServerName.value)
+    return
+  }
+  void refresh(selectedServerName.value)
+}
 </script>
 
 <style scoped>
@@ -392,8 +412,10 @@ function envCount(env: Record<string, string>): number {
 }
 
 .mcp-config-layout,
+.mcp-log-layout,
 .mcp-detail-panels,
 .mcp-editor,
+.mcp-log-panel,
 .mcp-env-panel,
 .mcp-env-list {
   display: grid;
@@ -423,10 +445,23 @@ function envCount(env: Record<string, string>): number {
   align-items: start;
 }
 
+.mcp-log-layout {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  align-items: start;
+}
+
 .mcp-server-sidebar,
 .mcp-server-item {
   display: grid;
   gap: 10px;
+}
+
+.mcp-log-empty {
+  min-height: 240px;
+  place-items: center;
+  border: 1px dashed rgba(133, 163, 199, 0.18);
+  border-radius: 18px;
+  background: var(--surface-panel-muted);
 }
 
 .mcp-server-item {
@@ -568,6 +603,7 @@ function envCount(env: Record<string, string>): number {
 
 @media (max-width: 1080px) {
   .mcp-config-layout,
+  .mcp-log-layout,
   .mcp-editor {
     grid-template-columns: 1fr;
   }

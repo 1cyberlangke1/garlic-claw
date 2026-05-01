@@ -122,7 +122,7 @@ vi.mock('@/modules/skills/composables/use-skill-management', () => ({
 }))
 
 describe('SkillsView', () => {
-  it('renders the skill workspace, governance state, and markdown preview', () => {
+  it('switches between skill details and event logs', async () => {
     const wrapper = mount(SkillsView)
 
     expect(wrapper.text()).toContain('技能目录')
@@ -133,6 +133,11 @@ describe('SkillsView', () => {
     expect(wrapper.text()).toContain('scripts/weather.js')
     expect(wrapper.text()).toContain('请先确认地点，再查询天气')
     expect(wrapper.text()).toContain('技能日志设置')
+    expect(wrapper.text()).not.toContain('技能治理已更新')
+
+    await wrapper.get('button[title="日志"]').trigger('click')
+
+    expect(wrapper.text()).toContain('技能日志')
     expect(wrapper.text()).toContain('技能事件日志')
     expect(wrapper.text()).toContain('技能治理已更新')
   })

@@ -6,7 +6,7 @@
         {{ currentView === 'automations' ? '自动化' : '执行日志' }}
       </h1>
       <div class="header-actions">
-        <AutomationViewSwitch
+        <HeaderViewSwitch
           :model-value="currentView"
           :options="viewOptions"
           @update:model-value="handleViewSwitch"
@@ -236,8 +236,8 @@
 </template>
 
 <script setup lang="ts">
-import AutomationViewSwitch from '@/modules/automations/components/AutomationViewSwitch.vue'
 import { useAutomations } from '@/modules/automations/composables/use-automations'
+import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
 import type { AutomationInfo } from '@garlic-claw/shared'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import checkCircleBold from '@iconify-icons/solar/check-circle-bold'
@@ -281,7 +281,7 @@ const viewOptions: ReadonlyArray<{ label: string; value: AutomationView }> = [
 const dialogVisible = ref(false)
 const editingAutomation = ref<AutomationInfo | null>(null)
 
-function handleViewSwitch(value: string | number) {
+function handleViewSwitch(value: string) {
   if (value === 'automations' || value === 'logs') {
     handleViewChange(value)
   }

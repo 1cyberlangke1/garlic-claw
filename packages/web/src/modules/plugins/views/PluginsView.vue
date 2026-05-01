@@ -1,6 +1,8 @@
 <template>
   <div class="plugins-page">
     <PluginPageHero
+      v-model:current-view="currentView"
+      :view-options="viewOptions"
       :headline="heroHeadline"
       :cards="overviewCards"
       @refresh="refreshAll"
@@ -41,7 +43,7 @@
           @delete-selected="deleteSelectedPlugin"
         />
 
-        <div class="detail-grid">
+        <div v-if="currentView === 'manage'" class="detail-grid">
           <PluginRemoteSummaryPanel
             v-if="selectedPlugin.remote"
             :plugin="selectedPlugin"
@@ -90,15 +92,6 @@
               打开工具管理
             </a>
           </article>
-          <PluginEventLog
-            class="detail-span"
-            :events="eventLogs"
-            :loading="detailLoading || eventLoading"
-            :query="eventQuery"
-            :next-cursor="eventNextCursor"
-            @refresh="refreshPluginEvents"
-            @load-more="loadMorePluginEvents"
-          />
           <PluginStoragePanel
             class="detail-span"
             :entries="storageEntries"
@@ -128,6 +121,17 @@
             :routes="selectedPlugin.manifest.routes ?? []"
           />
         </div>
+
+        <div v-else class="plugin-log-section">
+          <PluginEventLog
+            :events="eventLogs"
+            :loading="detailLoading || eventLoading"
+            :query="eventQuery"
+            :next-cursor="eventNextCursor"
+            @refresh="refreshPluginEvents"
+            @load-more="loadMorePluginEvents"
+          />
+        </div>
       </section>
 
       <section v-else class="plugin-empty">
@@ -141,7 +145,7 @@
 
 <script setup lang="ts">
 import type { PluginActionName, PluginHealthSnapshot, PluginInfo } from '@garlic-claw/shared'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import PluginAttentionPanel from '@/modules/plugins/components/PluginAttentionPanel.vue'
 import SchemaConfigForm from '@/modules/config/components/SchemaConfigForm.vue'
@@ -165,7 +169,14 @@ import {
 } from '@/modules/plugins/composables/plugin-management.helpers'
 import { usePluginManagement } from '@/modules/plugins/composables/use-plugin-management'
 
+type PluginsPageView = 'manage' | 'logs'
+
 const route = useRoute()
+const currentView = ref<PluginsPageView>('manage')
+const viewOptions: ReadonlyArray<{ label: string; value: PluginsPageView }> = [
+  { label: '管理', value: 'manage' },
+  { label: '日志', value: 'logs' },
+]
 const preferredPluginName = computed(() => {
   const raw = route.query.plugin
   return typeof raw === 'string' && raw.trim()

@@ -103,7 +103,7 @@ vi.mock('@/modules/commands/composables/use-plugin-command-management', () => ({
 }))
 
 describe('CommandsView', () => {
-  it('renders command management overview, conflicts, and plugin deep-links', () => {
+  it('switches between command directory and conflict views', async () => {
     const wrapper = mount(CommandsView, {
       global: {
         stubs: {
@@ -117,8 +117,15 @@ describe('CommandsView', () => {
 
     expect(wrapper.text()).toContain('命令管理')
     expect(wrapper.text()).toContain('/sys reload')
-    expect(wrapper.text()).toContain('冲突触发词')
     expect(wrapper.text()).toContain('核心工具')
     expect(wrapper.text()).toContain('管理插件')
+    expect(wrapper.find('.command-list-panel').exists()).toBe(true)
+    expect(wrapper.find('.command-conflict-panel').exists()).toBe(false)
+
+    await wrapper.get('button[title="冲突"]').trigger('click')
+
+    expect(wrapper.text()).toContain('冲突触发词')
+    expect(wrapper.find('.command-list-panel').exists()).toBe(false)
+    expect(wrapper.find('.command-conflict-panel').exists()).toBe(true)
   })
 })

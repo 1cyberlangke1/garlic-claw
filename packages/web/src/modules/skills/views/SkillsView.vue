@@ -1,19 +1,22 @@
 <template>
   <div class="skills-page">
-    <section class="skill-hero">
-      <header class="skill-hero-header">
-        <h1><Icon :icon="magicStick3Bold" class="hero-icon" aria-hidden="true" />技能目录</h1>
-        <div class="hero-actions">
+    <ConsoleViewHeader
+      v-model="currentView"
+      :title="currentView === 'details' ? '技能目录' : '技能日志'"
+      :icon="currentView === 'details' ? magicStick3Bold : listCheckBold"
+      :view-options="viewOptions"
+      aria-label="技能目录视图切换"
+    >
+      <template #actions>
           <ElButton
-            class="hero-button icon-only"
+            class="hero-button icon-only view-header-action"
             title="刷新目录"
             :disabled="refreshing"
             @click="refreshAll()"
           >
-            <Icon :icon="refreshBold" class="hero-button-icon" aria-hidden="true" />
+            <Icon :icon="refreshBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
           </ElButton>
-        </div>
-      </header>
+      </template>
 
       <div class="overview-grid">
         <article class="overview-card accent">
@@ -37,7 +40,7 @@
           <p>其中 {{ executableCount }} 个目录带有可执行脚本资产。</p>
         </article>
       </div>
-    </section>
+    </ConsoleViewHeader>
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
 
@@ -49,7 +52,7 @@
         :loading="loading"
       />
 
-      <div class="skill-detail-column">
+      <div v-if="currentView === 'details'" class="skill-detail-column">
         <SkillDetailPanel
           :skill="selectedSkill"
           :mutating-skill-id="mutatingSkillId"
@@ -63,8 +66,10 @@
           description="此技能的事件日志会写入 log/skills/<skillId>/ 目录。"
           @save="handleSkillEventLogUpdate"
         />
+      </div>
+
+      <div v-else-if="selectedSkill" class="skill-log-column">
         <EventLogPanel
-          v-if="selectedSkill"
           title="技能事件日志"
           description="查看技能最近的加载和拒绝记录。"
           :events="eventLogs"
@@ -75,22 +80,32 @@
           @load-more="loadMoreSkillEvents"
         />
       </div>
+
+      <div v-else class="skill-log-column">
+        <section class="skill-log-empty">
+          请先从左侧选择一个技能，再查看事件日志。
+        </section>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Icon } from '@iconify/vue'
+import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import magicStick3Bold from '@iconify-icons/solar/magic-stick-3-bold'
 import { ElButton } from 'element-plus'
 import type { SkillLoadPolicy } from '@garlic-claw/shared'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import SkillDetailPanel from '@/modules/skills/components/SkillDetailPanel.vue'
 import SkillsList from '@/modules/skills/components/SkillsList.vue'
 import EventLogPanel from '@/modules/tools/components/EventLogPanel.vue'
 import EventLogSettingsPanel from '@/modules/tools/components/EventLogSettingsPanel.vue'
 import { useSkillManagement } from '@/modules/skills/composables/use-skill-management'
+
+type SkillsPageView = 'details' | 'logs'
 const {
   loading,
   refreshing,
@@ -115,6 +130,12 @@ const {
   loadMoreSkillEvents,
   refreshAll,
 } = useSkillManagement()
+
+const currentView = ref<SkillsPageView>('details')
+const viewOptions: ReadonlyArray<{ label: string; value: SkillsPageView }> = [
+  { label: '详情', value: 'details' },
+  { label: '日志', value: 'logs' },
+]
 
 const selectedSkillIdModel = computed({
   get: () => selectedSkillId.value,

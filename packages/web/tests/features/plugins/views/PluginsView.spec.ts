@@ -171,7 +171,7 @@ describe('PluginsView', () => {
     ])
   })
 
-  it('renders the richer plugin highlight labels for the selected plugin', () => {
+  it('renders the richer plugin highlight labels for the selected plugin', async () => {
     const wrapper = mount(PluginsView, {
       global: {
         stubs: {
@@ -220,6 +220,11 @@ describe('PluginsView', () => {
     expect(wrapper.text()).toContain('最后检查')
     expect(wrapper.text()).toContain('并发')
     expect(wrapper.text()).toContain('2 / 6')
+
+    await wrapper.get('button[title="日志"]').trigger('click')
+
+    expect(wrapper.text()).toContain('插件日志')
+    expect(wrapper.text()).not.toContain('打开工具管理')
   })
 
   it('only renders the plugin model panel for plugins that declare llm access', () => {

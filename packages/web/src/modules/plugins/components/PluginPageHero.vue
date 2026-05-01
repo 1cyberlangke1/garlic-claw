@@ -1,13 +1,17 @@
 <template>
-  <section class="hero-shell">
-    <header class="page-header">
-      <div class="hero-copy">
-        <h1><Icon :icon="widgetBold" class="hero-icon" aria-hidden="true" />插件管理</h1>
-      </div>
-      <ElButton class="hero-action" title="刷新全部" @click="$emit('refresh')">
-        <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
+  <ConsoleViewHeader
+    :model-value="currentView"
+    :title="currentView === 'manage' ? '插件管理' : '插件日志'"
+    :icon="currentView === 'manage' ? widgetBold : listCheckBold"
+    :view-options="viewOptions"
+    aria-label="插件管理视图切换"
+    @update:model-value="handleViewUpdate"
+  >
+    <template #actions>
+      <ElButton class="hero-action view-header-action" title="刷新全部" @click="$emit('refresh')">
+        <Icon :icon="refreshBold" class="refresh-icon view-header-action-icon" aria-hidden="true" />
       </ElButton>
-    </header>
+    </template>
 
     <div class="overview-grid">
       <article class="overview-card accent">
@@ -26,17 +30,24 @@
         <p>{{ card.note }}</p>
       </article>
     </div>
-  </section>
+  </ConsoleViewHeader>
 </template>
 
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
+import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import widgetBold from '@iconify-icons/solar/widget-5-bold'
 import { ElButton } from 'element-plus'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 
 defineProps<{
   headline: string
+  currentView: string
+  viewOptions: ReadonlyArray<{
+    label: string
+    value: string
+  }>
   cards: Array<{
     label: string
     value: string
@@ -45,65 +56,27 @@ defineProps<{
   }>
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'refresh'): void
+  (event: 'update:currentView', value: string): void
 }>()
+
+function handleViewUpdate(value: string) {
+  emit('update:currentView', value)
+}
 </script>
 
 <style scoped>
-.hero-shell {
-  display: grid;
-  gap: 14px;
-}
-
-.page-header {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: start;
-  gap: 18px;
-}
-
-.hero-icon {
-  vertical-align: -0.15em;
-  margin-right: 6px;
-}
-
-.hero-copy {
-  display: grid;
-  gap: 12px;
-}
-
-.hero-kicker,
 .overview-label {
   font-size: 0.76rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
-.hero-kicker {
-  color: var(--accent);
-}
-
-.page-header p {
-  color: var(--text-muted);
-  max-width: 60ch;
-}
-
 .hero-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #63c7cd, #4f9ee8);
   box-shadow: 0 12px 28px rgba(52, 116, 168, 0.28);
-}
-
-.refresh-icon {
-  width: 20px;
-  height: 20px;
 }
 
 .hero-action:hover:not(:disabled) {
@@ -170,13 +143,8 @@ defineEmits<{
 }
 
 @media (max-width: 720px) {
-  .page-header,
   .overview-grid {
     grid-template-columns: 1fr;
-  }
-
-  .hero-action {
-    width: 100%;
   }
 }
 </style>
