@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
 import PluginRouteList from '@/modules/plugins/components/PluginRouteList.vue'
 
 const { invokePluginRoute } = vi.hoisted(() => ({
@@ -9,6 +10,43 @@ const { invokePluginRoute } = vi.hoisted(() => ({
 vi.mock('@/modules/plugins/api/plugins', () => ({
   invokePluginRoute,
 }))
+
+const ElSelectStub = defineComponent({
+  name: 'ElSelect',
+  props: {
+    modelValue: {
+      type: String,
+      default: '',
+    },
+  },
+  emits: ['update:modelValue'],
+  setup(props, { emit, slots, attrs }) {
+    return () => h('select', {
+      ...attrs,
+      value: props.modelValue,
+      onChange: (event: Event) => {
+        emit('update:modelValue', (event.target as HTMLSelectElement).value)
+      },
+    }, slots.default?.())
+  },
+})
+
+const ElOptionStub = defineComponent({
+  name: 'ElOption',
+  props: {
+    label: {
+      type: String,
+      default: '',
+    },
+    value: {
+      type: String,
+      required: true,
+    },
+  },
+  setup(props) {
+    return () => h('option', { value: props.value }, props.label)
+  },
+})
 
 describe('PluginRouteList', () => {
   it('invokes the selected plugin route and renders the JSON response', async () => {
@@ -24,6 +62,12 @@ describe('PluginRouteList', () => {
     })
 
     const wrapper = mount(PluginRouteList, {
+      global: {
+        stubs: {
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+        },
+      },
       props: {
         pluginName: 'builtin.route-inspector',
         routes: [
@@ -57,6 +101,12 @@ describe('PluginRouteList', () => {
     invokePluginRoute.mockReset()
 
     const wrapper = mount(PluginRouteList, {
+      global: {
+        stubs: {
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+        },
+      },
       props: {
         pluginName: 'builtin.route-inspector',
         routes: [
@@ -87,6 +137,12 @@ describe('PluginRouteList', () => {
     })
 
     const wrapper = mount(PluginRouteList, {
+      global: {
+        stubs: {
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+        },
+      },
       props: {
         pluginName: 'builtin.route-inspector',
         routes: [

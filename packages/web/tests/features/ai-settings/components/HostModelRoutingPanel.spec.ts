@@ -1,10 +1,54 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { defineComponent, h } from 'vue'
 import HostModelRoutingPanel from '@/modules/ai-settings/components/HostModelRoutingPanel.vue'
+
+const ElSelectStub = defineComponent({
+  name: 'ElSelect',
+  props: {
+    modelValue: {
+      type: String,
+      default: '',
+    },
+  },
+  emits: ['update:modelValue'],
+  setup(props, { emit, slots, attrs }) {
+    return () => h('select', {
+      ...attrs,
+      value: props.modelValue,
+      onChange: (event: Event) => {
+        emit('update:modelValue', (event.target as HTMLSelectElement).value)
+      },
+    }, slots.default?.())
+  },
+})
+
+const ElOptionStub = defineComponent({
+  name: 'ElOption',
+  props: {
+    label: {
+      type: String,
+      default: '',
+    },
+    value: {
+      type: String,
+      required: true,
+    },
+  },
+  setup(props) {
+    return () => h('option', { value: props.value }, props.label)
+  },
+})
 
 describe('HostModelRoutingPanel', () => {
   it('只编辑聊天回退链并发出保存事件', async () => {
     const wrapper = mount(HostModelRoutingPanel, {
+      global: {
+        stubs: {
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+        },
+      },
       props: {
         saving: false,
         config: {

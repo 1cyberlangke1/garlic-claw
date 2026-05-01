@@ -92,7 +92,7 @@ describe('useSkillManagement', () => {
     }))
   })
 
-  it('loads the skill catalog and aggregates catalog metrics', async () => {
+  it('loads the skill catalog and aggregates enabled count', async () => {
     let state!: ReturnType<typeof useSkillManagement>
     const Harness = defineComponent({
       setup() {
@@ -105,10 +105,8 @@ describe('useSkillManagement', () => {
     await flushPromises()
 
     expect(state.skills.value).toHaveLength(1)
-    expect(state.directoryCount.value).toBe(1)
-    expect(state.deniedCount.value).toBe(0)
-    expect(state.packageCount.value).toBe(1)
-    expect(state.executableCount.value).toBe(1)
+    expect(state.totalCount.value).toBe(1)
+    expect(state.enabledCount.value).toBe(1)
   })
 
   it('updates skill governance in the local catalog', async () => {
@@ -134,7 +132,7 @@ describe('useSkillManagement', () => {
     expect(state.skills.value[0]?.governance).toEqual({
       loadPolicy: 'deny',
     })
-    expect(state.deniedCount.value).toBe(1)
+    expect(state.enabledCount.value).toBe(0)
   })
 
   it('loads more skill events with nextCursor and appends the next page', async () => {

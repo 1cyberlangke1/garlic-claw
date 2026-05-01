@@ -398,14 +398,14 @@ describe('PluginSidebar', () => {
       },
     })
 
-    expect(wrapper.findAll('.plugin-item')).toHaveLength(4)
+    expect(wrapper.findAll('.plugin-item')).toHaveLength(8)
     expect(wrapper.text()).toContain('匹配 11 / 11')
-    expect(wrapper.text()).toContain('第 1 / 3 页')
+    expect(wrapper.text()).toContain('第 1 / 2 页')
 
     await wrapper.get('[data-test="plugin-sidebar-next-page"]').trigger('click')
 
-    expect(wrapper.text()).toContain('第 2 / 3 页')
-    expect(wrapper.find('.plugin-item strong').text()).toBe('Plugin 05')
+    expect(wrapper.text()).toContain('第 2 / 2 页')
+    expect(wrapper.find('.plugin-item strong').text()).toBe('Plugin 09')
 
     await wrapper.get('[data-test="plugin-sidebar-search"]').setValue('plugin-11')
 

@@ -43,7 +43,7 @@ describe('McpConfigPanel', () => {
     expect(wrapper.text()).toContain('weather-server')
     expect(wrapper.find('[data-test="mcp-name-input"]').element).toHaveProperty('value', 'weather-server')
     expect(wrapper.find('[data-test="mcp-command-input"]').element).toHaveProperty('value', 'npx')
-    expect(wrapper.text()).toContain('MCP 日志设置')
+    expect(wrapper.text()).not.toContain('MCP 日志设置')
     expect(wrapper.text()).not.toContain('MCP 事件日志')
   })
 
@@ -95,11 +95,16 @@ describe('McpConfigPanel', () => {
     }
     hoisted.state.selectedServerName.value = 'weather-server'
 
-    const wrapper = mount(McpConfigPanel)
+    const wrapper = mount(McpConfigPanel, {
+      props: {
+        view: 'logs',
+      },
+    })
     await flushPromises()
 
+    await wrapper.get('[title="日志设置"]').trigger('click')
     await wrapper.get('input[type="number"]').setValue('2')
-    await wrapper.get('.mcp-detail-panels .action-row .el-button--primary').trigger('click')
+    await wrapper.get('.action-row .el-button--primary').trigger('click')
 
     expect(hoisted.state?.saveServerEventLog).toHaveBeenCalledWith({
       maxFileSizeMb: 2,

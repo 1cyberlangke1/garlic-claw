@@ -1,10 +1,56 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { defineComponent, h } from 'vue'
 import PluginEventLog from '@/modules/plugins/components/PluginEventLog.vue'
+
+const ElSelectStub = defineComponent({
+  name: 'ElSelect',
+  props: {
+    modelValue: {
+      type: [String, Number],
+      default: '',
+    },
+  },
+  emits: ['update:modelValue', 'change'],
+  setup(props, { emit, slots, attrs }) {
+    return () => h('select', {
+      ...attrs,
+      value: String(props.modelValue ?? ''),
+      onChange: (event: Event) => {
+        const value = (event.target as HTMLSelectElement).value
+        emit('update:modelValue', value)
+        emit('change', value)
+      },
+    }, slots.default?.())
+  },
+})
+
+const ElOptionStub = defineComponent({
+  name: 'ElOption',
+  props: {
+    label: {
+      type: String,
+      default: '',
+    },
+    value: {
+      type: [String, Number],
+      required: true,
+    },
+  },
+  setup(props) {
+    return () => h('option', { value: String(props.value) }, props.label)
+  },
+})
 
 describe('PluginEventLog', () => {
   it('emits refresh with the selected server-side filters', async () => {
     const wrapper = mount(PluginEventLog, {
+      global: {
+        stubs: {
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+        },
+      },
       props: {
         events: [],
         loading: false,
@@ -44,6 +90,12 @@ describe('PluginEventLog', () => {
 
   it('emits load-more with the current query and cursor', async () => {
     const wrapper = mount(PluginEventLog, {
+      global: {
+        stubs: {
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+        },
+      },
       props: {
         events: [
           {
@@ -91,6 +143,12 @@ describe('PluginEventLog', () => {
 
   it('shows an empty-result message when the current server-side query returns no events', () => {
     const wrapper = mount(PluginEventLog, {
+      global: {
+        stubs: {
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+        },
+      },
       props: {
         events: [],
         loading: false,
