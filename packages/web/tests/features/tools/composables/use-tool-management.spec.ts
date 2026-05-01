@@ -2,10 +2,10 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ToolInfo, ToolSourceInfo } from '@garlic-claw/shared'
-import { useToolManagement } from '@/features/tools/composables/use-tool-management'
-import * as toolData from '@/features/tools/composables/tool-management.data'
+import { useToolManagement } from '@/modules/tools/composables/use-tool-management'
+import * as toolData from '@/modules/tools/composables/tool-management.data'
 
-vi.mock('@/features/tools/composables/tool-management.data', () => ({
+vi.mock('@/modules/tools/composables/tool-management.data', () => ({
   loadToolOverview: vi.fn(),
   saveToolSourceEnabled: vi.fn(),
   saveToolEnabled: vi.fn(),

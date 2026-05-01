@@ -11,10 +11,10 @@ import type {
   DiscoveredAiModel,
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
-import { useProviderSettings } from '@/features/ai-settings/composables/use-provider-settings'
-import * as providerData from '@/features/ai-settings/composables/provider-settings.data'
+import { useProviderSettings } from '@/modules/ai-settings/composables/use-provider-settings'
+import * as providerData from '@/modules/ai-settings/composables/provider-settings.data'
 
-vi.mock('@/features/ai-settings/composables/provider-settings.data', () => ({
+vi.mock('@/modules/ai-settings/composables/provider-settings.data', () => ({
   loadProviderSettingsBaseData: vi.fn(),
   loadProviderSelectionData: vi.fn(),
   loadProviderModelOptions: vi.fn(),

@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import PluginScopeEditor from '@/features/plugins/components/PluginScopeEditor.vue'
+import PluginScopeEditor from '@/modules/plugins/components/PluginScopeEditor.vue'
 
 describe('PluginScopeEditor', () => {
   it('blocks save when a conversation override row is left blank', async () => {

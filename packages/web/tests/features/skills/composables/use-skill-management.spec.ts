@@ -1,10 +1,10 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSkillManagement } from '@/features/skills/composables/use-skill-management'
-import * as skillData from '@/features/skills/composables/skill-management.data'
+import { useSkillManagement } from '@/modules/skills/composables/use-skill-management'
+import * as skillData from '@/modules/skills/composables/skill-management.data'
 
-vi.mock('@/features/skills/composables/skill-management.data', () => ({
+vi.mock('@/modules/skills/composables/skill-management.data', () => ({
   dedupeEventLogs: vi.fn((items) => items),
   loadSkillCatalog: vi.fn(),
   loadSkillEvents: vi.fn().mockResolvedValue({

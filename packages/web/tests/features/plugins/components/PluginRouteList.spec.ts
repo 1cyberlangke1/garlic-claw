@@ -1,12 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import PluginRouteList from '@/features/plugins/components/PluginRouteList.vue'
+import PluginRouteList from '@/modules/plugins/components/PluginRouteList.vue'
 
 const { invokePluginRoute } = vi.hoisted(() => ({
   invokePluginRoute: vi.fn(),
 }))
 
-vi.mock('@/features/plugins/api/plugins', () => ({
+vi.mock('@/modules/plugins/api/plugins', () => ({
   invokePluginRoute,
 }))
 

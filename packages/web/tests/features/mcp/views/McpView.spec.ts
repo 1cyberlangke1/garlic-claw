@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import McpView from '@/features/mcp/views/McpView.vue'
+import McpView from '@/modules/mcp/views/McpView.vue'
 
 describe('McpView', () => {
   it('renders mcp workspace with config section and unified management entry', () => {

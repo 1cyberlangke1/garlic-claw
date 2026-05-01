@@ -40,6 +40,7 @@ process.env.NO_PROXY = [
 const visitedHttpRoutes = [];
 let smokeWebFetchUrl = '';
 let smokeBashTimeoutUrl = '';
+let currentStepName = 'bootstrap';
 
 function readSmokeShellToolName() {
   return usesNativePowerShellBackend() ? 'powershell' : 'bash';
@@ -140,12 +141,13 @@ async function main() {
   const tempRoot = path.join(PROJECT_ROOT, 'workspace', 'test-artifacts', 'http-smoke');
   await fsPromises.mkdir(tempRoot, { recursive: true });
   const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'http-smoke-'));
+  let smokeFailed = false;
   let port = null;
   let wsPort = null;
   const skillRoot = path.join(PROJECT_ROOT, 'config', 'skills', 'definitions', SKILL_DIR_NAME);
-  const fakeOpenAi = cli.realProviderId ? null : await startFakeOpenAiServer();
-  smokeWebFetchUrl = fakeOpenAi ? `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-webfetch/article` : '';
-  smokeBashTimeoutUrl = fakeOpenAi ? `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-bash-timeout` : '';
+  let fakeOpenAi = null;
+  smokeWebFetchUrl = '';
+  smokeBashTimeoutUrl = '';
   const smokeSkillId = 'project/.smoke-http-flow';
   const mcpScriptPath = path.join(tempDir, 'working-mcp.cjs');
   const remotePluginScriptPath = path.join(tempDir, 'remote-route-plugin.cjs');
@@ -240,6 +242,9 @@ async function main() {
   let apiBase = '';
 
   try {
+    fakeOpenAi = cli.realProviderId ? null : await startFakeOpenAiServer();
+    smokeWebFetchUrl = fakeOpenAi ? `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-webfetch/article` : '';
+    smokeBashTimeoutUrl = fakeOpenAi ? `${fakeOpenAi.url.replace(/\/v1$/, '')}/mock-bash-timeout` : '';
     await runStep('contracts.web-alignment', async () => {
       assertWebRoutesMatchServerRoutes(serverRoutes, webRoutes);
     });
@@ -282,13 +287,15 @@ async function main() {
 
     if (cli.realProviderId) {
       await runRealProviderHttpFlow(apiBase, state, {
+        profile: cli.profile,
         realModelId: cli.realModelId,
         realProviderId: cli.realProviderId,
       });
-      console.log(`server real-provider smoke passed: ${getCompletedStepCount()} checks`);
+      console.log(`server real-provider smoke (${cli.profile}) passed: ${getCompletedStepCount()} checks`);
     } else {
       ensure(fakeOpenAi, 'Expected fake OpenAI for default smoke flow');
       await runHttpFlow(apiBase, state, {
+        profile: cli.profile,
         fakeOpenAi,
         fakeOpenAiUrl: fakeOpenAi.url,
         flowSuffix: state.userAlias,
@@ -301,13 +308,29 @@ async function main() {
         runtimeWorkspacesPath: serverFiles.runtimeWorkspacesPath,
         smokeSkillId,
       });
-      await runStep('contracts.server-route-coverage', async () => {
-        assertAllServerRoutesCovered(serverRoutes);
-      });
+      if (cli.profile === 'full') {
+        await runStep('contracts.server-route-coverage', async () => {
+          assertAllServerRoutesCovered(serverRoutes);
+        });
+      }
 
-      console.log(`server HTTP smoke passed: ${getCompletedStepCount()} checks`);
+      console.log(`server HTTP smoke (${cli.profile}) passed: ${getCompletedStepCount()} checks`);
     }
   } catch (error) {
+    smokeFailed = true;
+    if (shouldKeepSmokeArtifacts(cli.artifactMode, true)) {
+      await persistHttpSmokeArtifacts(tempDir, {
+        artifactMode: cli.artifactMode,
+        backendLogs: backend?.logs ?? [],
+        completedStepCount: getCompletedStepCount(),
+        currentStepName,
+        error,
+        fakeOpenAiRequests: fakeOpenAi?.readChatCompletions?.() ?? [],
+        profile: cli.profile,
+        visitedHttpRoutes,
+      });
+      console.error(`[http-smoke] 已保留失败产物: ${tempDir}`);
+    }
     if (backend?.logs.length) {
       console.error('--- server logs ---');
       console.error(backend.logs.join(''));
@@ -315,6 +338,7 @@ async function main() {
     }
     throw error;
   } finally {
+    const keepArtifacts = shouldKeepSmokeArtifacts(cli.artifactMode, smokeFailed);
     await Promise.allSettled([
       cli.proxyOrigin && state.proxyOpenAiProviderManaged
         ? restoreProxyOpenAiProvider(apiBase, state)
@@ -323,9 +347,15 @@ async function main() {
       backend?.stop?.() ?? Promise.resolve(),
       fakeOpenAi?.close?.() ?? Promise.resolve(),
       fsPromises.rm(skillRoot, { recursive: true, force: true }),
-      fsPromises.rm(tempDir, { recursive: true, force: true }),
+      keepArtifacts
+        ? Promise.resolve()
+        : fsPromises.rm(tempDir, { recursive: true, force: true }),
     ]);
-    await removeEmptyDirectoryChain(tempRoot, path.join(PROJECT_ROOT, 'workspace'));
+    if (!keepArtifacts) {
+      await removeEmptyDirectoryChain(tempRoot, path.join(PROJECT_ROOT, 'workspace'));
+    } else if (!smokeFailed) {
+      console.log(`[http-smoke] 已保留运行产物: ${tempDir}`);
+    }
   }
 }
 
@@ -343,6 +373,31 @@ async function removeEmptyDirectoryChain(startPath, stopPath) {
     } catch {
       return;
     }
+  }
+}
+
+async function persistHttpSmokeArtifacts(tempDir, input) {
+  const summary = {
+    artifactMode: input.artifactMode,
+    completedStepCount: input.completedStepCount,
+    currentStepName: input.currentStepName,
+    error: serializeError(input.error),
+    failedAt: new Date().toISOString(),
+    profile: input.profile,
+    visitedHttpRoutes: input.visitedHttpRoutes,
+  };
+  await fsPromises.writeFile(path.join(tempDir, 'failure-summary.json'), `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+
+  if (input.backendLogs.length > 0) {
+    await fsPromises.writeFile(path.join(tempDir, 'server.log'), input.backendLogs.join(''), 'utf8');
+  }
+
+  if (input.fakeOpenAiRequests.length > 0) {
+    await fsPromises.writeFile(
+      path.join(tempDir, 'fake-openai-chat-completions.json'),
+      `${JSON.stringify(input.fakeOpenAiRequests, null, 2)}\n`,
+      'utf8',
+    );
   }
 }
 
@@ -445,6 +500,26 @@ async function runSmokeConversationDeleteVerification(apiBase, state, input) {
       headers: input.headers(),
     });
     ensure(Array.isArray(conversations) && !conversations.some((entry) => entry.id === state.conversationId), 'Expected deleted conversation to disappear from list');
+  });
+}
+
+async function runSmokeProviderDelete(apiBase, state, input) {
+  await runStep(input.stepName, async () => {
+    const result = await deleteJson(apiBase, `/ai/providers/${state.providerId}`);
+    ensure(result.success === true, 'Expected provider delete response');
+  });
+}
+
+async function runSmokeProviderDeleteVerification(apiBase, state, input) {
+  await runStep(input.detailStepName, async () => {
+    await getJson(apiBase, `/ai/providers/${state.providerId}`, {
+      expectedStatus: 404,
+    });
+  });
+
+  await runStep(input.listStepName, async () => {
+    const providers = await getJson(apiBase, '/ai/providers');
+    ensure(!providers.some((entry) => entry.id === state.providerId), 'Expected provider list to exclude deleted provider');
   });
 }
 
@@ -562,6 +637,19 @@ async function runRealProviderHttpFlow(apiBase, state, input) {
     timeoutMs: 90_000,
   });
 
+  if (input.profile === 'core') {
+    await runSmokeConversationDelete(apiBase, state, {
+      headers: userHeaders,
+      stepName: 'chat.conversation.delete.real',
+    });
+    await runSmokeConversationDeleteVerification(apiBase, state, {
+      detailStepName: 'chat.conversation.get.after-delete.real',
+      headers: userHeaders,
+      listStepName: 'chat.conversation.list.after-delete.real',
+    });
+    return;
+  }
+
   await runSmokeTextChatRoundTrip(apiBase, state, {
     content: '请再用一句不同的简短中文回复，确认上下文压缩前已有两轮真实对话。',
     headers: userHeaders,
@@ -594,6 +682,57 @@ async function runRealProviderHttpFlow(apiBase, state, input) {
     detailStepName: 'chat.conversation.get.after-delete.real',
     headers: userHeaders,
     listStepName: 'chat.conversation.list.after-delete.real',
+  });
+}
+
+async function runCoreHttpFlow(apiBase, state, input) {
+  await runSmokeConversationCreate(apiBase, state, {
+    headers: input.headers,
+    stepName: 'chat.conversation.create',
+    title: 'Smoke Chat',
+  });
+
+  await runStep('chat.conversation.list', async () => {
+    const conversations = await getJson(apiBase, '/chat/conversations', { headers: input.headers() });
+    ensure(Array.isArray(conversations) && conversations.some((entry) => entry.id === state.conversationId), 'Expected conversation list to include smoke conversation');
+  });
+
+  await runStep('chat.conversation.get', async () => {
+    const conversation = await getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: input.headers() });
+    ensure(conversation.id === state.conversationId, 'Expected conversation detail to match');
+  });
+
+  await runSmokeTextChatRoundTrip(apiBase, state, {
+    content: '请用一句中文确认 smoke core 已连通。',
+    headers: input.headers,
+    stepName: 'chat.messages.basic',
+  });
+
+  await runContextCompactionModelSmoke(apiBase, state, {
+    commandStepName: 'chat.messages.compact',
+    configStepName: 'ai.context-governance.put.core',
+    headers: input.headers,
+    verifySummaryStepName: 'chat.messages.compact.verify',
+  });
+
+  await runSmokeConversationDelete(apiBase, state, {
+    headers: input.headers,
+    stepName: 'chat.conversation.delete',
+  });
+
+  await runSmokeConversationDeleteVerification(apiBase, state, {
+    detailStepName: 'chat.conversation.get.after-delete',
+    headers: input.headers,
+    listStepName: 'chat.conversation.list.after-delete',
+  });
+
+  await runSmokeProviderDelete(apiBase, state, {
+    stepName: 'ai.provider.delete',
+  });
+
+  await runSmokeProviderDeleteVerification(apiBase, state, {
+    detailStepName: 'ai.provider.get.after-delete',
+    listStepName: 'ai.providers.list.after-delete',
   });
 }
 
@@ -646,13 +785,12 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(pending) && pending.length === 0, `Expected ${label} to leave no pending runtime permission request`);
   };
 
-  await runStep('ai.provider-catalog', async () => {
-    const catalog = await getJson(apiBase, '/ai/provider-catalog');
+  await runStep('ai.provider-catalog+providers.list.initial', async () => {
+    const [catalog, providers] = await Promise.all([
+      getJson(apiBase, '/ai/provider-catalog'),
+      getJson(apiBase, '/ai/providers'),
+    ]);
     ensure(Array.isArray(catalog) && catalog.length > 0, 'Expected provider catalog to be non-empty');
-  });
-
-  await runStep('ai.providers.list.initial', async () => {
-    const providers = await getJson(apiBase, '/ai/providers');
     ensure(Array.isArray(providers), 'Expected providers list to be an array');
   });
 
@@ -753,6 +891,13 @@ async function runHttpFlow(apiBase, state, input) {
   await runSmokeConnectionCheck(apiBase, state, {
     stepName: 'ai.test-connection',
   });
+
+  if (input.profile === 'core') {
+    await runCoreHttpFlow(apiBase, state, {
+      headers: userHeaders,
+    });
+    return;
+  }
 
   await runStep('ai.vision-fallback.get', async () => {
     const config = await getJson(apiBase, '/ai/vision-fallback');
@@ -2062,15 +2207,14 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(config.values.contextCompaction.strategy === 'sliding', 'Expected context governance compaction strategy to persist');
   });
 
-  await runStep('commands.overview', async () => {
-    const overview = await getJson(apiBase, '/command-catalog/overview');
+  await runStep('commands.overview+version', async () => {
+    const [overview, version] = await Promise.all([
+      getJson(apiBase, '/command-catalog/overview'),
+      getJson(apiBase, '/command-catalog/version'),
+    ]);
     ensure(Array.isArray(overview.commands), 'Expected command overview payload');
     ensure(overview.commands.some((entry) => entry.commandId === 'internal.context-governance:/compact:command'), 'Expected internal context governance command');
     ensure(typeof overview.version === 'string' && overview.version.length > 0, 'Expected command overview version');
-  });
-
-  await runStep('commands.version', async () => {
-    const version = await getJson(apiBase, '/command-catalog/version');
     ensure(typeof version.version === 'string' && version.version.length > 0, 'Expected command catalog version payload');
   });
 
@@ -2824,20 +2968,13 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(fs.existsSync(readSessionWorkspaceRoot()) === false, 'Expected conversation deletion to remove runtime workspace');
   });
 
-  await runStep('ai.provider.delete', async () => {
-    const result = await deleteJson(apiBase, `/ai/providers/${state.providerId}`);
-    ensure(result.success === true, 'Expected provider delete response');
+  await runSmokeProviderDelete(apiBase, state, {
+    stepName: 'ai.provider.delete',
   });
 
-  await runStep('ai.provider.get.after-delete', async () => {
-    await getJson(apiBase, `/ai/providers/${state.providerId}`, {
-      expectedStatus: 404,
-    });
-  });
-
-  await runStep('ai.providers.list.after-delete', async () => {
-    const providers = await getJson(apiBase, '/ai/providers');
-    ensure(!providers.some((entry) => entry.id === state.providerId), 'Expected provider list to exclude deleted provider');
+  await runSmokeProviderDeleteVerification(apiBase, state, {
+    detailStepName: 'ai.provider.get.after-delete',
+    listStepName: 'ai.providers.list.after-delete',
   });
 }
 
@@ -3098,7 +3235,12 @@ async function writeRealSmokeJsonDefaults(aiSettingsPath) {
 }
 
 async function runTypescriptBuild() {
-  await runCommand(process.execPath, [resolveTscCliEntry(), '-p', 'tsconfig.build.json'], {
+  await runCommand(process.execPath, [
+    resolveTscCliEntry(),
+    '-p', 'tsconfig.build.json',
+    '--incremental',
+    '--tsBuildInfoFile', path.join(SERVER_DIR, 'dist', 'tsconfig.build.tsbuildinfo-smoke'),
+  ], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
@@ -3191,7 +3333,7 @@ async function waitForJson(url, backend, timeoutMs = DEFAULT_TIMEOUT_MS) {
       // keep polling
     }
 
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error(`Timed out waiting for ${url}`);
@@ -3317,6 +3459,8 @@ async function writeHostModelRoutingConfig(apiBase, body) {
 
 function parseCliArgs(args) {
   const config = {
+    artifactMode: normalizeSmokeArtifactMode(process.env.GARLIC_CLAW_SMOKE_ARTIFACT_MODE),
+    profile: normalizeSmokeProfile(process.env.GARLIC_CLAW_SMOKE_PROFILE),
     proxyOrigin: null,
     realModelId: normalizeOptionalText(process.env.GARLIC_CLAW_SMOKE_REAL_MODEL_ID),
     realProviderId: normalizeOptionalText(process.env.GARLIC_CLAW_SMOKE_REAL_PROVIDER_ID),
@@ -3327,6 +3471,16 @@ function parseCliArgs(args) {
     const arg = args[index];
     if (arg === '--proxy-origin') {
       config.proxyOrigin = args[index + 1] ?? null;
+      index += 1;
+      continue;
+    }
+    if (arg === '--profile') {
+      config.profile = normalizeSmokeProfile(args[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg === '--artifact-mode') {
+      config.artifactMode = normalizeSmokeArtifactMode(args[index + 1]);
       index += 1;
       continue;
     }
@@ -3356,6 +3510,32 @@ function parseCliArgs(args) {
   }
 
   return config;
+}
+
+function normalizeSmokeProfile(value) {
+  const normalizedValue = (value ?? 'full').trim().toLowerCase();
+  if (normalizedValue === 'core' || normalizedValue === 'full') {
+    return normalizedValue;
+  }
+  throw new Error('smoke profile must be core or full');
+}
+
+function normalizeSmokeArtifactMode(value) {
+  const normalizedValue = (value ?? 'on-failure').trim().toLowerCase();
+  if (normalizedValue === 'always' || normalizedValue === 'on-failure' || normalizedValue === 'never') {
+    return normalizedValue;
+  }
+  throw new Error('smoke artifact mode must be always, on-failure, or never');
+}
+
+function shouldKeepSmokeArtifacts(artifactMode, smokeFailed) {
+  if (artifactMode === 'always') {
+    return true;
+  }
+  if (artifactMode === 'never') {
+    return false;
+  }
+  return smokeFailed;
 }
 
 function normalizeRuntimeApprovalMode(value) {
@@ -3399,13 +3579,22 @@ async function waitForBootstrapAdminLogin(apiBase) {
       // keep polling
     }
 
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error('Timed out waiting for bootstrap admin login');
 }
 
 async function waitForPluginHealth(apiBase, pluginId, expectedOk) {
+  try {
+    const health = await getJson(apiBase, `/plugins/${pluginId}/health`);
+    if (readPluginHealthOk(health) === expectedOk) {
+      return health;
+    }
+  } catch {
+    // fall through to polling loop
+  }
+
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
@@ -3418,7 +3607,7 @@ async function waitForPluginHealth(apiBase, pluginId, expectedOk) {
       // keep polling
     }
 
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error(`Timed out waiting for plugin ${pluginId} health=${expectedOk}`);
@@ -3439,7 +3628,7 @@ async function waitForSubagentTaskCompletion(apiBase, conversationId) {
     if (subagent?.status === 'error') {
       throw new Error(`Subagent conversation ${conversationId} failed: ${subagent.error ?? 'unknown error'}`);
     }
-    await delay(250);
+    await delay(100);
   }
 
   throw new Error(`Timed out waiting for subagent conversation ${conversationId} to complete`);
@@ -3656,6 +3845,7 @@ function findContextCompactionSummaryMessage(messages) {
 let completedStepCount = 0;
 
 async function runStep(name, task) {
+  currentStepName = name;
   console.log(`-> ${name}`);
   const result = await task();
   completedStepCount += 1;
@@ -3783,6 +3973,21 @@ function formatPayload(payload) {
   } catch {
     return String(payload);
   }
+}
+
+function serializeError(error) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack ?? null,
+    };
+  }
+  return {
+    message: String(error),
+    name: 'NonError',
+    stack: null,
+  };
 }
 
 function ensure(condition, message) {
@@ -3972,7 +4177,7 @@ async function writeStreamResponse(request, response, body) {
       id: 'chatcmpl-smoke',
       model,
     });
-    await delay(80);
+    await delay(0);
     if (request.aborted || response.destroyed || response.writableEnded) {
       return;
     }
@@ -4020,7 +4225,7 @@ async function writeStreamResponse(request, response, body) {
       id: 'chatcmpl-smoke',
       model,
     });
-    await delay(80);
+    await delay(0);
   }
 
   if (request.aborted || response.destroyed || response.writableEnded) {

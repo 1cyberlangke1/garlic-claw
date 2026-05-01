@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import PluginEventLog from '@/features/plugins/components/PluginEventLog.vue'
+import PluginEventLog from '@/modules/plugins/components/PluginEventLog.vue'
 
 describe('PluginEventLog', () => {
   it('emits refresh with the selected server-side filters', async () => {

@@ -9,7 +9,7 @@
 - 开始复杂任务、重构、架构调整或长期路线讨论前，先读取 `TODO.md`
 - 长期方向变更要同步更新 `TODO.md`；过程记录放在 `task_plan.md / progress.md / findings.md`
 - 未完成计划不能删除，只能追加状态、标记为 `已完成 / 已取消 / 已废弃 / 已替代`
-- 会话恢复信息可追加到 `tmp/session-persistence.md`，该文件不提交 git
+- 会话恢复信息可追加到 `tmp/session-persistence.md`
 
 ## 文档分层
 
@@ -30,6 +30,7 @@
 - 不做兼容层，不保留历史过渡壳，不接受把同等复杂度换名留在 `core`
 - `core` 只保留稳定 contract 与最少宿主能力；作者侧语法糖、生态兼容、adapter glue 优先放到 `SDK / adapter`
 - 每一刀优先删重复控制流、中间 owner 与特判路径；只换位置或换名字不算完成
+- 对于前端Vue文件只按照职责拆分，不要因为CSS等过长就把组件拆分成多个文件
 
 ## 执行约束
 
@@ -97,6 +98,7 @@ packages/: server(NestJS) | web(Vue) | shared | plugin-sdk | plugins
 
 - 包名统一为 `@garlic-claw/{server,web,shared,plugin-sdk}`
 - 文件过长时优先拆分；如必须保留不拆分，需在文件头说明原因
+- Vue文件只按照职责拆分，不要因为CSS等过长就把组件拆分成多个文件
 
 ## 错误处理与测试
 

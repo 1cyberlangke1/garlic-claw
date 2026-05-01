@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createChatStoreModule } from '@/features/chat/modules/chat-store.module'
-import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
+import { createChatStoreModule } from '@/modules/chat/modules/chat-store.module'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/modules/ai-settings/internal-config-change'
 import type { Conversation } from '@garlic-claw/shared'
-import type { ChatMessage } from '@/features/chat/store/chat-store.types'
+import type { ChatMessage } from '@/modules/chat/store/chat-store.types'
 
-vi.mock('@/features/chat/modules/chat-conversation.data', () => ({
+vi.mock('@/modules/chat/modules/chat-conversation.data', () => ({
   createConversationRecord: vi.fn(),
   deleteConversationMessageRecord: vi.fn(),
   deleteConversationRecord: vi.fn(),
@@ -18,7 +18,7 @@ vi.mock('@/features/chat/modules/chat-conversation.data', () => ({
   updateConversationMessageRecord: vi.fn(),
 }))
 
-vi.mock('@/features/chat/modules/chat-stream.module', () => ({
+vi.mock('@/modules/chat/modules/chat-stream.module', () => ({
   abortChatStream: vi.fn(),
   discardPendingMessageUpdates: vi.fn(),
   dispatchRetryMessage: vi.fn(),
@@ -28,13 +28,13 @@ vi.mock('@/features/chat/modules/chat-stream.module', () => ({
   syncChatStreamingState: vi.fn(),
 }))
 
-vi.mock('@/features/chat/modules/chat-model-selection', () => ({
+vi.mock('@/modules/chat/modules/chat-model-selection', () => ({
   ensureChatModelSelection: vi.fn(),
 }))
 
-import * as chatConversationData from '@/features/chat/modules/chat-conversation.data'
-import * as chatStreamModule from '@/features/chat/modules/chat-stream.module'
-import * as chatModelSelection from '@/features/chat/modules/chat-model-selection'
+import * as chatConversationData from '@/modules/chat/modules/chat-conversation.data'
+import * as chatStreamModule from '@/modules/chat/modules/chat-stream.module'
+import * as chatModelSelection from '@/modules/chat/modules/chat-model-selection'
 
 describe('createChatStoreModule', () => {
   beforeEach(() => {

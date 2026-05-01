@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadProviderModelOptions } from '@/features/ai-settings/composables/provider-settings.data'
-import * as aiApi from '@/features/ai-settings/api/ai'
+import { loadProviderModelOptions } from '@/modules/ai-settings/composables/provider-settings.data'
+import * as aiApi from '@/modules/ai-settings/api/ai'
 
-vi.mock('@/features/ai-settings/api/ai', () => ({
+vi.mock('@/modules/ai-settings/api/ai', () => ({
   listAiModels: vi.fn(),
 }))
 

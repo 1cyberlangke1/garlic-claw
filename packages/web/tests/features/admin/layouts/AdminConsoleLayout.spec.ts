@@ -2,14 +2,14 @@ import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useAdminShellPreferences } from '@/features/admin/modules/admin-shell-preferences'
-import AdminConsoleLayout from '@/features/admin/layouts/AdminConsoleLayout.vue'
+import { useAdminShellPreferences } from '@/modules/admin/modules/admin-shell-preferences'
+import AdminConsoleLayout from '@/modules/admin/layouts/AdminConsoleLayout.vue'
 
 const authState = {
   logout: vi.fn(),
 }
 
-vi.mock('@/stores/auth', () => ({
+vi.mock('@/shared/stores/auth', () => ({
   useAuthStore: () => authState,
 }))
 

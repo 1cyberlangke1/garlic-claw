@@ -1,17 +1,17 @@
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatMessage } from '@/features/chat/store/chat-store.types'
-import { BusinessError } from '@/utils/error'
+import type { ChatMessage } from '@/modules/chat/store/chat-store.types'
+import { BusinessError } from '@/shared/utils/error'
 import {
   abortChatStream,
   discardPendingMessageUpdates,
   dispatchSendMessage,
   dispatchRetryMessage,
   syncChatStreamingState,
-} from '@/features/chat/modules/chat-stream.module'
-import * as chatConversationData from '@/features/chat/modules/chat-conversation.data'
+} from '@/modules/chat/modules/chat-stream.module'
+import * as chatConversationData from '@/modules/chat/modules/chat-conversation.data'
 
-vi.mock('@/features/chat/modules/chat-conversation.data', () => ({
+vi.mock('@/modules/chat/modules/chat-conversation.data', () => ({
   sendConversationMessage: vi.fn(),
   retryConversationMessage: vi.fn(),
   loadConversationMessages: vi.fn(),

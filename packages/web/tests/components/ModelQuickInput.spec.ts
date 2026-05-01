@@ -1,9 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import ModelQuickInput from '@/components/ModelQuickInput.vue'
-import * as aiApi from '@/features/ai-settings/api/ai'
+import ModelQuickInput from '@/shared/components/ModelQuickInput.vue'
+import * as aiApi from '@/modules/ai-settings/api/ai'
 
-vi.mock('@/features/ai-settings/api/ai', () => ({
+vi.mock('@/modules/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn(),
   listAiModels: vi.fn(),
 }))

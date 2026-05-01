@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
-import { request } from '@/api/http'
+import { request } from '@/shared/api/http'
 
 describe('http request', () => {
   beforeEach(() => {

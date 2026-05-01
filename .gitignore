@@ -82,3 +82,6 @@ other/
 .playwright-mcp/
 log/
 .claude/
+
+pnpm-lock.yaml
+pnpm-workspace.yaml

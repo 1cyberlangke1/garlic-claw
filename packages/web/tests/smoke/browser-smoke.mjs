@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
@@ -14,7 +13,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const WEB_DIR = path.resolve(__dirname, '..', '..');
 const PROJECT_ROOT = path.resolve(WEB_DIR, '..', '..');
-const STATE_FILE = path.join(PROJECT_ROOT, 'other', 'dev-processes.json');
 
 const DEFAULT_WEB_ORIGIN = 'http://127.0.0.1:23333';
 const API_ORIGIN = 'http://127.0.0.1:23330/api';
@@ -42,19 +40,25 @@ let browserSmokeCompleted = false;
 let webOrigin = process.env.GARLIC_CLAW_WEB_ORIGIN || DEFAULT_WEB_ORIGIN;
 
 async function main() {
-  const fakeOpenAi = await startFakeOpenAiServer();
-  const tempRoot = path.join(PROJECT_ROOT, 'other', 'tmp');
+  const cli = parseCliArgs(process.argv.slice(2));
+  const tempRoot = path.join(PROJECT_ROOT, 'workspace', 'test-artifacts', 'browser-smoke');
   await fsPromises.mkdir(tempRoot, { recursive: true });
   const tempDir = await fsPromises.mkdtemp(path.join(tempRoot, 'browser-smoke-'));
   const remotePluginScriptPath = path.join(tempDir, 'remote-plugin.cjs');
-  await prepareRemotePluginScript(remotePluginScriptPath);
-  const serviceSession = await ensureDevServices();
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    baseURL: webOrigin,
-  });
-  const page = await context.newPage();
+  let fakeOpenAi = null;
+  let serviceSession = {
+    mode: 'uninitialized',
+    async stop() {},
+  };
+  let browser = null;
+  let context = null;
+  let page = null;
+  let tracingStarted = false;
+  let runError = null;
+  const pageErrors = [];
+  const consoleErrors = [];
   const handlePageError = (error) => {
+    pageErrors.push(serializeError(error));
     console.error('[browser-smoke:pageerror]', error);
   };
   const handlePageConsole = (message) => {
@@ -66,11 +70,14 @@ async function main() {
       return;
     }
     if (message.type() === 'error') {
+      consoleErrors.push({
+        location: message.location(),
+        text: message.text(),
+        type: message.type(),
+      });
       console.error('[browser-smoke:console]', message.text());
     }
   };
-  page.on('pageerror', handlePageError);
-  page.on('console', handlePageConsole);
   let accessToken = '';
   let createdConversationId = null;
   const createdConversationIds = new Set();
@@ -78,6 +85,23 @@ async function main() {
   let remotePluginHandle = null;
 
   try {
+    fakeOpenAi = await startFakeOpenAiServer();
+    await prepareRemotePluginScript(remotePluginScriptPath);
+    serviceSession = await ensureDevServices();
+    browser = await chromium.launch({ headless: true });
+    context = await browser.newContext({
+      baseURL: webOrigin,
+    });
+    await context.tracing.start({
+      screenshots: true,
+      snapshots: true,
+      sources: true,
+    });
+    tracingStarted = true;
+    page = await context.newPage();
+    page.on('pageerror', handlePageError);
+    page.on('console', handlePageConsole);
+
     accessToken = await loginBrowserSmokeAdmin();
     await page.addInitScript((token) => {
       try {
@@ -87,13 +111,13 @@ async function main() {
     initialProviderIds = new Set((await requestJson('/ai/providers', {
       headers: createAuthHeaders(accessToken),
     }).catch(() => [])).map((provider) => provider.id));
-    await page.goto('/', { waitUntil: 'networkidle' });
+    await page.goto('/', { waitUntil: 'load' });
     await page.evaluate((token) => {
       try {
         window.localStorage.setItem('accessToken', token);
       } catch {}
     }, accessToken);
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'load' });
     await page.getByRole('button', { name: '新对话' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
     await cleanupSmokeArtifacts(accessToken, {
@@ -123,18 +147,41 @@ async function main() {
     browserSmokeCompleted = true;
     page.off('pageerror', handlePageError);
     page.off('console', handlePageConsole);
+  } catch (error) {
+    runError = error;
+    throw error;
   } finally {
+    const keepArtifacts = shouldKeepSmokeArtifacts(cli.artifactMode, !browserSmokeCompleted);
     suppressExpectedTeardownConsoleErrors = true;
-    await page.evaluate(() => {
+    await page?.evaluate(() => {
       window.__GARLIC_CLAW_SUPPRESS_REQUEST_ERRORS__ = true;
     }).catch(() => undefined);
-    if (!browserSmokeCompleted) {
+    if (!browserSmokeCompleted && page) {
       page.off('pageerror', handlePageError);
       page.off('console', handlePageConsole);
     }
+    if (context && tracingStarted) {
+      if (keepArtifacts) {
+        await context.tracing.stop({
+          path: path.join(tempDir, 'playwright-trace.zip'),
+        }).catch(() => undefined);
+      } else {
+        await context.tracing.stop().catch(() => undefined);
+      }
+    }
+    if (keepArtifacts) {
+      await persistBrowserSmokeArtifacts(tempDir, {
+        consoleErrors,
+        error: runError,
+        page,
+        pageErrors,
+        serviceMode: serviceSession.mode,
+        webOrigin,
+      });
+    }
     await Promise.allSettled([
-      context.close(),
-      browser.close(),
+      context?.close?.() ?? Promise.resolve(),
+      browser?.close?.() ?? Promise.resolve(),
     ]);
     await Promise.allSettled([
       cleanupSmokeArtifacts(accessToken, {
@@ -145,9 +192,16 @@ async function main() {
         providerId: PROVIDER_ID,
       }),
       remotePluginHandle?.stop?.() ?? Promise.resolve(),
-      fakeOpenAi.close(),
-      fsPromises.rm(tempDir, { recursive: true, force: true }),
+      fakeOpenAi?.close?.() ?? Promise.resolve(),
+      keepArtifacts
+        ? Promise.resolve()
+        : fsPromises.rm(tempDir, { recursive: true, force: true }),
     ]);
+    if (!keepArtifacts) {
+      await removeEmptyDirectoryChain(tempRoot, path.join(PROJECT_ROOT, 'workspace'));
+    } else {
+      console.error(`[browser-smoke] 已保留${browserSmokeCompleted ? '运行' : '失败'}产物: ${tempDir}`);
+    }
     await serviceSession.stop();
   }
 }
@@ -175,8 +229,10 @@ async function ensureDevServices() {
       started.push(await startBrowserSmokeBackendApp());
     }
     started.push(await startBrowserSmokeWebApp());
-    await waitForHttpReady(`${API_ORIGIN}/health`);
-    await waitForHttpReady(webOrigin);
+    await Promise.all([
+      waitForHttpReady(`${API_ORIGIN}/health`),
+      waitForHttpReady(webOrigin),
+    ]);
     return {
       mode: 'isolated-web',
       async stop() {
@@ -209,8 +265,10 @@ async function ensureDevServices() {
     label: '启动开发环境',
     timeoutMs: DEV_RESTART_TIMEOUT_MS,
   });
-  await waitForHttpReady(`${API_ORIGIN}/health`);
-  await waitForHttpReady(webOrigin);
+  await Promise.all([
+    waitForHttpReady(`${API_ORIGIN}/health`),
+    waitForHttpReady(webOrigin),
+  ]);
 
   return {
     mode: 'full-stack',
@@ -221,28 +279,6 @@ async function ensureDevServices() {
       });
     },
   };
-}
-
-async function isManagedDevEnvironmentReady() {
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      const payload = JSON.parse(await fsPromises.readFile(STATE_FILE, 'utf8'));
-      const services = payload?.services;
-      if (services && typeof services === 'object') {
-        return await Promise.all([
-          isPortListening(23330),
-          isPortListening(23333),
-        ]).then((values) => values.every(Boolean));
-      }
-    }
-
-    return await Promise.all([
-      isPortListening(23330),
-      isPortListening(23333),
-    ]).then((values) => values.every(Boolean));
-  } catch {
-    return false;
-  }
 }
 
 async function isGarlicWebApp(origin) {
@@ -320,7 +356,7 @@ async function startBrowserSmokeWebApp() {
 }
 
 async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.goto('/', { waitUntil: 'load' });
   await page.locator('a[href="/ai"]').click();
   await page.waitForURL(/\/ai$/, { timeout: REQUEST_TIMEOUT_MS });
   await page.getByRole('heading', { name: 'AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -355,7 +391,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
       throw new Error(saveError);
     }
     await waitForHttpReady(`${API_ORIGIN}/health`);
-    await page.goto('/ai', { waitUntil: 'networkidle' });
+    await page.goto('/ai', { waitUntil: 'load' });
   }
 
   await waitFor(async () => {
@@ -478,7 +514,7 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
 
 async function runChatFlow(page, accessToken, createdConversationIds) {
   const beforeIds = new Set((await listConversations(accessToken)).map((item) => item.id));
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.goto('/', { waitUntil: 'load' });
   const createConversationResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
       && response.url().endsWith('/api/chat/conversations'),
@@ -491,7 +527,7 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
     return conversations.find((item) => !beforeIds.has(item.id)) ?? null;
   }, '等待新对话创建');
   createdConversationIds.add(conversation.id);
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'load' });
   await expectConversationSelected(page, conversation.id);
 
   await expectText(page, `${PROVIDER_ID}/${MODEL_ID}`);
@@ -586,7 +622,7 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
 }
 
 async function verifyMcpPage(page) {
-  await page.goto('/mcp', { waitUntil: 'networkidle' });
+  await page.goto('/mcp', { waitUntil: 'load' });
   await expectText(page, 'MCP 管理');
   await expectText(page, '工具启用/禁用统一在工具管理页');
   await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -600,7 +636,7 @@ async function verifyMcpPage(page) {
 }
 
 async function verifyPersonasPage(page) {
-  await page.goto('/personas', { waitUntil: 'networkidle' });
+  await page.goto('/personas', { waitUntil: 'load' });
   await expectText(page, '人设管理');
   await expectText(page, '人设索引');
   await expectText(page, '可用人设');
@@ -611,14 +647,14 @@ async function verifyPersonasPage(page) {
 }
 
 async function verifySkillsPage(page) {
-  await page.goto('/skills', { waitUntil: 'networkidle' });
+  await page.goto('/skills', { waitUntil: 'load' });
   await expectText(page, '技能目录');
   await expectText(page, '已拒绝加载');
   await page.getByPlaceholder('搜索技能名称、说明、标签').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
 async function verifyCommandsPage(page) {
-  await page.goto('/commands', { waitUntil: 'networkidle' });
+  await page.goto('/commands', { waitUntil: 'load' });
   await expectText(page, '命令管理');
   await expectText(page, '冲突触发词');
   await expectText(page, '命令目录');
@@ -627,14 +663,14 @@ async function verifyCommandsPage(page) {
 
 async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   const remotePluginHandle = await createCachedRemotePluginFixture(accessToken, remotePluginScriptPath)
-  await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'networkidle' });
+  await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'load' });
   await expectText(page, '已接入插件');
   let pluginItems = page.locator('.plugin-item');
   if (await pluginItems.count() === 0) {
     const toggle = page.locator('[data-test="plugin-sidebar-toggle-system"]');
     if (await toggle.count() > 0) {
       await toggle.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('load');
       pluginItems = page.locator('.plugin-item');
     }
   }
@@ -654,7 +690,7 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   const systemToggleInput = systemToggle.locator('input');
   if (await systemToggleInput.count() > 0 && !(await systemToggleInput.isChecked())) {
     await systemToggle.click();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
   }
 
   await expectText(page, '工具管理入口');
@@ -663,7 +699,7 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
 }
 
 async function verifyRuntimeToolsSettingsPage(page) {
-  await page.goto('/ai', { waitUntil: 'networkidle' });
+  await page.goto('/ai', { waitUntil: 'load' });
   await page.getByRole('heading', { name: 'AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.getByRole('button', { exact: true, name: '执行工具' }).click();
   await page.getByRole('heading', { name: '执行工具' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -703,7 +739,7 @@ async function verifyToolsPage(page, accessToken) {
       .filter(Boolean),
   );
 
-  await page.goto('/tools', { waitUntil: 'networkidle' });
+  await page.goto('/tools', { waitUntil: 'load' });
   await expectText(page, '工具管理');
   await assertToolsSectionVisibility(page, '执行工具管理', visibleSectionTitles.has('执行工具管理'));
   await assertToolsSectionVisibility(page, '子代理工具管理', visibleSectionTitles.has('子代理工具管理'));
@@ -724,7 +760,7 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
   assert.equal(subagent.title, chatFlow.subagentName, '子代理总览没有保留命名标题');
   assert.equal(subagent.resultPreview, SUBAGENT_RESULT_TEXT, '子代理总览没有返回 smoke 结果摘要');
 
-  await page.goto('/subagents', { waitUntil: 'networkidle' });
+  await page.goto('/subagents', { waitUntil: 'load' });
   await expectText(page, 'Subagent');
   await expectText(page, '会话窗口');
   await expectText(page, chatFlow.subagentName);
@@ -732,7 +768,7 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
 }
 
 async function runAutomationFlow(page, accessToken, conversationId) {
-  await page.goto('/automations', { waitUntil: 'networkidle' });
+  await page.goto('/automations', { waitUntil: 'load' });
   await page.getByRole('button', { name: '+ 新建自动化' }).click();
   const form = page.locator('.create-form');
   await form.locator('input[placeholder*="每5分钟检查系统信息"]').fill(AUTOMATION_NAME);
@@ -880,6 +916,48 @@ async function cleanupSmokeArtifacts(accessToken, input) {
   );
 }
 
+async function persistBrowserSmokeArtifacts(tempDir, input) {
+  const summary = {
+    capturedAt: new Date().toISOString(),
+    consoleErrors: input.consoleErrors,
+    error: serializeError(input.error),
+    pageErrors: input.pageErrors,
+    pageUrl: input.page?.url?.() ?? null,
+    serviceMode: input.serviceMode,
+    status: input.error ? 'failed' : 'completed',
+    webOrigin: input.webOrigin,
+  };
+  await fsPromises.writeFile(path.join(tempDir, 'smoke-summary.json'), `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+
+  if (input.page) {
+    await input.page.screenshot({
+      fullPage: true,
+      path: path.join(tempDir, 'page.png'),
+    }).catch(() => undefined);
+    const pageContent = await input.page.content().catch(() => null);
+    if (typeof pageContent === 'string') {
+      await fsPromises.writeFile(path.join(tempDir, 'page.html'), pageContent, 'utf8');
+    }
+  }
+}
+
+async function removeEmptyDirectoryChain(startPath, stopPath) {
+  let currentPath = path.resolve(startPath);
+  const resolvedStopPath = path.resolve(stopPath);
+  while (currentPath.startsWith(resolvedStopPath) && currentPath !== resolvedStopPath) {
+    try {
+      const entries = await fsPromises.readdir(currentPath);
+      if (entries.length > 0) {
+        return;
+      }
+      await fsPromises.rmdir(currentPath);
+      currentPath = path.dirname(currentPath);
+    } catch {
+      return;
+    }
+  }
+}
+
 async function findSmokeConversationIds(headers, smokePrefixRoot) {
   const conversations = await requestJson('/chat/conversations', { headers }).catch(() => []);
   const conversationIds = new Set();
@@ -931,12 +1009,12 @@ async function listAutomations(accessToken) {
 }
 
 async function loginBrowserSmokeAdmin() {
-  const payload = await requestJson('/auth/login', {
-    body: {
-      secret: LOGIN_SECRET,
-    },
+  const response = await fetchWithRetry(`${API_ORIGIN}/auth/login`, {
+    body: JSON.stringify({ secret: LOGIN_SECRET }),
+    headers: { 'content-type': 'application/json' },
     method: 'POST',
   });
+  const payload = await response.json();
   assert.equal(typeof payload?.accessToken, 'string', '浏览器 smoke 登录未返回 accessToken');
   return payload.accessToken;
 }
@@ -950,7 +1028,10 @@ async function requestJson(routePath, options = {}) {
     },
     method: options.method ?? 'GET',
   };
-  const response = await fetchWithRetry(`${API_ORIGIN}${routePath}`, requestInit);
+  const response = await fetch(`${API_ORIGIN}${routePath}`, {
+    ...requestInit,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   const text = await response.text();
   const payload = parseMaybeJson(text);
   if (!response.ok) {
@@ -1003,7 +1084,7 @@ async function waitFor(task, label) {
     if (result) {
       return result;
     }
-    await delay(300);
+    await delay(100);
   }
   throw new Error(`${label}超时`);
 }
@@ -1044,9 +1125,45 @@ async function waitForHttpReady(url) {
         return;
       }
     } catch {}
-    await delay(500);
+    await delay(200);
   }
   throw new Error(`等待服务就绪超时: ${url}`);
+}
+
+function parseCliArgs(args) {
+  const config = {
+    artifactMode: normalizeSmokeArtifactMode(
+      process.env.GARLIC_CLAW_BROWSER_SMOKE_ARTIFACT_MODE ?? process.env.GARLIC_CLAW_SMOKE_ARTIFACT_MODE,
+    ),
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--artifact-mode') {
+      config.artifactMode = normalizeSmokeArtifactMode(args[index + 1]);
+      index += 1;
+    }
+  }
+
+  return config;
+}
+
+function normalizeSmokeArtifactMode(value) {
+  const normalizedValue = (value ?? 'on-failure').trim().toLowerCase();
+  if (normalizedValue === 'always' || normalizedValue === 'on-failure' || normalizedValue === 'never') {
+    return normalizedValue;
+  }
+  throw new Error('browser smoke artifact mode must be always, on-failure, or never');
+}
+
+function shouldKeepSmokeArtifacts(artifactMode, smokeFailed) {
+  if (artifactMode === 'always') {
+    return true;
+  }
+  if (artifactMode === 'never') {
+    return false;
+  }
+  return smokeFailed;
 }
 
 function resolvePythonCommand() {
@@ -1093,6 +1210,21 @@ function parseMaybeJson(text) {
   } catch {
     return text;
   }
+}
+
+function serializeError(error) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+      stack: error.stack ?? null,
+    };
+  }
+  return {
+    message: error ? String(error) : null,
+    name: error ? 'NonError' : null,
+    stack: null,
+  };
 }
 
 async function runCommand(command, args, options) {
@@ -1398,7 +1530,7 @@ async function writeStream(response, body) {
       id: 'chatcmpl-ui-smoke',
       model: body.model ?? MODEL_ID,
     })}\n\n`);
-    await delay(60);
+    await delay(0);
     response.write(`data: ${JSON.stringify({
       choices: [{
         delta: {},
@@ -1429,7 +1561,7 @@ async function writeStream(response, body) {
       id: 'chatcmpl-ui-smoke',
       model: body.model ?? MODEL_ID,
     })}\n\n`);
-    await delay(60);
+    await delay(0);
   }
 
   response.write(`data: ${JSON.stringify({

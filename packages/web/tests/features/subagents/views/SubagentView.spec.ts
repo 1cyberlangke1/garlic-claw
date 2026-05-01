@@ -1,13 +1,13 @@
 import { computed, ref, shallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import SubagentView from '@/features/subagents/views/SubagentView.vue'
+import SubagentView from '@/modules/subagents/views/SubagentView.vue'
 
 const closeSubagentConversation = vi.fn()
 const selectConversation = vi.fn()
 const selectWindow = vi.fn()
 
-vi.mock('@/features/subagents/composables/use-subagents', () => ({
+vi.mock('@/modules/subagents/composables/use-subagents', () => ({
   useSubagents: () => ({
     loading: ref(false),
     error: ref(null),

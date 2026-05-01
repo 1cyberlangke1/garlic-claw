@@ -1,13 +1,13 @@
 import { computed, ref, shallowRef } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import McpConfigPanel from '@/features/tools/components/McpConfigPanel.vue'
+import McpConfigPanel from '@/modules/tools/components/McpConfigPanel.vue'
 
 const hoisted = vi.hoisted(() => ({
   state: null as ReturnType<typeof createManagementState> | null,
 }))
 
-vi.mock('@/features/tools/composables/use-mcp-config-management', () => ({
+vi.mock('@/modules/tools/composables/use-mcp-config-management', () => ({
   useMcpConfigManagement: () => hoisted.state,
 }))
 

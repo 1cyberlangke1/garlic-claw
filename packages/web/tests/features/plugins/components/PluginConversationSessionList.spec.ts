@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { PluginConversationSessionInfo } from '@garlic-claw/shared'
-import PluginConversationSessionList from '@/features/plugins/components/PluginConversationSessionList.vue'
+import PluginConversationSessionList from '@/modules/plugins/components/PluginConversationSessionList.vue'
 
 describe('PluginConversationSessionList', () => {
   it('renders active session details and emits finish for the selected conversation', async () => {

@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import type { PluginInfo } from '@garlic-claw/shared'
-import PluginRemoteAccessPanel from '@/features/plugins/components/PluginRemoteAccessPanel.vue'
+import PluginRemoteAccessPanel from '@/modules/plugins/components/PluginRemoteAccessPanel.vue'
 
 function createRemotePlugin(remote?: Partial<NonNullable<PluginInfo['remote']>>): PluginInfo {
   return {

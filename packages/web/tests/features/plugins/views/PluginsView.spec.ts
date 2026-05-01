@@ -2,7 +2,7 @@ import { computed, ref, shallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginInfo } from '@garlic-claw/shared'
-import PluginsView from '@/features/plugins/views/PluginsView.vue'
+import PluginsView from '@/modules/plugins/views/PluginsView.vue'
 
 function createSelectedPlugin(permissions: string[]): PluginInfo {
   return {
@@ -96,7 +96,7 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
-vi.mock('@/features/plugins/composables/use-plugin-management', () => {
+vi.mock('@/modules/plugins/composables/use-plugin-management', () => {
   return {
     usePluginManagement: () => ({
       loading: ref(false),

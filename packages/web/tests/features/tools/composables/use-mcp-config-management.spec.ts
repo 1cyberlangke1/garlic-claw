@@ -1,10 +1,10 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useMcpConfigManagement } from '@/features/tools/composables/use-mcp-config-management'
-import * as mcpData from '@/features/tools/composables/mcp-config-management.data'
+import { useMcpConfigManagement } from '@/modules/tools/composables/use-mcp-config-management'
+import * as mcpData from '@/modules/tools/composables/mcp-config-management.data'
 
-vi.mock('@/features/tools/composables/mcp-config-management.data', () => ({
+vi.mock('@/modules/tools/composables/mcp-config-management.data', () => ({
   loadMcpConfigSnapshot: vi.fn(),
   createMcpServerConfig: vi.fn(),
   updateMcpServerConfig: vi.fn(),
