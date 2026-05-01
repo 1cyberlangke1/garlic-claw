@@ -769,7 +769,7 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
 
 async function runAutomationFlow(page, accessToken, conversationId) {
   await page.goto('/automations', { waitUntil: 'load' });
-  await page.getByRole('button', { name: '+ 新建自动化' }).click();
+  await page.getByRole('button', { name: '新建自动化' }).click();
   const form = page.locator('.create-form');
   await form.locator('input[placeholder*="每5分钟检查系统信息"]').fill(AUTOMATION_NAME);
   await form.locator('select').nth(0).selectOption('manual');
