@@ -434,6 +434,19 @@ describe('SchemaConfigForm', () => {
           schema: {
             type: 'object',
             items: {
+              approvalMode: {
+                type: 'string',
+                options: [
+                  {
+                    value: 'review',
+                    label: '审批确认',
+                  },
+                  {
+                    value: 'yolo',
+                    label: 'YOLO 直通',
+                  },
+                ],
+              },
               shellBackend: {
                 type: 'string',
                 options: process.platform === 'win32'
@@ -483,6 +496,7 @@ describe('SchemaConfigForm', () => {
             },
           },
           values: {
+            approvalMode: 'review',
             shellBackend: 'native-shell',
             bashOutput: {
               maxLines: 80,
@@ -494,7 +508,11 @@ describe('SchemaConfigForm', () => {
       },
     })
 
-    const backendInput = wrapper.get('select.config-input')
+    const selects = wrapper.findAll('select.config-input')
+    const approvalModeInput = selects[0]
+    const backendInput = selects[1]
+    expect((approvalModeInput.element as HTMLSelectElement).value).toBe('review')
+    await approvalModeInput.setValue('yolo')
     expect((backendInput.element as HTMLSelectElement).value).toBe('native-shell')
     await backendInput.setValue(process.platform === 'win32' ? 'just-bash' : 'native-shell')
 
@@ -504,6 +522,7 @@ describe('SchemaConfigForm', () => {
     expect(wrapper.emitted('save')).toEqual([
       [
         {
+          approvalMode: 'yolo',
           shellBackend: process.platform === 'win32' ? 'just-bash' : 'native-shell',
           bashOutput: {
             maxLines: 80,

@@ -21,6 +21,7 @@ import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { createServerLogger } from '../core/logging/server-logger';
 import { ConversationStoreService } from '../runtime/host/conversation-store.service';
 import { asJsonObject } from '../runtime/host/host-input.codec';
+import { buildConversationVisibleModelMessages, readConversationVisibleModelMessageText } from './conversation-model-visible-history';
 import { ContextGovernanceSettingsService } from './context-governance-settings.service';
 
 const CONTEXT_COMPACTION_ANNOTATION_TYPE = 'context-compaction';
@@ -221,9 +222,13 @@ export class ContextGovernanceService {
     }
     const historyState = readContextCompactionHistoryState(history.messages, true);
     const rawHistoryModelMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage);
-    if (historyState.modelMessages.length === rawHistoryModelMessages.length) {return input.messages;}
-    const prefixCount = Math.max(input.messages.length - rawHistoryModelMessages.length, 0);
-    return [...input.messages.slice(0, prefixCount), ...historyState.modelMessages.map((message) => ({ content: message.parts?.length ? message.parts : message.content ?? '', role: message.role === 'assistant' ? 'assistant' as const : message.role === 'system' ? 'system' as const : 'user' as const }))];
+    const rawVisibleHistoryMessages = buildConversationVisibleModelMessages(rawHistoryModelMessages);
+    const rewrittenVisibleHistoryMessages = buildConversationVisibleModelMessages(historyState.modelMessages);
+    if (JSON.stringify(rewrittenVisibleHistoryMessages) === JSON.stringify(rawVisibleHistoryMessages)) {
+      return input.messages;
+    }
+    const prefixCount = Math.max(input.messages.length - rawVisibleHistoryMessages.length, 0);
+    return [...input.messages.slice(0, prefixCount), ...rewrittenVisibleHistoryMessages];
   }
 
   private async runContextCompaction(input: {
@@ -329,7 +334,7 @@ export class ContextGovernanceService {
     userId?: string;
   }): ModelMessage[] | null {
     const historyState = readContextCompactionHistoryState(input.history.messages, true);
-    const historyMessages = historyState.modelMessages.map(toConversationModelMessage);
+    const historyMessages = buildConversationVisibleModelMessages(historyState.modelMessages);
     if (historyMessages.length === 0) {return null;}
     const requestHistoryCount = Math.min(input.requestMessages.length, historyMessages.length);
     const prefixMessages = input.requestMessages.slice(0, input.requestMessages.length - requestHistoryCount);
@@ -611,10 +616,13 @@ function readContextCompactionAnnotationState(message: PluginConversationHistory
 }
 
 function buildSummarySource(messages: PluginConversationHistoryMessage[]): string {
-  return messages.map((message) => {
-    const content = readMessageText(message);
-    return content ? `${CONTEXT_COMPACTION_ROLE_LABELS[message.role] ?? '用户'}: ${content}` : '';
-  }).filter(Boolean).join('\n');
+  return buildConversationVisibleModelMessages(messages)
+    .map((message) => {
+      const content = readConversationVisibleModelMessageText(message);
+      return content ? `${CONTEXT_COMPACTION_ROLE_LABELS[message.role] ?? '用户'}: ${content}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
 }
 
 function readMessageText(message: PluginConversationHistoryMessage): string { return ((message.parts ?? []).flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n') || message.content || '').trim(); }
@@ -745,7 +753,6 @@ function readContextCompactionAnnotationData(message: PluginConversationHistoryM
   return (message.metadata?.annotations ?? []).flatMap((annotation) => annotation.type === CONTEXT_COMPACTION_ANNOTATION_TYPE && annotation.owner === CONTEXT_COMPACTION_OWNER && isRecord(annotation.data) ? [annotation.data] : []);
 }
 
-function toConversationModelMessage(message: PluginConversationHistoryMessage): ModelMessage { return { content: message.parts?.length ? message.parts : message.content ?? '', role: message.role === 'assistant' ? 'assistant' : message.role === 'system' ? 'system' : 'user' }; }
 function toContextWindowPreviewMessage(message: ModelMessage, index: number): PluginConversationHistoryMessage { return { content: Array.isArray(message.content) ? null : message.content, createdAt: `preview-${index}`, id: `preview-${index}`, parts: Array.isArray(message.content) ? message.content : [{ text: message.content, type: 'text' }], role: message.role, status: 'completed', updatedAt: `preview-${index}` }; }
 
 function isContextCompactionOwnedAnnotation(annotation: ChatMessageAnnotation): boolean {

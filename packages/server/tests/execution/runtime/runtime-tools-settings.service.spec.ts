@@ -159,6 +159,31 @@ describe('RuntimeToolsSettingsService', () => {
     expect(toolOutputCaptureSchema.items.maxBytes?.type).toBe('int');
     expect(toolOutputCaptureSchema.items.maxFilesPerSession?.type).toBe('int');
   });
+
+  it('persists approvalMode and exposes review/yolo options in runtime-tools schema', () => {
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = createTempConfigPath(tempFiles);
+    const service = new RuntimeToolsSettingsService();
+
+    const snapshot = service.updateConfig({
+      approvalMode: 'yolo',
+    });
+
+    expect(snapshot.values).toEqual({
+      approvalMode: 'yolo',
+    });
+    const approvalModeSchema = snapshot.schema?.type === 'object'
+      ? snapshot.schema.items.approvalMode
+      : undefined;
+    expect(approvalModeSchema?.type).toBe('string');
+    if (!approvalModeSchema || approvalModeSchema.type !== 'string') {
+      throw new Error('approvalMode schema is missing');
+    }
+    expect(approvalModeSchema.defaultValue).toBe('review');
+    expect(approvalModeSchema.options).toEqual([
+      { label: '审批确认', value: 'review' },
+      { label: 'YOLO 直通', value: 'yolo' },
+    ]);
+  });
 });
 
 function createTempConfigPath(tempFiles: string[]): string {

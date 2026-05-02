@@ -596,7 +596,7 @@ describe('ConversationStoreService', () => {
     });
   });
 
-  it('does not count raw tool call and tool result payloads when estimating history preview tokens', () => {
+  it('counts compact tool facts without reintroducing the raw oversized payloads when estimating history preview tokens', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Tool Payload Preview Chat' }) as { id: string }).id;
@@ -650,16 +650,44 @@ describe('ConversationStoreService', () => {
       ],
     });
 
-    const expectedTextBytes = Buffer.byteLength('user\n请检查最近的工具结果。\nassistant\n已经检查完成。', 'utf8');
-    expect(service.previewConversationHistory(conversationId, {
+    const plainTextBytes = Buffer.byteLength('user\n请检查最近的工具结果。\nassistant\n已经检查完成。', 'utf8');
+    const rawPayloadBytes = Buffer.byteLength(JSON.stringify({
+      toolCalls: [
+        {
+          input: {
+            command: 'echo verbose',
+            huge: 'x'.repeat(5000),
+          },
+          toolCallId: 'call-1',
+          toolName: 'bash',
+        },
+      ],
+      toolResults: [
+        {
+          output: {
+            data: {
+              stderr: 'warn'.repeat(500),
+              stdout: 'line'.repeat(2000),
+            },
+            kind: 'tool:text',
+            value: 'ok',
+          },
+          toolCallId: 'call-1',
+          toolName: 'bash',
+        },
+      ],
+    }), 'utf8');
+    const preview = service.previewConversationHistory(conversationId, {
       modelId: 'gpt-5.4',
       providerId: 'openai',
-    })).toEqual({
-      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+    });
+    expect(preview).toEqual(expect.objectContaining({
       messageCount: 2,
       source: 'estimated',
-      textBytes: expectedTextBytes,
-    });
+    }));
+    expect((preview as { textBytes: number }).textBytes).toBeGreaterThan(plainTextBytes);
+    expect((preview as { textBytes: number }).textBytes).toBeLessThan(rawPayloadBytes);
+    expect((preview as { estimatedTokens: number }).estimatedTokens).toBe(Math.ceil((preview as { textBytes: number }).textBytes / 4));
   });
 
   it('deletes runtime workspace together with the conversation', async () => {

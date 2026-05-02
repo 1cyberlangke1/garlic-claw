@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../conversation/conversation-history-signature';
+import { buildConversationVisibleModelMessages, readConversationVisiblePreviewText } from '../../conversation/conversation-model-visible-history';
 import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
@@ -155,8 +156,21 @@ export class ConversationStoreService {
   }
 
   previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
-    const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages), textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
-    const preview = readConversationHistoryPreviewTokens(messages, { historySignature: createConversationHistorySignatureFromHistoryMessages(messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0]), modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes });
+    const messages = params.messages === undefined
+      ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message))
+      : readConversationHistoryMessages(params.messages);
+    const visibleMessages = buildConversationVisibleModelMessages(
+      messages as unknown as Parameters<typeof buildConversationVisibleModelMessages>[0],
+    );
+    const textBytes = Buffer.byteLength(readConversationVisiblePreviewText(visibleMessages), 'utf8');
+    const preview = readConversationHistoryPreviewTokens(messages, {
+      historySignature: createConversationHistorySignatureFromHistoryMessages(
+        messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0],
+      ),
+      modelId: typeof params.modelId === 'string' ? params.modelId : null,
+      providerId: typeof params.providerId === 'string' ? params.providerId : null,
+      textBytes,
+    });
     return asJsonValue({ ...preview, messageCount: messages.length, textBytes });
   }
 
@@ -453,12 +467,6 @@ function readConversationHistoryString(value: unknown, label: string, options?: 
 function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | null {
   if (typeof value !== 'string' || !value.trim()) {return null;}
   try { return JSON.parse(value) as ChatMessageMetadata; } catch { return null; }
-}
-
-function readConversationHistoryMessageText(message: JsonObject): string {
-  if (message.role === 'display') {return '';}
-  const partText = Array.isArray(message.parts) ? message.parts.flatMap((part) => { const object = readJsonObject(part); return object?.type === 'text' && typeof object.text === 'string' ? [object.text] : []; }).join('\n') : '';
-  return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : '')].filter(Boolean).join('\n');
 }
 
 function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): { estimatedTokens: number; source: 'estimated' | 'provider' } {

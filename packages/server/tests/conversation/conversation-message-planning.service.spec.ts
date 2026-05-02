@@ -96,7 +96,7 @@ describe('ConversationMessagePlanningService', () => {
     }
   });
 
-  it('returns a sliding context window preview and trims oldest history messages', async () => {
+  it('returns a sliding context window preview using the full configured context length budget', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
         keepRecentMessages: 1,
@@ -114,11 +114,12 @@ describe('ConversationMessagePlanningService', () => {
     await expect(service.getContextWindowPreview({ conversationId, modelId: 'gpt-5.4', providerId: 'openai', userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
       contextLength: 512,
       enabled: true,
-      excludedMessageIds: ['history-1'],
+      excludedMessageIds: [],
       frontendMessageWindowSize: 200,
-      includedMessageIds: ['history-2', 'history-3'],
+      includedMessageIds: ['history-1', 'history-2', 'history-3'],
       keepRecentMessages: 1,
       slidingWindowUsagePercent: 50,
+      source: 'estimated',
       strategy: 'sliding',
     }));
   });
@@ -384,10 +385,144 @@ describe('ConversationMessagePlanningService', () => {
     }));
   });
 
+  it('includes compact tool and subagent facts in the next model request history', async () => {
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '请先创建子代理，再总结执行结果。'),
+      {
+        content: '子代理已经完成。',
+        createdAt: '2026-05-02T12:00:00.000Z',
+        id: 'history-2',
+        parts: [{ text: '子代理已经完成。', type: 'text' as const }],
+        role: 'assistant',
+        status: 'completed',
+        toolCalls: [
+          {
+            input: {
+              description: '探索 smoke 流程',
+              prompt: '请总结 smoke-http-flow 的用途',
+              subagentType: 'general',
+            },
+            toolCallId: 'call-subagent-1',
+            toolName: 'spawn_subagent',
+          },
+          {
+            input: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+            },
+            toolCallId: 'call-subagent-2',
+            toolName: 'wait_subagent',
+          },
+        ],
+        toolResults: [
+          {
+            output: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+              status: 'queued',
+              title: 'Smoke Agent',
+            },
+            toolCallId: 'call-subagent-1',
+            toolName: 'spawn_subagent',
+          },
+          {
+            output: {
+              conversationId: '019ddd0a-1234-7890-abcd-ef1234567890',
+              result: 'Smoke HTTP Flow 用于后端烟测。',
+              status: 'completed',
+              title: 'Smoke Agent',
+            },
+            toolCallId: 'call-subagent-2',
+            toolName: 'wait_subagent',
+          },
+        ],
+        updatedAt: '2026-05-02T12:00:00.000Z',
+      },
+    ]);
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: undefined,
+      fullStream: (async function* () { yield { text: 'ok', type: 'text-delta' as const }; })(),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usage: undefined,
+    });
+
+    await service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-pending',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+
+    expect(aiModelExecutionService.streamText).toHaveBeenCalledWith(expect.objectContaining({
+      messages: expect.arrayContaining([
+        expect.objectContaining({
+          content: expect.stringContaining('spawn_subagent'),
+          role: 'assistant',
+        }),
+        expect.objectContaining({
+          content: expect.stringContaining('Smoke HTTP Flow 用于后端烟测。'),
+          role: 'assistant',
+        }),
+      ]),
+    }));
+  });
+
+  it('passes provider usage through the stream plan so completed replies can write model usage annotations', async () => {
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield { text: 'ok', type: 'text-delta' as const };
+      })(),
+      modelId: 'deepseek-v4-flash',
+      providerId: 'ds2api',
+      usage: Promise.resolve({
+        cachedInputTokens: 0,
+        inputTokens: 273,
+        outputTokens: 291,
+        source: 'provider',
+        totalTokens: 564,
+      }),
+    });
+
+    const plan = await service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-pending',
+      modelId: 'deepseek-v4-flash',
+      providerId: 'ds2api',
+      userId: 'user-1',
+    });
+
+    await expect(plan.stream.usage).resolves.toEqual({
+      cachedInputTokens: 0,
+      inputTokens: 273,
+      outputTokens: 291,
+      source: 'provider',
+      totalTokens: 564,
+    });
+  });
+
   it('compacts history immediately after a completed model reply is sent', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 90,
+        compressionThreshold: 30,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,
@@ -548,22 +683,21 @@ describe('ConversationMessagePlanningService', () => {
       'model',
     )).resolves.toBeUndefined();
 
-    await expect(service.createStreamPlan({
+    const blockedPlan = await service.createStreamPlan({
       abortSignal: new AbortController().signal,
       conversationId,
       messageId: 'assistant-next',
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
-    })).resolves.toEqual(expect.objectContaining({
-      responseSource: 'short-circuit',
-      shortCircuitParts: [{
-        text: '当前最后一轮内容本身已占满上下文，现有历史不足以继续压缩。本轮已停止继续生成。请新开会话，或先删减本轮长回复后再继续。',
-        type: 'text',
-      }],
-    }));
+    });
 
-    expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
+    expect(blockedPlan.responseSource).toBe('short-circuit');
+    expect(blockedPlan.shortCircuitParts?.[0]).toEqual({
+      text: expect.stringContaining('压缩后的上下文仍超过预算'),
+      type: 'text',
+    });
+
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });
 
