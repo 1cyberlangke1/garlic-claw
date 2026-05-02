@@ -160,7 +160,15 @@ export class ConversationTaskService {
       this.emit(task, { content: patched.content, messageId: runtime.assistantMessageId, ...(patched.parts.length > 0 ? { parts: patched.parts } : {}), type: 'message-patch' });
     }
 
-    finalResult = await this.attachResponseHistoryUsageSignature(runtime, finalResult);
+    const usageAnnotatedResult = await this.attachResponseHistoryUsageSignature(runtime, finalResult);
+    if (JSON.stringify(finalResult.metadata ?? null) !== JSON.stringify(usageAnnotatedResult.metadata ?? null)) {
+      this.emit(task, {
+        messageId: runtime.assistantMessageId,
+        metadata: cloneJsonValue(usageAnnotatedResult.metadata ?? {}),
+        type: 'message-metadata',
+      });
+    }
+    finalResult = usageAnnotatedResult;
     this.emit(task, { messageId: runtime.assistantMessageId, status: 'completed', type: 'finish' });
     try {
       await runtime.onSent?.(finalResult);

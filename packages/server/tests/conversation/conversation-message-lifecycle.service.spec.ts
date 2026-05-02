@@ -187,6 +187,43 @@ describe('ConversationMessageLifecycleService', () => {
     expect(events).toEqual([]);
   });
 
+  it('persists provider usage onto the assistant message and makes it available to the current conversation state', async () => {
+    aiModelExecutionService.streamText.mockReturnValue(streamed('deepseek-v4-flash', 'ds2api', '真正的模型回复', {
+      cachedInputTokens: 19,
+      inputTokens: 321,
+      outputTokens: 87,
+      source: 'provider',
+      totalTokens: 408,
+    }));
+
+    await startAndWait(service, conversationTaskService, {
+      content: '你好',
+      model: 'deepseek-v4-flash',
+      provider: 'ds2api',
+    });
+
+    const assistantMessage = readConversation(runtimeHostConversationRecordService).messages[1];
+    expect(JSON.parse(String(assistantMessage.metadataJson))).toMatchObject({
+      annotations: [
+        {
+          data: {
+            cachedInputTokens: 19,
+            inputTokens: 321,
+            modelId: 'deepseek-v4-flash',
+            outputTokens: 87,
+            providerId: 'ds2api',
+            responseHistorySignature: expect.any(String),
+            source: 'provider',
+            totalTokens: 408,
+          },
+          owner: 'conversation.model-usage',
+          type: 'model-usage',
+          version: '1',
+        },
+      ],
+    });
+  });
+
   it('can read context window preview after a real message lifecycle round', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
@@ -681,7 +718,7 @@ describe('ConversationMessageLifecycleService', () => {
           ],
           role: 'assistant',
         },
-        { content: [], role: 'user' },
+        { content: '新的用户问题', role: 'user' },
       ],
       modelId: 'gpt-5.4',
       providerId: 'openai',
@@ -1056,7 +1093,18 @@ async function startAndWait(
   return started;
 }
 
-function streamed(modelId: string, providerId: string, text: string) {
+function streamed(
+  modelId: string,
+  providerId: string,
+  text: string,
+  usage?: {
+    cachedInputTokens?: number;
+    inputTokens: number;
+    outputTokens: number;
+    source: 'estimated' | 'provider';
+    totalTokens: number;
+  },
+) {
   return {
     finishReason: Promise.resolve('stop'),
     fullStream: (async function* () {
@@ -1064,6 +1112,7 @@ function streamed(modelId: string, providerId: string, text: string) {
     })(),
     modelId,
     providerId,
+    ...(usage ? { usage: Promise.resolve(usage) } : {}),
   };
 }
 

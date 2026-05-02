@@ -113,6 +113,43 @@ describe('ConversationTaskService', () => {
         type: 'tool-result',
       },
       { content: '最终回复', messageId: String(assistantMessage.id), parts: [{ text: '最终回复', type: 'text' }], type: 'message-patch' },
+      {
+        messageId: String(assistantMessage.id),
+        metadata: {
+          annotations: [
+            {
+              data: {
+                inputTokens: 21,
+                modelId: 'gpt-5.4',
+                outputTokens: 9,
+                providerId: 'openai',
+                requestHistorySignature: 'history-signature-1',
+                responseHistorySignature: expect.any(String),
+                source: 'provider',
+                totalTokens: 30,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+          customBlocks: [
+            {
+              id: 'custom-field:reasoning_content',
+              kind: 'text',
+              source: {
+                key: 'reasoning_content',
+                origin: 'ai-sdk.raw',
+                providerId: 'openai',
+              },
+              state: 'done',
+              text: '先检查上下文',
+              title: 'Reasoning Content',
+            },
+          ],
+        },
+        type: 'message-metadata',
+      },
       { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
     ]);
 
