@@ -1,0 +1,28 @@
+#!/bin/sh
+# 阻止特定文件被提交
+
+BLOCKED_FILES="task_plan.md progress.md findings.md"
+BLOCKED_FOUND=""
+
+for file in $BLOCKED_FILES; do
+    if git diff --cached --diff-filter=AM --name-only | grep -q "^$file$"; then
+        BLOCKED_FOUND="$BLOCKED_FOUND $file"
+        git reset HEAD "$file" > /dev/null 2>&1
+    fi
+done
+
+if [ -n "$BLOCKED_FOUND" ]; then
+    echo "以下文件不允许提交，已自动从暂存区移除:"
+    for file in $BLOCKED_FOUND; do
+        echo "  - $file"
+    done
+    
+    # 检查是否还有其他文件留在暂存区
+    REMAINING=$(git diff --cached --name-only)
+    if [ -z "$REMAINING" ]; then
+        echo "暂存区中已无其他文件，提交取消。"
+        exit 1
+    fi
+    
+    echo "其余文件将继续提交..."
+fi
