@@ -3,17 +3,17 @@ import { Module, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { WebSocket, WebSocketServer } from 'ws';
-import { RuntimeGatewayConnectionLifecycleService } from '../../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
-import { RuntimeGatewayModule } from '../../../runtime/gateway/runtime-gateway.module';
-import { RuntimeGatewayRemoteTransportService } from '../../../runtime/gateway/runtime-gateway-remote-transport.service';
-import { HostModule } from '../../../runtime/host/host.module';
+import { RuntimeGatewayConnectionLifecycleService } from '../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
+import { RuntimeGatewayModule } from '../../runtime/gateway/runtime-gateway.module';
+import { RuntimeGatewayRemoteTransportService } from '../../runtime/gateway/runtime-gateway-remote-transport.service';
+import { HostModule } from '../../runtime/host/host.module';
 import {
   createWsReply,
-  type PluginGatewayInboundResult,
+  type PluginWsInboundResult,
   readWsMessage,
-} from './plugin-gateway.protocol';
-import { WS_ACTION, WS_TYPE } from './plugin-gateway.constants';
-import { PluginGatewayWsInboundService } from './plugin-gateway-ws-inbound.service';
+} from './plugin-ws.protocol';
+import { WS_ACTION, WS_TYPE } from './plugin-ws.constants';
+import { PluginWsInboundService } from './plugin-ws-inbound.service';
 
 const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
@@ -27,10 +27,10 @@ const AUTH_TIMEOUT_MS = 10_000;
     RuntimeGatewayModule,
     HostModule,
   ],
-  providers: [PluginGatewayWsInboundService],
+  providers: [PluginWsInboundService],
 })
-export class PluginGatewayWsModule implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(PluginGatewayWsModule.name);
+export class PluginWsModule implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PluginWsModule.name);
   private readonly authTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly sockets = new Map<string, WebSocket>();
   private heartbeatInterval?: ReturnType<typeof setInterval>;
@@ -41,7 +41,7 @@ export class PluginGatewayWsModule implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
     private readonly runtimeGatewayRemoteTransportService: RuntimeGatewayRemoteTransportService,
-    private readonly pluginGatewayWsInboundService: PluginGatewayWsInboundService,
+    private readonly pluginWsInboundService: PluginWsInboundService,
   ) {}
 
   onModuleInit() {
@@ -103,7 +103,7 @@ export class PluginGatewayWsModule implements OnModuleInit, OnModuleDestroy {
     socket.on('close', () => this.handleDisconnect(connection.connectionId));
     socket.on('error', (error) => {
       this.logger.error(
-        `插件网关连接错误 ${connection.connectionId}${remoteAddress ? ` ${remoteAddress}` : ''}: ${
+        `插件 WS 连接错误 ${connection.connectionId}${remoteAddress ? ` ${remoteAddress}` : ''}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -113,8 +113,8 @@ export class PluginGatewayWsModule implements OnModuleInit, OnModuleDestroy {
   async handleMessage({ connectionId, message }: {
     connectionId: string;
     message: WsMessage;
-  }): Promise<PluginGatewayInboundResult | void> {
-    return this.pluginGatewayWsInboundService.handleMessage({ connectionId, message });
+  }): Promise<PluginWsInboundResult | void> {
+    return this.pluginWsInboundService.handleMessage({ connectionId, message });
   }
 
   private clearAuthTimeout(connectionId: string): void {

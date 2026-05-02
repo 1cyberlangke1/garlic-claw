@@ -1,9 +1,9 @@
-import { WS_ACTION, WS_TYPE } from '../../../../src/adapters/ws/plugin-gateway/plugin-gateway.constants';
 import type { WebSocket } from 'ws';
-import { PluginGatewayWsModule } from '../../../../src/adapters/ws/plugin-gateway/plugin-gateway.module';
-import { PluginGatewayWsInboundService } from '../../../../src/adapters/ws/plugin-gateway/plugin-gateway-ws-inbound.service';
+import { WS_ACTION, WS_TYPE } from '../../../src/plugin/ws/plugin-ws.constants';
+import { PluginWsInboundService } from '../../../src/plugin/ws/plugin-ws-inbound.service';
+import { PluginWsModule } from '../../../src/plugin/ws/plugin-ws.module';
 
-describe('PluginGatewayWsModule connection lifecycle', () => {
+describe('PluginWsModule connection lifecycle', () => {
   beforeEach(() => {
     jest.useFakeTimers();
   });
@@ -186,21 +186,21 @@ function createFixture(input?: {
     resolveHostCallContext: jest.fn(),
     settlePendingRequest: jest.fn(),
   };
-  const pluginGatewayWsInboundService = new PluginGatewayWsInboundService(
+  const pluginWsInboundService = new PluginWsInboundService(
     runtimeGatewayConnectionLifecycleService as never,
     runtimeGatewayRemoteTransportService as never,
     { call: jest.fn() } as never,
   );
 
   return {
-    pluginGatewayWsInboundService,
+    pluginWsInboundService,
     runtimeGatewayConnectionLifecycleService,
     runtimeGatewayRemoteTransportService,
-    service: new PluginGatewayWsModule(
+    service: new PluginWsModule(
       { get: jest.fn() } as never,
       runtimeGatewayConnectionLifecycleService as never,
       runtimeGatewayRemoteTransportService as never,
-      pluginGatewayWsInboundService as never,
+      pluginWsInboundService as never,
     ),
     socket,
   };

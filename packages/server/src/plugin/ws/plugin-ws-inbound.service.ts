@@ -1,21 +1,21 @@
 import type { WsMessage } from '@garlic-claw/shared';
 import { Injectable, Logger } from '@nestjs/common';
-import { RuntimeGatewayConnectionLifecycleService } from '../../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
-import { RuntimeGatewayRemoteTransportService } from '../../../runtime/gateway/runtime-gateway-remote-transport.service';
-import { PluginHostService } from '../../../runtime/host/plugin-host.service';
+import { RuntimeGatewayConnectionLifecycleService } from '../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
+import { RuntimeGatewayRemoteTransportService } from '../../runtime/gateway/runtime-gateway-remote-transport.service';
+import { PluginHostService } from '../../runtime/host/plugin-host.service';
 import {
   createWsReply,
-  type PluginGatewayInboundResult,
+  type PluginWsInboundResult,
   readAuthPayload,
   readHostCallPayload,
   readRegisterPayload,
   readRemoteSettlement,
-} from './plugin-gateway.protocol';
-import { WS_ACTION, WS_TYPE } from './plugin-gateway.constants';
+} from './plugin-ws.protocol';
+import { WS_ACTION, WS_TYPE } from './plugin-ws.constants';
 
 @Injectable()
-export class PluginGatewayWsInboundService {
-  private readonly logger = new Logger(PluginGatewayWsInboundService.name);
+export class PluginWsInboundService {
+  private readonly logger = new Logger(PluginWsInboundService.name);
   constructor(
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
     private readonly runtimeGatewayRemoteTransportService: RuntimeGatewayRemoteTransportService,
@@ -24,7 +24,7 @@ export class PluginGatewayWsInboundService {
   async handleMessage({ connectionId, message }: {
     connectionId: string;
     message: WsMessage;
-  }): Promise<PluginGatewayInboundResult | void> {
+  }): Promise<PluginWsInboundResult | void> {
     if ((message.type !== WS_TYPE.AUTH || message.action !== WS_ACTION.AUTHENTICATE) && !this.runtimeGatewayConnectionLifecycleService.getConnection(connectionId)?.authenticated) {
       return { reply: createWsReply(WS_TYPE.ERROR, WS_ACTION.AUTH_FAIL, { error: '未认证' }) };
     }
@@ -68,7 +68,7 @@ export class PluginGatewayWsInboundService {
       return createWsReply(WS_TYPE.ERROR, WS_ACTION.AUTH_FAIL, { error: error instanceof Error ? error.message : '认证失败' });
     }
   }
-  private async handleHostCall(connectionId: string, message: WsMessage): Promise<PluginGatewayInboundResult | void> {
+  private async handleHostCall(connectionId: string, message: WsMessage): Promise<PluginWsInboundResult | void> {
     const requestId = this.readRequestId(message);
     if (!requestId) {return;}
     let hostPayload;
@@ -98,7 +98,7 @@ export class PluginGatewayWsInboundService {
     this.logger.warn(`收到缺少 requestId 的插件消息: ${message.type}/${message.action}`);
     return null;
   }
-  private registerRemotePlugin(connectionId: string, payload: unknown): PluginGatewayInboundResult {
+  private registerRemotePlugin(connectionId: string, payload: unknown): PluginWsInboundResult {
     const connection = this.runtimeGatewayConnectionLifecycleService.getConnection(connectionId);
     if (!connection?.pluginId) {return { reply: createWsReply(WS_TYPE.ERROR, WS_ACTION.AUTH_FAIL, { error: '未认证' }) };}
     let registerPayload;

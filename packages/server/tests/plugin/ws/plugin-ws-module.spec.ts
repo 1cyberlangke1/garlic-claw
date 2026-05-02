@@ -1,8 +1,8 @@
-import { PluginGatewayWsModule } from '../../../../src/adapters/ws/plugin-gateway/plugin-gateway.module';
-import { WS_ACTION, WS_TYPE } from '../../../../src/adapters/ws/plugin-gateway/plugin-gateway.constants';
-import { PluginGatewayWsInboundService } from '../../../../src/adapters/ws/plugin-gateway/plugin-gateway-ws-inbound.service';
+import { WS_ACTION, WS_TYPE } from '../../../src/plugin/ws/plugin-ws.constants';
+import { PluginWsInboundService } from '../../../src/plugin/ws/plugin-ws-inbound.service';
+import { PluginWsModule } from '../../../src/plugin/ws/plugin-ws.module';
 
-describe('PluginGatewayWsModule inbound handling', () => {
+describe('PluginWsModule inbound handling', () => {
   afterEach(() => {
     jest.useRealTimers();
   });
@@ -442,7 +442,7 @@ describe('PluginGatewayWsModule inbound handling', () => {
       },
     });
     const loggerWarn = jest.fn();
-    fixture.pluginGatewayWsInboundService['logger'].warn = loggerWarn;
+    fixture.pluginWsInboundService['logger'].warn = loggerWarn;
 
     const result = await fixture.service.handleMessage({
       connectionId: 'conn-1',
@@ -600,22 +600,22 @@ function createFixture(input?: {
   const runtimeHostService = {
     call: jest.fn(),
   };
-  const pluginGatewayWsInboundService = new PluginGatewayWsInboundService(
+  const pluginWsInboundService = new PluginWsInboundService(
     runtimeGatewayConnectionLifecycleService as never,
     runtimeGatewayRemoteTransportService as never,
     runtimeHostService as never,
   );
 
   return {
-    pluginGatewayWsInboundService,
+    pluginWsInboundService,
     runtimeGatewayConnectionLifecycleService,
     runtimeGatewayRemoteTransportService,
     runtimeHostService,
-    service: new PluginGatewayWsModule(
+    service: new PluginWsModule(
       configService as never,
       runtimeGatewayConnectionLifecycleService as never,
       runtimeGatewayRemoteTransportService as never,
-      pluginGatewayWsInboundService as never,
+      pluginWsInboundService as never,
     ),
   };
 }
