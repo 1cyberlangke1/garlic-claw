@@ -221,13 +221,13 @@ function readPersonaAvatarAlt(name?: string | null) {
 
           <div class="detail-grid">
             <label class="field-block">
-              <span class="summary-label">人设 ID</span>
-              <ElInput v-model.trim="editorDraft.id" class="field-input" :disabled="editorMode === 'edit'" placeholder="persona.writer" />
+              <span class="summary-label">名称</span>
+              <ElInput v-model.trim="editorDraft.name" class="field-input" placeholder="Writer" />
             </label>
 
             <label class="field-block">
-              <span class="summary-label">名称</span>
-              <ElInput v-model.trim="editorDraft.name" class="field-input" placeholder="Writer" />
+              <span class="summary-label">人设 ID</span>
+              <ElInput v-model.trim="editorDraft.id" class="field-input" :disabled="editorMode === 'edit'" placeholder="如 persona.writer，留空时根据名称自动生成" />
             </label>
 
             <label class="field-block field-block-full">
