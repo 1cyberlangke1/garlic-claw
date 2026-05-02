@@ -16,3 +16,23 @@ export function emitPluginConfigChanged(detail: PluginConfigChangedDetail) {
   )
 }
 
+export function subscribePluginConfigChanged(
+  listener: (detail: PluginConfigChangedDetail) => void,
+) {
+  if (typeof window === 'undefined') {
+    return () => undefined
+  }
+
+  const handler = (event: Event) => {
+    const detail = (event as CustomEvent<PluginConfigChangedDetail>).detail
+    if (!detail) {
+      return
+    }
+    listener(detail)
+  }
+
+  window.addEventListener(PLUGIN_CONFIG_CHANGED_EVENT, handler)
+  return () => {
+    window.removeEventListener(PLUGIN_CONFIG_CHANGED_EVENT, handler)
+  }
+}

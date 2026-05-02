@@ -330,6 +330,49 @@ describe('dispatchSendMessage', () => {
     })
   })
 
+  it('does not wait for the final conversation refresh before resolving send', async () => {
+    vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
+      async (_conversationId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+      },
+    )
+    const state = createState()
+    let resolveRefresh: (() => void) | null = null
+    const refreshConversationState = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve
+        }),
+    )
+
+    const completed = await Promise.race([
+      dispatchSendMessage(
+        state,
+        {
+          content: 'hello',
+        },
+        {
+          refreshConversationState,
+        },
+      ).then(() => true),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), 0)
+      }),
+    ])
+
+    expect(completed).toBe(true)
+    expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    resolveRefresh?.()
+  })
+
   it('still refreshes the original conversation state after switching away during send', async () => {
     const state = createState()
     vi.mocked(chatConversationData.sendConversationMessage).mockImplementation(
@@ -391,6 +434,54 @@ describe('dispatchSendMessage', () => {
       permissionStateChanged: false,
       summaryRefreshed: false,
     })
+  })
+
+  it('does not wait for the final conversation refresh before resolving retry', async () => {
+    vi.mocked(chatConversationData.retryConversationMessage).mockImplementation(
+      async (_conversationId, _messageId, _payload, onEvent) => {
+        onEvent({
+          type: 'message-start',
+          assistantMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '',
+            status: 'pending',
+          },
+        })
+      },
+    )
+    const state = createState([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'old',
+        status: 'completed',
+      },
+    ])
+    let resolveRefresh: (() => void) | null = null
+    const refreshConversationState = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve
+        }),
+    )
+
+    const completed = await Promise.race([
+      dispatchRetryMessage(
+        state,
+        'assistant-1',
+        {
+          refreshConversationState,
+        },
+      ).then(() => true),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), 0)
+      }),
+    ])
+
+    expect(completed).toBe(true)
+    expect(refreshConversationState).toHaveBeenCalledTimes(1)
+    resolveRefresh?.()
   })
 
   it('marks permission refresh as changed when the stream emitted permission events', async () => {

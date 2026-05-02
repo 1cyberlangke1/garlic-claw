@@ -1,14 +1,16 @@
 import type { ChatMessageMetadata, ChatMessagePart, ConversationKind, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
+import { createConversationHistorySignatureFromHistoryMessages } from '../../conversation/conversation-history-signature';
 import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
+import { RuntimeHostConversationTodoService } from './runtime-host-conversation-todo.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
 
 export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; id: string; kind?: ConversationKind; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; subagent?: ConversationSubagentState; title: string; updatedAt: string; userId: string; }
@@ -26,6 +28,7 @@ export class RuntimeHostConversationRecordService {
   constructor(
     @Optional() private readonly runtimeHostPluginDispatchService?: RuntimeHostPluginDispatchService,
     @Optional() private readonly runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
+    @Optional() @Inject(forwardRef(() => RuntimeHostConversationTodoService)) private readonly runtimeHostConversationTodoService?: RuntimeHostConversationTodoService,
   ) {
     const stored = this.readStoredConversations();
     this.conversationSessions = stored.sessions;
@@ -60,6 +63,7 @@ export class RuntimeHostConversationRecordService {
     this.requireConversation(conversationId, userId);
     const conversationIds = this.collectConversationTreeIds(conversationId, userId);
     for (const currentConversationId of conversationIds) {
+      this.runtimeHostConversationTodoService?.deleteSessionTodo(currentConversationId);
       this.conversations.delete(currentConversationId);
       this.removeConversationSessions(currentConversationId);
       await this.runtimeSessionEnvironmentService?.deleteSessionEnvironment(currentConversationId);
@@ -73,6 +77,18 @@ export class RuntimeHostConversationRecordService {
   listConversations(userId?: string): JsonValue { return [...this.conversations.values()].filter((conversation) => !userId || conversation.userId === userId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map((conversation) => readConversationRecordValue(conversation, 'overview')); }
 
   listChildConversations(parentId: string): JsonValue { return [...this.conversations.values()].filter(c => c.parentId === parentId).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).map(c => readConversationRecordValue(c, 'overview')); }
+  listConversationTreeRecords(conversationId: string, userId?: string): RuntimeConversationRecord[] {
+    return this.collectConversationTreeIds(conversationId, userId)
+      .map((currentConversationId) => cloneJsonValue(this.requireConversation(currentConversationId, userId)) as RuntimeConversationRecord);
+  }
+  listChildSubagentConversations(parentId: string, userId?: string): JsonValue {
+    return [...this.conversations.values()]
+      .filter((conversation) => conversation.parentId === parentId)
+      .filter((conversation) => conversation.kind === 'subagent' && Boolean(conversation.subagent))
+      .filter((conversation) => !userId || conversation.userId === userId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .map((conversation) => readConversationRecordValue(conversation, 'overview'));
+  }
   listSubagentConversations(userId?: string): JsonValue {
     return this.listSubagentConversationRecords(userId).map((conversation) => readConversationRecordValue(conversation, 'overview'));
   }
@@ -91,6 +107,20 @@ export class RuntimeHostConversationRecordService {
   finishPluginConversationSession(pluginId: string, conversationId: string): boolean {
     const deleted = this.conversationSessions.delete(readConversationSessionKey(pluginId, conversationId));
     if (deleted) {this.persistConversations();}
+    return deleted;
+  }
+  deletePluginConversationSessions(pluginId: string): number {
+    let deleted = 0;
+    for (const [key, session] of this.conversationSessions.entries()) {
+      if (session.pluginId !== pluginId) {
+        continue;
+      }
+      this.conversationSessions.delete(key);
+      deleted += 1;
+    }
+    if (deleted > 0) {
+      this.persistConversations();
+    }
     return deleted;
   }
   readConversationSummary(conversationId: string, userId?: string): JsonValue { return readConversationRecordValue(this.requireConversation(conversationId, userId), 'summary'); }
@@ -126,7 +156,7 @@ export class RuntimeHostConversationRecordService {
 
   previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
     const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages), textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
-    return asJsonValue({ estimatedTokens: readConversationHistoryPreviewTokens(messages, { modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes }), messageCount: messages.length, textBytes });
+    return asJsonValue({ estimatedTokens: readConversationHistoryPreviewTokens(messages, { historySignature: createConversationHistorySignatureFromHistoryMessages(messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0]), modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes }), messageCount: messages.length, textBytes });
   }
 
   replaceConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
@@ -430,10 +460,10 @@ function readConversationHistoryMessageText(message: JsonObject): string {
   return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : ''), Array.isArray(message.toolCalls) ? JSON.stringify(message.toolCalls) : '', Array.isArray(message.toolResults) ? JSON.stringify(message.toolResults) : ''].filter(Boolean).join('\n');
 }
 
-function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { modelId: string | null; providerId: string | null; textBytes: number }): number {
+function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): number {
   if (input.modelId && input.providerId) {for (let index = messages.length - 1; index >= 0; index -= 1) {
     const usage = readConversationModelUsageAnnotation(readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined, { modelId: input.modelId, providerId: input.providerId });
-    if (usage?.source === 'provider') {return usage.inputTokens;}
+    if (usage?.source === 'provider' && usage.responseHistorySignature === input.historySignature) {return usage.totalTokens;}
   }}
   return Math.ceil(input.textBytes / 4);
 }

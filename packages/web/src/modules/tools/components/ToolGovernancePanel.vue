@@ -150,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus'
 import type {
   PluginActionName,
@@ -158,6 +158,7 @@ import type {
   ToolSourceInfo,
   ToolSourceKind,
 } from '@garlic-claw/shared'
+import { subscribeInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 import {
   loadToolOverview,
   runToolSourceActionRequest,
@@ -200,6 +201,7 @@ const selectedSourceId = ref<string | null>(props.sourceId ?? null)
 const sourceKeyword = ref('')
 const toolKeyword = ref('')
 const toolFilter = ref<'all' | 'attention' | 'disabled' | 'enabled'>('all')
+let removeInternalConfigChangedListener = () => {}
 
 const filteredSources = computed(() =>
   sources.value
@@ -271,7 +273,17 @@ watch(selectedSource, (source) => {
 }, { immediate: true })
 
 onMounted(() => {
+  removeInternalConfigChangedListener = subscribeInternalConfigChanged(({ scope }) => {
+    if (!shouldRefreshFromInternalConfig(scope)) {
+      return
+    }
+    void refresh()
+  })
   void refresh()
+})
+
+onUnmounted(() => {
+  removeInternalConfigChangedListener()
 })
 
 async function refresh() {
@@ -411,6 +423,19 @@ function sourceKindLabel(kind: ToolSourceKind): string {
 function parameterSummary(parameters: ToolInfo['parameters']) {
   const count = Object.keys(parameters).length
   return count === 0 ? '无参数' : `${count} 个参数`
+}
+
+function shouldRefreshFromInternalConfig(scope: 'context-governance' | 'provider-models' | 'runtime-tools' | 'subagent' | 'vision-fallback' | 'mcp') {
+  if (props.sourceKind !== 'internal') {
+    return false
+  }
+  if (props.sourceId === 'runtime-tools') {
+    return scope === 'runtime-tools'
+  }
+  if (props.sourceId === 'subagent') {
+    return scope === 'subagent'
+  }
+  return scope === 'runtime-tools' || scope === 'subagent'
 }
 
 defineExpose({

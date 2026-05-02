@@ -1,6 +1,9 @@
 import { defineComponent, ref } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/modules/ai-settings/internal-config-change'
 import type {
   PluginLlmPreference,
   PluginConversationSessionInfo,
@@ -10,6 +13,19 @@ import type {
 import * as pluginManagementData from '@/modules/plugins/composables/plugin-management.data'
 import { usePluginManagement } from '@/modules/plugins/composables/use-plugin-management'
 
+vi.mock('element-plus', async () => {
+  const actual = await vi.importActual<typeof import('element-plus')>('element-plus')
+  return {
+    ...actual,
+    ElMessage: vi.fn(),
+    ElMessageBox: {
+      confirm: vi.fn(),
+    },
+  }
+})
+
+enableAutoUnmount(afterEach)
+
 vi.mock('@/modules/plugins/composables/plugin-management.data', async () => {
   const actual = await vi.importActual<typeof import('@/modules/plugins/composables/plugin-management.data')>('@/modules/plugins/composables/plugin-management.data')
   return {
@@ -17,6 +33,7 @@ vi.mock('@/modules/plugins/composables/plugin-management.data', async () => {
     loadPlugins: vi.fn(),
     loadPluginDetailSnapshot: vi.fn(),
     finishPluginConversation: vi.fn(),
+    runPluginActionRequest: vi.fn(),
     savePluginScope: vi.fn(),
   }
 })
@@ -93,9 +110,24 @@ function createDetailSnapshot(input: {
 }
 
 describe('usePluginManagement', () => {
+  let pinia: ReturnType<typeof createPinia>
+
   beforeEach(() => {
+    vi.unstubAllGlobals()
     vi.clearAllMocks()
+    pinia = createPinia()
+    setActivePinia(pinia)
+    vi.mocked(ElMessageBox.confirm).mockResolvedValue(undefined as never)
+    vi.mocked(ElMessage).mockImplementation(() => undefined as never)
   })
+
+  function mountHarness(Harness: ReturnType<typeof defineComponent>) {
+    return mount(Harness, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+  }
 
   it('syncs refreshed health snapshots back into the sidebar plugin list', async () => {
     const initialPlugin: PluginInfo = createPlugin({
@@ -143,7 +175,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.healthSnapshot.value).toEqual(refreshedHealth)
@@ -195,10 +227,6 @@ describe('usePluginManagement', () => {
       }),
     )
     vi.mocked(pluginManagementData.finishPluginConversation).mockResolvedValue(true)
-    vi.stubGlobal('window', {
-      confirm: vi.fn(() => true),
-    })
-
     let state!: ReturnType<typeof usePluginManagement>
     const Harness = defineComponent({
       setup() {
@@ -207,7 +235,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.conversationSessions.value).toEqual(sessions)
@@ -218,6 +246,7 @@ describe('usePluginManagement', () => {
       'builtin.demo',
       'conversation-1',
     )
+    expect(ElMessageBox.confirm).toHaveBeenCalled()
     expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
       'builtin.demo',
       { limit: 50 },
@@ -270,7 +299,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.selectedPluginName.value).toBe('builtin.memory')
@@ -331,7 +360,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.selectedPluginName.value).toBe('builtin.route-inspector')
@@ -372,7 +401,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     await state.saveScope({
@@ -388,5 +417,214 @@ describe('usePluginManagement', () => {
         'conversation-1': false,
       },
     })
+  })
+
+  it('refreshes selected plugin llm route details after provider-model config changes', async () => {
+    const initialPlugin: PluginInfo = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.demo',
+      displayName: 'Demo Plugin',
+    })
+
+    vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([initialPlugin])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot)
+      .mockResolvedValueOnce(createDetailSnapshot({}))
+      .mockResolvedValueOnce(createDetailSnapshot({}))
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mountHarness(Harness)
+    await flushPromises()
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await flushPromises()
+
+    expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
+      'builtin.demo',
+      { limit: 50 },
+      '',
+    )
+    expect(state.selectedPluginName.value).toBe('builtin.demo')
+  })
+
+  it('ignores stale detail responses after quickly switching plugins', async () => {
+    const alpha = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.alpha',
+      displayName: 'Alpha Plugin',
+    })
+    const beta = createPlugin({
+      id: 'plugin-2',
+      name: 'builtin.beta',
+      displayName: 'Beta Plugin',
+    })
+    let resolveAlpha!: (value: ReturnType<typeof createDetailSnapshot>) => void
+    const alphaDetail = new Promise<ReturnType<typeof createDetailSnapshot>>((resolve) => {
+      resolveAlpha = resolve
+    })
+    const betaHealth: PluginHealthSnapshot = {
+      status: 'degraded',
+      failureCount: 2,
+      consecutiveFailures: 1,
+      lastError: 'beta failed',
+      lastErrorAt: '2026-03-28T00:05:00.000Z',
+      lastSuccessAt: '2026-03-28T00:04:00.000Z',
+      lastCheckedAt: '2026-03-28T00:05:00.000Z',
+    }
+
+    vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([alpha, beta])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot).mockImplementation((pluginName) => {
+      if (pluginName === 'builtin.alpha') {
+        return alphaDetail
+      }
+      return Promise.resolve(createDetailSnapshot({
+        healthSnapshot: betaHealth,
+      }))
+    })
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mountHarness(Harness)
+    await flushPromises()
+
+    await state.selectPlugin('builtin.beta')
+    await flushPromises()
+
+    expect(state.selectedPluginName.value).toBe('builtin.beta')
+    expect(state.healthSnapshot.value).toEqual(betaHealth)
+
+    resolveAlpha(createDetailSnapshot({
+      healthSnapshot: {
+        status: 'error',
+        failureCount: 9,
+        consecutiveFailures: 9,
+        lastError: 'alpha stale',
+        lastErrorAt: '2026-03-28T00:09:00.000Z',
+        lastSuccessAt: null,
+        lastCheckedAt: '2026-03-28T00:09:00.000Z',
+      },
+    }))
+    await flushPromises()
+
+    expect(state.selectedPluginName.value).toBe('builtin.beta')
+    expect(state.healthSnapshot.value).toEqual(betaHealth)
+    expect(state.selectedPlugin.value?.name).toBe('builtin.beta')
+  })
+
+  it('falls back to another plugin when reload removes the currently selected local plugin', async () => {
+    const alpha = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.alpha',
+      displayName: 'Alpha Plugin',
+      supportedActions: ['reload'],
+    })
+    const beta = createPlugin({
+      id: 'plugin-2',
+      name: 'builtin.beta',
+      displayName: 'Beta Plugin',
+    })
+
+    vi.mocked(pluginManagementData.loadPlugins)
+      .mockResolvedValueOnce([alpha, beta])
+      .mockResolvedValueOnce([beta])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot).mockResolvedValue(
+      createDetailSnapshot({}),
+    )
+    vi.mocked(pluginManagementData.runPluginActionRequest).mockResolvedValue({
+      accepted: true,
+      action: 'reload',
+      pluginId: 'builtin.alpha',
+      message: '本地插件目录已删除，已清理旧记录',
+    })
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mountHarness(Harness)
+    await flushPromises()
+
+    await state.runAction('reload')
+    await flushPromises()
+
+    expect(state.selectedPluginName.value).toBe('builtin.beta')
+    expect(state.selectedPlugin.value?.name).toBe('builtin.beta')
+    expect(state.error.value).toBeNull()
+    expect(ElMessage).toHaveBeenCalledWith(expect.objectContaining({
+      message: '本地插件目录已删除，已清理旧记录',
+    }))
+    expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenLastCalledWith(
+      'builtin.beta',
+      { limit: 50 },
+      '',
+    )
+  })
+
+  it('resets event query and storage prefix before loading another plugin detail snapshot', async () => {
+    const alpha = createPlugin({
+      id: 'plugin-1',
+      name: 'builtin.alpha',
+      displayName: 'Alpha Plugin',
+    })
+    const beta = createPlugin({
+      id: 'plugin-2',
+      name: 'builtin.beta',
+      displayName: 'Beta Plugin',
+    })
+
+    vi.mocked(pluginManagementData.loadPlugins).mockResolvedValue([alpha, beta])
+    vi.mocked(pluginManagementData.loadPluginDetailSnapshot).mockResolvedValue(
+      createDetailSnapshot({}),
+    )
+
+    let state!: ReturnType<typeof usePluginManagement>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginManagement()
+        return () => null
+      },
+    })
+
+    mountHarness(Harness)
+    await flushPromises()
+    vi.clearAllMocks()
+
+    state.eventQuery.value = {
+      limit: 50,
+      keyword: 'error',
+    }
+    state.storagePrefix.value = 'cursor.'
+
+    await state.selectPlugin('builtin.beta')
+    await flushPromises()
+
+    expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
+      'builtin.beta',
+      { limit: 50 },
+      '',
+    )
+    expect(state.eventQuery.value).toEqual({ limit: 50 })
+    expect(state.storagePrefix.value).toBe('')
   })
 })

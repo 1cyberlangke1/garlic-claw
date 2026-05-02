@@ -208,6 +208,44 @@ describe('AiModelExecutionService', () => {
     });
   });
 
+  it('preserves cached input tokens from provider usage', async () => {
+    const service = createService();
+    mockGenerateText.mockResolvedValueOnce({
+      finishReason: 'stop',
+      text: 'cached response',
+      usage: {
+        cachedInputTokens: 11,
+        inputTokens: 21,
+        outputTokens: 5,
+        totalTokens: 26,
+      },
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.response-body',
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'cached response',
+      usage: {
+        cachedInputTokens: 11,
+        inputTokens: 21,
+        outputTokens: 5,
+        source: 'provider',
+        totalTokens: 26,
+      },
+    });
+  });
+
   it('estimates usage from text content when the provider does not return token counts', async () => {
     const service = createService();
     mockGenerateText.mockResolvedValueOnce({

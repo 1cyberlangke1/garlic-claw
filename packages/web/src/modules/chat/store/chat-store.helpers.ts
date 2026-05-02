@@ -143,7 +143,7 @@ export function findActiveAssistantMessageId(messages: ChatMessage[]): string | 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (
-      isActiveResponseMessage(message) &&
+      isStoppableResponseMessage(message) &&
       (message.status === 'pending' || message.status === 'streaming')
     ) {
       return message.id ?? null
@@ -153,7 +153,7 @@ export function findActiveAssistantMessageId(messages: ChatMessage[]): string | 
   return null
 }
 
-function isActiveResponseMessage(message: ChatMessage): boolean {
+export function isStoppableResponseMessage(message: ChatMessage): boolean {
   if (message.role === 'assistant') {
     return true
   }

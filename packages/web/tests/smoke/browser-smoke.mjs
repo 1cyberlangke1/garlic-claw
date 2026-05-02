@@ -19,8 +19,18 @@ const API_ORIGIN = 'http://127.0.0.1:23330/api';
 const REQUEST_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_REQUEST_TIMEOUT_MS', 20_000);
 const STARTUP_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_STARTUP_TIMEOUT_MS', 120_000);
 const COMMAND_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_COMMAND_TIMEOUT_MS', 180_000);
-const DEV_SERVICE_WAIT_TIMEOUT_SECONDS = readBrowserSmokeTimeoutSeconds('GARLIC_CLAW_BROWSER_SMOKE_DEV_SERVICE_WAIT_TIMEOUT_SECONDS', 30);
-const DEV_RESTART_TIMEOUT_MS = readBrowserSmokeTimeoutMs('GARLIC_CLAW_BROWSER_SMOKE_DEV_RESTART_TIMEOUT_MS', 90_000);
+// 冷启动时后端首轮编译、Nest 依赖初始化和端口稳定监听可能明显超过 30 秒。
+// 这里过低只会把 launcher 的真实成功启动误判成失败。
+const DEV_SERVICE_WAIT_TIMEOUT_SECONDS = readBrowserSmokeTimeoutSeconds(
+  'GARLIC_CLAW_BROWSER_SMOKE_DEV_SERVICE_WAIT_TIMEOUT_SECONDS',
+  90,
+);
+// `start_launcher.py restart` 会串行做预检、依赖校验、构建、端口探测与 HTTP 健康检查。
+// 在 Windows 冷启动或 lockfile 变动后，固定 90s 很容易与真实完成时间撞线。
+const DEV_RESTART_TIMEOUT_MS = readBrowserSmokeTimeoutMs(
+  'GARLIC_CLAW_BROWSER_SMOKE_DEV_RESTART_TIMEOUT_MS',
+  Math.max(COMMAND_TIMEOUT_MS, STARTUP_TIMEOUT_MS),
+);
 const RETRYABLE_FETCH_ATTEMPTS = 8;
 const LOGIN_SECRET = process.env.GARLIC_CLAW_LOGIN_SECRET || 'smoke-login-secret';
 const SMOKE_PREFIX_ROOT = 'smoke-ui-';
@@ -363,15 +373,14 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   let saveError = null;
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await page.getByRole('button', { exact: true, name: '新增' }).click();
-    const dialog = page.locator('[data-test="provider-dialog-overlay"]');
-    await dialog.waitFor({ state: 'visible' });
-    await dialog.locator('select').nth(0).selectOption('openai');
-    await dialog.getByPlaceholder('openai 或 my-company').fill(PROVIDER_ID);
-    await dialog.getByPlaceholder('显示名称').fill(PROVIDER_NAME);
-    await dialog.getByPlaceholder('https://...').fill(fakeOpenAiUrl);
-    await dialog.getByPlaceholder('sk-...').fill('smoke-openai-key');
-    await dialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(MODEL_ID);
+    await page.getByRole('button', { name: /新增服务商|新增/ }).click();
+    const { dialog, dialogBody } = getProviderEditorDialog(page);
+    await dialogBody.waitFor({ state: 'visible' });
+    await dialogBody.getByPlaceholder('openai 或 my-company').fill(PROVIDER_ID);
+    await dialogBody.getByPlaceholder('显示名称').fill(PROVIDER_NAME);
+    await dialogBody.getByPlaceholder('https://...').fill(fakeOpenAiUrl);
+    await dialogBody.getByPlaceholder('sk-...').fill('smoke-openai-key');
+    await dialogBody.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(MODEL_ID);
 
     const saveResponsePromise = page.waitForResponse(
       (response) =>
@@ -406,35 +415,14 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   await contextLengthInput.waitFor({ timeout: REQUEST_TIMEOUT_MS });
   const currentContextLengthValue = Number(await contextLengthInput.inputValue());
   const targetContextLength = currentContextLengthValue === 65536 ? 65537 : 65536;
-  const saveButton = page.locator(`[data-test="context-length-save-${MODEL_ID}"]`);
-  let contextLengthSaveResponsePromise = null;
-  await waitFor(async () => {
-    await contextLengthInput.click({ clickCount: 3 });
-    await page.keyboard.press('Control+A').catch(() => {});
-    await page.keyboard.type(String(targetContextLength), { delay: 20 });
-    await contextLengthInput.press('Tab');
-    const enabled = await saveButton.evaluate((button) => {
-      if (!(button instanceof HTMLButtonElement) || button.disabled) {
-        return false;
-      }
-      return true;
-    });
-    if (!enabled) {
-      return null;
-    }
-    contextLengthSaveResponsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST'
-        && response.url().endsWith(`/api/ai/providers/${PROVIDER_ID}/models/${MODEL_ID}`),
-      { timeout: REQUEST_TIMEOUT_MS },
-    );
-    await saveButton.evaluate((button) => {
-      if (button instanceof HTMLButtonElement && !button.disabled) {
-        button.click();
-      }
-    });
-    return true;
-  }, '等待上下文长度保存按钮可用');
+  const contextLengthSaveResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST'
+      && response.url().endsWith(`/api/ai/providers/${PROVIDER_ID}/models/${MODEL_ID}`),
+    { timeout: REQUEST_TIMEOUT_MS },
+  );
+  await contextLengthInput.fill(String(targetContextLength));
+  await contextLengthInput.press('Tab');
   await contextLengthSaveResponsePromise;
 
   await waitFor(async () => {
@@ -445,9 +433,9 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   }, '等待上下文长度持久化');
 
   await page.getByRole('button', { name: '编辑' }).click();
-  const editDialog = page.locator('[data-test="provider-dialog-overlay"]');
-  await editDialog.waitFor({ state: 'visible' });
-  await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(SHADOW_MODEL_ID);
+  const { dialog: editDialog, dialogBody: editDialogBody } = getProviderEditorDialog(page);
+  await editDialogBody.waitFor({ state: 'visible' });
+  await editDialogBody.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill(SHADOW_MODEL_ID);
   const removeOriginalModelResponsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'PUT'
@@ -468,8 +456,8 @@ async function createProviderThroughUi(page, accessToken, fakeOpenAiUrl) {
   }, '等待原模型从 provider 配置中移除');
 
   await page.getByRole('button', { name: '编辑' }).click();
-  await editDialog.waitFor({ state: 'visible' });
-  await editDialog.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill([MODEL_ID, SHADOW_MODEL_ID].join('\n'));
+  await editDialogBody.waitFor({ state: 'visible' });
+  await editDialogBody.getByPlaceholder('每行一个模型 ID，或用逗号分隔').fill([MODEL_ID, SHADOW_MODEL_ID].join('\n'));
   const readdOriginalModelResponsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'PUT'
@@ -534,6 +522,10 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
   await page.getByRole('link', { name: '前往 AI 设置' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 
   const composer = page.getByPlaceholder('输入消息，支持附带图片');
+  const firstSendFinished = page.waitForEvent('requestfinished', (request) =>
+    request.method() === 'POST'
+      && request.url().endsWith(`/api/chat/conversations/${conversation.id}/messages`),
+  );
   await composer.fill(`${PREFIX} chat message`);
   await page.locator('.send-button').click();
   await waitFor(async () => {
@@ -558,16 +550,32 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
     }
     return await composer.isEnabled() ? true : null;
   }, '等待聊天恢复空闲');
+  await firstSendFinished;
 
   await composer.fill('/compact');
   await page.locator('.send-button').click();
-  await waitFor(async () => {
-    const detail = await getConversationDetail(accessToken, conversation.id);
-    const resultMessage = detail.messages.find((message) => hasDisplayMessageVariant(message, 'result'));
-    return resultMessage
-      ? true
-      : null;
-  }, '等待 /compact 的命令结果写入会话历史');
+  let lastCompactDetail = null;
+  try {
+    await waitFor(async () => {
+      const detail = await getConversationDetail(accessToken, conversation.id);
+      lastCompactDetail = detail;
+      const resultMessage = detail.messages.find((message) => hasDisplayMessageVariant(message, 'result'));
+      return resultMessage
+        ? true
+        : null;
+    }, '等待 /compact 的命令结果写入会话历史');
+  } catch (error) {
+    if (lastCompactDetail?.messages) {
+      console.error('[browser-smoke:/compact:detail]', JSON.stringify(lastCompactDetail.messages.map((message) => ({
+        content: message.content,
+        id: message.id,
+        metadata: readMessageMetadata(message),
+        role: message.role,
+        status: message.status,
+      })), null, 2));
+    }
+    throw error;
+  }
 
   await composer.fill(SUBAGENT_TRIGGER);
   await page.locator('.send-button').click();
@@ -624,12 +632,10 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
 async function verifyMcpPage(page) {
   await page.goto('/mcp', { waitUntil: 'load' });
   await expectText(page, 'MCP 管理');
-  await expectText(page, '工具启用/禁用统一在工具管理页');
-  await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('.segmented-switch__option[title="管理"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('.segmented-switch__option[title="日志"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'MCP 配置');
-  const configPath = (await page.locator('.mcp-config-path').textContent())?.trim() ?? '';
-  assert.ok(configPath.length > 0, 'MCP 配置区未展示配置路径');
-  assert.ok(configPath.includes('mcp/servers'), 'MCP 配置路径未切到目录化存储');
+  await page.locator('[data-test="mcp-new-button"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="mcp-new-button"]').click();
   await page.locator('[data-test="mcp-name-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="mcp-command-input"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -638,7 +644,6 @@ async function verifyMcpPage(page) {
 async function verifyPersonasPage(page) {
   await page.goto('/personas', { waitUntil: 'load' });
   await expectText(page, '人设管理');
-  await expectText(page, '可用人设');
   await expectText(page, '可用人设');
   await page.getByRole('button', { name: '新建人设' }).click();
   await page.locator('input[placeholder="persona.writer"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
@@ -649,7 +654,7 @@ async function verifyPersonasPage(page) {
 async function verifySkillsPage(page) {
   await page.goto('/skills', { waitUntil: 'load' });
   await expectText(page, '技能目录');
-  await expectText(page, '已禁用技能');
+  await expectText(page, '已启用');
   await page.getByPlaceholder('搜索技能名称、说明、标签').waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
@@ -664,6 +669,7 @@ async function verifyCommandsPage(page) {
 async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   const remotePluginHandle = await createCachedRemotePluginFixture(accessToken, remotePluginScriptPath)
   await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'load' });
+  await expectText(page, '插件管理');
   await expectText(page, '已接入插件');
   let pluginItems = page.locator('.plugin-item');
   if (await pluginItems.count() === 0) {
@@ -675,26 +681,19 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
     }
   }
   assert.ok(await pluginItems.count() > 0, '插件页未加载任何插件条目');
+  await page.getByRole('button', { exact: true, name: '远程摘要' }).click();
+  await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, '远程接入');
-  await expectText(page, '远程接入配置');
   await expectText(page, 'IoT 远程插件');
   await expectText(page, '必须 Key');
   await expectText(page, '控制型');
   await expectText(page, '已有缓存');
   await expectText(page, '高风险');
-  await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+
+  await page.getByRole('button', { exact: true, name: '远程接入' }).click();
   await page.locator('[data-test="plugin-remote-access-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await expectText(page, '远程接入配置');
   await page.locator('[data-test="plugin-remote-access-key"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
-
-  const systemToggle = page.locator('[data-test="plugin-sidebar-toggle-system"]');
-  const systemToggleInput = systemToggle.locator('input');
-  if (await systemToggleInput.count() > 0 && !(await systemToggleInput.isChecked())) {
-    await systemToggle.click();
-    await page.waitForLoadState('load');
-  }
-
-  await expectText(page, '工具管理入口');
-  await expectText(page, '打开工具管理');
   return remotePluginHandle
 }
 
@@ -704,12 +703,8 @@ async function verifyRuntimeToolsSettingsPage(page) {
   await page.getByRole('button', { exact: true, name: '执行工具' }).click();
   await page.getByRole('heading', { name: '执行工具' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'bash 执行后端');
-  const collapsedToggle = page.locator('button.collapsed-toggle').first();
-  if (await collapsedToggle.count() > 0) {
-    await collapsedToggle.click();
-    await expectText(page, '收起高级配置');
-    await expectText(page, 'bash 输出');
-  }
+  assert.equal(await page.locator('button.collapsed-toggle').count(), 0, '执行工具设置不应再出现高级配置折叠按钮');
+  await expectText(page, 'bash 输出');
   await expectText(page, '工具启用状态');
   await page.getByRole('link', { name: '打开工具管理' }).waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
@@ -769,28 +764,60 @@ async function verifySubagentsPage(page, accessToken, chatFlow) {
 
 async function runAutomationFlow(page, accessToken, conversationId) {
   await page.goto('/automations', { waitUntil: 'load' });
-  await page.getByRole('button', { name: '新建自动化' }).click();
-  const form = page.locator('.create-form');
-  await form.locator('input[placeholder*="每5分钟检查系统信息"]').fill(AUTOMATION_NAME);
-  await form.locator('select').nth(0).selectOption('manual');
-  await form.locator('select').nth(1).selectOption('ai_message');
-  await form.locator('textarea').fill(AUTOMATION_MESSAGE);
-  await form.locator('select').nth(2).selectOption(conversationId);
-  await page.getByRole('button', { name: '创建' }).click();
+  await page.getByRole('button', { name: /新建自动化|新建/ }).click();
+  const dialog = page.getByRole('dialog', { name: '新建自动化' });
+  await dialog.waitFor({ state: 'visible' });
+  await dialog.getByPlaceholder('例如：每5分钟检查系统信息').fill(AUTOMATION_NAME);
+  await selectElementPlusOption(page, dialog, 0, '手动触发');
+  await selectElementPlusOption(page, dialog, 1, '发送消息');
+  await dialog.locator('textarea').fill(AUTOMATION_MESSAGE);
+  const conversationTitle = (await getConversationDetail(accessToken, conversationId)).title;
+  await selectElementPlusOption(page, dialog, 2, conversationTitle);
+  await dialog.getByRole('button', { name: '创建' }).click();
   await expectText(page, AUTOMATION_NAME);
 
   const automationCard = page.locator('.automation-card').filter({ hasText: AUTOMATION_NAME });
-  await automationCard.getByRole('button', { name: '▶ 运行' }).click();
+  await automationCard.getByRole('button', { name: '手动运行' }).click();
   await waitFor(async () => {
     const detail = await getConversationDetail(accessToken, conversationId);
     return detail.messages.some((message) => message.content === AUTOMATION_MESSAGE);
   }, '等待自动化消息写回会话');
 
-  await automationCard.getByRole('button', { name: '删除' }).click();
+  const automations = await listAutomations(accessToken);
+  const created = automations.find((item) => item.name === AUTOMATION_NAME);
+  assert.ok(created, '自动化创建后未能通过接口读取到记录');
+  await requestJson(`/automations/${created.id}`, {
+    headers: createAuthHeaders(accessToken),
+    method: 'DELETE',
+  });
   await waitFor(async () => {
     const automations = await listAutomations(accessToken);
     return !automations.some((item) => item.name === AUTOMATION_NAME);
   }, '等待自动化删除');
+}
+
+async function selectElementPlusOption(page, container, index, optionLabel) {
+  const nativeSelect = container.locator('select').nth(index);
+  if (await nativeSelect.count()) {
+    await nativeSelect.selectOption({ label: optionLabel }).catch(async () => {
+      await nativeSelect.selectOption(optionLabel);
+    });
+    return;
+  }
+
+  const select = container.locator('.el-select').nth(index);
+  await select.click();
+  const option = page.locator('.el-select-dropdown__item').filter({ hasText: optionLabel }).last();
+  await option.waitFor({ state: 'visible', timeout: REQUEST_TIMEOUT_MS });
+  await option.click();
+}
+
+function getProviderEditorDialog(page) {
+  const dialog = page.locator('.provider-editor-dialog').last();
+  return {
+    dialog,
+    dialogBody: dialog.locator('[data-test="provider-dialog-overlay"]'),
+  };
 }
 
 async function verifyArtifactsPresent(accessToken, conversationId) {

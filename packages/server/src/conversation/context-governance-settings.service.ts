@@ -73,7 +73,6 @@ function sanitizeContextGovernanceSection(sectionName: ContextGovernanceSectionN
   }
   if (sectionName === 'conversationTitle') { writeOptionalText(next, values.defaultTitle, 'conversationTitle.defaultTitle'); writeOptionalInteger(next, values.maxMessages, 'conversationTitle.maxMessages', 1); }
   if (sectionName === 'contextCompaction') {
-    writeOptionalTextOption(next, values.mode, 'contextCompaction.mode', ['auto', 'manual']);
     writeOptionalTextOption(next, values.strategy, 'contextCompaction.strategy', ['sliding', 'summary']);
     for (const [key, value] of [['compressionThreshold', values.compressionThreshold], ['keepRecentMessages', values.keepRecentMessages], ['frontendMessageWindowSize', values.frontendMessageWindowSize], ['reservedTokens', values.reservedTokens], ['slidingWindowUsagePercent', values.slidingWindowUsagePercent]] as const) {writeOptionalInteger(next, value, `contextCompaction.${key}`, 1);}
     writeOptionalText(next, values.summaryPrompt, 'contextCompaction.summaryPrompt');

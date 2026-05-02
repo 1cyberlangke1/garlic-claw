@@ -22,7 +22,7 @@
         },
         {
           "name": "plugin-pc",
-          "root": "packages/plugins/plugin-pc/src"
+          "root": "config/plugins/plugin-pc/src"
         }
       ]
     },
@@ -54,7 +54,7 @@
       "consumers": [
         {
           "name": "plugin-pc",
-          "root": "packages/plugins/plugin-pc/src"
+          "root": "config/plugins/plugin-pc/src"
         }
       ]
     },
@@ -74,7 +74,7 @@
         },
         {
           "name": "plugin-pc",
-          "root": "packages/plugins/plugin-pc/src"
+          "root": "config/plugins/plugin-pc/src"
         }
       ]
     }

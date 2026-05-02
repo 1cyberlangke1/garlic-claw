@@ -47,7 +47,7 @@
     "packages/server/src",
     "packages/web/src",
     "packages/plugin-sdk/src",
-    "packages/plugins/plugin-pc/src"
+    "config/plugins/plugin-pc/src"
   ],
   "globalTopFileCount": 12,
   "importExtensions": [".ts", ".vue", ".js", ".mjs", ".cjs"],

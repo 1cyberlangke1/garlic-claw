@@ -272,6 +272,65 @@ describe('ToolRegistryService', () => {
     ).rejects.toThrow('工具源 plugin:builtin.memory 不支持治理动作 reload');
   });
 
+  it('cleans current plugin source state when local reload finds that the directory was removed', async () => {
+    const {
+      pluginBootstrapService,
+      runtimeHostConversationRecordService,
+      runtimeHostPluginRuntimeService,
+      runtimePluginGovernanceService,
+      service,
+      toolManagementSettingsService,
+    } = createFixture();
+    jest.spyOn(pluginBootstrapService, 'getPlugin').mockReturnValue({
+      connected: true,
+      defaultEnabled: true,
+      governance: { canDisable: true },
+      lastSeenAt: null,
+      manifest: {
+        id: 'builtin.memory',
+        name: 'Memory',
+        permissions: [],
+        runtime: 'local',
+        tools: [
+          {
+            description: 'save',
+            name: 'save_memory',
+            parameters: {},
+          },
+        ],
+        version: '1.0.0',
+      },
+      pluginId: 'builtin.memory',
+      status: 'online',
+    } as never);
+    jest.spyOn(pluginBootstrapService, 'canReloadLocal').mockReturnValue(true);
+    jest.spyOn(pluginBootstrapService, 'reloadLocal').mockReturnValue({
+      pluginId: 'builtin.memory',
+      removed: true,
+    });
+    const deletePluginRuntimeStateSpy = jest.spyOn(runtimeHostPluginRuntimeService, 'deletePluginRuntimeState');
+    const deletePluginConversationSessionsSpy = jest.spyOn(runtimeHostConversationRecordService, 'deletePluginConversationSessions');
+    const deleteGovernanceRuntimeStateSpy = jest.spyOn(runtimePluginGovernanceService, 'deletePluginRuntimeState');
+    toolManagementSettingsService.writeSourceEnabledOverride('plugin:builtin.memory', false);
+    toolManagementSettingsService.writeToolEnabledOverride('plugin:builtin.memory:save_memory', false);
+
+    await expect(
+      service.runSourceAction('plugin', 'builtin.memory', 'reload'),
+    ).resolves.toEqual({
+      accepted: true,
+      action: 'reload',
+      sourceKind: 'plugin',
+      sourceId: 'builtin.memory',
+      message: '本地插件目录已删除，已清理旧记录',
+    });
+
+    expect(deletePluginRuntimeStateSpy).toHaveBeenCalledWith('builtin.memory');
+    expect(deletePluginConversationSessionsSpy).toHaveBeenCalledWith('builtin.memory');
+    expect(deleteGovernanceRuntimeStateSpy).toHaveBeenCalledWith('builtin.memory');
+    expect(toolManagementSettingsService.readSourceEnabledOverride('plugin:builtin.memory')).toBeUndefined();
+    expect(toolManagementSettingsService.readToolEnabledOverride('plugin:builtin.memory:save_memory')).toBeUndefined();
+  });
+
   it('persists source and tool enabled overrides across service reload', async () => {
     const fixture = createFixture();
 
@@ -285,6 +344,34 @@ describe('ToolRegistryService', () => {
 
     expect(source?.enabled).toBe(false);
     expect(tool?.enabled).toBe(false);
+  });
+
+  it('does not report plugin tools as enabled when the whole plugin source is disabled', async () => {
+    const { service } = createFixture();
+
+    await service.setSourceEnabled('plugin', 'builtin.memory', false);
+
+    await expect(
+      service.setToolEnabled('plugin:builtin.memory:save_memory', true),
+    ).resolves.toEqual(expect.objectContaining({
+      enabled: false,
+      toolId: 'plugin:builtin.memory:save_memory',
+    }));
+
+    const overview = await service.listOverview();
+    const source = overview.sources.find((entry) => entry.kind === 'plugin' && entry.id === 'builtin.memory');
+    const tool = overview.tools.find((entry) => entry.toolId === 'plugin:builtin.memory:save_memory');
+
+    expect(source).toEqual(expect.objectContaining({
+      enabled: false,
+      enabledTools: 0,
+      id: 'builtin.memory',
+      kind: 'plugin',
+    }));
+    expect(tool).toEqual(expect.objectContaining({
+      enabled: false,
+      toolId: 'plugin:builtin.memory:save_memory',
+    }));
   });
 
   it('does not fabricate plugin health before any health snapshot exists', async () => {
@@ -356,6 +443,215 @@ describe('ToolRegistryService', () => {
       message: 'MCP source health check passed',
     });
     expect(mcpService.setServerEnabled).toHaveBeenCalledWith('weather', false);
+  });
+
+  it('applies MCP tool enabled overrides to overview and executable tool set', async () => {
+    const { mcpService, service, toolManagementSettingsService } = createFixture();
+    const buildOverview = () => {
+      const firstEnabled = toolManagementSettingsService.readToolEnabledOverride('mcp:weather:get_forecast') ?? true;
+      const secondEnabled = toolManagementSettingsService.readToolEnabledOverride('mcp:weather:get_alerts') ?? true;
+      return [{
+        source: {
+          kind: 'mcp' as const,
+          id: 'weather',
+          label: 'weather',
+          enabled: true,
+          health: 'healthy' as const,
+          lastError: null,
+          lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          totalTools: 2,
+          enabledTools: [firstEnabled, secondEnabled].filter(Boolean).length,
+          supportedActions: ['health-check', 'reconnect', 'reload'],
+        },
+        tools: [
+          {
+            toolId: 'mcp:weather:get_forecast',
+            name: 'get_forecast',
+            callName: 'weather__get_forecast',
+            description: 'Get forecast',
+            parameters: {},
+            enabled: firstEnabled,
+            sourceKind: 'mcp' as const,
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'healthy' as const,
+            lastError: null,
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+          {
+            toolId: 'mcp:weather:get_alerts',
+            name: 'get_alerts',
+            callName: 'weather__get_alerts',
+            description: 'Get alerts',
+            parameters: {},
+            enabled: secondEnabled,
+            sourceKind: 'mcp' as const,
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'healthy' as const,
+            lastError: null,
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+        ],
+      }];
+    };
+    mcpService.listToolSources.mockImplementation(buildOverview);
+
+    await expect(service.setToolEnabled('mcp:weather:get_alerts', false)).resolves.toEqual(
+      expect.objectContaining({
+        toolId: 'mcp:weather:get_alerts',
+        enabled: false,
+      }),
+    );
+
+    const overview = await service.listOverview();
+    const alertTool = overview.tools.find((entry) => entry.toolId === 'mcp:weather:get_alerts');
+    const source = overview.sources.find((entry) => entry.kind === 'mcp' && entry.id === 'weather');
+
+    expect(alertTool?.enabled).toBe(false);
+    expect(source).toEqual(expect.objectContaining({
+      totalTools: 2,
+      enabledTools: 1,
+    }));
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+
+    expect(toolSet).toBeDefined();
+    expect(Object.keys(toolSet ?? {})).toContain('weather__get_forecast');
+    expect(Object.keys(toolSet ?? {})).not.toContain('weather__get_alerts');
+  });
+
+  it('keeps MCP sources visible in overview when a source is disabled but still has known tools', async () => {
+    const { mcpService, service } = createFixture();
+    mcpService.listToolSources.mockReturnValue([
+      {
+        source: {
+          kind: 'mcp',
+          id: 'weather',
+          label: 'weather',
+          enabled: false,
+          health: 'error',
+          lastError: 'server offline',
+          lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          totalTools: 2,
+          enabledTools: 0,
+          supportedActions: ['health-check', 'reconnect', 'reload'],
+        },
+        tools: [
+          {
+            toolId: 'mcp:weather:get_forecast',
+            name: 'get_forecast',
+            callName: 'weather__get_forecast',
+            description: 'Get forecast',
+            parameters: {},
+            enabled: false,
+            sourceKind: 'mcp',
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'error',
+            lastError: 'server offline',
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+          {
+            toolId: 'mcp:weather:get_alerts',
+            name: 'get_alerts',
+            callName: 'weather__get_alerts',
+            description: 'Get alerts',
+            parameters: {},
+            enabled: false,
+            sourceKind: 'mcp',
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'error',
+            lastError: 'server offline',
+            lastCheckedAt: '2026-04-14T00:00:00.000Z',
+          },
+        ],
+      },
+    ]);
+
+    const overview = await service.listOverview();
+
+    expect(overview.sources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'mcp',
+        id: 'weather',
+        enabled: false,
+        totalTools: 2,
+        enabledTools: 0,
+      }),
+    ]));
+  });
+
+  it('keeps offline plugin sources visible in overview but excludes them from executable tools', async () => {
+    const { pluginBootstrapService, service } = createFixture();
+    pluginBootstrapService.registerPlugin({
+      connected: false,
+      fallback: {
+        id: 'remote.weather',
+        name: 'Remote Weather',
+        runtime: 'remote',
+      },
+      manifest: {
+        id: 'remote.weather',
+        name: 'Remote Weather',
+        permissions: [],
+        runtime: 'remote',
+        tools: [
+          {
+            description: 'Get forecast',
+            name: 'get_forecast',
+            parameters: {},
+          },
+        ],
+        version: '1.0.0',
+      } as never,
+      remote: {
+        access: { accessKey: 'key', serverUrl: 'https://example.com/plugin' },
+        descriptor: {
+          auth: { mode: 'required' },
+          capabilityProfile: 'query',
+          remoteEnvironment: 'api',
+        },
+        metadataCache: {
+          lastSyncedAt: '2026-05-01T00:00:00.000Z',
+          manifestHash: 'hash-1',
+          status: 'cached',
+        },
+      },
+    });
+
+    const overview = await service.listOverview();
+    const source = overview.sources.find((entry) => entry.kind === 'plugin' && entry.id === 'remote.weather');
+    const tool = overview.tools.find((entry) => entry.toolId === 'plugin:remote.weather:get_forecast');
+
+    expect(source).toEqual(expect.objectContaining({
+      kind: 'plugin',
+      id: 'remote.weather',
+      totalTools: 1,
+      enabledTools: 0,
+    }));
+    expect(tool).toEqual(expect.objectContaining({
+      toolId: 'plugin:remote.weather:get_forecast',
+      enabled: false,
+      sourceKind: 'plugin',
+    }));
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+    });
+
+    expect(Object.keys(toolSet ?? {})).not.toContain('get_forecast');
   });
 
   it('filters out tools disabled for the current conversation scope', async () => {
@@ -445,6 +741,105 @@ describe('ToolRegistryService', () => {
       'skill',
       'invalid',
     ]);
+  });
+
+  it('blocks direct plugin execution when the plugin is disabled for the current conversation scope', async () => {
+    const { pluginBootstrapService, runtimeHostPluginDispatchService, service } = createFixture();
+    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+    const persisted = (pluginBootstrapService as unknown as {
+      pluginPersistenceService: PluginPersistenceService;
+    }).pluginPersistenceService;
+    persisted.upsertPlugin({
+      ...pluginBootstrapService.getPlugin('builtin.memory'),
+      connected: true,
+      conversationScopes: {
+        'conversation-1': false,
+      },
+      defaultEnabled: true,
+      lastSeenAt: new Date().toISOString(),
+    });
+
+    await expect(service.executeRegisteredTool({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'automation',
+        userId: 'user-1',
+      },
+      params: { content: 'should not run' },
+      sourceId: 'builtin.memory',
+      sourceKind: 'plugin',
+      toolName: 'save_memory',
+    })).rejects.toThrow('Tool disabled for current context: plugin:builtin.memory:save_memory');
+    expect(executeToolSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks direct plugin execution when the source is disabled', async () => {
+    const { runtimeHostPluginDispatchService, service } = createFixture();
+    const executeToolSpy = jest.spyOn(runtimeHostPluginDispatchService, 'executeTool');
+
+    await service.setSourceEnabled('plugin', 'builtin.memory', false);
+
+    await expect(service.executeRegisteredTool({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'automation',
+        userId: 'user-1',
+      },
+      params: { content: 'should not run' },
+      sourceId: 'builtin.memory',
+      sourceKind: 'plugin',
+      toolName: 'save_memory',
+    })).rejects.toThrow('Tool disabled for current context: plugin:builtin.memory:save_memory');
+    expect(executeToolSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks direct MCP execution when the tool is disabled', async () => {
+    const { mcpService, service } = createFixture();
+    mcpService.listToolSources.mockReturnValue([
+      {
+        source: {
+          kind: 'mcp',
+          id: 'weather',
+          label: 'weather',
+          enabled: true,
+          health: 'healthy',
+          lastError: null,
+          lastCheckedAt: '2026-05-01T00:00:00.000Z',
+          totalTools: 1,
+          enabledTools: 0,
+          supportedActions: ['health-check', 'reconnect', 'reload'],
+        },
+        tools: [
+          {
+            toolId: 'mcp:weather:get_forecast',
+            name: 'get_forecast',
+            callName: 'weather__get_forecast',
+            description: 'Get forecast',
+            parameters: {},
+            enabled: false,
+            sourceKind: 'mcp',
+            sourceId: 'weather',
+            sourceLabel: 'weather',
+            health: 'healthy',
+            lastError: null,
+            lastCheckedAt: '2026-05-01T00:00:00.000Z',
+          },
+        ],
+      },
+    ]);
+
+    await expect(service.executeRegisteredTool({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'automation',
+        userId: 'user-1',
+      },
+      params: { city: 'Shanghai' },
+      sourceId: 'weather',
+      sourceKind: 'mcp',
+      toolName: 'get_forecast',
+    })).rejects.toThrow('Tool disabled for current context: mcp:weather:get_forecast');
+    expect(mcpService.callTool).not.toHaveBeenCalled();
   });
 
   it('includes builtin tools in the executable tool set when enabled', async () => {
@@ -8027,6 +8422,11 @@ function createFixture(options: {
     writeToolService,
     projectWorktreeSearchOverlayService,
   );
+  const runtimeHostPluginRuntimeService = new RuntimeHostPluginRuntimeService();
+  const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
+    pluginBootstrapService,
+    runtimeGatewayConnectionLifecycleService,
+  );
   const runtimeHostService = new RuntimeHostService(
     pluginBootstrapService,
     runtimeHostAutomationService,
@@ -8036,17 +8436,13 @@ function createFixture(options: {
     aiManagementService,
     new RuntimeHostKnowledgeService(),
     runtimeHostPluginDispatchService,
-    new RuntimeHostPluginRuntimeService(),
+    runtimeHostPluginRuntimeService,
     runtimeHostRuntimeToolService,
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
     new PersonaService(new PersonaStoreService(projectWorktreeRootService), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();
-  const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
-    pluginBootstrapService,
-    runtimeGatewayConnectionLifecycleService,
-  );
   const invalidToolService = new InvalidToolService();
   const todoToolService = new TodoToolService(runtimeHostConversationTodoService);
   const webFetchService = {
@@ -8065,7 +8461,9 @@ function createFixture(options: {
     mcpService,
     pluginBootstrapService,
     runtimeHostConversationRecordService,
+    runtimeHostPluginRuntimeService,
     runtimeHostConversationTodoService,
+    runtimeHostPluginDispatchService,
     runtimePluginGovernanceService,
     runtimeHostSubagentRunnerService,
     skillRegistryService,
@@ -8086,6 +8484,9 @@ function createFixture(options: {
       runtimeToolPermissionService,
       runtimeToolsSettingsService,
       toolManagementSettingsService,
+      pluginBootstrapService,
+      runtimeHostConversationRecordService,
+      runtimeHostPluginRuntimeService,
       subagentToolService,
       todoToolService,
       webFetchToolService,

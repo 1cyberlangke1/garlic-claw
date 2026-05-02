@@ -455,15 +455,20 @@ function seedRemotePlugin(input: ReturnType<typeof createService>) {
   });
 }
 
-function createService() {
+function createService(options?: { projectPluginRegistryService?: unknown }) {
   const builtinPluginRegistryService = new BuiltinPluginRegistryService();
   const pluginBootstrapService = new PluginBootstrapService(
     new PluginGovernanceService(),
     new PluginPersistenceService(),
     builtinPluginRegistryService,
+    options?.projectPluginRegistryService as never,
   );
   const runtimeGatewayConnectionLifecycleService = new RuntimeGatewayConnectionLifecycleService(
     pluginBootstrapService,
+  );
+  const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
+    pluginBootstrapService,
+    runtimeGatewayConnectionLifecycleService,
   );
   const runtimeGatewayRemoteTransportService = new RuntimeGatewayRemoteTransportService(
     runtimeGatewayConnectionLifecycleService,
@@ -518,6 +523,7 @@ function createService() {
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
   );
+  const runtimeHostPluginRuntimeService = new RuntimeHostPluginRuntimeService();
   const runtimeHostService = new RuntimeHostService(
     pluginBootstrapService,
     runtimeHostAutomationService,
@@ -527,7 +533,7 @@ function createService() {
     aiManagementService,
     new RuntimeHostKnowledgeService(),
     runtimeHostPluginDispatchService,
-    new RuntimeHostPluginRuntimeService(),
+    runtimeHostPluginRuntimeService,
     {} as never,
     runtimeHostSubagentRunnerService,
     new RuntimeHostUserContextService(),
@@ -539,10 +545,9 @@ function createService() {
     pluginBootstrapService,
     runtimeGatewayConnectionLifecycleService,
     runtimeGatewayRemoteTransportService,
+    runtimeHostConversationRecordService,
     runtimeHostPluginDispatchService,
-    service: new RuntimePluginGovernanceService(
-      pluginBootstrapService,
-      runtimeGatewayConnectionLifecycleService,
-    ),
+    runtimeHostPluginRuntimeService,
+    service: runtimePluginGovernanceService,
   };
 }

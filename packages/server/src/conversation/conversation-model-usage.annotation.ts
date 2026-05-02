@@ -2,12 +2,14 @@ import type {
   AiModelUsage,
   ChatMessageAnnotation,
   ChatMessageMetadata,
-  JsonValue,
+  JsonObject,
 } from '@garlic-claw/shared';
 
-export interface ConversationModelUsageAnnotationData extends AiModelUsage, Record<string, JsonValue> {
+export interface ConversationModelUsageAnnotationData extends AiModelUsage {
   modelId: string;
   providerId: string;
+  requestHistorySignature?: string;
+  responseHistorySignature?: string;
 }
 
 const CONVERSATION_MODEL_USAGE_OWNER = 'conversation.model-usage';
@@ -53,10 +55,26 @@ function createConversationModelUsageAnnotation(
   data: ConversationModelUsageAnnotationData,
 ): ChatMessageAnnotation {
   return {
-    data,
+    data: serializeConversationModelUsageAnnotationData(data),
     owner: CONVERSATION_MODEL_USAGE_OWNER,
     type: CONVERSATION_MODEL_USAGE_TYPE,
     version: CONVERSATION_MODEL_USAGE_VERSION,
+  };
+}
+
+function serializeConversationModelUsageAnnotationData(
+  data: ConversationModelUsageAnnotationData,
+): JsonObject {
+  return {
+    ...(data.cachedInputTokens === undefined ? {} : { cachedInputTokens: data.cachedInputTokens }),
+    inputTokens: data.inputTokens,
+    modelId: data.modelId,
+    outputTokens: data.outputTokens,
+    providerId: data.providerId,
+    ...(data.requestHistorySignature ? { requestHistorySignature: data.requestHistorySignature } : {}),
+    ...(data.responseHistorySignature ? { responseHistorySignature: data.responseHistorySignature } : {}),
+    source: data.source,
+    totalTokens: data.totalTokens,
   };
 }
 
@@ -77,7 +95,10 @@ function isConversationModelUsageAnnotationData(
   }
   return typeof value.modelId === 'string'
     && typeof value.providerId === 'string'
+    && (value.requestHistorySignature === undefined || typeof value.requestHistorySignature === 'string')
+    && (value.responseHistorySignature === undefined || typeof value.responseHistorySignature === 'string')
     && isTokenCount(value.inputTokens)
+    && (value.cachedInputTokens === undefined || isTokenCount(value.cachedInputTokens))
     && isTokenCount(value.outputTokens)
     && isTokenCount(value.totalTokens)
     && (value.source === 'provider' || value.source === 'estimated');

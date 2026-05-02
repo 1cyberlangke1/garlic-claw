@@ -446,8 +446,8 @@ export interface ConversationContextWindowPreview {
   excludedMessageIds: string[];
   /** 当前窗口的估算 token 数。 */
   estimatedTokens: number;
-  /** 当前窗口预算上限。 */
-  maxWindowTokens: number;
+  /** 当前模型总上下文长度。 */
+  contextLength: number;
   /** 无论何种策略都至少保留的最近消息数。 */
   keepRecentMessages: number;
   /** 前端本地最多缓存的最近消息数。 */

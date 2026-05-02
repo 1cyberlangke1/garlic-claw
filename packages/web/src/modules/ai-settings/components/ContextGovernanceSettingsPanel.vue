@@ -2,8 +2,9 @@
   <section class="panel-shell">
     <header class="panel-header">
       <div>
+        <span class="panel-kicker">上下文</span>
         <h2>上下文设置</h2>
-        <p>配置自动标题、上下文压缩窗口与压缩专用模型。</p>
+        <p>配置自动标题、上下文自动管理策略和压缩专用模型。滑动窗口与摘要压缩都会自动管理上下文。</p>
       </div>
     </header>
 
@@ -39,16 +40,18 @@
     </section>
 
     <SchemaConfigForm
+      :auto-save="false"
       :snapshot="snapshot"
       :saving="saving"
       :show-header="false"
-      @save="saveConfig"
+      :show-save-button="false"
+      @draft-change="handleSchemaDraftChange"
     />
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { ElButton } from 'element-plus'
 import type { JsonObject, PluginConfigSnapshot } from '@garlic-claw/shared'
 import ModelQuickInput from '@/shared/components/ModelQuickInput.vue'
@@ -64,25 +67,90 @@ const emit = defineEmits<{
 }>()
 
 const compressionModel = ref<{ modelId: string; providerId: string } | null>(null)
+const schemaDraftValues = ref<JsonObject>({})
+const autoSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const committedSignature = ref('{}')
+const pendingSignature = ref<string | null>(null)
+const CONTEXT_GOVERNANCE_AUTO_SAVE_DEBOUNCE_MS = 500
 
 watch(
   () => props.snapshot,
   (snapshot) => {
     compressionModel.value = readCompressionModel(snapshot?.values)
+    schemaDraftValues.value = cloneJsonObject(snapshot?.values ?? {})
+    const snapshotSignature = JSON.stringify(
+      mergeCompressionModel(schemaDraftValues.value, compressionModel.value),
+    )
+    committedSignature.value = snapshotSignature
+    pendingSignature.value = pendingSignature.value === snapshotSignature
+      ? null
+      : pendingSignature.value
   },
   { immediate: true },
 )
 
-function saveConfig(values: PluginConfigSnapshot['values']) {
-  emit('save', mergeCompressionModel(values, compressionModel.value))
+watch(
+  () => props.saving,
+  (saving) => {
+    if (saving) {
+      return
+    }
+    if (pendingSignature.value && pendingSignature.value !== committedSignature.value) {
+      pendingSignature.value = null
+      scheduleAutoSave(0)
+      return
+    }
+    if (readDraftSignature() !== committedSignature.value) {
+      scheduleAutoSave(0)
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  clearAutoSaveTimer()
+})
+
+function handleSchemaDraftChange(values: PluginConfigSnapshot['values']) {
+  schemaDraftValues.value = cloneJsonObject(values)
+  scheduleAutoSave()
 }
 
 function clearCompressionModel() {
   compressionModel.value = null
+  scheduleAutoSave()
 }
 
 function setCompressionModel(value: { modelId: string; providerId: string }) {
   compressionModel.value = value
+  scheduleAutoSave()
+}
+
+function scheduleAutoSave(delayMs = CONTEXT_GOVERNANCE_AUTO_SAVE_DEBOUNCE_MS) {
+  clearAutoSaveTimer()
+  autoSaveTimer.value = setTimeout(() => {
+    autoSaveTimer.value = null
+    if (props.saving || !props.snapshot) {
+      return
+    }
+    const nextValues = mergeCompressionModel(schemaDraftValues.value, compressionModel.value)
+    const nextSignature = JSON.stringify(nextValues)
+    if (
+      nextSignature === committedSignature.value
+      || nextSignature === pendingSignature.value
+    ) {
+      return
+    }
+    pendingSignature.value = nextSignature
+    emit('save', nextValues)
+  }, delayMs)
+}
+
+function clearAutoSaveTimer() {
+  if (!autoSaveTimer.value) {
+    return
+  }
+  clearTimeout(autoSaveTimer.value)
+  autoSaveTimer.value = null
 }
 
 function readCompressionModel(values: PluginConfigSnapshot['values'] | undefined) {
@@ -120,6 +188,10 @@ function mergeCompressionModel(
 
 function cloneJsonObject(value: PluginConfigSnapshot['values']): JsonObject {
   return JSON.parse(JSON.stringify(value ?? {})) as JsonObject
+}
+
+function readDraftSignature(): string {
+  return JSON.stringify(mergeCompressionModel(schemaDraftValues.value, compressionModel.value))
 }
 
 function readJsonObject(value: unknown): JsonObject | null {

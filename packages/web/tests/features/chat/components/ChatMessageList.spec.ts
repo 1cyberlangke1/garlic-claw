@@ -277,13 +277,13 @@ describe('ChatMessageList', () => {
           name: 'Writer',
         },
         contextWindowPreview: {
+          contextLength: 256,
           enabled: true,
           estimatedTokens: 120,
           excludedMessageIds: ['assistant-1'],
           frontendMessageWindowSize: 200,
           includedMessageIds: ['assistant-2'],
           keepRecentMessages: 2,
-          maxWindowTokens: 256,
           slidingWindowUsagePercent: 50,
           strategy: 'sliding',
         },
@@ -386,5 +386,130 @@ describe('ChatMessageList', () => {
     expect(assistant.text()).toContain('资料核对员')
     expect(assistant.text()).toContain('conversationId')
     expect(assistant.text()).toContain('subagent-conversation-1')
+  })
+
+  it('renders assistant usage details behind an info toggle and includes cached tokens only when provided', async () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-usage-1',
+            role: 'assistant',
+            content: '第一条回复',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    cachedInputTokens: 64,
+                    inputTokens: 320,
+                    modelId: 'gpt-5.4',
+                    outputTokens: 120,
+                    providerId: 'openai',
+                    source: 'provider',
+                    totalTokens: 440,
+                  },
+                  owner: 'conversation.model-usage',
+                  type: 'model-usage',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+          {
+            id: 'assistant-usage-2',
+            role: 'assistant',
+            content: '第二条回复',
+            provider: 'openai',
+            model: 'gpt-5.4-mini',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    inputTokens: 180,
+                    modelId: 'gpt-5.4-mini',
+                    outputTokens: 40,
+                    providerId: 'openai',
+                    source: 'provider',
+                    totalTokens: 220,
+                  },
+                  owner: 'conversation.model-usage',
+                  type: 'model-usage',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+          {
+            id: 'assistant-usage-3',
+            role: 'assistant',
+            content: '第三条回复',
+            provider: null,
+            model: null,
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    inputTokens: 42,
+                    modelId: 'deepseek-v4-flash',
+                    outputTokens: 21,
+                    providerId: 'ds2api',
+                    source: 'provider',
+                    totalTokens: 63,
+                  },
+                  owner: 'conversation.model-usage',
+                  type: 'model-usage',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const firstAssistant = wrapper.find('[data-message-id="assistant-usage-1"]')
+    const secondAssistant = wrapper.find('[data-message-id="assistant-usage-2"]')
+    const thirdAssistant = wrapper.find('[data-message-id="assistant-usage-3"]')
+
+    expect(firstAssistant.find('.usage-info-toggle').text()).toBe('[i]')
+    expect(firstAssistant.text()).not.toContain('输入 token')
+    expect(thirdAssistant.find('.usage-info-toggle').text()).toBe('[i]')
+
+    await firstAssistant.find('.usage-info-toggle').trigger('click')
+
+    expect(firstAssistant.text()).toContain('输入 token')
+    expect(firstAssistant.text()).toContain('320')
+    expect(firstAssistant.text()).toContain('输出 token')
+    expect(firstAssistant.text()).toContain('120')
+    expect(firstAssistant.text()).toContain('缓存 token')
+    expect(firstAssistant.text()).toContain('64')
+
+    await secondAssistant.find('.usage-info-toggle').trigger('click')
+
+    expect(secondAssistant.text()).toContain('输入 token')
+    expect(secondAssistant.text()).toContain('180')
+    expect(secondAssistant.text()).toContain('输出 token')
+    expect(secondAssistant.text()).toContain('40')
+    expect(secondAssistant.text()).not.toContain('缓存 token')
+
+    await thirdAssistant.find('.usage-info-toggle').trigger('click')
+
+    expect(thirdAssistant.text()).toContain('输入 token')
+    expect(thirdAssistant.text()).toContain('42')
+    expect(thirdAssistant.text()).toContain('输出 token')
+    expect(thirdAssistant.text()).toContain('21')
   })
 })

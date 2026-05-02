@@ -17,13 +17,16 @@ export interface UsePluginEventsOptions {
   error: Ref<string | null>
 }
 
+const DEFAULT_EVENT_QUERY: PluginEventQuery = {
+  limit: 50,
+}
+
 export function usePluginEvents(options: UsePluginEventsOptions) {
   const eventLoading = ref(false)
   const eventLogs = shallowRef<PluginEventRecord[]>([])
-  const eventQuery = shallowRef<PluginEventQuery>({
-    limit: 50,
-  })
+  const eventQuery = shallowRef<PluginEventQuery>(DEFAULT_EVENT_QUERY)
   const eventNextCursor = ref<string | null>(null)
+  let activeEventRequestId = 0
 
   function applyDetailSnapshot(detail: PluginDetailSnapshot) {
     eventLogs.value = detail.eventResult.items
@@ -32,53 +35,74 @@ export function usePluginEvents(options: UsePluginEventsOptions) {
 
   function clearDetailState() {
     eventLogs.value = []
+    eventQuery.value = DEFAULT_EVENT_QUERY
     eventNextCursor.value = null
   }
 
   async function refreshPluginEvents(query: PluginEventQuery = eventQuery.value) {
-    if (!options.selectedPlugin.value) {
+    const baseQuery = readBasePluginEventQuery(query)
+    const pluginName = options.selectedPlugin.value?.name ?? null
+    if (!pluginName) {
       eventLogs.value = []
-      eventQuery.value = normalizeEventQuery(query)
+      eventQuery.value = baseQuery
       eventNextCursor.value = null
       return
     }
 
+    const requestId = ++activeEventRequestId
     eventLoading.value = true
     options.error.value = null
     try {
-      const normalized = normalizeEventQuery(query)
-      const result = await loadPluginEvents(options.selectedPlugin.value.name, normalized)
-      eventQuery.value = normalized
+      const result = await loadPluginEvents(pluginName, baseQuery)
+      if (requestId !== activeEventRequestId || options.selectedPlugin.value?.name !== pluginName) {
+        return
+      }
+      eventQuery.value = baseQuery
       eventLogs.value = result.items
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
+      if (requestId !== activeEventRequestId || options.selectedPlugin.value?.name !== pluginName) {
+        return
+      }
       options.error.value = toErrorMessage(caughtError, '加载插件事件日志失败')
     } finally {
-      eventLoading.value = false
+      if (requestId === activeEventRequestId) {
+        eventLoading.value = false
+      }
     }
   }
 
   async function loadMorePluginEvents(query?: PluginEventQuery) {
-    const normalized = normalizeEventQuery(query ?? eventQuery.value)
+    const baseQuery = readBasePluginEventQuery(query ?? eventQuery.value)
     const cursor = query?.cursor ?? eventNextCursor.value
-    if (!options.selectedPlugin.value || !cursor) {
+    const pluginName = options.selectedPlugin.value?.name ?? null
+    if (!pluginName || !cursor) {
       return
     }
 
+    const requestId = ++activeEventRequestId
     eventLoading.value = true
     options.error.value = null
     try {
-      const result = await loadPluginEvents(options.selectedPlugin.value.name, {
-        ...normalized,
+      const result = await loadPluginEvents(pluginName, {
+        ...baseQuery,
         cursor,
       })
-      eventQuery.value = normalized
+      if (requestId !== activeEventRequestId || options.selectedPlugin.value?.name !== pluginName) {
+        return
+      }
+      eventQuery.value = baseQuery
       eventLogs.value = dedupeEventLogs([...eventLogs.value, ...result.items])
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
+      if (requestId !== activeEventRequestId || options.selectedPlugin.value?.name !== pluginName) {
+        return
+      }
       options.error.value = toErrorMessage(caughtError, '加载更多插件事件日志失败')
     } finally {
-      eventLoading.value = false
+      if (requestId === activeEventRequestId) {
+        eventLoading.value = false
+      }
     }
   }
 
@@ -92,4 +116,10 @@ export function usePluginEvents(options: UsePluginEventsOptions) {
     refreshPluginEvents,
     loadMorePluginEvents,
   }
+}
+
+function readBasePluginEventQuery(query: PluginEventQuery): PluginEventQuery {
+  const normalized = normalizeEventQuery(query)
+  const { cursor: _cursor, ...baseQuery } = normalized
+  return baseQuery
 }

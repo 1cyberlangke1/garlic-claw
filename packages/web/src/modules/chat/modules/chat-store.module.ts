@@ -1,4 +1,4 @@
-import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef, triggerRef } from "vue";
+import { computed, getCurrentScope, markRaw, onScopeDispose, ref, shallowRef, triggerRef, watch } from "vue";
 import type {
   ChatMessagePart,
   Conversation,
@@ -30,15 +30,21 @@ import {
   stopConversationMessageRecord,
   updateConversationMessageRecord,
 } from "@/modules/chat/modules/chat-conversation.data";
-import { ensureChatModelSelection } from "@/modules/chat/modules/chat-model-selection";
+import {
+  ensureChatModelSelection,
+  findLatestAssistantSelection,
+  type ResolvedChatModelSelection,
+  type ChatModelSelectionSource,
+} from "@/modules/chat/modules/chat-model-selection";
 import {
   getRetryableMessageId,
   removeMessage,
   replaceMessage,
   replaceOrAppendMessage,
 } from "@/modules/chat/store/chat-store.runtime";
+import { isStoppableResponseMessage } from "@/modules/chat/store/chat-store.helpers";
 import {
-  INTERNAL_CONFIG_CHANGED_EVENT,
+  subscribeInternalConfigChanged,
   type InternalConfigChangedDetail,
 } from "@/modules/ai-settings/internal-config-change";
 import type {
@@ -47,6 +53,8 @@ import type {
   ChatSendInput,
 } from "@/modules/chat/store/chat-store.types";
 import { isValidConversationRouteId } from "@/shared/utils/uuid";
+
+let removeGlobalInternalConfigChangedListener: (() => void) | null = null;
 
 interface QueuedChatSendRequest {
   id: string;
@@ -73,6 +81,7 @@ export function createChatStoreModule() {
   const recoveryTimer = ref<number | null>(null);
   const selectedProvider = ref<string | null>(null);
   const selectedModel = ref<string | null>(null);
+  const selectedModelSource = ref<ChatModelSelectionSource | null>(null);
   const queuedSendRequestsByConversation = shallowRef<Record<string, QueuedChatSendRequest[]>>({});
   const streamState = {
     currentConversationId,
@@ -92,6 +101,11 @@ export function createChatStoreModule() {
   let conversationContextWindowRequestId = 0;
   let conversationRuntimePermissionRequestId = 0;
   let conversationTodoRequestId = 0;
+  let conversationSelectionRequestId = 0;
+  let pendingConfigRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingConfigRefreshScope: InternalConfigChangedDetail["scope"] | null = null;
+  let bufferedConfigRefreshConversationId: string | null = null;
+  let bufferedConfigRefreshScope: InternalConfigChangedDetail["scope"] | null = null;
 
   const DEFAULT_FRONTEND_MESSAGE_WINDOW_SIZE = 200;
   const retryableMessageId = computed(() =>
@@ -112,8 +126,40 @@ export function createChatStoreModule() {
         preview: createQueuedSendPreview(entry.input),
       })),
   );
+  const canStopStreaming = computed(() => {
+    const messageId = currentStreamingMessageId.value;
+    if (!messageId) {
+      return false;
+    }
+    const message = messages.value.find((entry) => entry.id === messageId);
+    return !!message && isStoppableResponseMessage(message) && (
+      message.status === "pending" || message.status === "streaming"
+    );
+  });
   let drainingQueuedSendRequests = false;
   let queuedSendSequence = 0;
+  const stableConversationState = shallowRef<ReturnType<typeof readConversationStateSnapshot> | null>(null);
+
+  watch(
+    [
+      currentConversationId,
+      contextWindowPreview,
+      messages,
+      pendingRuntimePermissions,
+      todoItems,
+      selectedProvider,
+      selectedModel,
+      selectedModelSource,
+      loading,
+    ],
+    () => {
+      if (loading.value) {
+        return;
+      }
+      stableConversationState.value = readConversationStateSnapshot();
+    },
+    { flush: "sync" },
+  );
 
   function createPendingRuntimePermissionEntry(
     entry: RuntimePermissionRequest,
@@ -145,6 +191,9 @@ export function createChatStoreModule() {
     contextWindowPreview.value = null;
     selectedProvider.value = null;
     selectedModel.value = null;
+    selectedModelSource.value = null;
+    bufferedConfigRefreshConversationId = null;
+    bufferedConfigRefreshScope = null;
     pendingRuntimePermissions.value = [];
     todoItems.value = [];
     replaceMessages([]);
@@ -173,31 +222,57 @@ export function createChatStoreModule() {
       : nextMessages;
   }
 
-  function handleInternalConfigChanged(rawEvent: Event) {
-    if (!(rawEvent instanceof CustomEvent)) {
+  function handleInternalConfigChanged(detail: InternalConfigChangedDetail) {
+    if (detail.scope !== "context-governance" && detail.scope !== "provider-models") {
       return;
     }
-    const event = rawEvent as CustomEvent<InternalConfigChangedDetail>;
-    if (event.detail.scope !== "context-governance") {
+    if (!currentConversationId.value) {
       return;
     }
-    if (!currentConversationId.value || streaming.value) {
+    if (streaming.value) {
+      bufferedConfigRefreshConversationId = currentConversationId.value;
+      bufferedConfigRefreshScope = (
+        detail.scope === "provider-models" || bufferedConfigRefreshScope === "provider-models"
+      )
+        ? "provider-models"
+        : "context-governance";
       return;
     }
-    void tryLoadConversationContextWindow(currentConversationId.value);
+    scheduleConfigRefresh(currentConversationId.value, detail.scope);
   }
 
   if (typeof window !== "undefined") {
-    window.addEventListener(INTERNAL_CONFIG_CHANGED_EVENT, handleInternalConfigChanged);
+    removeGlobalInternalConfigChangedListener?.();
+    const removeListener = subscribeInternalConfigChanged(handleInternalConfigChanged);
+    removeGlobalInternalConfigChangedListener = () => {
+      removeListener();
+      if (removeGlobalInternalConfigChangedListener) {
+        removeGlobalInternalConfigChangedListener = null;
+      }
+    };
     if (getCurrentScope()) {
       onScopeDispose(() => {
-        window.removeEventListener(
-          INTERNAL_CONFIG_CHANGED_EVENT,
-          handleInternalConfigChanged,
-        );
+        clearPendingConfigRefreshTimer();
+        removeGlobalInternalConfigChangedListener?.();
       });
     }
   }
+
+  watch(streaming, (isStreaming) => {
+    if (
+      isStreaming ||
+      !bufferedConfigRefreshConversationId ||
+      currentConversationId.value !== bufferedConfigRefreshConversationId ||
+      !bufferedConfigRefreshScope
+    ) {
+      return;
+    }
+    const conversationId = bufferedConfigRefreshConversationId;
+    const scope = bufferedConfigRefreshScope;
+    bufferedConfigRefreshConversationId = null;
+    bufferedConfigRefreshScope = null;
+    scheduleConfigRefresh(conversationId, scope);
+  });
 
   function invalidateConversationRequests() {
     conversationListRequestId += 1;
@@ -205,6 +280,39 @@ export function createChatStoreModule() {
     conversationContextWindowRequestId += 1;
     conversationRuntimePermissionRequestId += 1;
     conversationTodoRequestId += 1;
+  }
+
+  function scheduleConfigRefresh(
+    conversationId: string,
+    scope: InternalConfigChangedDetail["scope"],
+  ) {
+    pendingConfigRefreshScope = (
+      scope === "provider-models" || pendingConfigRefreshScope === "provider-models"
+    )
+      ? "provider-models"
+      : "context-governance";
+    clearPendingConfigRefreshTimer();
+    pendingConfigRefreshTimer = setTimeout(() => {
+      const refreshScope = pendingConfigRefreshScope;
+      pendingConfigRefreshTimer = null;
+      pendingConfigRefreshScope = null;
+      if (currentConversationId.value !== conversationId || streaming.value) {
+        return;
+      }
+      if (refreshScope === "provider-models") {
+        void refreshConversationProviderModelState(conversationId);
+        return;
+      }
+      void tryLoadConversationContextWindow(conversationId);
+    }, 300);
+  }
+
+  function clearPendingConfigRefreshTimer() {
+    if (!pendingConfigRefreshTimer) {
+      return;
+    }
+    clearTimeout(pendingConfigRefreshTimer);
+    pendingConfigRefreshTimer = null;
   }
 
   async function refreshConversationSummary(
@@ -225,6 +333,24 @@ export function createChatStoreModule() {
     }
 
     await loadConversations();
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
+
+    await tryLoadConversationContextWindow(conversationId);
+  }
+
+  async function refreshConversationProviderModelState(
+    conversationId: string | null = currentConversationId.value,
+  ) {
+    if (!conversationId) {
+      return;
+    }
+
+    await ensureModelSelection(messages.value, {
+      force: true,
+      ...readModelSelectionRefreshInput(messages.value),
+    });
     if (currentConversationId.value !== conversationId) {
       return;
     }
@@ -322,6 +448,10 @@ export function createChatStoreModule() {
       clearCurrentConversationState();
       return;
     }
+    const requestId = ++conversationSelectionRequestId;
+    const previousState = stableConversationState.value ?? readConversationStateSnapshot();
+    const shouldClearMessages = currentConversationId.value !== id;
+    loading.value = true;
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
@@ -330,21 +460,44 @@ export function createChatStoreModule() {
     contextWindowPreview.value = null;
     selectedProvider.value = null;
     selectedModel.value = null;
+    selectedModelSource.value = null;
     pendingRuntimePermissions.value = [];
     todoItems.value = [];
-    loading.value = true;
+    if (shouldClearMessages) {
+      replaceMessages([]);
+      syncChatStreamingState(streamState);
+    }
     try {
       await Promise.all([
         loadConversationDetail(id),
         loadConversationRuntimePermissions(id),
         loadConversationTodo(id),
       ]);
-      await ensureModelSelection(messages.value);
+      if (
+        requestId !== conversationSelectionRequestId ||
+        currentConversationId.value !== id
+      ) {
+        return;
+      }
+      await ensureModelSelection(messages.value, {
+        force: true,
+        ...readModelSelectionRefreshInput(messages.value),
+      });
       await tryLoadConversationContextWindow(id);
       scheduleChatRecoveryWithState(streamState, loadConversationWindowSnapshot);
       await drainQueuedSendRequests();
+    } catch {
+      if (
+        requestId === conversationSelectionRequestId &&
+        currentConversationId.value === id
+      ) {
+        invalidateConversationRequests();
+        restoreConversationStateSnapshot(previousState);
+      }
     } finally {
-      loading.value = false;
+      if (requestId === conversationSelectionRequestId) {
+        loading.value = false;
+      }
     }
   }
 
@@ -365,6 +518,9 @@ export function createChatStoreModule() {
       contextWindowPreview.value = null;
       selectedProvider.value = null;
       selectedModel.value = null;
+      selectedModelSource.value = null;
+      bufferedConfigRefreshConversationId = null;
+      bufferedConfigRefreshScope = null;
       pendingRuntimePermissions.value = [];
       todoItems.value = [];
       replaceMessages([]);
@@ -379,35 +535,68 @@ export function createChatStoreModule() {
   }) {
     selectedProvider.value = selection.provider;
     selectedModel.value = selection.model;
+    selectedModelSource.value = (
+      selection.provider && selection.model
+        ? "manual"
+        : null
+    );
     if (currentConversationId.value && !streaming.value) {
       void tryLoadConversationContextWindow(currentConversationId.value);
     }
   }
 
-  async function ensureModelSelection(existingMessages: ChatMessage[] = []) {
-    await ensureChatModelSelection({
+  async function ensureModelSelection(
+    existingMessages: ChatMessage[] = [],
+    input: {
+      force?: boolean;
+      preferred?: {
+        providerId?: string | null;
+        modelId?: string | null;
+      };
+      preferredSource?: ChatModelSelectionSource;
+      shouldApply?: () => boolean;
+    } = {},
+  ) {
+    return await ensureChatModelSelection({
       selectedProvider,
       selectedModel,
+      selectedSource: selectedModelSource,
       messages: existingMessages,
+      force: input.force,
+      shouldApply: input.shouldApply,
+      preferred: input.preferred,
+      preferredSource: input.preferredSource,
     });
   }
 
   async function sendMessage(input: ChatSendInput) {
-    await ensureModelSelection(messages.value);
     const conversationId = currentConversationId.value;
     if (!conversationId) {
       return;
     }
+    const messageSnapshot = [...messages.value];
+    const resolvedSelection = await ensureModelSelection(messageSnapshot, {
+      shouldApply: () => currentConversationId.value === conversationId,
+    });
+    const effectiveSelection = readQueuedSendSelection(
+      input,
+      resolvedSelection,
+      selectedProvider.value,
+      selectedModel.value,
+    );
 
     appendQueuedSendRequest(conversationId, {
       conversationId,
       id: `queued-send-${++queuedSendSequence}`,
       input: {
         ...input,
-        model: input.model ?? selectedModel.value,
-        provider: input.provider ?? selectedProvider.value,
+        model: effectiveSelection.modelId,
+        provider: effectiveSelection.providerId,
       },
     });
+    if (currentConversationId.value !== conversationId) {
+      return;
+    }
     await drainQueuedSendRequests();
   }
 
@@ -502,16 +691,17 @@ export function createChatStoreModule() {
       return;
     }
     const activeMessage = messages.value.find((entry) => entry.id === messageId);
+    if (!activeMessage || !isStoppableResponseMessage(activeMessage)) {
+      return;
+    }
 
     abortChatStream(streamState);
     discardPendingMessageUpdates(streamState);
     stopChatRecovery(streamState);
-    if (!activeMessage || activeMessage.role === "assistant") {
-      await stopConversationMessageRecord(
-        conversationId,
-        messageId,
-      );
-    }
+    await stopConversationMessageRecord(
+      conversationId,
+      messageId,
+    );
     if (currentConversationId.value === conversationId) {
       applyStoppedStreamingMessage(messageId);
       await refreshConversationTailState(conversationId);
@@ -662,6 +852,7 @@ export function createChatStoreModule() {
     todoItems,
     loading,
     streaming,
+    canStopStreaming,
     currentStreamingMessageId,
     queuedSendCount,
     queuedSendPreviewEntries,
@@ -696,6 +887,36 @@ export function createChatStoreModule() {
     }));
   }
 
+  function readConversationStateSnapshot() {
+    return {
+      conversationId: currentConversationId.value,
+      contextWindowPreview: contextWindowPreview.value,
+      selectedProvider: selectedProvider.value,
+      selectedModel: selectedModel.value,
+      selectedModelSource: selectedModelSource.value,
+      pendingRuntimePermissions: [...pendingRuntimePermissions.value],
+      todoItems: [...todoItems.value],
+      messages: [...messages.value],
+    };
+  }
+
+  function restoreConversationStateSnapshot(
+    snapshot: ReturnType<typeof readConversationStateSnapshot>,
+  ) {
+    currentConversationId.value = snapshot.conversationId;
+    contextWindowPreview.value = snapshot.contextWindowPreview;
+    selectedProvider.value = snapshot.selectedProvider;
+    selectedModel.value = snapshot.selectedModel;
+    selectedModelSource.value = snapshot.selectedModelSource;
+    pendingRuntimePermissions.value = snapshot.pendingRuntimePermissions;
+    todoItems.value = snapshot.todoItems;
+    replaceMessages(snapshot.messages);
+    syncChatStreamingState(streamState);
+    if (snapshot.conversationId) {
+      scheduleChatRecoveryWithState(streamState, loadConversationWindowSnapshot);
+    }
+  }
+
   function appendQueuedSendRequest(conversationId: string, request: QueuedChatSendRequest) {
     writeQueuedSendRequests(conversationId, [
       ...readQueuedSendRequests(conversationId),
@@ -722,6 +943,31 @@ export function createChatStoreModule() {
       ...queuedSendRequestsByConversation.value,
       [conversationId]: requests,
     };
+  }
+
+  function readModelSelectionRefreshInput(existingMessages: ChatMessage[]) {
+    if (
+      selectedModelSource.value === "manual" &&
+      selectedProvider.value &&
+      selectedModel.value
+    ) {
+      return {
+        preferred: {
+          providerId: selectedProvider.value,
+          modelId: selectedModel.value,
+        },
+        preferredSource: "manual" as const,
+      };
+    }
+
+    if (selectedModelSource.value === "history") {
+      return {
+        preferred: findLatestAssistantSelection(existingMessages),
+        preferredSource: "history" as const,
+      };
+    }
+
+    return {};
   }
 }
 
@@ -787,5 +1033,23 @@ function buildEditedUserResendInput(
     ...(payload.parts ?? message.parts
       ? { parts: payload.parts ?? message.parts }
       : {}),
+  };
+}
+
+function readQueuedSendSelection(
+  input: ChatSendInput,
+  resolvedSelection: ResolvedChatModelSelection | null,
+  selectedProviderValue: string | null,
+  selectedModelValue: string | null,
+) {
+  return {
+    modelId: input.model
+      ?? resolvedSelection?.modelId
+      ?? selectedModelValue
+      ?? null,
+    providerId: input.provider
+      ?? resolvedSelection?.providerId
+      ?? selectedProviderValue
+      ?? null,
   };
 }

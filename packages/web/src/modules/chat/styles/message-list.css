@@ -705,6 +705,16 @@
   color: #a6efd0;
 }
 
+.usage-info-toggle {
+  color: rgba(159, 233, 255, 0.82);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.usage-info-toggle:hover {
+  color: #d7f7ff;
+}
+
 .delete-text {
   color: rgba(226, 74, 74, 0.8);
 }
@@ -773,6 +783,45 @@
   border-color: rgba(68, 204, 136, 0.34);
   background: rgba(68, 204, 136, 0.16);
   color: #a6efd0;
+}
+
+.message-usage-panel {
+  min-width: 220px;
+  padding: 12px 14px;
+  margin-left: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(92, 203, 255, 0.18);
+  background: linear-gradient(180deg, rgba(10, 19, 24, 0.82), rgba(6, 10, 18, 0.9));
+  box-shadow: 0 10px 24px rgba(1, 6, 15, 0.14);
+}
+
+.message.user .message-usage-panel {
+  margin-right: 12px;
+  margin-left: 0;
+}
+
+.message-usage-title {
+  font-size: 12px;
+  color: #b6efff;
+  margin-bottom: 10px;
+}
+
+.message-usage-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px 16px;
+  align-items: center;
+}
+
+.message-usage-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.message-usage-value {
+  font-size: 13px;
+  color: var(--text);
+  justify-self: end;
 }
 
 .cursor {

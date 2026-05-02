@@ -21,6 +21,16 @@ export class RuntimeEventLogService {
     return record;
   }
 
+  appendDetachedPluginAudit(entityId: string, settings: EventLogSettings | null | undefined, input: RuntimeEventLogInput): EventLogRecord | null {
+    const maxFileSizeMb = normalizeEventLogSettings(settings).maxFileSizeMb;
+    if (maxFileSizeMb <= 0) {return null;}
+    const record: EventLogRecord = { createdAt: new Date().toISOString(), id: `event-log-${randomUUID()}`, level: input.level, message: input.message, metadata: input.metadata ? structuredClone(input.metadata) : null, type: input.type };
+    const filePath = resolveDetachedPluginAuditFilePath(this.logRootPath, entityId), records = readRuntimeEventLogFile(filePath);
+    records.push(record);
+    writeRuntimeEventLogFile(filePath, trimRuntimeEventLogRecords(records, maxFileSizeMb));
+    return record;
+  }
+
   listLogs(kind: RuntimeEventLogKind, entityId: string, query: EventLogQuery = {}): EventLogListResult {
     const limit = query.limit ?? 50;
     const records = readRuntimeEventLogFile(resolveEventLogFilePath(this.logRootPath, kind, entityId)).reverse()
@@ -29,6 +39,11 @@ export class RuntimeEventLogService {
     const paged = cursorIndex < 0 ? (query.cursor ? [] : records) : records.slice(cursorIndex + 1);
     const items = paged.slice(0, limit);
     return { items, nextCursor: paged.length > limit ? items.at(-1)?.id ?? null : null };
+  }
+
+  deleteLogs(kind: RuntimeEventLogKind, entityId: string): void {
+    const directoryPath = path.dirname(resolveEventLogFilePath(this.logRootPath, kind, entityId));
+    fs.rmSync(directoryPath, { force: true, recursive: true });
   }
 }
 
@@ -63,6 +78,10 @@ function runtimeEventLogMatchesKeyword(record: EventLogRecord, keyword: string):
 
 function resolveEventLogFilePath(rootPath: string, kind: RuntimeEventLogKind, entityId: string): string {
   return path.join(rootPath, kind === 'plugin' ? 'plugins' : kind === 'skill' ? 'skills' : 'mcp', encodeURIComponent(entityId), 'events.json');
+}
+
+function resolveDetachedPluginAuditFilePath(rootPath: string, entityId: string): string {
+  return path.join(rootPath, 'deleted-plugins', encodeURIComponent(entityId), 'events.json');
 }
 
 function resolveEventLogRootPath(): string {

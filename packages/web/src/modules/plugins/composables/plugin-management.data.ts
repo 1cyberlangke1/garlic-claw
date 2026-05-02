@@ -212,6 +212,7 @@ export function deletePluginRecord(pluginName: string) {
 export function normalizeEventQuery(query: PluginEventQuery): PluginEventQuery {
   return {
     limit: Math.min(200, Math.max(1, query.limit ?? 50)),
+    ...(query.cursor?.trim() ? { cursor: query.cursor.trim() } : {}),
     ...(query.level ? { level: query.level } : {}),
     ...(query.type?.trim() ? { type: query.type.trim() } : {}),
     ...(query.keyword?.trim() ? { keyword: query.keyword.trim() } : {}),

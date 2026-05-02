@@ -25,14 +25,7 @@
           />
 
           <div v-if="collapsedEntries.length > 0" class="collapsed-group">
-            <ElButton
-              class="collapsed-toggle"
-              @click="showCollapsed = !showCollapsed"
-            >
-              {{ showCollapsed ? '收起高级配置' : '展开高级配置' }}
-            </ElButton>
-
-            <div v-if="showCollapsed" class="collapsed-items">
+            <div class="collapsed-items">
               <SchemaConfigNodeRenderer
                 v-for="[childKey, childSchema] in collapsedEntries"
                 :key="childKey"
@@ -61,14 +54,7 @@
         />
 
         <div v-if="collapsedEntries.length > 0" class="collapsed-group">
-          <ElButton
-            class="collapsed-toggle"
-            @click="showCollapsed = !showCollapsed"
-          >
-            {{ showCollapsed ? '收起高级配置' : '展开高级配置' }}
-          </ElButton>
-
-          <div v-if="showCollapsed" class="collapsed-items">
+          <div class="collapsed-items">
             <SchemaConfigNodeRenderer
               v-for="[childKey, childSchema] in collapsedEntries"
               :key="childKey"
@@ -258,7 +244,6 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: JsonValue | undefined): void
 }>()
 
-const showCollapsed = ref(false)
 const fieldError = ref<string | null>(null)
 const editorOpen = ref(false)
 const editorDraft = ref('')
@@ -622,7 +607,19 @@ type CheckboxValueType = string | number | boolean
 }
 
 .checkbox-option {
-  margin-right: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editor-button,
+.editor-action {
+  width: fit-content;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
 }
 
 .collapsed-group {

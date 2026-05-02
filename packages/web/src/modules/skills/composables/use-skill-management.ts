@@ -56,6 +56,16 @@ export function useSkillManagement() {
   const enabledCount = computed(() =>
     skills.value.filter((skill) => skill.governance.loadPolicy === 'allow').length,
   )
+  const directoryCount = computed(() => skills.value.length)
+  const deniedCount = computed(() =>
+    skills.value.filter((skill) => skill.governance.loadPolicy === 'deny').length,
+  )
+  const packageCount = computed(() =>
+    skills.value.filter((skill) => skill.assets.length > 0).length,
+  )
+  const executableCount = computed(() =>
+    skills.value.filter((skill) => skill.assets.some((asset) => asset.executable)).length,
+  )
 
   void loadSkills()
 
@@ -188,8 +198,12 @@ export function useSkillManagement() {
     filteredSkills,
     selectedSkillId,
     selectedSkill,
-    enabledCount,
     totalCount,
+    enabledCount,
+    directoryCount,
+    deniedCount,
+    packageCount,
+    executableCount,
     selectSkill,
     updateSkillGovernance,
     refreshSkillEvents,

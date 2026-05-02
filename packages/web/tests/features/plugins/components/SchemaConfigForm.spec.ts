@@ -1,7 +1,9 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SchemaConfigForm from '@/modules/config/components/SchemaConfigForm.vue'
-
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/modules/ai-settings/internal-config-change'
+import * as aiApi from '@/modules/ai-settings/api/ai'
 vi.mock('@/modules/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn().mockResolvedValue([
     {
@@ -38,9 +40,75 @@ vi.mock('@/modules/plugins/api/plugins', () => ({
   ]),
 }))
 
+enableAutoUnmount(afterEach)
+
+const ElOptionStub = defineComponent({
+  name: 'ElOption',
+  props: {
+    label: {
+      type: String,
+      default: '',
+    },
+    value: {
+      type: [String, Number, Boolean],
+      required: false,
+      default: '',
+    },
+  },
+  template: '<option :value="value"><slot>{{ label }}</slot></option>',
+})
+const ElSelectStub = defineComponent({
+  name: 'ElSelect',
+  props: {
+    modelValue: {
+      type: [String, Number, Array, Boolean, Object],
+      required: false,
+      default: '',
+    },
+    multiple: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  emits: ['change', 'update:modelValue'],
+  setup(props, { emit }) {
+    function handleChange(event: Event) {
+      const target = event.target as HTMLSelectElement
+      const value = props.multiple
+        ? [...target.selectedOptions].map((option) => option.value)
+        : target.value
+      emit('update:modelValue', value)
+      emit('change', value)
+    }
+
+    return {
+      handleChange,
+    }
+  },
+  template: '<select :multiple="multiple" :value="multiple ? null : modelValue ?? \'\'" @change="handleChange"><slot /></select>',
+})
+
+function mountSchemaConfigForm(options: Parameters<typeof mount<typeof SchemaConfigForm>>[1]) {
+  return mount(SchemaConfigForm, {
+    ...options,
+    global: {
+      ...options?.global,
+      stubs: {
+        ElOption: ElOptionStub,
+        ElSelect: ElSelectStub,
+        ...options?.global?.stubs,
+      },
+    },
+  })
+}
+
 describe('SchemaConfigForm', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('emits nested config values from object-tree schema', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -85,7 +153,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('drops undeclared legacy keys before saving config', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -132,7 +200,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders AstrBot-style special selector options through host data sources', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -160,7 +228,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders subagent type selector options through host data sources', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -189,7 +257,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders typed option labels for single-select fields', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -224,7 +292,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders list options as multi-select when render type is select', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -261,7 +329,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders condition, collapsed sections, obvious hints and editor actions from schema', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -321,10 +389,6 @@ describe('SchemaConfigForm', () => {
 
     await wrapper.get('select').setValue('advanced')
 
-    expect(wrapper.text()).toContain('展开高级配置')
-
-    await wrapper.get('button.collapsed-toggle').trigger('click')
-
     expect(wrapper.text()).toContain('高级设置')
     expect(wrapper.text()).toContain('注意：')
     expect(wrapper.text()).toContain('谨慎修改')
@@ -333,7 +397,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('shows a clear error when list fields contain invalid JSON', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -358,7 +422,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders builtin runtime-tools config schema as platform-scoped backend options', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -425,12 +489,9 @@ describe('SchemaConfigForm', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('展开高级配置')
     const backendInput = wrapper.get('select.config-input')
     expect((backendInput.element as HTMLSelectElement).value).toBe('native-shell')
     await backendInput.setValue(process.platform === 'win32' ? 'just-bash' : 'native-shell')
-
-    await wrapper.get('button.collapsed-toggle').trigger('click')
 
     expect(wrapper.text()).toContain('bash 输出治理')
     await wrapper.get('button').trigger('click')
@@ -447,5 +508,58 @@ describe('SchemaConfigForm', () => {
         },
       ],
     ])
+  })
+
+  it('refreshes provider selector options after provider-model config changes', async () => {
+    vi.mocked(aiApi.listAiProviders)
+      .mockResolvedValueOnce([
+        {
+          id: 'openai',
+          name: 'OpenAI',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'openai',
+          name: 'OpenAI',
+        },
+        {
+          id: 'deepseek',
+          name: 'DeepSeek',
+        },
+      ])
+
+    const wrapper = mountSchemaConfigForm({
+      props: {
+        saving: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              targetProviderId: {
+                type: 'string',
+                specialType: 'selectProvider',
+              },
+            },
+          },
+          values: {
+            targetProviderId: 'openai',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPromises()
+
+    const options = wrapper.findAll('option').map((node) => node.text())
+    expect(options).toContain('OpenAI')
+    expect(options).toContain('DeepSeek')
   })
 })

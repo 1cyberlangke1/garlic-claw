@@ -14,7 +14,7 @@ import type {
   PluginConversationHistoryMessage,
   PluginConversationHistoryPreviewResult,
 } from '@garlic-claw/shared';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { AiManagementService } from '../ai-management/ai-management.service';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
@@ -28,8 +28,9 @@ const CONTEXT_COMPACTION_VERSION = '1';
 const CONTEXT_COMPACTION_COMMAND_MODEL = 'context-compaction-command';
 const CONTEXT_COMPACTION_COMMAND_PROVIDER = 'system';
 const AUTO_STOP_REPLY = '已完成上下文压缩，本轮不继续生成主回复。';
+const AUTO_COMPACTION_FAILED_REPLY = '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。';
 const CONTEXT_COMPACTION_COMMANDS = ['/compact', '/compress'] as const;
-const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前上下文治理已关闭压缩。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前历史还不足以生成稳定摘要。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
+const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前上下文治理已关闭压缩。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前历史还不足以生成稳定摘要。', 'still-over-budget': '压缩后的上下文仍超过预算，本次未替换历史。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
 const CONTEXT_COMPACTION_ROLE_LABELS: Partial<Record<PluginConversationHistoryMessage['role'], string>> = { assistant: '助手', system: '系统' };
 
 type ModelMessage = { content: string | ChatMessagePart[]; role: 'assistant' | 'system' | 'user' };
@@ -59,6 +60,8 @@ type ContextGovernanceBeforeModelResult =
 @Injectable()
 export class ContextGovernanceService {
   private readonly autoStopConversationIds = new Set<string>();
+  private readonly blockedConversationReplies = new Map<string, string>();
+  private readonly logger = new Logger(ContextGovernanceService.name);
 
   constructor(
     private readonly aiManagementService: AiManagementService,
@@ -98,12 +101,53 @@ export class ContextGovernanceService {
 
   async rewriteHistoryBeforeModel(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
-    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary' || runtimeConfig.mode !== 'auto') {return;}
-    const result = await this.runContextCompaction({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, trigger: 'prepare-model', userId: input.userId });
-    if (result.compacted && !runtimeConfig.allowAutoContinue) {this.autoStopConversationIds.add(input.conversationId);}
+    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return;}
+    try {
+      const result = await this.runContextCompaction({ conversationId: input.conversationId, modelId: input.modelId, providerId: input.providerId, trigger: 'prepare-model', userId: input.userId });
+      if (result.compacted) {
+        this.clearBlockedConversationReply(input.conversationId);
+        if (!runtimeConfig.allowAutoContinue) {this.autoStopConversationIds.add(input.conversationId);}
+        return;
+      }
+      if (result.reason && result.reason !== 'threshold-not-reached') {
+        this.blockConversationAfterCompactionFailure(input.conversationId, result.reason);
+      } else {
+        this.clearBlockedConversationReply(input.conversationId);
+      }
+    } catch (error) {
+      this.blockConversationAfterCompactionFailure(input.conversationId, error);
+    }
+  }
+
+  async rewriteHistoryAfterCompletedResponse(input: { conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {
+    const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
+    if (!runtimeConfig.enabled || runtimeConfig.strategy !== 'summary') {return;}
+    try {
+      const result = await this.runContextCompaction({
+        conversationId: input.conversationId,
+        modelId: input.modelId,
+        providerId: input.providerId,
+        trigger: 'prepare-model',
+        userId: input.userId,
+      });
+      if (result.compacted) {
+        this.clearBlockedConversationReply(input.conversationId);
+        return;
+      }
+      if (result.reason && result.reason !== 'threshold-not-reached') {
+        this.blockConversationAfterCompactionFailure(input.conversationId, result.reason);
+      }
+    } catch (error) {
+      this.blockConversationAfterCompactionFailure(input.conversationId, error);
+    }
   }
 
   async applyBeforeModel(input: ContextGovernanceBeforeModelInput): Promise<ContextGovernanceBeforeModelResult> {
+    const blockedReply = this.blockedConversationReplies.get(input.conversationId);
+    if (blockedReply) {
+      this.blockedConversationReplies.delete(input.conversationId);
+      return { action: 'short-circuit', assistantContent: blockedReply, assistantParts: [{ text: blockedReply, type: 'text' }], modelId: input.modelId, providerId: input.providerId, reason: 'context-compaction:failed' };
+    }
     if (this.autoStopConversationIds.delete(input.conversationId)) {
       return { action: 'short-circuit', assistantContent: AUTO_STOP_REPLY, assistantParts: [{ text: AUTO_STOP_REPLY, type: 'text' }], modelId: input.modelId, providerId: input.providerId, reason: 'context-compaction:auto-stop' };
     }
@@ -144,13 +188,14 @@ export class ContextGovernanceService {
     const history = readConversationHistorySnapshot(this.runtimeHostConversationRecordService.readConversationHistory(input.conversationId, input.userId));
     const runtimeConfig = this.contextGovernanceSettingsService.readRuntimeConfig().contextCompaction;
     const windowTarget = this.readContextWindowTarget(input.providerId, input.modelId);
-    const maxWindowTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.strategy === 'sliding' ? runtimeConfig.slidingWindowUsagePercent : 100);
+    const contextLength = windowTarget.contextLength;
+    const windowBudgetTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.strategy === 'sliding' ? runtimeConfig.slidingWindowUsagePercent : 100);
     if (!runtimeConfig.enabled) {
       const includedMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage);
       const preview = this.previewHistoryMessages(input.conversationId, includedMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
-      return createContextWindowPreview(runtimeConfig, { enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), maxWindowTokens, strategy: runtimeConfig.strategy });
+      return createContextWindowPreview(runtimeConfig, { contextLength, enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), strategy: runtimeConfig.strategy });
     }
-    return runtimeConfig.strategy === 'sliding' ? this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, windowTarget.modelId, windowTarget.providerId, input.userId) : this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, maxWindowTokens, windowTarget.modelId, windowTarget.providerId, input.userId);
+    return runtimeConfig.strategy === 'sliding' ? this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, windowBudgetTokens, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId) : this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId);
   }
 
   listCommandCatalogEntries(): Array<{ aliases: string[]; canonicalCommand: string; commandId: string; conflictTriggers: string[]; connected: boolean; defaultEnabled: boolean; description: string; kind: 'command'; path: string[]; pluginDisplayName: string; pluginId: string; runtimeKind: 'local'; source: 'manifest'; variants: string[] }> {
@@ -216,6 +261,9 @@ export class ContextGovernanceService {
     const predictedMessages = applyContextCompaction({ compactionId, coveredMessageIds, createdAt, historyMessages: history.messages, markerVisible: runtimeConfig.showCoveredMarker, summaryMessageId, summaryText });
     const afterState = readContextCompactionHistoryState(predictedMessages, omitTrailingPendingAssistant);
     const afterPreview = this.previewHistoryMessages(input.conversationId, afterState.modelMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
+    if (afterPreview.estimatedTokens >= thresholdTokens) {
+      return { afterPreview, beforePreview, compacted: false, reason: 'still-over-budget', thresholdTokens };
+    }
     const nextMessages = finalizeContextCompactionMessages({ afterPreview, beforePreview, compactionId, coveredCount: coveredMessageIds.size, createdAt, messages: predictedMessages, modelId: compactionModelTarget.modelId, providerId: compactionModelTarget.providerId, showCoveredMarker: runtimeConfig.showCoveredMarker, summaryMessageId, trigger: input.trigger });
     const replaced = this.runtimeHostConversationRecordService.replaceConversationHistory(input.conversationId, asJsonObject({ expectedRevision: history.revision, messages: nextMessages }), input.userId) as { changed?: boolean; revision?: string };
     return { afterPreview, beforePreview, compacted: true, coveredMessageCount: coveredMessageIds.size, revision: typeof replaced.revision === 'string' ? replaced.revision : undefined, summaryMessageId };
@@ -288,24 +336,25 @@ export class ContextGovernanceService {
     conversationId: string,
     historyMessages: PluginConversationHistoryMessage[],
     runtimeConfig: ReturnType<ContextGovernanceSettingsService['readRuntimeConfig']>['contextCompaction'],
-    maxWindowTokens: number,
+    windowBudgetTokens: number,
+    contextLength: number,
     modelId: string,
     providerId: string,
     userId?: string,
   ): ConversationContextWindowPreview {
     const candidates = readContextWindowCompactedHistory(historyMessages).filter((entry): entry is ContextWindowCandidateMessage => entry.modelMessage !== null);
-    const { preview, selected } = selectMessagesForWindow(candidates, runtimeConfig.keepRecentMessages, maxWindowTokens, (selectedEntries) => (
+    const { preview, selected } = selectMessagesForWindow(candidates, runtimeConfig.keepRecentMessages, windowBudgetTokens, (selectedEntries) => (
       this.previewHistoryMessages(conversationId, selectedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId)
     ));
     const includedMessageIds = selected.map((entry) => entry.id);
-    return createContextWindowPreview(runtimeConfig, { enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: candidates.map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, maxWindowTokens, strategy: 'sliding' });
+    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: candidates.map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, strategy: 'sliding' });
   }
 
   private readSummaryContextWindowPreview(
     conversationId: string,
     historyMessages: PluginConversationHistoryMessage[],
     runtimeConfig: ReturnType<ContextGovernanceSettingsService['readRuntimeConfig']>['contextCompaction'],
-    maxWindowTokens: number,
+    contextLength: number,
     modelId: string,
     providerId: string,
     userId?: string,
@@ -313,7 +362,7 @@ export class ContextGovernanceService {
     const entries = readContextWindowCompactedHistory(historyMessages);
     const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null);
     const includedMessageIds = includedEntries.map((entry) => entry.id);
-    return createContextWindowPreview(runtimeConfig, { enabled: true, estimatedTokens: this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId).estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, maxWindowTokens, strategy: runtimeConfig.strategy });
+    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId).estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, strategy: runtimeConfig.strategy });
 }
 
   private async executeContextCompactionCommand(input: {
@@ -323,17 +372,27 @@ export class ContextGovernanceService {
     providerId: string;
     userId?: string;
   }): Promise<DeferredInternalCommandResolution> {
-    const result = input.commandInput.hasUnexpectedArgs
-      ? null
-      : await this.runContextCompaction({
+    let result: ContextCompactionRunResult | null = null;
+    let failureReason: string | null = null;
+    if (!input.commandInput.hasUnexpectedArgs) {
+      try {
+        result = await this.runContextCompaction({
           conversationId: input.conversationId,
           modelId: input.modelId,
           providerId: input.providerId,
           trigger: 'manual',
           userId: input.userId,
         });
+        if (result.compacted) {
+          this.clearBlockedConversationReply(input.conversationId);
+        }
+      } catch (error) {
+        failureReason = this.readCompactionFailureDetail(error);
+      }
+    }
     const assistantContent = input.commandInput.hasUnexpectedArgs
       ? '上下文压缩命令不接受额外参数。\n可用命令：/compact 或 /compress'
+      : failureReason ? `${AUTO_COMPACTION_FAILED_REPLY}\n原因：${failureReason}`
       : !result ? '本次未执行上下文压缩。'
         : result.compacted ? (result.coveredMessageCount ? `已压缩上下文，覆盖 ${result.coveredMessageCount} 条历史消息。` : '已完成上下文压缩。')
           : (CONTEXT_COMPACTION_REASON_LABELS[result.reason ?? ''] ?? '本次未执行上下文压缩。');
@@ -345,11 +404,32 @@ export class ContextGovernanceService {
       reason: 'context-compaction:command',
     };
   }
+
+  private blockConversationAfterCompactionFailure(conversationId: string, failure: string | unknown): void {
+    const detail = this.readCompactionFailureDetail(failure);
+    const reply = detail ? `${AUTO_COMPACTION_FAILED_REPLY}\n原因：${detail}` : AUTO_COMPACTION_FAILED_REPLY;
+    this.blockedConversationReplies.set(conversationId, reply);
+    this.logger.warn(`会话 ${conversationId} 自动压缩失败，已停止后续继续生成: ${detail || 'unknown'}`);
+  }
+
+  private clearBlockedConversationReply(conversationId: string): void {
+    this.blockedConversationReplies.delete(conversationId);
+  }
+
+  private readCompactionFailureDetail(failure: string | unknown): string {
+    if (typeof failure === 'string') {
+      return CONTEXT_COMPACTION_REASON_LABELS[failure] ?? failure;
+    }
+    if (failure instanceof Error) {
+      return failure.message.trim() || '压缩模型请求失败';
+    }
+    return '压缩模型请求失败';
+  }
 }
 
 function createContextWindowPreview(
   runtimeConfig: ReturnType<ContextGovernanceSettingsService['readRuntimeConfig']>['contextCompaction'],
-  input: Pick<ConversationContextWindowPreview, 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'maxWindowTokens' | 'strategy'> & { excludedMessageIds?: string[] },
+  input: Pick<ConversationContextWindowPreview, 'contextLength' | 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'strategy'> & { excludedMessageIds?: string[] },
 ): ConversationContextWindowPreview {
   return {
     ...input,

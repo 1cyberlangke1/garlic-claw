@@ -118,6 +118,16 @@ export class RuntimeHostPluginRuntimeService implements OnApplicationBootstrap, 
     return deleted;
   }
 
+  deletePluginRuntimeState(pluginId: string): void {
+    for (const job of this.cronJobs.get(pluginId) ?? []) {
+      this.clearCronTimer(job.id);
+    }
+    this.cronJobs.delete(pluginId);
+    this.stateStore.delete(pluginId);
+    this.storageStore.delete(pluginId);
+    this.persistRuntimeState();
+  }
+
   deleteStoreValue(surface: 'state' | 'storage', pluginId: string, context: PluginCallContext, params: JsonObject): JsonValue {
     const deleted = this.getPluginStore(surface, pluginId).delete(this.buildScopedKey(context, params));
     if (deleted) {

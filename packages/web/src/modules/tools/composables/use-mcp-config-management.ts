@@ -7,6 +7,7 @@ import type {
   McpServerConfig,
 } from '@garlic-claw/shared'
 import { useAsyncState } from '@/shared/composables/use-async-state'
+import { emitInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 import {
   createMcpServerConfig,
   dedupeMcpEventLogs,
@@ -38,6 +39,8 @@ export function useMcpConfigManagement() {
   const eventLogs = shallowRef<EventLogRecord[]>([])
   const eventQuery = shallowRef<EventLogQuery>({ limit: 50 })
   const eventNextCursor = ref<string | null>(null)
+  let refreshRequestId = 0
+  let activeEventRequestId = 0
 
   const servers = computed(() => snapshot.value.servers)
   const selectedServer = computed(() =>
@@ -49,10 +52,14 @@ export function useMcpConfigManagement() {
   })
 
   async function refresh(preferredName = selectedServerName.value) {
+    const requestId = ++refreshRequestId
     loading.value = true
     requestState.clearError()
     try {
       const nextSnapshot = await loadMcpConfigSnapshot()
+      if (requestId !== refreshRequestId) {
+        return
+      }
       snapshot.value = nextSnapshot
       const fallback = nextSnapshot.servers.find((server) => server.name === preferredName)
         ?? nextSnapshot.servers[0]
@@ -64,18 +71,26 @@ export function useMcpConfigManagement() {
         clearServerEvents()
       }
     } catch (caughtError) {
+      if (requestId !== refreshRequestId) {
+        return
+      }
       requestState.setError(caughtError, '加载 MCP 配置失败')
     } finally {
-      loading.value = false
+      if (requestId === refreshRequestId) {
+        loading.value = false
+      }
     }
   }
 
   function selectServer(name: string | null) {
+    activeEventRequestId += 1
     selectedServerName.value = servers.value.some((server) => server.name === name)
       ? name
       : null
+    eventQuery.value = readBaseMcpEventQuery({ limit: 50 })
     if (selectedServerName.value) {
-      void refreshServerEvents(undefined, selectedServerName.value)
+      clearServerEvents()
+      void refreshServerEvents(eventQuery.value, selectedServerName.value)
       return
     }
     clearServerEvents()
@@ -86,6 +101,7 @@ export function useMcpConfigManagement() {
     requestState.clearError()
     try {
       const saved = await createMcpServerConfig(input)
+      emitInternalConfigChanged({ scope: 'mcp' })
       await refresh(saved.name)
       uiStore.notify('MCP server 已创建')
       return saved
@@ -101,6 +117,7 @@ export function useMcpConfigManagement() {
     requestState.clearError()
     try {
       const saved = await updateMcpServerConfig(currentName, input)
+      emitInternalConfigChanged({ scope: 'mcp' })
       await refresh(saved.name)
       uiStore.notify('MCP server 已更新')
       return saved
@@ -116,6 +133,7 @@ export function useMcpConfigManagement() {
     requestState.clearError()
     try {
       const result = await deleteMcpServerConfig(name)
+      emitInternalConfigChanged({ scope: 'mcp' })
       await refresh()
       uiStore.notify('MCP server 已删除')
       return result
@@ -152,24 +170,33 @@ export function useMcpConfigManagement() {
     query: EventLogQuery = eventQuery.value,
     serverName = selectedServerName.value,
   ) {
+    const baseQuery = readBaseMcpEventQuery(query)
     if (!serverName) {
       clearServerEvents()
-      eventQuery.value = normalizeMcpEventQuery(query)
+      eventQuery.value = baseQuery
       return
     }
 
+    const requestId = ++activeEventRequestId
     eventLoading.value = true
     requestState.clearError()
     try {
-      const normalized = normalizeMcpEventQuery(query)
-      const result = await loadMcpServerEvents(serverName, normalized)
-      eventQuery.value = normalized
+      const result = await loadMcpServerEvents(serverName, baseQuery)
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
+      eventQuery.value = baseQuery
       eventLogs.value = result.items
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
       requestState.setError(caughtError, '加载 MCP 事件日志失败')
     } finally {
-      eventLoading.value = false
+      if (requestId === activeEventRequestId) {
+        eventLoading.value = false
+      }
     }
   }
 
@@ -177,26 +204,35 @@ export function useMcpConfigManagement() {
     query?: EventLogQuery,
     serverName = selectedServerName.value,
   ) {
-    const normalized = normalizeMcpEventQuery(query ?? eventQuery.value)
+    const baseQuery = readBaseMcpEventQuery(query ?? eventQuery.value)
     const cursor = query?.cursor ?? eventNextCursor.value
     if (!serverName || !cursor) {
       return
     }
 
+    const requestId = ++activeEventRequestId
     eventLoading.value = true
     requestState.clearError()
     try {
       const result = await loadMcpServerEvents(serverName, {
-        ...normalized,
+        ...baseQuery,
         cursor,
       })
-      eventQuery.value = normalized
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
+      eventQuery.value = baseQuery
       eventLogs.value = dedupeMcpEventLogs([...eventLogs.value, ...result.items])
       eventNextCursor.value = result.nextCursor
     } catch (caughtError) {
+      if (requestId !== activeEventRequestId || selectedServerName.value !== serverName) {
+        return
+      }
       requestState.setError(caughtError, '加载更多 MCP 事件日志失败')
     } finally {
-      eventLoading.value = false
+      if (requestId === activeEventRequestId) {
+        eventLoading.value = false
+      }
     }
   }
 
@@ -229,4 +265,10 @@ export function useMcpConfigManagement() {
     refreshServerEvents,
     loadMoreServerEvents,
   }
+}
+
+function readBaseMcpEventQuery(query: EventLogQuery): EventLogQuery {
+  const normalized = normalizeMcpEventQuery(query)
+  const { cursor: _cursor, ...baseQuery } = normalized
+  return baseQuery
 }

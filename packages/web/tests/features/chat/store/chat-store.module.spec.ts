@@ -30,6 +30,10 @@ vi.mock('@/modules/chat/modules/chat-stream.module', () => ({
 
 vi.mock('@/modules/chat/modules/chat-model-selection', () => ({
   ensureChatModelSelection: vi.fn(),
+  findLatestAssistantSelection: vi.fn(() => ({
+    providerId: null,
+    modelId: null,
+  })),
 }))
 
 import * as chatConversationData from '@/modules/chat/modules/chat-conversation.data'
@@ -43,13 +47,13 @@ describe('createChatStoreModule', () => {
     vi.mocked(chatConversationData.deleteConversationMessageRecord).mockReset()
     vi.mocked(chatConversationData.deleteConversationRecord).mockReset()
     vi.mocked(chatConversationData.loadConversationContextWindowRecord).mockReset().mockResolvedValue({
+      contextLength: 256,
       enabled: true,
       estimatedTokens: 80,
       excludedMessageIds: [],
       frontendMessageWindowSize: 200,
       includedMessageIds: [],
       keepRecentMessages: 6,
-      maxWindowTokens: 256,
       slidingWindowUsagePercent: 50,
       strategy: 'summary',
     })
@@ -274,6 +278,51 @@ describe('createChatStoreModule', () => {
     expect(store.queuedSendCount.value).toBe(0)
   })
 
+  it('keeps a send request on the original conversation when model selection resolves after the user switches conversations', async () => {
+    let resolveSelection: (() => void) | null = null
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockImplementation(
+      async ({ selectedProvider, selectedModel, selectedSource, shouldApply }) =>
+        new Promise((resolve) => {
+          resolveSelection = () => {
+            if (!shouldApply || shouldApply()) {
+              selectedProvider.value = 'provider-a'
+              selectedModel.value = 'model-a'
+              if (selectedSource) {
+                selectedSource.value = 'default'
+              }
+            }
+            resolve({
+              modelId: 'model-a',
+              providerId: 'provider-a',
+              source: 'default',
+            })
+          }
+        }),
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+
+    const sendTask = store.sendMessage({
+      content: '旧会话消息',
+    })
+    store.currentConversationId.value = 'conversation-2'
+    resolveSelection?.()
+    await sendTask
+
+    expect(chatStreamModule.dispatchSendMessage).not.toHaveBeenCalled()
+    expect(store.selectedProvider.value).toBeNull()
+    expect(store.selectedModel.value).toBeNull()
+    expect(store.queuedSendCount.value).toBe(0)
+
+    store.currentConversationId.value = 'conversation-1'
+    expect(store.popQueuedSendRequestTail()).toEqual({
+      content: '旧会话消息',
+      model: 'model-a',
+      provider: 'provider-a',
+    })
+  })
+
   it('drains queued messages after the user stops the current reply', async () => {
     vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
       state.currentStreamingMessageId.value = null
@@ -297,6 +346,20 @@ describe('createChatStoreModule', () => {
     store.currentConversationId.value = 'conversation-1'
     store.currentStreamingMessageId.value = 'assistant-1'
     store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '正在生成中的回复',
+        status: 'streaming',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
 
     await store.sendMessage({
       content: '停止后发送',
@@ -622,6 +685,196 @@ describe('createChatStoreModule', () => {
       expect.objectContaining({
         content: '检查停止后的上下文窗口',
       }),
+    ])
+  })
+
+  it('stops display result messages and releases the queue', async () => {
+    vi.mocked(chatStreamModule.syncChatStreamingState).mockImplementation((state) => {
+      state.currentStreamingMessageId.value = null
+      state.streaming.value = false
+    })
+    vi.mocked(chatConversationData.stopConversationMessageRecord).mockResolvedValue(undefined)
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.currentStreamingMessageId.value = 'display-result-1'
+    store.streaming.value = true
+    store.messages.value = [
+      {
+        id: 'display-result-1',
+        role: 'display',
+        content: '',
+        status: 'pending',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: 'system',
+        model: 'context-compaction-command',
+        metadata: {
+          annotations: [
+            {
+              data: { variant: 'result' },
+              owner: 'conversation.display-message',
+              type: 'display-message',
+              version: '1',
+            },
+          ],
+        },
+      },
+    ]
+    await store.sendMessage({
+      content: '排队中的下一条消息',
+    })
+
+    expect(store.canStopStreaming.value).toBe(true)
+    expect(store.queuedSendCount.value).toBe(1)
+
+    await store.stopStreaming()
+
+    expect(chatConversationData.stopConversationMessageRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      'display-result-1',
+    )
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'display-result-1',
+        status: 'stopped',
+      }),
+    ])
+    expect(store.queuedSendCount.value).toBe(0)
+  })
+
+  it('restores the previous conversation state when switching to another conversation fails', async () => {
+    vi.mocked(chatConversationData.loadConversationMessages).mockImplementation(
+      async (conversationId: string) => {
+        if (conversationId === 'conversation-2') {
+          throw new Error('load failed')
+        }
+        return []
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.setModelSelection({
+      provider: 'provider-a',
+      model: 'model-a',
+    })
+    store.contextWindowPreview.value = {
+      contextLength: 256,
+      enabled: true,
+      estimatedTokens: 80,
+      excludedMessageIds: [],
+      frontendMessageWindowSize: 200,
+      includedMessageIds: [],
+      keepRecentMessages: 6,
+      slidingWindowUsagePercent: 50,
+      strategy: 'summary',
+    }
+    store.pendingRuntimePermissions.value = [
+      {
+        id: 'permission-1',
+        conversationId: 'conversation-1',
+        backendKind: 'just-bash',
+        toolName: 'bash',
+        operations: ['command.execute'],
+        createdAt: '2026-05-01T00:00:00.000Z',
+        summary: '执行 pwd',
+        resolving: false,
+      },
+    ]
+    store.todoItems.value = [
+      { content: '旧会话待办', priority: 'high', status: 'in_progress' },
+    ]
+    store.messages.value = [
+      createChatMessage('message-1', '旧会话消息'),
+    ]
+
+    await expect(store.selectConversation('conversation-2')).resolves.toBeUndefined()
+
+    expect(store.currentConversationId.value).toBe('conversation-1')
+    expect(store.selectedProvider.value).toBe('provider-a')
+    expect(store.selectedModel.value).toBe('model-a')
+    expect(store.todoItems.value).toEqual([
+      { content: '旧会话待办', priority: 'high', status: 'in_progress' },
+    ])
+    expect(store.messages.value).toEqual([
+      createChatMessage('message-1', '旧会话消息'),
+    ])
+  })
+
+  it('restores the last stable conversation state when a newer switch fails during an older pending switch', async () => {
+    let resolveConversation2Messages: ((messages: ChatMessage[]) => void) | null = null
+    vi.mocked(chatConversationData.loadConversationMessages).mockImplementation(
+      async (conversationId: string) => {
+        if (conversationId === 'conversation-2') {
+          return await new Promise<ChatMessage[]>((resolve) => {
+            resolveConversation2Messages = resolve
+          })
+        }
+        if (conversationId === 'conversation-3') {
+          throw new Error('load failed')
+        }
+        return []
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.setModelSelection({
+      provider: 'provider-a',
+      model: 'model-a',
+    })
+    store.contextWindowPreview.value = {
+      contextLength: 256,
+      enabled: true,
+      estimatedTokens: 80,
+      excludedMessageIds: [],
+      frontendMessageWindowSize: 200,
+      includedMessageIds: [],
+      keepRecentMessages: 6,
+      slidingWindowUsagePercent: 50,
+      strategy: 'summary',
+    }
+    store.pendingRuntimePermissions.value = [
+      {
+        id: 'permission-1',
+        conversationId: 'conversation-1',
+        backendKind: 'just-bash',
+        toolName: 'bash',
+        operations: ['command.execute'],
+        createdAt: '2026-05-01T00:00:00.000Z',
+        summary: '执行 pwd',
+        resolving: false,
+      },
+    ]
+    store.todoItems.value = [
+      { content: '旧会话待办', priority: 'high', status: 'in_progress' },
+    ]
+    store.messages.value = [
+      createChatMessage('message-1', '旧会话消息'),
+    ]
+
+    const firstSwitch = store.selectConversation('conversation-2')
+    await Promise.resolve()
+    await expect(store.selectConversation('conversation-3')).resolves.toBeUndefined()
+
+    expect(store.currentConversationId.value).toBe('conversation-1')
+    expect(store.selectedProvider.value).toBe('provider-a')
+    expect(store.selectedModel.value).toBe('model-a')
+    expect(store.todoItems.value).toEqual([
+      { content: '旧会话待办', priority: 'high', status: 'in_progress' },
+    ])
+    expect(store.messages.value).toEqual([
+      createChatMessage('message-1', '旧会话消息'),
+    ])
+
+    resolveConversation2Messages?.([])
+    await firstSwitch
+
+    expect(store.currentConversationId.value).toBe('conversation-1')
+    expect(store.messages.value).toEqual([
+      createChatMessage('message-1', '旧会话消息'),
     ])
   })
 
@@ -1015,6 +1268,62 @@ describe('createChatStoreModule', () => {
     ])
   })
 
+  it('clears previous conversation messages immediately while the next conversation detail is still loading', async () => {
+    let resolveDetail: ((value: ChatMessage[]) => void) | null = null
+    vi.mocked(chatConversationData.loadConversationMessages).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDetail = resolve
+        }),
+    )
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockResolvedValue()
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.messages.value = [
+      {
+        id: 'assistant-old',
+        role: 'assistant',
+        content: '上一会话内容',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ]
+
+    const selectTask = store.selectConversation('conversation-2')
+
+    expect(store.currentConversationId.value).toBe('conversation-2')
+    expect(store.messages.value).toEqual([])
+
+    resolveDetail?.([
+      {
+        id: 'assistant-new',
+        role: 'assistant',
+        content: '当前会话内容',
+        status: 'completed',
+        parts: [],
+        toolCalls: [],
+        toolResults: [],
+        error: null,
+        provider: null,
+        model: null,
+      },
+    ])
+    await selectTask
+
+    expect(store.messages.value).toEqual([
+      expect.objectContaining({
+        id: 'assistant-new',
+        content: '当前会话内容',
+      }),
+    ])
+  })
+
   it('routes recovery polling through the same guarded conversation detail loader', async () => {
     const initialDetail = [
       {
@@ -1188,13 +1497,13 @@ describe('createChatStoreModule', () => {
     ])
     vi.mocked(chatConversationData.loadConversationTodoRecord).mockResolvedValue([])
     vi.mocked(chatConversationData.loadConversationContextWindowRecord).mockResolvedValue({
+      contextLength: 256,
       enabled: true,
       estimatedTokens: 80,
       excludedMessageIds: ['message-2'],
       frontendMessageWindowSize: 2,
       includedMessageIds: ['message-3'],
       keepRecentMessages: 1,
-      maxWindowTokens: 256,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     })
@@ -1217,7 +1526,7 @@ describe('createChatStoreModule', () => {
     expect(chatConversationData.loadConversationMessages).toHaveBeenCalledTimes(1)
   })
 
-  it('refreshes the current conversation window when context compaction config changes', async () => {
+  it('refreshes the current conversation window when relevant AI config changes', async () => {
     vi.mocked(chatConversationData.loadConversationMessages).mockResolvedValue([
       createChatMessage('message-1', '第一条'),
     ])
@@ -1231,7 +1540,12 @@ describe('createChatStoreModule', () => {
         scope: 'context-governance',
       },
     }))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 350))
 
     expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
       'conversation-1',
@@ -1240,6 +1554,7 @@ describe('createChatStoreModule', () => {
         providerId: null,
       },
     )
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledTimes(1)
     expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
   })
 
@@ -1261,6 +1576,99 @@ describe('createChatStoreModule', () => {
       },
     )
     expect(chatConversationData.loadConversationMessages).not.toHaveBeenCalled()
+  })
+
+  it('recomputes selected provider and model after provider-model config changes', async () => {
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockImplementation(
+      async ({ selectedProvider, selectedModel, selectedSource, force }) => {
+        if (!force) {
+          return
+        }
+        selectedProvider.value = 'provider-b'
+        selectedModel.value = 'model-b'
+        if (selectedSource) {
+          selectedSource.value = 'default'
+        }
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.setModelSelection({
+      provider: 'provider-a',
+      model: 'model-a',
+    })
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(chatModelSelection.ensureChatModelSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        force: true,
+      }),
+    )
+    expect(store.selectedProvider.value).toBe('provider-b')
+    expect(store.selectedModel.value).toBe('model-b')
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        modelId: 'model-b',
+        providerId: 'provider-b',
+      },
+    )
+  })
+
+  it('replays provider-model refresh after streaming ends', async () => {
+    vi.mocked(chatModelSelection.ensureChatModelSelection).mockImplementation(
+      async ({ selectedProvider, selectedModel, selectedSource, force }) => {
+        if (!force) {
+          return
+        }
+        selectedProvider.value = 'provider-stream'
+        selectedModel.value = 'model-stream'
+        if (selectedSource) {
+          selectedSource.value = 'default'
+        }
+      },
+    )
+
+    const store = createChatStoreModule()
+    store.currentConversationId.value = 'conversation-1'
+    store.streaming.value = true
+    store.setModelSelection({
+      provider: 'provider-a',
+      model: 'model-a',
+    })
+    vi.clearAllMocks()
+
+    window.dispatchEvent(new CustomEvent(INTERNAL_CONFIG_CHANGED_EVENT, {
+      detail: {
+        scope: 'provider-models',
+      },
+    }))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(chatModelSelection.ensureChatModelSelection).not.toHaveBeenCalled()
+    store.streaming.value = false
+    await new Promise((resolve) => setTimeout(resolve, 350))
+
+    expect(chatModelSelection.ensureChatModelSelection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        force: true,
+      }),
+    )
+    expect(chatConversationData.loadConversationContextWindowRecord).toHaveBeenCalledWith(
+      'conversation-1',
+      {
+        modelId: 'model-stream',
+        providerId: 'provider-stream',
+      },
+    )
   })
 })
 

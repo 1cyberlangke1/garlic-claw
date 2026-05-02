@@ -295,6 +295,15 @@
               class="message-actions"
             >
               <button
+                v-if="row.message.id && shouldShowUsageInfoToggle(row.message)"
+                type="button"
+                class="action-text usage-info-toggle"
+                :aria-expanded="isUsageDetailsExpanded(row.message)"
+                @click="toggleUsageDetails(row.message.id)"
+              >
+                [i]
+              </button>
+              <button
                 v-if="row.message.role === 'user'"
                 type="button"
                 class="action-text edit-text"
@@ -318,6 +327,28 @@
                 删除
               </button>
             </div>
+            <div
+              v-if="isUsageDetailsExpanded(row.message) && readAssistantUsage(row.message)"
+              class="message-usage-panel"
+            >
+              <div class="message-usage-title">本次响应用量</div>
+              <div class="message-usage-grid">
+                <span class="message-usage-label">输入 token</span>
+                <strong class="message-usage-value">
+                  {{ readAssistantUsage(row.message)?.inputTokens }}
+                </strong>
+                <template v-if="readAssistantUsage(row.message)?.cachedInputTokens !== undefined">
+                  <span class="message-usage-label">缓存 token</span>
+                  <strong class="message-usage-value">
+                    {{ readAssistantUsage(row.message)?.cachedInputTokens }}
+                  </strong>
+                </template>
+                <span class="message-usage-label">输出 token</span>
+                <strong class="message-usage-value">
+                  {{ readAssistantUsage(row.message)?.outputTokens }}
+                </strong>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -339,6 +370,7 @@ import {
 } from "vue";
 
 import type {
+  AiModelUsage,
   ChatMessageAnnotation,
   ChatMessageCustomBlock,
   ChatMessagePart,
@@ -366,6 +398,12 @@ interface ToolTimelineEntry {
   toolCallId?: string;
   toolName: string;
   value: JsonValue;
+}
+
+interface MessageModelUsageSummary extends AiModelUsage {
+  cachedInputTokens?: number;
+  modelId: string;
+  providerId: string;
 }
 
 const AUTO_SCROLL_THRESHOLD = 96;
@@ -403,6 +441,7 @@ const messagesEl = ref<HTMLElement | null>(null);
 const renderedMessages = shallowRef<ChatMessage[]>([]);
 const editingMessageId = ref<string | null>(null);
 const editingText = ref("");
+const expandedUsageMessageId = ref<string | null>(null);
 const shouldStickToBottom = ref(true);
 const markdownCache = markRaw(new Map<string, string>());
 
@@ -752,6 +791,12 @@ function cancelEdit() {
   editingText.value = "";
 }
 
+function toggleUsageDetails(messageId: string) {
+  expandedUsageMessageId.value = expandedUsageMessageId.value === messageId
+    ? null
+    : messageId;
+}
+
 function saveEdit(message: ChatMessage) {
   if (!message.id) {
     return;
@@ -793,6 +838,43 @@ function hasEditableImages(message: ChatMessage): boolean {
 
 function assistantCustomBlocks(message: ChatMessage): ChatMessageCustomBlock[] {
   return message.role === "assistant" ? message.metadata?.customBlocks ?? [] : [];
+}
+
+function readAssistantUsage(message: ChatMessage): MessageModelUsageSummary | null {
+  if (message.role !== "assistant") {
+    return null;
+  }
+  const usageAnnotations = [...(message.metadata?.annotations ?? [])]
+    .reverse()
+    .flatMap((entry) => (
+      entry.owner === "conversation.model-usage" &&
+        entry.type === "model-usage" &&
+        entry.version === "1" &&
+        isMessageModelUsageSummary(entry.data)
+        ? [entry.data]
+        : []
+    ));
+  if (usageAnnotations.length === 0) {
+    return null;
+  }
+  if (message.provider && message.model) {
+    const exactMatch = usageAnnotations.find((entry) => (
+      entry.providerId === message.provider &&
+      entry.modelId === message.model
+    ));
+    if (exactMatch) {
+      return exactMatch;
+    }
+  }
+  return usageAnnotations[0] ?? null;
+}
+
+function shouldShowUsageInfoToggle(message: ChatMessage): boolean {
+  return Boolean(message.id && readAssistantUsage(message));
+}
+
+function isUsageDetailsExpanded(message: ChatMessage): boolean {
+  return Boolean(message.id && expandedUsageMessageId.value === message.id);
 }
 
 function customBlockKindLabel(block: ChatMessageCustomBlock): string {
@@ -1035,8 +1117,25 @@ function contextCompactionTriggerLabel(
   return trigger === "manual" ? "手动触发" : "自动触发";
 }
 
+function isMessageModelUsageSummary(
+  value: unknown,
+): value is MessageModelUsageSummary {
+  return isRecord(value) &&
+    typeof value.modelId === "string" &&
+    typeof value.providerId === "string" &&
+    isTokenCount(value.inputTokens) &&
+    (value.cachedInputTokens === undefined || isTokenCount(value.cachedInputTokens)) &&
+    isTokenCount(value.outputTokens) &&
+    isTokenCount(value.totalTokens) &&
+    (value.source === "provider" || value.source === "estimated");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isTokenCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function buildUpdatedParts(

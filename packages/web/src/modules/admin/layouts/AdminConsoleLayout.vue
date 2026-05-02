@@ -137,7 +137,7 @@ const dragState = reactive({
   startBottom: 0,
   startPullCordPosition: 0,
 })
-let topbarPullTimer: ReturnType<typeof setTimeout> | null = null
+let topbarPullTimer: number | null = null
 
 const navItems: Array<{
   name:

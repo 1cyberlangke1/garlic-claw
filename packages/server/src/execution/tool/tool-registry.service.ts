@@ -1,5 +1,5 @@
 import type { JsonValue, PluginActionName, PluginAvailableToolSummary, PluginCallContext, PluginParamSchema, PluginToolOutput, SkillLoadResult, ToolInfo, ToolOverview, ToolSourceActionResult, ToolSourceInfo, ToolSourceKind } from '@garlic-claw/shared';
-import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import type { Tool } from 'ai';
 import { z } from 'zod';
 import { BashToolService } from '../bash/bash-tool.service';
@@ -15,7 +15,10 @@ import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import { RuntimeToolPermissionService } from '../runtime/runtime-tool-permission.service';
 import { RuntimeToolsSettingsService } from '../runtime/runtime-tools-settings.service';
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
+import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
+import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
 import { RuntimeHostPluginDispatchService } from '../../runtime/host/runtime-host-plugin-dispatch.service';
+import { RuntimeHostPluginRuntimeService } from '../../runtime/host/runtime-host-plugin-runtime.service';
 import { isPluginEnabledForContext } from '../../runtime/kernel/runtime-plugin-hook-governance';
 import { RuntimePluginGovernanceService } from '../../runtime/kernel/runtime-plugin-governance.service';
 import { McpService } from '../mcp/mcp.service';
@@ -53,6 +56,9 @@ export class ToolRegistryService {
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
     private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
+    private readonly pluginBootstrapService: PluginBootstrapService,
+    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService,
     @Inject(forwardRef(() => SubagentToolService)) private readonly subagentToolService: SubagentToolService,
     private readonly todoToolService: TodoToolService,
     private readonly webFetchToolService: WebFetchToolService,
@@ -86,6 +92,18 @@ export class ToolRegistryService {
     if (kind !== 'plugin') {throw new BadRequestException(`工具源 ${kind}:${sourceId} 不支持治理动作 ${action}`);}
     const source = readToolSource(await this.listOverview(), kind, sourceId);
     if (!(source.supportedActions ?? []).includes(action)) {throw new BadRequestException(`工具源 ${kind}:${sourceId} 不支持治理动作 ${action}`);}
+    const plugin = this.pluginBootstrapService.getPlugin(sourceId);
+    if (action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(sourceId)) {
+      const reloaded = this.pluginBootstrapService.reloadLocal(sourceId);
+      if (reloaded.removed) {
+        this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(sourceId);
+        this.runtimeHostConversationRecordService.deletePluginConversationSessions(sourceId);
+        this.runtimePluginGovernanceService.deletePluginRuntimeState(sourceId);
+        this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${sourceId}`);
+        return { accepted: true, action, sourceKind: source.kind, sourceId, message: '本地插件目录已删除，已清理旧记录' };
+      }
+      return { accepted: true, action, sourceKind: source.kind, sourceId, message: '已重新装载本地插件' };
+    }
     const result = await this.runtimePluginGovernanceService.runPluginAction({ action, pluginId: sourceId });
     return { accepted: result.accepted, action: result.action, sourceKind: source.kind, sourceId: result.pluginId, message: result.message };
   }
@@ -138,34 +156,7 @@ export class ToolRegistryService {
     sourceKind: ToolSourceKind;
     toolName: string;
   }): Promise<unknown> {
-    if (input.sourceKind === 'plugin') {
-      return this.runtimeHostPluginDispatchService.executeTool({
-        context: input.context,
-        params: input.params as never,
-        pluginId: input.sourceId,
-        toolName: input.toolName,
-      });
-    }
-    if (input.sourceKind === 'mcp') {
-      return this.mcpService.callTool({
-        arguments: input.params,
-        serverName: input.sourceId,
-        toolName: input.toolName,
-      });
-    }
-    if (input.sourceKind !== 'internal') {
-      throw new BadRequestException(`暂不支持执行工具源 ${input.sourceKind}:${input.sourceId}`);
-    }
-    const configuredShellBackend = this.runtimeToolsSettingsService.readConfiguredShellBackend();
-    const shellToolName = this.bashToolService.getToolName(configuredShellBackend);
-    const resolvedToolName = this.bashToolService.isToolName(input.toolName, configuredShellBackend)
-      ? shellToolName
-      : input.toolName;
-    const definition = (await this.readInternalTools({ context: input.context }))
-      .find((entry) => entry.sourceId === input.sourceId && entry.callName === resolvedToolName);
-    if (!definition) {
-      throw new NotFoundException(`Tool not found: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
-    }
+    const definition = await this.resolveRegisteredToolExecution(input);
     return definition.execute(input.params);
   }
 
@@ -198,6 +189,50 @@ export class ToolRegistryService {
       .map((entry) => toExecutableToolDefinition(entry, input.context, input.assistantMessageId, this.mcpService, this.runtimeHostPluginDispatchService));
   }
 
+  private async resolveRegisteredToolExecution(input: {
+    context: PluginCallContext;
+    params: Record<string, unknown>;
+    sourceId: string;
+    sourceKind: ToolSourceKind;
+    toolName: string;
+  }): Promise<ExecutableToolDefinition> {
+    if (input.sourceKind === 'internal') {
+      return this.resolveInternalRegisteredToolExecution(input);
+    }
+    if (input.sourceKind !== 'plugin' && input.sourceKind !== 'mcp') {
+      throw new BadRequestException(`暂不支持执行工具源 ${input.sourceKind}:${input.sourceId}`);
+    }
+    const tool = (await this.listOverview()).tools.find((entry) =>
+      entry.sourceKind === input.sourceKind
+      && entry.sourceId === input.sourceId
+      && (entry.name === input.toolName || entry.callName === input.toolName || entry.toolId === input.toolName));
+    if (!tool) {
+      throw new NotFoundException(`Tool not found: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
+    }
+    if (!this.isToolEnabledForContext(tool, input.context)) {
+      throw new ForbiddenException(`Tool disabled for current context: ${input.sourceKind}:${input.sourceId}:${input.toolName}`);
+    }
+    return toExecutableToolDefinition(tool, input.context, undefined, this.mcpService, this.runtimeHostPluginDispatchService);
+  }
+
+  private async resolveInternalRegisteredToolExecution(input: {
+    context: PluginCallContext;
+    sourceId: string;
+    toolName: string;
+  }): Promise<ExecutableToolDefinition> {
+    const configuredShellBackend = this.runtimeToolsSettingsService.readConfiguredShellBackend();
+    const shellToolName = this.bashToolService.getToolName(configuredShellBackend);
+    const resolvedToolName = this.bashToolService.isToolName(input.toolName, configuredShellBackend)
+      ? shellToolName
+      : input.toolName;
+    const definition = (await this.readInternalTools({ context: input.context }))
+      .find((entry) => entry.sourceId === input.sourceId && entry.callName === resolvedToolName);
+    if (!definition) {
+      throw new NotFoundException(`Tool not found: internal:${input.sourceId}:${input.toolName}`);
+    }
+    return definition;
+  }
+
   private async readNativeTools(input: { allowedToolNames?: string[]; assistantMessageId?: string; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
     const skills = await this.skillToolService.listAvailableSkills();
     const tools = [
@@ -214,7 +249,7 @@ export class ToolRegistryService {
   }
 
   private buildPluginSources(): Array<{ source: ToolSourceInfo; tools: ToolInfo[] }> {
-    return this.runtimePluginGovernanceService.listPlugins().filter((plugin) => plugin.connected && plugin.manifest.tools.length > 0).map((plugin) => {
+    return this.runtimePluginGovernanceService.listPlugins().filter((plugin) => plugin.manifest.tools.length > 0).map((plugin) => {
       const sourceEnabled = this.toolManagementSettingsService.readSourceEnabledOverride(`plugin:${plugin.pluginId}`) ?? plugin.defaultEnabled;
       const healthSnapshot = this.runtimePluginGovernanceService.readStoredPluginHealthSnapshot(plugin.pluginId);
       const source: ToolSourceInfo = {
@@ -233,7 +268,14 @@ export class ToolRegistryService {
         runtimeKind: plugin.manifest.runtime,
         supportedActions: this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId) as PluginActionName[],
       };
-      const tools = plugin.manifest.tools.map((tool) => createPluginToolInfo(plugin, source, tool, this.toolManagementSettingsService.readToolEnabledOverride(`plugin:${plugin.pluginId}:${tool.name}`) ?? sourceEnabled));
+      const tools = plugin.manifest.tools.map((tool) => createPluginToolInfo(
+        plugin,
+        source,
+        tool,
+        plugin.connected
+        && sourceEnabled
+        && (this.toolManagementSettingsService.readToolEnabledOverride(`plugin:${plugin.pluginId}:${tool.name}`) ?? true),
+      ));
       source.enabledTools = tools.filter((tool) => tool.enabled).length;
       return { source, tools };
     });
@@ -248,7 +290,7 @@ export class ToolRegistryService {
     const plugin = this.runtimePluginGovernanceService.listPlugins().find((entry) => entry.pluginId === tool.pluginId);
     if (!plugin) {return false;}
     const sourceEnabled = this.toolManagementSettingsService.readSourceEnabledOverride(`plugin:${plugin.pluginId}`) ?? isPluginEnabledForContext({ conversations: { ...(plugin.conversationScopes ?? {}) }, defaultEnabled: plugin.defaultEnabled }, context);
-    return sourceEnabled && (this.toolManagementSettingsService.readToolEnabledOverride(tool.toolId) ?? true);
+    return plugin.connected && sourceEnabled && (this.toolManagementSettingsService.readToolEnabledOverride(tool.toolId) ?? true);
   }
 
   private buildInternalSources(): Array<{ source: ToolSourceInfo; tools: ToolInfo[] }> {

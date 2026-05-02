@@ -68,6 +68,9 @@ export class PluginPersistenceService {
   recordPluginEvent(pluginId: string, input: PluginEventInput): PluginEventRecord {
     return this.runtimeEventLogService.appendLog('plugin', pluginId, this.readPlugin(pluginId).eventLog, input) ?? createDisabledPluginEventRecord(input);
   }
+  recordDetachedPluginEvent(pluginId: string, eventLog: EventLogSettings, input: PluginEventInput): PluginEventRecord {
+    return this.runtimeEventLogService.appendDetachedPluginAudit(pluginId, normalizeDetachedAuditEventLogSettings(eventLog), input) ?? createDisabledPluginEventRecord(input);
+  }
 
   setConnectionState(pluginId: string, connected: boolean): RegisteredPluginRecord {
     return this.updatePlugin(pluginId, (r, timestamp) => ({ ...r, connected, status: connected ? PLUGIN_STATUS.ONLINE : PLUGIN_STATUS.OFFLINE, updatedAt: timestamp }));
@@ -77,13 +80,18 @@ export class PluginPersistenceService {
     const record = this.readPlugin(pluginId);
     if (record.connected) { throw new BadRequestException(`Plugin ${record.pluginId} is still connected`); }
     this.records.delete(pluginId);
+    this.runtimeEventLogService.deleteLogs('plugin', pluginId);
     this.persistRecords();
+    this.recordDetachedPluginEvent(pluginId, record.eventLog, { level: 'warn', message: `Deleted plugin ${pluginId}`, type: 'plugin:deleted' });
     return cloneRegisteredPluginRecord(record);
   }
 
   dropPluginRecords(pluginIds: string[]): string[] {
     const droppedPluginIds = pluginIds.filter((pluginId) => this.records.delete(pluginId));
     if (droppedPluginIds.length > 0) {
+      for (const pluginId of droppedPluginIds) {
+        this.runtimeEventLogService.deleteLogs('plugin', pluginId);
+      }
       this.persistRecords();
     }
     return droppedPluginIds;
@@ -173,6 +181,11 @@ function createDisabledPluginEventRecord(input: PluginEventInput): PluginEventRe
     metadata: input.metadata ? { ...input.metadata } : null,
     type: input.type,
   };
+}
+
+function normalizeDetachedAuditEventLogSettings(settings: EventLogSettings): EventLogSettings {
+  const normalized = normalizeEventLogSettings(settings);
+  return { maxFileSizeMb: Math.max(1, normalized.maxFileSizeMb) };
 }
 
 export function cloneRegisteredPluginRecord(record: RegisteredPluginRecord): RegisteredPluginRecord {

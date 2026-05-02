@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, ref, watch } from 'vue'
 import type {
   AiModelCapabilities,
   ChatMessagePart,
@@ -9,6 +9,7 @@ import {
   loadModelCapabilities,
   loadVisionFallbackEnabled,
 } from '@/modules/chat/composables/chat-view.data'
+import { subscribeInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 
 import type { useChatStore } from '@/modules/chat/store/chat'
 import {
@@ -52,6 +53,8 @@ export interface UploadNotice {
  */
 export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   const draftTextByConversationId = ref<Record<string, string>>({})
+  const pendingImagesByConversationId = ref<Record<string, PendingImage[]>>({})
+  const uploadProcessingNoticesByConversationId = ref<Record<string, UploadNotice[]>>({})
   const inputText = computed({
     get() {
       const conversationId = chat.currentConversationId
@@ -68,9 +71,37 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
       }
     },
   })
-  const pendingImages = ref<PendingImage[]>([])
+  const pendingImages = computed({
+    get() {
+      return readConversationScopedList(
+        pendingImagesByConversationId,
+        chat.currentConversationId,
+      )
+    },
+    set(value: PendingImage[]) {
+      writeConversationScopedList(
+        pendingImagesByConversationId,
+        chat.currentConversationId,
+        value,
+      )
+    },
+  })
   const selectedCapabilities = ref<AiModelCapabilities | null>(null)
-  const uploadProcessingNotices = ref<UploadNotice[]>([])
+  const uploadProcessingNotices = computed({
+    get() {
+      return readConversationScopedList(
+        uploadProcessingNoticesByConversationId,
+        chat.currentConversationId,
+      )
+    },
+    set(value: UploadNotice[]) {
+      writeConversationScopedList(
+        uploadProcessingNoticesByConversationId,
+        chat.currentConversationId,
+        value,
+      )
+    },
+  })
   const visionFallbackEnabled = ref(false)
   let capabilityRequestId = 0
   const imageFallbackNotice = computed<UploadNotice[]>(() => {
@@ -146,6 +177,22 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     },
     { immediate: true },
   )
+  const removeInternalConfigChangedListener = subscribeInternalConfigChanged(
+    ({ scope }) => {
+      if (scope === 'provider-models') {
+        void refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
+        return
+      }
+      if (scope === 'vision-fallback') {
+        void refreshVisionFallbackAvailability()
+      }
+    },
+  )
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
+      removeInternalConfigChangedListener()
+    })
+  }
   void refreshVisionFallbackAvailability()
 
   /**
@@ -166,13 +213,30 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
    * 把当前文本和待发送图片一起发给聊天 store。
    */
   async function send() {
-    const text = inputText.value.trim()
+    const conversationId = chat.currentConversationId
+    if (!conversationId) {
+      return
+    }
+    const draftText = draftTextByConversationId.value[conversationId] ?? ''
+    const draftImages = [
+      ...readConversationScopedList(
+        pendingImagesByConversationId,
+        conversationId,
+      ),
+    ]
+    const draftNotices = [
+      ...readConversationScopedList(
+        uploadProcessingNoticesByConversationId,
+        conversationId,
+      ),
+    ]
+    const text = draftText.trim()
 
     if (!selectedCapabilities.value && chat.selectedProvider && chat.selectedModel) {
       await refreshSelectedCapabilities(chat.selectedProvider, chat.selectedModel)
     }
     const mayNeedVisionFallback =
-      pendingImages.value.length > 0 &&
+      draftImages.length > 0 &&
       Boolean(selectedCapabilities.value) &&
       !selectedCapabilities.value?.input.image
 
@@ -187,11 +251,11 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
         },
       } satisfies ChatMessageMetadata
       : undefined
-    const matchedCommand = pendingImages.value.length === 0
+    const matchedCommand = draftImages.length === 0
       ? resolveMatchedCommand(text)
       : null
     const parts: ChatMessagePart[] = [
-      ...pendingImages.value.map((image) => ({
+      ...draftImages.map((image) => ({
         type: 'image' as const,
         image: image.image,
         mimeType: image.mimeType,
@@ -203,28 +267,41 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
       return
     }
 
-    inputText.value = ''
-    pendingImages.value = []
-    uploadProcessingNotices.value = []
-    await chat.sendMessage({
-      content: text || undefined,
-      parts,
-      provider: chat.selectedProvider,
-      model: chat.selectedModel,
-      ...(matchedCommand
-        ? {
-          optimisticAssistantMetadata: mergeMessageMetadata(
-            optimisticAssistantMetadata,
-            createDisplayMessageMetadata('result'),
-          ),
-          optimisticAssistantRole: 'display' as const,
-          optimisticUserMetadata: createDisplayMessageMetadata('command'),
-          optimisticUserRole: 'display' as const,
-        }
-        : optimisticAssistantMetadata
-          ? { optimisticAssistantMetadata }
-          : {}),
-    })
+    writeConversationDraftText(draftTextByConversationId, conversationId, '')
+    writeConversationScopedList(pendingImagesByConversationId, conversationId, [])
+    writeConversationScopedList(uploadProcessingNoticesByConversationId, conversationId, [])
+    try {
+      await chat.sendMessage({
+        content: text || undefined,
+        parts,
+        provider: chat.selectedProvider,
+        model: chat.selectedModel,
+        ...(matchedCommand
+          ? {
+            optimisticAssistantMetadata: mergeMessageMetadata(
+              optimisticAssistantMetadata,
+              createDisplayMessageMetadata('result'),
+            ),
+            optimisticAssistantRole: 'display' as const,
+            optimisticUserMetadata: createDisplayMessageMetadata('command'),
+            optimisticUserRole: 'display' as const,
+          }
+          : optimisticAssistantMetadata
+            ? { optimisticAssistantMetadata }
+            : {}),
+      })
+    } catch (error) {
+      restoreConversationDraftAfterSendFailure({
+        conversationId,
+        draftText,
+        draftImages,
+        draftNotices,
+        draftTextByConversationId,
+        pendingImagesByConversationId,
+        uploadProcessingNoticesByConversationId,
+      })
+      throw error
+    }
   }
 
   /**
@@ -234,7 +311,14 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
   async function handleFileChange(event: Event) {
     const target = event.target as HTMLInputElement
     const files = Array.from(target.files ?? [])
-    uploadProcessingNotices.value = []
+    const conversationId = chat.currentConversationId
+
+    if (!conversationId) {
+      target.value = ''
+      return
+    }
+
+    writeConversationScopedList(uploadProcessingNoticesByConversationId, conversationId, [])
 
     if (files.length === 0) {
       target.value = ''
@@ -246,7 +330,12 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
     let remainingBudget = Math.max(
       0,
       MAX_CHAT_TOTAL_IMAGE_DATA_URL_BYTES -
-        getPendingImageBudgetBytes(pendingImages.value),
+        getPendingImageBudgetBytes(
+          readConversationScopedList(
+            pendingImagesByConversationId,
+            conversationId,
+          ),
+        ),
     )
 
     for (let index = 0; index < files.length; index += 1) {
@@ -292,8 +381,23 @@ export function createChatViewModule(chat: ReturnType<typeof useChatStore>) {
       }
     }
 
-    pendingImages.value.push(...nextImages)
-    uploadProcessingNotices.value = notices
+    const nextPendingImages = [
+      ...readConversationScopedList(
+        pendingImagesByConversationId,
+        conversationId,
+      ),
+      ...nextImages,
+    ]
+    writeConversationScopedList(
+      pendingImagesByConversationId,
+      conversationId,
+      nextPendingImages,
+    )
+    writeConversationScopedList(
+      uploadProcessingNoticesByConversationId,
+      conversationId,
+      notices,
+    )
     target.value = ''
   }
 
@@ -442,6 +546,89 @@ function getPendingImageBudgetBytes(images: PendingImage[] = []): number {
     (total, image) => total + measureDataUrlBytes(image.image),
     0,
   )
+}
+
+function readConversationScopedList<T>(
+  bucket: { value: Record<string, T[]> },
+  conversationId: string | null,
+): T[] {
+  if (!conversationId) {
+    return []
+  }
+  const existing = bucket.value[conversationId]
+  if (existing) {
+    return existing
+  }
+  const created: T[] = []
+  bucket.value = {
+    ...bucket.value,
+    [conversationId]: created,
+  }
+  return created
+}
+
+function writeConversationScopedList<T>(
+  bucket: { value: Record<string, T[]> },
+  conversationId: string | null,
+  value: T[],
+): void {
+  if (!conversationId) {
+    return
+  }
+  bucket.value = {
+    ...bucket.value,
+    [conversationId]: value,
+  }
+}
+
+function writeConversationDraftText(
+  bucket: { value: Record<string, string> },
+  conversationId: string | null,
+  value: string,
+): void {
+  if (!conversationId) {
+    return
+  }
+  bucket.value = {
+    ...bucket.value,
+    [conversationId]: value,
+  }
+}
+
+function restoreConversationDraftAfterSendFailure(input: {
+  conversationId: string
+  draftText: string
+  draftImages: PendingImage[]
+  draftNotices: UploadNotice[]
+  draftTextByConversationId: { value: Record<string, string> }
+  pendingImagesByConversationId: { value: Record<string, PendingImage[]> }
+  uploadProcessingNoticesByConversationId: { value: Record<string, UploadNotice[]> }
+}): void {
+  const currentDraftText = input.draftTextByConversationId.value[input.conversationId] ?? ''
+  const currentPendingImages = input.pendingImagesByConversationId.value[input.conversationId] ?? []
+  const currentNotices = input.uploadProcessingNoticesByConversationId.value[input.conversationId] ?? []
+
+  if (!currentDraftText) {
+    writeConversationDraftText(
+      input.draftTextByConversationId,
+      input.conversationId,
+      input.draftText,
+    )
+  }
+  if (currentPendingImages.length === 0) {
+    writeConversationScopedList(
+      input.pendingImagesByConversationId,
+      input.conversationId,
+      input.draftImages,
+    )
+  }
+  if (currentNotices.length === 0) {
+    writeConversationScopedList(
+      input.uploadProcessingNoticesByConversationId,
+      input.conversationId,
+      input.draftNotices,
+    )
+  }
 }
 
 function readQueuedDraftText(input: { content?: string; parts?: ChatMessagePart[] }): string {
