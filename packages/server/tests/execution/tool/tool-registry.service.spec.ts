@@ -64,8 +64,7 @@ import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.s
 const runtimeWorkspaceRoots: string[] = [];
 const runtimeOneShotShellServices: RuntimeOneShotShellService[] = [];
 const originalRuntimeWorkspaceRoot = process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
-const originalRuntimeToolsConfigPath = process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
-const originalToolManagementConfigPath = process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH;
+const originalSettingsConfigPath = process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
 const originalHintsTestRoot = process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
 
 describe('ToolRegistryService', () => {
@@ -75,15 +74,10 @@ describe('ToolRegistryService', () => {
     } else {
       process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = originalRuntimeWorkspaceRoot;
     }
-    if (originalRuntimeToolsConfigPath === undefined) {
-      delete process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
+    if (originalSettingsConfigPath === undefined) {
+      delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     } else {
-      process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = originalRuntimeToolsConfigPath;
-    }
-    if (originalToolManagementConfigPath === undefined) {
-      delete process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH;
-    } else {
-      process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH = originalToolManagementConfigPath;
+      process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = originalSettingsConfigPath;
     }
     if (originalHintsTestRoot === undefined) {
       delete process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
@@ -7785,8 +7779,7 @@ function createFixture(options: {
 } = {}) {
   const runtimeWorkspaceRoot = options.runtimeWorkspaceRoot ?? fs.mkdtempSync(path.join(os.tmpdir(), 'gc-tool-registry-runtime-'));
   process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
-  process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'runtime-tools', 'settings.json');
-  process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'tools', 'settings.json');
+  process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'settings.json');
   if (!options.runtimeWorkspaceRoot) {
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
   }

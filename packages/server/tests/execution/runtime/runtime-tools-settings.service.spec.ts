@@ -7,22 +7,22 @@ import {
 } from '../../../src/execution/runtime/runtime-tools-settings.service';
 
 describe('RuntimeToolsSettingsService', () => {
-  const originalConfigPath = process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
+  const originalConfigPath = process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
   const tempFiles: string[] = [];
 
   afterEach(() => {
     if (originalConfigPath === undefined) {
-      delete process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
+      delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     } else {
-      process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = originalConfigPath;
+      process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = originalConfigPath;
     }
     for (const nextPath of tempFiles.splice(0)) {
-      fs.rmSync(nextPath, { force: true });
+      fs.rmSync(nextPath, { force: true, recursive: true });
     }
   });
 
   it('exposes platform-scoped shell backend options in config schema', () => {
-    process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = createTempConfigPath(tempFiles);
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = createTempConfigPath(tempFiles);
 
     const snapshot = new RuntimeToolsSettingsService().getConfigSnapshot();
     const schema = snapshot.schema;
@@ -45,7 +45,7 @@ describe('RuntimeToolsSettingsService', () => {
   });
 
   it('accepts just-bash as a stored shell backend on Windows', () => {
-    process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = createTempConfigPath(tempFiles);
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = createTempConfigPath(tempFiles);
     const service = new RuntimeToolsSettingsService();
 
     if (process.platform !== 'win32') {
@@ -59,6 +59,31 @@ describe('RuntimeToolsSettingsService', () => {
       values: { shellBackend: 'just-bash' },
     }));
     expect(service.readConfiguredShellBackend()).toBe('just-bash');
+  });
+
+  it('copies settings.example.json when settings.json is missing', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-settings-example-'));
+    const configPath = path.join(tempDir, 'settings.json');
+    const examplePath = path.join(tempDir, 'settings.example.json');
+    tempFiles.push(tempDir);
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = configPath;
+    fs.writeFileSync(examplePath, JSON.stringify({
+      runtimeTools: {
+        shellBackend: 'native-shell',
+      },
+    }, null, 2), 'utf-8');
+
+    const service = new RuntimeToolsSettingsService();
+
+    expect(service.getStoredConfig()).toEqual({
+      shellBackend: 'native-shell',
+    });
+    expect(fs.existsSync(configPath)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(configPath, 'utf-8'))).toEqual({
+      runtimeTools: {
+        shellBackend: 'native-shell',
+      },
+    });
   });
 
   it('falls back to just-bash when native-shell is configured on Windows without PowerShell', () => {
