@@ -8,11 +8,12 @@ import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 
 export interface StoredPersonaRecord extends PluginPersonaDetail {}
-type StoredPersonaConfigFile = Omit<StoredPersonaRecord, 'avatar' | 'prompt'>
+type StoredPersonaConfigFile = Omit<StoredPersonaRecord, 'avatar' | 'prompt' | 'isDefault'>
 
 const DEFAULT_PERSONA_TIMESTAMP = '2026-04-10T00:00:00.000Z'
 const PERSONA_CONFIG_FILE_NAME = 'persona.json'
 const PERSONA_PROMPT_FILE_NAME = 'prompt.md'
+const DEFAULT_SELECTION_FILE_NAME = 'default-selection.json'
 const AVATAR_BASENAME = 'avatar'
 const AVATAR_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.ico', '.tif', '.tiff'])
 
@@ -20,15 +21,19 @@ const AVATAR_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif
 export class PersonaStoreService {
   private readonly storageRoot: string
   private personas: StoredPersonaRecord[]
+  private defaultPersonaId: string
 
   constructor(private readonly projectWorktreeRootService: ProjectWorktreeRootService) {
     this.storageRoot = resolvePersonaStorageRoot(this.projectWorktreeRootService)
     this.personas = loadPersonaStore(this.storageRoot)
+    this.defaultPersonaId = loadDefaultPersonaId(this.storageRoot, this.personas)
+    this.personas = this.applyDefaultFlag(this.personas)
   }
 
   list(): StoredPersonaRecord[] { return this.personas.map((persona) => structuredClone(persona)) }
   read(personaId: string): StoredPersonaRecord | null { return clonePersonaRecord(this.personas.find((persona) => persona.id === personaId)) }
   readAvatarPath(personaId: string): string | null { return readPersonaAvatarFilePath(path.join(this.storageRoot, readPersonaFolderName(personaId))) }
+  readDefaultPersonaId(): string { return this.defaultPersonaId }
 
   writeAvatar(personaId: string, buffer: Buffer, mimetype: string): string {
     const personaRoot = path.join(this.storageRoot, readPersonaFolderName(personaId));
@@ -43,11 +48,17 @@ export class PersonaStoreService {
     return avatarPath;
   }
 
-  replaceAll(personas: StoredPersonaRecord[]): StoredPersonaRecord[] {
+  replaceAll(personas: StoredPersonaRecord[], nextDefaultPersonaId?: string): StoredPersonaRecord[] {
     const nextPersonas = personas.map((persona) => structuredClone(persona))
-    persistPersonaStore(this.storageRoot, this.personas, nextPersonas)
-    this.personas = nextPersonas
+    const defaultPersonaId = nextDefaultPersonaId ?? this.defaultPersonaId
+    persistPersonaStore(this.storageRoot, this.personas, nextPersonas, defaultPersonaId)
+    this.personas = this.applyDefaultFlag(nextPersonas)
+    this.defaultPersonaId = defaultPersonaId
     return this.list()
+  }
+
+  private applyDefaultFlag(personas: StoredPersonaRecord[]): StoredPersonaRecord[] {
+    return personas.map((persona) => ({ ...persona, isDefault: persona.id === this.defaultPersonaId }))
   }
 }
 
@@ -63,11 +74,12 @@ function loadPersonaStore(storageRoot: string): StoredPersonaRecord[] {
     fs.mkdirSync(storageRoot, { recursive: true })
     const loaded = readStoredPersonas(storageRoot)
     const normalized = normalizeStoredPersonas(loaded.length > 0 ? loaded : seeded)
-    persistPersonaStore(storageRoot, loaded, normalized)
-    return normalized
+    const defaultPersonaId = loadDefaultPersonaId(storageRoot, normalized)
+    persistPersonaStore(storageRoot, loaded, normalized, defaultPersonaId)
+    return normalized.map((persona) => ({ ...persona, isDefault: persona.id === defaultPersonaId }))
   } catch {
-    persistPersonaStore(storageRoot, [], seeded)
-    return seeded
+    persistPersonaStore(storageRoot, [], seeded, DEFAULT_PERSONA_ID)
+    return seeded.map((persona) => ({ ...persona, isDefault: true }))
   }
 }
 
@@ -95,7 +107,7 @@ function readStoredPersona(personaRoot: string): StoredPersonaRecord | null {
       customErrorMessage: config.customErrorMessage,
       description: config.description,
       id: config.id ?? path.basename(personaRoot),
-      isDefault: config.isDefault,
+      isDefault: false,
       name: config.name,
       prompt: readStoredPersonaPrompt(personaRoot),
       toolNames: config.toolNames,
@@ -106,13 +118,14 @@ function readStoredPersona(personaRoot: string): StoredPersonaRecord | null {
   }
 }
 
-function persistPersonaStore(storageRoot: string, previousPersonas: readonly StoredPersonaRecord[], nextPersonas: readonly StoredPersonaRecord[]): void {
+function persistPersonaStore(storageRoot: string, previousPersonas: readonly StoredPersonaRecord[], nextPersonas: readonly StoredPersonaRecord[], defaultPersonaId: string): void {
   fs.mkdirSync(storageRoot, { recursive: true })
   const nextFolderNames = new Set(nextPersonas.map((persona) => readPersonaFolderName(persona.id)))
   for (const folderName of previousPersonas.map((persona) => readPersonaFolderName(persona.id))) {
     if (!nextFolderNames.has(folderName)) {fs.rmSync(path.join(storageRoot, folderName), { force: true, recursive: true })}
   }
   nextPersonas.forEach((persona) => writeStoredPersona(storageRoot, persona))
+  fs.writeFileSync(path.join(storageRoot, DEFAULT_SELECTION_FILE_NAME), JSON.stringify({ defaultPersonaId }, null, 2), 'utf-8')
 }
 
 function writeStoredPersona(storageRoot: string, persona: StoredPersonaRecord): void {
@@ -124,7 +137,6 @@ function writeStoredPersona(storageRoot: string, persona: StoredPersonaRecord): 
     customErrorMessage: persona.customErrorMessage,
     description: persona.description,
     id: persona.id,
-    isDefault: persona.isDefault,
     name: persona.name,
     toolNames: persona.toolNames,
     updatedAt: persona.updatedAt,
@@ -159,8 +171,7 @@ function readPersonaAvatarFilePath(personaRoot: string): string | null {
 function normalizeStoredPersonas(rawPersonas: StoredPersonaRecord[]): StoredPersonaRecord[] {
   const personas = rawPersonas.filter((persona): persona is StoredPersonaRecord => Boolean(persona && typeof persona.id === 'string' && persona.id.trim())).map(normalizeStoredPersona)
   if (!personas.some((persona) => persona.id === DEFAULT_PERSONA_ID)) {personas.unshift(createDefaultPersona())}
-  const defaultPersonaId = personas.find((persona) => persona.isDefault)?.id ?? DEFAULT_PERSONA_ID
-  return personas.map((persona) => ({ ...persona, isDefault: persona.id === defaultPersonaId })).sort((left, right) => left.id.localeCompare(right.id))
+  return personas.sort((left, right) => left.id.localeCompare(right.id))
 }
 
 function normalizeStoredPersona(persona: StoredPersonaRecord): StoredPersonaRecord {
@@ -172,7 +183,7 @@ function normalizeStoredPersona(persona: StoredPersonaRecord): StoredPersonaReco
     customErrorMessage: normalizeNullableText(persona.customErrorMessage),
     description: normalizeOptionalText(persona.description),
     id: persona.id.trim(),
-    isDefault: persona.isDefault === true,
+    isDefault: false,
     name: normalizeRequiredText(persona.name, persona.id),
     prompt: normalizeRequiredText(persona.prompt, fallback.prompt),
     toolNames: normalizeNullableIdList(persona.toolNames),
@@ -188,7 +199,7 @@ function createDefaultPersona(): StoredPersonaRecord {
     customErrorMessage: null,
     description: 'server 默认人格',
     id: DEFAULT_PERSONA_ID,
-    isDefault: true,
+    isDefault: false,
     name: 'Default Assistant',
     prompt: DEFAULT_PERSONA_PROMPT,
     toolNames: null,
@@ -225,6 +236,19 @@ function normalizeOptionalText(value: unknown): string | undefined {
 
 function normalizeRequiredText(value: unknown, fallback: string): string {
   return normalizeOptionalText(value) ?? fallback
+}
+
+function loadDefaultPersonaId(storageRoot: string, personas: StoredPersonaRecord[]): string {
+  const selectionPath = path.join(storageRoot, DEFAULT_SELECTION_FILE_NAME)
+  if (fs.existsSync(selectionPath)) {
+    try {
+      const { defaultPersonaId } = JSON.parse(fs.readFileSync(selectionPath, 'utf-8')) as { defaultPersonaId?: string }
+      if (defaultPersonaId && personas.some((persona) => persona.id === defaultPersonaId)) {
+        return defaultPersonaId
+      }
+    } catch {}
+  }
+  return DEFAULT_PERSONA_ID
 }
 
 function mimetypeToExtension(mimetype: string): string {

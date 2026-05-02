@@ -7,9 +7,6 @@ dist/
 packages/*/dist/
 packages/server/tmp/
 workspace/
-packages/*/node_modules/.cache/
-packages/web/node_modules/.vite/
-packages/web/node_modules/.vite-temp/
 
 # TypeScript 编译产物
 **/*.js.map

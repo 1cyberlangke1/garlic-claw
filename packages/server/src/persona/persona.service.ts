@@ -90,7 +90,7 @@ export class PersonaService {
     const defaultPersonaId = preferredDefaultPersonaId
       ?? personas.find((persona) => persona.isDefault)?.id
       ?? (personas.some((persona) => persona.id === DEFAULT_PERSONA_ID) ? DEFAULT_PERSONA_ID : personas[0]?.id)
-    return this.personaStoreService.replaceAll(personas.map((persona) => ({ ...persona, isDefault: persona.id === defaultPersonaId })).sort((left, right) => left.id.localeCompare(right.id)))
+    return this.personaStoreService.replaceAll(personas.sort((left, right) => left.id.localeCompare(right.id)), defaultPersonaId)
   }
 
   private requirePersona(personaId: string): StoredPersonaRecord {
