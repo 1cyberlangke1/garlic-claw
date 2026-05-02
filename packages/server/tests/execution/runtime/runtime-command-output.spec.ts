@@ -124,6 +124,33 @@ describe('renderRuntimeCommandTextOutput', () => {
     expect(output).toContain('<stdout>\nline-7\nline-8\n</stdout>');
   });
 
+  it('still exposes the saved output path when truncation details are hidden', () => {
+    const stdout = Array.from({ length: 8 }, (_, index) => `line-${index + 1}`).join('\n');
+
+    const output = renderRuntimeCommandTextOutput({
+      cwd: '/tmp',
+      exitCode: 0,
+      outputPath: '/.garlic-claw/runtime-command-output/command-hidden-details.txt',
+      stderr: '',
+      stderrStats: {
+        bytes: 0,
+        lines: 0,
+      },
+      stdout,
+      stdoutStats: {
+        bytes: Buffer.byteLength(stdout, 'utf8'),
+        lines: 8,
+      },
+    }, {
+      maxLines: 2,
+      showTruncationDetails: false,
+    });
+
+    expect(output).not.toContain('output truncated');
+    expect(output).toContain('Full output saved to: /.garlic-claw/runtime-command-output/command-hidden-details.txt');
+    expect(output).toContain('<stdout>\nline-7\nline-8\n</stdout>');
+  });
+
   it('supports a custom result wrapper tag', () => {
     const output = renderRuntimeCommandTextOutput({
       cwd: '/tmp',

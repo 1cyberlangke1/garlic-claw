@@ -3,10 +3,7 @@ import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import type { RuntimeCommandBackendResult } from './runtime-command.types';
 import { RuntimeSessionEnvironmentService } from './runtime-session-environment.service';
-import {
-  DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_BYTES,
-  DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_LINES,
-} from './runtime-command-output';
+import { RuntimeToolsSettingsService } from './runtime-tools-settings.service';
 import { joinRuntimeVisiblePath } from './runtime-visible-path';
 
 const RUNTIME_COMMAND_CAPTURE_DIRECTORY = '.garlic-claw/runtime-command-output';
@@ -15,10 +12,12 @@ const RUNTIME_COMMAND_CAPTURE_DIRECTORY = '.garlic-claw/runtime-command-output';
 export class RuntimeCommandCaptureService {
   constructor(
     private readonly runtimeSessionEnvironmentService: RuntimeSessionEnvironmentService,
+    private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
   ) {}
 
   async captureIfNeeded(result: RuntimeCommandBackendResult): Promise<string | null> {
-    if (!shouldCaptureRuntimeCommandOutput(result)) {
+    const captureOptions = this.runtimeToolsSettingsService.readToolOutputCaptureOptions();
+    if (!captureOptions.enabled || !shouldCaptureRuntimeCommandOutput(result, captureOptions.maxBytes)) {
       return null;
     }
     const sessionEnvironment = await this.runtimeSessionEnvironmentService.getSessionEnvironment(
@@ -30,22 +29,25 @@ export class RuntimeCommandCaptureService {
       ...relativePath.split('/'),
     );
     await fs.mkdir(path.dirname(hostPath), { recursive: true });
+    await cleanupOldRuntimeCommandCaptureFiles(path.dirname(hostPath), captureOptions.maxFilesPerSession - 1);
     await fs.writeFile(hostPath, renderRuntimeCommandCaptureText(result), 'utf8');
     return joinRuntimeVisiblePath(sessionEnvironment.visibleRoot, relativePath);
   }
 }
 
-function shouldCaptureRuntimeCommandOutput(result: RuntimeCommandBackendResult): boolean {
-  return exceedsRuntimeCommandOutputLimit(result.stdout)
-    || exceedsRuntimeCommandOutputLimit(result.stderr);
+function shouldCaptureRuntimeCommandOutput(
+  result: RuntimeCommandBackendResult,
+  maxBytes: number,
+): boolean {
+  return exceedsRuntimeCommandOutputLimit(result.stdout, maxBytes)
+    || exceedsRuntimeCommandOutputLimit(result.stderr, maxBytes);
 }
 
-function exceedsRuntimeCommandOutputLimit(text: string): boolean {
+function exceedsRuntimeCommandOutputLimit(text: string, maxBytes: number): boolean {
   if (!text) {
     return false;
   }
-  return Buffer.byteLength(text, 'utf8') > DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_BYTES
-    || text.replace(/\r\n/g, '\n').split('\n').length > DEFAULT_MAX_RUNTIME_COMMAND_OUTPUT_LINES;
+  return maxBytes > 0 && Buffer.byteLength(text, 'utf8') > maxBytes;
 }
 
 function createRuntimeCommandCaptureFileName(): string {
@@ -65,4 +67,26 @@ function renderRuntimeCommandCaptureText(result: RuntimeCommandBackendResult): s
     '</stderr>',
     '</runtime_command_output>',
   ].join('\n');
+}
+
+async function cleanupOldRuntimeCommandCaptureFiles(
+  directoryPath: string,
+  keepCount: number,
+): Promise<void> {
+  try {
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    const files = await Promise.all(entries
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => {
+        const filePath = path.join(directoryPath, entry.name);
+        const stats = await fs.stat(filePath);
+        return { filePath, modifiedAt: stats.mtimeMs };
+      }));
+    const staleFiles = files
+      .sort((left, right) => right.modifiedAt - left.modifiedAt)
+      .slice(Math.max(0, keepCount));
+    await Promise.all(staleFiles.map(async ({ filePath }) => fs.rm(filePath, { force: true })));
+  } catch {
+    // 自动清理失败不应阻断主命令执行。
+  }
 }

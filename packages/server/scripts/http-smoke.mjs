@@ -851,10 +851,20 @@ async function runHttpFlow(apiBase, state, input) {
   const userHeaders = adminHeaders;
   const managedPersonaDirectory = path.join(input.personasPath, encodeURIComponent(state.managedPersonaId));
   const managedPersonaAvatarPath = path.join(managedPersonaDirectory, 'avatar.svg');
+  const runtimeCommandCapturePaths = [];
   const readSessionWorkspaceRoot = () => {
     ensure(typeof state.conversationId === 'string', 'Expected conversation id before reading runtime workspace');
     return path.join(input.runtimeWorkspacesPath, encodeURIComponent(state.conversationId));
   };
+  const readSessionRuntimeCommandCaptureRoot = () => path.join(
+    readSessionWorkspaceRoot(),
+    '.garlic-claw',
+    'runtime-command-output',
+  );
+  const readVisibleRuntimeCommandCaptureHostPath = (visiblePath) => path.join(
+    readSessionWorkspaceRoot(),
+    ...String(visiblePath).replace(/^\/+/, '').split('/'),
+  );
   const approveRuntimePermissionRequest = async (event, decision = 'once') => {
     ensure(typeof state.conversationId === 'string', 'Expected conversation id before replying runtime permission');
     const pending = await getJson(apiBase, `/chat/conversations/${state.conversationId}/runtime-permissions/pending`, {
@@ -1565,6 +1575,9 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(config.schema?.items?.shellBackend?.type === 'string', 'Expected runtime tools shell backend schema');
     ensure(Array.isArray(config.schema?.items?.shellBackend?.options), 'Expected runtime tools shell backend options');
     ensure(config.schema?.items?.bashOutput?.type === 'object', 'Expected runtime tools bash output schema');
+    ensure(config.schema?.items?.toolOutputCapture?.type === 'object', 'Expected runtime tools tool output capture schema');
+    ensure(config.schema?.items?.toolOutputCapture?.items?.maxBytes?.type === 'int', 'Expected runtime tools tool output capture maxBytes schema');
+    ensure(config.schema?.items?.toolOutputCapture?.items?.maxFilesPerSession?.type === 'int', 'Expected runtime tools tool output capture maxFilesPerSession schema');
   });
 
   await runStep('ai.runtime-tools-config.put.compact', async () => {
@@ -1577,12 +1590,20 @@ async function runHttpFlow(apiBase, state, input) {
             maxLines: 2,
             showTruncationDetails: false,
           },
+          toolOutputCapture: {
+            enabled: true,
+            maxBytes: 24,
+            maxFilesPerSession: 5,
+          },
         },
       },
     });
     ensure(config.values?.shellBackend === readSmokeRuntimeToolsShellBackendKind(), 'Expected runtime tools shell backend to persist');
     ensure(config.values?.bashOutput?.maxLines === 2, 'Expected runtime tools config maxLines to persist');
     ensure(config.values?.bashOutput?.showTruncationDetails === false, 'Expected runtime tools config truncation details toggle to persist');
+    ensure(config.values?.toolOutputCapture?.enabled === true, 'Expected runtime tools config tool output capture toggle to persist');
+    ensure(config.values?.toolOutputCapture?.maxBytes === 24, 'Expected runtime tools config tool output capture maxBytes to persist');
+    ensure(config.values?.toolOutputCapture?.maxFilesPerSession === 5, 'Expected runtime tools config tool output capture maxFilesPerSession to persist');
   });
 
   await runStep('chat.messages.bash-config-loop', async () => {
@@ -1623,6 +1644,90 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(typeof bashToolContent === 'string', 'Expected bash config loop follow-up request to include bash tool content');
     ensure(readBashStreamSection(bashToolContent, 'stdout') === 'line-3\nline-4', 'Expected bash config loop follow-up request to keep only the bounded stdout tail');
     ensure(!bashToolContent.includes('output truncated'), 'Expected bash config loop follow-up request to hide truncation details');
+    const outputPathMatch = bashToolContent.match(/Full output saved to: ([^\n]+)/);
+    ensure(outputPathMatch?.[1], 'Expected bash config loop follow-up request to expose captured full output path even when truncation details are hidden');
+    ensure(fs.existsSync(readVisibleRuntimeCommandCaptureHostPath(outputPathMatch[1])), 'Expected bash config loop captured full output file to exist');
+  });
+
+  await runStep('ai.runtime-tools-config.put.capture', async () => {
+    input.fakeOpenAi.resetChatCompletions();
+    const config = await putJson(apiBase, '/ai/runtime-tools-config', {
+      body: {
+        values: {
+          shellBackend: readSmokeRuntimeToolsShellBackendKind(),
+          bashOutput: {
+            maxBytes: 16,
+            maxLines: 200,
+            showTruncationDetails: true,
+          },
+          toolOutputCapture: {
+            enabled: true,
+            maxBytes: 16,
+            maxFilesPerSession: 2,
+          },
+        },
+      },
+    });
+    ensure(config.values?.bashOutput?.maxBytes === 16, 'Expected runtime tools config capture maxBytes to persist');
+    ensure(config.values?.bashOutput?.maxLines === 200, 'Expected runtime tools config capture maxLines to persist');
+    ensure(config.values?.bashOutput?.showTruncationDetails === true, 'Expected runtime tools config capture truncation details toggle to persist');
+    ensure(config.values?.toolOutputCapture?.enabled === true, 'Expected runtime tools config capture toggle to persist');
+    ensure(config.values?.toolOutputCapture?.maxBytes === 16, 'Expected runtime tools config capture maxBytes to persist');
+    ensure(config.values?.toolOutputCapture?.maxFilesPerSession === 2, 'Expected runtime tools config capture maxFilesPerSession to persist');
+  });
+
+  for (const index of [1, 2, 3]) {
+    const prompt = buildSmokeShellInstruction(`请使用 {shellToolName} 工具生成多行输出，并确认最后两行内容，同时验证长输出全文文件 ${index}。`);
+    await runStep(`chat.messages.bash-capture-loop.${index}`, async () => {
+      const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
+        body: {
+          content: prompt,
+          model: state.modelId,
+          provider: state.providerId,
+        },
+        headers: userHeaders(),
+        onEvent: async (event) => {
+          if (event.type === 'permission-request') {
+            await approveRuntimePermissionRequest(event);
+          }
+        },
+      });
+      await ensureRuntimePermissionExpectation(
+        events,
+        usesYoloApproval ? 'skipped' : 'requested',
+        `bash capture loop ${index} SSE`,
+      );
+      assertCompletedSse(events, '已读取 smoke workspace 文件。');
+    });
+
+    await runStep(`chat.messages.bash-capture-loop.${index}.verify`, async () => {
+      const requests = input.fakeOpenAi.readChatCompletions();
+      const toolResultRequest = [...requests].reverse().find((entry) =>
+        requestContainsShellToolResult(entry.body)
+        && readLatestUserText(entry.body?.messages).includes(prompt));
+      ensure(toolResultRequest, `Expected bash capture loop ${index} to issue a follow-up request with shell tool results`);
+      const bashToolContent = readLatestShellToolContent(toolResultRequest.body);
+      ensure(typeof bashToolContent === 'string', `Expected bash capture loop ${index} follow-up request to include shell tool content`);
+      ensure(bashToolContent.includes('Full output saved to: /.garlic-claw/runtime-command-output/'), `Expected bash capture loop ${index} to expose captured full output path`);
+      const outputPathMatch = bashToolContent.match(/Full output saved to: ([^\n]+)/);
+      ensure(outputPathMatch?.[1], `Expected bash capture loop ${index} full output path`);
+      runtimeCommandCapturePaths.push(outputPathMatch[1]);
+      const hostPath = readVisibleRuntimeCommandCaptureHostPath(outputPathMatch[1]);
+      ensure(fs.existsSync(hostPath), `Expected bash capture loop ${index} full output file to exist`);
+      ensure(readNormalizedFileContent(hostPath).includes('line-1'), `Expected bash capture loop ${index} captured file to keep full stdout head`);
+      ensure(readNormalizedFileContent(hostPath).includes('line-4'), `Expected bash capture loop ${index} captured file to keep full stdout tail`);
+    });
+  }
+
+  await runStep('chat.messages.bash-capture-loop.cleanup.verify', async () => {
+    const captureDirectory = readSessionRuntimeCommandCaptureRoot();
+    ensure(fs.existsSync(captureDirectory), 'Expected runtime command capture directory to exist');
+    const files = fs.readdirSync(captureDirectory);
+    ensure(files.length === 2, 'Expected runtime command capture cleanup to keep only the newest two files');
+    ensure(runtimeCommandCapturePaths.length === 3, 'Expected three runtime command capture paths');
+    ensure(fs.existsSync(readVisibleRuntimeCommandCaptureHostPath(runtimeCommandCapturePaths[0])) === false, 'Expected oldest runtime command capture file to be cleaned up');
+    ensure(fs.existsSync(readVisibleRuntimeCommandCaptureHostPath(runtimeCommandCapturePaths[1])), 'Expected second runtime command capture file to remain');
+    ensure(fs.existsSync(readVisibleRuntimeCommandCaptureHostPath(runtimeCommandCapturePaths[2])), 'Expected newest runtime command capture file to remain');
   });
 
   await runStep('ai.runtime-tools-config.put.default', async () => {
@@ -1635,12 +1740,20 @@ async function runHttpFlow(apiBase, state, input) {
             maxLines: 200,
             showTruncationDetails: true,
           },
+          toolOutputCapture: {
+            enabled: true,
+            maxBytes: 8 * 1024,
+            maxFilesPerSession: 20,
+          },
         },
       },
     });
     ensure(config.values?.shellBackend === readSmokeRuntimeToolsShellBackendKind(), 'Expected runtime tools shell backend to restore');
     ensure(config.values?.bashOutput?.maxLines === 200, 'Expected runtime tools config maxLines to restore');
     ensure(config.values?.bashOutput?.showTruncationDetails === true, 'Expected runtime tools config truncation details toggle to restore');
+    ensure(config.values?.toolOutputCapture?.enabled === true, 'Expected runtime tools config tool output capture toggle to restore');
+    ensure(config.values?.toolOutputCapture?.maxBytes === 8 * 1024, 'Expected runtime tools config tool output capture maxBytes to restore');
+    ensure(config.values?.toolOutputCapture?.maxFilesPerSession === 20, 'Expected runtime tools config tool output capture maxFilesPerSession to restore');
   });
 
   await runStep('chat.messages.bash-write-loop', async () => {

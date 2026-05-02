@@ -1,9 +1,8 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { JsonObject, JsonValue, PluginConfigSnapshot, PluginConfigSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { SettingsStore } from '../../core/config/settings.store';
 import type { RuntimeCommandTextOutputOptions } from './runtime-command-output';
+import { hasWindowsPowerShellRuntime } from './runtime-powershell-variant';
 
 const RUNTIME_TOOLS_SOURCE_ID = 'runtime-tools';
 const MAX_CONFIG_INTEGER = 1_000_000;
@@ -16,6 +15,11 @@ interface RuntimeToolsConfigRecord {
     showTruncationDetails?: boolean;
   };
   shellBackend?: RuntimeBackendKind;
+  toolOutputCapture?: {
+    enabled?: boolean;
+    maxBytes?: number;
+    maxFilesPerSession?: number;
+  };
 }
 
 export const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
@@ -50,6 +54,29 @@ export const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
           type: 'bool',
           description: '截断时是否显示总行数、总字节数与保留范围说明。',
           defaultValue: true,
+        },
+      },
+    },
+    toolOutputCapture: {
+      type: 'object',
+      description: '长工具输出落盘',
+      hint: '工具返回正文过长时，把全文写入会话工作区文件，并在回传给 LLM 的截断结果里附上路径；同时自动清理旧文件。',
+      collapsed: true,
+      items: {
+        enabled: {
+          type: 'bool',
+          description: '是否为过长工具输出自动保存全文文件。',
+          defaultValue: true,
+        },
+        maxBytes: {
+          type: 'int',
+          description: '工具返回正文超过多少字节后触发全文落盘。设为 0 时表示禁用按大小触发。',
+          defaultValue: 8 * 1024,
+        },
+        maxFilesPerSession: {
+          type: 'int',
+          description: '每个会话最多保留多少份工具全文输出文件；超出后自动删除最旧文件。',
+          defaultValue: 20,
         },
       },
     },
@@ -92,6 +119,16 @@ export class RuntimeToolsSettingsService {
   readBashOutputOptions(): RuntimeCommandTextOutputOptions {
     return readRuntimeToolsBashOutputOptions(this.configValues);
   }
+
+  readToolOutputCaptureOptions(): RuntimeToolOutputCaptureOptions {
+    return readRuntimeToolsToolOutputCaptureOptions(this.configValues);
+  }
+}
+
+export interface RuntimeToolOutputCaptureOptions {
+  enabled: boolean;
+  maxBytes: number;
+  maxFilesPerSession: number;
 }
 
 export function readRuntimeToolsConfiguredShellBackend(
@@ -126,6 +163,22 @@ export function readRuntimeToolsBashOutputOptions(config: JsonValue): RuntimeCom
   };
 }
 
+export function readRuntimeToolsToolOutputCaptureOptions(
+  config: JsonValue,
+): RuntimeToolOutputCaptureOptions {
+  const record = isJsonObject(config) ? config : null;
+  const capture = isJsonObject(record?.toolOutputCapture) ? record.toolOutputCapture : null;
+  return {
+    enabled: typeof capture?.enabled === 'boolean' ? capture.enabled : true,
+    maxBytes: typeof capture?.maxBytes === 'number'
+      ? readRuntimeToolsNonNegativeInteger(capture.maxBytes, 'runtime-tools.toolOutputCapture.maxBytes')
+      : 8 * 1024,
+    maxFilesPerSession: typeof capture?.maxFilesPerSession === 'number'
+      ? Math.max(1, readRuntimeToolsNonNegativeInteger(capture.maxFilesPerSession, 'runtime-tools.toolOutputCapture.maxFilesPerSession'))
+      : 20,
+  };
+}
+
 function sanitizeRuntimeToolsConfig(values: JsonObject): JsonObject {
   const next: RuntimeToolsConfigRecord = {};
   if (typeof values.shellBackend === 'string') {
@@ -151,6 +204,21 @@ function sanitizeRuntimeToolsConfig(values: JsonObject): JsonObject {
       next.bashOutput = bashOutput;
     }
   }
+  if (isJsonObject(values.toolOutputCapture)) {
+    const toolOutputCapture: NonNullable<RuntimeToolsConfigRecord['toolOutputCapture']> = {};
+    if (typeof values.toolOutputCapture.enabled === 'boolean') {
+      toolOutputCapture.enabled = values.toolOutputCapture.enabled;
+    }
+    if (typeof values.toolOutputCapture.maxBytes === 'number') {
+      toolOutputCapture.maxBytes = readRuntimeToolsNonNegativeInteger(values.toolOutputCapture.maxBytes, 'runtime-tools.toolOutputCapture.maxBytes');
+    }
+    if (typeof values.toolOutputCapture.maxFilesPerSession === 'number') {
+      toolOutputCapture.maxFilesPerSession = readRuntimeToolsNonNegativeInteger(values.toolOutputCapture.maxFilesPerSession, 'runtime-tools.toolOutputCapture.maxFilesPerSession');
+    }
+    if (Object.keys(toolOutputCapture).length > 0) {
+      next.toolOutputCapture = toolOutputCapture;
+    }
+  }
   return next as unknown as JsonObject;
 }
 
@@ -167,29 +235,6 @@ function readRuntimeToolsShellBackendOptions(platform: NodeJS.Platform = process
     ];
   }
   return [{ label: 'bash', value: 'native-shell' }];
-}
-
-function hasWindowsPowerShellRuntime(): boolean {
-  const candidatePaths = new Set<string>();
-  const systemRoot = process.env.SystemRoot?.trim();
-  if (systemRoot) {
-    candidatePaths.add(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
-    candidatePaths.add(path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'pwsh.exe'));
-  }
-  const pathEntries = (process.env.PATH ?? '')
-    .split(path.delimiter)
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-  for (const basePath of pathEntries) {
-    candidatePaths.add(path.join(basePath, 'powershell.exe'));
-    candidatePaths.add(path.join(basePath, 'pwsh.exe'));
-  }
-  for (const candidatePath of candidatePaths) {
-    if (fs.existsSync(candidatePath)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function readRuntimeToolsNonNegativeInteger(value: number, fieldName: string): number {

@@ -1,5 +1,6 @@
 import type { RuntimeBackendKind } from '@garlic-claw/shared';
 import { normalizeRuntimeVisiblePath } from './runtime-visible-path';
+import { supportsWindowsPowerShellAndAnd } from './runtime-powershell-variant';
 
 const SINGLE_QUOTED_LITERAL_PREFIX = '__GARLIC_CLAW_SINGLE_QUOTED__', MAX_PREVIEW_ITEMS = 3;
 const COMMAND_ALIASES = new Map<string, string>([['gc', 'get-content'], ['irm', 'invoke-restmethod'], ['iwr', 'invoke-webrequest'], ['copy', 'copy-item'], ['move', 'move-item'], ['sc', 'set-content'], ['ac', 'add-content'], ['sl', 'set-location'], ['cpi', 'copy-item'], ['mi', 'move-item'], ['ni', 'new-item'], ['md', 'mkdir'], ['rd', 'remove-item'], ['ri', 'remove-item'], ['del', 'remove-item'], ['erase', 'remove-item'], ['ren', 'rename-item']]);
@@ -30,7 +31,7 @@ interface RuntimeShellEntry { kind: 'separator' | 'token'; text: string; } inter
 interface RuntimeOptionValueMatch { attachedValue?: string; takesNextValue: boolean; } interface RuntimePowerShellTargetRule { fallback: 'destination' | 'path'; positionalValueFlags: Set<string>; buildPath?: (basePath: string, leafName: string) => string; leafFlags?: Set<string>; pathFlags?: Set<string>; }
 type RuntimeVariableMap = Map<string, string>;
 export async function readRuntimeShellCommandHints(input: ReadRuntimeShellCommandHintsInput): Promise<RuntimeShellCommandHints> {
-  const usesPowerShell = usesRuntimePowerShellSyntax(input.backendKind), scan = readCommandScan(input.command, usesPowerShell);
+  const usesPowerShell = usesRuntimePowerShellSyntax(input.backendKind), allowsAndAnd = usesPowerShell && supportsWindowsPowerShellAndAnd(), scan = readCommandScan(input.command, usesPowerShell);
   const absolutePaths = uniquePreview(scan.tokens.flatMap((token) => readAbsolutePathCandidates(token, input.backendKind)));
   const externalAbsolutePaths = uniquePreview(absolutePaths.filter((token) => isExternalAbsolutePath(token, input.visibleRoot)));
   const externalWritePaths = uniquePreview(scan.writeTokens.map((token) => normalizeAbsolutePath(token, input.backendKind)).filter((token): token is string => Boolean(token)).filter((token) => isExternalAbsolutePath(token, input.visibleRoot)));
@@ -39,12 +40,12 @@ export async function readRuntimeShellCommandHints(input: ReadRuntimeShellComman
   const parentTraversalPaths = uniquePreview(scan.tokens.filter(isParentTraversalToken)), usesCd = scan.segments.some((segment) => CD_COMMANDS.has(segment.command));
   const metadata: RuntimeShellCommandHintMetadata = {
     ...(absolutePaths.length > 0 ? { absolutePaths } : {}), ...(externalAbsolutePaths.length > 0 ? { externalAbsolutePaths } : {}), ...(externalWritePaths.length > 0 ? { externalWritePaths } : {}), ...(fileCommands.length > 0 ? { fileCommands } : {}), ...(networkCommands.length > 0 ? { networkCommands } : {}), ...(parentTraversalPaths.length > 0 ? { parentTraversalPaths } : {}),
-    ...(usesCd ? { usesCd: true } : {}), ...(networkCommands.length > 0 ? { usesNetworkCommand: true } : {}), ...(parentTraversalPaths.length > 0 ? { usesParentTraversal: true } : {}), ...(input.workdir && usesCd ? { redundantCdWithWorkdir: true } : {}), ...(usesPowerShell && input.command.includes('&&') ? { usesWindowsAndAnd: true } : {}), ...(externalWritePaths.length > 0 ? { writesExternalPath: true } : {}), ...(networkCommands.length > 0 && externalAbsolutePaths.length > 0 ? { networkTouchesExternalPath: true } : {}),
+    ...(usesCd ? { usesCd: true } : {}), ...(networkCommands.length > 0 ? { usesNetworkCommand: true } : {}), ...(parentTraversalPaths.length > 0 ? { usesParentTraversal: true } : {}), ...(input.workdir && usesCd ? { redundantCdWithWorkdir: true } : {}), ...(usesPowerShell && input.command.includes('&&') && !allowsAndAnd ? { usesWindowsAndAnd: true } : {}), ...(externalWritePaths.length > 0 ? { writesExternalPath: true } : {}), ...(networkCommands.length > 0 && externalAbsolutePaths.length > 0 ? { networkTouchesExternalPath: true } : {}),
   };
   const summary = [
     usesCd ? '含 cd' : undefined, input.workdir && usesCd ? '已提供 workdir，命令里仍含 cd' : undefined, parentTraversalPaths.length > 0 ? `相对上级路径: ${parentTraversalPaths.join(', ')}` : undefined,
     networkCommands.length > 0 ? `联网命令: ${networkCommands.join(', ')}` : undefined, networkCommands.length > 0 && externalAbsolutePaths.length > 0 ? `联网命令涉及外部绝对路径: ${externalAbsolutePaths.join(', ')}` : undefined,
-    externalWritePaths.length > 0 ? `写入命令涉及外部绝对路径: ${externalWritePaths.join(', ')}` : undefined, usesPowerShell && input.command.includes('&&') ? 'Windows native-shell 中不建议使用 &&' : undefined,
+    externalWritePaths.length > 0 ? `写入命令涉及外部绝对路径: ${externalWritePaths.join(', ')}` : undefined, usesPowerShell && input.command.includes('&&') && !allowsAndAnd ? '当前 Windows PowerShell 不支持 &&' : undefined,
     fileCommands.length > 0 ? `文件命令: ${fileCommands.join(', ')}` : undefined, externalAbsolutePaths.length > 0 ? `外部绝对路径: ${externalAbsolutePaths.join(', ')}` : undefined,
   ].filter((part): part is string => Boolean(part));
   return { ...(Object.keys(metadata).length > 0 ? { metadata } : {}), ...(summary.length > 0 ? { summary: `静态提示: ${summary.join('、')}` } : {}) };

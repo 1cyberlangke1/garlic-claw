@@ -388,7 +388,7 @@ describe('ChatMessageList', () => {
     expect(assistant.text()).toContain('subagent-conversation-1')
   })
 
-  it('renders assistant usage details behind an info toggle and includes total and cached tokens when provided', async () => {
+  it('renders assistant usage inline and still allows expanding detailed token breakdown', async () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         assistantPersona: {
@@ -484,8 +484,18 @@ describe('ChatMessageList', () => {
     const secondAssistant = wrapper.find('[data-message-id="assistant-usage-2"]')
     const thirdAssistant = wrapper.find('[data-message-id="assistant-usage-3"]')
 
+    expect(firstAssistant.find('.message-usage-inline').text()).toContain('输入 320')
+    expect(firstAssistant.find('.message-usage-inline').text()).toContain('输出 120')
+    expect(firstAssistant.find('.message-usage-inline').text()).toContain('缓存 64')
+    expect(firstAssistant.find('.message-usage-inline').text()).toContain('总计 440')
+    expect(secondAssistant.find('.message-usage-inline').text()).toContain('输入 180')
+    expect(secondAssistant.find('.message-usage-inline').text()).toContain('输出 40')
+    expect(secondAssistant.find('.message-usage-inline').text()).toContain('总计 220')
+    expect(secondAssistant.find('.message-usage-inline').text()).not.toContain('缓存')
+    expect(thirdAssistant.find('.message-usage-inline').text()).toContain('输入 42')
+    expect(thirdAssistant.find('.message-usage-inline').text()).toContain('输出 21')
+    expect(thirdAssistant.find('.message-usage-inline').text()).toContain('总计 63')
     expect(firstAssistant.find('.usage-info-toggle').text()).toBe('[i]')
-    expect(firstAssistant.text()).not.toContain('输入 token')
     expect(thirdAssistant.find('.usage-info-toggle').text()).toBe('[i]')
 
     await firstAssistant.find('.usage-info-toggle').trigger('click')

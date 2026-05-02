@@ -369,7 +369,7 @@ describe('ContextGovernanceService', () => {
     expect(history.messages.some((message) => typeof message.content === 'string' && message.content.includes('仍然过长的摘要'))).toBe(false);
   });
 
-  it('returns a clear stop message when the first completed turn already overflows but no history can be compacted', async () => {
+  it('returns a clear failure message when the last oversized reply still leaves the conversation over budget after compaction', async () => {
     settingsService.updateConfig({
       contextCompaction: {
         compressionThreshold: 1,
@@ -404,13 +404,84 @@ describe('ContextGovernanceService', () => {
       userId: 'user-1',
       userMessageId: 'user-1',
     })).resolves.toEqual({
-      assistantContent: '当前最后一轮内容本身已占满上下文，现有历史不足以继续压缩。请新开会话，或先删减本轮长回复后再继续。',
-      assistantParts: [{ text: '当前最后一轮内容本身已占满上下文，现有历史不足以继续压缩。请新开会话，或先删减本轮长回复后再继续。', type: 'text' }],
+      assistantContent: '压缩后的上下文仍超过预算，本次未替换历史。',
+      assistantParts: [{ text: '压缩后的上下文仍超过预算，本次未替换历史。', type: 'text' }],
       modelId: 'context-compaction-command',
       providerId: 'system',
       reason: 'context-compaction:command',
     });
+    expect(aiModelExecutionService.generateText).toHaveBeenCalled();
+  });
+
+  it('does not secretly clamp the effective context budget to 256 when the configured context length is 10000', async () => {
+    aiManagementService.getProviderModel.mockImplementation((providerId: string, modelId: string) => ({
+      capabilities: {
+        input: { image: false, text: true },
+        output: { image: false, text: true },
+        reasoning: false,
+        toolCall: true,
+      },
+      contextLength: 10_000,
+      id: modelId,
+      name: modelId,
+      providerId,
+      status: 'active',
+    }));
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 50,
+        enabled: true,
+        keepRecentMessages: 2,
+        reservedTokens: 12_000,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一段历史消息，用来验证 10000 上下文长度不会被偷偷压成 256。'.repeat(12)),
+      createHistoryMessage('message-2', 'assistant', '第二段历史回复，用来让当前上下文占用明显高于 128，但仍远低于 10000 的 50%。'.repeat(12)),
+      createHistoryMessage('message-3', 'user', '第三段消息保留在最近窗口内。'),
+    ], 'user-1');
+
+    await service.rewriteHistoryBeforeModel({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    const preview = await service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+    const beforeModel = await service.applyBeforeModel({
+      conversationId,
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+      userId: 'user-1',
+    });
+
+    expect(preview.contextLength).toBe(10_000);
+    expect(preview.estimatedTokens).toBeGreaterThan(128);
+    expect(preview.estimatedTokens).toBeLessThan(5_000);
     expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
+    expect(beforeModel).toEqual({
+      action: 'continue',
+      messages: [
+        { content: 'system prompt', role: 'system' },
+        { content: '继续下一步', role: 'user' },
+      ],
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      systemPrompt: '你是测试助手',
+    });
   });
 
   it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
@@ -469,7 +540,7 @@ describe('ContextGovernanceService', () => {
   it('does not let stale provider usage suppress auto compaction threshold checks', async () => {
     settingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 50,
+        compressionThreshold: 10,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,
@@ -489,9 +560,9 @@ describe('ContextGovernanceService', () => {
       },
     ]);
     conversationRecordService.replaceMessages(conversationId, [
-      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来确保当前真实历史已经超过自动压缩阈值。'.repeat(8)),
+      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来确保当前真实历史已经超过自动压缩阈值。'.repeat(20)),
       {
-        ...createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，附带的是上一轮旧 usage，不应该继续参与这轮阈值判断。'.repeat(8)),
+        ...createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，附带的是上一轮旧 usage，不应该继续参与这轮阈值判断。'.repeat(20)),
         metadataJson: JSON.stringify({
           annotations: [
             {

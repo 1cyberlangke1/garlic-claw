@@ -1,9 +1,11 @@
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
+import * as runtimePowerShellVariant from '../../../src/execution/runtime/runtime-powershell-variant';
 
 describe('BashToolService', () => {
   const originalHintsTestRoot = process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
 
   afterEach(() => {
+    jest.restoreAllMocks();
     if (originalHintsTestRoot === undefined) {
       delete process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
       return;
@@ -55,6 +57,10 @@ describe('BashToolService', () => {
   });
 
   it('describes native-shell syntax according to the host platform', async () => {
+    if (process.platform === 'win32') {
+      jest.spyOn(runtimePowerShellVariant, 'readWindowsPowerShellVariant').mockReturnValue('pwsh');
+      jest.spyOn(runtimePowerShellVariant, 'supportsWindowsPowerShellAndAnd').mockReturnValue(true);
+    }
     const service = new BashToolService(
       {} as never,
       {
@@ -86,14 +92,54 @@ describe('BashToolService', () => {
 
     expect(service.buildToolDescription()).toContain(
       process.platform === 'win32'
-        ? '当前 shell backend 使用 PowerShell 语法。'
+        ? '当前 shell backend 实际使用 PowerShell 7（pwsh）语法。'
         : '当前 shell backend 使用 bash 语法。',
     );
     expect(service.buildToolDescription()).toContain(
       process.platform === 'win32'
-        ? '如果后续命令依赖前序命令成功，不要使用 &&；请改用 PowerShell 条件写法，例如 cmd1; if ($?) { cmd2 }。'
+        ? '当前 PowerShell 7 支持 && / ||；如需更复杂的条件分支，仍优先使用 if ($?) { ... } 这类显式写法。'
         : '如果后续命令依赖前序命令成功，请把它们放进同一条命令，并用 && 串起来。',
     );
+  });
+
+  it('describes native-shell fallback as Windows PowerShell 5 when pwsh is unavailable', async () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
+    jest.spyOn(runtimePowerShellVariant, 'readWindowsPowerShellVariant').mockReturnValue('powershell');
+    jest.spyOn(runtimePowerShellVariant, 'supportsWindowsPowerShellAndAnd').mockReturnValue(false);
+
+    const service = new BashToolService(
+      {} as never,
+      {
+        getDescriptor: () => ({ visibleRoot: '/' }),
+      } as never,
+      {
+        getShellBackendDescriptor: () => ({
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'native-shell',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        }),
+        getShellBackendKind: () => 'native-shell',
+      } as never,
+    );
+
+    expect(service.buildToolDescription()).toContain('当前 shell backend 实际使用 Windows PowerShell 5 语法。');
+    expect(service.buildToolDescription()).toContain('当前 Windows PowerShell 5 不支持 &&；请改用 PowerShell 条件写法，例如 cmd1; if ($?) { cmd2 }。');
   });
 
   it('describes persistent shell state when the backend keeps one shell session alive', async () => {
@@ -131,6 +177,10 @@ describe('BashToolService', () => {
   });
 
   it('treats native-shell aliases as the same shell syntax family', async () => {
+    if (process.platform === 'win32') {
+      jest.spyOn(runtimePowerShellVariant, 'readWindowsPowerShellVariant').mockReturnValue('powershell');
+      jest.spyOn(runtimePowerShellVariant, 'supportsWindowsPowerShellAndAnd').mockReturnValue(false);
+    }
     const service = new BashToolService(
       {} as never,
       {
@@ -162,7 +212,7 @@ describe('BashToolService', () => {
 
     expect(service.buildToolDescription()).toContain(
       process.platform === 'win32'
-        ? '当前 shell backend 使用 PowerShell 语法。'
+        ? '当前 shell backend 实际使用 Windows PowerShell 5 语法。'
         : '当前 shell backend 使用 bash 语法。',
     );
 
@@ -180,7 +230,7 @@ describe('BashToolService', () => {
             usesWindowsAndAnd: true,
           },
         },
-        summary: '检查 native-shell-alias chaining 提示 (/)；静态提示: Windows native-shell 中不建议使用 &&',
+        summary: '检查 native-shell-alias chaining 提示 (/)；静态提示: 当前 Windows PowerShell 不支持 &&',
       });
       return;
     }
@@ -6820,6 +6870,9 @@ describe('BashToolService', () => {
   });
 
   it('warns about && in windows native-shell static hints', async () => {
+    if (process.platform === 'win32') {
+      jest.spyOn(runtimePowerShellVariant, 'supportsWindowsPowerShellAndAnd').mockReturnValue(false);
+    }
     const service = new BashToolService(
       {} as never,
       {
@@ -6868,7 +6921,7 @@ describe('BashToolService', () => {
         },
         requiredOperations: ['command.execute'],
         role: 'shell',
-        summary: '检查 windows chaining 提示 (/workspace)；静态提示: Windows native-shell 中不建议使用 &&',
+        summary: '检查 windows chaining 提示 (/workspace)；静态提示: 当前 Windows PowerShell 不支持 &&',
       });
       return;
     }
@@ -6885,4 +6938,3 @@ describe('BashToolService', () => {
     });
   });
 });
-

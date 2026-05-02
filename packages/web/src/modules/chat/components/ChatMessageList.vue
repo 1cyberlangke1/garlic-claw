@@ -277,6 +277,26 @@
                 <div v-if="row.message.error" class="message-error">
                   错误: {{ row.message.error }}
                 </div>
+                <div
+                  v-if="readAssistantUsage(row.message)"
+                  class="message-usage-inline"
+                >
+                  <span class="message-usage-inline-item">
+                    输入 {{ readAssistantUsage(row.message)?.inputTokens }}
+                  </span>
+                  <span class="message-usage-inline-item">
+                    输出 {{ readAssistantUsage(row.message)?.outputTokens }}
+                  </span>
+                  <span
+                    v-if="readAssistantUsage(row.message)?.cachedInputTokens !== undefined"
+                    class="message-usage-inline-item"
+                  >
+                    缓存 {{ readAssistantUsage(row.message)?.cachedInputTokens }}
+                  </span>
+                  <span class="message-usage-inline-item">
+                    总计 {{ readAssistantUsage(row.message)?.totalTokens }}
+                  </span>
+                </div>
               </template>
 
               <span

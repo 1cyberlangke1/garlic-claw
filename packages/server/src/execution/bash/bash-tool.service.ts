@@ -5,6 +5,7 @@ import type { RuntimeToolAccessRequest } from '../runtime/runtime-tool-access';
 import type { RuntimeCommandResult } from '../runtime/runtime-command.types';
 import { renderRuntimeCommandTextOutput } from '../runtime/runtime-command-output';
 import { readRuntimeShellCommandHints, usesRuntimePowerShellSyntax } from '../runtime/runtime-shell-command-hints';
+import { readWindowsPowerShellVariant, supportsWindowsPowerShellAndAnd } from '../runtime/runtime-powershell-variant';
 import { isRuntimeShellToolAlias, readRuntimeShellToolAliases, readRuntimeShellToolName } from '../runtime/runtime-shell-tool-name';
 import { RuntimeCommandService } from '../runtime/runtime-command.service';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
@@ -13,7 +14,7 @@ import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.servi
 export interface BashToolInput { backendKind: RuntimeBackendKind; command: string; description: string; sessionId: string; timeout?: number; workdir?: string; }
 
 export const BASH_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
-  command: { description: '要执行的命令。命令语法跟随当前 shell backend：bash / WSL 使用 bash，Windows PowerShell backend 使用 PowerShell。', required: true, type: 'string' },
+  command: { description: '要执行的命令。命令语法跟随当前 shell backend：bash / WSL 使用 bash；Windows 下若实际走 pwsh 则按 PowerShell 7，退回 powershell.exe 则按 Windows PowerShell 5。', required: true, type: 'string' },
   description: { description: '用 5 到 10 个词描述这条命令在做什么，便于审查和后续理解。', required: true, type: 'string' },
   workdir: { description: '可选工作目录。相对路径会基于当前 backend 的可见根解析。优先使用该字段，不要在命令里先写 cd。', required: false, type: 'string' },
   timeout: { description: '可选超时时间，单位毫秒，默认 30000，最大 120000。', required: false, type: 'number' },
@@ -57,11 +58,19 @@ export class BashToolService {
   buildToolDescription(): string {
     const backend = this.runtimeToolBackendService.getShellBackendDescriptor(), visibleRoot = this.runtimeSessionEnvironmentService.getDescriptor().visibleRoot, visibleRootDescription = visibleRoot === '/' ? '同一 session 下写入 backend 当前可见路径的文件，会在后续工具调用中继续可见。' : `同一 session 下写入 ${visibleRoot} 内的文件，会在后续工具调用中继续可见。`;
     const toolName = this.getToolName(backend.kind);
+    const usesPowerShell = usesRuntimePowerShellSyntax(backend.kind);
+    const powerShellVariant = usesPowerShell ? readWindowsPowerShellVariant() : null;
     return [
       '在当前 session 的执行后端中执行命令。',
-      usesRuntimePowerShellSyntax(backend.kind) ? '当前 shell backend 使用 PowerShell 语法。' : '当前 shell backend 使用 bash 语法。',
-      usesRuntimePowerShellSyntax(backend.kind)
-        ? '如果后续命令依赖前序命令成功，不要使用 &&；请改用 PowerShell 条件写法，例如 cmd1; if ($?) { cmd2 }。'
+      !usesPowerShell
+        ? '当前 shell backend 使用 bash 语法。'
+        : powerShellVariant === 'pwsh'
+          ? '当前 shell backend 实际使用 PowerShell 7（pwsh）语法。'
+          : '当前 shell backend 实际使用 Windows PowerShell 5 语法。',
+      usesPowerShell
+        ? supportsWindowsPowerShellAndAnd()
+          ? '当前 PowerShell 7 支持 && / ||；如需更复杂的条件分支，仍优先使用 if ($?) { ... } 这类显式写法。'
+          : '当前 Windows PowerShell 5 不支持 &&；请改用 PowerShell 条件写法，例如 cmd1; if ($?) { cmd2 }。'
         : '如果后续命令依赖前序命令成功，请把它们放进同一条命令，并用 && 串起来。',
       visibleRootDescription,
       '当前后端不会保留 shell 进程状态；不要依赖 cd、export、alias 或 shell function 在跨调用时继续存在。',
