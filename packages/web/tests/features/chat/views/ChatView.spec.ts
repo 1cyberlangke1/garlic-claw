@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import ChatView from '@/features/chat/views/ChatView.vue'
+import ChatView from '@/modules/chat/views/ChatView.vue'
 
 const applyCommandSuggestion = vi.fn()
 const replyRuntimePermission = vi.fn()
@@ -45,7 +45,7 @@ function createDeferred<T>() {
 
 vi.stubGlobal('fetch', mockFetch)
 
-vi.mock('@/features/chat/store/chat', () => ({
+vi.mock('@/modules/chat/store/chat', () => ({
   useChatStore: () => ({
     currentConversationId: 'conversation-1',
     selectedProvider: 'demo-provider',
@@ -59,7 +59,7 @@ vi.mock('@/features/chat/store/chat', () => ({
   }),
 }))
 
-vi.mock('@/features/chat/composables/use-chat-view', () => ({
+vi.mock('@/modules/chat/composables/use-chat-view', () => ({
   useChatView: () => ({
     inputText: ref(''),
     pendingImages: ref([]),
@@ -111,7 +111,7 @@ vi.mock('@/features/chat/composables/use-chat-view', () => ({
   }),
 }))
 
-vi.mock('@/features/personas/composables/persona-settings.data', () => ({
+vi.mock('@/modules/personas/composables/persona-settings.data', () => ({
   loadCurrentPersona: vi.fn().mockResolvedValue({
     avatar: '/api/personas/persona.writer/avatar',
     name: 'Writer',

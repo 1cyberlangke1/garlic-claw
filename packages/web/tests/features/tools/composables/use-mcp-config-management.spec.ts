@@ -1,9 +1,10 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import * as internalConfigChange from '@/features/ai-settings/internal-config-change'
-import { useMcpConfigManagement } from '@/features/tools/composables/use-mcp-config-management'
-import * as mcpData from '@/features/tools/composables/mcp-config-management.data'
+import * as internalConfigChange from '@/modules/ai-settings/internal-config-change'
+import { useMcpConfigManagement } from '@/modules/tools/composables/use-mcp-config-management'
+import * as mcpData from '@/modules/tools/composables/mcp-config-management.data'
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -16,7 +17,7 @@ function createDeferred<T>() {
   }
 }
 
-vi.mock('@/features/tools/composables/mcp-config-management.data', () => ({
+vi.mock('@/modules/tools/composables/mcp-config-management.data', () => ({
   loadMcpConfigSnapshot: vi.fn(),
   createMcpServerConfig: vi.fn(),
   updateMcpServerConfig: vi.fn(),
@@ -34,8 +35,12 @@ vi.mock('@/features/tools/composables/mcp-config-management.data', () => ({
 }))
 
 describe('useMcpConfigManagement', () => {
+  let pinia: ReturnType<typeof createPinia>
+
   beforeEach(() => {
     vi.clearAllMocks()
+    pinia = createPinia()
+    setActivePinia(pinia)
     vi.mocked(mcpData.loadMcpConfigSnapshot).mockResolvedValue({
       configPath: 'mcp/servers',
       servers: [
@@ -78,6 +83,14 @@ describe('useMcpConfigManagement', () => {
     })
   })
 
+  function mountHarness(Harness: ReturnType<typeof defineComponent>) {
+    return mount(Harness, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+  }
+
   it('loads MCP config snapshot and tracks selected server', async () => {
     let state!: ReturnType<typeof useMcpConfigManagement>
     const Harness = defineComponent({
@@ -87,7 +100,7 @@ describe('useMcpConfigManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.snapshot.value.configPath).toBe('mcp/servers')
@@ -110,7 +123,7 @@ describe('useMcpConfigManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     await state.createServer({
@@ -193,7 +206,7 @@ describe('useMcpConfigManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     await expect(state.createServer({
@@ -266,7 +279,7 @@ describe('useMcpConfigManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.eventLogs.value.map((entry) => entry.id)).toEqual(['event-3', 'event-2'])
@@ -334,7 +347,7 @@ describe('useMcpConfigManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
     await state.loadMoreServerEvents()
     await state.refreshServerEvents()
@@ -432,7 +445,7 @@ describe('useMcpConfigManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
     vi.clearAllMocks()
 
@@ -480,7 +493,7 @@ describe('useMcpConfigManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
     vi.clearAllMocks()
     const firstRefresh = createDeferred<{

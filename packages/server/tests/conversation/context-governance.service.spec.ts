@@ -82,7 +82,7 @@ describe('ContextGovernanceService', () => {
     conversationRecordService = new RuntimeHostConversationRecordService();
     conversationId = (
       conversationRecordService.createConversation({
-        title: 'New Chat',
+        title: '新的对话',
         userId: 'user-1',
       }) as { id: string }
     ).id;
@@ -109,6 +109,12 @@ describe('ContextGovernanceService', () => {
   });
 
   it('generates a conversation title through the model execution owner', async () => {
+    settingsService.updateConfig({
+      conversationTitle: {
+        defaultTitle: '新的对话',
+        enabled: true,
+      },
+    } as never);
     conversationRecordService.replaceMessages(conversationId, [
       createHistoryMessage('message-1', 'user', '帮我整理一下今天的代码评审结论'),
       createHistoryMessage('message-2', 'assistant', '今天主要处理 provider smoke、subagent 和上下文压缩'),

@@ -22,7 +22,7 @@ describe('readHttpServerConfig', () => {
 
   it('rejects an invalid port', () => {
     expect(() => readHttpServerConfig({ PORT: '0' })).toThrow(
-      'PORT must be a positive integer',
+      'PORT 必须是正整数',
     );
   });
 });

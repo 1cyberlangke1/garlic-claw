@@ -2,8 +2,8 @@ import { computed, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import type { PluginPersonaCurrentInfo, PluginPersonaDetail, PluginPersonaSummary } from '@garlic-claw/shared'
-import PersonaSettingsView from '@/features/personas/views/PersonaSettingsView.vue'
-import type { PersonaEditorDraft } from '@/features/personas/composables/use-persona-settings'
+import PersonaSettingsView from '@/modules/personas/views/PersonaSettingsView.vue'
+import type { PersonaEditorDraft } from '@/modules/personas/composables/use-persona-settings'
 
 const selectedPersona = ref<PluginPersonaDetail | null>({
   avatar: 'https://example.com/writer.png',
@@ -48,7 +48,7 @@ const editorDraft = ref<PersonaEditorDraft>({
   toolInput: 'memory.search',
 })
 
-vi.mock('@/features/personas/composables/use-persona-settings', () => ({
+vi.mock('@/modules/personas/composables/use-persona-settings', () => ({
   usePersonaSettings: () => ({
     loading: ref(false),
     loadingCurrentPersona: ref(false),
@@ -102,10 +102,12 @@ describe('PersonaSettingsView', () => {
     expect(wrapper.text()).toContain('Writer')
     expect(wrapper.text()).toContain('Begin Dialogs')
     expect(wrapper.text()).toContain('应用到当前对话')
+    expect(wrapper.text()).toContain('默认人设')
     expect(wrapper.text()).not.toContain('builtin.persona-router')
     expect(wrapper.find('[data-persona-avatar="current"] img').attributes('src')).toBe('https://example.com/default.png')
     expect(wrapper.find('[data-persona-avatar="selected-detail"] img').attributes('src')).toBe('https://example.com/writer.png')
     expect(wrapper.find('[data-persona-avatar="list-persona.writer"] img').attributes('src')).toBe('https://example.com/writer.png')
-    expect((wrapper.find('textarea.prompt-textarea').element as HTMLTextAreaElement).value).toBe('writer prompt')
+    expect(wrapper.find('.setting-row .el-switch').exists()).toBe(true)
+    expect((wrapper.find('.prompt-textarea textarea').element as HTMLTextAreaElement).value).toBe('writer prompt')
   })
 })

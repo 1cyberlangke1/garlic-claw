@@ -53,7 +53,7 @@ export class RuntimeHostService implements OnModuleInit {
     pluginId: string;
   }): Promise<JsonValue> {
     const handler = this.callHandlers[input.method];
-    if (!handler) {throw new BadRequestException(`Host API ${input.method} is not implemented in the current server runtime`);}
+    if (!handler) {throw new BadRequestException(`当前服务运行时未实现 Host API ${input.method}`);}
     const plugin = this.pluginBootstrapService.getPlugin(input.pluginId);
     this.assertHostPermission(plugin, input.method);
     if (input.context.conversationId && input.context.activePersonaId) {
@@ -64,7 +64,7 @@ export class RuntimeHostService implements OnModuleInit {
   private assertHostPermission(plugin: RegisteredPluginRecord, method: PluginHostMethod): void {
     const requiredPermission = PLUGIN_HOST_METHOD_PERMISSION_MAP[method];
     if (!requiredPermission || plugin.manifest.permissions.includes(requiredPermission)) {return;}
-    throw new ForbiddenException(`Plugin ${plugin.pluginId} is missing permission ${requiredPermission}`);
+    throw new ForbiddenException(`插件 ${plugin.pluginId} 缺少权限 ${requiredPermission}`);
   }
 
   private buildCallHandlers(): Record<PluginHostMethod, RuntimeHostCallHandler> {
@@ -132,7 +132,7 @@ export class RuntimeHostService implements OnModuleInit {
       'subagent.send-input': (input) => this.runtimeHostSubagentRunnerService.sendInputSubagent(input.pluginId, input.context, readRuntimeHostSubagentSendInputParams(input.params)),
       'subagent.spawn': (input) => this.runtimeHostSubagentRunnerService.spawnSubagent(input.pluginId, input.plugin.manifest.name, input.context, input.params),
       'subagent.wait': (input) => this.runtimeHostSubagentRunnerService.waitSubagent(input.pluginId, readRuntimeHostSubagentWaitParams(input.params)),
-      'user.get': (input) => { if (!input.context.userId) {throw new NotFoundException('User not found: unknown');} return asJsonValue(createSingleUserProfile()); },
+      'user.get': (input) => { if (!input.context.userId) {throw new NotFoundException('未找到用户: unknown');} return asJsonValue(createSingleUserProfile()); },
       ...toolHandlers,
       ...storeHandlers,
     } as Record<PluginHostMethod, RuntimeHostCallHandler>;
@@ -195,7 +195,7 @@ function readRuntimeHostLlmRequest(input: {
     ...(typeof input.params.maxOutputTokens === 'number' ? { maxOutputTokens: input.params.maxOutputTokens } : {}),
     messages: input.method === 'llm.generate-text'
       ? [{ content: readRequiredString(input.params, 'prompt'), role: 'user' }]
-      : readPluginLlmMessages(input.params.messages, 'llm.generate messages must be a non-empty array', (message) => new Error(message), 'llm.generate'),
+      : readPluginLlmMessages(input.params.messages, 'llm.generate messages 必须是非空数组', (message) => new Error(message), 'llm.generate'),
     ...(modelId ? { modelId } : {}),
     ...(providerOptions ? { providerOptions } : {}),
     ...(providerId ? { providerId } : {}),
@@ -236,7 +236,7 @@ function readTransportMode(params: JsonObject): PluginLlmTransportMode | null {
   const value = readOptionalString(params, 'transportMode');
   if (!value) {return null;}
   if (value === 'generate' || value === 'stream-collect') {return value;}
-  throw new BadRequestException('transportMode must be generate or stream-collect');
+  throw new BadRequestException('transportMode 只能是 generate 或 stream-collect');
 }
 
 function readRuntimeHostSubagentWaitParams(params: JsonObject): PluginSubagentWaitParams {
@@ -255,7 +255,7 @@ function readRuntimeHostSubagentSendInputParams(params: JsonObject): PluginSubag
     ...(typeof params.providerId === 'string' ? { providerId: params.providerId } : {}),
     ...(typeof params.modelId === 'string' ? { modelId: params.modelId } : {}),
     ...(typeof params.system === 'string' ? { system: params.system } : {}),
-    messages: readPluginLlmMessages(params.messages, 'subagent.send-input messages must be a non-empty array', (message) => new Error(message), 'subagent.send-input'),
+    messages: readPluginLlmMessages(params.messages, 'subagent.send-input messages 必须是非空数组', (message) => new Error(message), 'subagent.send-input'),
     ...(Array.isArray(params.toolNames) ? { toolNames: params.toolNames.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0) } : {}),
     ...(typeof params.variant === 'string' ? { variant: params.variant } : {}),
     ...(providerOptions ? { providerOptions } : {}),

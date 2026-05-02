@@ -7,6 +7,8 @@
     "dev": "tsc -p tsconfig.build.json --watch & node --watch dist/src/main.js",
     "start": "node dist/src/main.js",
     "smoke:http": "node scripts/http-smoke.mjs",
+    "smoke:http:core": "node scripts/http-smoke.mjs --profile core",
+    "smoke:http:full": "node scripts/http-smoke.mjs --profile full",
     "smoke:http:real": "node scripts/http-smoke.mjs --real-provider-env",
     "test": "jest --runInBand --passWithNoTests",
     "typecheck": "tsc --noEmit"

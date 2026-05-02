@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import HostModelRoutingPanel from '@/features/ai-settings/components/HostModelRoutingPanel.vue'
+import HostModelRoutingPanel from '@/modules/ai-settings/components/HostModelRoutingPanel.vue'
 
 describe('HostModelRoutingPanel', () => {
   it('只编辑聊天回退链并发出保存事件', async () => {

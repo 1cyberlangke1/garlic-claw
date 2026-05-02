@@ -22,7 +22,7 @@ export class RequestAuthService {
   async authenticateJwtRequest(request: Request): Promise<AuthenticatedUser> {
     const jwtToken = extractJwtToken(request);
     if (!jwtToken) {
-      throw new UnauthorizedException('Missing access token');
+      throw new UnauthorizedException('缺少访问令牌');
     }
 
     return this.authenticateJwtToken(jwtToken);
@@ -35,11 +35,11 @@ export class RequestAuthService {
         secret: this.configService.get<string>('JWT_SECRET') || 'fallback-secret',
       });
     } catch {
-      throw new UnauthorizedException('Invalid access token');
+      throw new UnauthorizedException('访问令牌无效');
     }
 
     if (payload.sub !== SINGLE_USER_ID) {
-      throw new UnauthorizedException('Invalid access token');
+      throw new UnauthorizedException('访问令牌无效');
     }
 
     return {

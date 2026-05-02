@@ -1,9 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
-import { PLUGIN_CONFIG_CHANGED_EVENT } from '@/features/plugins/plugin-config-change'
-import ToolsView from '@/features/tools/views/ToolsView.vue'
-import * as toolData from '@/features/tools/composables/tool-management.data'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/modules/ai-settings/internal-config-change'
+import { PLUGIN_CONFIG_CHANGED_EVENT } from '@/modules/plugins/plugin-config-change'
+import ToolsView from '@/modules/tools/views/ToolsView.vue'
+import * as toolData from '@/modules/tools/composables/tool-management.data'
 
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
@@ -19,7 +19,7 @@ vi.mock('vue-router', async () => {
   }
 })
 
-vi.mock('@/features/tools/composables/tool-management.data', () => ({
+vi.mock('@/modules/tools/composables/tool-management.data', () => ({
   loadToolOverview: vi.fn(),
 }))
 

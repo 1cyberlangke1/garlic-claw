@@ -48,7 +48,7 @@ export function readHttpServerConfig(env: NodeJS.ProcessEnv = process.env): {
   const rawPort = env.PORT?.trim();
   const port = rawPort ? Number(rawPort) : DEFAULT_HTTP_PORT;
   if (!Number.isInteger(port) || port <= 0) {
-    throw new Error('PORT must be a positive integer');
+    throw new Error('PORT 必须是正整数');
   }
 
   return {

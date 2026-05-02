@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import ChatComposer from '@/features/chat/components/ChatComposer.vue'
+import ChatComposer from '@/modules/chat/components/ChatComposer.vue'
 
 describe('ChatComposer', () => {
   it('shows a generic command hint instead of hard-coded compaction commands', () => {

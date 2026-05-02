@@ -1,13 +1,15 @@
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
+import ElementPlus from 'element-plus'
+import '@/shared/styles/element-plus'
 
-import { addRequestErrorListener } from '@/api/http'
-import { useThemeStore } from '@/stores/theme'
-import { useUiStore } from '@/stores/ui'
+import { addRequestErrorListener } from '@/shared/api/http'
+import { useThemeStore } from '@/shared/stores/theme'
+import { useUiStore } from '@/shared/stores/ui'
 
 import App from './App.vue'
-import router from './router'
-import './style.css'
+import router from './app/router'
+import '@/shared/styles/app.css'
 
 const pinia = createPinia()
 const uiStore = useUiStore(pinia)
@@ -57,5 +59,6 @@ themeStore.initTheme()
 
 const app = createApp(App)
 app.use(pinia)
+app.use(ElementPlus)
 app.use(router)
 app.mount('#app')

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SSEEvent } from '@garlic-claw/shared'
-import { applySseEvent, getRetryableMessageId } from '@/features/chat/store/chat-store.runtime'
-import type { ChatMessage } from '@/features/chat/store/chat-store.types'
+import { applySseEvent, getRetryableMessageId } from '@/modules/chat/store/chat-store.runtime'
+import type { ChatMessage } from '@/modules/chat/store/chat-store.types'
 
 describe('applySseEvent', () => {
   it('overrides the assistant content when a message-patch event arrives', () => {

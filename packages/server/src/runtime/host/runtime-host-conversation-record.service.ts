@@ -1,14 +1,14 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { ChatMessageMetadata, ChatMessagePart, ConversationKind, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, ConflictException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { uuidv7 } from 'uuidv7';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../conversation/conversation-history-signature';
 import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
-import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
 import { RuntimeHostConversationTodoService } from './runtime-host-conversation-todo.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
@@ -48,7 +48,7 @@ export class RuntimeHostConversationRecordService {
       revisionVersion: 0,
       runtimePermissionApprovals: [],
       ...(input.subagent ? { subagent: cloneJsonValue(input.subagent) as ConversationSubagentState } : {}),
-      title: input.title?.trim() || 'New Chat',
+      title: input.title?.trim() || '新的对话',
       updatedAt: timestamp,
       userId: input.userId ?? SINGLE_USER_ID,
     };
@@ -223,7 +223,7 @@ export class RuntimeHostConversationRecordService {
     return serializeConversationSession(session);
   }
 
-  private readSessionTimeoutMs(params: JsonObject): number { const timeoutMs = readPositiveInteger(params, 'timeoutMs'); if (timeoutMs) {return timeoutMs;} throw new BadRequestException('timeoutMs must be a positive integer'); }
+  private readSessionTimeoutMs(params: JsonObject): number { const timeoutMs = readPositiveInteger(params, 'timeoutMs'); if (timeoutMs) {return timeoutMs;} throw new BadRequestException('timeoutMs 必须是正整数'); }
 
   private persistConversations(): void {
     fs.mkdirSync(path.dirname(this.storagePath), { recursive: true });
@@ -369,17 +369,17 @@ function readOptionalConversationHistoryString(value: unknown, label: string): s
 function readOptionalConversationHistoryStatus(value: unknown, label: string): string | null {
   if (value === undefined || value === null) {return null;}
   if (typeof value === 'string' && CONVERSATION_HISTORY_STATUSES.has(value)) {return value;}
-  throw new BadRequestException(`${label} is invalid`);
+  throw new BadRequestException(`${label} 不合法`);
 }
 
 function readConversationHistoryTimestamp(value: unknown): string { return typeof value === 'string' && value.trim() ? value : new Date().toISOString(); }
 
 function readConversationHistoryObject(value: unknown, label: string): JsonObject {
   if (isPlainObject(value)) {return value as JsonObject;}
-  throw new BadRequestException(`${label} must be an object`);
+  throw new BadRequestException(`${label} 必须是对象`);
 }
 
-function readConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] { if (!Array.isArray(value)) {throw new BadRequestException(`${label} must be an array`);} return value.map((entry, index) => readEntry(entry, index)); }
+function readConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] { if (!Array.isArray(value)) {throw new BadRequestException(`${label} 必须是数组`);} return value.map((entry, index) => readEntry(entry, index)); }
 
 function readOptionalConversationHistoryArray<T>(value: unknown, label: string, readEntry: (entry: unknown, index: number) => T): T[] | null { if (value === undefined || value === null) {return null;} return readConversationHistoryArray(value, label, readEntry); }
 
@@ -389,7 +389,7 @@ function readConversationHistoryPart(value: unknown, messageIndex: number, partI
   if (object.type === 'image' && typeof object.image === 'string') {
     return { image: object.image, ...(typeof object.mimeType === 'string' ? { mimeType: object.mimeType } : {}), type: 'image' };
   }
-  throw new BadRequestException(`${readConversationHistoryLabel(messageIndex)}.parts[${partIndex}] is invalid`);
+  throw new BadRequestException(`${readConversationHistoryLabel(messageIndex)}.parts[${partIndex}] 不合法`);
 }
 
 function readConversationHistoryMetadata(value: unknown, index: number): ChatMessageMetadata | null {
@@ -402,21 +402,21 @@ function readConversationHistoryMetadata(value: unknown, index: number): ChatMes
 function readConversationHistoryVisionFallback(value: unknown, index: number): NonNullable<ChatMessageMetadata['visionFallback']> {
   const label = `${readConversationHistoryLabel(index)}.metadata.visionFallback`;
   const object = readConversationHistoryObject(value, label);
-  if ((object.state !== 'completed' && object.state !== 'transcribing') || !Array.isArray(object.entries)) {throw new BadRequestException(`${label} is invalid`);}
-  return { entries: object.entries.map((entry, entryIndex) => { const item = readConversationHistoryObject(entry, `${label}.entries[${entryIndex}]`); if (typeof item.text !== 'string' || (item.source !== 'cache' && item.source !== 'generated')) {throw new BadRequestException(`${label}.entries[${entryIndex}] is invalid`);} return { source: item.source, text: item.text }; }), state: object.state };
+  if ((object.state !== 'completed' && object.state !== 'transcribing') || !Array.isArray(object.entries)) {throw new BadRequestException(`${label} 不合法`);}
+  return { entries: object.entries.map((entry, entryIndex) => { const item = readConversationHistoryObject(entry, `${label}.entries[${entryIndex}]`); if (typeof item.text !== 'string' || (item.source !== 'cache' && item.source !== 'generated')) {throw new BadRequestException(`${label}.entries[${entryIndex}] 不合法`);} return { source: item.source, text: item.text }; }), state: object.state };
 }
 
 function readConversationHistoryCustomBlocks(value: unknown, index: number): NonNullable<ChatMessageMetadata['customBlocks']> {
   const label = `${readConversationHistoryLabel(index)}.metadata.customBlocks`;
   return readConversationHistoryArray(value, label, (entry, blockIndex) => {
     const object = readConversationHistoryObject(entry, `${label}[${blockIndex}]`);
-    if (typeof object.id !== 'string' || typeof object.title !== 'string') {throw new BadRequestException(`${label}[${blockIndex}] is invalid`);}
+    if (typeof object.id !== 'string' || typeof object.title !== 'string') {throw new BadRequestException(`${label}[${blockIndex}] 不合法`);}
     const source = readConversationHistorySource(object.source);
     const state = object.state === 'done' || object.state === 'streaming' ? object.state : undefined;
     if (object.kind === 'text' && typeof object.text === 'string') {return { id: object.id, kind: 'text' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), text: object.text, title: object.title };}
     const data = sanitizeHistoryJsonValue(object.data);
     if (object.kind === 'json' && data !== undefined) {return { data, id: object.id, kind: 'json' as const, ...(source ? { source } : {}), ...(state ? { state } : {}), title: object.title };}
-    throw new BadRequestException(`${label}[${blockIndex}] is invalid`);
+    throw new BadRequestException(`${label}[${blockIndex}] 不合法`);
   });
 }
 
@@ -433,7 +433,7 @@ function readConversationHistoryAnnotations(value: unknown, index: number): NonN
   const label = `${readConversationHistoryLabel(index)}.metadata.annotations`;
   return readConversationHistoryArray(value, label, (entry, annotationIndex) => {
     const object = readConversationHistoryObject(entry, `${label}[${annotationIndex}]`);
-    if (typeof object.type !== 'string' || typeof object.owner !== 'string' || typeof object.version !== 'string') {throw new BadRequestException(`${label}[${annotationIndex}] is invalid`);}
+    if (typeof object.type !== 'string' || typeof object.owner !== 'string' || typeof object.version !== 'string') {throw new BadRequestException(`${label}[${annotationIndex}] 不合法`);}
     const data = sanitizeHistoryJsonValue(object.data);
     return { ...(data !== undefined ? { data } : {}), owner: object.owner, type: object.type, version: object.version };
   });
@@ -442,10 +442,10 @@ function readConversationHistoryAnnotations(value: unknown, index: number): NonN
 function readConversationHistoryLabel(index: number): string { return `history.messages[${index}]`; }
 
 function readConversationHistoryString(value: unknown, label: string, options?: { allowNull?: boolean; required?: boolean; trim?: boolean }): string | null {
-  if (value === undefined || value === null) { if (options?.required) {throw new BadRequestException(`${label} is required`);} return null; }
-  if (typeof value !== 'string') {throw new BadRequestException(`${label} must be string${options?.allowNull ? ' or null' : ''}`);}
+  if (value === undefined || value === null) { if (options?.required) {throw new BadRequestException(`${label} 不能为空`);} return null; }
+  if (typeof value !== 'string') {throw new BadRequestException(`${label} 必须是字符串${options?.allowNull ? '或 null' : ''}`);}
   const nextValue = options?.trim ? value.trim() : value;
-  if (!nextValue && options?.required) {throw new BadRequestException(`${label} is required`);}
+  if (!nextValue && options?.required) {throw new BadRequestException(`${label} 不能为空`);}
   return options?.trim && !nextValue ? null : nextValue;
 }
 

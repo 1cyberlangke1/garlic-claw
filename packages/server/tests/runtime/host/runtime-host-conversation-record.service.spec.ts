@@ -43,14 +43,14 @@ describe('RuntimeHostConversationRecordService', () => {
   it('creates, lists, persists and mutates conversation state', async () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new RuntimeHostConversationRecordService();
-    const created = service.createConversation({ title: 'New Chat' }) as { id: string };
+    const created = service.createConversation({ title: '新的对话' }) as { id: string };
     const conversationId = created.id;
 
     expect(created).toEqual({
       _count: { messages: 0 },
       createdAt: expect.any(String),
       id: expect.any(String),
-      title: 'New Chat',
+      title: '新的对话',
       updatedAt: expect.any(String),
     });
     expect(conversationId).toMatch(uuidV7Pattern);
@@ -59,7 +59,7 @@ describe('RuntimeHostConversationRecordService', () => {
         _count: { messages: 0 },
         createdAt: expect.any(String),
         id: conversationId,
-        title: 'New Chat',
+        title: '新的对话',
         updatedAt: expect.any(String),
       },
     ]);
@@ -107,7 +107,7 @@ describe('RuntimeHostConversationRecordService', () => {
           updatedAt: '2026-04-11T00:00:00.000Z',
         },
       ],
-      title: 'New Chat',
+      title: '新的对话',
       updatedAt: expect.any(String),
     });
 
@@ -131,7 +131,7 @@ describe('RuntimeHostConversationRecordService', () => {
   it('throws ForbiddenException when reading another user conversation', () => {
     process.env[conversationsEnvKey] = storagePath;
     const service = new RuntimeHostConversationRecordService();
-    const conversationId = (service.createConversation({ title: 'New Chat', userId: 'user-1' }) as { id: string }).id;
+    const conversationId = (service.createConversation({ title: '新的对话', userId: 'user-1' }) as { id: string }).id;
 
     expect(() => service.requireConversation(conversationId, 'user-2')).toThrow(ForbiddenException);
   });
@@ -152,7 +152,7 @@ describe('RuntimeHostConversationRecordService', () => {
     };
     const service = new RuntimeHostConversationRecordService(runtimeKernelService as unknown as RuntimeHostPluginDispatchService);
 
-    service.createConversation({ title: 'New Chat', userId: 'user-1' });
+    service.createConversation({ title: '新的对话', userId: 'user-1' });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(runtimeKernelService.invokeHook).toHaveBeenCalledWith(expect.objectContaining({

@@ -1,5 +1,61 @@
 # Progress
 
+## 2026-05-01 阶段 Q：上游对齐要求已落盘
+
+### 已完成
+- 已读取当前规划文件与 merge 现场状态，确认仓库仍处于 `git merge --no-commit --no-ff upstream/main` 过程中。
+- 已把这轮冲突处理口径写明：
+  - 优先保留 upstream
+  - 不做 `merge --abort` / `reset --hard`
+  - 样式、目录、组件体系优先跟 upstream
+  - 只有上游没覆盖到的真实行为修复才补回本地语义
+
+### 下一步
+- 直接开始处理当前 `UU` 源码冲突。
+- 源码冲突清完后再处理对应测试冲突。
+
+## 2026-05-02 阶段 Q：最新 upstream 再次推进后的状态
+
+### 已完成
+- 已重新执行 `git fetch upstream`，确认 `upstream/main` 已从 `0b1c804` 前进到 `180d16b`。
+- 已复测 `packages/web/tests/smoke/browser-smoke.mjs` 的启动链路：
+  - `start_launcher.py restart` 不再因固定 `90s` 超时被误杀
+  - 浏览器 smoke 已越过开发环境启动阶段
+- 已继续收口浏览器 smoke 的后续 UI 断点：
+  - `createProviderThroughUi()` 改为在 `.provider-editor-dialog` 根节点下点击 footer 的“保存”，不再把 `data-test="provider-dialog-overlay"` 误当整颗弹窗
+  - provider 创建入口与自动化创建入口都补了对最新 upstream 文案的兼容选择器
+  - 上下文长度输入从逐字 `keyboard.type()` 改为一次性 `fill()`，避免 Element Plus 自动保存重渲染把 `65536` 截成 `6`
+  - `/mcp` 页面去掉了纯说明文案断言，改为检查稳定结构元素
+- 已顺手吸收两处低风险上游视图差异：
+  - `ProviderSettings.vue` 的“新增服务商”入口改回 icon button 语义
+  - `AutomationsView.vue` 头部按钮文案改回上游当前的“新建 / 刷新”
+- 已完成两条实际回归：
+  - 复用现有前后端服务时，`npm run smoke:web-ui` 通过
+  - 冷启动 `start_launcher.py restart` 路径下，`npm run smoke:web-ui` 通过
+- 已把浏览器 smoke 传给 launcher 的 `GARLIC_CLAW_DEV_BACKEND_*_WAIT_TIMEOUT_SECONDS` 默认值从 `30s` 放宽到 `90s`，避免冷启动误判
+- 已继续吸收最新 upstream 的一批页面壳层与共享组件：
+  - 新增 `ConsoleViewHeader.vue`
+  - 新增 `HeaderViewSwitch.vue`
+  - 对齐 `CommandsView.vue`
+  - 对齐 `SkillsView.vue / SkillsList.vue / SkillCard.vue`
+  - 对齐 `McpView.vue / McpConfigPanel.vue`
+  - 对齐 `PersonaSettingsView.vue`
+  - 对齐 `AutomationsView.vue`
+- 已按最新 upstream 结构补齐这批页面对应验证：
+  - `npm run test:run -w packages/web -- tests/features/commands/views/CommandsView.spec.ts tests/features/skills/views/SkillsView.spec.ts tests/features/mcp/views/McpView.spec.ts tests/features/tools/components/McpConfigPanel.spec.ts tests/features/personas/views/PersonaSettingsView.spec.ts`
+  - `npm run test:run -w packages/web -- tests/features/skills/views/SkillsView.spec.ts tests/features/skills/composables/use-skill-management.spec.ts`
+  - `npm run typecheck -w packages/web`
+  - `npm run smoke:web-ui`
+- 已把浏览器 smoke 继续收口到最新 upstream 页面结构：
+  - `MCP` 页不再依赖已删除的 `.mcp-config-path`
+  - `Persona` 页不再依赖已删除的“人设索引”
+  - `Skills` 页不再依赖已删除的“已拒绝加载”
+
+### 下一步
+- 先评估 `180d16b` 相对当前 merge 现场是否引入新的冲突面或必须吸收的上游改动。
+- 再按重叠文件列表逐个判断哪些新 upstream 改动需要现在手工吸收，减少下一次正式并到 `upstream/main` 的冲突面。
+- 若继续缩小与最新 upstream 的差异面，优先转到 `plugins / tools` 相关页面壳层。
+
 ## 2026-05-01 阶段 F：剩余中高优先级缺陷继续扫描与修复
 
 ### 已开始
@@ -662,6 +718,31 @@
   - `npm run typecheck -w packages/web`
   - `npm run smoke:server`
   - `npm run smoke:web-ui`
+
+## 2026-05-01 阶段 Q：上游大幅改动对齐并消除合并冲突
+
+### 已开始
+- 用户要求当前仓库吸收上游 `https://github.com/sakurakugu/garlic-claw` 的大幅改动，并整理到后续可安全并回 upstream、不再发生冲突。
+- 已抓取最新远端：
+  - `upstream/main = 0b1c804`
+  - 本地 `main = 0570d61`
+- 当前分叉状态：
+  - `main` 相对 `upstream/main`：`21` ahead / `22` behind
+  - merge-base：`1f7a5a431df9232f20f770c275b56255e30eeb04`
+
+### 当前判断
+- 上游新增主要集中在：
+  - 前端样式架构拆分
+  - Element Plus 接入
+  - 控制台/设置页布局与样式调整
+  - smoke 脚本优化
+- 本地新增主要集中在：
+  - 聊天状态机、上下文压缩、插件运行时、工具管理与配置联动
+- 因为双方都改了大量同一批前端文件，直接保持旧分叉继续开发没有意义。
+- 本轮采用：
+  - 在当前分支直接 `merge upstream/main`
+  - 按真实冲突做语义合并
+  - 再跑验证确认已经对齐
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

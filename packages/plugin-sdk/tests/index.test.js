@@ -864,11 +864,11 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
   );
   assert.deepEqual(
     readConversationTitleConfig({
-      defaultTitle: 'New Chat',
+      defaultTitle: '新的对话',
       maxMessages: 6,
     }),
     {
-      defaultTitle: 'New Chat',
+      defaultTitle: '新的对话',
       maxMessages: 6,
     },
   );
@@ -1017,8 +1017,8 @@ test('plugin-sdk exposes shared host result readers for conversation, memory and
       toolNames: ['recall_memory'],
     },
   );
-  assert.equal(shouldGenerateConversationTitle(' New Chat ', 'New Chat'), true);
-  assert.equal(shouldGenerateConversationTitle('已生成标题', 'New Chat'), false);
+  assert.equal(shouldGenerateConversationTitle(' 新对话 ', '新的对话'), true);
+  assert.equal(shouldGenerateConversationTitle('已生成标题', '新的对话'), false);
   assert.match(
     buildConversationTitlePrompt([
       {

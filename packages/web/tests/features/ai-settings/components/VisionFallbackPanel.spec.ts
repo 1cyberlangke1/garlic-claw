@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import VisionFallbackPanel from '@/features/ai-settings/components/VisionFallbackPanel.vue'
+import VisionFallbackPanel from '@/modules/ai-settings/components/VisionFallbackPanel.vue'
 
 function createOptions(count: number) {
   return Array.from({ length: count }, (_, index) => ({

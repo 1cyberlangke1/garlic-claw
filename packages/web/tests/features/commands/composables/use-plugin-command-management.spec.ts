@@ -1,10 +1,10 @@
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { usePluginCommandManagement } from '@/features/commands/composables/use-plugin-command-management'
-import * as commandData from '@/features/commands/composables/plugin-command-management.data'
+import { usePluginCommandManagement } from '@/modules/commands/composables/use-plugin-command-management'
+import * as commandData from '@/modules/commands/composables/plugin-command-management.data'
 
-vi.mock('@/features/commands/composables/plugin-command-management.data', () => ({
+vi.mock('@/modules/commands/composables/plugin-command-management.data', () => ({
   loadPluginCommandOverview: vi.fn(),
   toErrorMessage: vi.fn((error: Error | undefined, fallback: string) => error?.message ?? fallback),
 }))

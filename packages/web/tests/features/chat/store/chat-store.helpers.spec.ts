@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { dbMessageToChat } from '@/features/chat/store/chat-store.helpers'
-import { resolveChatModelSelection } from '@/features/chat/modules/chat-model-selection'
-import * as aiApi from '@/features/ai-settings/api/ai'
+import { dbMessageToChat } from '@/modules/chat/store/chat-store.helpers'
+import { resolveChatModelSelection } from '@/modules/chat/modules/chat-model-selection'
+import * as aiApi from '@/modules/ai-settings/api/ai'
 
-vi.mock('@/features/ai-settings/api/ai', () => ({
+vi.mock('@/modules/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn(),
   listAiModels: vi.fn(),
 }))

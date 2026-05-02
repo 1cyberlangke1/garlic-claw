@@ -5,7 +5,7 @@ import type {
   AiProviderConfig,
   AiProviderCatalogItem,
 } from '@garlic-claw/shared'
-import AiProviderModelsPanel from '@/features/ai-settings/components/AiProviderModelsPanel.vue'
+import AiProviderModelsPanel from '@/modules/ai-settings/components/AiProviderModelsPanel.vue'
 import { coreProviderCatalogFixture } from './provider-test.fixtures'
 
 const catalog: AiProviderCatalogItem[] = [

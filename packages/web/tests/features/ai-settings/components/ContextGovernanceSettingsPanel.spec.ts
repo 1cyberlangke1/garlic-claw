@@ -1,7 +1,7 @@
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import ContextGovernanceSettingsPanel from '@/features/ai-settings/components/ContextGovernanceSettingsPanel.vue'
+import ContextGovernanceSettingsPanel from '@/modules/ai-settings/components/ContextGovernanceSettingsPanel.vue'
 
 const SchemaConfigFormStub = defineComponent({
   name: 'SchemaConfigForm',

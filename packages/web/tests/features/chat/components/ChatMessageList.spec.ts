@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import ChatMessageList from '@/features/chat/components/ChatMessageList.vue'
+import ChatMessageList from '@/modules/chat/components/ChatMessageList.vue'
 
 describe('ChatMessageList', () => {
   it('renders vision fallback chips and collapsible transcription details only when present', () => {

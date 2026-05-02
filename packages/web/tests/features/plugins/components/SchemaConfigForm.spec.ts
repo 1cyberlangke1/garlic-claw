@@ -1,10 +1,10 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
-import * as aiApi from '@/features/ai-settings/api/ai'
-import SchemaConfigForm from '@/features/config/components/SchemaConfigForm.vue'
-
-vi.mock('@/features/ai-settings/api/ai', () => ({
+import SchemaConfigForm from '@/modules/config/components/SchemaConfigForm.vue'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/modules/ai-settings/internal-config-change'
+import * as aiApi from '@/modules/ai-settings/api/ai'
+vi.mock('@/modules/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn().mockResolvedValue([
     {
       id: 'openai',
@@ -13,7 +13,7 @@ vi.mock('@/features/ai-settings/api/ai', () => ({
   ]),
 }))
 
-vi.mock('@/features/personas/api/personas', () => ({
+vi.mock('@/modules/personas/api/personas', () => ({
   listPersonas: vi.fn().mockResolvedValue([
     {
       id: 'builtin.default-assistant',
@@ -26,7 +26,7 @@ vi.mock('@/features/personas/api/personas', () => ({
   ]),
 }))
 
-vi.mock('@/features/plugins/api/plugins', () => ({
+vi.mock('@/modules/plugins/api/plugins', () => ({
   listSubagentTypes: vi.fn().mockResolvedValue([
     {
       id: 'general',
@@ -42,13 +42,73 @@ vi.mock('@/features/plugins/api/plugins', () => ({
 
 enableAutoUnmount(afterEach)
 
+const ElOptionStub = defineComponent({
+  name: 'ElOption',
+  props: {
+    label: {
+      type: String,
+      default: '',
+    },
+    value: {
+      type: [String, Number, Boolean],
+      required: false,
+      default: '',
+    },
+  },
+  template: '<option :value="value"><slot>{{ label }}</slot></option>',
+})
+const ElSelectStub = defineComponent({
+  name: 'ElSelect',
+  props: {
+    modelValue: {
+      type: [String, Number, Array, Boolean, Object],
+      required: false,
+      default: '',
+    },
+    multiple: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  emits: ['change', 'update:modelValue'],
+  setup(props, { emit }) {
+    function handleChange(event: Event) {
+      const target = event.target as HTMLSelectElement
+      const value = props.multiple
+        ? [...target.selectedOptions].map((option) => option.value)
+        : target.value
+      emit('update:modelValue', value)
+      emit('change', value)
+    }
+
+    return {
+      handleChange,
+    }
+  },
+  template: '<select :multiple="multiple" :value="multiple ? null : modelValue ?? \'\'" @change="handleChange"><slot /></select>',
+})
+
+function mountSchemaConfigForm(options: Parameters<typeof mount<typeof SchemaConfigForm>>[1]) {
+  return mount(SchemaConfigForm, {
+    ...options,
+    global: {
+      ...options?.global,
+      stubs: {
+        ElOption: ElOptionStub,
+        ElSelect: ElSelectStub,
+        ...options?.global?.stubs,
+      },
+    },
+  })
+}
+
 describe('SchemaConfigForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('emits nested config values from object-tree schema', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -93,7 +153,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('drops undeclared legacy keys before saving config', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -140,7 +200,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders AstrBot-style special selector options through host data sources', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -168,7 +228,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders subagent type selector options through host data sources', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -197,7 +257,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders typed option labels for single-select fields', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -232,7 +292,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders list options as multi-select when render type is select', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -269,7 +329,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders condition, collapsed sections, obvious hints and editor actions from schema', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -337,7 +397,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('shows a clear error when list fields contain invalid JSON', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -362,7 +422,7 @@ describe('SchemaConfigForm', () => {
   })
 
   it('renders builtin runtime-tools config schema as platform-scoped backend options', async () => {
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {
@@ -469,7 +529,7 @@ describe('SchemaConfigForm', () => {
         },
       ])
 
-    const wrapper = mount(SchemaConfigForm, {
+    const wrapper = mountSchemaConfigForm({
       props: {
         saving: false,
         snapshot: {

@@ -1,20 +1,33 @@
 import { defineComponent, ref } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/modules/ai-settings/internal-config-change'
 import type {
   PluginLlmPreference,
   PluginConversationSessionInfo,
   PluginHealthSnapshot,
   PluginInfo,
 } from '@garlic-claw/shared'
-import * as pluginManagementData from '@/features/plugins/composables/plugin-management.data'
-import { usePluginManagement } from '@/features/plugins/composables/use-plugin-management'
+import * as pluginManagementData from '@/modules/plugins/composables/plugin-management.data'
+import { usePluginManagement } from '@/modules/plugins/composables/use-plugin-management'
+
+vi.mock('element-plus', async () => {
+  const actual = await vi.importActual<typeof import('element-plus')>('element-plus')
+  return {
+    ...actual,
+    ElMessage: vi.fn(),
+    ElMessageBox: {
+      confirm: vi.fn(),
+    },
+  }
+})
 
 enableAutoUnmount(afterEach)
 
-vi.mock('@/features/plugins/composables/plugin-management.data', async () => {
-  const actual = await vi.importActual<typeof import('@/features/plugins/composables/plugin-management.data')>('@/features/plugins/composables/plugin-management.data')
+vi.mock('@/modules/plugins/composables/plugin-management.data', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/plugins/composables/plugin-management.data')>('@/modules/plugins/composables/plugin-management.data')
   return {
     ...actual,
     loadPlugins: vi.fn(),
@@ -97,10 +110,24 @@ function createDetailSnapshot(input: {
 }
 
 describe('usePluginManagement', () => {
+  let pinia: ReturnType<typeof createPinia>
+
   beforeEach(() => {
     vi.unstubAllGlobals()
     vi.clearAllMocks()
+    pinia = createPinia()
+    setActivePinia(pinia)
+    vi.mocked(ElMessageBox.confirm).mockResolvedValue(undefined as never)
+    vi.mocked(ElMessage).mockImplementation(() => undefined as never)
   })
+
+  function mountHarness(Harness: ReturnType<typeof defineComponent>) {
+    return mount(Harness, {
+      global: {
+        plugins: [pinia],
+      },
+    })
+  }
 
   it('syncs refreshed health snapshots back into the sidebar plugin list', async () => {
     const initialPlugin: PluginInfo = createPlugin({
@@ -148,7 +175,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.healthSnapshot.value).toEqual(refreshedHealth)
@@ -200,10 +227,6 @@ describe('usePluginManagement', () => {
       }),
     )
     vi.mocked(pluginManagementData.finishPluginConversation).mockResolvedValue(true)
-    vi.stubGlobal('window', {
-      confirm: vi.fn(() => true),
-    })
-
     let state!: ReturnType<typeof usePluginManagement>
     const Harness = defineComponent({
       setup() {
@@ -212,7 +235,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.conversationSessions.value).toEqual(sessions)
@@ -223,6 +246,7 @@ describe('usePluginManagement', () => {
       'builtin.demo',
       'conversation-1',
     )
+    expect(ElMessageBox.confirm).toHaveBeenCalled()
     expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenCalledWith(
       'builtin.demo',
       { limit: 50 },
@@ -275,7 +299,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.selectedPluginName.value).toBe('builtin.memory')
@@ -336,7 +360,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     expect(state.selectedPluginName.value).toBe('builtin.route-inspector')
@@ -377,7 +401,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     await state.saveScope({
@@ -415,7 +439,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
     vi.clearAllMocks()
 
@@ -477,7 +501,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     await state.selectPlugin('builtin.beta')
@@ -538,7 +562,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
 
     await state.runAction('reload')
@@ -547,7 +571,9 @@ describe('usePluginManagement', () => {
     expect(state.selectedPluginName.value).toBe('builtin.beta')
     expect(state.selectedPlugin.value?.name).toBe('builtin.beta')
     expect(state.error.value).toBeNull()
-    expect(state.notice.value).toBe('本地插件目录已删除，已清理旧记录')
+    expect(ElMessage).toHaveBeenCalledWith(expect.objectContaining({
+      message: '本地插件目录已删除，已清理旧记录',
+    }))
     expect(pluginManagementData.loadPluginDetailSnapshot).toHaveBeenLastCalledWith(
       'builtin.beta',
       { limit: 50 },
@@ -580,7 +606,7 @@ describe('usePluginManagement', () => {
       },
     })
 
-    mount(Harness)
+    mountHarness(Harness)
     await flushPromises()
     vi.clearAllMocks()
 

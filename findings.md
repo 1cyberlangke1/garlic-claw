@@ -1,5 +1,59 @@
 # Findings
 
+## 2026-05-01 阶段 Q 当前合并口径
+
+### 已固定的处理原则
+- 当前仓库已经进入 merge 现场，不能再用回退式操作规避冲突。
+- 这轮不是继续发散做新功能，而是把现有 fork 收口到 `upstream/main`。
+- 用户明确要求：
+  - 优先保留 upstream
+  - 只有确实不能保留时，才补回本地必要行为
+
+### 已固定的保留项
+- `packages/web/src/modules/config/components/SchemaConfigNodeRenderer.vue`
+  - 继续保持高级配置默认展开，不恢复折叠按钮。
+- AI 设置 / provider / model / tools / plugins 的配置修改联动
+  - 不退回大范围手动保存或手动刷新。
+- 聊天、工具、插件里此前已经修过的 request guard、失败回滚、自动刷新
+  - 若 upstream 没有同等保护，需要补回。
+
+## 2026-05-02 阶段 Q 新发现
+
+### 最新 upstream 基线
+- 已重新抓取上游，`upstream/main` 当前推进到 `180d16b`。
+- 这意味着当前 merge 收口不能只以 `0b1c804` 为目标，后续需要再复核一次与最新 upstream 的差异。
+
+### `packages/web/tests/smoke/browser-smoke.mjs`
+- 启动超时的真实原因不是服务没起来，而是 `start_launcher.py restart` 的完整耗时与脚本默认 `90_000ms` 超时边界撞线。
+- 实测一次完整 `python tools/start_launcher.py restart`：
+  - 退出码：`0`
+  - 耗时：`89962ms`
+- 将 launcher 重启超时改成跟随通用命令超时后，浏览器 smoke 已成功越过“启动开发环境”阶段。
+- 后续新增取证结果：
+  - provider 新建弹窗的 `保存` 按钮位于 `ElDialog` footer，不在 `data-test="provider-dialog-overlay"` 这个 body 容器里
+  - 旧 smoke 在错误的子树下等待并点击 `保存`，所以会误报 `waitForResponse` 超时
+  - 模型上下文长度输入在当前 Element Plus 绑定下，逐字 `keyboard.type('65536')` 会被中途自动保存重渲染打断，最终请求体只剩 `{"contextLength":6}`
+  - `/mcp` 页面此前失败只是说明文案断言过旧，不是功能回归
+- 已收口后的 smoke 兼容策略：
+  - provider 弹窗统一改为 `.provider-editor-dialog` 根节点 + `dialogBody` 两层定位
+  - “新增服务商 / 新建自动化 / 新建” 一类标题与按钮改成兼容新旧文案的选择器
+  - 数字输入统一使用 `fill()`，避免逐字输入被自动保存链截断
+  - `/mcp` 页面只保留稳定结构断言，不再绑定易变说明文案
+
+### 本轮页面壳层对齐结论
+- `commands / skills / mcp / personas / automations` 这批页面，可以直接采用 upstream 当前壳层与共享组件。
+- 本地此前修过的真实行为保护主要仍在 `composables / store / smoke`，不需要为保留这些语义而继续背着旧页面壳。
+- 这样处理后，最新 upstream 在这一批页面上的结构冲突面已经明显缩小。
+
+### 当前明确保留的非 upstream 差异
+- `packages/web/src/modules/ai-settings/views/ProviderSettings.vue`
+  - 保留本地上下文长度自动保存，不回退到逐行手点“保存”。
+  - 保留 `host routing` 的真实保存中状态，不回退到静态 `saving=false`。
+- `packages/web/src/modules/skills/composables/use-skill-management.ts`
+  - 在不删除本地既有统计字段的前提下补 `enabledCount`，用于承接 upstream `SkillsView`。
+- `packages/web/tests/smoke/browser-smoke.mjs`
+  - 继续按最新 upstream 页面结构维护断言，不回退到旧 DOM / 旧文案绑定。
+
 ## 2026-05-01 阶段 F：继续扫描记录
 
 ### 当前扫描优先级
@@ -272,6 +326,23 @@
 - `packages/web/src/features/chat/modules/chat-view.module.ts`
   - 发送失败后会按原会话恢复草稿文本、待发送图片与上传提示
   - 图片压缩过程锁定原会话，切会话后不会再串图或串提示
+
+## 2026-05-01 阶段 Q 合并前观察
+
+### 分叉结论
+- 本地 `main` 与 `upstream/main` 已形成双向大分叉：
+  - 本地 ahead `21`
+  - upstream ahead `22`
+- 上游提交主体不是功能 owner 迁移，而是大规模前端样式/组件体系调整。
+- 本地同一时期则持续修改了聊天、AI 设置、工具页、插件页、smoke 与大量相关 tests。
+
+### 预期冲突面
+- `packages/web/src/features/chat/*`
+- `packages/web/src/features/ai-settings/*`
+- `packages/web/src/features/tools/*`
+- `packages/web/src/features/plugins/*`
+- `packages/web/tests/*`
+- `packages/web/tests/smoke/browser-smoke.mjs`
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

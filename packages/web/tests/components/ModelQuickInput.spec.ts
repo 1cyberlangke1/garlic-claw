@@ -1,10 +1,10 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import ModelQuickInput from '@/components/ModelQuickInput.vue'
-import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/features/ai-settings/internal-config-change'
-import * as aiApi from '@/features/ai-settings/api/ai'
+import ModelQuickInput from '@/shared/components/ModelQuickInput.vue'
+import { INTERNAL_CONFIG_CHANGED_EVENT } from '@/modules/ai-settings/internal-config-change'
+import * as aiApi from '@/modules/ai-settings/api/ai'
 
-vi.mock('@/features/ai-settings/api/ai', () => ({
+vi.mock('@/modules/ai-settings/api/ai', () => ({
   listAiProviders: vi.fn(),
   listAiModels: vi.fn(),
 }))

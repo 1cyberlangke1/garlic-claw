@@ -2,10 +2,10 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AutomationInfo, Conversation } from '@garlic-claw/shared'
-import { useAutomations } from '@/features/automations/composables/use-automations'
-import * as automationData from '@/features/automations/composables/automations.data'
+import { useAutomations } from '@/modules/automations/composables/use-automations'
+import * as automationData from '@/modules/automations/composables/automations.data'
 
-vi.mock('@/features/automations/composables/automations.data', () => ({
+vi.mock('@/modules/automations/composables/automations.data', () => ({
   createAutomationRecord: vi.fn(),
   deleteAutomationRecord: vi.fn(),
   loadAutomationConversations: vi.fn(),

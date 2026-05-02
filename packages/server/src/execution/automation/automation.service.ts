@@ -282,34 +282,34 @@ function readUserAutomations(automations: Map<string, RuntimeAutomationRecord[]>
 function readEventAutomations(records: RuntimeAutomationRecord[], event: string): RuntimeAutomationRecord[] { return records.filter((record) => record.enabled && record.trigger.type === 'event' && record.trigger.event === event); }
 
 function readAutomationActions(params: JsonObject): ActionConfig[] {
-  if (!Array.isArray(params.actions)) { throw new BadRequestException('actions must be an array'); }
+  if (!Array.isArray(params.actions)) { throw new BadRequestException('actions 必须是数组'); }
   return params.actions.map((entry, index) => readAutomationAction(entry, index));
 }
 
 function readAutomationTrigger(params: JsonObject): TriggerConfig {
   const trigger = readJsonObject(params.trigger);
-  if (!trigger) {throw new BadRequestException('trigger is required');}
-  if (trigger.type !== 'cron' && trigger.type !== 'event' && trigger.type !== 'manual') {throw new BadRequestException('trigger.type is invalid');}
+  if (!trigger) {throw new BadRequestException('trigger 不能为空');}
+  if (trigger.type !== 'cron' && trigger.type !== 'event' && trigger.type !== 'manual') {throw new BadRequestException('trigger.type 不合法');}
   return { type: trigger.type, ...(typeof trigger.cron === 'string' ? { cron: trigger.cron } : {}), ...(typeof trigger.event === 'string' ? { event: trigger.event } : {}) };
 }
 
 function readAutomationAction(value: JsonValue, index: number): ActionConfig {
   const action = readJsonObject(value);
-  if (!action) { throw new BadRequestException(`actions[${index}] must be an object`); }
-  if (action.type !== 'device_command' && action.type !== 'ai_message') { throw new BadRequestException(`actions[${index}].type is invalid`); }
+  if (!action) { throw new BadRequestException(`actions[${index}] 必须是对象`); }
+  if (action.type !== 'device_command' && action.type !== 'ai_message') { throw new BadRequestException(`actions[${index}].type 不合法`); }
   if (action.type === 'device_command') {
     const params = action.params === undefined ? undefined : readJsonObject(action.params);
     const capability = typeof action.capability === 'string' && action.capability.trim().length > 0 ? action.capability : null;
     const plugin = typeof action.plugin === 'string' && action.plugin.trim().length > 0 ? action.plugin : null;
     const sourceId = typeof action.sourceId === 'string' && action.sourceId.trim().length > 0 ? action.sourceId.trim() : null;
     const sourceKind = readAutomationToolSourceKind(action.sourceKind);
-    if (action.params !== undefined && !params) { throw new BadRequestException(`actions[${index}].params must be an object`); }
-    if (!capability || (!plugin && !(sourceKind && sourceId))) { throw new BadRequestException(`actions[${index}].type is missing required fields`); }
+    if (action.params !== undefined && !params) { throw new BadRequestException(`actions[${index}].params 必须是对象`); }
+    if (!capability || (!plugin && !(sourceKind && sourceId))) { throw new BadRequestException(`actions[${index}].type 缺少必填字段`); }
     return { capability, ...(params ? { params } : {}), ...(plugin ? { plugin } : {}), ...(sourceId ? { sourceId } : {}), ...(sourceKind ? { sourceKind } : {}), type: action.type };
   }
   const target = action.target ? readJsonObject(action.target) : null;
   if (action.target && (!target || target.type !== 'conversation' || typeof target.id !== 'string')) {
-    throw new BadRequestException(`actions[${index}].target is invalid`);
+    throw new BadRequestException(`actions[${index}].target 不合法`);
   }
   const conversationMode = readAutomationConversationMode(target, index);
   const maxHistoryConversations = target ? readPositiveInteger(target, 'maxHistoryConversations') : null;
@@ -344,7 +344,7 @@ function readAutomationConversationMode(target: JsonObject | null, index: number
   if (target.conversationMode === 'existing' || target.conversationMode === 'cron_child') {
     return target.conversationMode;
   }
-  throw new BadRequestException(`actions[${index}].target.conversationMode is invalid`);
+  throw new BadRequestException(`actions[${index}].target.conversationMode 不合法`);
 }
 
 function readCronChildConversationTarget(actions: ActionConfig[]): CronChildConversationTarget | null {

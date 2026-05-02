@@ -1,10 +1,10 @@
 import { defineComponent, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useChatCommandCatalog } from '@/features/chat/composables/use-chat-command-catalog'
-import * as chatCommandCatalogData from '@/features/chat/composables/chat-command-catalog.data'
+import { useChatCommandCatalog } from '@/modules/chat/composables/use-chat-command-catalog'
+import * as chatCommandCatalogData from '@/modules/chat/composables/chat-command-catalog.data'
 
-vi.mock('@/features/chat/composables/chat-command-catalog.data', () => ({
+vi.mock('@/modules/chat/composables/chat-command-catalog.data', () => ({
   loadChatCommandCatalog: vi.fn(),
   loadChatCommandCatalogVersion: vi.fn(),
 }))
