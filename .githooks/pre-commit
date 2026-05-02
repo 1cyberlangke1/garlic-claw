@@ -5,7 +5,7 @@ BLOCKED_FILES="task_plan.md progress.md findings.md"
 BLOCKED_FOUND=""
 
 for file in $BLOCKED_FILES; do
-    if git diff --cached --name-only | grep -q "^$file$"; then
+    if git diff --cached --diff-filter=AM --name-only | grep -q "^$file$"; then
         BLOCKED_FOUND="$BLOCKED_FOUND $file"
         git reset HEAD "$file" > /dev/null 2>&1
     fi
