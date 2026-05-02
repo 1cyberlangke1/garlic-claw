@@ -45,3 +45,96 @@ function statusClass(loadPolicy: SkillLoadPolicy): string {
   }
 }
 </script>
+
+<style scoped>
+.skill-card {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  cursor: pointer;
+  border: 1px solid var(--border, rgba(133, 163, 199, 0.24));
+  border-left: 4px solid var(--success);
+  border-radius: 12px;
+  padding: 0.95rem 1rem;
+  background: var(--surface-panel, color-mix(in srgb, var(--shell-bg, #0f172a) 78%, white 4%));
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.skill-card:hover {
+  border-color: color-mix(in srgb, var(--shell-active, #18a058) 26%, var(--border, rgba(133, 163, 199, 0.24)));
+  background: var(--provider-row-hover-bg, color-mix(in srgb, var(--shell-bg, #0f172a) 66%, white 8%));
+}
+
+.skill-card.active {
+  border-color: rgba(76, 189, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(76, 189, 255, 0.18);
+}
+
+.skill-card.policy-allow {
+  border-left-color: var(--success);
+}
+
+.skill-card.policy-ask {
+  border-left-color: #f0b24b;
+}
+
+.skill-card.policy-deny {
+  border-left-color: #f36c6c;
+}
+
+.skill-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.skill-card-title {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--shell-text, var(--text));
+}
+
+.skill-card-description {
+  margin: 0.3rem 0 0;
+  color: var(--shell-text-secondary, var(--text-muted));
+}
+
+.skill-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.skill-card-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  background: var(--shell-bg-hover, #334155);
+  color: var(--shell-text-tertiary, #94a3b8);
+  font-size: 0.74rem;
+}
+
+.skill-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--shell-text-tertiary, var(--text-muted));
+  font-size: 0.78rem;
+}
+
+.skill-card-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1100px) {
+  .skill-card-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>

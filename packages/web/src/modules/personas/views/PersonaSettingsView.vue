@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { ElButton, ElInput, ElOption, ElSelect, ElSwitch } from 'element-plus'
-import { ref } from 'vue'
-import { Icon } from '@iconify/vue'
-import type { IconifyIcon } from '@iconify/types'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBinTrashBold from '@iconify-icons/solar/trash-bin-trash-bold'
 import userIdBold from '@iconify-icons/solar/user-id-bold'
-import ConsolePage from '@/shared/components/ConsolePage.vue'
-import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
+import type { IconifyIcon } from '@iconify/types'
+import { Icon } from '@iconify/vue'
+import { ElButton, ElInput, ElOption, ElSelect, ElSwitch } from 'element-plus'
+import { ref } from 'vue'
 import { usePersonaSettings } from '../composables/use-persona-settings'
 
 const {
@@ -25,7 +25,6 @@ const {
   selectedPersona,
   currentPersona,
   currentConversationTitle,
-  hasCurrentConversation,
   canApplySelectedPersona,
   canDeleteSelectedPersona,
   selectedPersonaStatus,
@@ -192,11 +191,6 @@ function readPersonaAvatarAlt(name?: string | null) {
               <p v-if="!currentPersona">
                 无会话级人设
               </p>
-              <p class="hero-hint">
-                {{ hasCurrentConversation
-                  ? '选中不同对话时，这里的人设状态会同步刷新。'
-                  : '先在左侧选中一个对话，再把人设应用到该会话。' }}
-              </p>
             </article>
 
             <div v-if="loading" class="section-state">加载中...</div>
@@ -207,6 +201,7 @@ function readPersonaAvatarAlt(name?: string | null) {
               <button
                 v-for="persona in personas"
                 :key="persona.id"
+                type="button"
                 class="persona-list-item"
                 :class="{ active: persona.id === selectedPersonaId && editorMode === 'edit' }"
                 @click="selectPersona(persona.id)"
@@ -520,7 +515,6 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .page-header p,
-.hero-hint,
 .section-meta,
 .persona-list-item p,
 .section-state {
@@ -580,12 +574,22 @@ function readPersonaAvatarAlt(name?: string | null) {
   min-width: 0;
 }
 
+.persona-list-card,
+.persona-detail-card {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
 .hero-card {
+  padding: 16px;
+  border-radius: 16px;
   background: var(--surface-hero-gradient);
 }
 
 .hero-card-inline {
-  padding: 16px;
+  padding: 14px 16px;
 }
 
 .persona-overview-card {
@@ -677,7 +681,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 
 .persona-grid {
   grid-template-columns: 320px minmax(0, 1fr);
-  gap: 18px;
+  gap: 0;
   min-height: 0;
 }
 
@@ -687,36 +691,97 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .persona-list-card {
+  display: grid;
   align-content: start;
+  gap: 10px;
+  min-height: 0;
+  padding-right: 16px;
+  border-right: 1px solid var(--shell-border, #334155);
+  overflow: hidden;
+}
+
+.persona-detail-card {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+  padding-left: 20px;
+}
+
+.persona-list-card .section-header {
+  padding-top: 2px;
+}
+
+.section-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(24, 160, 88, 0.14);
+  color: var(--shell-active, #18a058);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .persona-list {
   display: grid;
-  gap: 8px;
+  gap: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .persona-list-item {
+  position: relative;
   display: grid;
   gap: 10px;
-  padding: 14px;
-  border-radius: 16px;
-  border: 1px solid var(--border, rgba(133, 163, 199, 0.16));
-  background: var(--surface-panel-muted-strong);
-  color: var(--text);
+  width: 100%;
+  padding: 14px 10px 14px 18px;
+  border: none;
+  border-bottom: 1px solid var(--shell-border, #334155);
+  border-radius: 0;
+  background: transparent;
+  color: var(--shell-text-secondary, var(--text));
   text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.persona-list-item::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent);
+  opacity: 0.9;
 }
 
 .persona-list-item strong {
-  color: var(--text);
+  color: var(--shell-text, var(--text));
 }
 
 .persona-list-item code {
-  color: var(--text-muted);
+  color: var(--shell-text-tertiary, var(--text-muted));
+}
+
+.persona-list-item:last-child {
+  border-bottom: none;
+}
+
+.persona-list-item:hover {
+  background: var(--provider-row-hover-bg);
 }
 
 .persona-list-item.active {
-  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.persona-list-item.active::before {
+  width: 4px;
+  opacity: 1;
 }
 
 .persona-list-row {
@@ -822,6 +887,18 @@ function readPersonaAvatarAlt(name?: string | null) {
   .detail-grid,
   .dialog-item {
     grid-template-columns: 1fr;
+  }
+
+  .persona-list-card {
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border, #334155);
+  }
+
+  .persona-detail-card {
+    padding-top: 12px;
+    padding-left: 0;
   }
 }
 
