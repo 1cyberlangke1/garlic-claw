@@ -2,6 +2,8 @@ import { Module, OnModuleInit } from '@nestjs/common';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
 import { AiManagementService } from '../../ai-management/ai-management.service';
 import { AiProviderSettingsService } from '../../ai-management/ai-provider-settings.service';
+import { CoreLoggingModule } from '../../core/logging/core-logging.module';
+import { RuntimeEventLogService } from '../../core/logging/runtime-event-log.service';
 import { AutomationExecutionService } from '../../execution/automation/automation-execution.service';
 import { AutomationService } from '../../execution/automation/automation.service';
 import { BashToolService } from '../../execution/bash/bash-tool.service';
@@ -55,11 +57,10 @@ import { ToolGatewayService } from './tool-gateway.service';
 import { PluginHostService } from './plugin-host.service';
 import { SubagentRunnerService } from './subagent-runner.service';
 import { UserContextService } from './user-context.service';
-import { RuntimeEventLogService } from '../log/runtime-event-log.service';
 import { SettingsStore } from '../../core/config/settings.store';
 
 @Module({
-  imports: [PluginModule, RuntimeGatewayModule, RuntimeKernelModule, ProjectWorktreeOverlayModule],
+  imports: [CoreLoggingModule, PluginModule, RuntimeGatewayModule, RuntimeKernelModule, ProjectWorktreeOverlayModule],
   providers: [
     AiModelExecutionService,
     AiManagementService,
@@ -78,7 +79,6 @@ import { SettingsStore } from '../../core/config/settings.store';
     ConversationMessageService,
     ConversationStoreService,
     ConversationTodoService,
-    RuntimeEventLogService,
     {
       provide: RUNTIME_BACKENDS_TOKEN,
       useFactory: (

@@ -11,9 +11,10 @@ import type {
 import { BadRequestException, Injectable, OnApplicationBootstrap, OnModuleDestroy, Optional } from '@nestjs/common';
 import { CronExpressionParser } from 'cron-parser';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
+import { RuntimeEventLogService } from '../../core/logging/runtime-event-log.service';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { PluginPersistenceService } from '../../plugin/persistence/plugin-persistence.service';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
-import { RuntimeEventLogService } from '../log/runtime-event-log.service';
 import { PluginDispatchService } from './plugin-dispatch.service';
 import {
   SCOPED_STORE_PREFIX,
@@ -61,6 +62,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnModuleDes
   private readonly storageStore = new Map<string, Map<string, JsonValue>>();
   private readonly storagePath = resolvePluginRuntimeStoragePath();
   private readonly runtimeEventLogService: RuntimeEventLogService;
+  private readonly logger: ReturnType<typeof createServerLogger>;
   private cronSchedulerReady = false;
 
   constructor(
@@ -69,6 +71,7 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnModuleDes
     @Optional() runtimeEventLogService?: RuntimeEventLogService,
   ) {
     this.runtimeEventLogService = runtimeEventLogService ?? new RuntimeEventLogService();
+    this.logger = createServerLogger(PluginRuntimeService.name, this.runtimeEventLogService);
     const restored = this.readStoredRuntimeState();
     this.cronSequence = restored.cronSequence;
     for (const [pluginId, store] of restored.stateStore.entries()) {
@@ -228,17 +231,17 @@ export class PluginRuntimeService implements OnApplicationBootstrap, OnModuleDes
   }
 
   writePluginLog(pluginId: string, params: JsonObject): JsonValue {
-    this.runtimeEventLogService.appendLog(
-      'plugin',
-      pluginId,
-      this.pluginPersistenceService?.findPlugin(pluginId)?.eventLog,
-      {
-        level: (readOptionalString(params, 'level') ?? 'info') as 'error' | 'info' | 'warn',
-        message: readRequiredString(params, 'message'),
-        ...(readJsonObject(params.metadata) ? { metadata: readJsonObject(params.metadata) ?? undefined } : {}),
+    const level = (readOptionalString(params, 'level') ?? 'info') as 'error' | 'info' | 'warn';
+    this.logger[level](readRequiredString(params, 'message'), {
+      console: false,
+      event: {
+        entityId: pluginId,
+        kind: 'plugin',
+        metadata: readJsonObject(params.metadata) ?? undefined,
+        settings: this.pluginPersistenceService?.findPlugin(pluginId)?.eventLog,
         type: readOptionalString(params, 'type') ?? 'plugin:log',
       },
-    );
+    });
     return true;
   }
 

@@ -20,8 +20,9 @@ import type {
   PluginStatus,
 } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
+import { RuntimeEventLogService, normalizeEventLogSettings } from '../../core/logging/runtime-event-log.service';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { PLUGIN_STATUS } from '../plugin.constants';
 import { createPluginConfigSnapshot } from './plugin-read-model';
 
@@ -51,8 +52,10 @@ type PluginEventInput = { level: PluginEventLevel; message: string; metadata?: J
 export class PluginPersistenceService {
   private readonly records = new Map<string, RegisteredPluginRecord>();
   private readonly storagePath = resolvePluginStatePath();
+  private readonly logger: ReturnType<typeof createServerLogger>;
 
   constructor(@Optional() private readonly runtimeEventLogService: RuntimeEventLogService = new RuntimeEventLogService()) {
+    this.logger = createServerLogger(PluginPersistenceService.name, this.runtimeEventLogService);
     for (const record of loadPersistedPluginRecords(this.storagePath)) { this.records.set(record.pluginId, cloneRegisteredPluginRecord(record)); }
   }
 
@@ -66,10 +69,29 @@ export class PluginPersistenceService {
   listPlugins(): RegisteredPluginRecord[] { return [...this.records.values()].map(cloneRegisteredPluginRecord); }
 
   recordPluginEvent(pluginId: string, input: PluginEventInput): PluginEventRecord {
-    return this.runtimeEventLogService.appendLog('plugin', pluginId, this.readPlugin(pluginId).eventLog, input) ?? createDisabledPluginEventRecord(input);
+    return this.logger[input.level](input.message, {
+      console: false,
+      event: {
+        entityId: pluginId,
+        kind: 'plugin',
+        metadata: input.metadata,
+        settings: this.readPlugin(pluginId).eventLog,
+        type: input.type,
+      },
+    }) ?? createDisabledPluginEventRecord(input);
   }
   recordDetachedPluginEvent(pluginId: string, eventLog: EventLogSettings, input: PluginEventInput): PluginEventRecord {
-    return this.runtimeEventLogService.appendDetachedPluginAudit(pluginId, normalizeDetachedAuditEventLogSettings(eventLog), input) ?? createDisabledPluginEventRecord(input);
+    return this.logger[input.level](input.message, {
+      console: false,
+      event: {
+        detached: true,
+        entityId: pluginId,
+        kind: 'plugin',
+        metadata: input.metadata,
+        settings: normalizeDetachedAuditEventLogSettings(eventLog),
+        type: input.type,
+      },
+    }) ?? createDisabledPluginEventRecord(input);
   }
 
   setConnectionState(pluginId: string, connected: boolean): RegisteredPluginRecord {

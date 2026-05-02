@@ -7,7 +7,7 @@ import { McpServerStoreService } from '../../../src/execution/mcp/mcp-server-sto
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
 import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
-import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
+import { RuntimeEventLogService } from '../../../src/core/logging/runtime-event-log.service';
 import { createServerTestArtifactPath } from '../../../src/core/runtime/server-workspace-paths';
 
 describe('McpService', () => {

@@ -1,8 +1,9 @@
 import type { WsMessage } from '@garlic-claw/shared';
-import { Module, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Module, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { WebSocket, WebSocketServer } from 'ws';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { RuntimeGatewayConnectionLifecycleService } from '../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayModule } from '../../runtime/gateway/runtime-gateway.module';
 import { RuntimeGatewayRemoteTransportService } from '../../runtime/gateway/runtime-gateway-remote-transport.service';
@@ -30,7 +31,7 @@ const AUTH_TIMEOUT_MS = 10_000;
   providers: [PluginWsInboundService],
 })
 export class PluginWsModule implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(PluginWsModule.name);
+  private readonly logger = createServerLogger(PluginWsModule.name);
   private readonly authTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly sockets = new Map<string, WebSocket>();
   private heartbeatInterval?: ReturnType<typeof setInterval>;
@@ -47,7 +48,7 @@ export class PluginWsModule implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     const port = this.configService.get<number>('WS_PORT', 23331);
     this.server = new WebSocketServer({ port });
-    this.logger.log(`插件 WebSocket 服务器监听端口 ${port}`);
+    this.logger.info(`插件 WebSocket 服务器监听端口 ${port}`);
     this.server.on('connection', (socket, request) =>
       this.handleConnection(socket, request.socket.remoteAddress));
     this.runtimeGatewayConnectionLifecycleService.registerConnectionCloser((connectionId) =>
@@ -102,11 +103,9 @@ export class PluginWsModule implements OnModuleInit, OnModuleDestroy {
     });
     socket.on('close', () => this.handleDisconnect(connection.connectionId));
     socket.on('error', (error) => {
-      this.logger.error(
-        `插件 WS 连接错误 ${connection.connectionId}${remoteAddress ? ` ${remoteAddress}` : ''}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.logger.error(`插件 WS 连接错误 ${connection.connectionId}${remoteAddress ? ` ${remoteAddress}` : ''}: ${
+        error instanceof Error ? error.message : String(error)
+      }`);
     });
   }
 

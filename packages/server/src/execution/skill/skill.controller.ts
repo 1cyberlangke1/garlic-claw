@@ -1,7 +1,7 @@
 import type { EventLogListResult, SkillDetail, UpdateSkillGovernancePayload } from '@garlic-claw/shared';
 import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { SkillRegistryService } from './skill-registry.service';
-import { normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
+import { normalizeEventLogSettings } from '../../core/logging/runtime-event-log.service';
 import { readPluginEventQuery } from '../../shared/http/http-request.codec';
 
 interface UpdateSkillGovernanceDto {

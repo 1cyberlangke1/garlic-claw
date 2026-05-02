@@ -7,7 +7,7 @@ import type {
 } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
-import { normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
+import { normalizeEventLogSettings } from '../../core/logging/runtime-event-log.service';
 
 type StoredMcpServerFile = Partial<McpServerConfig> & {
   name?: string;

@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto';
 import type { EventLogListResult, EventLogQuery, EventLogRecord, EventLogSettings, JsonObject, PluginEventLevel } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 
-type RuntimeEventLogKind = 'mcp' | 'plugin' | 'skill';
-type RuntimeEventLogInput = { level: PluginEventLevel; message: string; metadata?: JsonObject; type: string };
+export type RuntimeEventLogKind = 'mcp' | 'plugin' | 'skill';
+export type RuntimeEventLogInput = { level: PluginEventLevel; message: string; metadata?: JsonObject; type: string };
 
 @Injectable()
 export class RuntimeEventLogService {

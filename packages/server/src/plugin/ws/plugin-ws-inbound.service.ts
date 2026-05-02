@@ -1,5 +1,6 @@
 import type { WsMessage } from '@garlic-claw/shared';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { RuntimeGatewayConnectionLifecycleService } from '../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../runtime/gateway/runtime-gateway-remote-transport.service';
 import { PluginHostService } from '../../runtime/host/plugin-host.service';
@@ -15,7 +16,7 @@ import { WS_ACTION, WS_TYPE } from './plugin-ws-message.constants';
 
 @Injectable()
 export class PluginWsInboundService {
-  private readonly logger = new Logger(PluginWsInboundService.name);
+  private readonly logger = createServerLogger(PluginWsInboundService.name);
   constructor(
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
     private readonly runtimeGatewayRemoteTransportService: RuntimeGatewayRemoteTransportService,

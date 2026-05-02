@@ -3,9 +3,10 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { EventLogListResult, EventLogQuery, JsonObject, JsonValue, McpConfigSnapshot, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
+import { RuntimeEventLogService } from '../../core/logging/runtime-event-log.service';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { McpServerStoreService } from './mcp-server-store.service';
 import { ToolManagementSettingsService } from '../tool/tool-management-settings.service';
 
@@ -25,14 +26,16 @@ const MCP_MAX_RETRIES = 2;
 export class McpService implements OnModuleDestroy, OnModuleInit {
   readonly clients = new Map<string, McpClientSession>();
   readonly serverRecords = new Map<string, McpRecord>();
-  private readonly logger = new Logger(McpService.name);
+  private readonly logger: ReturnType<typeof createServerLogger>;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly mcpServerStoreService: McpServerStoreService,
     private readonly runtimeEventLogService: RuntimeEventLogService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
-  ) {}
+  ) {
+    this.logger = createServerLogger(McpService.name, this.runtimeEventLogService);
+  }
 
   onModuleInit(): void {
     this.primeServerRecords(this.getSnapshot().servers);
@@ -253,7 +256,16 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   }
 
   private recordServerEvent(name: string, input: { level: 'error' | 'info' | 'warn'; message: string; metadata?: JsonObject; type: string }, config?: McpServerConfig): void {
-    this.runtimeEventLogService.appendLog('mcp', name, config?.eventLog ?? this.mcpServerStoreService.getServer(name)?.eventLog, input);
+    this.logger[input.level](input.message, {
+      console: false,
+      event: {
+        entityId: name,
+        kind: 'mcp',
+        metadata: input.metadata,
+        settings: config?.eventLog ?? this.mcpServerStoreService.getServer(name)?.eventLog,
+        type: input.type,
+      },
+    });
   }
 }
 
