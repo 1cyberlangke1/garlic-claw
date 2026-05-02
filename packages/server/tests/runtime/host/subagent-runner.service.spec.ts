@@ -120,6 +120,54 @@ describe('SubagentRunnerService', () => {
       },
       status: 'completed',
     });
+    expect(fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse).toHaveBeenCalledWith({
+      conversationId: summary.conversationId,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+  });
+
+  it('runs post-completion auto compaction for subagent conversations without rewriting completed status on failure', async () => {
+    const fixture = createFixture();
+    Reflect.set(fixture.runner as object, 'executeSubagent', jest.fn(async ({ request }) => ({
+      finishReason: 'stop',
+      message: {
+        content: `Generated: ${readLatestPrompt(request.messages)}`,
+        role: 'assistant',
+      },
+      modelId: request.modelId ?? 'gpt-5.4',
+      providerId: request.providerId ?? 'openai',
+      text: `Generated: ${readLatestPrompt(request.messages)}`,
+      toolCalls: [],
+      toolResults: [],
+    })));
+    fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse.mockRejectedValueOnce(new Error('compaction failed'));
+
+    const summary = await fixture.runner.spawnSubagent('builtin.memory', 'Memory', {
+      conversationId: fixture.parentConversationId,
+      source: 'plugin',
+      userId: 'user-1',
+    }, {
+      messages: [{ content: '压缩失败也不能改成 error', role: 'user' }],
+      providerId: 'openai',
+    } as never) as { conversationId: string };
+
+    await jest.runAllTimersAsync();
+
+    expect(fixture.contextGovernanceService.rewriteHistoryAfterCompletedResponse).toHaveBeenCalledWith({
+      conversationId: summary.conversationId,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+    expect(fixture.runner.getSubagent('builtin.memory', summary.conversationId)).toMatchObject({
+      conversationId: summary.conversationId,
+      result: {
+        text: 'Generated: 压缩失败也不能改成 error',
+      },
+      status: 'completed',
+    });
   });
 
   it('interrupts a queued subagent before it starts running', async () => {
@@ -345,6 +393,9 @@ describe('SubagentRunnerService', () => {
 
 function createFixture() {
   const recordService = new ConversationStoreService();
+  const contextGovernanceService = {
+    rewriteHistoryAfterCompletedResponse: jest.fn().mockResolvedValue(undefined),
+  };
   const parentConversationId = (recordService.createConversation({
     title: 'Parent Chat',
     userId: 'user-1',
@@ -360,9 +411,12 @@ function createFixture() {
       listPlugins: jest.fn().mockReturnValue([]),
     } as never,
     new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    { get: jest.fn().mockReturnValue(contextGovernanceService) } as never,
     recordService,
+    contextGovernanceService as never,
   );
   return {
+    contextGovernanceService,
     parentConversationId,
     recordService,
     runner,

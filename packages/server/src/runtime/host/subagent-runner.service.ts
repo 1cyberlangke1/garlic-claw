@@ -1,7 +1,9 @@
 import type { ChatMessagePart, ConversationSubagentState, JsonObject, JsonValue, PluginCallContext, PluginLlmMessage, PluginSubagentCloseParams, PluginSubagentDetail, PluginSubagentExecutionResult, PluginSubagentHandle, PluginSubagentOverview, PluginSubagentRequest, PluginSubagentSendInputParams, PluginSubagentSpawnParams, PluginSubagentSummary, PluginSubagentWaitParams, PluginSubagentWaitResult, SubagentAfterRunHookResult, SubagentBeforeRunHookResult } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional, forwardRef } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { uuidv7 } from 'uuidv7';
 import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
+import { ContextGovernanceService } from '../../conversation/context-governance.service';
 import { ProjectSubagentTypeRegistryService } from '../../execution/project/project-subagent-type-registry.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../kernel/runtime-plugin-hook-governance';
@@ -28,7 +30,9 @@ export class SubagentRunnerService {
     @Inject(forwardRef(() => ToolRegistryService)) private readonly toolRegistryService: ToolRegistryService,
     @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
     private readonly projectSubagentTypeRegistryService: ProjectSubagentTypeRegistryService,
+    private readonly moduleRef: ModuleRef,
     @Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService,
+    @Optional() private readonly contextGovernanceService?: ContextGovernanceService,
   ) {}
 
   resumePendingSubagents(pluginId?: string): void {
@@ -450,6 +454,12 @@ export class SubagentRunnerService {
           : null,
         result: null,
       }));
+      await this.runSubagentPostCompletionCompaction({
+        conversationId: refreshed.id,
+        modelId: result.modelId,
+        providerId: result.providerId,
+        userId: refreshed.userId,
+      });
       return this.buildSubagentWaitResult(this.requireSubagentConversation(refreshed.id, subagent.pluginId));
     } catch (error) {
       const message = abortSignal.aborted
@@ -477,6 +487,24 @@ export class SubagentRunnerService {
       }));
       return this.buildSubagentWaitResult(this.requireSubagentConversation(conversation.id, subagent.pluginId));
     }
+  }
+
+  private async runSubagentPostCompletionCompaction(input: {
+    conversationId: string;
+    modelId: string;
+    providerId: string;
+    userId?: string;
+  }): Promise<void> {
+    try {
+      await this.readContextGovernanceService()?.rewriteHistoryAfterCompletedResponse(input);
+    } catch {
+      // 上下文治理服务内部会自行记录失败并阻断后续轮次，这里不能把已完成子代理改写成错误态。
+    }
+  }
+
+  private readContextGovernanceService(): ContextGovernanceService | undefined {
+    return this.contextGovernanceService
+      ?? this.moduleRef.get(ContextGovernanceService, { strict: false });
   }
 
   private async executeSubagent(input: { abortSignal: AbortSignal; context: PluginCallContext; pluginId: string; request: PluginSubagentRequest; onTextDelta?: (text: string) => void }): Promise<PluginSubagentExecutionResult> {
@@ -841,7 +869,7 @@ async function collectSubagentRunResult(input: { finishReason?: Promise<unknown>
     if (part.type === 'tool-call') {
       toolCalls.push({ ...payload, input: asJsonValue(part.input) });
     } else {
-      toolResults.push({ ...payload, output: asJsonValue(part.output) });
+      toolResults.push({ ...payload, output: compactSubagentToolResultOutput(part.output) });
     }
   }
   const finishReason = await input.finishReason;
@@ -854,4 +882,18 @@ async function collectSubagentRunResult(input: { finishReason?: Promise<unknown>
     toolCalls,
     toolResults,
   };
+}
+
+function compactSubagentToolResultOutput(value: unknown): JsonValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return asJsonValue(value);
+  }
+  const record = value as Record<string, unknown>;
+  if ((record.kind === 'tool:text' && typeof record.value === 'string') || record.kind === 'tool:json') {
+    return asJsonValue({
+      kind: record.kind,
+      value: asJsonValue(record.value ?? null),
+    });
+  }
+  return asJsonValue(value);
 }

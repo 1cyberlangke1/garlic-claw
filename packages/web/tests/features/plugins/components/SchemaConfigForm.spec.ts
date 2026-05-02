@@ -104,7 +104,12 @@ function mountSchemaConfigForm(options: Parameters<typeof mount<typeof SchemaCon
 
 describe('SchemaConfigForm', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('emits nested config values from object-tree schema', async () => {
@@ -555,11 +560,123 @@ describe('SchemaConfigForm', () => {
         scope: 'provider-models',
       },
     }))
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    await vi.advanceTimersByTimeAsync(0)
     await flushPromises()
 
     const options = wrapper.findAll('option').map((node) => node.text())
     expect(options).toContain('OpenAI')
     expect(options).toContain('DeepSeek')
+  })
+
+  it('retries auto-save after a failed save when the snapshot has not caught up', async () => {
+    const wrapper = mountSchemaConfigForm({
+      props: {
+        autoSave: true,
+        saving: false,
+        showSaveButton: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              prompt: {
+                type: 'string',
+              },
+            },
+          },
+          values: {
+            prompt: 'alpha',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('.config-input input').setValue('beta')
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
+
+    await wrapper.setProps({ saving: true })
+    await wrapper.setProps({ saving: false })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
+  })
+
+  it('does not retry auto-save after the snapshot catches up to the pending draft', async () => {
+    const wrapper = mountSchemaConfigForm({
+      props: {
+        autoSave: true,
+        saving: false,
+        showSaveButton: false,
+        snapshot: {
+          schema: {
+            type: 'object',
+            items: {
+              prompt: {
+                type: 'string',
+              },
+            },
+          },
+          values: {
+            prompt: 'alpha',
+          },
+        },
+      },
+    })
+
+    await wrapper.get('.config-input input').setValue('beta')
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
+
+    await wrapper.setProps({ saving: true })
+    await wrapper.setProps({
+      snapshot: {
+        schema: {
+          type: 'object',
+          items: {
+            prompt: {
+              type: 'string',
+            },
+          },
+        },
+        values: {
+          prompt: 'beta',
+        },
+      },
+    })
+    await wrapper.setProps({ saving: false })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(wrapper.emitted('save')).toEqual([
+      [
+        {
+          prompt: 'beta',
+        },
+      ],
+    ])
   })
 })

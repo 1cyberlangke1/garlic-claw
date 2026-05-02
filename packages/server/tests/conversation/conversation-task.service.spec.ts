@@ -43,7 +43,7 @@ describe('ConversationTaskService', () => {
             yield rawCustomFieldChunk('reasoning_content', '上下文');
             yield delta('模型');
             yield toolCall();
-            yield toolResult();
+            yield wrappedToolResult();
           })(),
           usage: Promise.resolve({
             inputTokens: 21,
@@ -105,7 +105,13 @@ describe('ConversationTaskService', () => {
       },
       { messageId: String(assistantMessage.id), text: '模型', type: 'text-delta' },
       { input: { city: 'Shanghai' }, messageId: String(assistantMessage.id), toolCallId: 'tool-call-1', toolName: 'weather.search', type: 'tool-call' },
-      { messageId: String(assistantMessage.id), output: { temp: 20 }, toolCallId: 'tool-call-1', toolName: 'weather.search', type: 'tool-result' },
+      {
+        messageId: String(assistantMessage.id),
+        output: { kind: 'tool:json', value: { temp: 20 } },
+        toolCallId: 'tool-call-1',
+        toolName: 'weather.search',
+        type: 'tool-result',
+      },
       { content: '最终回复', messageId: String(assistantMessage.id), parts: [{ text: '最终回复', type: 'text' }], type: 'message-patch' },
       { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
     ]);
@@ -124,7 +130,7 @@ describe('ConversationTaskService', () => {
       role: 'assistant',
       status: 'completed',
       toolCalls: [toolCallRecord()],
-      toolResults: [toolResultRecord()],
+      toolResults: [compactToolResultRecord()],
     });
     expect(persistedMetadata).toEqual({
       annotations: [
@@ -163,7 +169,7 @@ describe('ConversationTaskService', () => {
       content: '最终回复',
       metadataJson: JSON.stringify(persistedMetadata),
       toolCalls: JSON.stringify([toolCallRecord()]),
-      toolResults: JSON.stringify([toolResultRecord()]),
+      toolResults: JSON.stringify([compactToolResultRecord()]),
     });
     expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ content: '最终回复' }));
   });
@@ -542,13 +548,35 @@ function toolCallRecord() {
 }
 
 function toolResultRecord() {
-  return { output: { temp: 20 }, toolCallId: 'tool-call-1', toolName: 'weather.search' };
+  return {
+    output: {
+      data: {
+        backendKind: 'native-shell',
+        stdout: 'temp=20',
+      },
+      kind: 'tool:json',
+      value: { temp: 20 },
+    },
+    toolCallId: 'tool-call-1',
+    toolName: 'weather.search',
+  };
+}
+
+function compactToolResultRecord() {
+  return {
+    output: {
+      kind: 'tool:json',
+      value: { temp: 20 },
+    },
+    toolCallId: 'tool-call-1',
+    toolName: 'weather.search',
+  };
 }
 
 function toolCall() {
   return { ...toolCallRecord(), type: 'tool-call' as const };
 }
 
-function toolResult() {
+function wrappedToolResult() {
   return { ...toolResultRecord(), type: 'tool-result' as const };
 }

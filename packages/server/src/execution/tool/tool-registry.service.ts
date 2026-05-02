@@ -164,7 +164,7 @@ export class ToolRegistryService {
     const toolDefinition: Tool = { description: entry.description, execute: async (args: Record<string, unknown>) => {
       try {
         const output = await entry.execute(args);
-        return entry.wrapExecutionOutput ? normalizeToolExecutionOutput(output, entry.toModelOutput) : output;
+        return entry.wrapExecutionOutput ? normalizeToolExecutionOutput(output, entry.callName, entry.toModelOutput) : output;
       } catch (error) {
         if (entry.callName === this.invalidToolService.getToolName()) {throw error;}
         return createInvalidToolResult({ error: readToolExecutionErrorMessage(error), inputText: stringifyInvalidToolInput(args), phase: 'execute', tool: entry.callName });
@@ -173,7 +173,9 @@ export class ToolRegistryService {
     toolDefinition.toModelOutput = async (event) => isInvalidToolResult(event.output)
       ? this.invalidToolService.toModelOutput({ ...event, output: event.output })
       : isPluginToolOutput(event.output)
-        ? event.output.kind === 'tool:text' ? { type: 'text', value: event.output.value } : { type: 'json', value: event.output.value }
+        ? event.output.kind === 'tool:text'
+          ? { type: 'text', value: compactToolTextValue(event.output.value) }
+          : { type: 'json', value: compactToolModelJsonValue(event.output.value) }
         : entry.toModelOutput
           ? entry.toModelOutput(event)
           : typeof event.output === 'string'
@@ -236,9 +238,9 @@ export class ToolRegistryService {
   private async readNativeTools(input: { allowedToolNames?: string[]; assistantMessageId?: string; context: PluginCallContext }): Promise<ExecutableToolDefinition[]> {
     const skills = await this.skillToolService.listAvailableSkills();
     const tools = [
-      readNativeToolDefinition(input.allowedToolNames, this.todoToolService.getToolName(), this.todoToolService.buildToolDescription(), this.todoToolService.getToolParameters(), async (args) => this.todoToolService.updateSessionTodo({ sessionId: input.context.conversationId, todos: Array.isArray(args.todos) ? args.todos as never : [], userId: input.context.userId }), this.todoToolService.toModelOutput),
-      readNativeToolDefinition(input.allowedToolNames, this.webFetchToolService.getToolName(), this.webFetchToolService.buildToolDescription(), this.webFetchToolService.getToolParameters(), async (args) => this.webFetchToolService.fetch({ url: String(args.url ?? ''), ...(typeof args.format === 'string' ? { format: args.format as 'text' | 'markdown' | 'html' } : {}), ...(typeof args.timeout === 'number' ? { timeout: args.timeout } : {}) }), this.webFetchToolService.toModelOutput),
-      skills.length === 0 ? undefined : readNativeToolDefinition(input.allowedToolNames, 'skill', this.skillToolService.buildToolDescription(skills), this.skillToolService.getToolParameters(), async (args) => this.skillToolService.loadSkill(String(args.name ?? '')), ({ output }) => this.skillToolService.toModelOutput(output as SkillLoadResult), { sourceId: 'skill-catalog', sourceKind: 'skill' }),
+      readNativeToolDefinition(input.allowedToolNames, this.todoToolService.getToolName(), this.todoToolService.buildToolDescription(), this.todoToolService.getToolParameters(), async (args) => this.todoToolService.updateSessionTodo({ sessionId: input.context.conversationId, todos: Array.isArray(args.todos) ? args.todos as never : [], userId: input.context.userId }), this.todoToolService.toModelOutput, { wrapExecutionOutput: true }),
+      readNativeToolDefinition(input.allowedToolNames, this.webFetchToolService.getToolName(), this.webFetchToolService.buildToolDescription(), this.webFetchToolService.getToolParameters(), async (args) => this.webFetchToolService.fetch({ url: String(args.url ?? ''), ...(typeof args.format === 'string' ? { format: args.format as 'text' | 'markdown' | 'html' } : {}), ...(typeof args.timeout === 'number' ? { timeout: args.timeout } : {}) }), this.webFetchToolService.toModelOutput, { wrapExecutionOutput: true }),
+      skills.length === 0 ? undefined : readNativeToolDefinition(input.allowedToolNames, 'skill', this.skillToolService.buildToolDescription(skills), this.skillToolService.getToolParameters(), async (args) => this.skillToolService.loadSkill(String(args.name ?? '')), ({ output }) => this.skillToolService.toModelOutput(output as SkillLoadResult), { sourceId: 'skill-catalog', sourceKind: 'skill', wrapExecutionOutput: true }),
     ];
     return tools.filter((entry): entry is ExecutableToolDefinition => Boolean(entry));
   }
@@ -436,6 +438,7 @@ export class ToolRegistryService {
         parameters: entry.parameters,
         sourceId,
         sourceKind: 'internal',
+        wrapExecutionOutput: true,
       }));
   }
 
@@ -465,10 +468,20 @@ function readNativeToolDefinition(
   parameters: Record<string, PluginParamSchema>,
   execute: (args: Record<string, unknown>) => Promise<unknown>,
   toModelOutput?: NonNullable<Tool['toModelOutput']>,
-  source?: Pick<PluginAvailableToolSummary, 'sourceId' | 'sourceKind'>,
+  options?: Pick<PluginAvailableToolSummary, 'sourceId' | 'sourceKind'> & {
+    wrapExecutionOutput?: boolean;
+  },
 ): ExecutableToolDefinition | undefined {
   if (allowedToolNames && !allowedToolNames.includes(toolName)) {return undefined;}
-  return { availableTool: { callName: toolName, description, name: toolName, parameters, ...(source ?? {}) }, callName: toolName, description, execute, parameters, ...(toModelOutput ? { toModelOutput } : {}) };
+  return {
+    availableTool: { callName: toolName, description, name: toolName, parameters, ...(options?.sourceId || options?.sourceKind ? { sourceId: options.sourceId, sourceKind: options.sourceKind } : {}) },
+    callName: toolName,
+    description,
+    execute,
+    parameters,
+    wrapExecutionOutput: options?.wrapExecutionOutput ?? false,
+    ...(toModelOutput ? { toModelOutput } : {}),
+  };
 }
 
 function createInternalToolInfo(
@@ -492,25 +505,35 @@ function createInternalToolInfo(
 
 async function normalizeToolExecutionOutput(
   output: unknown,
+  toolName: string,
   toModelOutput?: NonNullable<Tool['toModelOutput']>,
 ): Promise<unknown> {
-  if (isPluginToolOutput(output) || isInvalidToolResult(output)) {
+  if (isInvalidToolResult(output)) {
     return output;
+  }
+  if (isPluginToolOutput(output)) {
+    return compactPluginToolOutput(output);
   }
   if (typeof output === 'string') {
-    return { kind: 'tool:text', value: output } satisfies PluginToolOutput;
+    return { kind: 'tool:text', value: compactToolTextValue(output) } satisfies PluginToolOutput;
   }
-  if (!toModelOutput) {
-    return output;
-  }
-  const modelOutput = await toModelOutput({ input: {}, output, toolCallId: '' });
+  const modelOutput = toModelOutput
+    ? await toModelOutput({ input: {}, output, toolCallId: '' })
+    : readDefaultToolModelOutput(output, toolName);
   if (modelOutput.type !== 'json' && modelOutput.type !== 'text') {
     return output;
   }
   if (modelOutput.type === 'json') {
-    return createWrappedToolOutput('tool:json', modelOutput.value as JsonValue, output);
+    return createWrappedToolOutput('tool:json', compactToolModelJsonValue(modelOutput.value as JsonValue), output);
   }
-  return createWrappedToolOutput('tool:text', modelOutput.value, output);
+  return createWrappedToolOutput('tool:text', compactToolTextValue(modelOutput.value), output);
+}
+
+function compactPluginToolOutput(output: PluginToolOutput): PluginToolOutput {
+  const rawData = isRecord(output) && 'data' in output ? (output as { data?: JsonValue }).data : undefined;
+  return output.kind === 'tool:text'
+    ? createWrappedToolOutput('tool:text', compactToolTextValue(output.value), rawData)
+    : createWrappedToolOutput('tool:json', compactToolModelJsonValue(output.value), rawData);
 }
 
 function createWrappedToolOutput(
@@ -518,11 +541,7 @@ function createWrappedToolOutput(
   value: JsonValue | string,
   output: unknown,
 ): PluginToolOutput {
-  const record = typeof output === 'object' && output !== null && !Array.isArray(output)
-    ? output as Record<string, JsonValue>
-    : null;
   return {
-    ...(record ?? {}),
     ...(output !== null && output !== undefined ? { data: output as JsonValue } : {}),
     kind,
     value,
@@ -562,7 +581,16 @@ function createPluginToolInfo(plugin: RegisteredPluginRecord, source: ToolSource
 
 function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext, assistantMessageId: string | undefined, mcpService: McpService, runtimeHostPluginDispatchService: PluginDispatchService): ExecutableToolDefinition {
   const toolContext = assistantMessageId ? { ...context, metadata: { ...(context.metadata ?? {}), assistantMessageId } } : context;
-  return { availableTool: { callName: entry.callName, description: entry.description, name: entry.name, parameters: entry.parameters, pluginId: entry.pluginId, runtimeKind: entry.runtimeKind, sourceId: entry.sourceId, sourceKind: entry.sourceKind }, callName: entry.callName, description: entry.description, execute: async (args) => entry.sourceKind === 'mcp' ? mcpService.callTool({ arguments: args, serverName: entry.sourceId, toolName: entry.name }) : runtimeHostPluginDispatchService.executeTool({ context: toolContext, params: args as never, pluginId: entry.pluginId ?? entry.sourceId, toolName: entry.name }), parameters: entry.parameters };
+  return {
+    availableTool: { callName: entry.callName, description: entry.description, name: entry.name, parameters: entry.parameters, pluginId: entry.pluginId, runtimeKind: entry.runtimeKind, sourceId: entry.sourceId, sourceKind: entry.sourceKind },
+    callName: entry.callName,
+    description: entry.description,
+    execute: async (args) => entry.sourceKind === 'mcp'
+      ? mcpService.callTool({ arguments: args, serverName: entry.sourceId, toolName: entry.name })
+      : runtimeHostPluginDispatchService.executeTool({ context: toolContext, params: args as never, pluginId: entry.pluginId ?? entry.sourceId, toolName: entry.name }),
+    parameters: entry.parameters,
+    wrapExecutionOutput: true,
+  };
 }
 
 function readToolSource(overview: ToolOverview, kind: ToolSourceKind, sourceId: string): ToolSourceInfo {
@@ -601,4 +629,124 @@ function readToolHealthStatus(status: 'degraded' | 'error' | 'healthy' | 'offlin
     return 'error';
   }
   return 'unknown';
+}
+
+function readDefaultToolModelOutput(output: unknown, toolName: string): { type: 'json'; value: JsonValue } | { type: 'text'; value: string } {
+  const subagentResult = readCompactSubagentToolValue(output, toolName);
+  if (subagentResult) {
+    return { type: 'json', value: subagentResult };
+  }
+  const mcpText = readMcpToolTextValue(output);
+  if (mcpText !== null) {
+    return { type: 'text', value: mcpText };
+  }
+  const genericText = readGenericToolTextValue(output);
+  if (genericText !== null) {
+    return { type: 'text', value: genericText };
+  }
+  return { type: 'json', value: compactToolModelJsonValue(output) };
+}
+
+function readCompactSubagentToolValue(output: unknown, toolName: string): JsonValue | null {
+  if (!isRecord(output)) {
+    return null;
+  }
+  const isSubagentControlTool = toolName === 'spawn_subagent'
+    || toolName === 'send_input_subagent'
+    || toolName === 'interrupt_subagent'
+    || toolName === 'close_subagent'
+    || toolName === 'wait_subagent';
+  if (!isSubagentControlTool || typeof output.conversationId !== 'string' || typeof output.status !== 'string' || typeof output.title !== 'string') {
+    return null;
+  }
+  return {
+    conversationId: output.conversationId,
+    ...(typeof output.error === 'string' ? { error: output.error } : {}),
+    ...(typeof output.name === 'string' ? { name: output.name } : {}),
+    ...(typeof output.result === 'string' ? { result: output.result } : {}),
+    status: output.status,
+    title: output.title,
+  };
+}
+
+function readMcpToolTextValue(output: unknown): string | null {
+  const content = Array.isArray(output)
+    ? output
+    : isRecord(output) && Array.isArray(output.content)
+      ? output.content
+      : null;
+  if (!content) {
+    return null;
+  }
+  const lines = content.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.type !== 'string') {
+      return [];
+    }
+    if (entry.type === 'text' && typeof entry.text === 'string') {
+      return [entry.text];
+    }
+    if (entry.type === 'image') {
+      return ['[image omitted]'];
+    }
+    if (entry.type === 'resource' && typeof entry.uri === 'string') {
+      return [`[resource] ${entry.uri}`];
+    }
+    return [];
+  }).filter((entry) => entry.trim().length > 0);
+  return lines.length > 0 ? lines.join('\n\n') : null;
+}
+
+function readGenericToolTextValue(output: unknown): string | null {
+  if (!isRecord(output)) {
+    return null;
+  }
+  if (typeof output.text === 'string') {
+    return output.text;
+  }
+  if (typeof output.output === 'string') {
+    return output.output;
+  }
+  if (typeof output.message === 'string') {
+    return output.message;
+  }
+  return null;
+}
+
+function compactToolModelJsonValue(value: unknown, depth = 0): JsonValue {
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    return value.length <= 2_000 ? value : `${value.slice(0, 2_000)}... [truncated ${value.length - 2_000} chars]`;
+  }
+  if (Array.isArray(value)) {
+    const next = value.slice(0, 20).map((entry) => compactToolModelJsonValue(entry, depth + 1));
+    if (value.length > 20) {
+      next.push(`... ${value.length - 20} more item(s)`);
+    }
+    return next;
+  }
+  if (!isRecord(value)) {
+    return String(value);
+  }
+  if (depth >= 4) {
+    return '[max depth reached]';
+  }
+  const entries = Object.entries(value).filter(([, entryValue]) => entryValue !== undefined);
+  const result: Record<string, JsonValue> = {};
+  for (const [key, entryValue] of entries.slice(0, 20)) {
+    result[key] = compactToolModelJsonValue(entryValue, depth + 1);
+  }
+  if (entries.length > 20) {
+    result.__truncatedKeys = `... ${entries.length - 20} more key(s)`;
+  }
+  return result;
+}
+
+function compactToolTextValue(value: string): string {
+  return value.length <= 2_000 ? value : `${value.slice(0, 2_000)}... [truncated ${value.length - 2_000} chars]`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

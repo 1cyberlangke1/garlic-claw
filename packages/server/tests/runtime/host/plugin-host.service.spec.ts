@@ -691,7 +691,7 @@ describe('PluginHostService', () => {
             kind: 'text',
             source: {
               key: 'reasoning_content',
-              origin: 'ai-sdk.response-body',
+              origin: 'ai-sdk.raw',
               providerId: 'openai',
             },
             state: 'done',
@@ -710,6 +710,9 @@ describe('PluginHostService', () => {
         totalTokens: 25,
       },
     });
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      transportMode: 'stream-collect',
+    }));
 
     pluginPersistenceService.updatePluginLlmPreference('builtin.memory', {
       mode: 'override',
@@ -739,7 +742,7 @@ describe('PluginHostService', () => {
             kind: 'text',
             source: {
               key: 'reasoning_content',
-              origin: 'ai-sdk.response-body',
+              origin: 'ai-sdk.raw',
               providerId: 'ds2api',
             },
             state: 'done',
@@ -758,14 +761,65 @@ describe('PluginHostService', () => {
         totalTokens: 25,
       },
     });
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      transportMode: 'stream-collect',
+    }));
 
-    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(3, expect.objectContaining({
+    await expect(
+      service.call({
+        context: {
+          activeModelId: 'gpt-5.4',
+          activeProviderId: 'openai',
+          source: 'plugin',
+          userId: 'user-1',
+        },
+        method: 'llm.generate-text',
+        params: {
+          modelId: 'gpt-5.4',
+          prompt: '请保留显式非流式接口',
+          providerId: 'openai',
+          transportMode: 'generate',
+        },
+        pluginId: 'builtin.memory',
+      }),
+    ).resolves.toEqual({
+      metadata: {
+        customBlocks: [
+          {
+            id: 'custom-field:reasoning_content',
+            kind: 'text',
+            source: {
+              key: 'reasoning_content',
+              origin: 'ai-sdk.response-body',
+              providerId: 'openai',
+            },
+            state: 'done',
+            text: '先生成标题再输出正文',
+            title: 'Reasoning Content',
+          },
+        ],
+      },
       modelId: 'gpt-5.4',
       providerId: 'openai',
+      text: 'Generated: 请保留显式非流式接口',
+      usage: {
+        inputTokens: 7,
+        outputTokens: 18,
+        source: 'provider',
+        totalTokens: 25,
+      },
+    });
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      transportMode: 'generate',
     }));
+
     expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(4, expect.objectContaining({
       modelId: 'deepseek-reasoner',
       providerId: 'ds2api',
+    }));
+    expect(runtimeHostLlmService.generateText).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
     }));
   });
 
@@ -1047,6 +1101,9 @@ function createFixture(input?: {
       invokeHook: jest.fn(),
     } as never,
     new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    {
+      get: jest.fn().mockReturnValue(undefined),
+    } as never,
     runtimeHostConversationRecordService,
   );
   (runtimeHostSubagentRunnerService as any).executeSubagent = async ({ request }: any) => ({

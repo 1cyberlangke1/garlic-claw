@@ -916,9 +916,13 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      format: 'markdown',
-      title: 'Smoke Example',
-      url: 'https://example.com/smoke',
+      kind: 'tool:text',
+      value: expect.stringContaining('<webfetch_result>'),
+      data: expect.objectContaining({
+        format: 'markdown',
+        title: 'Smoke Example',
+        url: 'https://example.com/smoke',
+      }),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
@@ -986,11 +990,18 @@ describe('ToolRegistryService', () => {
         kind: 'tool:text',
         value: expect.stringContaining('persisted'),
       }));
+      expect(readResult).not.toHaveProperty('cwd');
+      expect(readResult).not.toHaveProperty('stdout');
+      expect(readResult).not.toHaveProperty('stderr');
+      expect(readWrappedToolData(readResult)).toEqual(expect.objectContaining({
+        cwd: '/',
+        stdout: expect.stringContaining('persisted'),
+      }));
       expect(modelOutput).toEqual(expect.objectContaining({
         type: 'text',
         value: expect.stringContaining(`<${shellToolName}_result>`),
       }));
-      expect((modelOutput as { value: string }).value).toContain('cwd: /');
+      expect((modelOutput as { value: string }).value).not.toContain('cwd: /');
       expect((modelOutput as { value: string }).value).not.toContain('backend:');
       expect(
         fs.readFileSync(path.join(runtimeWorkspaceRoot, conversationId, 'logs', 'run.txt'), 'utf8').replace(/\r\n/g, '\n'),
@@ -1046,10 +1057,10 @@ describe('ToolRegistryService', () => {
         toolCallId: 'call-bash-config-1',
       });
 
-      expect(result).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
         backendKind: 'native-shell',
+        stdout: expect.stringContaining('line-4'),
       }));
-      expect((result as { stdout: string }).stdout).toContain('line-4');
       expect(modelOutput).toEqual(expect.objectContaining({
         type: 'text',
         value: expect.stringContaining(`<${shellToolName}_result>`),
@@ -1098,7 +1109,7 @@ describe('ToolRegistryService', () => {
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       backendKind: 'native-shell',
       stdout: expect.stringContaining('configured-backend'),
     }));
@@ -1132,7 +1143,7 @@ describe('ToolRegistryService', () => {
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       backendKind: 'just-bash',
       stdout: expect.stringContaining('default-platform-backend'),
     }));
@@ -1182,7 +1193,7 @@ describe('ToolRegistryService', () => {
     runtimeToolPermissionService.reply(conversationId, request.id, 'once');
     const result = await execution;
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       backendKind: secondaryShellBackendKind,
       stdout: expect.stringContaining('configured-secondary-backend'),
     }));
@@ -1290,13 +1301,31 @@ describe('ToolRegistryService', () => {
     });
 
     expect(backgroundResult).toEqual(expect.objectContaining({
-      conversationId: 'subagent-conversation-2',
-      status: 'queued',
-      title: '浏览器烟测分身',
+      kind: 'tool:json',
+      value: {
+        conversationId: 'subagent-conversation-2',
+        status: 'queued',
+        title: '浏览器烟测分身',
+      },
+      data: expect.objectContaining({
+        conversationId: 'subagent-conversation-2',
+        status: 'queued',
+        title: '浏览器烟测分身',
+      }),
     }));
     expect(waitedResult).toEqual(expect.objectContaining({
-      conversationId: 'subagent-conversation-2',
-      status: 'completed',
+      kind: 'tool:json',
+      value: {
+        conversationId: 'subagent-conversation-2',
+        name: '浏览器烟测分身',
+        result: '已完成',
+        status: 'completed',
+        title: '浏览器烟测分身',
+      },
+      data: expect.objectContaining({
+        conversationId: 'subagent-conversation-2',
+        status: 'completed',
+      }),
     }));
     expect(runtimeHostSubagentRunnerService.spawnSubagent).toHaveBeenCalledWith(
       'subagent',
@@ -1355,8 +1384,16 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      conversationId: 'subagent-conversation-2',
-      title: '跟进分身',
+      kind: 'tool:json',
+      value: {
+        conversationId: 'subagent-conversation-2',
+        status: 'queued',
+        title: '跟进分身',
+      },
+      data: expect.objectContaining({
+        conversationId: 'subagent-conversation-2',
+        title: '跟进分身',
+      }),
     }));
     expect(runtimeHostSubagentRunnerService.sendInputSubagent).toHaveBeenCalledWith(
       'subagent',
@@ -6142,7 +6179,10 @@ describe('ToolRegistryService', () => {
 
       expect(workdirResult).toEqual(expect.objectContaining({
         kind: 'tool:text',
-        value: expect.stringContaining('cwd: /nested'),
+      }));
+      expect(readWrappedToolData(workdirResult)).toEqual(expect.objectContaining({
+        cwd: '/nested',
+        stdout: expect.stringContaining('from-workdir'),
       }));
       expect((workdirResult as { value: string }).value).toContain('from-workdir');
 
@@ -6756,11 +6796,11 @@ describe('ToolRegistryService', () => {
         filePath: 'ignored.txt',
       });
 
-      expect(result).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/mock-filesystem.txt'),
       }));
-      expect((result as { output: string }).output).toContain('1: mock-filesystem line');
-      expect((result as { output: string }).output).toContain('(end of file, total lines: 2, total bytes:');
+      expect(readWrappedToolOutput(result)).toContain('1: mock-filesystem line');
+      expect(readWrappedToolOutput(result)).toContain('(end of file, total lines: 2, total bytes:');
     } finally {
       if (originalFilesystemBackend === undefined) {
         delete process.env.GARLIC_CLAW_RUNTIME_FILESYSTEM_BACKEND;
@@ -6805,13 +6845,13 @@ describe('ToolRegistryService', () => {
         oldString: 'created',
       });
 
-      expect((globResult as { output: string }).output).toContain('/mock-filesystem.txt');
-      expect((grepResult as { output: string }).output).toContain('/mock-filesystem.txt:');
-      expect((grepResult as { output: string }).output).toContain('1: mock-filesystem line');
-      expect(writeResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolOutput(globResult)).toContain('/mock-filesystem.txt');
+      expect(readWrappedToolOutput(grepResult)).toContain('/mock-filesystem.txt:');
+      expect(readWrappedToolOutput(grepResult)).toContain('1: mock-filesystem line');
+      expect(readWrappedToolData(writeResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/mock-filesystem/notes/output.txt'),
       }));
-      expect(editResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(editResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/mock-filesystem/notes/output.txt'),
       }));
     } finally {
@@ -6863,14 +6903,14 @@ describe('ToolRegistryService', () => {
         pattern: 'updated by aliased backend',
       });
 
-      expect((readResult as { output: string }).output).toContain('/notes/routed.txt');
-      expect((globResult as { output: string }).output).toContain('/notes/output.txt');
-      expect((globResult as { output: string }).output).toContain('/notes/routed.txt');
-      expect((grepResult as { output: string }).output).toContain('/notes/output.txt:');
-      expect(writeResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolOutput(readResult)).toContain('/notes/routed.txt');
+      expect(readWrappedToolOutput(globResult)).toContain('/notes/output.txt');
+      expect(readWrappedToolOutput(globResult)).toContain('/notes/routed.txt');
+      expect(readWrappedToolOutput(grepResult)).toContain('/notes/output.txt:');
+      expect(readWrappedToolData(writeResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/notes/output.txt'),
       }));
-      expect(editResult).toEqual(expect.objectContaining({
+      expect(readWrappedToolData(editResult)).toEqual(expect.objectContaining({
         output: expect.stringContaining('/notes/output.txt'),
       }));
     } finally {
@@ -6911,6 +6951,10 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('/notes/runtime.txt'),
+    }));
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       loaded: [],
       output: expect.stringContaining('/notes/runtime.txt'),
     }));
@@ -6945,7 +6989,7 @@ describe('ToolRegistryService', () => {
       offset: 1,
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       loaded: ['/notes/AGENTS.md'],
       output: expect.stringContaining('该路径命中以下 AGENTS.md 指令'),
     }));
@@ -6981,11 +7025,11 @@ describe('ToolRegistryService', () => {
       offset: 1,
     });
 
-    expect(firstResult).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(firstResult)).toEqual(expect.objectContaining({
       loaded: ['/notes/AGENTS.md'],
       output: expect.stringContaining('该路径命中以下 AGENTS.md 指令'),
     }));
-    expect(secondResult).toMatchObject({
+    expect(readWrappedToolData(secondResult)).toMatchObject({
       loaded: [],
       output: [
         '<read_result>',
@@ -7071,7 +7115,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-glob-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('/packages/server/src/runtime.ts'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7113,7 +7157,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-glob-empty-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('(total matches: 0. Refine path or pattern and retry.)'),
     }));
     expect((modelOutput as { value: string }).value).toContain(
@@ -7238,7 +7282,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-grep-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('/packages/server/src/runtime.ts:'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7285,7 +7329,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-grep-empty-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('(total matches: 0. Refine path, include or pattern and retry.)'),
     }));
     expect((modelOutput as { value: string }).value).toContain(
@@ -7318,7 +7362,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-write-1',
     });
 
-    expect(wrappedResult).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(wrappedResult)).toEqual(expect.objectContaining({
       created: true,
       lineCount: 1,
       output: expect.stringContaining('/generated/output.txt'),
@@ -7362,7 +7406,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       occurrences: 1,
       output: expect.stringContaining('/generated/output.txt'),
       path: '/generated/output.txt',
@@ -7409,7 +7453,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-empty-old-string-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: empty-old-string'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7451,7 +7495,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-escape-normalized-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: escape-normalized'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7520,7 +7564,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-line-trimmed-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: line-trimmed'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7576,7 +7620,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-trailing-whitespace-trimmed-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: trailing-whitespace-trimmed'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7624,7 +7668,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-indentation-flexible-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: indentation-flexible'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7672,7 +7716,7 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-line-ending-normalized-1',
     });
 
-    expect(result).toEqual(expect.objectContaining({
+    expect(readWrappedToolData(result)).toEqual(expect.objectContaining({
       output: expect.stringContaining('Strategy: line-ending-normalized'),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
@@ -7745,10 +7789,10 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-write-diagnostics-1',
     });
 
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Diagnostics: 2 issue(s). Current file: 1 Related files: 1 across 1 file(s)',
     );
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read /mock-filesystem/generated/output.ts and fix error diagnostics before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -7806,9 +7850,9 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-write-formatting-hint-1',
     });
 
-    expect((result as { output: string }).output).toContain('Formatting: json-pretty');
-    expect((result as { output: string }).output).toContain('Diagnostics: none');
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain('Formatting: json-pretty');
+    expect(readWrappedToolOutput(result)).toContain('Diagnostics: none');
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read /mock-filesystem/generated/output.json to confirm the formatted output before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -7878,10 +7922,10 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-diagnostics-1',
     });
 
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Diagnostics: 2 issue(s). Current file: 1 Related files: 1 across 1 file(s)',
     );
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read /mock-filesystem/generated/output.ts and fix error diagnostics before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -7942,10 +7986,10 @@ describe('ToolRegistryService', () => {
       toolCallId: 'call-edit-related-error-hint-1',
     });
 
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Diagnostics: 1 issue(s) in related file',
     );
-    expect((result as { output: string }).output).toContain(
+    expect(readWrappedToolOutput(result)).toContain(
       'Next: read related files first: /mock-filesystem/generated/related.ts. Fix error diagnostics before continuing edits or writes.',
     );
     expect((modelOutput as { value: string }).value).toContain(
@@ -8043,7 +8087,11 @@ describe('ToolRegistryService', () => {
     const result = await (mcpTool as any).execute({ city: 'Shanghai' });
 
     expect(Object.keys(toolSet ?? {})).toContain('weather__get_forecast');
-    expect(result).toEqual({ forecast: 'sunny' });
+    expect(result).toEqual({
+      data: { forecast: 'sunny' },
+      kind: 'tool:json',
+      value: { forecast: 'sunny' },
+    });
     expect(mcpService.callTool).toHaveBeenCalledWith({
       arguments: { city: 'Shanghai' },
       serverName: 'weather',
@@ -8084,9 +8132,13 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual(expect.objectContaining({
-      name: 'weather-query',
-      entryPath: 'weather-query/SKILL.md',
-      modelOutput: expect.stringContaining('<skill_content name="weather-query">'),
+      kind: 'tool:text',
+      value: expect.stringContaining('<skill_content name="weather-query">'),
+      data: expect.objectContaining({
+        name: 'weather-query',
+        entryPath: 'weather-query/SKILL.md',
+        modelOutput: expect.stringContaining('<skill_content name="weather-query">'),
+      }),
     }));
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
@@ -8120,15 +8172,112 @@ describe('ToolRegistryService', () => {
     });
 
     expect(result).toEqual({
-      sessionId: conversationId,
-      pendingCount: 1,
-      todos,
+      data: {
+        pendingCount: 1,
+        sessionId: conversationId,
+        todos,
+      },
+      kind: 'tool:text',
+      value: expect.stringContaining('<todo_result>'),
     });
     expect(modelOutput).toEqual(expect.objectContaining({
       type: 'text',
       value: expect.stringContaining('<todo_result>'),
     }));
     expect(runtimeHostConversationTodoService.readSessionTodo(conversationId)).toEqual(todos);
+  });
+
+  it('wraps plugin tool execution results before they enter the model context', async () => {
+    const { runtimeHostPluginDispatchService, service } = createFixture();
+    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+      saved: true,
+      summary: '已保存 2 条记忆',
+      vectors: Array.from({ length: 30 }, (_, index) => index),
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+
+    expect(result).toEqual({
+      data: {
+        saved: true,
+        summary: '已保存 2 条记忆',
+        vectors: Array.from({ length: 30 }, (_, index) => index),
+      },
+      kind: 'tool:json',
+      value: {
+        saved: true,
+        summary: '已保存 2 条记忆',
+        vectors: expect.arrayContaining([
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+          10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        ]),
+      },
+    });
+    expect((result as { value: { vectors: unknown[] } }).value.vectors.at(-1)).toEqual(expect.stringMatching(/more item\(s\)$/));
+    expect(runtimeHostPluginDispatchService.executeTool).toHaveBeenCalledWith({
+      context: expect.objectContaining({
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      }),
+      params: { content: 'memory payload' },
+      pluginId: 'builtin.memory',
+      toolName: 'save_memory',
+    });
+  });
+
+  it('re-compacts pre-wrapped plugin tool outputs before they enter the model context', async () => {
+    const { runtimeHostPluginDispatchService, service } = createFixture();
+    const oversizedText = 'x'.repeat(2_400);
+    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+      data: {
+        raw: oversizedText,
+      },
+      kind: 'tool:text',
+      value: oversizedText,
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+    const modelOutput = await (pluginTool as any).toModelOutput({
+      input: { content: 'memory payload' },
+      output: result,
+      toolCallId: 'call-plugin-wrapped-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      data: {
+        raw: oversizedText,
+      },
+      kind: 'tool:text',
+      value: expect.stringContaining('[truncated 400 chars]'),
+    }));
+    expect((result as { value: string }).value.length).toBeLessThan(2_100);
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('[truncated'),
+    }));
   });
 
   it('excludes disconnected remote plugins from the executable tool set', async () => {
@@ -8234,6 +8383,9 @@ function createFixture(options: {
       listPlugins: jest.fn().mockReturnValue([]),
     } as never,
     new ProjectSubagentTypeRegistryService(projectWorktreeRootService),
+    {
+      get: jest.fn().mockReturnValue(undefined),
+    } as never,
     runtimeHostConversationRecordService,
   );
   const runtimeHostAutomationService = new AutomationService(
@@ -8510,6 +8662,15 @@ async function waitForPendingRuntimeRequest(
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   throw new Error(`Timed out waiting for runtime permission request: ${conversationId}`);
+}
+
+function readWrappedToolData<T extends object = Record<string, unknown>>(value: unknown): T {
+  return ((value as { data?: T } | null)?.data ?? {}) as T;
+}
+
+function readWrappedToolOutput(value: unknown): string {
+  const data = readWrappedToolData<{ output?: unknown }>(value);
+  return typeof data.output === 'string' ? data.output : '';
 }
 
 function createMockRuntimeBackend(kind: string): RuntimeBackend {

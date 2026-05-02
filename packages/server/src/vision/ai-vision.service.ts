@@ -57,6 +57,7 @@ export class AiVisionService {
       ],
       modelId: config.modelId,
       providerId: config.providerId,
+      transportMode: 'stream-collect',
     });
     const text = trimVisionText(
       executed.text,

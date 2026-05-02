@@ -64,9 +64,20 @@ export function parseToolResults(value: string | null): ChatMessage['toolResults
   return (JSON.parse(value) as Array<{ toolCallId?: string; toolName: string; output: JsonValue }>).map((item) => ({
     ...(typeof item.toolCallId === 'string' ? { toolCallId: item.toolCallId } : {}),
     toolName: item.toolName,
-    output: item.output,
-    outputPreview: stringifyPayload(item.output),
+    output: unwrapToolResultPayload(item.output),
+    outputPreview: stringifyPayload(unwrapToolResultPayload(item.output)),
   }))
+}
+
+function unwrapToolResultPayload(value: JsonValue): JsonValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value
+  }
+  const record = value as Record<string, JsonValue>
+  if ((record.kind === 'tool:text' || record.kind === 'tool:json') && 'value' in record) {
+    return record.value ?? null
+  }
+  return value
 }
 
 /**

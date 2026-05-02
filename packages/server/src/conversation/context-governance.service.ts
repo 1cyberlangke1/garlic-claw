@@ -29,9 +29,11 @@ const CONTEXT_COMPACTION_VERSION = '1';
 const CONTEXT_COMPACTION_COMMAND_MODEL = 'context-compaction-command';
 const CONTEXT_COMPACTION_COMMAND_PROVIDER = 'system';
 const AUTO_STOP_REPLY = '已完成上下文压缩，本轮不继续生成主回复。';
-const AUTO_COMPACTION_FAILED_REPLY = '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。';
+const MANUAL_COMPACTION_FAILED_REPLY = '当前上下文压缩失败，本次未替换历史。可稍后重试 /compact，或先清理部分历史后再继续。';
+const AUTO_COMPACTION_FAILED_REPLY = '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请新开会话，或先删减最近请求后再继续。';
+const AUTO_COMPACTION_OVERFLOW_REPLY = '当前最后一轮内容本身已占满上下文，现有历史不足以继续压缩。本轮已停止继续生成。请新开会话，或先删减本轮长回复后再继续。';
 const CONTEXT_COMPACTION_COMMANDS = ['/compact', '/compress'] as const;
-const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前上下文治理已关闭压缩。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前历史还不足以生成稳定摘要。', 'still-over-budget': '压缩后的上下文仍超过预算，本次未替换历史。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
+const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { disabled: '当前上下文治理已关闭压缩。', 'empty-summary': '压缩模型没有返回有效摘要。', 'invalid-history': '当前历史结构异常，暂时无法压缩。', 'not-enough-history': '当前历史还不足以生成稳定摘要。', 'overflow-without-compaction': '当前最后一轮内容本身已占满上下文，现有历史不足以继续压缩。请新开会话，或先删减本轮长回复后再继续。', 'still-over-budget': '压缩后的上下文仍超过预算，本次未替换历史。', 'threshold-not-reached': '当前上下文还未达到自动压缩阈值。' };
 const CONTEXT_COMPACTION_ROLE_LABELS: Partial<Record<PluginConversationHistoryMessage['role'], string>> = { assistant: '助手', system: '系统' };
 
 type ModelMessage = { content: string | ChatMessagePart[]; role: 'assistant' | 'system' | 'user' };
@@ -244,13 +246,20 @@ export class ContextGovernanceService {
     const keepRecentMessages = Math.min(runtimeConfig.keepRecentMessages, beforeState.modelMessages.length);
     const candidateMessages = beforeState.modelMessages.slice(0, Math.max(0, beforeState.modelMessages.length - keepRecentMessages));
     const summarySource = buildSummarySource(candidateMessages);
-    if (!candidateMessages.length || !summarySource) {return { beforePreview, compacted: false, reason: 'not-enough-history' };}
+    if (!candidateMessages.length || !summarySource) {
+      return {
+        beforePreview,
+        compacted: false,
+        reason: beforePreview.estimatedTokens >= thresholdTokens ? 'overflow-without-compaction' : 'not-enough-history',
+        thresholdTokens,
+      };
+    }
     const summaryText = (await this.aiModelExecutionService.generateText({
       allowFallbackChatModels: true,
       messages: [{ content: [runtimeConfig.summaryPrompt, '', '历史对话：', summarySource].join('\n'), role: 'user' }],
       modelId: compactionModelTarget.modelId,
       providerId: compactionModelTarget.providerId,
-      transportMode: 'generate',
+      transportMode: 'stream-collect',
     })).text.trim();
     if (!summaryText) {return { beforePreview, compacted: false, reason: 'empty-summary' };}
     const compactionId = uuidv7();
@@ -393,7 +402,7 @@ export class ContextGovernanceService {
     }
     const assistantContent = input.commandInput.hasUnexpectedArgs
       ? '上下文压缩命令不接受额外参数。\n可用命令：/compact 或 /compress'
-      : failureReason ? `${AUTO_COMPACTION_FAILED_REPLY}\n原因：${failureReason}`
+      : failureReason ? `${MANUAL_COMPACTION_FAILED_REPLY}\n原因：${failureReason}`
       : !result ? '本次未执行上下文压缩。'
         : result.compacted ? (result.coveredMessageCount ? `已压缩上下文，覆盖 ${result.coveredMessageCount} 条历史消息。` : '已完成上下文压缩。')
           : (CONTEXT_COMPACTION_REASON_LABELS[result.reason ?? ''] ?? '本次未执行上下文压缩。');
@@ -407,6 +416,11 @@ export class ContextGovernanceService {
   }
 
   private blockConversationAfterCompactionFailure(conversationId: string, failure: string | unknown): void {
+    if (failure === 'overflow-without-compaction') {
+      this.blockedConversationReplies.set(conversationId, AUTO_COMPACTION_OVERFLOW_REPLY);
+      this.logger.warn(`会话 ${conversationId} 自动压缩失败，已停止后续继续生成: ${CONTEXT_COMPACTION_REASON_LABELS['overflow-without-compaction']}`);
+      return;
+    }
     const detail = this.readCompactionFailureDetail(failure);
     const reply = detail ? `${AUTO_COMPACTION_FAILED_REPLY}\n原因：${detail}` : AUTO_COMPACTION_FAILED_REPLY;
     this.blockedConversationReplies.set(conversationId, reply);

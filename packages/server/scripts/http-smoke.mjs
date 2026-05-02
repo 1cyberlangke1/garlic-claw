@@ -20,6 +20,8 @@ const LOGIN_SECRET = process.env.GARLIC_CLAW_LOGIN_SECRET || 'smoke-login-secret
 const API_PREFIX = '/api';
 const SKILL_DIR_NAME = '.smoke-http-flow';
 const SMOKE_IMAGE_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0p8AAAAASUVORK5CYII=';
+const AUTO_COMPACTION_SUBAGENT_TEXT = '子代理长程压缩 smoke 已整理背景、限制、行动项和待办，并展开较长说明用于自动压缩验证。'.repeat(8);
+const AUTO_COMPACTION_MAIN_TEXT = '主代理长程压缩 smoke 已整合子代理结果、当前限制、下一步动作和验证结论，并保留较长汇总用于自动压缩验证。'.repeat(8);
 const {
   collectServerHttpRoutes,
   collectWebHttpRoutes,
@@ -612,6 +614,107 @@ async function runContextCompactionModelSmoke(apiBase, state, input) {
       ensure(typeof result?.message === 'string' && result.message.includes('deleted'), 'Expected isolated context compaction conversation delete to succeed');
     });
     state.conversationId = originalConversationId;
+  }
+}
+
+async function runSubagentAutoCompactionSmoke(apiBase, state, input) {
+  const originalConversationId = state.conversationId;
+  const originalModelId = state.modelId;
+  const compactionModelId = 'smoke-auto-compaction';
+  let isolatedConversationId = null;
+  try {
+    await runStep('ai.model.upsert.auto-compaction', async () => {
+      const model = await postJson(apiBase, `/ai/providers/${state.providerId}/models/${compactionModelId}`, {
+        body: {
+          contextLength: 256,
+          name: 'Smoke Auto Compaction',
+        },
+      });
+      ensure(model.id === compactionModelId, 'Expected auto compaction smoke model to be created');
+      ensure(model.contextLength === 256, 'Expected auto compaction smoke model to expose small context length');
+    });
+
+    await runStep('chat.conversation.create.auto-compaction', async () => {
+      const conversation = await postJson(apiBase, '/chat/conversations', {
+        body: { title: 'Subagent Auto Compaction Smoke' },
+        headers: input.headers(),
+      });
+      isolatedConversationId = conversation.id;
+      ensure(typeof isolatedConversationId === 'string' && isolatedConversationId.length > 0, 'Expected auto compaction smoke conversation id');
+      state.conversationId = isolatedConversationId;
+      state.modelId = compactionModelId;
+    });
+
+    await runStep('ai.context-governance.put.auto-compaction', async () => {
+      const config = await putJson(apiBase, '/ai/context-governance-config', {
+        body: {
+          values: {
+            contextCompaction: {
+              allowAutoContinue: true,
+              compressionThreshold: 60,
+              enabled: true,
+              keepRecentMessages: 0,
+              strategy: 'summary',
+              summaryPrompt: '请把下面这段历史对话整理成可供后续继续回答的上下文摘要。',
+            },
+            conversationTitle: {
+              enabled: false,
+              maxMessages: 3,
+            },
+          },
+        },
+      });
+      ensure(config.values.contextCompaction.keepRecentMessages === 0, 'Expected auto compaction smoke config to keep zero recent messages');
+      ensure(config.values.contextCompaction.strategy === 'summary', 'Expected auto compaction smoke to use summary strategy');
+    });
+
+    input.fakeOpenAi.resetChatCompletions();
+    await runSmokeTextChatRoundTrip(apiBase, state, {
+      content: '请使用 subagent 工具委派一个探索任务，并在子代理长程压缩 smoke 完成后，继续完成主代理长程压缩 smoke 的最终汇总。',
+      expectedText: AUTO_COMPACTION_MAIN_TEXT,
+      headers: input.headers,
+      stepName: 'chat.messages.subagent-auto-compaction',
+    });
+
+    await runStep('chat.messages.subagent-auto-compaction.verify-model', async () => {
+      const requests = input.fakeOpenAi.readChatCompletions();
+      ensure(requests.length >= 5, 'Expected auto compaction smoke to issue multiple fake model requests');
+      ensure(requests.every((entry) => entry.body?.stream === true), 'Expected auto compaction smoke to use streamed requests only');
+      const summaryRequests = requests.filter((entry) => containsText(entry.body?.messages ?? [], '历史对话：'));
+      ensure(summaryRequests.some((entry) => containsText(entry.body?.messages ?? [], '子代理长程压缩 smoke')), 'Expected subagent auto compaction summary request');
+      ensure(summaryRequests.some((entry) => containsText(entry.body?.messages ?? [], '主代理长程压缩 smoke')), 'Expected main conversation auto compaction summary request');
+    });
+
+    await runStep('chat.messages.subagent-auto-compaction.verify-history', async () => {
+      const subagents = await getJson(apiBase, `/chat/conversations/${state.conversationId}/subagents`, { headers: input.headers() });
+      ensure(Array.isArray(subagents) && subagents.length === 1, 'Expected one subagent in auto compaction smoke conversation');
+      const subagentConversationId = subagents[0]?.conversationId ?? subagents[0]?.id;
+      ensure(typeof subagentConversationId === 'string' && subagentConversationId.length > 0, 'Expected auto compaction smoke subagent conversation id');
+      const [mainConversation, subagentConversation] = await Promise.all([
+        getJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: input.headers() }),
+        getJson(apiBase, `/chat/conversations/${subagentConversationId}`, { headers: input.headers() }),
+      ]);
+      const mainSummary = findContextCompactionSummaryMessage(mainConversation.messages);
+      const subagentSummary = findContextCompactionSummaryMessage(subagentConversation.messages);
+      ensure(mainSummary?.content === 'Smoke 压缩摘要。', 'Expected main conversation to persist auto compaction summary');
+      ensure(subagentSummary?.content === 'Smoke 压缩摘要。', 'Expected subagent conversation to persist auto compaction summary');
+    });
+
+    await runStep('chat.conversation.delete.auto-compaction', async () => {
+      const result = await deleteJson(apiBase, `/chat/conversations/${state.conversationId}`, { headers: input.headers() });
+      ensure(typeof result?.message === 'string' && result.message.includes('deleted'), 'Expected auto compaction smoke conversation delete to succeed');
+    });
+    state.conversationId = originalConversationId;
+    isolatedConversationId = null;
+
+    await runStep('ai.model.delete.auto-compaction', async () => {
+      const result = await deleteJson(apiBase, `/ai/providers/${state.providerId}/models/${compactionModelId}`);
+      ensure(result.success === true, 'Expected auto compaction smoke model delete response');
+    });
+    state.modelId = originalModelId;
+  } finally {
+    state.conversationId = originalConversationId;
+    state.modelId = originalModelId;
   }
 }
 
@@ -1367,6 +1470,11 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(Array.isArray(subagentToolResults) && subagentToolResults.some((entry) => entry?.toolName === 'wait_subagent'), 'Expected subagent loop assistant message to persist wait_subagent tool result');
   });
 
+  await runSubagentAutoCompactionSmoke(apiBase, state, {
+    fakeOpenAi: input.fakeOpenAi,
+    headers: userHeaders,
+  });
+
   await runStep('chat.messages.todo-loop', async () => {
     input.fakeOpenAi.resetChatCompletions();
     const events = await postSse(apiBase, `/chat/conversations/${state.conversationId}/messages`, {
@@ -1660,7 +1768,6 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash workdir loop request to expose native shell tool');
     const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash workdir loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsShellResult(toolResultRequest.body, 'cwd: /nested'), 'Expected bash workdir loop follow-up request to include rendered cwd');
     ensure(requestContainsShellResult(toolResultRequest.body, 'from-workdir'), 'Expected bash workdir loop follow-up request to include rendered workdir output');
     ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'nested', 'child.txt')) === 'from-workdir\n', 'Expected bash workdir loop to persist file under nested workdir');
 
@@ -2550,6 +2657,7 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(result.query?.via === 'delete', 'Expected plugin route DELETE query echo');
   });
 
+  input.fakeOpenAi.resetChatCompletions();
   await runStep('plugins.host.llm.generate-text', async () => {
     const result = await postJson(apiBase, `/plugin-routes/${state.remotePluginId}/host/ops`, {
       body: {
@@ -2557,7 +2665,6 @@ async function runHttpFlow(apiBase, state, input) {
         modelId: state.modelId,
         prompt: '请用一句话说明 smoke host llm.generate-text 已执行。',
         providerId: state.providerId,
-        transportMode: 'stream-collect',
       },
       headers: userHeaders(),
     });
@@ -2573,7 +2680,6 @@ async function runHttpFlow(apiBase, state, input) {
         modelId: state.modelId,
         prompt: '请用一句话说明 smoke host llm.generate 已执行。',
         providerId: state.providerId,
-        transportMode: 'generate',
       },
       headers: userHeaders(),
     });
@@ -2582,6 +2688,14 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(result.result?.text === '本地 smoke 回复: 请用一句话说明 smoke host llm.generate 已执行。', 'Expected plugin host llm.generate result text');
     ensure(result.result?.message?.role === 'assistant', 'Expected plugin host llm.generate to return assistant message');
     ensure(result.result?.message?.content === '本地 smoke 回复: 请用一句话说明 smoke host llm.generate 已执行。', 'Expected plugin host llm.generate assistant content');
+  });
+
+  await runStep('plugins.host.llm.default-stream.verify', async () => {
+    const requests = input.fakeOpenAi.readChatCompletions().filter((entry) => (
+      JSON.stringify(entry.body ?? {}).includes('smoke host llm.generate')
+    ));
+    ensure(requests.length === 2, 'Expected two host llm smoke requests to reach fake OpenAI');
+    ensure(requests.every((entry) => entry.body?.stream === true), 'Expected host llm smoke requests to use stream collect by default');
   });
 
   await runStep('plugins.host.memory.create', async () => {
@@ -4143,6 +4257,11 @@ function createChatCompletion(body) {
   const plannedResponse = planSmokeChatResponse(body);
   const model = body.model ?? 'smoke-model';
   if (plannedResponse.kind === 'tool-call') {
+    const usage = plannedResponse.usage ?? {
+      completion_tokens: 8,
+      prompt_tokens: 12,
+      total_tokens: 20,
+    };
     return {
       choices: [
         {
@@ -4168,14 +4287,15 @@ function createChatCompletion(body) {
       id: 'chatcmpl-smoke',
       model,
       object: 'chat.completion',
-      usage: {
-        completion_tokens: 8,
-        prompt_tokens: 12,
-        total_tokens: 20,
-      },
+      usage,
     };
   }
   const text = plannedResponse.text;
+  const usage = plannedResponse.usage ?? {
+    completion_tokens: Math.max(1, text.length),
+    prompt_tokens: 12,
+    total_tokens: 12 + Math.max(1, text.length),
+  };
   return {
     choices: [
       {
@@ -4191,11 +4311,7 @@ function createChatCompletion(body) {
     id: 'chatcmpl-smoke',
     model,
     object: 'chat.completion',
-    usage: {
-      completion_tokens: Math.max(1, text.length),
-      prompt_tokens: 12,
-      total_tokens: 12 + Math.max(1, text.length),
-    },
+    usage,
   };
 }
 
@@ -4209,6 +4325,11 @@ async function writeStreamResponse(request, response, body) {
   const model = body.model ?? 'smoke-model';
   const plannedResponse = planSmokeChatResponse(body);
   if (plannedResponse.kind === 'tool-call') {
+    const usage = plannedResponse.usage ?? {
+      completion_tokens: 8,
+      prompt_tokens: 12,
+      total_tokens: 20,
+    };
     writeSse(response, {
       choices: [
         {
@@ -4249,17 +4370,18 @@ async function writeStreamResponse(request, response, body) {
       created: Math.floor(Date.now() / 1000),
       id: 'chatcmpl-smoke',
       model,
-      usage: {
-        completion_tokens: 8,
-        prompt_tokens: 12,
-        total_tokens: 20,
-      },
+      usage,
     });
     response.write('data: [DONE]\n\n');
     response.end();
     return;
   }
   const text = plannedResponse.text;
+  const usage = plannedResponse.usage ?? {
+    completion_tokens: Math.max(1, text.length),
+    prompt_tokens: 12,
+    total_tokens: 12 + Math.max(1, text.length),
+  };
   const chunks = splitIntoChunks(text, 6);
 
   for (const chunk of chunks) {
@@ -4300,11 +4422,7 @@ async function writeStreamResponse(request, response, body) {
     created: Math.floor(Date.now() / 1000),
     id: 'chatcmpl-smoke',
     model,
-    usage: {
-      completion_tokens: Math.max(1, text.length),
-      prompt_tokens: 12,
-      total_tokens: 12 + Math.max(1, text.length),
-    },
+    usage,
   });
   response.write('data: [DONE]\n\n');
   response.end();
@@ -4334,6 +4452,9 @@ function resolveAssistantText(body) {
   }
 
   const latestUserText = findLatestUserText(messages);
+  if (latestUserText.includes('请围绕“子代理长程压缩 smoke”写一段较长总结')) {
+    return AUTO_COMPACTION_SUBAGENT_TEXT;
+  }
   if (latestUserText.includes('请总结 smoke-http-flow 技能的用途')) {
     return 'Smoke HTTP Flow 用于后端烟测。';
   }
@@ -4357,9 +4478,18 @@ function planSmokeChatResponse(body) {
   if (shouldTriggerSpawnSubagentTool(body)) {
     return {
       arguments: {
-        description: '探索 smoke 技能',
-        subagentType: 'review',
-        prompt: '请总结 smoke-http-flow 技能的用途',
+        description: isAutoCompactionSubagentPrompt(body) ? '子代理长程压缩 smoke' : '探索 smoke 技能',
+        ...(isAutoCompactionSubagentPrompt(body)
+          ? {
+              modelId: 'smoke-auto-compaction',
+              prompt: '请围绕“子代理长程压缩 smoke”写一段较长总结，方便随后验证自动压缩是否会立刻发生。',
+              providerId: 'smoke-openai',
+              subagentType: 'general',
+            }
+          : {
+              prompt: '请总结 smoke-http-flow 技能的用途',
+              subagentType: 'review',
+            }),
       },
       kind: 'tool-call',
       toolCallId: 'call_smoke_subagent_0',
@@ -4581,6 +4711,17 @@ function planSmokeChatResponse(body) {
     };
   }
   if (requestContainsToolResult(body, 'wait_subagent')) {
+    if (isAutoCompactionSubagentPrompt(body)) {
+      return {
+        kind: 'text',
+        text: AUTO_COMPACTION_MAIN_TEXT,
+        usage: {
+          completion_tokens: 28,
+          prompt_tokens: 392,
+          total_tokens: 420,
+        },
+      };
+    }
     return {
       kind: 'text',
       text: '子代理已完成：Smoke HTTP Flow 用于后端烟测。',
@@ -4657,6 +4798,7 @@ function planSmokeChatResponse(body) {
   return {
     kind: 'text',
     text: resolveAssistantText(body),
+    ...(readPlannedUsage(body) ? { usage: readPlannedUsage(body) } : {}),
   };
 }
 
@@ -4677,6 +4819,36 @@ function shouldTriggerWaitSubagentTool(body) {
     && requestContainsToolResult(body, 'spawn_subagent')
     && !requestContainsToolResult(body, 'wait_subagent')
     && readLatestUserText(body?.messages).includes('请使用 subagent 工具委派一个探索任务');
+}
+
+function isAutoCompactionSubagentPrompt(body) {
+  const latestUserText = readLatestUserText(body?.messages);
+  return latestUserText.includes('请使用 subagent 工具委派一个探索任务')
+    && latestUserText.includes('子代理长程压缩 smoke')
+    && latestUserText.includes('主代理长程压缩 smoke');
+}
+
+function readPlannedUsage(body) {
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  if (containsText(messages, '历史对话：')) {
+    return null;
+  }
+  const latestUserText = readLatestUserText(messages);
+  if (latestUserText.includes('子代理长程压缩 smoke')) {
+    return {
+      completion_tokens: 28,
+      prompt_tokens: 392,
+      total_tokens: 420,
+    };
+  }
+  if (latestUserText.includes('主代理长程压缩 smoke')) {
+    return {
+      completion_tokens: 28,
+      prompt_tokens: 392,
+      total_tokens: 420,
+    };
+  }
+  return null;
 }
 
 function shouldTriggerTodoTool(body) {

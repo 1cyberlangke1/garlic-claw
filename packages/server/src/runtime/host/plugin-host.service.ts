@@ -188,7 +188,7 @@ function readRuntimeHostLlmRequest(input: {
   const modelId = readOptionalString(input.params, 'modelId') ?? llmOverride?.modelId ?? input.context.activeModelId;
   const providerId = readOptionalString(input.params, 'providerId') ?? llmOverride?.providerId ?? input.context.activeProviderId;
   const system = readOptionalString(input.params, 'system');
-  const transportMode = readTransportMode(input.params);
+  const transportMode = readTransportMode(input.params) ?? 'stream-collect';
   const variant = readOptionalString(input.params, 'variant');
   return {
     ...(headers ? { headers: headers as Record<string, string> } : {}),
@@ -200,7 +200,7 @@ function readRuntimeHostLlmRequest(input: {
     ...(providerOptions ? { providerOptions } : {}),
     ...(providerId ? { providerId } : {}),
     ...(system ? { system } : {}),
-    ...(transportMode ? { transportMode } : {}),
+    transportMode,
     ...(variant ? { variant } : {}),
   };
 }

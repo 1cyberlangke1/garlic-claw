@@ -284,8 +284,9 @@ function readConversationTaskEvents(
     state.toolCalls.push({ input: part.input, toolCallId: part.toolCallId, toolName: part.toolName });
     return [...metadataEvents, { input: part.input, messageId, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-call' }];
   }
-  state.toolResults.push({ output: part.output, toolCallId: part.toolCallId, toolName: part.toolName });
-  return [...metadataEvents, { messageId, output: part.output, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-result' }];
+  const output = compactConversationToolResultOutput(part.output);
+  state.toolResults.push({ output, toolCallId: part.toolCallId, toolName: part.toolName });
+  return [...metadataEvents, { messageId, output, toolCallId: part.toolCallId, toolName: part.toolName, type: 'tool-result' }];
 }
 
 function readConversationTaskMetadataEvents(
@@ -336,6 +337,20 @@ function readConversationTaskCustomBlock(
   return update.kind === 'text'
     ? { ...base, kind: 'text', text: `${currentBlock?.kind === 'text' ? currentBlock.text : ''}${update.value}` }
     : { ...base, data: cloneJsonValue(update.value), kind: 'json' };
+}
+
+function compactConversationToolResultOutput(value: JsonValue): JsonValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return cloneJsonValue(value);
+  }
+  const record = value as Record<string, JsonValue>;
+  if ((record.kind === 'tool:text' && typeof record.value === 'string') || record.kind === 'tool:json') {
+    return cloneJsonValue({
+      kind: record.kind,
+      value: cloneJsonValue(record.value ?? null),
+    });
+  }
+  return cloneJsonValue(value);
 }
 
 function finalizeConversationTaskMetadata(metadata: ChatMessageMetadata | undefined, status: ChatMessageStatus): ChatMessageMetadata | undefined {

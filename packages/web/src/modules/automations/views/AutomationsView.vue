@@ -98,9 +98,9 @@
               :label="form.triggerType === 'cron' && form.targetConversationMode === 'cron_child' ? '请选择父会话' : '请选择目标会话'"
             />
             <ElOption
-              v-for="conversation in conversations"
+              v-for="conversation in conversationOptions"
               :key="conversation.id"
-              :label="conversation.title"
+              :label="conversation.label"
               :value="conversation.id"
             />
           </ElSelect>
@@ -281,6 +281,7 @@ type AutomationView = 'automations' | 'logs'
 
 const {
   automations,
+  conversationOptions,
   currentView,
   conversations,
   loading,

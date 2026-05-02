@@ -102,7 +102,7 @@ export function resolveContextCompactionRuntimeConfig(
     keepRecentMessages: normalizeIntegerInRange(
       config.keepRecentMessages,
       CONTEXT_COMPACTION_DEFAULT_KEEP_RECENT,
-      1,
+      0,
       64,
     ),
     frontendMessageWindowSize: normalizeIntegerInRange(

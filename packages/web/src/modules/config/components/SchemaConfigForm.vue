@@ -101,6 +101,7 @@ const headerClass = computed(() =>
   props.showHeader ? 'section-header' : 'section-actions',
 )
 const committedDraftSignature = ref('{}')
+const pendingDraftSignature = ref<string | null>(null)
 const draftChangeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const unsubscribeInternalConfigChanged = subscribeInternalConfigChanged(({ scope }) => {
   if (scope !== 'provider-models' || !rootSchema.value || !schemaNeedsProviderOptions(rootSchema.value)) {
@@ -114,7 +115,11 @@ watch(
   (snapshot) => {
     formError.value = null
     draft.value = resolveDraftValues(snapshot)
-    committedDraftSignature.value = JSON.stringify(draft.value)
+    const snapshotSignature = JSON.stringify(draft.value)
+    committedDraftSignature.value = snapshotSignature
+    pendingDraftSignature.value = pendingDraftSignature.value === snapshotSignature
+      ? null
+      : pendingDraftSignature.value
   },
   { immediate: true },
 )
@@ -140,11 +145,19 @@ watch(
 watch(
   () => props.saving,
   (saving) => {
-    if (!saving && props.autoSave && hasSchema.value) {
-      const nextSignature = JSON.stringify(readResolvedDraftValues())
-      if (nextSignature !== committedDraftSignature.value) {
-        scheduleAutoSave(0)
-      }
+    if (saving || !props.autoSave || !hasSchema.value) {
+      return
+    }
+    if (
+      pendingDraftSignature.value
+      && pendingDraftSignature.value !== committedDraftSignature.value
+    ) {
+      pendingDraftSignature.value = null
+      scheduleAutoSave(0)
+      return
+    }
+    if (readResolvedDraftSignature() !== committedDraftSignature.value) {
+      scheduleAutoSave(0)
     }
   },
 )
@@ -195,10 +208,11 @@ function applyDraft(nextValue: JsonValue | undefined) {
 function submit() {
   try {
     const values = readResolvedDraftValues()
-    committedDraftSignature.value = JSON.stringify(values)
+    pendingDraftSignature.value = JSON.stringify(values)
     emit('save', values)
     formError.value = null
   } catch (error) {
+    pendingDraftSignature.value = null
     formError.value = error instanceof Error ? error.message : '配置格式无效'
   }
 }
@@ -208,6 +222,13 @@ function scheduleAutoSave(delayMs = props.autoSaveDelayMs) {
   draftChangeTimer.value = setTimeout(() => {
     draftChangeTimer.value = null
     if (props.saving || !props.autoSave || !hasSchema.value) {
+      return
+    }
+    const nextSignature = readResolvedDraftSignature()
+    if (
+      nextSignature === committedDraftSignature.value
+      || nextSignature === pendingDraftSignature.value
+    ) {
       return
     }
     submit()
@@ -227,6 +248,10 @@ function resolveDraftValues(snapshot: PluginConfigSnapshot | null): JsonObject {
     return copyJsonObject(snapshot?.values)
   }
   return copyJsonObject(resolveConfigObjectValue(snapshot.schema, snapshot.values))
+}
+
+function readResolvedDraftSignature() {
+  return JSON.stringify(readResolvedDraftValues())
 }
 
 function copyJsonObject(value: JsonObject | undefined): JsonObject {

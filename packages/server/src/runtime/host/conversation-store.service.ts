@@ -457,7 +457,7 @@ function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | n
 function readConversationHistoryMessageText(message: JsonObject): string {
   if (message.role === 'display') {return '';}
   const partText = Array.isArray(message.parts) ? message.parts.flatMap((part) => { const object = readJsonObject(part); return object?.type === 'text' && typeof object.text === 'string' ? [object.text] : []; }).join('\n') : '';
-  return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : ''), Array.isArray(message.toolCalls) ? JSON.stringify(message.toolCalls) : '', Array.isArray(message.toolResults) ? JSON.stringify(message.toolResults) : ''].filter(Boolean).join('\n');
+  return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : '')].filter(Boolean).join('\n');
 }
 
 function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): number {
