@@ -1,0 +1,31 @@
+# Git 忽略文件
+
+# 本机真实配置默认不提交；仓库内置样例/默认配置显式放行
+ai-settings.json
+model-capabilities.json
+tool-governance.json
+skill-governance.json
+
+ai/providers/*.json
+ai/host-model-routing.json
+ai/vision-fallback.json
+ai/default-selection.json
+
+mcp/servers/*.json
+!mcp/servers/tavily-mcp.json
+
+personas/*
+!personas/builtin.default-assistant/
+personas/builtin.default-assistant/*
+!personas/builtin.default-assistant/avatar.png
+!personas/builtin.default-assistant/persona.json
+!personas/builtin.default-assistant/prompt.md
+
+subagent/*
+!subagent/general/
+!subagent/explore/
+subagent/general/*
+subagent/explore/*
+!subagent/general/subagent.json
+!subagent/explore/subagent.json
+!subagent/explore/prompt.md
