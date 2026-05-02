@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AiManagementModule } from '../ai-management/ai-management.module';
 import { AuthModule } from '../auth/auth.module';
+import { CoreRuntimeModule } from '../core/runtime/core-runtime.module';
 import { ConversationModule } from '../conversation/conversation.module';
 import { ExecutionApiModule } from '../execution/execution-api.module';
 import { HealthModule } from '../health/health.module';
@@ -9,7 +10,6 @@ import { PersonaModule } from '../persona/persona.module';
 import { PluginApiModule } from '../plugin/plugin-api.module';
 import { PluginWsModule } from '../plugin/ws/plugin-ws.module';
 import { HostApiModule } from '../runtime/host/host-api.module';
-import { RuntimeModule } from '../runtime/runtime.module';
 
 @Module({
   imports: [
@@ -19,6 +19,7 @@ import { RuntimeModule } from '../runtime/runtime.module';
     }),
     AiManagementModule,
     AuthModule,
+    CoreRuntimeModule,
     ConversationModule,
     ExecutionApiModule,
     HealthModule,
@@ -26,7 +27,6 @@ import { RuntimeModule } from '../runtime/runtime.module';
     PluginApiModule,
     PluginWsModule,
     HostApiModule,
-    RuntimeModule,
   ],
 })
 export class AppModule {}
