@@ -293,4 +293,102 @@ describe('RuntimeToolPermissionService', () => {
 
     expect(service.listPendingRequests(conversationId)).toEqual([]);
   });
+
+  it('allows ask capabilities directly when runtime-tools config stores approvalMode=yolo', async () => {
+    const settingsPath = path.join(
+      os.tmpdir(),
+      `runtime-tool-permission.settings-${Date.now()}-${Math.random()}.json`,
+    );
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      runtimeTools: {
+        approvalMode: 'yolo',
+      },
+    }, null, 2), 'utf-8');
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsPath;
+    const configuredService = new RuntimeToolPermissionService(new ConversationStoreService());
+
+    try {
+      await expect(configuredService.review({
+        backend: {
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'just-bash',
+          permissionPolicy: {
+            networkAccess: 'ask',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        },
+        conversationId,
+        requiredOperations: ['command.execute', 'network.access'],
+        summary: '联网执行 bash 命令',
+        toolName: 'bash',
+      })).resolves.toBeUndefined();
+
+      expect(configuredService.listPendingRequests(conversationId)).toEqual([]);
+    } finally {
+      delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
+      fs.rmSync(settingsPath, { force: true });
+    }
+  });
+
+  it('still lets the environment variable override stored approvalMode', async () => {
+    const settingsPath = path.join(
+      os.tmpdir(),
+      `runtime-tool-permission.settings-${Date.now()}-${Math.random()}.json`,
+    );
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      runtimeTools: {
+        approvalMode: 'yolo',
+      },
+    }, null, 2), 'utf-8');
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsPath;
+    process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE = 'review';
+    const configuredService = new RuntimeToolPermissionService(new ConversationStoreService());
+
+    try {
+      const reviewPromise = configuredService.review({
+        backend: {
+          capabilities: {
+            networkAccess: true,
+            persistentFilesystem: true,
+            persistentShellState: false,
+            shellExecution: true,
+            workspaceRead: true,
+            workspaceWrite: true,
+          },
+          kind: 'just-bash',
+          permissionPolicy: {
+            networkAccess: 'allow',
+            persistentFilesystem: 'allow',
+            persistentShellState: 'deny',
+            shellExecution: 'ask',
+            workspaceRead: 'allow',
+            workspaceWrite: 'allow',
+          },
+        },
+        conversationId,
+        requiredOperations: ['command.execute'],
+        summary: '执行 bash 命令',
+        toolName: 'bash',
+      });
+
+      const [pendingRequest] = configuredService.listPendingRequests(conversationId);
+      expect(pendingRequest?.toolName).toBe('bash');
+      configuredService.reply(conversationId, pendingRequest.id, 'once');
+      await expect(reviewPromise).resolves.toBeUndefined();
+    } finally {
+      delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
+      fs.rmSync(settingsPath, { force: true });
+    }
+  });
 });

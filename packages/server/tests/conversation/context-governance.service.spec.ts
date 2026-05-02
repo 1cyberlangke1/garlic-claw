@@ -810,6 +810,22 @@ describe('ContextGovernanceService', () => {
       assistantContent: '已压缩上下文，覆盖 4 条历史消息。',
       reason: 'context-compaction:command',
     }));
+    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [
+        expect.objectContaining({
+          content: expect.stringContaining('spawn_subagent'),
+          role: 'user',
+        }),
+      ],
+    }));
+    expect(aiModelExecutionService.generateText).toHaveBeenCalledWith(expect.objectContaining({
+      messages: [
+        expect.objectContaining({
+          content: expect.stringContaining('Smoke HTTP Flow 用于后端烟测。'),
+          role: 'user',
+        }),
+      ],
+    }));
   });
 
   it('does not block the next reply with “当前历史还不足以生成稳定摘要” when only raw tool payloads inflated the preview', async () => {

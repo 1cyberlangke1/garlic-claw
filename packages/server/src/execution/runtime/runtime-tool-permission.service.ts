@@ -4,6 +4,7 @@ import { uuidv7 } from 'uuidv7';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
 import { expandRuntimeOperationsToCapabilities } from './runtime-operation-policy';
 import { ConversationStoreService } from '../../runtime/host/conversation-store.service';
+import { RuntimeToolsSettingsService, type RuntimeApprovalMode } from './runtime-tools-settings.service';
 
 interface RuntimePermissionReviewInput {
   abortSignal?: AbortSignal;
@@ -18,7 +19,6 @@ interface RuntimePermissionReviewInput {
 
 interface PendingRuntimePermissionRequest { request: RuntimePermissionRequest; resolve: (decision: RuntimePermissionDecision) => void; }
 type RuntimePermissionEvent = { type: 'request'; request: RuntimePermissionRequest } | { type: 'resolved'; messageId?: string; result: RuntimePermissionReplyResult };
-type RuntimeApprovalMode = 'review' | 'yolo';
 
 @Injectable()
 export class RuntimeToolPermissionService {
@@ -26,7 +26,10 @@ export class RuntimeToolPermissionService {
   private readonly pendingRequests = new Map<string, PendingRuntimePermissionRequest>();
   private readonly listeners = new Map<string, Set<(event: RuntimePermissionEvent) => void>>();
 
-  constructor(@Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService) {}
+  constructor(
+    @Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService,
+    @Optional() private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService = new RuntimeToolsSettingsService(),
+  ) {}
 
   async review(input: RuntimePermissionReviewInput): Promise<void> {
     const requiredCapabilities = expandRuntimeOperationsToCapabilities(input.requiredOperations);
@@ -34,7 +37,7 @@ export class RuntimeToolPermissionService {
     if (unsupported.length > 0) {throw new ForbiddenException(`当前 runtime 后端 ${input.backend.kind} 不支持能力: ${unsupported.join(', ')}`);}
     const denied = requiredCapabilities.filter((capability) => input.backend.permissionPolicy[capability] === 'deny');
     if (denied.length > 0) {throw new ForbiddenException(`当前 runtime 权限策略拒绝能力: ${denied.join(', ')}`);}
-    if (readRuntimeApprovalMode() === 'yolo') {return;}
+    if (this.readRuntimeApprovalMode() === 'yolo') {return;}
 
     const operations = input.requiredOperations.filter((operation) => {
       const asksCapability = expandRuntimeOperationsToCapabilities([operation]).some((capability) => input.backend.permissionPolicy[capability] === 'ask');
@@ -117,11 +120,15 @@ export class RuntimeToolPermissionService {
     }
     return approvals;
   }
-}
 
-function readRuntimeApprovalMode(): RuntimeApprovalMode {
-  const configuredMode = process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE?.trim().toLowerCase();
-  if (!configuredMode || configuredMode === 'review') {return 'review';}
-  if (configuredMode === 'yolo') {return 'yolo';}
-  throw new ForbiddenException('GARLIC_CLAW_RUNTIME_APPROVAL_MODE 只能是 review / yolo');
+  private readRuntimeApprovalMode(): RuntimeApprovalMode {
+    const configuredMode = process.env.GARLIC_CLAW_RUNTIME_APPROVAL_MODE?.trim().toLowerCase();
+    if (!configuredMode) {
+      return this.runtimeToolsSettingsService.readApprovalMode();
+    }
+    if (configuredMode === 'review' || configuredMode === 'yolo') {
+      return configuredMode;
+    }
+    throw new ForbiddenException('GARLIC_CLAW_RUNTIME_APPROVAL_MODE 只能是 review / yolo');
+  }
 }

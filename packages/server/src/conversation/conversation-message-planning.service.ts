@@ -9,6 +9,7 @@ import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
 import { asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/host-input.codec';
 import { AiVisionService } from '../vision/ai-vision.service';
 import { createConversationHistorySignatureFromModelMessages } from './conversation-history-signature';
+import { buildConversationVisibleModelMessages } from './conversation-model-visible-history';
 import { ContextGovernanceService, type DeferredInternalCommandAction } from './context-governance.service';
 import type { CompletedConversationTaskResult, ResolvedConversationTaskStreamSource } from './conversation-task.service';
 
@@ -95,7 +96,18 @@ export class ConversationMessagePlanningService {
       ...(beforeModel.systemPrompt ? { system: beforeModel.systemPrompt } : {}),
       ...(tools ? { tools } : {}),
     });
-    return { requestHistorySignature, modelId: stream.modelId, providerId: stream.providerId, responseSource: 'model', shortCircuitParts: null, stream: { finishReason: stream.finishReason, fullStream: stream.fullStream } };
+    return {
+      requestHistorySignature,
+      modelId: stream.modelId,
+      providerId: stream.providerId,
+      responseSource: 'model',
+      shortCircuitParts: null,
+      stream: {
+        finishReason: stream.finishReason,
+        fullStream: stream.fullStream,
+        usage: stream.usage,
+      },
+    };
   }
 
   async finalizeTaskResult(result: CompletedConversationTaskResult, responseSource: ConversationResponseSource, shortCircuitParts: ChatMessagePart[] | null): Promise<CompletedConversationTaskResult> {
@@ -123,7 +135,19 @@ export class ConversationMessagePlanningService {
   }
 
   private async buildModelMessages(conversationId: string, messageId: string): Promise<ModelMessage[]> {
-    return Promise.all(this.runtimeHostConversationRecordService.requireConversation(conversationId).messages.filter((message) => message.id !== messageId && (message.role === 'assistant' || message.role === 'user')).map(async (message) => ({ content: Array.isArray(message.parts) ? await this.aiVisionService.resolveMessageParts(conversationId, message.parts as unknown as ChatMessagePart[]) : typeof message.content === 'string' ? message.content : '', role: message.role === 'assistant' ? 'assistant' : 'user' })));
+    const historyMessages = this.runtimeHostConversationRecordService
+      .requireConversation(conversationId)
+      .messages
+      .filter((message) => message.id !== messageId && (message.role === 'assistant' || message.role === 'user' || message.role === 'display'));
+    const visibleMessages = buildConversationVisibleModelMessages(
+      historyMessages as unknown as Parameters<typeof buildConversationVisibleModelMessages>[0],
+    );
+    return Promise.all(visibleMessages.map(async (message) => ({
+      content: Array.isArray(message.content)
+        ? await this.aiVisionService.resolveMessageParts(conversationId, message.content)
+        : message.content,
+      role: message.role,
+    })));
   }
 
   private async runConversationHistoryRewrite(input: { activePersonaId?: string; conversationId: string; modelId: string; providerId: string; userId?: string }): Promise<void> {

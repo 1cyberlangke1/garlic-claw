@@ -9,6 +9,7 @@ const MAX_CONFIG_INTEGER = 1_000_000;
 const RUNTIME_TOOLS_SECTION = 'runtimeTools';
 
 interface RuntimeToolsConfigRecord {
+  approvalMode?: RuntimeApprovalMode;
   bashOutput?: {
     maxBytes?: number;
     maxLines?: number;
@@ -22,9 +23,21 @@ interface RuntimeToolsConfigRecord {
   };
 }
 
+export type RuntimeApprovalMode = 'review' | 'yolo';
+
 export const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
   type: 'object',
   items: {
+    approvalMode: {
+      type: 'string',
+      description: '执行工具审批模式',
+      hint: 'review 表示需要审批；yolo 表示默认直通 ask 类工具操作。',
+      defaultValue: 'review',
+      options: [
+        { label: '审批确认', value: 'review' },
+        { label: 'YOLO 直通', value: 'yolo' },
+      ],
+    },
     shellBackend: {
       type: 'string',
       description: 'bash 执行后端',
@@ -120,6 +133,10 @@ export class RuntimeToolsSettingsService {
     return readRuntimeToolsBashOutputOptions(this.configValues);
   }
 
+  readApprovalMode(): RuntimeApprovalMode {
+    return readRuntimeToolsApprovalMode(this.configValues);
+  }
+
   readToolOutputCaptureOptions(): RuntimeToolOutputCaptureOptions {
     return readRuntimeToolsToolOutputCaptureOptions(this.configValues);
   }
@@ -129,6 +146,14 @@ export interface RuntimeToolOutputCaptureOptions {
   enabled: boolean;
   maxBytes: number;
   maxFilesPerSession: number;
+}
+
+export function readRuntimeToolsApprovalMode(config: JsonValue): RuntimeApprovalMode {
+  const record = isJsonObject(config) ? config : null;
+  const approvalMode = typeof record?.approvalMode === 'string'
+    ? record.approvalMode.trim().toLowerCase()
+    : '';
+  return approvalMode === 'yolo' ? 'yolo' : 'review';
 }
 
 export function readRuntimeToolsConfiguredShellBackend(
@@ -181,6 +206,14 @@ export function readRuntimeToolsToolOutputCaptureOptions(
 
 function sanitizeRuntimeToolsConfig(values: JsonObject): JsonObject {
   const next: RuntimeToolsConfigRecord = {};
+  if (typeof values.approvalMode === 'string') {
+    const approvalMode = values.approvalMode.trim().toLowerCase();
+    if (approvalMode === 'review' || approvalMode === 'yolo') {
+      next.approvalMode = approvalMode;
+    } else if (approvalMode) {
+      throw new BadRequestException('runtime-tools.approvalMode 只能是 review / yolo');
+    }
+  }
   if (typeof values.shellBackend === 'string') {
     const shellBackend = values.shellBackend.trim();
     if (readRuntimeToolsShellBackendOptions().some((option) => option.value === shellBackend)) {
