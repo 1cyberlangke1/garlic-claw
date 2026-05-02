@@ -18,21 +18,6 @@
     </template>
 
     <div>
-      <div class="overview-grid">
-        <article
-          v-for="card in overviewCards"
-          :key="card.label"
-          class="overview-card"
-          :class="card.tone"
-        >
-          <div class="overview-card-head">
-            <span class="overview-label">{{ card.label }}</span>
-            <strong>{{ card.value }}</strong>
-          </div>
-          <p>{{ card.note }}</p>
-        </article>
-      </div>
-
       <p v-if="error" class="page-banner error">{{ error }}</p>
 
     <PluginAttentionPanel
@@ -53,7 +38,8 @@
             :class="{ active: activePanel === panel.value }"
             @click="activePanel = panel.value"
           >
-            {{ panel.label }}
+            <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
+            <span class="nav-label">{{ panel.label }}</span>
           </button>
         </div>
       </nav>
@@ -191,8 +177,20 @@ import PluginEventLog from '@/modules/plugins/components/PluginEventLog.vue'
 import PluginLlmPreferencePanel from '@/modules/plugins/components/PluginLlmPreferencePanel.vue'
 import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import { Icon } from '@iconify/vue'
+import type { IconifyIcon } from '@iconify/types'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import widgetBold from '@iconify-icons/solar/widget-5-bold'
+import listCheckBold from '@iconify-icons/solar/list-check-bold'
+import documentTextBold from '@iconify-icons/solar/document-text-bold'
+import serverBold from '@iconify-icons/solar/server-bold'
+import codeBold from '@iconify-icons/solar/code-bold'
+import settingsBold from '@iconify-icons/solar/settings-bold'
+import cpuBold from '@iconify-icons/solar/cpu-bold'
+import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
+import disketteBold from '@iconify-icons/solar/diskette-bold'
+import clockCircleBold from '@iconify-icons/solar/clock-circle-bold'
+import chatRoundLineBold from '@iconify-icons/solar/chat-round-line-bold'
+import linkRoundBold from '@iconify-icons/solar/link-round-bold'
 import { ElButton } from 'element-plus'
 import PluginRemoteAccessPanel from '@/modules/plugins/components/PluginRemoteAccessPanel.vue'
 import PluginRemoteSummaryPanel from '@/modules/plugins/components/PluginRemoteSummaryPanel.vue'
@@ -311,25 +309,40 @@ const selectedPluginUsesLlm = computed(() =>
 
 const activePanel = ref<DetailPanelId>('plugins')
 
+const PANEL_ICONS: Record<DetailPanelId, IconifyIcon> = {
+  plugins: widgetBold,
+  overview: listCheckBold,
+  logs: documentTextBold,
+  'remote-summary': serverBold,
+  'remote-access': codeBold,
+  config: settingsBold,
+  'llm-preference': cpuBold,
+  scope: cpuBoltBold,
+  storage: disketteBold,
+  cron: clockCircleBold,
+  sessions: chatRoundLineBold,
+  routes: linkRoundBold,
+}
+
 const availablePanels = computed(() => {
-  const panels: Array<{ label: string; value: DetailPanelId }> = []
-  panels.push({ label: '插件列表', value: 'plugins' })
+  const panels: Array<{ label: string; value: DetailPanelId; icon: IconifyIcon }> = []
+  panels.push({ label: '插件列表', value: 'plugins', icon: PANEL_ICONS['plugins'] })
   if (selectedPlugin.value) {
-    panels.push({ label: '插件概览', value: 'overview' })
-    panels.push({ label: '日志', value: 'logs' })
+    panels.push({ label: '插件概览', value: 'overview', icon: PANEL_ICONS['overview'] })
+    panels.push({ label: '日志', value: 'logs', icon: PANEL_ICONS['logs'] })
     if (selectedPlugin.value.remote) {
-      panels.push({ label: '远程摘要', value: 'remote-summary' })
-      panels.push({ label: '远程接入', value: 'remote-access' })
+      panels.push({ label: '远程摘要', value: 'remote-summary', icon: PANEL_ICONS['remote-summary'] })
+      panels.push({ label: '远程接入', value: 'remote-access', icon: PANEL_ICONS['remote-access'] })
     }
-    panels.push({ label: '插件配置', value: 'config' })
+    panels.push({ label: '插件配置', value: 'config', icon: PANEL_ICONS['config'] })
     if (selectedPluginUsesLlm.value) {
-      panels.push({ label: '模型偏好', value: 'llm-preference' })
+      panels.push({ label: '模型偏好', value: 'llm-preference', icon: PANEL_ICONS['llm-preference'] })
     }
-    panels.push({ label: '作用域', value: 'scope' })
-    panels.push({ label: '持久化 KV', value: 'storage' })
-    panels.push({ label: '定时任务', value: 'cron' })
-    panels.push({ label: '会话等待态', value: 'sessions' })
-    panels.push({ label: 'Web 路由', value: 'routes' })
+    panels.push({ label: '作用域', value: 'scope', icon: PANEL_ICONS['scope'] })
+    panels.push({ label: '持久化 KV', value: 'storage', icon: PANEL_ICONS['storage'] })
+    panels.push({ label: '定时任务', value: 'cron', icon: PANEL_ICONS['cron'] })
+    panels.push({ label: '会话等待态', value: 'sessions', icon: PANEL_ICONS['sessions'] })
+    panels.push({ label: 'Web 路由', value: 'routes', icon: PANEL_ICONS['routes'] })
   }
   return panels
 })
@@ -356,61 +369,6 @@ const attentionPlugins = computed(() =>
       return (left.displayName ?? left.name).localeCompare(right.displayName ?? right.name)
     }),
 )
-const onlinePluginCount = computed(() =>
-  plugins.value.filter((plugin) => plugin.connected).length,
-)
-const localPluginCount = computed(() =>
-  plugins.value.filter((plugin) => (plugin.runtimeKind ?? 'remote') === 'local').length,
-)
-const remotePluginCount = computed(() =>
-  Math.max(plugins.value.length - localPluginCount.value, 0),
-)
-const attentionPluginCount = computed(() =>
-  plugins.value.filter((plugin) => needsAttention(plugin)).length,
-)
-const overviewCards = computed(() => {
-  const total = plugins.value.length
-
-  return [
-    {
-      label: '已接入插件',
-      value: String(total),
-      note: total > 0
-        ? `本地 ${localPluginCount.value} · 远程 ${remotePluginCount.value}`
-        : '本地与远程插件都会汇聚到这里',
-      tone: 'accent',
-    },
-    {
-      label: '在线插件',
-      value: String(onlinePluginCount.value),
-      note: total === 0
-        ? '还没有建立运行中的插件连接'
-        : onlinePluginCount.value === total
-          ? '全部在线'
-          : `${total - onlinePluginCount.value} 个离线`,
-      tone: 'neutral',
-    },
-    {
-      label: '需关注',
-      value: String(attentionPluginCount.value),
-      note: attentionPluginCount.value > 0
-        ? '存在异常、降级或满并发插件'
-        : '没有高优先级告警',
-      tone: attentionPluginCount.value > 0 ? 'warning' : 'neutral',
-    },
-    {
-      label: '焦点',
-      value: selectedPlugin.value
-        ? selectedPlugin.value.displayName ?? selectedPlugin.value.name
-        : '未选择插件',
-      note: selectedPlugin.value
-        ? `${runtimeKindLabel(selectedPlugin.value)} · ${healthText(selectedPluginHealth.value)}`
-        : '从左侧选择插件进入详情',
-      tone: 'spotlight',
-    },
-  ]
-})
-
 const ACTION_LABELS: Record<PluginActionName, {
   label: string
   pendingLabel: string
@@ -431,32 +389,6 @@ const ACTION_LABELS: Record<PluginActionName, {
     label: '刷新元数据',
     pendingLabel: '刷新中...',
   },
-}
-
-/** 健康状态文本。 */
-function healthText(health: PluginHealthSnapshot | null | undefined): string {
-  switch (health?.status) {
-    case 'healthy':
-      return '健康'
-    case 'degraded':
-      return '降级'
-    case 'error':
-      return '异常'
-    case 'offline':
-      return '离线'
-    default:
-      return '未知'
-  }
-}
-
-/** 运行形态标签。 */
-function runtimeKindLabel(plugin: PluginInfo): string {
-  return (plugin.runtimeKind ?? 'remote') === 'local' ? '本地插件' : '远程插件'
-}
-
-/** 判断插件是否需要关注。 */
-function needsAttention(plugin: PluginInfo): boolean {
-  return hasPluginIssue(plugin)
 }
 
 /** 根据权限与 Hook 推导插件能力标签。 */
@@ -727,21 +659,26 @@ async function runActionForPlugin(input: {
 
 .plugins-layout {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   grid-template-areas: "nav content";
-  gap: 18px;
+  gap: 0;
   min-height: 0;
   align-items: start;
 }
 
-.plugin-detail,
-.plugin-empty {
+.plugin-detail {
+  grid-area: content;
   display: grid;
   gap: 16px;
   min-width: 0;
+  padding: 20px 24px;
 }
 
 .plugin-empty {
+  grid-area: content;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
   align-content: start;
   padding: 2rem;
   border: 1px solid var(--border);
@@ -759,50 +696,64 @@ async function runActionForPlugin(input: {
 
 .detail-nav {
   grid-area: nav;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   position: sticky;
   top: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface-card-gradient);
+  padding: 12px 8px;
+  border-right: 1px solid var(--shell-border);
   align-self: start;
+  min-height: 0;
 }
 
 .detail-nav-group {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
 .detail-nav button {
   appearance: none;
   -webkit-appearance: none;
-  text-align: left;
-  padding: 0.5rem 0.7rem;
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
   font-size: 0.85rem;
+  text-align: left;
   cursor: pointer;
   transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 
 .detail-nav button:hover {
-  background: var(--surface-panel-hover-soft);
+  background: var(--shell-bg-hover, #334155);
   color: var(--text);
 }
 
 .detail-nav button.active {
-  background: var(--surface-panel-hover-soft);
-  border-color: rgba(103, 199, 207, 0.22);
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: rgba(103, 199, 207, 0.22);
 }
 
-.plugin-detail,
-.plugin-empty {
-  grid-area: content;
+.nav-icon {
+  width: 18px;
+  min-width: 18px;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-content {
@@ -846,20 +797,27 @@ async function runActionForPlugin(input: {
     flex-wrap: wrap;
     padding: 0.4rem;
     gap: 4px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border);
   }
 
   .detail-nav-group {
     display: flex;
     flex-wrap: wrap;
+    flex-direction: row;
     gap: 4px;
   }
 
   .detail-nav button {
     flex: 1 1 auto;
     min-width: 80px;
-    text-align: center;
+    justify-content: center;
     padding: 0.45rem 0.6rem;
     font-size: 0.8rem;
+  }
+
+  .plugin-detail {
+    padding: 16px;
   }
 }
 
