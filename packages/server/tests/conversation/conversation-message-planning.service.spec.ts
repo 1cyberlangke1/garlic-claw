@@ -162,8 +162,8 @@ describe('ConversationMessagePlanningService', () => {
       createMessage('summary-1', 'display', '压缩后的历史摘要', {
         annotations: [{
           data: {
-            afterPreview: { estimatedTokens: 16, messageCount: 2, textBytes: 64 },
-            beforePreview: { estimatedTokens: 32, messageCount: 3, textBytes: 128 },
+            afterPreview: { estimatedTokens: 16, messageCount: 2, source: 'estimated', textBytes: 64 },
+            beforePreview: { estimatedTokens: 32, messageCount: 3, source: 'estimated', textBytes: 128 },
             compactionId: 'compaction-1',
             coveredCount: 2,
             createdAt: '2026-04-25T00:00:00.000Z',
@@ -213,6 +213,7 @@ describe('ConversationMessagePlanningService', () => {
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-1', 'history-2'],
       keepRecentMessages: 0,
+      source: 'estimated',
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));
@@ -295,6 +296,7 @@ describe('ConversationMessagePlanningService', () => {
     })).resolves.toEqual(expect.objectContaining({
       estimatedTokens: 100,
       includedMessageIds: ['history-1', 'history-2'],
+      source: 'provider',
     }));
   });
 
@@ -339,6 +341,7 @@ describe('ConversationMessagePlanningService', () => {
     })).resolves.toEqual(expect.objectContaining({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       includedMessageIds: ['history-1', 'history-2'],
+      source: 'estimated',
     }));
   });
 

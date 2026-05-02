@@ -166,11 +166,11 @@ function readRuntimeCommandTruncationPrefix(
   limits: RuntimeCommandOutputLimits,
 ): string[] {
   const truncationLine = readRuntimeCommandTruncationLine(stdout, stderr, limits);
-  if (!truncationLine) {
+  if (!truncationLine && !outputPath) {
     return [];
   }
   return [
-    truncationLine,
+    ...(truncationLine ? [truncationLine] : []),
     ...(outputPath ? [`Full output saved to: ${outputPath}`] : []),
   ];
 }

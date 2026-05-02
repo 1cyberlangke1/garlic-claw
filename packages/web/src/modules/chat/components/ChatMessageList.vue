@@ -277,6 +277,26 @@
                 <div v-if="row.message.error" class="message-error">
                   错误: {{ row.message.error }}
                 </div>
+                <div
+                  v-if="readAssistantUsage(row.message)"
+                  class="message-usage-inline"
+                >
+                  <span class="message-usage-inline-item">
+                    输入 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.inputTokens) }}
+                  </span>
+                  <span class="message-usage-inline-item">
+                    输出 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.outputTokens) }}
+                  </span>
+                  <span
+                    v-if="readAssistantUsage(row.message)?.cachedInputTokens !== undefined"
+                    class="message-usage-inline-item"
+                  >
+                    缓存 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.cachedInputTokens) }}
+                  </span>
+                  <span class="message-usage-inline-item">
+                    总计 {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.totalTokens) }}
+                  </span>
+                </div>
               </template>
 
               <span
@@ -335,21 +355,21 @@
               <div class="message-usage-grid">
                 <span class="message-usage-label">输入 token</span>
                 <strong class="message-usage-value">
-                  {{ readAssistantUsage(row.message)?.inputTokens }}
+                  {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.inputTokens) }}
                 </strong>
                 <span class="message-usage-label">总 token</span>
                 <strong class="message-usage-value">
-                  {{ readAssistantUsage(row.message)?.totalTokens }}
+                  {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.totalTokens) }}
                 </strong>
                 <template v-if="readAssistantUsage(row.message)?.cachedInputTokens !== undefined">
                   <span class="message-usage-label">缓存 token</span>
                   <strong class="message-usage-value">
-                    {{ readAssistantUsage(row.message)?.cachedInputTokens }}
+                    {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.cachedInputTokens) }}
                   </strong>
                 </template>
                 <span class="message-usage-label">输出 token</span>
                 <strong class="message-usage-value">
-                  {{ readAssistantUsage(row.message)?.outputTokens }}
+                  {{ formatUsageTokenCount(readAssistantUsage(row.message), readAssistantUsage(row.message)?.outputTokens) }}
                 </strong>
               </div>
             </div>
@@ -1119,6 +1139,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isTokenCount(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function formatUsageTokenCount(
+  usage: MessageModelUsageSummary | null,
+  value: number | undefined,
+): string {
+  if (!isTokenCount(value)) {
+    return "-";
+  }
+  return `${usage?.source === "estimated" ? "*" : ""}${value}`;
 }
 
 function buildUpdatedParts(

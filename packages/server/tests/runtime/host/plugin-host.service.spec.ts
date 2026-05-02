@@ -957,6 +957,7 @@ describe('PluginHostService', () => {
     })).resolves.toEqual({
       estimatedTokens: Math.ceil(Buffer.byteLength('assistant\n压缩摘要', 'utf8') / 4),
       messageCount: 1,
+      source: 'estimated',
       textBytes: Buffer.byteLength('assistant\n压缩摘要', 'utf8'),
     });
 

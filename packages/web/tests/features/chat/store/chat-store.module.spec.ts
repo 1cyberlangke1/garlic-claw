@@ -54,6 +54,7 @@ describe('createChatStoreModule', () => {
       frontendMessageWindowSize: 200,
       includedMessageIds: [],
       keepRecentMessages: 6,
+      source: 'estimated',
       slidingWindowUsagePercent: 50,
       strategy: 'summary',
     })
@@ -768,6 +769,7 @@ describe('createChatStoreModule', () => {
       frontendMessageWindowSize: 200,
       includedMessageIds: [],
       keepRecentMessages: 6,
+      source: 'estimated',
       slidingWindowUsagePercent: 50,
       strategy: 'summary',
     }
@@ -833,6 +835,7 @@ describe('createChatStoreModule', () => {
       frontendMessageWindowSize: 200,
       includedMessageIds: [],
       keepRecentMessages: 6,
+      source: 'estimated',
       slidingWindowUsagePercent: 50,
       strategy: 'summary',
     }
@@ -1504,6 +1507,7 @@ describe('createChatStoreModule', () => {
       frontendMessageWindowSize: 2,
       includedMessageIds: ['message-3'],
       keepRecentMessages: 1,
+      source: 'estimated',
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     })

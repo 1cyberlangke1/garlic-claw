@@ -36,6 +36,7 @@ import { SkillRegistryService } from '../../../src/execution/skill/skill-registr
 import { SkillToolService } from '../../../src/execution/skill/skill-tool.service';
 import { SubagentSettingsService } from '../../../src/execution/subagent/subagent-settings.service';
 import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
+import { ToolOutputCaptureService } from '../../../src/execution/tool/tool-output-capture.service';
 import { SubagentToolService } from '../../../src/execution/subagent/subagent-tool.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
 import { WebFetchToolService } from '../../../src/execution/webfetch/webfetch-tool.service';
@@ -8280,6 +8281,108 @@ describe('ToolRegistryService', () => {
     }));
   });
 
+  it('captures oversized plugin text output to a session file while only returning compact text to the model', async () => {
+    const { runtimeHostPluginDispatchService, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
+    runtimeToolsSettingsService.updateConfig({
+      toolOutputCapture: {
+        enabled: true,
+        maxBytes: 128,
+        maxFilesPerSession: 5,
+      },
+    });
+    const oversizedText = 'tool-output-'.repeat(900);
+    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+      message: oversizedText,
+      summary: '已保存大文本输出',
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+    const modelOutput = await (pluginTool as any).toModelOutput({
+      input: { content: 'memory payload' },
+      output: result,
+      toolCallId: 'call-plugin-capture-text-1',
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:text',
+      value: expect.stringContaining('[full output saved to: /.garlic-claw/tool-output/'),
+    }));
+    expect(modelOutput).toEqual(expect.objectContaining({
+      type: 'text',
+      value: expect.stringContaining('[full output saved to: /.garlic-claw/tool-output/'),
+    }));
+    const outputPathMatch = String((result as { value: string }).value).match(/\[full output saved to: ([^\]]+)\]/);
+    expect(outputPathMatch?.[1]).toBeTruthy();
+    const hostPath = path.join(
+      runtimeWorkspaceRoot,
+      'conversation-1',
+      ...String(outputPathMatch?.[1] ?? '').replace(/^\/+/, '').split('/'),
+    );
+    expect(fs.existsSync(hostPath)).toBe(true);
+    expect(fs.readFileSync(hostPath, 'utf8')).toContain(oversizedText.slice(0, 400));
+  });
+
+  it('captures oversized plugin json output to a session file while keeping model json compact', async () => {
+    const { runtimeHostPluginDispatchService, runtimeToolsSettingsService, runtimeWorkspaceRoot, service } = createFixture();
+    runtimeToolsSettingsService.updateConfig({
+      toolOutputCapture: {
+        enabled: true,
+        maxBytes: 128,
+        maxFilesPerSession: 5,
+      },
+    });
+    jest.spyOn(runtimeHostPluginDispatchService, 'executeTool').mockResolvedValue({
+      items: Array.from({ length: 40 }, (_, index) => index),
+      nested: {
+        text: 'json-output-'.repeat(600),
+      },
+      saved: true,
+    } as never);
+
+    const toolSet = await service.buildToolSet({
+      context: {
+        conversationId: 'conversation-1',
+        source: 'plugin',
+        userId: 'user-1',
+      },
+      allowedToolNames: ['save_memory'],
+    });
+    const pluginTool = toolSet?.save_memory;
+    expect(pluginTool).toBeDefined();
+
+    const result = await (pluginTool as any).execute({ content: 'memory payload' });
+
+    expect(result).toEqual(expect.objectContaining({
+      kind: 'tool:json',
+      value: expect.objectContaining({
+        _fullOutputPath: expect.stringMatching(/^\/\.garlic-claw\/tool-output\//),
+        items: expect.any(Array),
+        nested: expect.any(Object),
+        saved: true,
+      }),
+    }));
+    const compactValue = (result as { value: Record<string, unknown> }).value;
+    const hostPath = path.join(
+      runtimeWorkspaceRoot,
+      'conversation-1',
+      ...String(compactValue._fullOutputPath ?? '').replace(/^\/+/, '').split('/'),
+    );
+    expect(fs.existsSync(hostPath)).toBe(true);
+    expect(fs.readFileSync(hostPath, 'utf8')).toContain('"saved": true');
+    expect(fs.readFileSync(hostPath, 'utf8')).toContain('json-output-json-output');
+  });
+
   it('excludes disconnected remote plugins from the executable tool set', async () => {
     const { pluginBootstrapService, service } = createFixture();
     pluginBootstrapService.registerPlugin({
@@ -8448,6 +8551,7 @@ function createFixture(options: {
   const runtimeOneShotShellService = new RuntimeOneShotShellService();
   runtimeOneShotShellServices.push(runtimeOneShotShellService);
   const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
+  const runtimeToolsSettingsService = new RuntimeToolsSettingsService();
   const runtimeHostFilesystemBackendService = new RuntimeHostFilesystemBackendService(
     runtimeSessionEnvironmentService,
   );
@@ -8469,7 +8573,7 @@ function createFixture(options: {
     : baseRuntimeBackends;
   const runtimeCommandService = new RuntimeCommandService(
     resolvedRuntimeBackends,
-    new RuntimeCommandCaptureService(runtimeSessionEnvironmentService),
+    new RuntimeCommandCaptureService(runtimeSessionEnvironmentService, runtimeToolsSettingsService),
   );
   const resolvedFilesystemBackends = options.runtimeFilesystemBackends ?? [
     runtimeHostFilesystemBackendService,
@@ -8547,8 +8651,11 @@ function createFixture(options: {
     runtimeFilesystemBackendService,
     runtimeFileFreshnessService,
   );
-  const runtimeToolsSettingsService = new RuntimeToolsSettingsService();
   const toolManagementSettingsService = new ToolManagementSettingsService();
+  const toolOutputCaptureService = new ToolOutputCaptureService(
+    runtimeSessionEnvironmentService,
+    runtimeToolsSettingsService,
+  );
   const subagentSettingsService = new SubagentSettingsService();
   const subagentToolService = new SubagentToolService(
     runtimeHostSubagentRunnerService,
@@ -8644,6 +8751,7 @@ function createFixture(options: {
       webFetchToolService,
       writeToolService,
       skillToolService,
+      toolOutputCaptureService,
       runtimeHostPluginDispatchService as never,
       runtimePluginGovernanceService as never,
     ),

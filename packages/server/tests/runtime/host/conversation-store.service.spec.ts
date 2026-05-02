@@ -237,12 +237,14 @@ describe('ConversationStoreService', () => {
     const preview = service.previewConversationHistory(conversationId, {}) as {
       estimatedTokens: number;
       messageCount: number;
+      source: 'estimated' | 'provider';
       textBytes: number;
     };
     const expectedTextBytes = Buffer.byteLength('assistant\n你好', 'utf8');
     expect(preview).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 1,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
 
@@ -309,6 +311,7 @@ describe('ConversationStoreService', () => {
     const preview = service.previewConversationHistory(conversationId, {}) as {
       estimatedTokens: number;
       messageCount: number;
+      source: 'estimated' | 'provider';
       textBytes: number;
     };
     const expectedTextBytes = Buffer.byteLength('assistant\n正常消息', 'utf8');
@@ -316,6 +319,7 @@ describe('ConversationStoreService', () => {
     expect(preview).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 2,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
   });
@@ -454,6 +458,7 @@ describe('ConversationStoreService', () => {
     })).toEqual({
       estimatedTokens: 90,
       messageCount: 2,
+      source: 'provider',
       textBytes: Buffer.byteLength('user\n你好\nassistant\n世界', 'utf8'),
     });
   });
@@ -524,6 +529,7 @@ describe('ConversationStoreService', () => {
     })).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 2,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
   });
@@ -585,13 +591,14 @@ describe('ConversationStoreService', () => {
     })).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 1,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
   });
 
   it('does not count raw tool call and tool result payloads when estimating history preview tokens', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Tool Payload Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
 
@@ -650,6 +657,7 @@ describe('ConversationStoreService', () => {
     })).toEqual({
       estimatedTokens: Math.ceil(expectedTextBytes / 4),
       messageCount: 2,
+      source: 'estimated',
       textBytes: expectedTextBytes,
     });
   });

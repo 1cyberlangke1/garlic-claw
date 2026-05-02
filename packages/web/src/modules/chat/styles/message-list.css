@@ -564,6 +564,23 @@
   background: rgba(226, 74, 74, 0.14);
 }
 
+.message-usage-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.message-usage-inline-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(92, 203, 255, 0.08);
+  color: #c6f2ff;
+  font-size: 12px;
+}
+
 .tool-entry {
   min-width: 0;
   max-width: 100%;

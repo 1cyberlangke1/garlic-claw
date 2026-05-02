@@ -157,6 +157,7 @@ describe('ConversationController', () => {
       frontendMessageWindowSize: 200,
       includedMessageIds: ['message-2', 'message-3'],
       keepRecentMessages: 2,
+      source: 'estimated' as const,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding' as const,
     };
