@@ -61,7 +61,7 @@
 
 - 命名统一风格并明确边界与职责，不要使用模糊的 `helper`
 - 公共 API / 服务方法用 JSDoc，关键逻辑用 `//`，标记统一用 `TODO / FIXME / NOTE`
-- 所有注释与回复都使用中文
+- 所有注释、对用户的过程汇报、最终回复，以及 `task_plan.md / progress.md / findings.md` 里的记录都使用中文
 
 ## AI Provider 适配
 
