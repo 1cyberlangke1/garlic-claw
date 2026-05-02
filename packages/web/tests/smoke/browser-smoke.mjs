@@ -632,8 +632,8 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
 async function verifyMcpPage(page) {
   await page.goto('/mcp', { waitUntil: 'load' });
   await expectText(page, 'MCP 管理');
-  await page.locator('.segmented-switch__option[title="管理"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
-  await page.locator('.segmented-switch__option[title="日志"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('button[title="MCP 配置"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('button[title="事件日志"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'MCP 配置');
   await page.locator('[data-test="mcp-new-button"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="mcp-new-button"]').click();
