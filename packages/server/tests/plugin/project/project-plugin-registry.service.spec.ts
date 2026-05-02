@@ -248,7 +248,7 @@ describe('ProjectPluginRegistryService', () => {
     const service = new ProjectPluginRegistryService(
       new ProjectWorktreeRootService(),
     );
-    const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation(() => undefined);
+    const warnSpy = jest.spyOn(service['logger'], 'warn').mockImplementation(() => null);
 
     expect(service.loadDefinitions()).toEqual([
       expect.objectContaining({

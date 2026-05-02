@@ -5,7 +5,7 @@ import { createConversationHistorySignatureFromHistoryMessages } from '../../src
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service';
 
 describe('ConversationMessagePlanningService', () => {
   const aiManagementService = {
@@ -23,24 +23,24 @@ describe('ConversationMessagePlanningService', () => {
   const runtimeHostPluginDispatchService = { invokeHook: jest.fn(), listPlugins: jest.fn().mockReturnValue([]) };
   const toolRegistryService = { buildToolSet: jest.fn(), listAvailableTools: jest.fn() };
 
-  let contextGovernanceConfigPath: string;
+  let settingsConfigPath: string;
   let conversationsPath: string;
   let conversationId: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
-  let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
+  let runtimeHostConversationRecordService: ConversationStoreService;
   let service: ConversationMessagePlanningService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    contextGovernanceConfigPath = path.join(
+    settingsConfigPath = path.join(
       os.tmpdir(),
-      `context-governance-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      `settings-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
     conversationsPath = path.join(
       os.tmpdir(),
       `conversation-message-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
-    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsConfigPath;
     process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationsPath;
     aiManagementService.getDefaultProviderSelection.mockReturnValue({ modelId: 'gpt-5.4', providerId: 'openai', source: 'default' });
     aiManagementService.getProvider.mockReturnValue({ defaultModel: 'gpt-5.4', id: 'openai', models: ['gpt-5.4'] });
@@ -63,7 +63,7 @@ describe('ConversationMessagePlanningService', () => {
       providerId: 'openai',
       text: '压缩后的历史摘要',
     });
-    runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
+    runtimeHostConversationRecordService = new ConversationStoreService();
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
@@ -83,9 +83,9 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   afterEach(() => {
-    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
-    for (const filePath of [contextGovernanceConfigPath, conversationsPath]) {
+    for (const filePath of [settingsConfigPath, conversationsPath]) {
       try {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
@@ -384,7 +384,7 @@ describe('ConversationMessagePlanningService', () => {
   it('compacts history immediately after a completed model reply is sent', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 30,
+        compressionThreshold: 90,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,

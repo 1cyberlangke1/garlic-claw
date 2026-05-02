@@ -7,7 +7,7 @@ import { EditToolService } from '../edit/edit-tool.service';
 import { GlobToolService } from '../glob/glob-tool.service';
 import { GrepToolService } from '../grep/grep-tool.service';
 import { InvalidToolService } from '../invalid/invalid-tool.service';
-import { createInvalidToolResult, isInvalidToolResult, stringifyInvalidToolInput } from '../invalid/invalid-tool-record';
+import { createInvalidToolResult, isInvalidToolResult, stringifyInvalidToolInput } from '../invalid/invalid-tool-result';
 import { ReadToolService } from '../read/read-tool.service';
 import { renderRuntimeCommandTextOutput } from '../runtime/runtime-command-output';
 import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';
@@ -16,9 +16,9 @@ import { RuntimeToolPermissionService } from '../runtime/runtime-tool-permission
 import { RuntimeToolsSettingsService } from '../runtime/runtime-tools-settings.service';
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
-import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostPluginDispatchService } from '../../runtime/host/runtime-host-plugin-dispatch.service';
-import { RuntimeHostPluginRuntimeService } from '../../runtime/host/runtime-host-plugin-runtime.service';
+import { ConversationStoreService } from '../../runtime/host/conversation-store.service';
+import { PluginDispatchService } from '../../runtime/host/plugin-dispatch.service';
+import { PluginRuntimeService } from '../../runtime/host/plugin-runtime.service';
 import { isPluginEnabledForContext } from '../../runtime/kernel/runtime-plugin-hook-governance';
 import { RuntimePluginGovernanceService } from '../../runtime/kernel/runtime-plugin-governance.service';
 import { McpService } from '../mcp/mcp.service';
@@ -57,14 +57,14 @@ export class ToolRegistryService {
     private readonly runtimeToolsSettingsService: RuntimeToolsSettingsService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
     private readonly pluginBootstrapService: PluginBootstrapService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
-    private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService,
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly runtimeHostPluginRuntimeService: PluginRuntimeService,
     @Inject(forwardRef(() => SubagentToolService)) private readonly subagentToolService: SubagentToolService,
     private readonly todoToolService: TodoToolService,
     private readonly webFetchToolService: WebFetchToolService,
     private readonly writeToolService: WriteToolService,
     private readonly skillToolService: SkillToolService,
-    @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
+    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
     @Inject(RuntimePluginGovernanceService) private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService,
   ) {}
 
@@ -579,7 +579,7 @@ function createPluginToolInfo(plugin: RegisteredPluginRecord, source: ToolSource
   return { toolId: `plugin:${plugin.pluginId}:${tool.name}`, name: tool.name, callName: tool.name, description: tool.description, parameters: tool.parameters, enabled, sourceKind: 'plugin' as const, sourceId: plugin.pluginId, sourceLabel: plugin.manifest.name, health: source.health, lastError: source.lastError, lastCheckedAt: source.lastCheckedAt, pluginId: plugin.pluginId, runtimeKind: plugin.manifest.runtime } satisfies ToolInfo;
 }
 
-function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext, assistantMessageId: string | undefined, mcpService: McpService, runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService): ExecutableToolDefinition {
+function toExecutableToolDefinition(entry: ToolInfo, context: PluginCallContext, assistantMessageId: string | undefined, mcpService: McpService, runtimeHostPluginDispatchService: PluginDispatchService): ExecutableToolDefinition {
   const toolContext = assistantMessageId ? { ...context, metadata: { ...(context.metadata ?? {}), assistantMessageId } } : context;
   return {
     availableTool: { callName: entry.callName, description: entry.description, name: entry.name, parameters: entry.parameters, pluginId: entry.pluginId, runtimeKind: entry.runtimeKind, sourceId: entry.sourceId, sourceKind: entry.sourceKind },

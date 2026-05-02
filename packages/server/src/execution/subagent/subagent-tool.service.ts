@@ -1,7 +1,7 @@
 import { buildSubagentCloseParams, buildSubagentSendInputParams, buildSubagentSpawnParams, buildSubagentWaitParams, SUBAGENT_TOOL_DEFINITIONS } from '@garlic-claw/plugin-sdk/authoring';
 import type { JsonObject, PluginCallContext, PluginParamSchema, ToolInfo } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
-import { RuntimeHostSubagentRunnerService } from '../../runtime/host/runtime-host-subagent-runner.service';
+import { SubagentRunnerService } from '../../runtime/host/subagent-runner.service';
 import { INTERNAL_SUBAGENT_SOURCE_ID, SubagentSettingsService } from './subagent-settings.service';
 
 const INTERNAL_SUBAGENT_SOURCE_LABEL = 'Subagent';
@@ -10,7 +10,7 @@ const SUBAGENT_TOOL_NAMES = new Set(['spawn_subagent', 'wait_subagent', 'send_in
 @Injectable()
 export class SubagentToolService {
   constructor(
-    @Inject(forwardRef(() => RuntimeHostSubagentRunnerService)) private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService,
+    @Inject(forwardRef(() => SubagentRunnerService)) private readonly runtimeHostSubagentRunnerService: SubagentRunnerService,
     private readonly subagentSettingsService: SubagentSettingsService,
   ) {}
 

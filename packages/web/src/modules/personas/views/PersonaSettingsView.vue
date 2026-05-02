@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ElButton, ElInput, ElOption, ElSelect, ElSwitch } from 'element-plus'
-import { ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
+import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBinTrashBold from '@iconify-icons/solar/trash-bin-trash-bold'
 import userIdBold from '@iconify-icons/solar/user-id-bold'
+import type { IconifyIcon } from '@iconify/types'
+import { Icon } from '@iconify/vue'
+import { ElButton, ElInput, ElOption, ElSelect, ElSwitch } from 'element-plus'
+import { ref } from 'vue'
 import { usePersonaSettings } from '../composables/use-persona-settings'
 
 const {
@@ -21,7 +25,6 @@ const {
   selectedPersona,
   currentPersona,
   currentConversationTitle,
-  hasCurrentConversation,
   canApplySelectedPersona,
   canDeleteSelectedPersona,
   selectedPersonaStatus,
@@ -53,6 +56,13 @@ const listModeOptions = [
 
 const avatarInput = ref<HTMLInputElement | null>(null)
 const uploadingAvatar = ref(false)
+type PersonaPanelId = 'editor' | 'overview'
+
+const currentPanel = ref<PersonaPanelId>('editor')
+const panelOptions: ReadonlyArray<{ label: string; value: PersonaPanelId; icon: IconifyIcon }> = [
+  { label: '人设编辑', value: 'editor', icon: userIdBold },
+  { label: '当前会话', value: 'overview', icon: listCheckBold },
+]
 
 function triggerAvatarUpload() { avatarInput.value?.click() }
 
@@ -81,261 +91,383 @@ function readPersonaAvatarAlt(name?: string | null) {
 </script>
 
 <template>
-  <div class="persona-page">
-    <header class="page-header">
-      <h1><Icon :icon="userIdBold" class="page-header-icon" aria-hidden="true" />人设管理</h1>
-      <div class="header-actions">
-        <ElButton class="ghost-button refresh-button" :disabled="loading" title="刷新" @click="refreshAll">
-          <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton type="primary" class="primary-button" @click="beginCreatePersona">
-          <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
-          新建人设
-        </ElButton>
-      </div>
-    </header>
+  <ConsolePage class="persona-page" no-padding>
+    <template #header>
+      <ConsoleViewHeader
+        title="人设管理"
+        :icon="userIdBold"
+      >
+        <template #actions>
+          <ElButton class="ghost-button refresh-button view-header-action" :disabled="loading" title="刷新" @click="refreshAll">
+            <Icon :icon="refreshBold" class="refresh-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+          <ElButton type="primary" class="primary-button" @click="beginCreatePersona">
+            <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
+            新建人设
+          </ElButton>
+        </template>
+      </ConsoleViewHeader>
+    </template>
 
-    <section class="hero-grid">
-      <article class="hero-card">
-        <div v-if="currentPersona" class="persona-identity">
-          <div class="persona-avatar persona-avatar-large" data-persona-avatar="current">
-            <img v-if="currentPersona.avatar" :src="currentPersona.avatar" :alt="readPersonaAvatarAlt(currentPersona.name)" class="persona-avatar-image" />
-            <span v-else>{{ readPersonaAvatarLabel(currentPersona.name) }}</span>
-          </div>
-          <div class="persona-identity-copy">
-            <h2>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
-            <p>
-              当前生效人设：
-              <strong>{{ currentPersona.name }}</strong>
-              <span class="persona-source">来源：{{ sourceLabelMap[currentPersona.source] }}</span>
-            </p>
-          </div>
-        </div>
-        <h2 v-else>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
-        <p v-if="!currentPersona">
-          无会话级人设
-        </p>
-        <p class="hero-hint">
-          {{ hasCurrentConversation
-            ? '选中不同对话时，这里的人设状态会同步刷新。'
-            : '先在左侧选中一个对话，再把人设应用到该会话。' }}
-        </p>
-      </article>
-    </section>
-
-    <p v-if="error" class="page-error">{{ error }}</p>
-    <p v-if="deleteResult" class="page-hint">
-      已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
-      <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
-    </p>
-
-    <div class="persona-grid">
-      <section class="persona-list-card">
-        <div class="section-header">
-          <div>
-            <h2>可用人设</h2>
-          </div>
-          <span class="section-meta">{{ personas.length }} 个</span>
-        </div>
-
-        <div v-if="loading" class="section-state">加载中...</div>
-        <div v-else-if="personas.length === 0" class="section-state">
-          当前还没有可用人设。
-        </div>
-        <div v-else class="persona-list">
-          <button
-            v-for="persona in personas"
-            :key="persona.id"
-            class="persona-list-item"
-            :class="{ active: persona.id === selectedPersonaId && editorMode === 'edit' }"
-            @click="selectPersona(persona.id)"
-          >
-            <div class="persona-list-head">
-              <div class="persona-avatar persona-avatar-small" :data-persona-avatar="`list-${persona.id}`">
-                <img v-if="persona.avatar" :src="persona.avatar" :alt="readPersonaAvatarAlt(persona.name)" class="persona-avatar-image" />
-                <span v-else>{{ readPersonaAvatarLabel(persona.name) }}</span>
-              </div>
-              <div class="persona-list-copy">
-                <div class="persona-list-row">
-                  <strong>{{ persona.name }}</strong>
-                  <span v-if="persona.isDefault" class="persona-badge">默认</span>
-                </div>
-                <p>{{ persona.description ?? '当前人设没有额外描述。' }}</p>
-              </div>
-            </div>
-            <code>{{ persona.id }}</code>
-          </button>
-        </div>
-      </section>
-
-      <section class="persona-detail-card">
-        <div class="section-header">
-          <div class="persona-heading">
-            <div v-if="editorMode === 'edit' && selectedPersona" class="persona-avatar persona-avatar-medium" data-persona-avatar="selected-detail" style="cursor:pointer;position:relative" @click="triggerAvatarUpload">
-              <img v-if="selectedPersona.avatar" :src="selectedPersona.avatar" :alt="readPersonaAvatarAlt(selectedPersona.name)" class="persona-avatar-image" />
-              <span v-else>{{ readPersonaAvatarLabel(selectedPersona.name) }}</span>
-              <span class="avatar-upload-hint">点击上传</span>
-            </div>
-            <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
-            <div class="persona-heading-copy">
-              <h2>{{ editorMode === 'create' ? '新建人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
-            </div>
-          </div>
-          <div class="editor-actions">
-            <ElButton
-              class="ghost-button"
-              :disabled="savingPersona"
-              @click="resetEditorDraft"
+    <div class="persona-inner">
+      <aside class="persona-sidebar">
+        <nav class="detail-nav" aria-label="人设管理面板切换">
+          <div class="detail-nav-group">
+            <button
+              v-for="panel in panelOptions"
+              :key="panel.value"
+              type="button"
+              :title="panel.label"
+              :class="{ active: currentPanel === panel.value }"
+              @click="currentPanel = panel.value"
             >
-              重置
-            </ElButton>
-            <ElButton
-              type="primary"
-              class="primary-button"
-              :disabled="savingPersona"
-              @click="savePersonaDraft"
-            >
-              {{ savingPersona ? '保存中...' : (editorMode === 'create' ? '创建人设' : '保存人设') }}
-            </ElButton>
+              <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
+              <span class="nav-label">{{ panel.label }}</span>
+            </button>
           </div>
-        </div>
+        </nav>
+      </aside>
 
-        <div v-if="loadingSelectedPersona" class="section-state">
-          读取详情中...
-        </div>
-        <template v-else>
+      <main class="persona-main">
+        <p v-if="error" class="page-error">{{ error }}</p>
+        <p v-if="deleteResult" class="page-hint">
+          已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
+          <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
+        </p>
+        <section v-if="currentPanel === 'overview'" class="persona-overview-card">
+          <div class="section-header">
+            <div>
+              <h2>当前会话人设状态</h2>
+            </div>
+          </div>
           <div class="detail-summary">
             <div class="summary-item">
-              <span class="summary-label">当前会话状态</span>
-              <span>{{ selectedPersonaStatus }}</span>
+              <span class="summary-label">当前对话</span>
+              <span>{{ currentConversationTitle ?? '当前未选中对话' }}</span>
             </div>
             <div class="summary-item">
               <span class="summary-label">当前生效人设</span>
               <span v-if="loadingCurrentPersona">读取中...</span>
-              <span v-else-if="currentPersona">
-                {{ currentPersona.name }}
-              </span>
-              <span v-else>未读取到当前会话人设</span>
+              <span v-else-if="currentPersona">{{ currentPersona.name }}</span>
+              <span v-else>无会话级人设</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">来源</span>
+              <span v-if="currentPersona">{{ sourceLabelMap[currentPersona.source] }}</span>
+              <span v-else>默认回退</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-label">可应用状态</span>
+              <span>{{ selectedPersonaStatus }}</span>
             </div>
           </div>
+        </section>
 
-          <div class="detail-grid">
-            <label class="field-block">
-              <span class="summary-label">人设 ID</span>
-              <ElInput v-model.trim="editorDraft.id" class="field-input" :disabled="editorMode === 'edit'" placeholder="persona.writer" />
-            </label>
-
-            <label class="field-block">
-              <span class="summary-label">名称</span>
-              <ElInput v-model.trim="editorDraft.name" class="field-input" placeholder="Writer" />
-            </label>
-
-            <label class="field-block field-block-full">
-              <span class="summary-label">描述</span>
-              <ElInput v-model="editorDraft.description" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="说明这个人设适合什么场景。" />
-            </label>
-
-            <label class="field-block field-block-full">
-              <span class="summary-label">系统提示词</span>
-              <ElInput v-model="editorDraft.prompt" class="field-textarea prompt-textarea" type="textarea" :rows="8" placeholder="输入人设的系统提示词。" />
-            </label>
-
-            <label class="field-block field-block-full">
-              <span class="summary-label">自定义失败文案</span>
-              <ElInput v-model="editorDraft.customErrorMessage" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="仅主对话主回复失败时，用这条文案直接回复用户；subagent、标题、总结不使用它。留空则显示默认错误。" />
-            </label>
-          </div>
-
-          <div class="setting-row">
-            <div class="setting-row-copy">
-              <span class="summary-label">默认人设</span>
-              <span>设为默认人设</span>
+        <div v-else class="persona-grid">
+          <section class="persona-list-card">
+            <div class="section-header">
+              <div>
+                <h2>可用人设</h2>
+              </div>
+              <span class="section-meta">{{ personas.length }} 个</span>
             </div>
-            <ElSwitch v-model="editorDraft.isDefault" />
-          </div>
 
-          <div class="detail-block">
-            <div class="block-header">
-              <span class="summary-label">Begin Dialogs</span>
-              <ElButton class="ghost-button small-button" @click="addBeginDialog">
-                添加对话
-              </ElButton>
+            <article class="hero-card hero-card-inline">
+              <div v-if="currentPersona" class="persona-identity">
+                <div class="persona-avatar persona-avatar-large" data-persona-avatar="current">
+                  <img v-if="currentPersona.avatar" :src="currentPersona.avatar" :alt="readPersonaAvatarAlt(currentPersona.name)" class="persona-avatar-image" />
+                  <span v-else>{{ readPersonaAvatarLabel(currentPersona.name) }}</span>
+                </div>
+                <div class="persona-identity-copy">
+                  <h2>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
+                  <p>
+                    当前生效人设：
+                    <strong>{{ currentPersona.name }}</strong>
+                    <span class="persona-source">来源：{{ sourceLabelMap[currentPersona.source] }}</span>
+                  </p>
+                </div>
+              </div>
+              <h2 v-else>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
+              <p v-if="!currentPersona">
+                无会话级人设
+              </p>
+            </article>
+
+            <div v-if="loading" class="section-state">加载中...</div>
+            <div v-else-if="personas.length === 0" class="section-state">
+              当前还没有可用人设。
             </div>
-            <div v-if="editorDraft.beginDialogs.length === 0" class="section-state">
-              无预置对话。
-            </div>
-            <div v-else class="dialog-list">
-              <div
-                v-for="(dialog, index) in editorDraft.beginDialogs"
-                :key="`dialog-${index}`"
-                class="dialog-item"
+            <div v-else class="persona-list">
+              <button
+                v-for="persona in personas"
+                :key="persona.id"
+                type="button"
+                class="persona-list-item"
+                :class="{ active: persona.id === selectedPersonaId && editorMode === 'edit' }"
+                @click="selectPersona(persona.id)"
               >
-                <ElSelect v-model="dialog.role" class="field-select">
-                  <ElOption value="assistant" label="assistant" />
-                  <ElOption value="user" label="user" />
-                </ElSelect>
-                <ElInput v-model="dialog.content" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="输入预置对话内容。" />
-                <ElButton class="ghost-button small-button" @click="removeBeginDialog(index)">
-                  删除
+                <div class="persona-list-head">
+                  <div class="persona-avatar persona-avatar-small" :data-persona-avatar="`list-${persona.id}`">
+                    <img v-if="persona.avatar" :src="persona.avatar" :alt="readPersonaAvatarAlt(persona.name)" class="persona-avatar-image" />
+                    <span v-else>{{ readPersonaAvatarLabel(persona.name) }}</span>
+                  </div>
+                  <div class="persona-list-copy">
+                    <div class="persona-list-row">
+                      <strong>{{ persona.name }}</strong>
+                      <span v-if="persona.isDefault" class="persona-badge">默认</span>
+                    </div>
+                    <p>{{ persona.description ?? '当前人设没有额外描述。' }}</p>
+                  </div>
+                </div>
+                <code>{{ persona.id }}</code>
+              </button>
+            </div>
+          </section>
+
+          <section class="persona-detail-card">
+            <div class="section-header">
+              <div class="persona-heading">
+                <div v-if="editorMode === 'edit' && selectedPersona" class="persona-avatar persona-avatar-medium" data-persona-avatar="selected-detail" style="cursor:pointer;position:relative" @click="triggerAvatarUpload">
+                  <img v-if="selectedPersona.avatar" :src="selectedPersona.avatar" :alt="readPersonaAvatarAlt(selectedPersona.name)" class="persona-avatar-image" />
+                  <span v-else>{{ readPersonaAvatarLabel(selectedPersona.name) }}</span>
+                  <span class="avatar-upload-hint">点击上传</span>
+                </div>
+                <input ref="avatarInput" type="file" accept="image/*" style="display:none" @change="handleAvatarUpload" />
+                <div class="persona-heading-copy">
+                  <h2>{{ editorMode === 'create' ? '新建人设' : (selectedPersona?.name ?? '选择一个人设') }}</h2>
+                </div>
+              </div>
+              <div class="editor-actions">
+                <ElButton
+                  class="ghost-button"
+                  :disabled="savingPersona"
+                  @click="resetEditorDraft"
+                >
+                  重置
+                </ElButton>
+                <ElButton
+                  type="primary"
+                  class="primary-button"
+                  :disabled="savingPersona"
+                  @click="savePersonaDraft"
+                >
+                  {{ savingPersona ? '保存中...' : (editorMode === 'create' ? '创建人设' : '保存人设') }}
                 </ElButton>
               </div>
             </div>
-          </div>
 
-          <div class="detail-grid">
-            <div class="detail-block">
-              <span class="summary-label">Tools 约束</span>
-              <ElSelect v-model="editorDraft.toolMode" class="field-select">
-                <ElOption v-for="option in listModeOptions" :key="option.value" :value="option.value" :label="option.label" />
-              </ElSelect>
-              <ElInput
-                v-if="editorDraft.toolMode === 'selected'"
-                v-model="editorDraft.toolInput"
-                class="field-textarea compact-textarea"
-                type="textarea"
-                :rows="4"
-                placeholder="每行一个 tool 名称，也可以用逗号分隔。"
-              />
+            <div v-if="loadingSelectedPersona" class="section-state">
+              读取详情中...
             </div>
-          </div>
+            <template v-else>
+              <div class="detail-summary">
+                <div class="summary-item">
+                  <span class="summary-label">当前会话状态</span>
+                  <span>{{ selectedPersonaStatus }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">当前生效人设</span>
+                  <span v-if="loadingCurrentPersona">读取中...</span>
+                  <span v-else-if="currentPersona">
+                    {{ currentPersona.name }}
+                  </span>
+                  <span v-else>未读取到当前会话人设</span>
+                </div>
+              </div>
 
-          <div class="footer-actions">
-            <ElButton
-              type="primary"
-              class="primary-button"
-              :disabled="!canApplySelectedPersona || applyingPersona || editorMode === 'create'"
-              @click="applySelectedPersona"
-            >
-              {{ applyingPersona ? '应用中...' : '应用到当前对话' }}
-            </ElButton>
-            <ElButton
-              class="danger-button"
-              :disabled="!canDeleteSelectedPersona || deletingPersona"
-              @click="deleteSelectedPersona"
-            >
-              <Icon :icon="trashBinTrashBold" class="button-icon" aria-hidden="true" />
-              {{ deletingPersona ? '删除中...' : '删除人设' }}
-            </ElButton>
-          </div>
-        </template>
-      </section>
+              <div class="detail-grid">
+                <label class="field-block">
+                  <span class="summary-label">名称</span>
+                  <ElInput v-model.trim="editorDraft.name" class="field-input" placeholder="Writer" />
+                </label>
+
+                <label class="field-block">
+                  <span class="summary-label">人设 ID</span>
+                  <ElInput v-model.trim="editorDraft.id" class="field-input" :disabled="editorMode === 'edit'" placeholder="如 persona.writer，留空时根据名称自动生成" />
+                </label>
+
+                <label class="field-block field-block-full">
+                  <span class="summary-label">描述</span>
+                  <ElInput v-model="editorDraft.description" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="说明这个人设适合什么场景。" />
+                </label>
+
+                <label class="field-block field-block-full">
+                  <span class="summary-label">系统提示词</span>
+                  <ElInput v-model="editorDraft.prompt" class="field-textarea prompt-textarea" type="textarea" :rows="8" placeholder="输入人设的系统提示词。" />
+                </label>
+
+                <label class="field-block field-block-full">
+                  <span class="summary-label">自定义失败文案</span>
+                  <ElInput v-model="editorDraft.customErrorMessage" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="仅主对话主回复失败时，用这条文案直接回复用户；subagent、标题、总结不使用它。留空则显示默认错误。" />
+                </label>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-row-copy">
+                  <span class="summary-label">默认人设</span>
+                  <span>设为默认人设</span>
+                </div>
+                <ElSwitch v-model="editorDraft.isDefault" />
+              </div>
+
+              <div class="detail-block">
+                <div class="block-header">
+                  <span class="summary-label">Begin Dialogs</span>
+                  <ElButton class="ghost-button small-button" @click="addBeginDialog">
+                    添加对话
+                  </ElButton>
+                </div>
+                <div v-if="editorDraft.beginDialogs.length === 0" class="section-state">
+                  无预置对话。
+                </div>
+                <div v-else class="dialog-list">
+                  <div
+                    v-for="(dialog, index) in editorDraft.beginDialogs"
+                    :key="`dialog-${index}`"
+                    class="dialog-item"
+                  >
+                    <ElSelect v-model="dialog.role" class="field-select">
+                      <ElOption value="assistant" label="assistant" />
+                      <ElOption value="user" label="user" />
+                    </ElSelect>
+                    <ElInput v-model="dialog.content" class="field-textarea compact-textarea" type="textarea" :rows="4" placeholder="输入预置对话内容。" />
+                    <ElButton class="ghost-button small-button" @click="removeBeginDialog(index)">
+                      删除
+                    </ElButton>
+                  </div>
+                </div>
+              </div>
+
+              <div class="detail-grid">
+                <div class="detail-block">
+                  <span class="summary-label">Tools 约束</span>
+                  <ElSelect v-model="editorDraft.toolMode" class="field-select">
+                    <ElOption v-for="option in listModeOptions" :key="option.value" :value="option.value" :label="option.label" />
+                  </ElSelect>
+                  <ElInput
+                    v-if="editorDraft.toolMode === 'selected'"
+                    v-model="editorDraft.toolInput"
+                    class="field-textarea compact-textarea"
+                    type="textarea"
+                    :rows="4"
+                    placeholder="每行一个 tool 名称，也可以用逗号分隔。"
+                  />
+                </div>
+              </div>
+
+              <div class="footer-actions">
+                <ElButton
+                  type="primary"
+                  class="primary-button"
+                  :disabled="!canApplySelectedPersona || applyingPersona || editorMode === 'create'"
+                  @click="applySelectedPersona"
+                >
+                  {{ applyingPersona ? '应用中...' : '应用到当前对话' }}
+                </ElButton>
+                <ElButton
+                  class="danger-button"
+                  :disabled="!canDeleteSelectedPersona || deletingPersona"
+                  @click="deleteSelectedPersona"
+                >
+                  <Icon :icon="trashBinTrashBold" class="button-icon" aria-hidden="true" />
+                  {{ deletingPersona ? '删除中...' : '删除人设' }}
+                </ElButton>
+              </div>
+            </template>
+          </section>
+        </div>
+      </main>
     </div>
-  </div>
+  </ConsolePage>
 </template>
 
 <style scoped>
 .persona-page {
-  display: grid;
-  gap: 18px;
-  padding: 1.5rem 2rem;
+  background: var(--shell-bg);
+}
+
+.persona-inner {
+  display: flex;
   height: 100%;
-  min-width: 0;
+  overflow: hidden;
+}
+
+.persona-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 200px;
+  border-right: 1px solid var(--shell-border);
+  color: var(--shell-text, var(--text));
   overflow-y: auto;
 }
 
-.page-header,
-.header-actions,
-.hero-grid,
+.persona-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.detail-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
+}
+
+.detail-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-nav button {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--shell-text-secondary, var(--text-muted));
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.detail-nav button:hover {
+  background: var(--shell-bg-hover, #334155);
+  color: var(--shell-text, var(--text));
+}
+
+.detail-nav button.active {
+  color: var(--shell-active, var(--accent));
+  background: color-mix(in srgb, var(--shell-active, var(--accent)) 10%, transparent);
+}
+
+.nav-icon {
+  width: 20px;
+  min-width: 20px;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .persona-grid,
 .section-header,
  .persona-heading,
@@ -350,11 +482,6 @@ function readPersonaAvatarAlt(name?: string | null) {
 .block-header {
   display: grid;
   gap: 16px;
-}
-
-.page-header {
-  grid-template-columns: 1fr auto;
-  align-items: start;
 }
 
 .header-actions,
@@ -380,13 +507,6 @@ function readPersonaAvatarAlt(name?: string | null) {
   min-width: 0;
 }
 
-.page-header-icon {
-  vertical-align: -0.15em;
-  margin-right: 6px;
-}
-
-.page-header h1,
-.page-header p,
 .hero-card h2,
 .hero-card p,
 .section-header h2,
@@ -395,7 +515,6 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .page-header p,
-.hero-hint,
 .section-meta,
 .persona-list-item p,
 .section-state {
@@ -442,11 +561,8 @@ function readPersonaAvatarAlt(name?: string | null) {
   height: 16px;
 }
 
-.hero-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .hero-card,
+.persona-overview-card,
 .persona-list-card,
 .persona-detail-card {
   display: grid;
@@ -458,8 +574,29 @@ function readPersonaAvatarAlt(name?: string | null) {
   min-width: 0;
 }
 
+.persona-list-card,
+.persona-detail-card {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
 .hero-card {
+  padding: 16px;
+  border-radius: 16px;
   background: var(--surface-hero-gradient);
+}
+
+.hero-card-inline {
+  padding: 14px 16px;
+}
+
+.persona-overview-card {
+  padding: 18px;
+  border-radius: 20px;
+  background: var(--surface-card-gradient);
+  border: 1px solid var(--border, rgba(133, 163, 199, 0.16));
 }
 
 .summary-label {
@@ -544,7 +681,7 @@ function readPersonaAvatarAlt(name?: string | null) {
 
 .persona-grid {
   grid-template-columns: 320px minmax(0, 1fr);
-  gap: 18px;
+  gap: 0;
   min-height: 0;
 }
 
@@ -554,36 +691,97 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 .persona-list-card {
+  display: grid;
   align-content: start;
+  gap: 10px;
+  min-height: 0;
+  padding-right: 16px;
+  border-right: 1px solid var(--shell-border, #334155);
+  overflow: hidden;
+}
+
+.persona-detail-card {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+  padding-left: 20px;
+}
+
+.persona-list-card .section-header {
+  padding-top: 2px;
+}
+
+.section-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(24, 160, 88, 0.14);
+  color: var(--shell-active, #18a058);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .persona-list {
   display: grid;
-  gap: 8px;
+  gap: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .persona-list-item {
+  position: relative;
   display: grid;
   gap: 10px;
-  padding: 14px;
-  border-radius: 16px;
-  border: 1px solid var(--border, rgba(133, 163, 199, 0.16));
-  background: var(--surface-panel-muted-strong);
-  color: var(--text);
+  width: 100%;
+  padding: 14px 10px 14px 18px;
+  border: none;
+  border-bottom: 1px solid var(--shell-border, #334155);
+  border-radius: 0;
+  background: transparent;
+  color: var(--shell-text-secondary, var(--text));
   text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.persona-list-item::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent);
+  opacity: 0.9;
 }
 
 .persona-list-item strong {
-  color: var(--text);
+  color: var(--shell-text, var(--text));
 }
 
 .persona-list-item code {
-  color: var(--text-muted);
+  color: var(--shell-text-tertiary, var(--text-muted));
+}
+
+.persona-list-item:last-child {
+  border-bottom: none;
+}
+
+.persona-list-item:hover {
+  background: var(--provider-row-hover-bg);
 }
 
 .persona-list-item.active {
-  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.persona-list-item.active::before {
+  width: 4px;
+  opacity: 1;
 }
 
 .persona-list-row {
@@ -684,18 +882,68 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 @media (max-width: 1080px) {
-  .hero-grid,
   .persona-grid,
   .detail-summary,
   .detail-grid,
   .dialog-item {
     grid-template-columns: 1fr;
   }
+
+  .persona-list-card {
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border, #334155);
+  }
+
+  .persona-detail-card {
+    padding-top: 12px;
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 800px) {
+  .persona-sidebar {
+    width: 180px;
+  }
+
+  .persona-main {
+    padding: 16px;
+  }
 }
 
 @media (max-width: 720px) {
-  .persona-page {
-    padding: 1rem;
+  .persona-inner {
+    flex-direction: column;
+  }
+
+  .persona-sidebar {
+    width: 100%;
+    max-height: 110px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border);
+  }
+
+  .detail-nav {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 12px 8px;
+  }
+
+  .detail-nav-group {
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .detail-nav button {
+    min-height: 40px;
+    padding: 0 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .persona-main {
+    padding: 12px;
   }
 
   .page-header,

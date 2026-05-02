@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
-import { resolveServerRuntimeWorkspaceRoot } from '../../runtime/server-workspace-paths';
+import { resolveServerRuntimeWorkspaceRoot } from '../../core/runtime/server-workspace-paths';
 import type {
   RuntimeSessionEnvironment,
   RuntimeSessionEnvironmentDescriptor,

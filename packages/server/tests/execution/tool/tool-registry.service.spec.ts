@@ -9,7 +9,7 @@ import { AutomationExecutionService } from '../../../src/execution/automation/au
 import { AutomationService } from '../../../src/execution/automation/automation.service';
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
+import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
 import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { InvalidToolService } from '../../../src/execution/invalid/invalid-tool.service';
@@ -48,24 +48,23 @@ import { PersonaService } from '../../../src/persona/persona.service';
 import { PersonaStoreService } from '../../../src/persona/persona-store.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../src/runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gateway/runtime-gateway-remote-transport.service';
-import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../../src/runtime/host/runtime-host-conversation-todo.service';
-import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-host-knowledge.service';
-import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
-import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
-import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
-import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
-import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
+import { ConversationMessageService } from '../../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../../src/runtime/host/conversation-todo.service';
+import { KnowledgeReaderService } from '../../../src/runtime/host/knowledge-reader.service';
+import { PluginDispatchService } from '../../../src/runtime/host/plugin-dispatch.service';
+import { PluginRuntimeService } from '../../../src/runtime/host/plugin-runtime.service';
+import { ToolGatewayService } from '../../../src/runtime/host/tool-gateway.service';
+import { PluginHostService } from '../../../src/runtime/host/plugin-host.service';
+import { SubagentRunnerService } from '../../../src/runtime/host/subagent-runner.service';
+import { UserContextService } from '../../../src/runtime/host/user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
 import { ToolRegistryService } from '../../../src/execution/tool/tool-registry.service';
 
 const runtimeWorkspaceRoots: string[] = [];
 const runtimeOneShotShellServices: RuntimeOneShotShellService[] = [];
 const originalRuntimeWorkspaceRoot = process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH;
-const originalRuntimeToolsConfigPath = process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
-const originalToolManagementConfigPath = process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH;
+const originalSettingsConfigPath = process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
 const originalHintsTestRoot = process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
 
 describe('ToolRegistryService', () => {
@@ -75,15 +74,10 @@ describe('ToolRegistryService', () => {
     } else {
       process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = originalRuntimeWorkspaceRoot;
     }
-    if (originalRuntimeToolsConfigPath === undefined) {
-      delete process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH;
+    if (originalSettingsConfigPath === undefined) {
+      delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     } else {
-      process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = originalRuntimeToolsConfigPath;
-    }
-    if (originalToolManagementConfigPath === undefined) {
-      delete process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH;
-    } else {
-      process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH = originalToolManagementConfigPath;
+      process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = originalSettingsConfigPath;
     }
     if (originalHintsTestRoot === undefined) {
       delete process.env.GARLIC_CLAW_HINTS_TEST_ROOT;
@@ -8329,8 +8323,7 @@ function createFixture(options: {
 } = {}) {
   const runtimeWorkspaceRoot = options.runtimeWorkspaceRoot ?? fs.mkdtempSync(path.join(os.tmpdir(), 'gc-tool-registry-runtime-'));
   process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
-  process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'runtime-tools.json');
-  process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'tool-management.json');
+  process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'settings.json');
   if (!options.runtimeWorkspaceRoot) {
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
   }
@@ -8368,18 +8361,18 @@ function createFixture(options: {
   const runtimeGatewayRemoteTransportService = new RuntimeGatewayRemoteTransportService(
     runtimeGatewayConnectionLifecycleService,
   );
-  const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
-  const runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(runtimeHostConversationRecordService);
+  const runtimeHostConversationRecordService = new ConversationStoreService();
+  const runtimeHostConversationTodoService = new ConversationTodoService(runtimeHostConversationRecordService);
   const conversationId = (runtimeHostConversationRecordService.createConversation({
     title: 'Tool Registry Todo',
     userId: 'user-1',
   }) as { id: string }).id;
-  const runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
+  const runtimeHostConversationMessageService = new ConversationMessageService(
     runtimeHostConversationRecordService,
   );
   const aiModelExecutionService = new AiModelExecutionService();
   const projectWorktreeRootService = new ProjectWorktreeRootService();
-  const runtimeHostSubagentRunnerService = new RuntimeHostSubagentRunnerService(
+  const runtimeHostSubagentRunnerService = new SubagentRunnerService(
     aiModelExecutionService,
     runtimeHostConversationMessageService,
     {
@@ -8404,7 +8397,7 @@ function createFixture(options: {
       } as never,
       {
         sendMessage: async () => {
-          throw new Error('RuntimeHostConversationMessageService is not available');
+          throw new Error('ConversationMessageService is not available');
         },
       } as never,
       {
@@ -8561,12 +8554,12 @@ function createFixture(options: {
     runtimeHostSubagentRunnerService,
     subagentSettingsService,
   );
-  const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
+  const runtimeHostPluginDispatchService = new PluginDispatchService(
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
   );
-  const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
+  const runtimeHostRuntimeToolService = new ToolGatewayService(
     bashToolService,
     editToolService,
     globToolService,
@@ -8581,24 +8574,24 @@ function createFixture(options: {
     writeToolService,
     projectWorktreeSearchOverlayService,
   );
-  const runtimeHostPluginRuntimeService = new RuntimeHostPluginRuntimeService();
+  const runtimeHostPluginRuntimeService = new PluginRuntimeService();
   const runtimePluginGovernanceService = new RuntimePluginGovernanceService(
     pluginBootstrapService,
     runtimeGatewayConnectionLifecycleService,
   );
-  const runtimeHostService = new RuntimeHostService(
+  const runtimeHostService = new PluginHostService(
     pluginBootstrapService,
     runtimeHostAutomationService,
     runtimeHostConversationMessageService,
     runtimeHostConversationRecordService,
     aiModelExecutionService as never,
     aiManagementService,
-    new RuntimeHostKnowledgeService(),
+    new KnowledgeReaderService(),
     runtimeHostPluginDispatchService,
     runtimeHostPluginRuntimeService,
     runtimeHostRuntimeToolService,
     runtimeHostSubagentRunnerService,
-    new RuntimeHostUserContextService(),
+    new UserContextService(),
     new PersonaService(new PersonaStoreService(projectWorktreeRootService), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();

@@ -1,12 +1,13 @@
 import type { AiModelUsage, ChatMessageCustomBlock, ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonValue, PluginSubagentToolCall, PluginSubagentToolResult, SSEEvent } from '@garlic-claw/shared';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { createConversationHistorySignatureFromHistoryMessages } from './conversation-history-signature';
 import { appendConversationModelUsageMetadata, readConversationModelUsageAnnotation } from './conversation-model-usage.annotation';
 import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
-import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../runtime/host/runtime-host-conversation-todo.service';
-import { cloneJsonValue, readAssistantRawCustomBlocks, readAssistantStreamPart } from '../runtime/host/runtime-host-values';
+import { ConversationMessageService } from '../runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../runtime/host/conversation-todo.service';
+import { cloneJsonValue, readAssistantRawCustomBlocks, readAssistantStreamPart } from '../runtime/host/host-input.codec';
+import { createServerLogger } from '../core/logging/server-logger';
 
 export type ConversationTaskToolCall = PluginSubagentToolCall & Record<string, JsonValue>;
 export type ConversationTaskToolResult = PluginSubagentToolResult & Record<string, JsonValue>;
@@ -62,14 +63,14 @@ interface ConversationTaskHandle {
 
 @Injectable()
 export class ConversationTaskService {
-  private readonly logger = new Logger(ConversationTaskService.name);
+  private readonly logger = createServerLogger(ConversationTaskService.name);
   private readonly tasks = new Map<string, ConversationTaskHandle>();
 
   constructor(
-    private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationMessageService: ConversationMessageService,
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
-    private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
+    private readonly runtimeHostConversationTodoService: ConversationTodoService,
   ) {}
 
   startTask(input: StartConversationTaskInput): void {
@@ -164,10 +165,9 @@ export class ConversationTaskService {
     try {
       await runtime.onSent?.(finalResult);
     } catch (error) {
-      this.logger.error(
-        `会话 ${runtime.conversationId} 的发送后附带动作失败: ${error instanceof Error ? error.message : '未知错误'}`,
-        error instanceof Error ? error.stack : undefined,
-      );
+      this.logger.error(`会话 ${runtime.conversationId} 的发送后附带动作失败: ${error instanceof Error ? error.message : '未知错误'}`, {
+        stack: error instanceof Error ? error.stack : undefined,
+      });
     }
   }
 

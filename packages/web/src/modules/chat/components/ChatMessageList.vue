@@ -150,7 +150,7 @@
                     <div class="message-custom-block-body">
                       <div
                         v-if="block.kind === 'text'"
-                        class="message-custom-block-text"
+                        class="message-custom-block-text gc-markdown"
                         v-html="renderMarkdown(block.text)"
                       ></div>
                       <pre v-else class="message-custom-block-json">{{
@@ -167,7 +167,7 @@
                     >
                       <div
                         v-if="part.type === 'text'"
-                        class="message-content"
+                        class="message-content gc-markdown"
                         v-html="renderMarkdown(part.text)"
                       ></div>
                       <img
@@ -181,7 +181,7 @@
                   </div>
                   <div
                     v-else
-                    class="message-content"
+                    class="message-content gc-markdown"
                     v-html="renderMarkdown(row.message.content)"
                   ></div>
                 </template>
@@ -203,7 +203,7 @@
                         {{ entry.source === "cache" ? "缓存复用" : "实时转述" }}
                       </span>
                       <div
-                        class="vision-fallback-text"
+                        class="vision-fallback-text gc-markdown"
                         v-html="renderMarkdown(entry.text)"
                       ></div>
                     </div>
@@ -255,7 +255,7 @@
                     >
                       <div
                         v-if="part.type === 'text'"
-                        class="message-content"
+                        class="message-content gc-markdown"
                         v-html="renderMarkdown(part.text)"
                       ></div>
                       <img
@@ -269,7 +269,7 @@
                   </div>
                   <div
                     v-else
-                    class="message-content"
+                    class="message-content gc-markdown"
                     v-html="renderMarkdown(row.message.content)"
                   ></div>
                 </template>
@@ -362,10 +362,8 @@
 
 <script setup lang="ts">
 import { useVirtualizer } from "@tanstack/vue-virtual";
-import { marked } from "marked";
 import {
   computed,
-  markRaw,
   nextTick,
   onBeforeUnmount,
   ref,
@@ -386,6 +384,7 @@ import type {
   ChatToolCallEntry,
   ChatToolResultEntry,
 } from "@/modules/chat/store/chat";
+import { renderMarkdown } from '@/shared/utils/markdown'
 
 interface VisibleMessageRow {
   index: number;
@@ -447,8 +446,6 @@ const editingMessageId = ref<string | null>(null);
 const editingText = ref("");
 const expandedUsageMessageId = ref<string | null>(null);
 const shouldStickToBottom = ref(true);
-const markdownCache = markRaw(new Map<string, string>());
-
 let scrollFrameId: number | null = null;
 let measureFrameId: number | null = null;
 
@@ -688,24 +685,6 @@ function shouldRenderMessageContentBeforeTools(message: ChatMessage): boolean {
 
 function shouldRenderMessageContentAfterTools(message: ChatMessage): boolean {
   return message.role === "assistant" && messageToolTimeline(message).length > 0;
-}
-
-function renderMarkdown(text: string): string {
-  if (!text) {
-    return "";
-  }
-
-  const cachedHtml = markdownCache.get(text);
-  if (cachedHtml) {
-    return cachedHtml;
-  }
-
-  const renderedHtml = marked.parse(text, { async: false }) as string;
-  if (markdownCache.size >= 400) {
-    markdownCache.clear();
-  }
-  markdownCache.set(text, renderedHtml);
-  return renderedHtml;
 }
 
 function getRoleLabel(message: ChatMessage): string {

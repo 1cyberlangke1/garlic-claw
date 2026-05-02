@@ -5,9 +5,9 @@ import type { ChatMessagePart } from '@garlic-claw/shared';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
-import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../src/runtime/host/runtime-host-conversation-todo.service';
+import { ConversationMessageService } from '../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../src/runtime/host/conversation-todo.service';
 import { ConversationMessageLifecycleService } from '../../src/conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
@@ -39,13 +39,13 @@ describe('ConversationMessageLifecycleService', () => {
 
   let conversationTaskService: ConversationTaskService;
   let conversationId: string;
-  let contextGovernanceConfigPath: string;
+  let settingsConfigPath: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let storagePath: string;
   let conversationMessagePlanningService: ConversationMessagePlanningService;
-  let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
-  let runtimeHostConversationMessageService: RuntimeHostConversationMessageService;
-  let runtimeHostConversationTodoService: RuntimeHostConversationTodoService;
+  let runtimeHostConversationRecordService: ConversationStoreService;
+  let runtimeHostConversationMessageService: ConversationMessageService;
+  let runtimeHostConversationTodoService: ConversationTodoService;
   let service: ConversationMessageLifecycleService;
 
   beforeEach(() => {
@@ -53,12 +53,12 @@ describe('ConversationMessageLifecycleService', () => {
       os.tmpdir(),
       `conversation-message-lifecycle.service.spec-${Date.now()}-${Math.random()}.json`,
     );
-    contextGovernanceConfigPath = path.join(
+    settingsConfigPath = path.join(
       os.tmpdir(),
-      `context-governance-lifecycle.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      `settings-lifecycle.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
     process.env[envKey] = storagePath;
-    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsConfigPath;
     jest.clearAllMocks();
     aiManagementService.getDefaultProviderSelection.mockReset();
     aiManagementService.getProvider.mockReset();
@@ -86,11 +86,11 @@ describe('ConversationMessageLifecycleService', () => {
     toolRegistryService.buildToolSet.mockResolvedValue(undefined);
     toolRegistryService.listAvailableTools.mockResolvedValue([]);
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([]);
-    runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
-    runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
+    runtimeHostConversationRecordService = new ConversationStoreService();
+    runtimeHostConversationMessageService = new ConversationMessageService(
       runtimeHostConversationRecordService,
     );
-    runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(
+    runtimeHostConversationTodoService = new ConversationTodoService(
       runtimeHostConversationRecordService,
     );
     conversationTaskService = new ConversationTaskService(
@@ -143,13 +143,13 @@ describe('ConversationMessageLifecycleService', () => {
 
   afterEach(() => {
     delete process.env[envKey];
-    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     try {
       if (fs.existsSync(storagePath)) {
         fs.unlinkSync(storagePath);
       }
-      if (fs.existsSync(contextGovernanceConfigPath)) {
-        fs.unlinkSync(contextGovernanceConfigPath);
+      if (fs.existsSync(settingsConfigPath)) {
+        fs.unlinkSync(settingsConfigPath);
       }
     } catch {
       // 忽略临时文件清理失败，避免影响测试主语义。
@@ -1039,7 +1039,7 @@ function plugin(id: string, hookNames: string[]) {
   };
 }
 
-function readConversation(runtimeHostConversationRecordService: RuntimeHostConversationRecordService) {
+function readConversation(runtimeHostConversationRecordService: ConversationStoreService) {
   return runtimeHostConversationRecordService.requireConversation(
     activeConversationId,
   );

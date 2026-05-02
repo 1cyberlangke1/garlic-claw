@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
+import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { RuntimeFileFreshnessService } from '../../../src/execution/runtime/runtime-file-freshness.service';
 import { RuntimeFilesystemBackendService } from '../../../src/execution/runtime/runtime-filesystem-backend.service';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';

@@ -1,5 +1,3 @@
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import {
   CONTEXT_COMPACTION_CONFIG_SCHEMA,
   CONVERSATION_TITLE_CONFIG_SCHEMA,
@@ -10,11 +8,10 @@ import {
 } from '@garlic-claw/plugin-sdk/authoring';
 import type { AiModelRouteTarget, JsonObject, JsonValue, PluginConfigSchema, PluginConfigSnapshot } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
-import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
+import { SettingsStore } from '../core/config/settings.store';
 
-const CONTEXT_GOVERNANCE_CONFIG_FILE = 'context-governance.json';
 const MAX_CONFIG_INTEGER = 1_000_000;
+const CONTEXT_GOVERNANCE_SECTION = 'context';
 
 const CONTEXT_GOVERNANCE_SECTION_NAMES = ['conversationTitle', 'contextCompaction'] as const;
 type ContextGovernanceSectionName = typeof CONTEXT_GOVERNANCE_SECTION_NAMES[number];
@@ -31,11 +28,14 @@ const CONTEXT_GOVERNANCE_CONFIG_SCHEMA: PluginConfigSchema = { type: 'object', i
 
 @Injectable()
 export class ContextGovernanceSettingsService {
-  private readonly configPath = resolveContextGovernanceConfigPath();
-  private configValues: JsonObject = loadContextGovernanceConfig(this.configPath);
+  private configValues: JsonObject;
+
+  constructor(private readonly settingsStore: SettingsStore = new SettingsStore()) {
+    this.configValues = sanitizeContextGovernanceConfig(this.settingsStore.readSection(CONTEXT_GOVERNANCE_SECTION));
+  }
 
   getConfigSnapshot(): PluginConfigSnapshot { return { schema: CONTEXT_GOVERNANCE_CONFIG_SCHEMA, values: structuredClone(this.configValues) }; }
-  updateConfig(values: JsonObject): PluginConfigSnapshot { this.configValues = sanitizeContextGovernanceConfig(values); persistContextGovernanceConfig(this.configPath, this.configValues); return this.getConfigSnapshot(); }
+  updateConfig(values: JsonObject): PluginConfigSnapshot { this.configValues = sanitizeContextGovernanceConfig(values); this.settingsStore.writeSection(CONTEXT_GOVERNANCE_SECTION, this.configValues); return this.getConfigSnapshot(); }
   readStoredConfig(): JsonObject { return structuredClone(this.configValues); }
 
   readRuntimeConfig(): StoredContextGovernanceConfig {
@@ -52,28 +52,6 @@ export class ContextGovernanceSettingsService {
       },
     };
   }
-}
-
-function resolveContextGovernanceConfigPath(): string {
-  return process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH
-    ?? (process.env.JEST_WORKER_ID
-      ? createServerTestArtifactPath({ extension: '.json', prefix: 'config-context-governance.server.test', subdirectory: 'server' })
-      : path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', CONTEXT_GOVERNANCE_CONFIG_FILE));
-}
-
-function loadContextGovernanceConfig(configPath: string): JsonObject {
-  try {
-    if (!fs.existsSync(configPath)) {return {};}
-    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as JsonValue;
-    return sanitizeContextGovernanceConfig(isJsonObject(parsed) ? parsed : {});
-  } catch {
-    return {};
-  }
-}
-
-function persistContextGovernanceConfig(configPath: string, values: JsonObject): void {
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(values, null, 2), 'utf-8');
 }
 
 function sanitizeContextGovernanceConfig(values: JsonObject): JsonObject {

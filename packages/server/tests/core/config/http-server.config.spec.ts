@@ -1,4 +1,4 @@
-import { readHttpServerConfig } from '../../../src/core/bootstrap/bootstrap-http-app';
+import { readHttpServerConfig } from '../../../src/bootstrap/bootstrap-http-app';
 
 describe('readHttpServerConfig', () => {
   it('returns defaults when env values are missing', () => {

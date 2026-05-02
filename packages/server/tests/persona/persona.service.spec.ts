@@ -5,11 +5,11 @@ import { ProjectWorktreeRootService } from '../../src/execution/project/project-
 import { DEFAULT_PERSONA_PROMPT } from '../../src/persona/default-persona'
 import { PersonaService } from '../../src/persona/persona.service'
 import { PersonaStoreService } from '../../src/persona/persona-store.service'
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service'
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service'
 
 describe('PersonaService', () => {
   const originalPersonaPath = process.env.GARLIC_CLAW_PERSONAS_PATH
-  let conversationRecordService: RuntimeHostConversationRecordService
+  let conversationRecordService: ConversationStoreService
   let service: PersonaService
   let storageRoot: string
 
@@ -19,7 +19,7 @@ describe('PersonaService', () => {
       `gc-personas-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     )
     process.env.GARLIC_CLAW_PERSONAS_PATH = storageRoot
-    conversationRecordService = new RuntimeHostConversationRecordService()
+    conversationRecordService = new ConversationStoreService()
     service = new PersonaService(
       new PersonaStoreService(new ProjectWorktreeRootService()),
       conversationRecordService,
@@ -81,9 +81,16 @@ describe('PersonaService', () => {
       ),
     ).toEqual(expect.objectContaining({
       id: 'builtin.default-assistant',
-      isDefault: true,
       name: 'Default Assistant',
     }))
+    expect(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(storageRoot, 'settings.json'),
+          'utf-8',
+        ),
+      ),
+    ).toEqual({ defaultPersonaId: 'builtin.default-assistant' })
     expect(
       fs.readFileSync(
         path.join(storageRoot, 'builtin.default-assistant', 'prompt.md'),
@@ -146,9 +153,16 @@ describe('PersonaService', () => {
     ).toEqual(expect.objectContaining({
       customErrorMessage: '当前人格不可用，请稍后再试。',
       id: 'persona.analyst',
-      isDefault: true,
       name: 'Reviewer',
     }))
+    expect(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(storageRoot, 'settings.json'),
+          'utf-8',
+        ),
+      ),
+    ).toEqual({ defaultPersonaId: 'persona.analyst' })
     expect(
       fs.readFileSync(
         path.join(storageRoot, 'persona.analyst', 'prompt.md'),

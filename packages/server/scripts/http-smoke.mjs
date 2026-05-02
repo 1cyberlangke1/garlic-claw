@@ -163,13 +163,12 @@ async function main() {
     aiSettingsPath: path.join(tempDir, 'config', 'ai'),
     automationsPath: path.join(tempDir, 'automations.server.json'),
     conversationsPath: path.join(tempDir, 'conversations.server.json'),
-    contextGovernanceConfigPath: path.join(tempDir, 'config', 'context-governance.json'),
     mcpConfigPath: path.join(tempDir, 'config', 'mcp', 'servers'),
     personasPath: path.join(tempDir, 'config', 'personas'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
-    runtimeToolsConfigPath: path.join(tempDir, 'config', 'runtime-tools.json'),
+    settingsConfigPath: path.join(tempDir, 'config', 'settings.json'),
     runtimeWorkspacesPath: path.join(tempDir, 'runtime-workspaces'),
-    skillGovernancePath: path.join(tempDir, 'config', 'skills', 'governance.json'),
+    skillGovernancePath: path.join(tempDir, 'config', 'skills', 'settings.json'),
     subagentPath: path.join(tempDir, 'config', 'subagent'),
     subagentsPath: path.join(tempDir, 'subagents.server.json'),
     userHomePath: path.join(tempDir, 'user-home'),
@@ -3397,8 +3396,14 @@ async function prepareRealProviderSmokeSettings(aiSettingsPath, providerId) {
 
 async function writeRealSmokeJsonDefaults(aiSettingsPath) {
   await fsPromises.mkdir(aiSettingsPath, { recursive: true });
-  await fsPromises.writeFile(path.join(aiSettingsPath, 'host-model-routing.json'), JSON.stringify({ fallbackChatModels: [], utilityModelRoles: {} }, null, 2), 'utf8');
-  await fsPromises.writeFile(path.join(aiSettingsPath, 'vision-fallback.json'), JSON.stringify({ enabled: false }, null, 2), 'utf8');
+  await fsPromises.writeFile(
+    path.join(aiSettingsPath, 'settings.json'),
+    JSON.stringify({
+      hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} },
+      visionFallback: { enabled: false },
+    }, null, 2),
+    'utf8',
+  );
 }
 
 async function runTypescriptBuild() {
@@ -3440,7 +3445,7 @@ async function startBackend(port, wsPort, files, options = {}) {
     env: {
       ...process.env,
       GARLIC_CLAW_AI_SETTINGS_PATH: files.aiSettingsPath,
-      GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH: files.contextGovernanceConfigPath,
+      GARLIC_CLAW_SETTINGS_CONFIG_PATH: files.settingsConfigPath,
       GARLIC_CLAW_LOGIN_SECRET: LOGIN_SECRET,
       GARLIC_CLAW_AUTOMATIONS_PATH: files.automationsPath,
       GARLIC_CLAW_CONVERSATIONS_PATH: files.conversationsPath,
@@ -3448,7 +3453,6 @@ async function startBackend(port, wsPort, files, options = {}) {
       GARLIC_CLAW_PERSONAS_PATH: files.personasPath,
       GARLIC_CLAW_PLUGIN_STATE_PATH: files.pluginStatePath,
       GARLIC_CLAW_RUNTIME_APPROVAL_MODE: options.runtimeApprovalMode ?? 'review',
-      GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH: files.runtimeToolsConfigPath,
       GARLIC_CLAW_RUNTIME_WORKSPACES_PATH: files.runtimeWorkspacesPath,
       GARLIC_CLAW_SKILL_GOVERNANCE_PATH: files.skillGovernancePath,
       GARLIC_CLAW_SUBAGENT_PATH: files.subagentPath,

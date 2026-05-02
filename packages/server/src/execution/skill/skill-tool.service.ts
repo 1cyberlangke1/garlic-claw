@@ -6,7 +6,9 @@ import type {
   SkillSummary,
 } from '@garlic-claw/shared';
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
+import { createSkillLoadBlockedEvent, createSkillLoadedEvent } from '../../core/logging/log-event-payloads';
+import { RuntimeEventLogService } from '../../core/logging/runtime-event-log.service';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { SkillRegistryService } from './skill-registry.service';
 
 const MODEL_OUTPUT_FILE_LIMIT = 10;
@@ -20,10 +22,14 @@ const SKILL_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class SkillToolService {
+  private readonly logger: ReturnType<typeof createServerLogger>;
+
   constructor(
     private readonly skillRegistryService: SkillRegistryService,
     @Optional() private readonly runtimeEventLogService?: RuntimeEventLogService,
-  ) {}
+  ) {
+    this.logger = createServerLogger(SkillToolService.name, this.runtimeEventLogService);
+  }
 
   async listAvailableSkills(): Promise<SkillSummary[]> {
     return (await this.skillRegistryService.listSkillSummaries()).filter((skill) => skill.governance.loadPolicy === 'allow');
@@ -62,19 +68,29 @@ export class SkillToolService {
     }
     if (skill.governance.loadPolicy !== 'allow') {
       const message = readBlockedSkillMessage(skill.governance.loadPolicy, skill.name);
-      this.runtimeEventLogService?.appendLog('skill', skill.id, skill.governance.eventLog, {
-        level: 'warn',
-        message,
-        metadata: { skillName },
-        type: 'skill:load-blocked',
+      const event = createSkillLoadBlockedEvent(message, skillName);
+      this.logger.warn(message, {
+        console: false,
+        event: {
+          entityId: skill.id,
+          kind: 'skill',
+          metadata: event.metadata,
+          settings: skill.governance.eventLog,
+          type: event.type,
+        },
       });
       throw new ForbiddenException(message);
     }
-    this.runtimeEventLogService?.appendLog('skill', skill.id, skill.governance.eventLog, {
-      level: 'info',
-      message: `Loaded skill ${skill.name}`,
-      metadata: { entryPath: skill.entryPath },
-      type: 'skill:loaded',
+    const loadedEvent = createSkillLoadedEvent(skill.name, skill.entryPath);
+    this.logger.info(loadedEvent.message, {
+      console: false,
+      event: {
+        entityId: skill.id,
+        kind: 'skill',
+        metadata: loadedEvent.metadata,
+        settings: skill.governance.eventLog,
+        type: loadedEvent.type,
+      },
     });
     const files = skill.assets.map(copySkillAssetSummary);
     const baseDirectory = this.skillRegistryService.resolveSkillDirectory(skill);

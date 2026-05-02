@@ -1,155 +1,171 @@
 <template>
-  <div class="plugins-page">
-    <PluginPageHero
-      :cards="overviewCards"
-      @refresh="refreshAll"
-    />
-
-    <p v-if="error" class="page-banner error">{{ error }}</p>
-
-    <PluginAttentionPanel
-      :plugins="attentionPlugins"
-      :running-action="runningAction"
-      @select-plugin="selectPlugin"
-      @run-action="runActionForPlugin"
-    />
-
-    <div class="plugins-layout">
-      <nav class="detail-nav" aria-label="插件详情面板切换">
-        <div class="detail-nav-group">
-          <button
-            v-for="panel in availablePanels"
-            :key="panel.value"
-            type="button"
-            :title="panel.label"
-            :class="{ active: activePanel === panel.value }"
-            @click="activePanel = panel.value"
+  <ConsolePage class="plugins-page" no-padding>
+    <template #header>
+      <ConsoleViewHeader
+        title="插件管理"
+        :icon="widgetBold"
+      >
+        <template #actions>
+          <ElButton
+            class="hero-action view-header-action"
+            title="刷新全部"
+            @click="refreshAll"
           >
-            {{ panel.label }}
-          </button>
-        </div>
-      </nav>
+            <Icon :icon="refreshBold" class="refresh-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+        </template>
+      </ConsoleViewHeader>
+    </template>
 
-      <section class="plugin-detail">
-        <PluginSidebar
-          v-show="activePanel === 'plugins'"
-          v-model:active-filter="activeFilter"
-          :filter-options="filterOptions"
-          :plugins="plugins"
-          :loading="loading"
-          :selected-plugin-name="selectedPluginName"
-          :error="null"
-          @refresh="refreshAll"
-          @select="handleSelectPlugin"
+    <div class="plugins-inner">
+      <aside class="plugins-sidebar">
+        <nav class="detail-nav" aria-label="插件详情面板切换">
+          <div class="detail-nav-group">
+            <button
+              v-for="panel in availablePanels"
+              :key="panel.value"
+              type="button"
+              :title="panel.label"
+              :class="{ active: activePanel === panel.value }"
+              @click="activePanel = panel.value"
+            >
+              <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
+              <span class="nav-label">{{ panel.label }}</span>
+            </button>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="plugins-content">
+        <p v-if="error" class="page-banner error">{{ error }}</p>
+
+        <PluginAttentionPanel
+          :plugins="attentionPlugins"
+          :running-action="runningAction"
+          @select-plugin="selectPlugin"
+          @run-action="runActionForPlugin"
         />
 
-        <template v-if="selectedPlugin">
-          <PluginDetailOverview
-            v-if="activePanel === 'overview'"
-            :plugin="selectedPlugin"
-            :health="selectedPluginHealth"
-            :actions="selectedPluginActions"
-            :running-action="runningAction"
-            :detail-loading="detailLoading"
-            :deleting="deleting"
-            :can-delete="canDeleteSelected"
-            :cron-count="selectedCronJobs.length"
-            :highlights="selectedPluginHighlights"
-            @refresh-details="refreshSelectedDetails()"
-            @run-action="runAction"
-            @delete-selected="deleteSelectedPlugin"
+        <section class="plugin-detail">
+          <PluginSidebar
+            v-show="activePanel === 'plugins'"
+            v-model:active-filter="activeFilter"
+            :filter-options="filterOptions"
+            :plugins="plugins"
+            :loading="loading"
+            :selected-plugin-name="selectedPluginName"
+            :error="null"
+            @select="handleSelectPlugin"
           />
 
-          <div v-if="activePanel !== 'plugins'" class="detail-content">
-            <div v-if="activePanel === 'logs'" class="plugin-log-stack">
-              <PluginEventLog
-                :events="eventLogs"
-                :loading="detailLoading || eventLoading"
-                :query="eventQuery"
-                :next-cursor="eventNextCursor"
-                @refresh="refreshPluginEvents"
-                @load-more="loadMorePluginEvents"
+          <template v-if="selectedPlugin">
+            <PluginDetailOverview
+              v-if="activePanel === 'overview'"
+              :plugin="selectedPlugin"
+              :health="selectedPluginHealth"
+              :actions="selectedPluginActions"
+              :running-action="runningAction"
+              :detail-loading="detailLoading"
+              :deleting="deleting"
+              :can-delete="canDeleteSelected"
+              :cron-count="selectedCronJobs.length"
+              :highlights="selectedPluginHighlights"
+              @refresh-details="refreshSelectedDetails()"
+              @run-action="runAction"
+              @delete-selected="deleteSelectedPlugin"
+            />
+
+            <div v-if="activePanel !== 'plugins'" class="detail-content">
+              <div v-if="activePanel === 'logs'" class="plugin-log-stack">
+                <PluginEventLog
+                  :events="eventLogs"
+                  :loading="detailLoading || eventLoading"
+                  :query="eventQuery"
+                  :next-cursor="eventNextCursor"
+                  @refresh="refreshPluginEvents"
+                  @load-more="loadMorePluginEvents"
+                />
+                <EventLogSettingsPanel
+                  :settings="selectedPlugin.eventLog"
+                  :saving="savingEventLog"
+                  title="插件日志设置"
+                  description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
+                  @save="saveEventLog"
+                />
+              </div>
+              <PluginRemoteSummaryPanel
+                v-if="activePanel === 'remote-summary'"
+                :plugin="selectedPlugin"
               />
-              <EventLogSettingsPanel
-                :settings="selectedPlugin.eventLog"
-                :saving="savingEventLog"
-                title="插件日志设置"
-                description="此插件的事件日志会写入 log/plugins/<pluginId>/ 目录。"
-                @save="saveEventLog"
+              <PluginRemoteAccessPanel
+                v-if="activePanel === 'remote-access'"
+                :plugin="selectedPlugin"
+                :saving="savingRemoteAccess"
+                @save="saveRemoteAccess"
+              />
+              <SchemaConfigForm
+                v-if="activePanel === 'config'"
+                :snapshot="configSnapshot"
+                :saving="savingConfig"
+                title="插件配置"
+                description="宿主按插件声明的配置元数据统一渲染，不再依赖扁平字段表单。"
+                empty-text="插件没有声明配置元数据。"
+                @save="saveConfig"
+              />
+              <PluginLlmPreferencePanel
+                v-if="selectedPluginUsesLlm && activePanel === 'llm-preference'"
+                :preference="llmPreference"
+                :providers="llmProviders"
+                :options="llmOptions"
+                :saving="savingLlmPreference"
+                @save="saveLlmPreference"
+              />
+              <PluginScopeEditor
+                v-if="activePanel === 'scope'"
+                :plugin="selectedPlugin"
+                :scope="scopeSettings"
+                :saving="savingScope"
+                @save="saveScope"
+              />
+              <PluginStoragePanel
+                v-if="activePanel === 'storage'"
+                :entries="storageEntries"
+                :prefix="storagePrefix"
+                :loading="detailLoading"
+                :saving="savingStorage"
+                :deleting-key="deletingStorageKey"
+                @refresh="refreshPluginStorage"
+                @save="saveStorageEntry"
+                @delete="deleteStorageEntry"
+              />
+              <PluginCronList
+                v-if="activePanel === 'cron'"
+                :jobs="selectedCronJobs"
+                :deleting-job-id="deletingCronJobId"
+                @delete="deleteCronJob"
+              />
+              <PluginConversationSessionList
+                v-if="activePanel === 'sessions'"
+                :sessions="selectedConversationSessions"
+                :finishing-conversation-id="finishingConversationId"
+                @finish="finishConversationSession"
+              />
+              <PluginRouteList
+                v-if="activePanel === 'routes'"
+                :plugin-name="selectedPlugin.name"
+                :routes="selectedPlugin.manifest.routes ?? []"
               />
             </div>
-            <PluginRemoteSummaryPanel
-              v-if="activePanel === 'remote-summary'"
-              :plugin="selectedPlugin"
-            />
-            <PluginRemoteAccessPanel
-              v-if="activePanel === 'remote-access'"
-              :plugin="selectedPlugin"
-              :saving="savingRemoteAccess"
-              @save="saveRemoteAccess"
-            />
-            <SchemaConfigForm
-              v-if="activePanel === 'config'"
-              :snapshot="configSnapshot"
-              :saving="savingConfig"
-              title="插件配置"
-              description="宿主按插件声明的配置元数据统一渲染，不再依赖扁平字段表单。"
-              empty-text="插件没有声明配置元数据。"
-              @save="saveConfig"
-            />
-            <PluginLlmPreferencePanel
-              v-if="selectedPluginUsesLlm && activePanel === 'llm-preference'"
-              :preference="llmPreference"
-              :providers="llmProviders"
-              :options="llmOptions"
-              :saving="savingLlmPreference"
-              @save="saveLlmPreference"
-            />
-            <PluginScopeEditor
-              v-if="activePanel === 'scope'"
-              :plugin="selectedPlugin"
-              :scope="scopeSettings"
-              :saving="savingScope"
-              @save="saveScope"
-            />
-            <PluginStoragePanel
-              v-if="activePanel === 'storage'"
-              :entries="storageEntries"
-              :prefix="storagePrefix"
-              :loading="detailLoading"
-              :saving="savingStorage"
-              :deleting-key="deletingStorageKey"
-              @refresh="refreshPluginStorage"
-              @save="saveStorageEntry"
-              @delete="deleteStorageEntry"
-            />
-            <PluginCronList
-              v-if="activePanel === 'cron'"
-              :jobs="selectedCronJobs"
-              :deleting-job-id="deletingCronJobId"
-              @delete="deleteCronJob"
-            />
-            <PluginConversationSessionList
-              v-if="activePanel === 'sessions'"
-              :sessions="selectedConversationSessions"
-              :finishing-conversation-id="finishingConversationId"
-              @finish="finishConversationSession"
-            />
-            <PluginRouteList
-              v-if="activePanel === 'routes'"
-              :plugin-name="selectedPlugin.name"
-              :routes="selectedPlugin.manifest.routes ?? []"
-            />
-          </div>
-        </template>
+          </template>
 
-        <section v-else-if="activePanel !== 'plugins'" class="plugin-empty">
-          <h2>暂无插件</h2>
-          <p>启动本地插件或远程插件后，就可以在这里统一查看扩展面和健康快照。</p>
+          <section v-else-if="activePanel !== 'plugins'" class="plugin-empty">
+            <h2>暂无插件</h2>
+            <p>启动本地插件或远程插件后，就可以在这里统一查看扩展面和健康快照。</p>
+          </section>
         </section>
-      </section>
+      </main>
     </div>
-  </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
@@ -160,13 +176,30 @@ import PluginCronList from '@/modules/plugins/components/PluginCronList.vue'
 import PluginDetailOverview from '@/modules/plugins/components/PluginDetailOverview.vue'
 import PluginEventLog from '@/modules/plugins/components/PluginEventLog.vue'
 import PluginLlmPreferencePanel from '@/modules/plugins/components/PluginLlmPreferencePanel.vue'
-import PluginPageHero from '@/modules/plugins/components/PluginPageHero.vue'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
+import { Icon } from '@iconify/vue'
+import type { IconifyIcon } from '@iconify/types'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import widgetBold from '@iconify-icons/solar/widget-5-bold'
+import listCheckBold from '@iconify-icons/solar/list-check-bold'
+import documentTextBold from '@iconify-icons/solar/document-text-bold'
+import serverBold from '@iconify-icons/solar/server-bold'
+import codeBold from '@iconify-icons/solar/code-bold'
+import settingsBold from '@iconify-icons/solar/settings-bold'
+import cpuBold from '@iconify-icons/solar/cpu-bold'
+import cpuBoltBold from '@iconify-icons/solar/cpu-bolt-bold'
+import disketteBold from '@iconify-icons/solar/diskette-bold'
+import clockCircleBold from '@iconify-icons/solar/clock-circle-bold'
+import chatRoundLineBold from '@iconify-icons/solar/chat-round-line-bold'
+import linkRoundBold from '@iconify-icons/solar/link-round-bold'
+import { ElButton } from 'element-plus'
 import PluginRemoteAccessPanel from '@/modules/plugins/components/PluginRemoteAccessPanel.vue'
 import PluginRemoteSummaryPanel from '@/modules/plugins/components/PluginRemoteSummaryPanel.vue'
 import PluginRouteList from '@/modules/plugins/components/PluginRouteList.vue'
 import PluginScopeEditor from '@/modules/plugins/components/PluginScopeEditor.vue'
 import PluginSidebar from '@/modules/plugins/components/PluginSidebar.vue'
 import PluginStoragePanel from '@/modules/plugins/components/PluginStoragePanel.vue'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import {
   hasPluginIssue,
   pluginAttentionWeight,
@@ -277,25 +310,40 @@ const selectedPluginUsesLlm = computed(() =>
 
 const activePanel = ref<DetailPanelId>('plugins')
 
+const PANEL_ICONS: Record<DetailPanelId, IconifyIcon> = {
+  plugins: widgetBold,
+  overview: listCheckBold,
+  logs: documentTextBold,
+  'remote-summary': serverBold,
+  'remote-access': codeBold,
+  config: settingsBold,
+  'llm-preference': cpuBold,
+  scope: cpuBoltBold,
+  storage: disketteBold,
+  cron: clockCircleBold,
+  sessions: chatRoundLineBold,
+  routes: linkRoundBold,
+}
+
 const availablePanels = computed(() => {
-  const panels: Array<{ label: string; value: DetailPanelId }> = []
-  panels.push({ label: '插件列表', value: 'plugins' })
+  const panels: Array<{ label: string; value: DetailPanelId; icon: IconifyIcon }> = []
+  panels.push({ label: '插件列表', value: 'plugins', icon: PANEL_ICONS['plugins'] })
   if (selectedPlugin.value) {
-    panels.push({ label: '插件概览', value: 'overview' })
-    panels.push({ label: '日志', value: 'logs' })
+    panels.push({ label: '插件概览', value: 'overview', icon: PANEL_ICONS['overview'] })
+    panels.push({ label: '日志', value: 'logs', icon: PANEL_ICONS['logs'] })
     if (selectedPlugin.value.remote) {
-      panels.push({ label: '远程摘要', value: 'remote-summary' })
-      panels.push({ label: '远程接入', value: 'remote-access' })
+      panels.push({ label: '远程摘要', value: 'remote-summary', icon: PANEL_ICONS['remote-summary'] })
+      panels.push({ label: '远程接入', value: 'remote-access', icon: PANEL_ICONS['remote-access'] })
     }
-    panels.push({ label: '插件配置', value: 'config' })
+    panels.push({ label: '插件配置', value: 'config', icon: PANEL_ICONS['config'] })
     if (selectedPluginUsesLlm.value) {
-      panels.push({ label: '模型偏好', value: 'llm-preference' })
+      panels.push({ label: '模型偏好', value: 'llm-preference', icon: PANEL_ICONS['llm-preference'] })
     }
-    panels.push({ label: '作用域', value: 'scope' })
-    panels.push({ label: '持久化 KV', value: 'storage' })
-    panels.push({ label: '定时任务', value: 'cron' })
-    panels.push({ label: '会话等待态', value: 'sessions' })
-    panels.push({ label: 'Web 路由', value: 'routes' })
+    panels.push({ label: '作用域', value: 'scope', icon: PANEL_ICONS['scope'] })
+    panels.push({ label: '持久化 KV', value: 'storage', icon: PANEL_ICONS['storage'] })
+    panels.push({ label: '定时任务', value: 'cron', icon: PANEL_ICONS['cron'] })
+    panels.push({ label: '会话等待态', value: 'sessions', icon: PANEL_ICONS['sessions'] })
+    panels.push({ label: 'Web 路由', value: 'routes', icon: PANEL_ICONS['routes'] })
   }
   return panels
 })
@@ -322,61 +370,6 @@ const attentionPlugins = computed(() =>
       return (left.displayName ?? left.name).localeCompare(right.displayName ?? right.name)
     }),
 )
-const onlinePluginCount = computed(() =>
-  plugins.value.filter((plugin) => plugin.connected).length,
-)
-const localPluginCount = computed(() =>
-  plugins.value.filter((plugin) => (plugin.runtimeKind ?? 'remote') === 'local').length,
-)
-const remotePluginCount = computed(() =>
-  Math.max(plugins.value.length - localPluginCount.value, 0),
-)
-const attentionPluginCount = computed(() =>
-  plugins.value.filter((plugin) => needsAttention(plugin)).length,
-)
-const overviewCards = computed(() => {
-  const total = plugins.value.length
-
-  return [
-    {
-      label: '已接入插件',
-      value: String(total),
-      note: total > 0
-        ? `本地 ${localPluginCount.value} · 远程 ${remotePluginCount.value}`
-        : '本地与远程插件都会汇聚到这里',
-      tone: 'accent',
-    },
-    {
-      label: '在线插件',
-      value: String(onlinePluginCount.value),
-      note: total === 0
-        ? '还没有建立运行中的插件连接'
-        : onlinePluginCount.value === total
-          ? '全部在线'
-          : `${total - onlinePluginCount.value} 个离线`,
-      tone: 'neutral',
-    },
-    {
-      label: '需关注',
-      value: String(attentionPluginCount.value),
-      note: attentionPluginCount.value > 0
-        ? '存在异常、降级或满并发插件'
-        : '没有高优先级告警',
-      tone: attentionPluginCount.value > 0 ? 'warning' : 'neutral',
-    },
-    {
-      label: '焦点',
-      value: selectedPlugin.value
-        ? selectedPlugin.value.displayName ?? selectedPlugin.value.name
-        : '未选择插件',
-      note: selectedPlugin.value
-        ? `${runtimeKindLabel(selectedPlugin.value)} · ${healthText(selectedPluginHealth.value)}`
-        : '从左侧选择插件进入详情',
-      tone: 'spotlight',
-    },
-  ]
-})
-
 const ACTION_LABELS: Record<PluginActionName, {
   label: string
   pendingLabel: string
@@ -397,32 +390,6 @@ const ACTION_LABELS: Record<PluginActionName, {
     label: '刷新元数据',
     pendingLabel: '刷新中...',
   },
-}
-
-/** 健康状态文本。 */
-function healthText(health: PluginHealthSnapshot | null | undefined): string {
-  switch (health?.status) {
-    case 'healthy':
-      return '健康'
-    case 'degraded':
-      return '降级'
-    case 'error':
-      return '异常'
-    case 'offline':
-      return '离线'
-    default:
-      return '未知'
-  }
-}
-
-/** 运行形态标签。 */
-function runtimeKindLabel(plugin: PluginInfo): string {
-  return (plugin.runtimeKind ?? 'remote') === 'local' ? '本地插件' : '远程插件'
-}
-
-/** 判断插件是否需要关注。 */
-function needsAttention(plugin: PluginInfo): boolean {
-  return hasPluginIssue(plugin)
 }
 
 /** 根据权限与 Hook 推导插件能力标签。 */
@@ -578,13 +545,99 @@ async function runActionForPlugin(input: {
 
 <style scoped>
 .plugins-page {
-  display: grid;
-  gap: 18px;
-  height: 100%;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 1.4rem clamp(1rem, 2.5vw, 2rem);
   background: var(--shell-bg);
+}
+
+.hero-action {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-panel-hover-soft);
+  color: var(--text);
+}
+
+.hero-action:hover:not(:disabled) {
+  background: var(--surface-panel-muted-strong);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.overview-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.overview-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+  min-width: 0;
+  height: 72px;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-card-gradient);
+  overflow: hidden;
+}
+
+.overview-card strong {
+  font-size: clamp(1.15rem, 1.6vw, 1.55rem);
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.overview-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.overview-card p {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow: hidden;
+}
+
+.overview-card.warning {
+  border-color: rgba(240, 198, 118, 0.28);
+}
+
+.overview-card.warning strong {
+  color: #f5d38c;
+}
+
+.overview-card.spotlight strong {
+  font-size: 1.25rem;
+}
+
+@media (max-width: 1280px) {
+  .overview-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .page-banner {
@@ -605,23 +658,41 @@ async function runActionForPlugin(input: {
   background: rgba(68, 204, 136, 0.14);
 }
 
-.plugins-layout {
-  display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
-  grid-template-areas: "nav content";
-  gap: 18px;
-  min-height: 0;
-  align-items: start;
+.plugins-inner {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
 }
 
-.plugin-detail,
-.plugin-empty {
+.plugins-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 200px;
+  border-right: 1px solid var(--shell-border);
+  color: var(--shell-text, var(--text));
+  overflow-y: auto;
+}
+
+.plugins-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.plugin-detail {
   display: grid;
   gap: 16px;
   min-width: 0;
 }
 
 .plugin-empty {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
   align-content: start;
   padding: 2rem;
   border: 1px solid var(--border);
@@ -633,56 +704,61 @@ async function runActionForPlugin(input: {
   color: var(--text-muted);
 }
 
-.detail-span {
-  grid-column: 1 / -1;
-}
-
 .detail-nav {
-  grid-area: nav;
-  display: grid;
-  gap: 6px;
-  position: sticky;
-  top: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface-card-gradient);
-  align-self: start;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
 }
 
 .detail-nav-group {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 
 .detail-nav button {
   appearance: none;
   -webkit-appearance: none;
-  text-align: left;
-  padding: 0.5rem 0.7rem;
-  border-radius: 10px;
-  border: 1px solid transparent;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: none;
   background: transparent;
-  color: var(--text-muted);
-  font-size: 0.85rem;
+  color: var(--shell-text-secondary, var(--text-muted));
+  font-size: 14px;
+  text-align: left;
   cursor: pointer;
-  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .detail-nav button:hover {
-  background: var(--surface-panel-hover-soft);
-  color: var(--text);
+  background: var(--shell-bg-hover, #334155);
+  color: var(--shell-text, var(--text));
 }
 
 .detail-nav button.active {
-  background: var(--surface-panel-hover-soft);
-  border-color: rgba(103, 199, 207, 0.22);
-  color: var(--accent);
+  color: var(--shell-active, var(--accent));
+  background: color-mix(in srgb, var(--shell-active, var(--accent)) 10%, transparent);
 }
 
-.plugin-detail,
-.plugin-empty {
-  grid-area: content;
+.nav-icon {
+  width: 20px;
+  min-width: 20px;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-content {
@@ -713,40 +789,47 @@ async function runActionForPlugin(input: {
 }
 
 @media (max-width: 800px) {
-  .plugins-layout {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "nav"
-      "content";
+  .plugins-sidebar {
+    width: 180px;
   }
 
-  .detail-nav {
-    position: static;
-    display: flex;
-    flex-wrap: wrap;
-    padding: 0.4rem;
-    gap: 4px;
-  }
-
-  .detail-nav-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .detail-nav button {
-    flex: 1 1 auto;
-    min-width: 80px;
-    text-align: center;
-    padding: 0.45rem 0.6rem;
-    font-size: 0.8rem;
+  .plugins-content {
+    padding: 16px;
   }
 }
 
 @media (max-width: 720px) {
-  .plugins-page {
-    gap: 14px;
-    padding: 1rem;
+  .plugins-inner {
+    flex-direction: column;
+  }
+
+  .plugins-sidebar {
+    width: 100%;
+    max-height: 110px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border);
+  }
+
+  .detail-nav {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 12px 8px;
+  }
+
+  .detail-nav-group {
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .detail-nav button {
+    min-height: 40px;
+    padding: 0 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .plugins-content {
+    padding: 12px;
   }
 }
 </style>

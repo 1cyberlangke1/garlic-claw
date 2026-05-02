@@ -1,0 +1,30 @@
+{
+  "defaultSelection": {
+    "providerId": "openai",
+    "modelId": "gpt-4o-mini"
+  },
+  "hostModelRouting": {
+    "fallbackChatModels": [],
+    "compressionModel": {
+      "providerId": "openai",
+      "modelId": "gpt-4o-mini"
+    },
+    "utilityModelRoles": {
+      "conversationTitle": {
+        "providerId": "openai",
+        "modelId": "gpt-4o-mini"
+      },
+      "pluginGenerateText": {
+        "providerId": "gemini",
+        "modelId": "gemini-1.5-pro"
+      }
+    }
+  },
+  "visionFallback": {
+    "enabled": false,
+    "providerId": "openai",
+    "modelId": "gpt-4o-mini",
+    "prompt": "对于纯文本模型，请清楚地描述上传的图像。",
+    "maxDescriptionLength": 400
+  }
+}

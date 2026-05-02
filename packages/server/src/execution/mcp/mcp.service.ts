@@ -3,10 +3,12 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { EventLogListResult, EventLogQuery, JsonObject, JsonValue, McpConfigSnapshot, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
-import { McpConfigStoreService } from './mcp-config-store.service';
+import { createMcpConnectionConnectedEvent, createMcpConnectionErrorEvent, createMcpGovernanceEvent, createMcpToolErrorEvent, type LogEventPayload } from '../../core/logging/log-event-payloads';
+import { RuntimeEventLogService } from '../../core/logging/runtime-event-log.service';
+import { createServerLogger } from '../../core/logging/server-logger';
+import { McpServerStoreService } from './mcp-server-store.service';
 import { ToolManagementSettingsService } from '../tool/tool-management-settings.service';
 
 type McpServerHealthStatus = 'healthy' | 'error' | 'unknown';
@@ -25,14 +27,16 @@ const MCP_MAX_RETRIES = 2;
 export class McpService implements OnModuleDestroy, OnModuleInit {
   readonly clients = new Map<string, McpClientSession>();
   readonly serverRecords = new Map<string, McpRecord>();
-  private readonly logger = new Logger(McpService.name);
+  private readonly logger: ReturnType<typeof createServerLogger>;
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly mcpConfigStoreService: McpConfigStoreService,
+    private readonly mcpServerStoreService: McpServerStoreService,
     private readonly runtimeEventLogService: RuntimeEventLogService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
-  ) {}
+  ) {
+    this.logger = createServerLogger(McpService.name, this.runtimeEventLogService);
+  }
 
   onModuleInit(): void {
     this.primeServerRecords(this.getSnapshot().servers);
@@ -42,7 +46,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     });
   }
   async onModuleDestroy(): Promise<void> { await this.disconnectAllClients(); }
-  getSnapshot(): McpConfigSnapshot { return this.mcpConfigStoreService.getSnapshot(); }
+  getSnapshot(): McpConfigSnapshot { return this.mcpServerStoreService.getSnapshot(); }
 
   async reloadServersFromConfig(): Promise<void> {
     const previousRecords = new Map(this.serverRecords);
@@ -55,14 +59,14 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   async reloadServer(name: string): Promise<void> { const normalized = name.trim(); await this.syncServerRecord(normalized, this.requireServerConfig(normalized)); }
   async applyServerConfig(config: McpServerConfig, previousName?: string): Promise<void> { const previous = previousName?.trim(); if (previous && previous !== config.name) {await this.removeServer(previous);} await this.syncServerRecord(config.name, config); }
-  async saveServer(server: McpServerConfig, previousName?: string): Promise<McpServerConfig> { return this.mcpConfigStoreService.saveServer(server, previousName); }
+  async saveServer(server: McpServerConfig, previousName?: string): Promise<McpServerConfig> { return this.mcpServerStoreService.saveServer(server, previousName); }
   async removeServer(name: string): Promise<void> {
     const normalized = name.trim();
     await this.disconnectServer(normalized);
     this.serverRecords.delete(normalized);
     this.toolManagementSettingsService.deleteSourceOverrides(`mcp:${normalized}`);
   }
-  async deleteServer(name: string): Promise<McpServerDeleteResult> { return this.mcpConfigStoreService.deleteServer(name); }
+  async deleteServer(name: string): Promise<McpServerDeleteResult> { return this.mcpServerStoreService.deleteServer(name); }
   async setServerEnabled(name: string, enabled: boolean): Promise<void> {
     const normalized = name.trim();
     this.toolManagementSettingsService.writeSourceEnabledOverride(`mcp:${normalized}`, enabled);
@@ -74,7 +78,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     if (action === 'health-check') {return this.runHealthCheck(sourceId);}
     await this.reloadServer(sourceId);
     const message = `MCP source ${action}ed`;
-    this.recordServerEvent(sourceId, { level: 'info', message, type: `governance:${action}` });
+    this.recordServerEvent(sourceId, createMcpGovernanceEvent(action, message));
     return { accepted: true, action, sourceId, sourceKind: 'mcp', message };
   }
 
@@ -142,7 +146,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       const message = error instanceof Error ? error.message : String(error);
       await this.closeClient(input.serverName);
       this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastCheckedAt: new Date().toISOString(), lastError: message });
-      this.recordServerEvent(input.serverName, { level: 'error', message, metadata: { toolName: input.toolName }, type: 'tool:error' });
+      this.recordServerEvent(input.serverName, createMcpToolErrorEvent(message, input.toolName));
       throw error;
     }
   }
@@ -154,10 +158,10 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       const connected = await this.connectClientSession({ name, config });
       this.clients.set(name, connected.client);
       this.serverRecords.set(name, createMcpRecord(name, { connected: true, health: 'healthy', lastCheckedAt }, connected.tools));
-      this.recordServerEvent(name, { level: 'info', message: `Connected MCP server ${name}`, metadata: { toolCount: connected.tools.length }, type: 'connection:connected' }, config);
+      this.recordServerEvent(name, createMcpConnectionConnectedEvent(name, connected.tools.length), config);
     } catch (error) {
       this.serverRecords.set(name, createMcpRecord(name, { health: 'error', lastCheckedAt, lastError: error instanceof Error ? error.message : String(error) }, knownTools));
-      this.recordServerEvent(name, { level: 'error', message: error instanceof Error ? error.message : String(error), type: 'connection:error' }, config);
+      this.recordServerEvent(name, createMcpConnectionErrorEvent(error instanceof Error ? error.message : String(error)), config);
     }
   }
 
@@ -168,7 +172,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   async disconnectAllClients(): Promise<void> { for (const name of [...this.clients.keys()]) {await this.disconnectServer(name);} }
 
-  private requireServerConfig(name: string): McpServerConfig { const server = this.mcpConfigStoreService.getServer(name); if (!server) {throw new NotFoundException(`MCP server not found: ${name}`);} return server; }
+  private requireServerConfig(name: string): McpServerConfig { const server = this.mcpServerStoreService.getServer(name); if (!server) {throw new NotFoundException(`MCP server not found: ${name}`);} return server; }
   private primeServerRecords(servers: McpServerConfig[]): void {
     this.serverRecords.clear();
     for (const server of servers) {
@@ -242,18 +246,27 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
         this.serverRecords.set(sourceId, createMcpRecord(sourceId, { connected: false, enabled: false, health: 'healthy', lastCheckedAt: checkedAt, lastError: null }, connected.tools));
       }
       const message = 'MCP source health check passed';
-      this.recordServerEvent(sourceId, { level: 'info', message, metadata: { toolCount: connected.tools.length }, type: 'governance:health-check' });
+      this.recordServerEvent(sourceId, createMcpGovernanceEvent('health-check', message, { toolCount: connected.tools.length }));
       return { accepted: true, action: 'health-check', sourceId, sourceKind: 'mcp', message };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.updateServerStatus(sourceId, { connected: false, health: 'error', lastCheckedAt: checkedAt, lastError: message });
-      this.recordServerEvent(sourceId, { level: 'warn', message: `MCP source health check failed: ${message}`, type: 'governance:health-check' });
+      this.recordServerEvent(sourceId, createMcpGovernanceEvent('health-check', `MCP source health check failed: ${message}`, undefined, 'warn'));
       return { accepted: true, action: 'health-check', sourceId, sourceKind: 'mcp', message: `MCP source health check failed: ${message}` };
     }
   }
 
-  private recordServerEvent(name: string, input: { level: 'error' | 'info' | 'warn'; message: string; metadata?: JsonObject; type: string }, config?: McpServerConfig): void {
-    this.runtimeEventLogService.appendLog('mcp', name, config?.eventLog ?? this.mcpConfigStoreService.getServer(name)?.eventLog, input);
+  private recordServerEvent(name: string, input: LogEventPayload, config?: McpServerConfig): void {
+    this.logger[input.level](input.message, {
+      console: false,
+      event: {
+        entityId: name,
+        kind: 'mcp',
+        metadata: input.metadata,
+        settings: config?.eventLog ?? this.mcpServerStoreService.getServer(name)?.eventLog,
+        type: input.type,
+      },
+    });
   }
 }
 

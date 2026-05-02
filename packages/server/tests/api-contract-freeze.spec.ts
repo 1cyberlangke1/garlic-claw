@@ -1,8 +1,8 @@
 import 'reflect-metadata';
 import { RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
-import { AuthController } from '../src/adapters/http/auth/auth.controller';
-import { ConversationController } from '../src/adapters/http/conversation/conversation.controller';
+import { AuthController } from '../src/auth/auth.controller';
+import { ConversationController } from '../src/conversation/conversation.controller';
 
 describe('server api contract freeze', () => {
   it('keeps the shrunken auth routes stable', () => {

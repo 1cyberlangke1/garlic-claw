@@ -1,192 +1,210 @@
 <template>
   <section class="panel-section mcp-config-panel">
-    <div class="mcp-config-header">
-      <div>
-        <h3>{{ view === 'manage' ? 'MCP 配置' : 'MCP 事件日志' }}</h3>
-        <p v-if="view === 'manage'">管理 <code>{{ snapshot.configPath || 'mcp/servers/' }}</code> 目录中的 server 定义，保存后会自动重载运行时。</p>
-        <p v-else>按 server 查看最近事件记录，避免和配置编辑区同时堆叠展示。</p>
-      </div>
-      <div class="mcp-config-actions">
-        <ElButton
-          class="action-icon-button"
-          :title="view === 'manage' ? '刷新配置' : '刷新日志'"
-          :disabled="loading"
-          @click="handleRefresh"
-        >
-          <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton
-          v-if="view === 'logs' && selectedServer"
-          class="action-icon-button"
-          :class="{ active: showLogSettings }"
-          title="日志设置"
-          @click="showLogSettings = !showLogSettings"
-        >
-          <Icon :icon="settingsBold" class="action-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton
-          v-if="view === 'manage'"
-          class="action-icon-button"
-          data-test="mcp-new-button"
-          title="新增 Server"
-          @click="startCreate"
-        >
-          <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
-        </ElButton>
-      </div>
-    </div>
     <p v-if="panelError" class="page-banner error">{{ panelError }}</p>
 
-    <div :class="view === 'manage' ? 'mcp-config-layout' : 'mcp-log-layout'">
+    <div class="mcp-workspace">
       <aside class="mcp-server-sidebar">
-        <div v-if="servers.length === 0" class="sidebar-state">
+        <div class="sidebar-header">
+          <div class="sidebar-header-row">
+            <span class="sidebar-title">MCP Server</span>
+            <span v-if="!loading && servers.length > 0" class="sidebar-count">{{ filteredServers.length }} 个</span>
+          </div>
+          <p v-if="!loading && servers.length > 0" class="sidebar-subtitle">带变量 {{ withEnvCount }} 个</p>
+        </div>
+
+        <div v-if="!loading && servers.length > 0" class="sidebar-tools">
+          <ElInput
+            v-model="searchKeyword"
+            class="field-input"
+            data-test="mcp-sidebar-search"
+            placeholder="搜索名称、命令或参数"
+          />
+          <p v-if="isCreating" class="sidebar-inline-hint">
+            当前正在新建 Server，保存后会自动刷新并选中。
+          </p>
+        </div>
+
+        <p v-if="selectedServerHidden" class="sidebar-hint">
+          当前选中的 Server 未命中筛选条件。
+        </p>
+
+        <div v-if="loading" class="sidebar-state">
+          加载中...
+        </div>
+        <div v-else-if="servers.length === 0" class="sidebar-state">
           还没有 MCP server 配置。
         </div>
-        <ElButton
-          v-for="server in servers"
-          :key="server.name"
-          class="mcp-server-item"
-          :class="{ active: !isCreating && selectedServerName === server.name }"
-          @click="selectExisting(server.name)"
-        >
-          <strong>{{ server.name }}</strong>
-        </ElButton>
+        <div v-else-if="filteredServers.length === 0" class="sidebar-state">
+          当前筛选下没有匹配的 MCP server。
+        </div>
+        <div v-else class="mcp-server-list">
+          <button
+            v-for="server in filteredServers"
+            :key="server.name"
+            type="button"
+            class="mcp-server-row"
+            :class="{ active: !isCreating && selectedServerName === server.name }"
+            @click="selectExisting(server.name)"
+          >
+            <div class="mcp-server-row-top">
+              <strong>{{ server.name }}</strong>
+              <span class="mcp-server-badge">{{ server.command }}</span>
+            </div>
+            <p class="mcp-server-command">
+              {{ renderCommandPreview(server) }}
+            </p>
+            <div class="mcp-server-meta">
+              <span>{{ server.args.length }} 个参数</span>
+              <span>{{ Object.keys(server.env).length }} 个环境变量</span>
+            </div>
+          </button>
+        </div>
       </aside>
 
-      <form v-if="view === 'manage'" class="mcp-editor" @submit.prevent="submitForm">
-        <label class="mcp-field">
-          <span>名称</span>
-          <ElInput
-            v-model="draftName"
-            data-test="mcp-name-input"
-            placeholder="weather-server"
-          />
-        </label>
-        <label class="mcp-field">
-          <span>命令</span>
-          <ElInput
-            v-model="draftCommand"
-            data-test="mcp-command-input"
-            placeholder="npx"
-          />
-        </label>
-        <label class="mcp-field">
-          <span>参数</span>
-          <ElInput
-            v-model="draftArgsText"
-            data-test="mcp-args-input"
-            type="textarea"
-            :rows="6"
-            placeholder="-y&#10;tavily-mcp@latest"
-          />
-          <small>每行一个参数，保存时会自动去掉空行。</small>
-        </label>
+      <div class="mcp-detail">
+        <header class="mcp-detail-header">
+          <div class="mcp-detail-copy">
+            <h2>{{ view === 'manage' ? 'MCP 配置' : 'MCP 日志' }}</h2>
+            <p>
+              {{ view === 'manage'
+                ? '维护当前 Server 的启动命令、参数和环境变量。'
+                : '查看当前 Server 的事件记录，并按需调整日志落盘策略。' }}
+            </p>
+          </div>
+        </header>
 
-        <section class="mcp-env-panel mcp-field-span">
-          <div class="mcp-env-header">
-            <div>
-              <span>环境变量</span>
-              <p>支持直接值或 `${VAR_NAME}` 占位符。</p>
+        <form v-if="view === 'manage'" class="mcp-editor" @submit.prevent="submitForm">
+          <label class="mcp-field">
+            <span>名称</span>
+            <ElInput
+              v-model="draftName"
+              data-test="mcp-name-input"
+              placeholder="weather-server"
+            />
+          </label>
+          <label class="mcp-field">
+            <span>命令</span>
+            <ElInput
+              v-model="draftCommand"
+              data-test="mcp-command-input"
+              placeholder="npx"
+            />
+          </label>
+          <label class="mcp-field">
+            <span>参数</span>
+            <ElInput
+              v-model="draftArgsText"
+              data-test="mcp-args-input"
+              type="textarea"
+              :rows="6"
+              placeholder="-y&#10;tavily-mcp@latest"
+            />
+            <small>每行一个参数，保存时会自动去掉空行。</small>
+          </label>
+
+          <section class="mcp-env-panel mcp-field-span">
+            <div class="mcp-env-header">
+              <div>
+                <span>环境变量</span>
+                <p>支持直接值或 `${VAR_NAME}` 占位符。</p>
+              </div>
+              <ElButton class="action-icon-button" title="新增变量" @click="addEnvRow">
+                <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
+              </ElButton>
             </div>
-            <ElButton class="action-icon-button" title="新增变量" @click="addEnvRow">
-              <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
-            </ElButton>
-          </div>
 
-          <div v-if="envRows.length === 0" class="sidebar-state">
-            没有环境变量。
-          </div>
-          <div v-else class="mcp-env-list">
-            <div
-              v-for="(entry, index) in envRows"
-              :key="entry.id"
-              class="mcp-env-row"
-            >
-              <div class="mcp-env-inputs">
-                <ElInput
-                  :data-test="`mcp-env-key-${index}`"
-                  v-model="entry.key"
-                  placeholder="TAVILY_API_KEY"
-                />
-                <ElInput
-                  :data-test="`mcp-env-value-${index}`"
-                  v-model="entry.value"
-                  placeholder="${TAVILY_API_KEY}"
-                />
-                <ElButton
-                  class="action-icon-button danger-icon-button"
-                  title="删除"
-                  :disabled="envRows.length === 1"
-                  @click="removeEnvRow(index)"
-                >
-                  <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
-                </ElButton>
+            <div v-if="envRows.length === 0" class="sidebar-state">
+              没有环境变量。
+            </div>
+            <div v-else class="mcp-env-list">
+              <div
+                v-for="(entry, index) in envRows"
+                :key="entry.id"
+                class="mcp-env-row"
+              >
+                <div class="mcp-env-inputs">
+                  <ElInput
+                    :data-test="`mcp-env-key-${index}`"
+                    v-model="entry.key"
+                    placeholder="TAVILY_API_KEY"
+                  />
+                  <ElInput
+                    :data-test="`mcp-env-value-${index}`"
+                    v-model="entry.value"
+                    placeholder="${TAVILY_API_KEY}"
+                  />
+                  <ElButton
+                    class="action-icon-button danger-icon-button"
+                    title="删除"
+                    :disabled="envRows.length === 1"
+                    @click="removeEnvRow(index)"
+                  >
+                    <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
+                  </ElButton>
+                </div>
               </div>
             </div>
+          </section>
+
+          <div class="mcp-editor-actions">
+            <ElButton
+              type="primary"
+              class="hero-action"
+              data-test="mcp-save-button"
+              :title="saving ? '保存中...' : isCreating ? '创建 Server' : '保存修改'"
+              :disabled="saving"
+            >
+              <Icon :icon="disketteBold" class="action-icon" aria-hidden="true" />
+            </ElButton>
+            <ElButton
+              v-if="!isCreating && selectedServer"
+              type="danger"
+              class="danger-icon-button"
+              data-test="mcp-delete-button"
+              :title="deleting ? '删除中...' : '删除 Server'"
+              :disabled="deleting"
+              @click="removeSelectedServer"
+            >
+              <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
+            </ElButton>
           </div>
-        </section>
+        </form>
 
-        <div class="mcp-editor-actions">
-          <ElButton
-            type="primary"
-            class="hero-action"
-            data-test="mcp-save-button"
-            :title="saving ? '保存中...' : isCreating ? '创建 Server' : '保存修改'"
-            :disabled="saving"
-          >
-            <Icon :icon="disketteBold" class="action-icon" aria-hidden="true" />
-          </ElButton>
-          <ElButton
-            v-if="!isCreating && selectedServer"
-            type="danger"
-            class="danger-icon-button"
-            data-test="mcp-delete-button"
-            :title="deleting ? '删除中...' : '删除 Server'"
-            :disabled="deleting"
-            @click="removeSelectedServer"
-          >
-            <Icon :icon="trashBinMinimalisticBold" class="action-icon" aria-hidden="true" />
-          </ElButton>
+        <div v-else-if="selectedServer" class="mcp-log-panel">
+          <EventLogSettingsPanel
+            v-if="showLogSettings"
+            :settings="selectedServer.eventLog"
+            :saving="savingEventLog"
+            title="MCP 日志设置"
+            description="此 MCP server 的事件日志会写入 log/mcp/<serverName>/ 目录。"
+            @save="saveServerEventLog"
+          />
+          <EventLogPanel
+            title="MCP 事件日志"
+            description="查看此 server 最近的事件记录。"
+            :events="eventLogs"
+            :loading="eventLoading"
+            :query="eventQuery"
+            :next-cursor="eventNextCursor"
+            @refresh="refreshServerEvents"
+            @load-more="loadMoreServerEvents"
+          />
         </div>
-      </form>
 
-      <div v-else-if="selectedServer" class="mcp-log-panel">
-        <EventLogSettingsPanel
-          v-if="showLogSettings"
-          :settings="selectedServer.eventLog"
-          :saving="savingEventLog"
-          title="MCP 日志设置"
-          description="此 MCP server 的事件日志会写入 log/mcp/<serverName>/ 目录。"
-          @save="saveServerEventLog"
-        />
-        <EventLogPanel
-          title="MCP 事件日志"
-          description="查看此 server 最近的事件记录。"
-          :events="eventLogs"
-          :loading="eventLoading"
-          :query="eventQuery"
-          :next-cursor="eventNextCursor"
-          @refresh="refreshServerEvents"
-          @load-more="loadMoreServerEvents"
-        />
-      </div>
-
-      <div v-else class="sidebar-state mcp-log-empty">
-        请先在管理视图中创建或选择一个 MCP server。
+        <div v-else class="sidebar-state mcp-log-empty">
+          请先在配置视图中创建或选择一个 MCP server。
+        </div>
       </div>
     </div>
-
   </section>
 </template>
 
 <script setup lang="ts">
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
-import refreshBold from '@iconify-icons/solar/refresh-bold'
-import settingsBold from '@iconify-icons/solar/settings-bold'
 import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalistic-bold'
 import { Icon } from '@iconify/vue'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElButton, ElInput } from 'element-plus'
 import type { McpServerConfig } from '@garlic-claw/shared'
 import EventLogPanel from '@/modules/tools/components/EventLogPanel.vue'
@@ -215,7 +233,6 @@ const {
   saving,
   savingEventLog,
   deleting,
-  snapshot,
   servers,
   selectedServerName,
   selectedServer,
@@ -240,7 +257,23 @@ const envRows = ref<EnvRow[]>([])
 const panelError = ref<string | null>(null)
 const isCreating = ref(false)
 const showLogSettings = ref(false)
+const searchKeyword = ref('')
 let envRowId = 0
+
+const normalizedKeyword = computed(() =>
+  searchKeyword.value.trim().toLocaleLowerCase(),
+)
+const filteredServers = computed(() =>
+  servers.value.filter((server) => matchesServer(server, normalizedKeyword.value)),
+)
+const withEnvCount = computed(() =>
+  servers.value.filter((server) => Object.keys(server.env).length > 0).length,
+)
+const selectedServerHidden = computed(() =>
+  !isCreating.value
+  && !!selectedServerName.value
+  && !filteredServers.value.some((server) => server.name === selectedServerName.value),
+)
 
 watch(
   [() => props.preferredServerName, servers],
@@ -277,6 +310,7 @@ watch(
 function startCreate() {
   isCreating.value = true
   panelError.value = null
+  showLogSettings.value = false
   resetDraft()
   selectServer(null)
 }
@@ -368,6 +402,29 @@ function buildPayload(): McpServerConfig {
   }
 }
 
+function matchesServer(server: McpServerConfig, keyword: string): boolean {
+  if (!keyword) {
+    return true
+  }
+
+  const haystack = [
+    server.name,
+    server.command,
+    server.args.join(' '),
+    ...Object.keys(server.env),
+    ...Object.values(server.env),
+  ]
+    .join(' ')
+    .toLocaleLowerCase()
+
+  return haystack.includes(keyword)
+}
+
+function renderCommandPreview(server: McpServerConfig): string {
+  const args = server.args.join(' ')
+  return args ? `${server.command} ${args}` : server.command
+}
+
 function applyServerToDraft(server: McpServerConfig) {
   draftName.value = server.name
   draftCommand.value = server.command
@@ -401,30 +458,178 @@ function handleRefresh() {
   }
   void refresh(selectedServerName.value)
 }
+
+function toggleLogSettings() {
+  showLogSettings.value = !showLogSettings.value
+}
+
+defineExpose({
+  loading,
+  selectedServer,
+  showLogSettings,
+  startCreate,
+  handleRefresh,
+  toggleLogSettings,
+})
 </script>
 
 <style scoped>
 .mcp-config-panel {
   display: grid;
   gap: 14px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface-panel-soft);
+  padding: 0.35rem;
+  background: transparent;
+  border: none;
 }
 
-.mcp-config-layout,
-.mcp-log-layout,
+.mcp-workspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 0;
+  min-height: 0;
+}
+
+.mcp-server-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  min-height: 0;
+  padding-right: 16px;
+  border-right: 1px solid var(--shell-border, #334155);
+  overflow: hidden;
+}
+
+.sidebar-header,
+.sidebar-header-row,
+.mcp-detail-copy,
+.mcp-detail,
 .mcp-editor,
 .mcp-log-panel,
 .mcp-env-panel,
 .mcp-env-list {
   display: grid;
+  gap: 10px;
+}
+
+.sidebar-header-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--shell-text, #f1f5f9);
+}
+
+.sidebar-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(24, 160, 88, 0.14);
+  color: var(--shell-active, #18a058);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-subtitle,
+.mcp-detail-copy p,
+.sidebar-inline-hint,
+.sidebar-hint,
+.sidebar-state,
+.mcp-field small,
+.mcp-env-header p {
+  margin: 0;
+  color: var(--shell-text-tertiary, var(--text-muted));
+  font-size: 0.85rem;
+}
+
+.sidebar-hint {
+  color: #f5d38c;
+}
+
+.sidebar-tools,
+.mcp-server-list {
+  display: grid;
   gap: 14px;
 }
 
-.mcp-config-header,
-.mcp-config-actions,
+.mcp-server-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.field-input {
+  min-width: 0;
+}
+
+.field-input :deep(.el-input__wrapper) {
+  background: var(--shell-bg, #0f172a);
+  box-shadow: 0 0 0 1px var(--shell-border, #334155) inset;
+}
+
+.field-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--shell-active, #18a058) inset;
+}
+
+.field-input :deep(.el-input__inner) {
+  color: var(--shell-text, #f1f5f9);
+}
+
+.mcp-server-row {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-height: 68px;
+  padding: 12px 10px 12px 18px;
+  border: none;
+  border-bottom: 1px solid var(--shell-border, #334155);
+  border-radius: 0;
+  background: transparent;
+  color: var(--shell-text-secondary, #cbd5e1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.mcp-server-row::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #22c55e;
+  opacity: 0.9;
+}
+
+.mcp-server-row:last-child {
+  border-bottom: none;
+}
+
+.mcp-server-row:hover {
+  background: var(--provider-row-hover-bg);
+}
+
+.mcp-server-row.active {
+  background: color-mix(in srgb, var(--shell-active, #18a058) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--shell-active, #18a058) 18%, transparent);
+  color: var(--shell-text, #f1f5f9);
+}
+
+.mcp-server-row.active::before {
+  width: 4px;
+  opacity: 1;
+}
+
+.mcp-server-row-top,
+.mcp-server-meta,
 .mcp-env-header,
 .mcp-env-row,
 .mcp-editor-actions {
@@ -435,68 +640,63 @@ function handleRefresh() {
   justify-content: space-between;
 }
 
-.mcp-config-layout {
-  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
-  align-items: start;
+.mcp-server-row-top strong {
+  font-size: 0.92rem;
+  line-height: 1.3;
+  color: var(--shell-text, #f1f5f9);
+  overflow-wrap: anywhere;
 }
 
-.mcp-log-layout {
-  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
-  align-items: start;
+.mcp-server-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--shell-bg-hover, #334155);
+  color: var(--shell-text-tertiary, #94a3b8);
+  font-size: 11px;
+  text-transform: uppercase;
 }
 
-.mcp-server-sidebar,
-.mcp-server-item {
-  display: grid;
-  gap: 10px;
+.mcp-server-command {
+  margin: 0;
+  color: var(--shell-text-tertiary, #94a3b8);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .mcp-server-meta {
-  display: grid;
-  gap: 4px;
-}
-
-.mcp-log-empty {
-  min-height: 240px;
-  place-items: center;
-  border: 1px dashed rgba(133, 163, 199, 0.18);
-  border-radius: 18px;
-  background: var(--surface-panel-muted);
-}
-
-.mcp-server-item {
-  height: auto;
-  min-height: 0;
-  padding: 0.9rem 0.95rem;
-  border: 1px solid rgba(133, 163, 199, 0.14);
-  border-radius: 12px;
-  background: var(--surface-panel-muted-strong);
-  color: var(--text);
-  text-align: left;
-  white-space: normal;
-  justify-items: start;
-}
-
-.mcp-server-item strong,
-.mcp-server-item span {
-  color: var(--text);
-}
-
-.mcp-server-item small {
-  color: var(--text-muted);
-}
-
-.mcp-server-item {
   justify-content: flex-start;
+  font-size: 0.78rem;
+  color: var(--shell-text-tertiary, #94a3b8);
 }
 
-.mcp-server-item :deep(.el-button__text) {
-  text-align: left;
+.mcp-detail {
+  min-width: 0;
+  min-height: 0;
+  padding-left: 20px;
+  align-content: start;
 }
 
-.mcp-server-item.active {
-  border-color: rgba(103, 199, 207, 0.42);
-  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.2);
+.mcp-detail-header {
+  padding: 0;
+}
+
+.mcp-detail-copy h2 {
+  margin: 0;
+  font-size: 1.14rem;
+  font-family: 'Aptos Display', 'Segoe UI Variable Display', 'Trebuchet MS', 'Segoe UI', sans-serif;
+}
+
+.mcp-editor,
+.mcp-log-panel,
+.mcp-log-empty {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .mcp-field,
@@ -509,28 +709,22 @@ function handleRefresh() {
   grid-column: 1 / -1;
 }
 
+.mcp-field :deep(.el-input__wrapper),
+.mcp-env-inputs :deep(.el-input__wrapper) {
+  min-height: 44px;
+}
+
 .mcp-field :deep(.el-textarea__inner) {
   width: 100%;
-  border: 1px solid var(--el-input-border-color, #dcdfe6);
-  border-radius: var(--el-input-border-radius, 4px);
-  background: var(--el-input-bg-color, #fff);
-  padding: 8px 12px;
-  box-shadow: none;
-  color: var(--el-input-text-color, #333);
+  border-radius: 14px;
+  border: 1px solid var(--border, rgba(133, 163, 199, 0.18));
+  background: var(--surface-panel-soft-strong);
+  color: var(--text);
+  padding: 12px 14px;
 }
 
 .mcp-field :deep(.el-textarea__inner:focus) {
-  border-color: var(--el-input-focus-border-color, #409eff);
-}
-
-.mcp-field small,
-.mcp-env-header p {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.mcp-editor {
-  grid-template-columns: minmax(0, 1fr);
+  border-color: var(--shell-active, #18a058);
 }
 
 .mcp-env-panel {
@@ -569,27 +763,6 @@ function handleRefresh() {
   grid-row: 1 / 3;
 }
 
-.refresh-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: auto;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 10px;
-}
-
-.refresh-button .refresh-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.refresh-label {
-  font-size: 0.9rem;
-}
-
 .action-icon-button {
   display: inline-flex;
   align-items: center;
@@ -613,30 +786,48 @@ function handleRefresh() {
   height: 20px;
 }
 
-.action-icon-button .action-icon {
+.action-icon-button .action-icon,
+.mcp-config-panel .action-icon {
   width: 18px;
   height: 18px;
 }
 
-.danger-icon-button {
-  color: #ffd1d1;
-}
-
+.danger-icon-button,
 .danger {
   color: #ffd1d1;
 }
 
-.mcp-config-panel .action-icon,
-.mcp-config-panel .refresh-icon {
-  width: 18px;
-  height: 18px;
+.mcp-log-empty {
+  min-height: 240px;
+  place-items: center;
 }
 
 @media (max-width: 1080px) {
-  .mcp-config-layout,
-  .mcp-log-layout,
-  .mcp-editor {
+  .mcp-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .mcp-server-sidebar {
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border, #334155);
+  }
+
+  .mcp-detail {
+    padding-top: 12px;
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .sidebar-header-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .mcp-editor-actions > * {
+    flex: 1 1 120px;
   }
 }
 </style>

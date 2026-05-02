@@ -1,9 +1,9 @@
 import type { ActionConfig, AutomationBeforeRunHookResult, AutomationInfo, JsonValue } from '@garlic-claw/shared';
 import { Inject, Injectable } from '@nestjs/common';
 import { ToolRegistryService } from '../tool/tool-registry.service';
-import { asJsonValue, cloneJsonValue } from '../../runtime/host/runtime-host-values';
-import { RuntimeHostConversationMessageService } from '../../runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostPluginDispatchService } from '../../runtime/host/runtime-host-plugin-dispatch.service';
+import { asJsonValue, cloneJsonValue } from '../../runtime/host/host-input.codec';
+import { ConversationMessageService } from '../../runtime/host/conversation-message.service';
+import { PluginDispatchService } from '../../runtime/host/plugin-dispatch.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../../runtime/kernel/runtime-plugin-hook-governance';
 import type { AutomationRunContext, RuntimeAutomationRecord } from './automation.service';
 
@@ -18,8 +18,8 @@ interface ShortCircuitedAutomationRun extends AutomationExecutionOutcome { actio
 @Injectable()
 export class AutomationExecutionService {
   constructor(
-    @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
-    @Inject(RuntimeHostConversationMessageService) private readonly conversationMessageService: RuntimeHostConversationMessageService,
+    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
+    @Inject(ConversationMessageService) private readonly conversationMessageService: ConversationMessageService,
     private readonly toolRegistryService: ToolRegistryService,
   ) {}
 
@@ -59,7 +59,7 @@ function readAutomationConversationId(actions: ActionConfig[]): string | null {
 
 async function prepareAutomationRun(
   plan: AutomationRunPlan,
-  kernel: RuntimeHostPluginDispatchService,
+  kernel: PluginDispatchService,
 ): Promise<AutomationRunPlan | ShortCircuitedAutomationRun> {
   const result = await runDispatchableHookChain<ActionConfig[], AutomationBeforeRunHookResult, ShortCircuitedAutomationRun>({
     applyResponse: (actions, mutation) => mutation.action === 'short-circuit'
@@ -79,7 +79,7 @@ async function prepareAutomationRun(
 
 async function executeAutomationActions(
   plan: AutomationRunPlan,
-  conversationMessageService: RuntimeHostConversationMessageService,
+  conversationMessageService: ConversationMessageService,
   toolRegistryService: ToolRegistryService,
 ): Promise<AutomationExecutionOutcome> {
   const results: JsonValue[] = [];
@@ -98,7 +98,7 @@ async function executeAutomationActions(
 async function executeAutomationAction(
   action: ActionConfig,
   context: AutomationRunContext,
-  conversationMessageService: RuntimeHostConversationMessageService,
+  conversationMessageService: ConversationMessageService,
   toolRegistryService: ToolRegistryService,
 ): Promise<JsonValue> {
   const toolSourceId = action.sourceId ?? action.plugin;
@@ -147,7 +147,7 @@ async function executeAutomationAction(
 async function settleAutomationRun(
   plan: AutomationRunPlan,
   execution: AutomationExecutionOutcome,
-  kernel: RuntimeHostPluginDispatchService,
+  kernel: PluginDispatchService,
 ): Promise<AutomationExecutionOutcome> {
   return applyMutatingDispatchableHooks({
     applyMutation: (next, mutation) => ({

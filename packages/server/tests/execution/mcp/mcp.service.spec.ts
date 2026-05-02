@@ -3,12 +3,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { McpServerConfig } from '@garlic-claw/shared';
-import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
+import { McpServerStoreService } from '../../../src/execution/mcp/mcp-server-store.service';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
 import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
-import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
-import { createServerTestArtifactPath } from '../../../src/runtime/server-workspace-paths';
+import { RuntimeEventLogService } from '../../../src/core/logging/runtime-event-log.service';
+import { createServerTestArtifactPath } from '../../../src/core/runtime/server-workspace-paths';
 
 describe('McpService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';
@@ -35,6 +35,7 @@ describe('McpService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env[envKey];
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     tempConfigRoot = path.join(os.tmpdir(), `mcp.service.spec-${Date.now()}-${Math.random()}`, 'servers');
     tempLogRoot = path.join(os.tmpdir(), `mcp.service.logs-${Date.now()}-${Math.random()}`);
     tempToolManagementPath = path.join(os.tmpdir(), `mcp.service.tool-management-${Date.now()}-${Math.random()}`, 'tool-management.json');
@@ -43,9 +44,10 @@ describe('McpService', () => {
     process.env[envKey] = tempConfigRoot;
     process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
     process.env[toolManagementEnvKey] = tempToolManagementPath;
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = tempToolManagementPath;
     service = new McpService(
       configService as never,
-      new McpConfigStoreService(new ProjectWorktreeRootService()),
+      new McpServerStoreService(new ProjectWorktreeRootService()),
       new RuntimeEventLogService(),
       new ToolManagementSettingsService(),
     );
@@ -54,6 +56,7 @@ describe('McpService', () => {
   afterEach(() => {
     delete process.env[envKey];
     delete process.env.GARLIC_CLAW_LOG_ROOT;
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     delete process.env[toolManagementEnvKey];
     fs.rmSync(path.dirname(tempConfigRoot), { recursive: true, force: true });
     fs.rmSync(tempLogRoot, { recursive: true, force: true });
@@ -200,7 +203,7 @@ describe('McpService', () => {
 
     const reloaded = new McpService(
       configService as never,
-      new McpConfigStoreService(new ProjectWorktreeRootService()),
+      new McpServerStoreService(new ProjectWorktreeRootService()),
       new RuntimeEventLogService(),
       new ToolManagementSettingsService(),
     );

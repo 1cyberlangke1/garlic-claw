@@ -14,12 +14,13 @@ import type {
   PluginConversationHistoryMessage,
   PluginConversationHistoryPreviewResult,
 } from '@garlic-claw/shared';
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { AiManagementService } from '../ai-management/ai-management.service';
 import { AiModelExecutionService } from '../ai/ai-model-execution.service';
-import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
-import { asJsonObject } from '../runtime/host/runtime-host-values';
+import { createServerLogger } from '../core/logging/server-logger';
+import { ConversationStoreService } from '../runtime/host/conversation-store.service';
+import { asJsonObject } from '../runtime/host/host-input.codec';
 import { ContextGovernanceSettingsService } from './context-governance-settings.service';
 
 const CONTEXT_COMPACTION_ANNOTATION_TYPE = 'context-compaction';
@@ -63,13 +64,13 @@ type ContextGovernanceBeforeModelResult =
 export class ContextGovernanceService {
   private readonly autoStopConversationIds = new Set<string>();
   private readonly blockedConversationReplies = new Map<string, string>();
-  private readonly logger = new Logger(ContextGovernanceService.name);
+  private readonly logger = createServerLogger(ContextGovernanceService.name);
 
   constructor(
     private readonly aiManagementService: AiManagementService,
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly contextGovernanceSettingsService: ContextGovernanceSettingsService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
   ) {}
 
   getConfigSnapshot() {

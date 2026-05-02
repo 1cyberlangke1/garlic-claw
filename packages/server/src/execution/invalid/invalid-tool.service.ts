@@ -5,7 +5,7 @@ import {
   createInvalidToolResult,
   type InvalidToolPayload,
   type InvalidToolResult,
-} from './invalid-tool-record';
+} from './invalid-tool-result';
 
 const INVALID_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
   error: {

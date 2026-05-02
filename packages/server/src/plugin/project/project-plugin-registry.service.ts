@@ -6,7 +6,8 @@ import type {
   PluginAuthorTransportGovernanceHandlers,
 } from '@garlic-claw/plugin-sdk/authoring';
 import type { PluginHostFacadeMethods } from '@garlic-claw/plugin-sdk/host';
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { ProjectWorktreeRootService } from '../../execution/project/project-worktree-root.service';
 
 type ProjectPluginRuntime = 'local' | 'remote';
@@ -34,7 +35,7 @@ export interface ProjectPluginDefinitionRecord {
 @Injectable()
 export class ProjectPluginRegistryService {
   private readonly definitions = new Map<string, ProjectPluginDefinitionRecord>();
-  private readonly logger = new Logger(ProjectPluginRegistryService.name);
+  private readonly logger = createServerLogger(ProjectPluginRegistryService.name);
 
   constructor(
     private readonly projectWorktreeRootService: ProjectWorktreeRootService,

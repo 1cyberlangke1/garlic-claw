@@ -4,7 +4,6 @@
   "customErrorMessage": null,
   "description": "server 默认人格",
   "id": "builtin.default-assistant",
-  "isDefault": true,
   "name": "Default Assistant",
   "toolNames": null,
   "updatedAt": "2026-04-10T00:00:00.000Z"

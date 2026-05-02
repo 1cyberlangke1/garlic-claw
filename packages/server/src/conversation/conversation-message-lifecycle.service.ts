@@ -1,9 +1,9 @@
 import type { ChatMessageMetadata, ChatMessagePart, JsonObject, RetryMessagePayload, SendMessagePayload } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService, serializeConversationMessage } from '../runtime/host/runtime-host-conversation-record.service';
-import { DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/runtime-host-values';
-import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-plugin-dispatch.service';
+import { ConversationMessageService } from '../runtime/host/conversation-message.service';
+import { ConversationStoreService, serializeConversationMessage } from '../runtime/host/conversation-store.service';
+import { DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/host-input.codec';
+import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
 import { PersonaService } from '../persona/persona.service';
 import { ConversationTaskService } from './conversation-task.service';
 import { ConversationMessagePlanningService, createShortCircuitStream, type ConversationResponseSource } from './conversation-message-planning.service';
@@ -12,7 +12,7 @@ import type { DeferredInternalCommandAction } from './context-governance.service
 @Injectable()
 // Keep lifecycle orchestration and hook mutation together to avoid recreating the removed single-consumer hook owner.
 export class ConversationMessageLifecycleService {
-  constructor(private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly conversationTaskService: ConversationTaskService, private readonly conversationMessagePlanningService: ConversationMessagePlanningService, private readonly personaService: PersonaService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService) {}
+  constructor(private readonly runtimeHostConversationMessageService: ConversationMessageService, private readonly runtimeHostConversationRecordService: ConversationStoreService, private readonly conversationTaskService: ConversationTaskService, private readonly conversationMessagePlanningService: ConversationMessagePlanningService, private readonly personaService: PersonaService, @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService) {}
 
   async retryMessageGeneration(conversationId: string, messageId: string, dto: RetryMessagePayload, userId?: string) {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);

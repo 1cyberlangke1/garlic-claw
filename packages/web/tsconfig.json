@@ -17,9 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "jsx": "preserve",
     "jsxImportSource": "vue",
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.vue", "env.d.ts"]

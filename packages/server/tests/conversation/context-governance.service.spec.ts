@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service';
 
 type GenerateTextInput = {
   allowFallbackChatModels?: boolean;
@@ -16,11 +16,11 @@ type GenerateTextInput = {
 };
 
 describe('ContextGovernanceService', () => {
-  let contextGovernanceConfigPath: string;
+  let settingsConfigPath: string;
   let conversationsPath: string;
   let conversationId: string;
   let settingsService: ContextGovernanceSettingsService;
-  let conversationRecordService: RuntimeHostConversationRecordService;
+  let conversationRecordService: ConversationStoreService;
   let service: ContextGovernanceService;
 
   const aiManagementService = {
@@ -35,15 +35,15 @@ describe('ContextGovernanceService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    contextGovernanceConfigPath = path.join(
+    settingsConfigPath = path.join(
       os.tmpdir(),
-      `context-governance.service.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      `settings.service.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
     conversationsPath = path.join(
       os.tmpdir(),
       `context-governance.service.conversations-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
-    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsConfigPath;
     process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationsPath;
     aiManagementService.getDefaultProviderSelection.mockReturnValue({
       modelId: 'gpt-oss-20b',
@@ -79,7 +79,7 @@ describe('ContextGovernanceService', () => {
     }));
     aiManagementService.listProviders.mockReturnValue([{ id: 'nvidia' }]);
     settingsService = new ContextGovernanceSettingsService();
-    conversationRecordService = new RuntimeHostConversationRecordService();
+    conversationRecordService = new ConversationStoreService();
     conversationId = (
       conversationRecordService.createConversation({
         title: '新的对话',
@@ -95,9 +95,9 @@ describe('ContextGovernanceService', () => {
   });
 
   afterEach(() => {
-    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
-    for (const filePath of [contextGovernanceConfigPath, conversationsPath]) {
+    for (const filePath of [settingsConfigPath, conversationsPath]) {
       try {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);

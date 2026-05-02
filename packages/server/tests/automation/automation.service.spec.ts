@@ -4,8 +4,8 @@ import * as path from 'node:path';
 import { SINGLE_USER_ID } from '../../src/auth/single-user-auth';
 import { AutomationExecutionService } from '../../src/execution/automation/automation-execution.service';
 import { AutomationService } from '../../src/execution/automation/automation.service';
-import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { ConversationMessageService } from '../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service';
 
 describe('AutomationService', () => {
   const envKey = 'GARLIC_CLAW_AUTOMATIONS_PATH';
@@ -771,8 +771,8 @@ describe('AutomationService', () => {
 });
 
 function createService(input?: {
-  conversationMessageService?: Pick<RuntimeHostConversationMessageService, 'sendMessage'>;
-  conversationRecordService?: RuntimeHostConversationRecordService;
+  conversationMessageService?: Pick<ConversationMessageService, 'sendMessage'>;
+  conversationRecordService?: ConversationStoreService;
   runtimeHostPluginDispatchService?: {
     executeTool: (...args: unknown[]) => Promise<unknown>;
     invokeHook: (...args: unknown[]) => Promise<unknown>;
@@ -791,7 +791,7 @@ function createService(input?: {
     runtimeHostPluginDispatchService as never,
     (input?.conversationMessageService ?? {
       sendMessage: async () => {
-        throw new Error('RuntimeHostConversationMessageService is not available');
+        throw new Error('ConversationMessageService is not available');
       },
     }) as never,
     (input?.toolRegistryService ?? {
@@ -805,11 +805,11 @@ function createService(input?: {
 }
 
 function createConversationServices(): {
-  conversationMessageService: RuntimeHostConversationMessageService;
-  conversationRecordService: RuntimeHostConversationRecordService;
+  conversationMessageService: ConversationMessageService;
+  conversationRecordService: ConversationStoreService;
 } {
-  const conversationRecordService = new RuntimeHostConversationRecordService();
-  const conversationMessageService = new RuntimeHostConversationMessageService(conversationRecordService);
+  const conversationRecordService = new ConversationStoreService();
+  const conversationMessageService = new ConversationMessageService(conversationRecordService);
   return {
     conversationMessageService,
     conversationRecordService,
