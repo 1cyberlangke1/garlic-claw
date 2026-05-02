@@ -26,6 +26,11 @@
       <!-- ═══ 服务商 & 模型 ═══ -->
       <section v-if="activeSection === 'provider-models'" class="provider-models-section">
         <div class="provider-column">
+          <div class="provider-list-header">
+            <span class="provider-list-title">服务商列表</span>
+            <span class="provider-list-count">{{ providerListCountLabel }}</span>
+          </div>
+
           <div class="column-toolbar">
             <ElInput
               v-model="providerSearch"
@@ -43,27 +48,42 @@
             </ElButton>
           </div>
 
-          <p v-if="error" class="msg-error">{{ error }}</p>
-          <p v-else-if="loadingProviders" class="msg-muted">加载中…</p>
-          <p v-else-if="filteredProviders.length === 0" class="msg-muted">暂无服务商</p>
+          <div class="provider-list-shell">
+            <p v-if="error" class="msg-error provider-list-message">{{ error }}</p>
+            <div v-else-if="loadingProviders" class="provider-list-empty">
+              <p class="msg-muted provider-list-empty-text">加载中…</p>
+            </div>
+            <div v-else-if="filteredProviders.length === 0" class="provider-list-empty">
+              <p class="msg-muted provider-list-empty-text">{{ providerEmptyText }}</p>
+            </div>
 
-          <div v-else class="provider-list">
-            <ElButton
-              v-for="p in filteredProviders"
-              :key="p.id"
-              class="provider-row"
-              :class="{ active: p.id === selectedProviderId }"
-              @click="selectProvider(p.id)"
-            >
-              <div class="provider-row-main">
-                <span class="provider-name">{{ p.name }}</span>
-                <span class="provider-driver">{{ getProviderDriverLabel(p, catalog) }}</span>
-              </div>
-              <div class="provider-row-meta">
-                <span>{{ p.modelCount }} 个模型</span>
-                <span class="status-dot" :class="p.available ? 'ok' : 'warn'" />
-              </div>
-            </ElButton>
+            <div v-else class="provider-list">
+              <button
+                v-for="p in filteredProviders"
+                :key="p.id"
+                type="button"
+                class="provider-row"
+                :class="{
+                  active: p.id === selectedProviderId,
+                  'provider-row--ok': p.available,
+                  'provider-row--warn': !p.available,
+                }"
+                @click="selectProvider(p.id)"
+              >
+                <div class="provider-row-main">
+                  <div class="provider-row-title">
+                    <span class="provider-name">{{ p.name }}</span>
+                  </div>
+                  <div class="provider-row-subline">
+                    <span class="provider-driver">{{ getProviderDriverLabel(p, catalog) }}</span>
+                    <span class="provider-kind">{{ getProviderKindLabel(p, catalog) }}</span>
+                  </div>
+                </div>
+                <div class="provider-row-meta">
+                  <span class="provider-model-count">{{ p.modelCount }} 个模型</span>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -267,7 +287,7 @@ import HostModelRoutingPanel from '@/modules/ai-settings/components/HostModelRou
 import RuntimeToolsSettingsPanel from '@/modules/ai-settings/components/RuntimeToolsSettingsPanel.vue'
 import SubagentSettingsPanel from '@/modules/ai-settings/components/SubagentSettingsPanel.vue'
 import VisionFallbackPanel from '@/modules/ai-settings/components/VisionFallbackPanel.vue'
-import { getProviderDriverLabel } from '@/modules/ai-settings/components/provider-catalog'
+import { getProviderDriverLabel, getProviderKindLabel } from '@/modules/ai-settings/components/provider-catalog'
 import ConsolePage from '@/shared/components/ConsolePage.vue'
 import { useProviderSettings } from '@/modules/ai-settings/composables/use-provider-settings'
 
@@ -339,6 +359,15 @@ const filteredProviders = computed(() => {
     `${p.name} ${p.id} ${p.driver}`.toLowerCase().includes(kw),
   )
 })
+const providerListCountLabel = computed(() => {
+  if (providerSearch.value.trim()) {
+    return `${filteredProviders.value.length} / ${providers.value.length}`
+  }
+  return `${providers.value.length} 项`
+})
+const providerEmptyText = computed(() =>
+  providerSearch.value.trim() ? '没有匹配的服务商' : '暂无服务商',
+)
 
 /* ── 模型搜索 ── */
 const modelSearch = ref('')
@@ -472,6 +501,15 @@ onBeforeUnmount(() => {
    ═══════════════════════════════════════════════════════════════════════ */
 .ai-settings-page {
   background: var(--shell-bg, #0f172a);
+  --provider-row-hover-bg: rgba(255, 255, 255, 0.08);
+  --provider-row-driver-hover-bg: rgba(255, 255, 255, 0.12);
+  --provider-row-kind-hover-bg: rgba(255, 255, 255, 0.1);
+}
+
+:global(html.light) .ai-settings-page {
+  --provider-row-hover-bg: rgba(15, 23, 42, 0.06);
+  --provider-row-driver-hover-bg: rgba(15, 23, 42, 0.08);
+  --provider-row-kind-hover-bg: rgba(15, 23, 42, 0.06);
 }
 
 .ai-settings-inner {
@@ -537,6 +575,9 @@ onBeforeUnmount(() => {
 /* ── 内容区 ── */
 .ai-settings-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   min-width: 0;
   overflow-y: auto;
   padding: 20px 24px;
@@ -580,18 +621,24 @@ onBeforeUnmount(() => {
    ═══════════════════════════════════════════════════════════════════════ */
 .provider-models-section {
   display: grid;
+  flex: 1;
   grid-template-columns: 280px 1fr;
   gap: 0;
-  height: 100%;
+  min-height: 0;
   min-width: 0;
 }
 
 .provider-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   border-right: 1px solid var(--shell-border, #334155);
+  min-height: 0;
   padding-right: 16px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .model-column {
+  min-height: 0;
   padding-left: 20px;
   overflow-y: auto;
 }
@@ -601,7 +648,6 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .toolbar-left {
@@ -624,12 +670,12 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   padding: 0;
   margin-left: auto;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 .current-provider-name {
   font-size: 16px;
@@ -643,18 +689,6 @@ onBeforeUnmount(() => {
 
 .provider-search-input {
   flex: 1;
-}
-
-.toolbar-icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  padding: 0;
-  margin-left: auto;
-  border-radius: 10px;
 }
 .capability-note {
   margin: 0 0 12px;
@@ -730,40 +764,173 @@ onBeforeUnmount(() => {
 .provider-list {
   display: grid;
   gap: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+.provider-list-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
+}
+.provider-list-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 2px 0 0;
+}
+.provider-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--shell-text, #f1f5f9);
+}
+.provider-list-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 0 8px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(24, 160, 88, 0.14);
+  color: var(--shell-active, #18a058);
+  font-size: 12px;
+  font-weight: 600;
+}
+.provider-list-message {
+  margin: 0;
+  padding: 14px 16px 0;
+}
+.provider-list-empty {
+  display: flex;
+  flex: 1;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+.provider-list-empty-text {
+  margin: 0;
+  text-align: center;
 }
 .provider-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  margin: 0 -8px;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 68px;
+  padding: 12px 10px 12px 18px;
+  margin: 0;
   border: none;
-  border-radius: 6px;
+  border-bottom: 1px solid var(--shell-border, #334155);
+  border-radius: 0;
   background: transparent;
   color: var(--shell-text-secondary, #cbd5e1);
+  font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
-.provider-row:hover { background: var(--shell-bg-hover, #334155); }
-.provider-row.active { background: rgba(24, 160, 88, 0.08); color: var(--shell-text, #f1f5f9); }
+.provider-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 0;
+  opacity: 0.9;
+}
+.provider-row--ok::before { background: #22c55e; }
+.provider-row--warn::before { background: #f59e0b; }
+.provider-row:last-child { border-bottom: none; }
+.provider-row:hover {
+  background: var(--provider-row-hover-bg);
+}
+.provider-row:hover .provider-driver {
+  background: var(--provider-row-driver-hover-bg);
+}
+.provider-row:hover .provider-kind {
+  background: var(--provider-row-kind-hover-bg);
+}
+.provider-row.active {
+  background: color-mix(in srgb, var(--shell-active, #18a058) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--shell-active, #18a058) 18%, transparent);
+  color: var(--shell-text, #f1f5f9);
+}
+.provider-row.active::before {
+  width: 4px;
+  opacity: 1;
+}
 .provider-row-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
 }
-.provider-name { font-weight: 500; color: var(--shell-text, #f1f5f9); }
-.provider-driver { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--shell-bg-hover, #334155); color: var(--shell-text-tertiary, #94a3b8); }
-.provider-row-meta {
+.provider-row-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  min-width: 0;
+}
+.provider-row-subline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+.provider-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--shell-text, #f1f5f9);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-kind,
+.provider-driver {
+  font-size: 11px;
+}
+.provider-driver,
+.provider-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.provider-driver {
+  background: var(--shell-bg-hover, #334155);
   color: var(--shell-text-tertiary, #94a3b8);
 }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-.status-dot.ok { background: #22c55e; }
-.status-dot.warn { background: #f59e0b; }
+.provider-kind {
+  background: var(--surface-subtle, rgba(255, 255, 255, 0.03));
+  color: var(--shell-text-secondary, #cbd5e1);
+}
+.provider-row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  justify-self: end;
+}
+.provider-model-count {
+  font-size: 12px;
+  color: var(--shell-text-tertiary, #94a3b8);
+  white-space: nowrap;
+}
 
 /* ── 模型列表 ── */
 .add-model-row {
@@ -853,6 +1020,21 @@ onBeforeUnmount(() => {
   .menu-item--divided::before { display: none; }
   .provider-models-section { grid-template-columns: 1fr; }
   .ai-settings-content { padding: 12px; }
+  .provider-list-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding-top: 0;
+  }
+  .provider-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .provider-row-meta {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+  }
 }
 </style>
 
