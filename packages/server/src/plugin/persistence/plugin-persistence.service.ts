@@ -20,6 +20,7 @@ import type {
   PluginStatus,
 } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { createPluginDeletedEvent } from '../../core/logging/log-event-payloads';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../core/logging/runtime-event-log.service';
 import { createServerLogger } from '../../core/logging/server-logger';
@@ -104,7 +105,7 @@ export class PluginPersistenceService {
     this.records.delete(pluginId);
     this.runtimeEventLogService.deleteLogs('plugin', pluginId);
     this.persistRecords();
-    this.recordDetachedPluginEvent(pluginId, record.eventLog, { level: 'warn', message: `Deleted plugin ${pluginId}`, type: 'plugin:deleted' });
+    this.recordDetachedPluginEvent(pluginId, record.eventLog, createPluginDeletedEvent(pluginId));
     return cloneRegisteredPluginRecord(record);
   }
 

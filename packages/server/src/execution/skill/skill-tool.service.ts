@@ -6,6 +6,7 @@ import type {
   SkillSummary,
 } from '@garlic-claw/shared';
 import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { createSkillLoadBlockedEvent, createSkillLoadedEvent } from '../../core/logging/log-event-payloads';
 import { RuntimeEventLogService } from '../../core/logging/runtime-event-log.service';
 import { createServerLogger } from '../../core/logging/server-logger';
 import { SkillRegistryService } from './skill-registry.service';
@@ -67,26 +68,28 @@ export class SkillToolService {
     }
     if (skill.governance.loadPolicy !== 'allow') {
       const message = readBlockedSkillMessage(skill.governance.loadPolicy, skill.name);
+      const event = createSkillLoadBlockedEvent(message, skillName);
       this.logger.warn(message, {
         console: false,
         event: {
           entityId: skill.id,
           kind: 'skill',
-          metadata: { skillName },
+          metadata: event.metadata,
           settings: skill.governance.eventLog,
-          type: 'skill:load-blocked',
+          type: event.type,
         },
       });
       throw new ForbiddenException(message);
     }
-    this.logger.info(`Loaded skill ${skill.name}`, {
+    const loadedEvent = createSkillLoadedEvent(skill.name, skill.entryPath);
+    this.logger.info(loadedEvent.message, {
       console: false,
       event: {
         entityId: skill.id,
         kind: 'skill',
-        metadata: { entryPath: skill.entryPath },
+        metadata: loadedEvent.metadata,
         settings: skill.governance.eventLog,
-        type: 'skill:loaded',
+        type: loadedEvent.type,
       },
     });
     const files = skill.assets.map(copySkillAssetSummary);

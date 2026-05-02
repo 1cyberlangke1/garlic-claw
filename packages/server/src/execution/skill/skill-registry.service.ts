@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillDetail, SkillGovernanceInfo, SkillSummary, UpdateSkillGovernancePayload } from '@garlic-claw/shared';
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import YAML from 'yaml';
+import { createSkillGovernanceUpdatedEvent } from '../../core/logging/log-event-payloads';
 import { createServerTestArtifactPath } from '../../core/runtime/server-workspace-paths';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../core/logging/runtime-event-log.service';
 import { createServerLogger } from '../../core/logging/server-logger';
@@ -55,14 +56,15 @@ export class SkillRegistryService {
     fs.mkdirSync(path.dirname(this.governancePath), { recursive: true });
     fs.writeFileSync(this.governancePath, JSON.stringify(this.governance, null, 2), 'utf8');
     this.cachedSkills = null;
-    this.logger.info(`Updated skill governance for ${skill.name}`, {
+    const event = createSkillGovernanceUpdatedEvent(skill.name, governance.loadPolicy, governance.eventLog.maxFileSizeMb);
+    this.logger.info(event.message, {
       console: false,
       event: {
         entityId: skillId,
         kind: 'skill',
-        metadata: { loadPolicy: governance.loadPolicy, maxFileSizeMb: governance.eventLog.maxFileSizeMb },
+        metadata: event.metadata,
         settings: governance.eventLog,
-        type: 'governance:updated',
+        type: event.type,
       },
     });
     return { ...skill, governance };

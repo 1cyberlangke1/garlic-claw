@@ -2,6 +2,16 @@ import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActi
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/http-auth';
+import {
+  createPluginConfigUpdatedEvent,
+  createPluginEventLogUpdatedEvent,
+  createPluginGovernanceEvent,
+  createPluginLlmPreferenceUpdatedEvent,
+  createPluginScopeUpdatedEvent,
+  createPluginStorageDeletedEvent,
+  createPluginStorageUpdatedEvent,
+  type LogEventPayload,
+} from '../core/logging/log-event-payloads';
 import { ToolManagementSettingsService } from '../execution/tool/tool-management-settings.service';
 import { buildPluginInfo } from './persistence/plugin-read-model';
 import { PluginPersistenceService } from './persistence/plugin-persistence.service';
@@ -79,7 +89,7 @@ export class PluginController {
   @Put('plugins/:pluginId/config')
   updatePluginConfig(@Param('pluginId') pluginId: string, @Body() dto: UpdatePluginConfigDto) {
     const snapshot = this.pluginPersistenceService.updatePluginConfig(pluginId, dto.values);
-    this.recordPluginEvent(pluginId, { message: `Updated plugin config for ${pluginId}`, metadata: { keys: Object.keys(dto.values) }, type: 'plugin:config.updated' });
+    this.recordPluginEvent(pluginId, createPluginConfigUpdatedEvent(pluginId, Object.keys(dto.values)));
     return snapshot;
   }
 
@@ -89,7 +99,7 @@ export class PluginController {
   @Put('plugins/:pluginId/llm-preference')
   updatePluginLlmPreference(@Param('pluginId') pluginId: string, @Body() dto: UpdatePluginLlmPreferenceDto) {
     const preference = this.pluginPersistenceService.updatePluginLlmPreference(pluginId, dto);
-    this.recordPluginEvent(pluginId, { message: `Updated plugin llm preference for ${pluginId}`, metadata: { mode: preference.mode, modelId: preference.modelId, providerId: preference.providerId }, type: 'plugin:llm-preference.updated' });
+    this.recordPluginEvent(pluginId, createPluginLlmPreferenceUpdatedEvent(pluginId, preference));
     return preference;
   }
 
@@ -99,7 +109,7 @@ export class PluginController {
   @Put('plugins/:pluginId/event-log')
   updatePluginEventLog(@Param('pluginId') pluginId: string, @Body() dto: UpdatePluginEventLogDto) {
     const settings = this.pluginPersistenceService.updatePluginEventLog(pluginId, dto);
-    this.recordPluginEvent(pluginId, { message: `Updated plugin event log settings for ${pluginId}`, metadata: { maxFileSizeMb: settings.maxFileSizeMb }, type: 'plugin:event-log.updated' });
+    this.recordPluginEvent(pluginId, createPluginEventLogUpdatedEvent(pluginId, settings.maxFileSizeMb));
     return settings;
   }
 
@@ -112,7 +122,7 @@ export class PluginController {
   @Put('plugins/:pluginId/scopes')
   updatePluginScope(@Param('pluginId') pluginId: string, @Body() dto: UpdatePluginScopeDto) {
     const scope = this.pluginPersistenceService.updatePluginScope(pluginId, dto);
-    this.recordPluginEvent(pluginId, { message: `Updated plugin scope for ${pluginId}`, metadata: { conversationCount: Object.keys(scope.conversations).length }, type: 'plugin:scope.updated' });
+    this.recordPluginEvent(pluginId, createPluginScopeUpdatedEvent(pluginId, Object.keys(scope.conversations).length));
     return scope;
   }
 
@@ -137,12 +147,10 @@ export class PluginController {
     }
     if (detachedAfterAction) {
       this.pluginPersistenceService.recordDetachedPluginEvent(pluginId, eventLog, {
-        level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info',
-        message: result.message,
-        type: `governance:${result.action}`,
+        ...createPluginGovernanceEvent(result.action, result.message, result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info'),
       });
     } else {
-      this.recordPluginEvent(pluginId, { level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info', message: result.message, type: `governance:${result.action}` });
+      this.recordPluginEvent(pluginId, createPluginGovernanceEvent(result.action, result.message, result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info'));
     }
     return result;
   }
@@ -153,7 +161,7 @@ export class PluginController {
   @Put('plugins/:pluginId/storage')
   setPluginStorage(@Param('pluginId') pluginId: string, @Body() dto: UpdatePluginStorageDto) {
     const entry = { key: dto.key, value: this.runtimeHostPluginRuntimeService.setPluginStorage(pluginId, dto.key, dto.value) };
-    this.recordPluginEvent(pluginId, { message: `Updated plugin storage key ${dto.key}`, metadata: { key: dto.key }, type: 'plugin:storage.updated' });
+    this.recordPluginEvent(pluginId, createPluginStorageUpdatedEvent(dto.key));
     return entry;
   }
 
@@ -163,7 +171,7 @@ export class PluginController {
     const normalizedKey = key.trim();
     const deleted = this.runtimeHostPluginRuntimeService.deletePluginStorage(pluginId, normalizedKey);
     if (deleted) {
-      this.recordPluginEvent(pluginId, { message: `Deleted plugin storage key ${normalizedKey}`, metadata: { key: normalizedKey }, type: 'plugin:storage.deleted' });
+      this.recordPluginEvent(pluginId, createPluginStorageDeletedEvent(normalizedKey));
     }
     return deleted;
   }
@@ -180,12 +188,7 @@ export class PluginController {
   @Delete('plugins/:pluginId/sessions/:conversationId')
   finishPluginConversationSession(@Param('pluginId') pluginId: string, @Param('conversationId') conversationId: string) { return this.runtimeHostConversationRecordService.finishPluginConversationSession(pluginId, conversationId); }
 
-  private recordPluginEvent(inputPluginId: string, input: {
-    level?: 'error' | 'info' | 'warn';
-    message: string;
-    metadata?: JsonObject;
-    type: string;
-  }): void {
+  private recordPluginEvent(inputPluginId: string, input: Omit<LogEventPayload, 'level'> & { level?: LogEventPayload['level'] }): void {
     this.pluginPersistenceService.recordPluginEvent(inputPluginId, { level: input.level ?? 'info', message: input.message, ...(input.metadata ? { metadata: input.metadata } : {}), type: input.type });
   }
 

@@ -5,6 +5,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { EventLogListResult, EventLogQuery, JsonObject, JsonValue, McpConfigSnapshot, McpServerConfig, McpServerDeleteResult, PluginParamSchema, ToolInfo, ToolSourceActionResult, ToolSourceInfo } from '@garlic-claw/shared';
 import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createMcpConnectionConnectedEvent, createMcpConnectionErrorEvent, createMcpGovernanceEvent, createMcpToolErrorEvent, type LogEventPayload } from '../../core/logging/log-event-payloads';
 import { RuntimeEventLogService } from '../../core/logging/runtime-event-log.service';
 import { createServerLogger } from '../../core/logging/server-logger';
 import { McpServerStoreService } from './mcp-server-store.service';
@@ -77,7 +78,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     if (action === 'health-check') {return this.runHealthCheck(sourceId);}
     await this.reloadServer(sourceId);
     const message = `MCP source ${action}ed`;
-    this.recordServerEvent(sourceId, { level: 'info', message, type: `governance:${action}` });
+    this.recordServerEvent(sourceId, createMcpGovernanceEvent(action, message));
     return { accepted: true, action, sourceId, sourceKind: 'mcp', message };
   }
 
@@ -145,7 +146,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       const message = error instanceof Error ? error.message : String(error);
       await this.closeClient(input.serverName);
       this.updateServerStatus(input.serverName, { connected: false, health: 'error', lastCheckedAt: new Date().toISOString(), lastError: message });
-      this.recordServerEvent(input.serverName, { level: 'error', message, metadata: { toolName: input.toolName }, type: 'tool:error' });
+      this.recordServerEvent(input.serverName, createMcpToolErrorEvent(message, input.toolName));
       throw error;
     }
   }
@@ -157,10 +158,10 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
       const connected = await this.connectClientSession({ name, config });
       this.clients.set(name, connected.client);
       this.serverRecords.set(name, createMcpRecord(name, { connected: true, health: 'healthy', lastCheckedAt }, connected.tools));
-      this.recordServerEvent(name, { level: 'info', message: `Connected MCP server ${name}`, metadata: { toolCount: connected.tools.length }, type: 'connection:connected' }, config);
+      this.recordServerEvent(name, createMcpConnectionConnectedEvent(name, connected.tools.length), config);
     } catch (error) {
       this.serverRecords.set(name, createMcpRecord(name, { health: 'error', lastCheckedAt, lastError: error instanceof Error ? error.message : String(error) }, knownTools));
-      this.recordServerEvent(name, { level: 'error', message: error instanceof Error ? error.message : String(error), type: 'connection:error' }, config);
+      this.recordServerEvent(name, createMcpConnectionErrorEvent(error instanceof Error ? error.message : String(error)), config);
     }
   }
 
@@ -245,17 +246,17 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
         this.serverRecords.set(sourceId, createMcpRecord(sourceId, { connected: false, enabled: false, health: 'healthy', lastCheckedAt: checkedAt, lastError: null }, connected.tools));
       }
       const message = 'MCP source health check passed';
-      this.recordServerEvent(sourceId, { level: 'info', message, metadata: { toolCount: connected.tools.length }, type: 'governance:health-check' });
+      this.recordServerEvent(sourceId, createMcpGovernanceEvent('health-check', message, { toolCount: connected.tools.length }));
       return { accepted: true, action: 'health-check', sourceId, sourceKind: 'mcp', message };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.updateServerStatus(sourceId, { connected: false, health: 'error', lastCheckedAt: checkedAt, lastError: message });
-      this.recordServerEvent(sourceId, { level: 'warn', message: `MCP source health check failed: ${message}`, type: 'governance:health-check' });
+      this.recordServerEvent(sourceId, createMcpGovernanceEvent('health-check', `MCP source health check failed: ${message}`, undefined, 'warn'));
       return { accepted: true, action: 'health-check', sourceId, sourceKind: 'mcp', message: `MCP source health check failed: ${message}` };
     }
   }
 
-  private recordServerEvent(name: string, input: { level: 'error' | 'info' | 'warn'; message: string; metadata?: JsonObject; type: string }, config?: McpServerConfig): void {
+  private recordServerEvent(name: string, input: LogEventPayload, config?: McpServerConfig): void {
     this.logger[input.level](input.message, {
       console: false,
       event: {
