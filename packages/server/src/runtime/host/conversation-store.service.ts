@@ -8,7 +8,7 @@ import { createConversationHistorySignatureFromHistoryMessages } from '../../con
 import { readConversationModelUsageAnnotation } from '../../conversation/conversation-model-usage.annotation';
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
-import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
 import { PluginDispatchService } from './plugin-dispatch.service';
 import { ConversationTodoService } from './conversation-todo.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './host-input.codec';

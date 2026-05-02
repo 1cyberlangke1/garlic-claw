@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ServerWorkspaceLifecycleService } from './server-workspace-lifecycle.service';
+import { ServerWorkspaceLifecycleService } from '../core/runtime/server-workspace-lifecycle.service';
 
 @Module({
   providers: [ServerWorkspaceLifecycleService],

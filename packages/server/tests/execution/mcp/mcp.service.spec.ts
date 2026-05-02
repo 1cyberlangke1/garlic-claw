@@ -8,7 +8,7 @@ import { ProjectWorktreeRootService } from '../../../src/execution/project/proje
 import { McpService } from '../../../src/execution/mcp/mcp.service';
 import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
 import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
-import { createServerTestArtifactPath } from '../../../src/runtime/server-workspace-paths';
+import { createServerTestArtifactPath } from '../../../src/core/runtime/server-workspace-paths';
 
 describe('McpService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';

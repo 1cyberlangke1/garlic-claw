@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AiHostModelRoutingConfig, AiModelRouteTarget, ProviderProtocolDriver, VisionFallbackConfig } from '@garlic-claw/shared';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
-import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
+import { createServerTestArtifactPath } from '../core/runtime/server-workspace-paths';
 import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
 const AI_PROVIDER_DIRECTORY = 'providers';

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ConversationTodoItem, JsonValue } from '@garlic-claw/shared';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
 import { asJsonValue, cloneJsonValue } from './host-input.codec';
 import {
   resolveConversationStoragePath,

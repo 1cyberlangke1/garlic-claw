@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
-import { resolveServerStatePath } from '../server-workspace-paths';
+import { resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
 import {
   asJsonValue,
   readKeywords,
@@ -144,4 +144,3 @@ function isRuntimeMemoryRecord(value: unknown): value is RuntimeMemoryRecord {
     && (value as RuntimeMemoryRecord).keywords.every((keyword) => typeof keyword === 'string')
     && typeof (value as RuntimeMemoryRecord).userId === 'string';
 }
-

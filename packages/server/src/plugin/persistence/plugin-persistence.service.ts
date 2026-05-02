@@ -21,7 +21,7 @@ import type {
 } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
-import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
 import { PLUGIN_STATUS } from '../plugin.constants';
 import { createPluginConfigSnapshot } from './plugin-read-model';
 

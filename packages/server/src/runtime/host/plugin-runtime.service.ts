@@ -12,7 +12,7 @@ import { BadRequestException, Injectable, OnApplicationBootstrap, OnModuleDestro
 import { CronExpressionParser } from 'cron-parser';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { PluginPersistenceService } from '../../plugin/persistence/plugin-persistence.service';
-import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
 import { RuntimeEventLogService } from '../log/runtime-event-log.service';
 import { PluginDispatchService } from './plugin-dispatch.service';
 import {

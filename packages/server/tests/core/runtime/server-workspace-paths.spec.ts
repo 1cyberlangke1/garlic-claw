@@ -10,8 +10,8 @@ import {
   resolveServerStatePath,
   resolveServerTestArtifactsRoot,
   resolveServerWorkspaceRoot,
-} from '../../src/runtime/server-workspace-paths';
-import { RuntimeSessionEnvironmentService } from '../../src/execution/runtime/runtime-session-environment.service';
+} from '../../../src/core/runtime/server-workspace-paths';
+import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 
 describe('server-workspace-paths', () => {
   const originalCwd = process.cwd();

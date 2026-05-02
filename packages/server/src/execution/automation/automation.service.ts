@@ -4,7 +4,7 @@ import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, Json
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { CronExpressionParser } from 'cron-parser';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
-import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
 import { ConversationStoreService } from '../../runtime/host/conversation-store.service';
 import { asJsonValue, cloneJsonValue, readJsonObject, readPositiveInteger, readRequiredString } from '../../runtime/host/host-input.codec';
 import { AutomationExecutionService } from './automation-execution.service';

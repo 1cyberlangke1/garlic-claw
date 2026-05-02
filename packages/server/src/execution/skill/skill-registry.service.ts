@@ -5,7 +5,7 @@ import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillDetail, Sk
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import YAML from 'yaml';
 import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
-import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
+import { createServerTestArtifactPath } from '../../core/runtime/server-workspace-paths';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
 
 interface SkillGovernanceFile { skills: Record<string, SkillGovernanceInfo>; }

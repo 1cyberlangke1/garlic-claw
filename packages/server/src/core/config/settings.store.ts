@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import type { JsonObject, JsonValue } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../../execution/project/project-worktree-root.service';
-import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
+import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
 
 const SETTINGS_CONFIG_FILE = 'settings.json';
 
