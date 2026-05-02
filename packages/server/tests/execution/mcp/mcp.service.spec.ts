@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { McpServerConfig } from '@garlic-claw/shared';
-import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
+import { McpServerStoreService } from '../../../src/execution/mcp/mcp-server-store.service';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
 import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
@@ -47,7 +47,7 @@ describe('McpService', () => {
     process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = tempToolManagementPath;
     service = new McpService(
       configService as never,
-      new McpConfigStoreService(new ProjectWorktreeRootService()),
+      new McpServerStoreService(new ProjectWorktreeRootService()),
       new RuntimeEventLogService(),
       new ToolManagementSettingsService(),
     );
@@ -203,7 +203,7 @@ describe('McpService', () => {
 
     const reloaded = new McpService(
       configService as never,
-      new McpConfigStoreService(new ProjectWorktreeRootService()),
+      new McpServerStoreService(new ProjectWorktreeRootService()),
       new RuntimeEventLogService(),
       new ToolManagementSettingsService(),
     );

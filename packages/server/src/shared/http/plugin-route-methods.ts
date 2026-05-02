@@ -1,6 +1,6 @@
 import type { PluginRouteMethod } from '@garlic-claw/shared';
 
-export const PLUGIN_ROUTE_METHOD_VALUES = [
+export const PLUGIN_ROUTE_METHODS = [
   'GET',
   'POST',
   'PUT',

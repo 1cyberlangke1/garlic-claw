@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { uuidv7 } from 'uuidv7';
 import { AiProviderSettingsService } from '../ai-management/ai-provider-settings.service';
 import type { StoredAiProviderConfig } from '../ai-management/ai-management.types';
-import { stringifyInvalidToolInput } from '../execution/invalid/invalid-tool-record';
+import { stringifyInvalidToolInput } from '../execution/invalid/invalid-tool-result';
 import { resolveKnownModelToolCallName } from '../execution/tool/model-tool-call-name';
 import { readAssistantRawCustomBlocks, readAssistantResponseCustomBlocks, type AssistantCustomBlockEntry } from '../runtime/host/host-input.codec';
 

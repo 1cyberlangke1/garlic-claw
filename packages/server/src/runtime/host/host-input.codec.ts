@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue, PluginCallContext, PluginLlmMessage } from '@garlic-claw/shared';
 import { BadRequestException } from '@nestjs/common';
-import { createInvalidToolResult, stringifyInvalidToolInput } from '../../execution/invalid/invalid-tool-record';
+import { createInvalidToolResult, stringifyInvalidToolInput } from '../../execution/invalid/invalid-tool-result';
 import { sanitizeModelToolCallName } from '../../execution/tool/model-tool-call-name';
 
 export const DEFAULT_PERSONA_ID = 'builtin.default-assistant';

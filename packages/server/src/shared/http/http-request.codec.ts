@@ -7,7 +7,7 @@ import {
 } from '@garlic-claw/shared';
 import { BadRequestException } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { PLUGIN_ROUTE_METHOD_VALUES } from './plugin-route.constants';
+import { PLUGIN_ROUTE_METHODS } from './plugin-route-methods';
 
 const BLOCKED_PLUGIN_REQUEST_HEADERS = new Set(['authorization', 'cookie']);
 const BLOCKED_PLUGIN_RESPONSE_HEADERS = new Set(['connection', 'content-length', 'set-cookie', 'transfer-encoding']);
@@ -44,7 +44,7 @@ export function readPluginRouteInvocation(
   const namedPath = req.params?.path;
   const bodyConversationId = typeof req.body === 'object' && req.body !== null && !Array.isArray(req.body) ? (req.body as Record<string, unknown>).conversationId : undefined;
   const conversationId = typeof query.conversationId === 'string' ? query.conversationId : typeof bodyConversationId === 'string' ? bodyConversationId : undefined;
-  const matchedMethod = PLUGIN_ROUTE_METHOD_VALUES.find((candidate) => candidate === method);
+  const matchedMethod = PLUGIN_ROUTE_METHODS.find((candidate) => candidate === method);
   if (!matchedMethod) {throw new BadRequestException(`插件 Route 暂不支持 HTTP 方法 ${method}`);}
   return {
     context: { source: 'http-route', userId: readRequestUserId(req), conversationId: conversationId?.trim() || undefined },

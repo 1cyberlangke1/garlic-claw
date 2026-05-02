@@ -7,7 +7,7 @@ import { EditToolService } from '../edit/edit-tool.service';
 import { GlobToolService } from '../glob/glob-tool.service';
 import { GrepToolService } from '../grep/grep-tool.service';
 import { InvalidToolService } from '../invalid/invalid-tool.service';
-import { createInvalidToolResult, isInvalidToolResult, stringifyInvalidToolInput } from '../invalid/invalid-tool-record';
+import { createInvalidToolResult, isInvalidToolResult, stringifyInvalidToolInput } from '../invalid/invalid-tool-result';
 import { ReadToolService } from '../read/read-tool.service';
 import { renderRuntimeCommandTextOutput } from '../runtime/runtime-command-output';
 import { RuntimeToolBackendService } from '../runtime/runtime-tool-backend.service';

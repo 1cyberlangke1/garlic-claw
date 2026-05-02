@@ -14,7 +14,7 @@ type StoredMcpServerFile = Partial<McpServerConfig> & {
 };
 
 @Injectable()
-export class McpConfigStoreService {
+export class McpServerStoreService {
   private readonly configRootPath: string;
   private readonly reportedConfigPath: string;
   private servers: McpServerConfig[];

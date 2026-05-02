@@ -12,7 +12,7 @@ import {
   type PluginWsInboundResult,
   readWsMessage,
 } from './plugin-ws.protocol';
-import { WS_ACTION, WS_TYPE } from './plugin-ws.constants';
+import { WS_ACTION, WS_TYPE } from './plugin-ws-message.constants';
 import { PluginWsInboundService } from './plugin-ws-inbound.service';
 
 const HEARTBEAT_SWEEP_INTERVAL_MS = 30_000;

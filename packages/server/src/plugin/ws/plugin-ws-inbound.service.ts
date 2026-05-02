@@ -11,7 +11,7 @@ import {
   readRegisterPayload,
   readRemoteSettlement,
 } from './plugin-ws.protocol';
-import { WS_ACTION, WS_TYPE } from './plugin-ws.constants';
+import { WS_ACTION, WS_TYPE } from './plugin-ws-message.constants';
 
 @Injectable()
 export class PluginWsInboundService {

@@ -2,9 +2,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
-import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
+import { McpServerStoreService } from '../../../src/execution/mcp/mcp-server-store.service';
 
-describe('McpConfigStoreService', () => {
+describe('McpServerStoreService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';
   let tempConfigRoot: string;
   let originalCwd: string;
@@ -24,7 +24,7 @@ describe('McpConfigStoreService', () => {
 
   it('returns an empty snapshot when the MCP config directory does not exist', async () => {
     process.env[envKey] = tempConfigRoot;
-    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
+    const service = new McpServerStoreService(new ProjectWorktreeRootService());
 
     expect(service.getSnapshot()).toEqual({
       configPath: tempConfigRoot,
@@ -51,7 +51,7 @@ describe('McpConfigStoreService', () => {
     process.chdir(nestedServerRoot);
 
     try {
-      const service = new McpConfigStoreService(new ProjectWorktreeRootService());
+      const service = new McpServerStoreService(new ProjectWorktreeRootService());
 
       expect(service.getSnapshot()).toEqual({
         configPath: 'config/mcp/servers',
@@ -85,7 +85,7 @@ describe('McpConfigStoreService', () => {
       args: ['-y', '@mariox/weather-mcp-server'],
     }, null, 2));
 
-    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
+    const service = new McpServerStoreService(new ProjectWorktreeRootService());
 
     expect(service.saveServer({
       name: 'tavily',
@@ -169,7 +169,7 @@ describe('McpConfigStoreService', () => {
       args: ['-y', 'tavily-mcp@latest'],
     }, null, 2));
 
-    const service = new McpConfigStoreService(new ProjectWorktreeRootService());
+    const service = new McpServerStoreService(new ProjectWorktreeRootService());
 
     expect(service.deleteServer('weather')).toEqual({
       deleted: true,

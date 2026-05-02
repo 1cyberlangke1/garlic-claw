@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { WS_ACTION, WS_TYPE } from '../../../src/plugin/ws/plugin-ws.constants';
+import { WS_ACTION, WS_TYPE } from '../../../src/plugin/ws/plugin-ws-message.constants';
 import { PluginWsInboundService } from '../../../src/plugin/ws/plugin-ws-inbound.service';
 import { PluginWsModule } from '../../../src/plugin/ws/plugin-ws.module';
 

@@ -1,7 +1,7 @@
 import type { RuntimeBackendKind } from '@garlic-claw/shared';
 import { Inject, Injectable } from '@nestjs/common';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
-import { RUNTIME_FILESYSTEM_BACKENDS, type RuntimeFilesystemBackendList } from './runtime-filesystem-backend.constants';
+import { RUNTIME_FILESYSTEM_BACKENDS_TOKEN, type RuntimeFilesystemBackendList } from './runtime-filesystem-backend.tokens';
 import type { RuntimeFilesystemBackend, RuntimeFilesystemDeleteResult, RuntimeFilesystemDirectoryResult, RuntimeFilesystemEditResult, RuntimeFilesystemFileEntry, RuntimeFilesystemGlobResult, RuntimeFilesystemGrepResult, RuntimeFilesystemPathStat, RuntimeFilesystemReadResult, RuntimeFilesystemResolvedPath, RuntimeFilesystemSymlinkResult, RuntimeFilesystemTransferResult, RuntimeFilesystemWriteResult } from './runtime-filesystem-backend.types';
 
 @Injectable()
@@ -9,7 +9,7 @@ export class RuntimeFilesystemBackendService {
   private readonly backends = new Map<RuntimeBackendKind, RuntimeFilesystemBackend>();
   private readonly defaultBackendKind: RuntimeBackendKind;
 
-  constructor(@Inject(RUNTIME_FILESYSTEM_BACKENDS) filesystemBackends: RuntimeFilesystemBackendList) {
+  constructor(@Inject(RUNTIME_FILESYSTEM_BACKENDS_TOKEN) filesystemBackends: RuntimeFilesystemBackendList) {
     if (filesystemBackends.length === 0) {throw new Error('RuntimeFilesystemBackendService 至少需要一个 filesystem backend');}
     for (const backend of filesystemBackends) {this.backends.set(backend.getKind(), backend);}
     this.defaultBackendKind = filesystemBackends[0].getKind();

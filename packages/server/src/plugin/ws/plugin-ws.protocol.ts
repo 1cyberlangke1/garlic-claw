@@ -7,7 +7,7 @@ import {
   type RegisterPayload,
   type WsMessage,
 } from '@garlic-claw/shared';
-import { WS_ACTION, WS_TYPE } from './plugin-ws.constants';
+import { WS_ACTION, WS_TYPE } from './plugin-ws-message.constants';
 
 export interface PluginWsInboundResult {
   flushOutbound?: boolean;

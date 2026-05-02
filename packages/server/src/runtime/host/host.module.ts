@@ -15,11 +15,11 @@ import { ProjectWorktreeOverlayModule } from '../../execution/project/project-wo
 import { ProjectWorktreeSearchOverlayService } from '../../execution/project/project-worktree-search-overlay.service';
 import { ReadToolService } from '../../execution/read/read-tool.service';
 import { RuntimeCommandService } from '../../execution/runtime/runtime-command.service';
-import { RUNTIME_BACKENDS } from '../../execution/runtime/runtime-backend.constants';
+import { RUNTIME_BACKENDS_TOKEN } from '../../execution/runtime/runtime-backend.tokens';
 import { RuntimeBackendRoutingService } from '../../execution/runtime/runtime-backend-routing.service';
 import { RuntimeCommandCaptureService } from '../../execution/runtime/runtime-command-capture.service';
 import { RuntimeFileFreshnessService } from '../../execution/runtime/runtime-file-freshness.service';
-import { RUNTIME_FILESYSTEM_BACKENDS } from '../../execution/runtime/runtime-filesystem-backend.constants';
+import { RUNTIME_FILESYSTEM_BACKENDS_TOKEN } from '../../execution/runtime/runtime-filesystem-backend.tokens';
 import { RuntimeFilesystemBackendService } from '../../execution/runtime/runtime-filesystem-backend.service';
 import { RuntimeFilesystemPostWriteService } from '../../execution/runtime/runtime-filesystem-post-write.service';
 import { RuntimeJustBashService } from '../../execution/runtime/runtime-just-bash.service';
@@ -80,7 +80,7 @@ import { SettingsStore } from '../../core/config/settings.store';
     ConversationTodoService,
     RuntimeEventLogService,
     {
-      provide: RUNTIME_BACKENDS,
+      provide: RUNTIME_BACKENDS_TOKEN,
       useFactory: (
         runtimeJustBashService: RuntimeJustBashService,
         runtimeNativeShellService: RuntimeNativeShellService,
@@ -91,7 +91,7 @@ import { SettingsStore } from '../../core/config/settings.store';
       inject: [RuntimeJustBashService, RuntimeNativeShellService, RuntimeWslShellService],
     },
     {
-      provide: RUNTIME_FILESYSTEM_BACKENDS,
+      provide: RUNTIME_FILESYSTEM_BACKENDS_TOKEN,
       useFactory: (runtimeHostFilesystemBackendService: RuntimeHostFilesystemBackendService) => [runtimeHostFilesystemBackendService],
       inject: [RuntimeHostFilesystemBackendService],
     },

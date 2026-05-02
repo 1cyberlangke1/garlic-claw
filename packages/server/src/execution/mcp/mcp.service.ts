@@ -6,7 +6,7 @@ import type { EventLogListResult, EventLogQuery, JsonObject, JsonValue, McpConfi
 import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RuntimeEventLogService } from '../../runtime/log/runtime-event-log.service';
-import { McpConfigStoreService } from './mcp-config-store.service';
+import { McpServerStoreService } from './mcp-server-store.service';
 import { ToolManagementSettingsService } from '../tool/tool-management-settings.service';
 
 type McpServerHealthStatus = 'healthy' | 'error' | 'unknown';
@@ -29,7 +29,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly mcpConfigStoreService: McpConfigStoreService,
+    private readonly mcpServerStoreService: McpServerStoreService,
     private readonly runtimeEventLogService: RuntimeEventLogService,
     private readonly toolManagementSettingsService: ToolManagementSettingsService,
   ) {}
@@ -42,7 +42,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
     });
   }
   async onModuleDestroy(): Promise<void> { await this.disconnectAllClients(); }
-  getSnapshot(): McpConfigSnapshot { return this.mcpConfigStoreService.getSnapshot(); }
+  getSnapshot(): McpConfigSnapshot { return this.mcpServerStoreService.getSnapshot(); }
 
   async reloadServersFromConfig(): Promise<void> {
     const previousRecords = new Map(this.serverRecords);
@@ -55,14 +55,14 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   async reloadServer(name: string): Promise<void> { const normalized = name.trim(); await this.syncServerRecord(normalized, this.requireServerConfig(normalized)); }
   async applyServerConfig(config: McpServerConfig, previousName?: string): Promise<void> { const previous = previousName?.trim(); if (previous && previous !== config.name) {await this.removeServer(previous);} await this.syncServerRecord(config.name, config); }
-  async saveServer(server: McpServerConfig, previousName?: string): Promise<McpServerConfig> { return this.mcpConfigStoreService.saveServer(server, previousName); }
+  async saveServer(server: McpServerConfig, previousName?: string): Promise<McpServerConfig> { return this.mcpServerStoreService.saveServer(server, previousName); }
   async removeServer(name: string): Promise<void> {
     const normalized = name.trim();
     await this.disconnectServer(normalized);
     this.serverRecords.delete(normalized);
     this.toolManagementSettingsService.deleteSourceOverrides(`mcp:${normalized}`);
   }
-  async deleteServer(name: string): Promise<McpServerDeleteResult> { return this.mcpConfigStoreService.deleteServer(name); }
+  async deleteServer(name: string): Promise<McpServerDeleteResult> { return this.mcpServerStoreService.deleteServer(name); }
   async setServerEnabled(name: string, enabled: boolean): Promise<void> {
     const normalized = name.trim();
     this.toolManagementSettingsService.writeSourceEnabledOverride(`mcp:${normalized}`, enabled);
@@ -168,7 +168,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
 
   async disconnectAllClients(): Promise<void> { for (const name of [...this.clients.keys()]) {await this.disconnectServer(name);} }
 
-  private requireServerConfig(name: string): McpServerConfig { const server = this.mcpConfigStoreService.getServer(name); if (!server) {throw new NotFoundException(`MCP server not found: ${name}`);} return server; }
+  private requireServerConfig(name: string): McpServerConfig { const server = this.mcpServerStoreService.getServer(name); if (!server) {throw new NotFoundException(`MCP server not found: ${name}`);} return server; }
   private primeServerRecords(servers: McpServerConfig[]): void {
     this.serverRecords.clear();
     for (const server of servers) {
@@ -253,7 +253,7 @@ export class McpService implements OnModuleDestroy, OnModuleInit {
   }
 
   private recordServerEvent(name: string, input: { level: 'error' | 'info' | 'warn'; message: string; metadata?: JsonObject; type: string }, config?: McpServerConfig): void {
-    this.runtimeEventLogService.appendLog('mcp', name, config?.eventLog ?? this.mcpConfigStoreService.getServer(name)?.eventLog, input);
+    this.runtimeEventLogService.appendLog('mcp', name, config?.eventLog ?? this.mcpServerStoreService.getServer(name)?.eventLog, input);
   }
 }
 
