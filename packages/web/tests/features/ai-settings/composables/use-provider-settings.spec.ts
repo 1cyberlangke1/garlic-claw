@@ -12,6 +12,7 @@ import type {
   VisionFallbackConfig,
 } from '@garlic-claw/shared'
 import { useProviderSettings } from '@/modules/ai-settings/composables/use-provider-settings'
+import * as internalConfigChange from '@/modules/ai-settings/internal-config-change'
 import * as providerData from '@/modules/ai-settings/composables/provider-settings.data'
 
 vi.mock('@/modules/ai-settings/composables/provider-settings.data', () => ({
@@ -114,6 +115,17 @@ function createDefaultSelection(
     providerId,
     modelId,
     source: 'default',
+  }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return {
+    promise,
+    resolve,
   }
 }
 
@@ -289,6 +301,144 @@ describe('useProviderSettings', () => {
     expect(state.connectionResult.value).toBeNull()
   })
 
+  it('keeps the latest base settings snapshot when an older refresh resolves later', async () => {
+    vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
+      catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
+      providers: [createProviderSummary('provider-a', 'Provider A')],
+      visionConfig: { enabled: false },
+      hostModelRoutingConfig: {
+        fallbackChatModels: [],
+        utilityModelRoles: {},
+      },
+    })
+    vi.mocked(providerData.loadProviderSelectionData).mockResolvedValue(
+      createSelectionData('provider-a'),
+    )
+    vi.mocked(providerData.loadProviderModelOptions).mockResolvedValue({
+      visionOptions: [],
+      hostModelRoutingOptions: [],
+      modelsByProviderId: {},
+    })
+
+    const state = await mountProviderSettingsHarness()
+    const firstOptionsRefresh = createDeferred({
+      visionOptions: [],
+      hostModelRoutingOptions: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+          label: 'Provider A / provider-a-model',
+        },
+      ],
+      modelsByProviderId: {
+        'provider-a': [createModel('provider-a-model', 'provider-a')],
+      },
+    })
+    vi.mocked(providerData.loadProviderSettingsBaseData)
+      .mockResolvedValueOnce({
+        catalog: [] as AiProviderCatalogItem[],
+        defaultSelection: createDefaultSelection('provider-a'),
+        providers: [createProviderSummary('provider-a', 'Provider A')],
+        visionConfig: { enabled: false } as VisionFallbackConfig,
+        hostModelRoutingConfig: {
+          fallbackChatModels: [],
+          utilityModelRoles: {},
+        },
+      })
+      .mockResolvedValueOnce({
+        catalog: [],
+        defaultSelection: createDefaultSelection('provider-b'),
+        providers: [
+          createProviderSummary('provider-a', 'Provider A'),
+          createProviderSummary('provider-b', 'Provider B'),
+        ],
+        visionConfig: { enabled: true },
+        hostModelRoutingConfig: {
+          fallbackChatModels: [
+            {
+              providerId: 'provider-b',
+              modelId: 'provider-b-model',
+            },
+          ],
+          utilityModelRoles: {},
+        },
+      })
+    vi.mocked(providerData.loadProviderSelectionData)
+      .mockResolvedValueOnce(createSelectionData('provider-a'))
+      .mockResolvedValueOnce(createSelectionData('provider-b'))
+    vi.mocked(providerData.loadProviderModelOptions)
+      .mockImplementationOnce(() => firstOptionsRefresh.promise)
+      .mockResolvedValueOnce({
+        visionOptions: [],
+        hostModelRoutingOptions: [
+          {
+            providerId: 'provider-b',
+            modelId: 'provider-b-model',
+            label: 'Provider B / provider-b-model',
+          },
+        ],
+        modelsByProviderId: {
+          'provider-b': [createModel('provider-b-model', 'provider-b')],
+        },
+      })
+
+    const firstPromise = state.refreshAll('provider-a')
+    await flushPromises()
+    const secondPromise = state.refreshAll('provider-b')
+    await secondPromise
+
+    expect(state.defaultSelection.value.providerId).toBe('provider-b')
+    expect(state.selectedProviderId.value).toBe('provider-b')
+    expect(state.visionConfig.value.enabled).toBe(true)
+    expect(state.hostModelRoutingConfig.value.fallbackChatModels).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+      },
+    ])
+    expect(state.hostModelRoutingOptions.value).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+        label: 'Provider B / provider-b-model',
+      },
+    ])
+
+    firstOptionsRefresh.resolve({
+      visionOptions: [],
+      hostModelRoutingOptions: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+          label: 'Provider A / provider-a-model',
+        },
+      ],
+      modelsByProviderId: {
+        'provider-a': [createModel('provider-a-model', 'provider-a')],
+      },
+    })
+    await firstPromise
+    await flushPromises()
+
+    expect(state.defaultSelection.value.providerId).toBe('provider-b')
+    expect(state.selectedProviderId.value).toBe('provider-b')
+    expect(state.visionConfig.value.enabled).toBe(true)
+    expect(state.hostModelRoutingConfig.value.fallbackChatModels).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+      },
+    ])
+    expect(state.hostModelRoutingOptions.value).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+        label: 'Provider B / provider-b-model',
+      },
+    ])
+  })
+
   it('saves host model routing config and updates local state', async () => {
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
@@ -357,6 +507,107 @@ describe('useProviderSettings', () => {
       .toBe('provider-a-model')
   })
 
+  it('keeps the latest host model routing save result when an older request resolves later', async () => {
+    vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
+      catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
+      providers: [createProviderSummary('provider-a', 'Provider A')],
+      visionConfig: { enabled: false },
+      hostModelRoutingConfig: {
+        fallbackChatModels: [],
+        utilityModelRoles: {},
+      },
+    })
+    vi.mocked(providerData.loadProviderSelectionData).mockResolvedValue(
+      createSelectionData('provider-a'),
+    )
+    vi.mocked(providerData.loadProviderModelOptions).mockResolvedValue({
+      visionOptions: [],
+      hostModelRoutingOptions: [],
+      modelsByProviderId: {},
+    })
+    const firstSave = createDeferred({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    const secondSave = createDeferred({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-b',
+          modelId: 'provider-b-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    vi.mocked(providerData.saveHostModelRouting)
+      .mockImplementationOnce(() => firstSave.promise)
+      .mockImplementationOnce(() => secondSave.promise)
+
+    const state = await mountProviderSettingsHarness()
+    const firstPromise = state.saveHostModelRoutingConfig({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    expect(state.savingHostModelRoutingConfig.value).toBe(true)
+    const secondPromise = state.saveHostModelRoutingConfig({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-b',
+          modelId: 'provider-b-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+
+    secondSave.resolve({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-b',
+          modelId: 'provider-b-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    await secondPromise
+
+    expect(state.hostModelRoutingConfig.value.fallbackChatModels).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+      },
+    ])
+    expect(state.savingHostModelRoutingConfig.value).toBe(false)
+
+    firstSave.resolve({
+      fallbackChatModels: [
+        {
+          providerId: 'provider-a',
+          modelId: 'provider-a-model',
+        },
+      ],
+      utilityModelRoles: {},
+    })
+    await firstPromise
+
+    expect(state.hostModelRoutingConfig.value.fallbackChatModels).toEqual([
+      {
+        providerId: 'provider-b',
+        modelId: 'provider-b-model',
+      },
+    ])
+    expect(state.savingHostModelRoutingConfig.value).toBe(false)
+  })
+
   it('updates the explicit global default locally without reloading provider detail', async () => {
     vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
       catalog: [],
@@ -381,6 +632,7 @@ describe('useProviderSettings', () => {
       modelId: 'provider-a-model',
       source: 'default',
     })
+    const emitSpy = vi.spyOn(internalConfigChange, 'emitInternalConfigChanged')
 
     const state = await mountProviderSettingsHarness()
     await state.setDefaultModel('provider-a-model')
@@ -396,6 +648,57 @@ describe('useProviderSettings', () => {
       providerId: 'provider-a',
       modelId: 'provider-a-model',
       source: 'default',
+    })
+    expect(emitSpy).toHaveBeenCalledWith({
+      scope: 'provider-models',
+    })
+  })
+
+  it('emits a vision-fallback config change event after saving vision fallback settings', async () => {
+    vi.mocked(providerData.loadProviderSettingsBaseData).mockResolvedValue({
+      catalog: [],
+      defaultSelection: createDefaultSelection('provider-a'),
+      providers: [createProviderSummary('provider-a', 'Provider A')],
+      visionConfig: { enabled: false },
+      hostModelRoutingConfig: {
+        fallbackChatModels: [],
+        utilityModelRoles: {},
+      },
+    })
+    vi.mocked(providerData.loadProviderSelectionData).mockResolvedValue(
+      createSelectionData('provider-a'),
+    )
+    vi.mocked(providerData.loadProviderModelOptions).mockResolvedValue({
+      visionOptions: [],
+      hostModelRoutingOptions: [],
+      modelsByProviderId: {},
+    })
+    vi.mocked(providerData.saveVisionFallbackConfig).mockResolvedValue({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+    const emitSpy = vi.spyOn(internalConfigChange, 'emitInternalConfigChanged')
+
+    const state = await mountProviderSettingsHarness()
+    await state.saveVisionConfig({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+
+    expect(providerData.saveVisionFallbackConfig).toHaveBeenCalledWith({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+    expect(state.visionConfig.value).toEqual({
+      enabled: true,
+      providerId: 'provider-a',
+      modelId: 'provider-a-model',
+    })
+    expect(emitSpy).toHaveBeenCalledWith({
+      scope: 'vision-fallback',
     })
   })
 

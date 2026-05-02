@@ -9,6 +9,26 @@
               <strong class="toolbar-model-value">
                 {{ chat.selectedProvider && chat.selectedModel ? `${chat.selectedProvider}/${chat.selectedModel}` : '未在 AI 设置中配置默认模型' }}
               </strong>
+              <div
+                v-if="contextUsageSummary"
+                class="toolbar-context-usage"
+              >
+                <span class="toolbar-context-usage-percent">
+                  {{ contextUsageSummary.percent }}%
+                </span>
+                <span class="toolbar-context-usage-tokens">
+                  {{ contextUsageSummary.estimatedTokens }} / {{ contextUsageSummary.contextLength }}
+                </span>
+                <span
+                  class="toolbar-context-progress"
+                  :title="`当前上下文估算占用 ${contextUsageSummary.percent}%`"
+                >
+                  <span
+                    class="toolbar-context-progress-fill"
+                    :style="{ width: `${contextUsageSummary.percent}%` }"
+                  ></span>
+                </span>
+              </div>
               <div v-if="selectedCapabilities" class="toolbar-capability-row">
                 <span v-if="selectedCapabilities.reasoning" class="capability-chip">推理</span>
                 <span v-if="selectedCapabilities.toolCall" class="capability-chip">工具</span>
@@ -67,6 +87,7 @@
       <ChatComposer
         v-model="inputText"
         :can-send="canSend"
+        :can-stop="chat.canStopStreaming"
         :command-suggestions="commandSuggestions"
         :pending-images="pendingImages"
         :queued-send-count="queuedSendCount"
@@ -108,6 +129,7 @@ const currentConversationId = computed(() => chat.currentConversationId ?? null)
 const SUBAGENT_TAB_POLL_INTERVAL_MS = 2000
 
 let subagentTabPollTimer: ReturnType<typeof setInterval> | null = null
+let subagentTabRequestId = 0
 
 onMounted(() => {
   subagentTabPollTimer = setInterval(() => {
@@ -165,15 +187,20 @@ function switchToSubagent(conversationId: string) {
 }
 
 async function refreshSubagentTabs(conversationId: string) {
+  const requestId = ++subagentTabRequestId
   try {
     const token = localStorage.getItem('accessToken')
     const resp = await fetch(`/api/chat/conversations/${conversationId}/subagents`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-    if (!resp.ok || workspaceConversationId.value !== conversationId) {
+    if (!resp.ok || workspaceConversationId.value !== conversationId || requestId !== subagentTabRequestId) {
       return
     }
-    subagentTabs.value = await resp.json()
+    const nextTabs = await resp.json()
+    if (workspaceConversationId.value !== conversationId || requestId !== subagentTabRequestId) {
+      return
+    }
+    subagentTabs.value = nextTabs
   } catch {
-    if (workspaceConversationId.value === conversationId) {
+    if (workspaceConversationId.value === conversationId && requestId === subagentTabRequestId) {
       subagentTabs.value = []
     }
   }
@@ -202,6 +229,22 @@ const {
   popQueuedSendTailToInput,
   applyCommandSuggestion,
 } = useChatView(chat)
+
+const contextUsageSummary = computed(() => {
+  const preview = contextWindowPreview.value
+  if (!preview || preview.contextLength <= 0) {
+    return null
+  }
+  const percent = Math.min(
+    100,
+    Math.max(0, Math.round((preview.estimatedTokens / preview.contextLength) * 100)),
+  )
+  return {
+    contextLength: preview.contextLength,
+    estimatedTokens: preview.estimatedTokens,
+    percent,
+  }
+})
 
 watch(
   currentConversationId,
@@ -317,6 +360,46 @@ function readTodoPriorityLabel(priority: "high" | "medium" | "low") {
   color: var(--text);
   word-break: break-all;
   flex: 0 1 auto;
+}
+
+.toolbar-context-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(10, 19, 24, 0.42);
+  border: 1px solid rgba(103, 199, 207, 0.18);
+}
+
+.toolbar-context-usage-percent {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e7fbff;
+}
+
+.toolbar-context-usage-tokens {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.toolbar-context-progress {
+  position: relative;
+  width: 92px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.toolbar-context-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #63d2c6 0%, #7cd5ff 54%, #ffd38a 100%);
+  box-shadow: 0 0 16px rgba(124, 213, 255, 0.25);
 }
 
 .toolbar-settings-link {

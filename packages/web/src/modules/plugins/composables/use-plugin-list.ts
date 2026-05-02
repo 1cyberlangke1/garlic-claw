@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import type {
   PluginActionName,
@@ -8,6 +8,7 @@ import type {
   PluginInfo,
 } from '@garlic-claw/shared'
 import type { PluginDetailSnapshot } from '@/modules/plugins/composables/plugin-management.data'
+import { subscribeInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 import { useUiStore } from '@/shared/stores/ui'
 import {
   deletePluginRecord,
@@ -43,6 +44,8 @@ export function usePluginList(options: UsePluginListOptions) {
   const selectedPluginName = ref<string | null>(null)
   const conversationSessions = shallowRef<PluginConversationSessionInfo[]>([])
   const healthSnapshot = shallowRef<PluginHealthSnapshot | null>(null)
+  let activeDetailRequestId = 0
+  let appliedDetailPluginName: string | null = null
 
   const selectedPlugin = computed<PluginInfo | null>(() => {
     const found = plugins.value.find(
@@ -61,6 +64,15 @@ export function usePluginList(options: UsePluginListOptions) {
 
   onMounted(() => {
     void refreshAll()
+  })
+  const unsubscribeInternalConfigChanged = subscribeInternalConfigChanged(({ scope }) => {
+    if (scope !== 'provider-models' || !selectedPluginName.value) {
+      return
+    }
+    void refreshSelectedDetails(selectedPluginName.value)
+  })
+  onUnmounted(() => {
+    unsubscribeInternalConfigChanged()
   })
 
   if (options.preferredPluginName) {
@@ -95,6 +107,7 @@ export function usePluginList(options: UsePluginListOptions) {
       if (fallback) {
         await refreshSelectedDetails(fallback.name)
       } else {
+        appliedDetailPluginName = null
         options.clearDetailState()
       }
     } catch (caughtError) {
@@ -113,10 +126,16 @@ export function usePluginList(options: UsePluginListOptions) {
     pluginName = selectedPluginName.value ?? undefined,
   ) {
     if (!pluginName) {
+      appliedDetailPluginName = null
       options.clearDetailState()
       return
     }
 
+    const requestId = ++activeDetailRequestId
+    if (selectedPluginName.value === pluginName && appliedDetailPluginName !== pluginName) {
+      clearDetailState()
+      options.clearDetailState()
+    }
     options.detailLoading.value = true
     options.error.value = null
     try {
@@ -125,6 +144,10 @@ export function usePluginList(options: UsePluginListOptions) {
         options.getEventQuery(),
         options.getStoragePrefix(),
       )
+      if (requestId !== activeDetailRequestId || selectedPluginName.value !== pluginName) {
+        return
+      }
+      appliedDetailPluginName = pluginName
       conversationSessions.value = detail.conversationSessions
       healthSnapshot.value = detail.healthSnapshot
       updatePluginSummary(pluginName, {
@@ -132,9 +155,14 @@ export function usePluginList(options: UsePluginListOptions) {
       })
       options.applyDetailSnapshot(detail, pluginName)
     } catch (caughtError) {
+      if (requestId !== activeDetailRequestId || selectedPluginName.value !== pluginName) {
+        return
+      }
       options.error.value = toErrorMessage(caughtError, '加载插件详情失败')
     } finally {
-      options.detailLoading.value = false
+      if (requestId === activeDetailRequestId) {
+        options.detailLoading.value = false
+      }
     }
   }
 
@@ -182,7 +210,13 @@ export function usePluginList(options: UsePluginListOptions) {
     try {
       const result = await runPluginActionRequest(pluginName, action)
       await reloadPluginListSilently()
-      await refreshSelectedDetails(pluginName)
+      if (selectedPluginName.value) {
+        await refreshSelectedDetails(selectedPluginName.value)
+      } else {
+        appliedDetailPluginName = null
+        clearDetailState()
+        options.clearDetailState()
+      }
       uiStore.notify(result.message)
     } catch (caughtError) {
       options.error.value = toErrorMessage(caughtError, '执行插件动作失败')
@@ -233,8 +267,19 @@ export function usePluginList(options: UsePluginListOptions) {
   }
 
   async function reloadPluginListSilently() {
+    const currentPluginName = selectedPluginName.value
     const nextPlugins = await loadPlugins()
     plugins.value = nextPlugins
+    selectedPluginName.value = pickDefaultPluginName({
+      plugins: nextPlugins,
+      currentPluginName,
+      preferredPluginName: options.preferredPluginName?.value ?? null,
+    })
+    if (!selectedPluginName.value) {
+      appliedDetailPluginName = null
+      clearDetailState()
+      options.clearDetailState()
+    }
   }
 
   function updatePluginSummary(pluginName: string, patch: Partial<PluginInfo>) {

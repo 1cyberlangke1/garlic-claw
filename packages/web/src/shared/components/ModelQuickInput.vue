@@ -39,6 +39,7 @@ import {
   listAiModels,
   listAiProviders,
 } from '@/modules/ai-settings/api/ai'
+import { subscribeInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 
 /**
  * 自动补全建议项。
@@ -71,6 +72,8 @@ const selectedIndex = ref(0)
 const containerRef = ref<HTMLElement | null>(null)
 const inputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const allSuggestions = ref<SuggestionItem[]>([])
+let removeInternalConfigChangedListener = () => {}
+let loadRequestId = 0
 
 const filteredSuggestions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -94,6 +97,7 @@ watch(
 )
 
 async function loadAllModels() {
+  const requestId = ++loadRequestId
   try {
     const providers = await listAiProviders()
     const availableProviders = providers.filter((provider) => provider.available)
@@ -113,8 +117,14 @@ async function loadAllModels() {
       }),
     )
 
+    if (requestId !== loadRequestId) {
+      return
+    }
     allSuggestions.value = suggestionGroups.flat()
   } catch {
+    if (requestId !== loadRequestId) {
+      return
+    }
     allSuggestions.value = []
   }
 }
@@ -208,10 +218,17 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   void loadAllModels()
+  removeInternalConfigChangedListener = subscribeInternalConfigChanged(({ scope }) => {
+    if (scope !== 'provider-models') {
+      return
+    }
+    void loadAllModels()
+  })
   document.addEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {
+  removeInternalConfigChangedListener()
   document.removeEventListener('click', handleClickOutside)
 })
 

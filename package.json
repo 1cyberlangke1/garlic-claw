@@ -5,14 +5,15 @@
   "description": "具备设备控制和自动化功能的AI秘书系统",
   "workspaces": [
     "packages/*",
-    "packages/plugins/*"
+    "config/plugins/*"
   ],
   "scripts": {
     "dev:server": "npm run build:server-runtime-deps && npm run dev -w packages/server",
     "dev:web": "npm run dev -w packages/web",
     "build:server": "npm run build:server-runtime-deps && npm run build -w packages/server",
     "typecheck:server": "npm run typecheck -w packages/server",
-    "build:server-runtime-deps": "npm run build:shared && npm run build -w packages/plugin-sdk",
+    "build:plugins": "node ./tools/build-project-plugins.mjs",
+    "build:server-runtime-deps": "npm run build:shared && npm run build -w packages/plugin-sdk && npm run build:plugins",
     "test:server": "npm run build:server-runtime-deps && npm run test -w packages/server -- --runInBand",
     "smoke:server": "npm run build:server-runtime-deps && npm run smoke:http -w packages/server -- --profile full",
     "smoke:server:core": "npm run build:server-runtime-deps && npm run smoke:http -w packages/server -- --profile core",
@@ -22,7 +23,7 @@
     "build:web": "npm run build -w packages/web",
     "build:shared": "npm run build -w packages/shared",
     "count:server-src": "node ./tools/count-server-src-lines.mjs",
-    "lint": "eslint --cache --cache-strategy content --cache-location .cache/eslint \"packages/*/src/**/*.ts\" \"packages/*/tests/**/*.ts\" \"packages/plugins/*/src/**/*.ts\"",
+    "lint": "eslint --cache --cache-strategy content --cache-location .cache/eslint \"packages/*/src/**/*.ts\" \"packages/*/tests/**/*.ts\" \"config/plugins/*/src/**/*.ts\"",
     "repo:refactor-metrics": "node ./tools/refactor/cli.js refactor-metrics",
     "repo:exports-guard": "node ./tools/refactor/cli.js exports-guard",
     "repo:forbidden-imports": "node ./tools/refactor/cli.js forbidden-imports",

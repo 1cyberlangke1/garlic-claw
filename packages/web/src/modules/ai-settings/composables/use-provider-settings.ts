@@ -54,6 +54,7 @@ export function useProviderSettings() {
   const error = providerRequestState.error
   const appError = providerRequestState.appError
   const savingVision = ref(false)
+  const savingHostModelRoutingConfig = ref(false)
   const savingRuntimeToolsConfig = ref(false)
   const savingSubagentConfig = ref(false)
   const savingContextGovernanceConfig = ref(false)
@@ -86,18 +87,29 @@ export function useProviderSettings() {
   const discoveredModels = ref<DiscoveredAiModel[]>([])
   const connectionResult = ref<ProviderConnectionResult | null>(null)
   let providerSelectionRequestId = 0
+  let providerModelOptionsRequestId = 0
   let discoveryRequestId = 0
   let connectionTestRequestId = 0
+  let hostModelRoutingRequestId = 0
+  let refreshAllRequestId = 0
+
+  function emitProviderModelsChanged() {
+    emitInternalConfigChanged({ scope: 'provider-models' })
+  }
 
   onMounted(() => {
     void refreshAll()
   })
 
   async function refreshAll(preferredProviderId?: string) {
+    const requestId = ++refreshAllRequestId
     loadingProviders.value = true
     providerRequestState.clearError()
     try {
       const baseData = await loadProviderSettingsBaseData()
+      if (requestId !== refreshAllRequestId) {
+        return
+      }
       catalog.value = baseData.catalog
       defaultSelection.value = baseData.defaultSelection
       providers.value = baseData.providers
@@ -115,11 +127,19 @@ export function useProviderSettings() {
         ),
       )
       const selectedSelection = await selectAvailableProvider(preferredProviderId)
+      if (requestId !== refreshAllRequestId) {
+        return
+      }
       await refreshProviderModelOptions(selectedSelection)
     } catch (caughtError) {
+      if (requestId !== refreshAllRequestId) {
+        return
+      }
       providerRequestState.setError(caughtError, '加载失败')
     } finally {
-      loadingProviders.value = false
+      if (requestId === refreshAllRequestId) {
+        loadingProviders.value = false
+      }
     }
   }
 
@@ -194,6 +214,7 @@ export function useProviderSettings() {
     showProviderDialog.value = false
     await saveProviderConfig(provider)
     await refreshAll(provider.id)
+    emitProviderModelsChanged()
   }
 
   async function deleteSelectedProvider() {
@@ -202,6 +223,7 @@ export function useProviderSettings() {
     }
     await deleteProviderConfig(selectedProvider.value.id)
     await refreshAll()
+    emitProviderModelsChanged()
   }
 
   async function addModel(payload: { modelId: string; name?: string }) {
@@ -210,6 +232,7 @@ export function useProviderSettings() {
     }
     await addProviderModel(selectedProvider.value.id, payload.modelId, payload.name)
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitProviderModelsChanged()
   }
 
   /**
@@ -271,6 +294,7 @@ export function useProviderSettings() {
       modelIds,
     )
     await reloadSelectedProvider(providerId)
+    emitProviderModelsChanged()
   }
 
   async function deleteModel(modelId: string) {
@@ -279,6 +303,7 @@ export function useProviderSettings() {
     }
     await deleteProviderModel(selectedProvider.value.id, modelId)
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitProviderModelsChanged()
   }
 
   async function setDefaultModel(modelId: string) {
@@ -303,6 +328,7 @@ export function useProviderSettings() {
           }
         : provider,
     )
+    emitProviderModelsChanged()
   }
 
   /**
@@ -323,6 +349,7 @@ export function useProviderSettings() {
       payload.capabilities,
     )
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitProviderModelsChanged()
   }
 
   async function updateContextLength(payload: {
@@ -339,6 +366,7 @@ export function useProviderSettings() {
       payload.contextLength,
     )
     await reloadSelectedProvider(selectedProvider.value.id)
+    emitProviderModelsChanged()
   }
 
   /**
@@ -392,13 +420,26 @@ export function useProviderSettings() {
     savingVision.value = true
     try {
       visionConfig.value = await saveVisionFallbackConfig(config)
+      emitInternalConfigChanged({ scope: 'vision-fallback' })
     } finally {
       savingVision.value = false
     }
   }
 
   async function saveHostModelRoutingConfig(config: AiHostModelRoutingConfig) {
-    hostModelRoutingConfig.value = await saveHostModelRouting(config)
+    const requestId = ++hostModelRoutingRequestId
+    savingHostModelRoutingConfig.value = true
+    try {
+      const nextConfig = await saveHostModelRouting(config)
+      if (requestId !== hostModelRoutingRequestId) {
+        return
+      }
+      hostModelRoutingConfig.value = nextConfig
+    } finally {
+      if (requestId === hostModelRoutingRequestId) {
+        savingHostModelRoutingConfig.value = false
+      }
+    }
   }
 
   async function saveRuntimeToolsConfig(values: PluginConfigSnapshot['values']) {
@@ -437,6 +478,7 @@ export function useProviderSettings() {
   async function refreshProviderModelOptions(
     selectionData?: Awaited<ReturnType<typeof loadProviderSelectionData>> | null,
   ) {
+    const requestId = ++providerModelOptionsRequestId
     const options = await loadProviderModelOptions({
       providers: providers.value,
       preloadedModelsByProviderId: {
@@ -448,6 +490,9 @@ export function useProviderSettings() {
           : {}),
       },
     })
+    if (requestId !== providerModelOptionsRequestId) {
+      return
+    }
     providerModelsByProviderId.value = options.modelsByProviderId
     visionOptions.value = options.visionOptions
     hostModelRoutingOptions.value = options.hostModelRoutingOptions
@@ -469,6 +514,7 @@ export function useProviderSettings() {
   return {
     loadingProviders,
     savingVision,
+    savingHostModelRoutingConfig,
     savingRuntimeToolsConfig,
     savingSubagentConfig,
     savingContextGovernanceConfig,

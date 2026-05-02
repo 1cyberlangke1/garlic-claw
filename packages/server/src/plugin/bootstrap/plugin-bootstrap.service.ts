@@ -4,10 +4,19 @@ import type {
   PluginManifest, PluginPermission, PluginRemoteAccessConfig, PluginRemoteDescriptor, PluginRouteDescriptor,
   PluginRuntimeKind, RemotePluginConnectionInfo,
 } from '@garlic-claw/shared';
-import { Injectable, Optional } from '@nestjs/common';
+import type {
+  PluginAuthorDefinition,
+  PluginAuthorTransportGovernanceHandlers,
+} from '@garlic-claw/plugin-sdk/authoring';
+import type { PluginHostFacadeMethods } from '@garlic-claw/plugin-sdk/host';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { BuiltinPluginRegistryService } from '../builtin/builtin-plugin-registry.service';
 import { PluginGovernanceService, type PluginGovernanceOverrides } from '../governance/plugin-governance.service';
 import { PluginPersistenceService, type RegisteredPluginRecord, type RegisteredPluginRemoteRecord } from '../persistence/plugin-persistence.service';
+import {
+  ProjectPluginRegistryService,
+  type ProjectPluginDefinitionRecord,
+} from '../project/project-plugin-registry.service';
 
 const CONFIG_NODE_TYPES = ['string', 'text', 'int', 'float', 'bool', 'object', 'list'] as const;
 const CONFIG_RENDER_TYPES = ['checkbox', 'select'] as const;
@@ -25,12 +34,24 @@ export interface UpsertRemotePluginInput { access: PluginRemoteAccessConfig; des
 
 export interface PluginManifestFallback { description?: string; id: string; name?: string; remote?: PluginRemoteDescriptor; runtime?: PluginRuntimeKind; version?: string; }
 
+export interface LocalPluginDefinitionRecord {
+  definition: PluginAuthorDefinition<PluginHostFacadeMethods>;
+  source: 'builtin' | 'project';
+  transportGovernance?: PluginAuthorTransportGovernanceHandlers;
+}
+
+export interface ReloadLocalPluginResult {
+  pluginId: string;
+  removed: boolean;
+}
+
 @Injectable()
 export class PluginBootstrapService {
   constructor(
     private readonly pluginGovernanceService: PluginGovernanceService,
     private readonly pluginPersistenceService: PluginPersistenceService,
     @Optional() private readonly builtinPluginRegistryService?: BuiltinPluginRegistryService,
+    @Optional() private readonly projectPluginRegistryService?: ProjectPluginRegistryService,
   ) {}
 
   getPlugin(pluginId: string): RegisteredPluginRecord { return this.pluginPersistenceService.getPluginOrThrow(pluginId); }
@@ -45,8 +66,76 @@ export class PluginBootstrapService {
     return this.builtinPluginRegistryService.listDefinitions().map((definition) => this.registerBuiltinDefinition(definition).pluginId);
   }
 
+  bootstrapProjectPlugins(onDrop?: (pluginId: string) => void): string[] {
+    if (!this.projectPluginRegistryService) {
+      return [];
+    }
+    const definitions = this.projectPluginRegistryService.loadDefinitions();
+    const loadedPluginIds = new Set(definitions.map((definition) => definition.definition.manifest.id));
+    const builtinPluginIds = new Set(
+      this.builtinPluginRegistryService?.listDefinitions().map((definition) => definition.manifest.id) ?? [],
+    );
+    const droppedPluginIds = this.pluginPersistenceService.dropPluginRecords(
+      this.pluginPersistenceService
+        .listPlugins()
+        .filter((plugin) => plugin.manifest.runtime === 'local')
+        .filter((plugin) => !builtinPluginIds.has(plugin.pluginId))
+        .filter((plugin) => !loadedPluginIds.has(plugin.pluginId))
+        .map((plugin) => plugin.pluginId),
+    );
+    for (const pluginId of droppedPluginIds) {
+      onDrop?.(pluginId);
+    }
+    return definitions.map((definition) => this.registerProjectDefinition(definition).pluginId);
+  }
+
   canReloadBuiltin(pluginId: string): boolean {
     return this.builtinPluginRegistryService?.hasDefinition(pluginId) ?? false;
+  }
+
+  canReloadLocal(pluginId: string): boolean {
+    return Boolean(
+      this.builtinPluginRegistryService?.hasDefinition(pluginId)
+      || this.projectPluginRegistryService?.hasDefinition(pluginId),
+    );
+  }
+
+  getLocalDefinition(pluginId: string): LocalPluginDefinitionRecord {
+    if (this.builtinPluginRegistryService?.hasDefinition(pluginId)) {
+      return {
+        definition: this.builtinPluginRegistryService.getDefinition(pluginId),
+        source: 'builtin',
+      };
+    }
+    const projectDefinition = this.projectPluginRegistryService?.getDefinition(pluginId);
+    if (projectDefinition) {
+      return {
+        definition: projectDefinition.definition,
+        source: 'project',
+        ...(projectDefinition.transportGovernance
+          ? { transportGovernance: projectDefinition.transportGovernance }
+          : {}),
+      };
+    }
+    throw new Error(`Local plugin definition not found: ${pluginId}`);
+  }
+
+  reloadLocal(pluginId: string): ReloadLocalPluginResult {
+    if (this.builtinPluginRegistryService?.hasDefinition(pluginId)) {
+      return { pluginId: this.registerBuiltinDefinition(this.builtinPluginRegistryService.getDefinition(pluginId)).pluginId, removed: false };
+    }
+    if (!this.projectPluginRegistryService) {
+      throw new Error('Project plugin registry is unavailable');
+    }
+    try {
+      return { pluginId: this.registerProjectDefinition(this.projectPluginRegistryService.reloadDefinition(pluginId)).pluginId, removed: false };
+    } catch (error) {
+      if (!isMissingProjectPluginDefinitionError(error)) {
+        throw error;
+      }
+      this.pluginPersistenceService.dropPluginRecords([pluginId]);
+      return { pluginId, removed: true };
+    }
   }
 
   registerPlugin(input: RegisterPluginInput): RegisteredPluginRecord {
@@ -82,6 +171,20 @@ export class PluginBootstrapService {
       fallback: { id: definition.manifest.id, name: definition.manifest.name, runtime: 'local', version: definition.manifest.version },
       governance: definition.governance,
       manifest: definition.manifest,
+    });
+  }
+
+  private registerProjectDefinition(
+    definition: ProjectPluginDefinitionRecord,
+  ): RegisteredPluginRecord {
+    return this.registerPlugin({
+      fallback: {
+        id: definition.definition.manifest.id,
+        name: definition.definition.manifest.name,
+        runtime: 'local',
+        version: definition.definition.manifest.version,
+      },
+      manifest: definition.definition.manifest,
     });
   }
 }
@@ -246,4 +349,9 @@ function readLiteral<T extends string>(value: unknown, allowed: readonly T[]): T
 
 function readArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? [...value] as T[] : [];
+}
+
+function isMissingProjectPluginDefinitionError(error: unknown): boolean {
+  return error instanceof NotFoundException
+    || (error instanceof Error && error.message.includes('Project plugin definition not found'));
 }

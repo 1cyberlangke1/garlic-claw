@@ -76,6 +76,40 @@ describe('RuntimeHostPluginRuntimeService', () => {
     })).toBe('collect-name');
   });
 
+  it('deletes plugin runtime storage, scoped state and cron jobs together', () => {
+    const pluginPersistenceService = createPluginPersistenceService();
+    const service = createService(pluginPersistenceService);
+
+    service.setPluginStorage('builtin.memory', 'cursor.lastMessageId', 'message-42');
+    service.setStoreValue('state', 'builtin.memory', {
+      conversationId: 'conversation-1',
+      source: 'chat-hook',
+      userId: 'user-1',
+    }, {
+      key: 'draft.step',
+      scope: 'conversation',
+      value: 'collect-name',
+    });
+    service.registerCronJob('builtin.memory', {
+      cron: '1s',
+      name: 'heartbeat',
+    });
+
+    service.deletePluginRuntimeState('builtin.memory');
+
+    const reloaded = createService(pluginPersistenceService);
+    expect(reloaded.listPluginStorage('builtin.memory')).toEqual([]);
+    expect(reloaded.getStoreValue('state', 'builtin.memory', {
+      conversationId: 'conversation-1',
+      source: 'chat-hook',
+      userId: 'user-1',
+    }, {
+      key: 'draft.step',
+      scope: 'conversation',
+    })).toBeNull();
+    expect(reloaded.listCronJobs('builtin.memory')).toEqual([]);
+  });
+
   it('restores host cron jobs across reloads and updates lastRunAt after a real tick', async () => {
     jest.useFakeTimers();
     const pluginPersistenceService = createPluginPersistenceService();

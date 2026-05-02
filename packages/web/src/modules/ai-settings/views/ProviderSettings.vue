@@ -147,18 +147,12 @@
                         :data-test="`context-length-input-${m.id}`"
                         class="field-input field-input-sm"
                         :value="ctxDrafts[m.id] ?? m.contextLength"
+                        min="1"
                         type="number"
                         @input="handleCtxInput(m.id, String($event))"
+                        @blur="flushCtxSave(m)"
                       />
                     </span>
-                    <ElButton
-                      :data-test="`context-length-save-${m.id}`"
-                      size="small"
-                      :disabled="!canSaveCtx(m)"
-                      @click="saveCtx(m)"
-                    >
-                      保存
-                    </ElButton>
                   </div>
                 </div>
                 <div class="model-actions">
@@ -185,7 +179,7 @@
         v-if="activeSection === 'routing'"
         :config="hostModelRoutingConfig"
         :options="hostModelRoutingOptions"
-        :saving="false"
+        :saving="savingHostModelRoutingConfig"
         @save="saveHostModelRoutingConfig"
       />
 
@@ -251,7 +245,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElButton, ElCheckbox, ElInput } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import type { IconifyIcon } from '@iconify/types'
@@ -288,6 +282,7 @@ const navItems: Array<{ id: string; label: string; icon: IconifyIcon; divided?: 
 const {
   loadingProviders,
   savingVision,
+  savingHostModelRoutingConfig,
   savingRuntimeToolsConfig,
   savingSubagentConfig,
   savingContextGovernanceConfig,
@@ -394,9 +389,18 @@ function emitCapImageToggle(model: AiModelConfig, checked: string | number | boo
 /* ── 上下文长度 ── */
 const ctxDrafts = ref<Record<string, string>>({})
 const ctxBases = ref<Record<string, string>>({})
+const ctxSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const CONTEXT_LENGTH_SAVE_DEBOUNCE_MS = 500
 watch(() => selectedModels.value, (models) => {
   const nextDrafts: Record<string, string> = {}
   const nextBases: Record<string, string> = {}
+  const nextModelIds = new Set(models.map((model) => model.id))
+  for (const [modelId, timer] of ctxSaveTimers.entries()) {
+    if (!nextModelIds.has(modelId)) {
+      clearTimeout(timer)
+      ctxSaveTimers.delete(modelId)
+    }
+  }
   for (const m of models) {
     const base = String(m.contextLength)
     const prevBase = ctxBases.value[m.id]
@@ -409,15 +413,54 @@ watch(() => selectedModels.value, (models) => {
 }, { immediate: true })
 function handleCtxInput(modelId: string, value: string) {
   ctxDrafts.value = { ...ctxDrafts.value, [modelId]: value }
+  scheduleCtxSave(modelId)
 }
 function canSaveCtx(model: AiModelConfig) {
   const draft = Number(ctxDrafts.value[model.id] ?? model.contextLength)
   return Number.isInteger(draft) && draft > 0 && draft !== model.contextLength
 }
+function flushCtxSave(model: AiModelConfig) {
+  scheduleCtxSave(model.id, true)
+}
 function saveCtx(model: AiModelConfig) {
   const val = Number(ctxDrafts.value[model.id] ?? model.contextLength)
   if (Number.isInteger(val) && val > 0) updateContextLength({ modelId: model.id, contextLength: val })
 }
+function scheduleCtxSave(modelId: string, immediate = false) {
+  const model = selectedModels.value.find((entry) => entry.id === modelId)
+  if (!model || !canSaveCtx(model)) {
+    clearCtxSaveTimer(modelId)
+    return
+  }
+  clearCtxSaveTimer(modelId)
+  const submit = () => {
+    ctxSaveTimers.delete(modelId)
+    const latestModel = selectedModels.value.find((entry) => entry.id === modelId)
+    if (!latestModel || !canSaveCtx(latestModel)) {
+      return
+    }
+    saveCtx(latestModel)
+  }
+  if (immediate) {
+    submit()
+    return
+  }
+  ctxSaveTimers.set(modelId, setTimeout(submit, CONTEXT_LENGTH_SAVE_DEBOUNCE_MS))
+}
+function clearCtxSaveTimer(modelId: string) {
+  const timer = ctxSaveTimers.get(modelId)
+  if (!timer) {
+    return
+  }
+  clearTimeout(timer)
+  ctxSaveTimers.delete(modelId)
+}
+onBeforeUnmount(() => {
+  for (const timer of ctxSaveTimers.values()) {
+    clearTimeout(timer)
+  }
+  ctxSaveTimers.clear()
+})
 </script>
 
 <style scoped>
@@ -579,6 +622,20 @@ function saveCtx(model: AiModelConfig) {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+.provider-search-input {
+  flex: 1;
+}
+.toolbar-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  margin-left: auto;
+  border-radius: 10px;
 }
 .current-provider-name {
   font-size: 16px;

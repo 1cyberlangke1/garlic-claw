@@ -38,6 +38,11 @@ export class RuntimePluginGovernanceService {
     return snapshot ? { ...snapshot } : null;
   }
 
+  deletePluginRuntimeState(pluginId: string): void {
+    this.failureCounts.delete(pluginId);
+    this.healthSnapshots.delete(pluginId);
+  }
+
   listPlugins(): RegisteredPluginRecord[] { return this.pluginBootstrapService.listPlugins().sort((left, right) => left.pluginId.localeCompare(right.pluginId)); }
 
   listSupportedActions(pluginId: string): PluginActionName[] {
@@ -45,7 +50,7 @@ export class RuntimePluginGovernanceService {
     if (plugin.manifest.runtime !== 'local') {
       return [...REMOTE_PLUGIN_ACTIONS];
     }
-    return this.pluginBootstrapService.canReloadBuiltin(pluginId)
+    return this.pluginBootstrapService.canReloadLocal(pluginId)
       ? [...LOCAL_PLUGIN_ACTIONS, 'reload']
       : [...LOCAL_PLUGIN_ACTIONS];
   }
@@ -56,8 +61,11 @@ export class RuntimePluginGovernanceService {
       const snapshot = await this.readPluginHealthSnapshot(input.pluginId);
       return createAcceptedActionResult(input.pluginId, input.action, snapshot.status === 'healthy' ? '插件健康检查通过' : '插件健康检查失败');
     }
-    if (input.action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadBuiltin(input.pluginId)) {
-      this.pluginBootstrapService.reloadBuiltin(input.pluginId);
+    if (input.action === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(input.pluginId)) {
+      const reloaded = this.pluginBootstrapService.reloadLocal(input.pluginId);
+      if (reloaded.removed) {
+        return createAcceptedActionResult(input.pluginId, input.action, '本地插件目录已删除，已清理旧记录');
+      }
       return createAcceptedActionResult(input.pluginId, input.action, '已重新装载本地插件');
     }
     if (plugin.manifest.runtime !== 'remote' || (input.action !== 'reload' && input.action !== 'reconnect' && input.action !== 'refresh-metadata')) {

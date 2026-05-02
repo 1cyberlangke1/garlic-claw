@@ -19,7 +19,7 @@ type RuntimeSubagentExecutionState = {
 @Injectable()
 export class RuntimeHostSubagentRunnerService {
   private readonly activeExecutions = new Map<string, RuntimeSubagentExecutionState>();
-  private readonly scheduledConversationIds = new Set<string>();
+  private readonly scheduledExecutionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly waiters = new Map<string, Set<() => void>>();
 
   constructor(
@@ -38,12 +38,15 @@ export class RuntimeHostSubagentRunnerService {
         continue;
       }
       if (subagent.status === 'running') {
+        const interruptedAt = new Date().toISOString();
+        this.writeInterruptedAssistantMessage(conversation, '服务重启时中断了正在运行的子代理');
         this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
           nextSubagent: currentSubagent
             ? {
                 ...currentSubagent,
                 error: '服务重启时中断了正在运行的子代理',
-                finishedAt: new Date().toISOString(),
+                finishedAt: interruptedAt,
+                activeAssistantMessageId: undefined,
                 status: 'interrupted',
               }
             : null,
@@ -137,14 +140,19 @@ export class RuntimeHostSubagentRunnerService {
     if (subagent.status !== 'queued' && subagent.status !== 'running') {
       return asJsonValue(this.buildSubagentWaitResult(conversation));
     }
+    const waitForStateChange = this.awaitSubagentStateChange(conversation.id, () => {
+      const currentConversation = this.requireSubagentConversation(conversation.id, pluginId);
+      const currentSubagent = requireConversationSubagent(currentConversation);
+      return currentSubagent.status !== 'queued' && currentSubagent.status !== 'running';
+    });
     this.scheduleSubagentExecution(conversation.id);
     const timeoutMs = typeof params.timeoutMs === 'number' && params.timeoutMs > 0 ? params.timeoutMs : null;
     if (timeoutMs === null) {
-      await this.awaitSubagentStateChange(conversation.id);
+      await waitForStateChange;
       return asJsonValue(this.buildSubagentWaitResult(this.requireSubagentConversation(conversation.id, pluginId)));
     }
     await Promise.race([
-      this.awaitSubagentStateChange(conversation.id),
+      waitForStateChange,
       new Promise<void>((resolve) => {
         setTimeout(resolve, timeoutMs);
       }),
@@ -223,13 +231,16 @@ export class RuntimeHostSubagentRunnerService {
       await execution.completion.catch(() => undefined);
       return asJsonValue(this.buildSubagentHandle(this.requireSubagentConversation(conversation.id, pluginId, userId)));
     }
+    this.clearScheduledExecution(conversation.id);
+    const interruptedAt = new Date().toISOString();
+    this.writeInterruptedAssistantMessage(conversation, '子代理已被手动中断');
     this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
       nextSubagent: currentSubagent
         ? {
             ...currentSubagent,
             activeAssistantMessageId: undefined,
             error: '子代理已被手动中断',
-            finishedAt: new Date().toISOString(),
+            finishedAt: interruptedAt,
             status: 'interrupted',
           }
         : null,
@@ -358,14 +369,14 @@ export class RuntimeHostSubagentRunnerService {
   }
 
   private scheduleSubagentExecution(conversationId: string): void {
-    if (this.activeExecutions.has(conversationId) || this.scheduledConversationIds.has(conversationId)) {
+    if (this.activeExecutions.has(conversationId) || this.scheduledExecutionTimers.has(conversationId)) {
       return;
     }
-    this.scheduledConversationIds.add(conversationId);
-    setTimeout(() => {
-      this.scheduledConversationIds.delete(conversationId);
+    const timer = setTimeout(() => {
+      this.scheduledExecutionTimers.delete(conversationId);
       void this.executeSubagentConversation(conversationId).catch(() => undefined);
     }, 0);
+    this.scheduledExecutionTimers.set(conversationId, timer);
   }
 
   private async executeSubagentConversation(conversationId: string): Promise<PluginSubagentWaitResult> {
@@ -386,7 +397,7 @@ export class RuntimeHostSubagentRunnerService {
   private async runSubagentConversation(conversationId: string, abortSignal: AbortSignal): Promise<PluginSubagentWaitResult> {
     const conversation = this.requireSubagentConversation(conversationId);
     const subagent = requireConversationSubagent(conversation);
-    if (subagent.status === 'closed') {
+    if (subagent.status === 'closed' || subagent.status === 'interrupted') {
       return this.buildSubagentWaitResult(conversation);
     }
     this.runtimeHostConversationRecordService?.updateConversationSubagent(conversation.id, (currentSubagent) => ({
@@ -529,7 +540,7 @@ export class RuntimeHostSubagentRunnerService {
     return nextMessages.slice(-messages.length).map((message) => String(message.id));
   }
 
-  private awaitSubagentStateChange(conversationId: string): Promise<void> {
+  private awaitSubagentStateChange(conversationId: string, shouldResolveImmediately?: () => boolean): Promise<void> {
     return new Promise<void>((resolve) => {
       const waiters = this.waiters.get(conversationId) ?? new Set<() => void>();
       const handler = () => {
@@ -541,6 +552,9 @@ export class RuntimeHostSubagentRunnerService {
       };
       waiters.add(handler);
       this.waiters.set(conversationId, waiters);
+      if (shouldResolveImmediately?.()) {
+        handler();
+      }
     });
   }
 
@@ -548,6 +562,26 @@ export class RuntimeHostSubagentRunnerService {
     for (const resolve of this.waiters.get(conversationId) ?? []) {
       resolve();
     }
+  }
+
+  private clearScheduledExecution(conversationId: string): void {
+    const timer = this.scheduledExecutionTimers.get(conversationId);
+    if (!timer) {
+      return;
+    }
+    clearTimeout(timer);
+    this.scheduledExecutionTimers.delete(conversationId);
+  }
+
+  private writeInterruptedAssistantMessage(conversation: RuntimeConversationRecord, errorMessage: string): void {
+    const targetMessageId = readConversationActiveAssistantMessageId(conversation);
+    if (!targetMessageId) {
+      return;
+    }
+    this.runtimeHostConversationMessageService.writeMessage(conversation.id, targetMessageId, {
+      error: errorMessage,
+      status: 'stopped',
+    });
   }
 
   private resolveEffectiveSubagentRequest(request: PluginSubagentRequest): { request: PluginSubagentRequest; subagentType: ResolvedSubagentType } {
@@ -632,6 +666,22 @@ function readConversationExecutionResult(conversation: RuntimeConversationRecord
       toolCalls: readStoredToolCalls(message.toolCalls),
       toolResults: readStoredToolResults(message.toolResults),
     };
+  }
+  return null;
+}
+
+function readConversationActiveAssistantMessageId(conversation: RuntimeConversationRecord): string | null {
+  if (typeof conversation.subagent?.activeAssistantMessageId === 'string' && conversation.subagent.activeAssistantMessageId.trim()) {
+    return conversation.subagent.activeAssistantMessageId;
+  }
+  for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
+    const message = conversation.messages[index];
+    if (message.role !== 'assistant') {
+      continue;
+    }
+    if (message.status === 'pending' || message.status === 'streaming') {
+      return typeof message.id === 'string' ? message.id : null;
+    }
   }
   return null;
 }

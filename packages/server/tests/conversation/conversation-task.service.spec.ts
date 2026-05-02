@@ -1,3 +1,4 @@
+import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
 import {
   RuntimeHostConversationRecordService,
@@ -20,7 +21,7 @@ describe('ConversationTaskService', () => {
     runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(runtimeHostConversationRecordService);
     runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(runtimeHostConversationRecordService);
     runtimeToolPermissionService = new RuntimeToolPermissionService();
-    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeToolPermissionService, runtimeHostConversationTodoService);
+    service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeHostConversationRecordService, runtimeToolPermissionService, runtimeHostConversationTodoService);
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1' }) as { id: string }).id;
   });
 
@@ -35,6 +36,7 @@ describe('ConversationTaskService', () => {
       createStream: async () => ({
         modelId: 'gpt-5.4',
         providerId: 'openai',
+        requestHistorySignature: 'history-signature-1',
         stream: {
           fullStream: (async function* () {
             yield rawCustomFieldChunk('reasoning_content', '先检查');
@@ -110,6 +112,11 @@ describe('ConversationTaskService', () => {
 
     const conversation = runtimeHostConversationRecordService.requireConversation(conversationId);
     const persistedMetadata = JSON.parse(String(conversation.messages[0].metadataJson));
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(
+      (runtimeHostConversationRecordService.readConversationHistory(conversationId) as unknown as {
+        messages: Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0];
+      }).messages,
+    );
     expect(conversation.messages[0]).toMatchObject({
       content: '最终回复',
       model: 'gpt-5.4',
@@ -127,6 +134,8 @@ describe('ConversationTaskService', () => {
             modelId: 'gpt-5.4',
             outputTokens: 9,
             providerId: 'openai',
+            requestHistorySignature: 'history-signature-1',
+            responseHistorySignature,
             source: 'provider',
             totalTokens: 30,
           },
@@ -157,6 +166,45 @@ describe('ConversationTaskService', () => {
       toolResults: JSON.stringify([toolResultRecord()]),
     });
     expect(onSent).toHaveBeenCalledWith(expect.objectContaining({ content: '最终回复' }));
+  });
+
+  it('keeps the assistant message completed when onSent fails after the reply has finished', async () => {
+    const assistantMessage = createAssistantMessage(runtimeHostConversationMessageService);
+    const events: ConversationTaskEvent[] = [];
+
+    service.startTask({
+      assistantMessageId: String(assistantMessage.id),
+      conversationId,
+      createStream: async () => ({
+        modelId: 'gpt-5.4',
+        providerId: 'openai',
+        stream: {
+          fullStream: (async function* () {
+            yield delta('回复已完成');
+          })(),
+        },
+      }),
+      modelId: 'gpt-5.4',
+      onSent: async () => {
+        throw new Error('after-send 失败');
+      },
+      providerId: 'openai',
+    });
+    service.subscribe(String(assistantMessage.id), (event) => events.push(event));
+
+    await service.waitForTask(String(assistantMessage.id));
+
+    expect(runtimeHostConversationRecordService.requireConversation(conversationId).messages[0]).toMatchObject({
+      content: '回复已完成',
+      error: null,
+      role: 'assistant',
+      status: 'completed',
+    });
+    expect(events).toEqual([
+      { messageId: String(assistantMessage.id), status: 'streaming', type: 'status' },
+      { messageId: String(assistantMessage.id), text: '回复已完成', type: 'text-delta' },
+      { messageId: String(assistantMessage.id), status: 'completed', type: 'finish' },
+    ]);
   });
 
   it('stops an active task and leaves the assistant message in stopped state', async () => {

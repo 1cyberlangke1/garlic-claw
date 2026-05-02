@@ -16,6 +16,32 @@ const todoItemsState = vi.hoisted(() => ({
     },
   ],
 }))
+const contextWindowPreviewState = vi.hoisted(() => ({
+  value: null as
+    | {
+        enabled: boolean
+        estimatedTokens: number
+        excludedMessageIds: string[]
+        contextLength: number
+        frontendMessageWindowSize: number
+        includedMessageIds: string[]
+        keepRecentMessages: number
+        slidingWindowUsagePercent: number
+        strategy: 'sliding'
+      }
+    | null,
+}))
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return {
+    promise,
+    resolve,
+  }
+}
 
 vi.stubGlobal('fetch', mockFetch)
 
@@ -38,7 +64,7 @@ vi.mock('@/modules/chat/composables/use-chat-view', () => ({
     inputText: ref(''),
     pendingImages: ref([]),
     displayedMessages: ref([]),
-    contextWindowPreview: ref(null),
+    contextWindowPreview: ref(contextWindowPreviewState.value),
     queuedSendCount: ref(0),
     queuedSendPreviewEntries: ref([]),
     commandSuggestions: ref([
@@ -97,6 +123,7 @@ vi.mock('@/modules/personas/composables/persona-settings.data', () => ({
 describe('ChatView', () => {
   beforeEach(() => {
     vi.useRealTimers()
+    contextWindowPreviewState.value = null
     todoItemsState.value = [
       {
         content: '实现 todo 面板',
@@ -203,6 +230,38 @@ describe('ChatView', () => {
 
     expect(wrapper.find('.chat-todo-panel').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('当前待办')
+  })
+
+  it('renders context window usage beside the model summary', async () => {
+    contextWindowPreviewState.value = {
+      contextLength: 10000,
+      enabled: true,
+      estimatedTokens: 4000,
+      excludedMessageIds: [],
+      frontendMessageWindowSize: 200,
+      includedMessageIds: [],
+      keepRecentMessages: 6,
+      slidingWindowUsagePercent: 50,
+      strategy: 'sliding',
+    }
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.toolbar-context-usage').text()).toContain('40%')
+    expect(wrapper.find('.toolbar-context-usage').text()).toContain('4000 / 10000')
+    expect(wrapper.find('.toolbar-context-progress-fill').attributes('style')).toContain('width: 40%')
   })
 
   it('passes pending runtime permission requests into the approval panel', async () => {
@@ -314,5 +373,57 @@ describe('ChatView', () => {
 
     expect(wrapper.findAll('.chat-tab')).toHaveLength(2)
     expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the latest subagent tabs when an older polling request resolves later', async () => {
+    vi.useFakeTimers()
+    const childConversationId = '019dd900-1234-7abc-8def-1234567890ab'
+    const firstTabs = createDeferred<Array<Record<string, unknown>>>()
+    const secondTabs = createDeferred<Array<Record<string, unknown>>>()
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockImplementation(() => firstTabs.promise),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockImplementation(() => secondTabs.promise),
+      })
+
+    const wrapper = mount(ChatView, {
+      global: {
+        stubs: {
+          ChatMessageList: { template: '<div class="chat-message-list" />' },
+          ChatComposer: { template: '<div class="chat-composer" />' },
+          ModelQuickInput: { template: '<div class="model-quick-input" />' },
+          RouterLink: {
+            props: ['to'],
+            template: '<a><slot /></a>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    secondTabs.resolve([
+      {
+        id: childConversationId,
+        title: '子代理窗口',
+        createdAt: '2026-04-29T00:00:00.000Z',
+        updatedAt: '2026-04-29T00:00:00.000Z',
+        _count: { messages: 1 },
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.findAll('.chat-tab')).toHaveLength(2)
+
+    firstTabs.resolve([])
+    await flushPromises()
+
+    expect(wrapper.findAll('.chat-tab')).toHaveLength(2)
   })
 })

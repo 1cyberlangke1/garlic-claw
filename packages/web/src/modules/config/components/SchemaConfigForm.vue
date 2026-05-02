@@ -6,6 +6,7 @@
         <p>{{ description }}</p>
       </div>
       <ElButton
+        v-if="showSaveButton"
         class="save-button"
         :title="saveButtonTitle"
         :disabled="saving || !hasSchema"
@@ -36,7 +37,7 @@
 <script setup lang="ts">
 import { Icon } from '@iconify/vue'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElButton } from 'element-plus'
 import type {
   AiProviderSummary,
@@ -49,6 +50,7 @@ import type {
   PluginSubagentTypeSummary,
 } from '@garlic-claw/shared'
 import { listAiProviders } from '@/modules/ai-settings/api/ai'
+import { subscribeInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 import SchemaConfigNodeRenderer from '@/modules/config/components/SchemaConfigNodeRenderer.vue'
 import { listPersonas } from '@/modules/personas/api/personas'
 import { listSubagentTypes } from '@/modules/plugins/api/plugins'
@@ -61,8 +63,14 @@ const props = withDefaults(defineProps<{
   description?: string
   emptyText?: string
   saveButtonTitle?: string
+  autoSave?: boolean
+  autoSaveDelayMs?: number
+  showSaveButton?: boolean
 }>(), {
+  autoSave: false,
+  autoSaveDelayMs: 500,
   showHeader: true,
+  showSaveButton: true,
   title: '配置',
   description: '按声明的配置元数据统一渲染。',
   emptyText: '无可编辑的配置。',
@@ -71,6 +79,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (event: 'save', values: PluginConfigSnapshot['values']): void
+  (event: 'draft-change', values: PluginConfigSnapshot['values']): void
 }>()
 
 const draft = ref<JsonObject>({})
@@ -91,45 +100,93 @@ const hasSchema = computed(() => !!rootSchema.value)
 const headerClass = computed(() =>
   props.showHeader ? 'section-header' : 'section-actions',
 )
+const committedDraftSignature = ref('{}')
+const draftChangeTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const unsubscribeInternalConfigChanged = subscribeInternalConfigChanged(({ scope }) => {
+  if (scope !== 'provider-models' || !rootSchema.value || !schemaNeedsProviderOptions(rootSchema.value)) {
+    return
+  }
+  void refreshSpecialOptions(rootSchema.value)
+})
 
 watch(
   () => props.snapshot,
   (snapshot) => {
     formError.value = null
     draft.value = resolveDraftValues(snapshot)
+    committedDraftSignature.value = JSON.stringify(draft.value)
   },
   { immediate: true },
 )
 
 watch(
-  rootSchema,
-  async (nextSchema) => {
-    sourceError.value = null
-    if (!nextSchema) {
-      specialOptions.providers = []
-      specialOptions.personas = []
-      specialOptions.subagentTypes = []
+  draft,
+  () => {
+    const resolvedDraft = readResolvedDraftValues()
+    emit('draft-change', resolvedDraft)
+    if (!props.autoSave || !hasSchema.value) {
       return
     }
-
-    try {
-      const [providers, personas, subagentTypes] = await Promise.all([
-        schemaNeedsProviderOptions(nextSchema) ? listAiProviders() : Promise.resolve([]),
-        schemaNeedsPersonaOptions(nextSchema) ? listPersonas() : Promise.resolve([]),
-        schemaNeedsSubagentTypeOptions(nextSchema) ? listSubagentTypes() : Promise.resolve([]),
-      ])
-      specialOptions.providers = providers
-      specialOptions.personas = personas
-      specialOptions.subagentTypes = subagentTypes
-    } catch (error) {
-      specialOptions.providers = []
-      specialOptions.personas = []
-      specialOptions.subagentTypes = []
-      sourceError.value = error instanceof Error ? error.message : '加载配置选择器数据失败'
+    const nextSignature = JSON.stringify(resolvedDraft)
+    if (nextSignature === committedDraftSignature.value) {
+      clearDraftChangeTimer()
+      return
     }
+    scheduleAutoSave()
+  },
+  { deep: true },
+)
+
+watch(
+  () => props.saving,
+  (saving) => {
+    if (!saving && props.autoSave && hasSchema.value) {
+      const nextSignature = JSON.stringify(readResolvedDraftValues())
+      if (nextSignature !== committedDraftSignature.value) {
+        scheduleAutoSave(0)
+      }
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  clearDraftChangeTimer()
+  unsubscribeInternalConfigChanged()
+})
+
+watch(
+  rootSchema,
+  async (nextSchema) => {
+    await refreshSpecialOptions(nextSchema)
   },
   { immediate: true },
 )
+
+async function refreshSpecialOptions(nextSchema: PluginConfigSchema | undefined) {
+  sourceError.value = null
+  if (!nextSchema) {
+    specialOptions.providers = []
+    specialOptions.personas = []
+    specialOptions.subagentTypes = []
+    return
+  }
+
+  try {
+    const [providers, personas, subagentTypes] = await Promise.all([
+      schemaNeedsProviderOptions(nextSchema) ? listAiProviders() : Promise.resolve([]),
+      schemaNeedsPersonaOptions(nextSchema) ? listPersonas() : Promise.resolve([]),
+      schemaNeedsSubagentTypeOptions(nextSchema) ? listSubagentTypes() : Promise.resolve([]),
+    ])
+    specialOptions.providers = providers
+    specialOptions.personas = personas
+    specialOptions.subagentTypes = subagentTypes
+  } catch (error) {
+    specialOptions.providers = []
+    specialOptions.personas = []
+    specialOptions.subagentTypes = []
+    sourceError.value = error instanceof Error ? error.message : '加载配置选择器数据失败'
+  }
+}
 
 function applyDraft(nextValue: JsonValue | undefined) {
   draft.value = isJsonObject(nextValue) ? copyJsonObject(nextValue) : {}
@@ -137,11 +194,32 @@ function applyDraft(nextValue: JsonValue | undefined) {
 
 function submit() {
   try {
-    emit('save', rootSchema.value ? copyJsonObject(resolveConfigObjectValue(rootSchema.value, draft.value)) : {})
+    const values = readResolvedDraftValues()
+    committedDraftSignature.value = JSON.stringify(values)
+    emit('save', values)
     formError.value = null
   } catch (error) {
     formError.value = error instanceof Error ? error.message : '配置格式无效'
   }
+}
+
+function scheduleAutoSave(delayMs = props.autoSaveDelayMs) {
+  clearDraftChangeTimer()
+  draftChangeTimer.value = setTimeout(() => {
+    draftChangeTimer.value = null
+    if (props.saving || !props.autoSave || !hasSchema.value) {
+      return
+    }
+    submit()
+  }, delayMs)
+}
+
+function clearDraftChangeTimer() {
+  if (!draftChangeTimer.value) {
+    return
+  }
+  clearTimeout(draftChangeTimer.value)
+  draftChangeTimer.value = null
 }
 
 function resolveDraftValues(snapshot: PluginConfigSnapshot | null): JsonObject {
@@ -160,6 +238,10 @@ function resolveConfigObjectValue(
   currentValue: JsonObject | undefined,
 ): JsonObject {
   return (resolveConfigNodeValue(schema, currentValue) ?? {}) as JsonObject
+}
+
+function readResolvedDraftValues(): JsonObject {
+  return rootSchema.value ? copyJsonObject(resolveConfigObjectValue(rootSchema.value, draft.value)) : {}
 }
 
 function resolveConfigNodeValue(

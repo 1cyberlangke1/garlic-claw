@@ -430,6 +430,132 @@ describe('PluginPersistenceService', () => {
     expect(service.listPlugins()).toEqual([]);
   });
 
+  it('clears active plugin event logs on delete and keeps detached audit separate from rebuilt plugins', () => {
+    const tempLogRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-claw-plugin-log-'));
+    process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
+
+    try {
+      const service = new PluginPersistenceService();
+
+      service.upsertPlugin({
+        connected: true,
+        defaultEnabled: true,
+        governance: { canDisable: true },
+        lastSeenAt: null,
+        manifest: {
+          id: 'builtin.ping',
+          name: 'Builtin Ping',
+          permissions: [],
+          runtime: 'local',
+          tools: [],
+          version: '1.0.0',
+        },
+        pluginId: 'builtin.ping',
+      });
+      service.recordPluginEvent('builtin.ping', {
+        level: 'info',
+        message: 'saved memory',
+        type: 'tool:success',
+      });
+      service.updatePluginEventLog('builtin.ping', { maxFileSizeMb: 0 });
+      service.setConnectionState('builtin.ping', false);
+
+      service.deletePlugin('builtin.ping');
+
+      service.upsertPlugin({
+        connected: true,
+        defaultEnabled: true,
+        governance: { canDisable: true },
+        lastSeenAt: null,
+        manifest: {
+          id: 'builtin.ping',
+          name: 'Builtin Ping',
+          permissions: [],
+          runtime: 'local',
+          tools: [],
+          version: '1.0.1',
+        },
+        pluginId: 'builtin.ping',
+      });
+
+      expect(service.listPluginEvents('builtin.ping')).toEqual({
+        items: [],
+        nextCursor: null,
+      });
+      expect(fs.existsSync(path.join(tempLogRoot, 'plugins', encodeURIComponent('builtin.ping'), 'events.json'))).toBe(false);
+      expect(fs.existsSync(path.join(tempLogRoot, 'deleted-plugins', encodeURIComponent('builtin.ping'), 'events.json'))).toBe(true);
+      expect(JSON.parse(fs.readFileSync(path.join(tempLogRoot, 'deleted-plugins', encodeURIComponent('builtin.ping'), 'events.json'), 'utf8'))).toEqual({
+        records: [
+          expect.objectContaining({
+            level: 'warn',
+            message: 'Deleted plugin builtin.ping',
+            type: 'plugin:deleted',
+          }),
+        ],
+      });
+    } finally {
+      delete process.env.GARLIC_CLAW_LOG_ROOT;
+      fs.rmSync(tempLogRoot, { force: true, recursive: true });
+    }
+  });
+
+  it('clears active plugin event logs when plugin records are dropped', () => {
+    const tempLogRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-claw-plugin-log-drop-'));
+    process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
+
+    try {
+      const service = new PluginPersistenceService();
+
+      service.upsertPlugin({
+        connected: true,
+        defaultEnabled: true,
+        governance: { canDisable: true },
+        lastSeenAt: null,
+        manifest: {
+          id: 'builtin.ping',
+          name: 'Builtin Ping',
+          permissions: [],
+          runtime: 'local',
+          tools: [],
+          version: '1.0.0',
+        },
+        pluginId: 'builtin.ping',
+      });
+      service.recordPluginEvent('builtin.ping', {
+        level: 'info',
+        message: 'saved memory',
+        type: 'tool:success',
+      });
+
+      expect(service.dropPluginRecords(['builtin.ping'])).toEqual(['builtin.ping']);
+
+      service.upsertPlugin({
+        connected: true,
+        defaultEnabled: true,
+        governance: { canDisable: true },
+        lastSeenAt: null,
+        manifest: {
+          id: 'builtin.ping',
+          name: 'Builtin Ping',
+          permissions: [],
+          runtime: 'local',
+          tools: [],
+          version: '1.0.1',
+        },
+        pluginId: 'builtin.ping',
+      });
+
+      expect(service.listPluginEvents('builtin.ping')).toEqual({
+        items: [],
+        nextCursor: null,
+      });
+      expect(fs.existsSync(path.join(tempLogRoot, 'plugins', encodeURIComponent('builtin.ping'), 'events.json'))).toBe(false);
+    } finally {
+      delete process.env.GARLIC_CLAW_LOG_ROOT;
+      fs.rmSync(tempLogRoot, { force: true, recursive: true });
+    }
+  });
+
   it('records, filters and pages plugin events', () => {
     const service = new PluginPersistenceService();
 

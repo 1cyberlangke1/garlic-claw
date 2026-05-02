@@ -78,6 +78,8 @@ export interface AiModelConfig {
 export interface AiModelUsage {
   /** 输入 token 数。 */
   inputTokens: number;
+  /** 命中缓存的输入 token 数。 */
+  cachedInputTokens?: number;
   /** 输出 token 数。 */
   outputTokens: number;
   /** 总 token 数。 */

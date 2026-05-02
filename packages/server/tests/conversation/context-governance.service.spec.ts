@@ -2,6 +2,7 @@ import type { JsonObject } from '@garlic-claw/shared';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
 import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
@@ -108,6 +109,12 @@ describe('ContextGovernanceService', () => {
   });
 
   it('generates a conversation title through the model execution owner', async () => {
+    settingsService.updateConfig({
+      conversationTitle: {
+        defaultTitle: '新的对话',
+        enabled: true,
+      },
+    } as never);
     conversationRecordService.replaceMessages(conversationId, [
       createHistoryMessage('message-1', 'user', '帮我整理一下今天的代码评审结论'),
       createHistoryMessage('message-2', 'assistant', '今天主要处理 provider smoke、subagent 和上下文压缩'),
@@ -140,7 +147,6 @@ describe('ContextGovernanceService', () => {
       contextCompaction: {
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'manual',
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
@@ -208,15 +214,111 @@ describe('ContextGovernanceService', () => {
       && annotation.data?.role === 'summary')).toBe(true);
   });
 
+  it('returns a clear failure message when /compact hits a compaction API error', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        enabled: true,
+        keepRecentMessages: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一条历史消息，说明 smoke 需要真实 provider。'),
+      createHistoryMessage('message-2', 'assistant', '第二条历史回复，说明默认 provider 不能落到占位 key。'),
+      createHistoryMessage('message-3', 'user', '第三条历史消息，说明 subagent 结果需要回写。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(result.action).toBe('deferred-short-circuit');
+    if (result.action !== 'deferred-short-circuit') {
+      throw new Error(`unexpected action: ${result.action}`);
+    }
+    await expect(result.deferred.execute({
+      assistantMessageId: 'assistant-1',
+      conversationId,
+      userId: 'user-1',
+      userMessageId: 'user-1',
+    })).resolves.toEqual({
+      assistantContent: '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。\n原因：compaction api failed',
+      assistantParts: [{ text: '当前上下文已接近上限，但自动压缩失败，本轮已停止继续生成。请先手动执行 /compact，或清理部分历史后重试。\n原因：compaction api failed', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+  });
+
+  it('does not report compaction as successful when the summary still leaves history over budget', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一条历史消息。'.repeat(20)),
+      createHistoryMessage('message-2', 'assistant', '第二条历史回复。'.repeat(20)),
+      createHistoryMessage('message-3', 'user', '第三条消息保留给最近窗口。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '仍然过长的摘要。'.repeat(40),
+    });
+
+    const result = await service.applyMessageReceived({
+      content: '/compact',
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      parts: [{ text: '/compact', type: 'text' }],
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    expect(result.action).toBe('deferred-short-circuit');
+    if (result.action !== 'deferred-short-circuit') {
+      throw new Error(`unexpected action: ${result.action}`);
+    }
+    await expect(result.deferred.execute({
+      assistantMessageId: 'assistant-1',
+      conversationId,
+      userId: 'user-1',
+      userMessageId: 'user-1',
+    })).resolves.toEqual({
+      assistantContent: '压缩后的上下文仍超过预算，本次未替换历史。',
+      assistantParts: [{ text: '压缩后的上下文仍超过预算，本次未替换历史。', type: 'text' }],
+      modelId: 'context-compaction-command',
+      providerId: 'system',
+      reason: 'context-compaction:command',
+    });
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages).toHaveLength(3);
+    expect(history.messages.some((message) => typeof message.content === 'string' && message.content.includes('仍然过长的摘要'))).toBe(false);
+  });
+
   it('auto compacts history before model execution and short-circuits the current reply when auto continue is disabled', async () => {
     settingsService.updateConfig({
       contextCompaction: {
         allowAutoContinue: false,
-        compressionThreshold: 1,
+        compressionThreshold: 20,
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'auto',
-        reservedTokens: 1,
+        reservedTokens: 900,
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
@@ -229,7 +331,7 @@ describe('ContextGovernanceService', () => {
     aiModelExecutionService.generateText.mockResolvedValue({
       modelId: 'gpt-oss-20b',
       providerId: 'nvidia',
-      text: '自动压缩摘要：保留最近窗口并折叠更早历史。',
+      text: '自动摘要。',
     });
 
     await service.rewriteHistoryBeforeModel({
@@ -262,6 +364,72 @@ describe('ContextGovernanceService', () => {
     });
   });
 
+  it('does not let stale provider usage suppress auto compaction threshold checks', async () => {
+    settingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 50,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-26T00:00:00.000Z',
+        id: 'stale-history',
+        parts: [{ text: '旧历史', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-26T00:00:00.000Z',
+      },
+    ]);
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('message-1', 'user', '第一段较长的历史消息，用来确保当前真实历史已经超过自动压缩阈值。'.repeat(8)),
+      {
+        ...createHistoryMessage('message-2', 'assistant', '第二段较长的历史回复，附带的是上一轮旧 usage，不应该继续参与这轮阈值判断。'.repeat(8)),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 8,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 2,
+                providerId: 'nvidia',
+                responseHistorySignature: staleSignature,
+                source: 'provider',
+                totalTokens: 10,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+      createHistoryMessage('message-3', 'user', '第三段消息保留给最近窗口。'),
+    ], 'user-1');
+    aiModelExecutionService.generateText.mockResolvedValue({
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      text: '自动压缩摘要：当前历史过长，旧 usage 已失效。',
+    });
+
+    await service.rewriteHistoryBeforeModel({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    });
+
+    const history = conversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages.some((message) => message.content === '自动压缩摘要：当前历史过长，旧 usage 已失效。')).toBe(true);
+  });
+
   it('uses the configured compression model while keeping context window budget bound to the active chat model', async () => {
     settingsService.updateConfig({
       contextCompaction: {
@@ -271,7 +439,6 @@ describe('ContextGovernanceService', () => {
         },
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'manual',
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },
@@ -327,7 +494,6 @@ describe('ContextGovernanceService', () => {
       contextCompaction: {
         enabled: true,
         keepRecentMessages: 1,
-        mode: 'manual',
         strategy: 'summary',
         summaryPrompt: '请整理下面的对话摘要',
       },

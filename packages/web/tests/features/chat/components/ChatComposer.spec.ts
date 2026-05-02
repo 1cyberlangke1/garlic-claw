@@ -13,6 +13,7 @@ describe('ChatComposer', () => {
         queuedSendCount: 0,
         queuedSendPreviewEntries: [],
         canSend: true,
+        canStop: false,
         streaming: false,
       },
     })
@@ -53,6 +54,7 @@ describe('ChatComposer', () => {
         queuedSendCount: 0,
         queuedSendPreviewEntries: [],
         canSend: true,
+        canStop: false,
         streaming: false,
       },
     })
@@ -82,6 +84,7 @@ describe('ChatComposer', () => {
           { id: 'queued-1', preview: '第一条待发送' },
         ],
         canSend: true,
+        canStop: false,
         streaming: true,
       },
     })
@@ -93,5 +96,23 @@ describe('ChatComposer', () => {
     await wrapper.find('textarea').trigger('keydown', { key: 'ArrowUp', altKey: true })
 
     expect(wrapper.emitted('pop-queued-send')).toEqual([[]])
+  })
+
+  it('disables stop when the current blocking message is not actually stoppable', () => {
+    const wrapper = mount(ChatComposer, {
+      props: {
+        modelValue: '',
+        pendingImages: [],
+        uploadNotices: [],
+        commandSuggestions: [],
+        queuedSendCount: 0,
+        queuedSendPreviewEntries: [],
+        canSend: true,
+        canStop: false,
+        streaming: true,
+      },
+    })
+
+    expect(wrapper.find('.stop-button').attributes('disabled')).toBeDefined()
   })
 })

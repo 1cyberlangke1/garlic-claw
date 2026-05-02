@@ -89,5 +89,157 @@ describe('usePluginEvents', () => {
     })
     expect(state.eventLogs.value.map((entry) => entry.id)).toEqual(['event-3', 'event-2', 'event-1'])
     expect(state.eventNextCursor.value).toBeNull()
+    expect(state.eventQuery.value).toEqual({ limit: 50 })
+  })
+
+  it('ignores stale event responses after switching plugins and resets query on detail clear', async () => {
+    let resolveAlpha!: (value: { items: Array<{ id: string; type: string; level: string; message: string; metadata: null; createdAt: string }>; nextCursor: string | null }) => void
+    const alphaResult = new Promise<{
+      items: Array<{ id: string; type: string; level: string; message: string; metadata: null; createdAt: string }>
+      nextCursor: string | null
+    }>((resolve) => {
+      resolveAlpha = resolve
+    })
+    vi.mocked(pluginData.loadPluginEvents).mockImplementation((pluginName) => {
+      if (pluginName === 'builtin.alpha') {
+        return alphaResult
+      }
+      return Promise.resolve({
+        items: [
+          {
+            id: 'event-beta',
+            type: 'plugin:info',
+            level: 'info',
+            message: 'beta',
+            metadata: null,
+            createdAt: '2026-04-21T00:00:04.000Z',
+          },
+        ],
+        nextCursor: null,
+      })
+    })
+
+    const selectedPlugin = shallowRef<PluginInfo | null>({
+      id: 'plugin-1',
+      name: 'builtin.alpha',
+    } as PluginInfo)
+    const error = ref<string | null>(null)
+    let state!: ReturnType<typeof usePluginEvents>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginEvents({
+          selectedPlugin: computed(() => selectedPlugin.value),
+          error,
+        })
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    state.eventQuery.value = {
+      limit: 50,
+      keyword: 'error',
+    }
+    void state.refreshPluginEvents()
+    await flushPromises()
+
+    selectedPlugin.value = {
+      id: 'plugin-2',
+      name: 'builtin.beta',
+    } as PluginInfo
+    state.clearDetailState()
+    expect(state.eventQuery.value).toEqual({ limit: 50 })
+
+    await state.refreshPluginEvents()
+    await flushPromises()
+    expect(state.eventLogs.value.map((entry) => entry.id)).toEqual(['event-beta'])
+
+    resolveAlpha({
+      items: [
+        {
+          id: 'event-alpha',
+          type: 'plugin:error',
+          level: 'error',
+          message: 'alpha',
+          metadata: null,
+          createdAt: '2026-04-21T00:00:03.000Z',
+        },
+      ],
+      nextCursor: 'event-alpha',
+    })
+    await flushPromises()
+
+    expect(state.eventLogs.value.map((entry) => entry.id)).toEqual(['event-beta'])
+    expect(state.eventQuery.value).toEqual({ limit: 50 })
+  })
+
+  it('does not reuse pagination cursor for a later normal refresh', async () => {
+    vi.mocked(pluginData.loadPluginEvents)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'event-3',
+            type: 'plugin:error',
+            level: 'error',
+            message: 'third',
+            metadata: null,
+            createdAt: '2026-04-21T00:00:03.000Z',
+          },
+        ],
+        nextCursor: 'event-3',
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'event-2',
+            type: 'plugin:warn',
+            level: 'warn',
+            message: 'second',
+            metadata: null,
+            createdAt: '2026-04-21T00:00:02.000Z',
+          },
+        ],
+        nextCursor: 'event-2',
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'event-9',
+            type: 'plugin:info',
+            level: 'info',
+            message: 'refreshed',
+            metadata: null,
+            createdAt: '2026-04-21T00:00:09.000Z',
+          },
+        ],
+        nextCursor: null,
+      })
+
+    const selectedPlugin = shallowRef<PluginInfo | null>({
+      id: 'plugin-1',
+      name: 'builtin.demo',
+    } as PluginInfo)
+    const error = ref<string | null>(null)
+    let state!: ReturnType<typeof usePluginEvents>
+    const Harness = defineComponent({
+      setup() {
+        state = usePluginEvents({
+          selectedPlugin: computed(() => selectedPlugin.value),
+          error,
+        })
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await state.refreshPluginEvents()
+    await state.loadMorePluginEvents()
+    await state.refreshPluginEvents()
+    await flushPromises()
+
+    expect(pluginData.loadPluginEvents).toHaveBeenNthCalledWith(3, 'builtin.demo', {
+      limit: 50,
+    })
+    expect(state.eventQuery.value).toEqual({ limit: 50 })
   })
 })

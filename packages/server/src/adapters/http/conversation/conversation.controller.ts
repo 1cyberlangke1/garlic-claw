@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser, JwtAuthGuard } from '../../../auth/http-auth';
 import { ConversationMessagePlanningService } from '../../../conversation/conversation-message-planning.service';
@@ -68,7 +68,13 @@ export class ConversationController {
   @Delete('conversations/:id')
   async deleteConversation(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
-    this.runtimeHostConversationTodoService.deleteSessionTodo(id);
+    const conversationTree = this.runtimeHostConversationRecordService.listConversationTreeRecords(id, userId) as RuntimeConversationRecord[];
+    await stopActiveConversationTreeWork(
+      conversationTree,
+      userId,
+      this.conversationTaskService,
+      this.runtimeHostSubagentRunnerService,
+    );
     return await this.runtimeHostConversationRecordService.deleteConversation(id, userId);
   }
 
@@ -177,10 +183,10 @@ export class ConversationController {
     const conversation = this.requireOwnedConversation(userId, id);
     if (conversation.kind === 'subagent' && conversation.subagent) {
       const pluginId = conversation.subagent.pluginId;
-      const retriedInput = readRetrySubagentInput(conversation, messageId);
       await streamSubagentEvents(
         res,
         async () => {
+          const retriedInput = readRetrySubagentInput(requireConversationMessage(conversation, messageId), conversation, messageId);
           await this.runtimeHostSubagentRunnerService.sendInputSubagent(pluginId, {
             ...(conversation.activePersonaId ? { activePersonaId: conversation.activePersonaId } : {}),
             ...(dto.model ? { activeModelId: dto.model } : {}),
@@ -253,7 +259,18 @@ export class ConversationController {
   stopMessage(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string, @Param('messageId', routeUuidPipe) messageId: string) {
     const conversation = this.requireOwnedConversation(userId, id);
     if (conversation.kind === 'subagent' && conversation.subagent) {
-      return this.runtimeHostSubagentRunnerService.interruptSubagent(conversation.subagent.pluginId, id, userId);
+      const message = requireConversationMessage(conversation, messageId);
+      if (message.role !== 'assistant') {
+        throw new BadRequestException('Only assistant messages can be stopped');
+      }
+      const activeAssistantMessageId = readActiveSubagentAssistantMessageId(conversation);
+      if (
+        activeAssistantMessageId === messageId
+        && (conversation.subagent.status === 'queued' || conversation.subagent.status === 'running')
+      ) {
+        return this.runtimeHostSubagentRunnerService.interruptSubagent(conversation.subagent.pluginId, id, userId);
+      }
+      return { message: 'Generation stopped' };
     }
     return this.conversationMessageLifecycleService.stopMessageGeneration(id, messageId, userId);
   }
@@ -268,7 +285,7 @@ export class ConversationController {
   @Get('conversations/:id/subagents')
   listConversationSubagents(@CurrentUser('id') userId: string, @Param('id', routeUuidPipe) id: string) {
     this.requireOwnedConversation(userId, id);
-    return this.runtimeHostConversationRecordService.listChildConversations(id);
+    return this.runtimeHostConversationRecordService.listChildSubagentConversations(id, userId);
   }
 
   @Delete('conversations/:id/messages/:messageId')
@@ -352,7 +369,14 @@ function toPluginLlmMessage(dto: SendMessageDto) {
   return { content: dto.content ?? '', role: 'user' as const };
 }
 
-function readRetrySubagentInput(conversation: RuntimeConversationRecord, assistantMessageId: string) {
+function readRetrySubagentInput(
+  message: RuntimeConversationRecord['messages'][number],
+  conversation: RuntimeConversationRecord,
+  assistantMessageId: string,
+) {
+  if (message.role !== 'assistant') {
+    throw new BadRequestException('Only assistant messages can be retried');
+  }
   const assistantIndex = conversation.messages.findIndex((message) => message.id === assistantMessageId);
   if (assistantIndex < 0) {
     throw new Error(`Message not found: ${assistantMessageId}`);
@@ -437,4 +461,63 @@ function readToolEntries(
       toolName: object.toolName,
     }];
   });
+}
+
+async function stopActiveConversationTreeWork(
+  conversations: RuntimeConversationRecord[],
+  userId: string,
+  conversationTaskService: ConversationTaskService,
+  runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService,
+) {
+  for (const conversation of conversations) {
+    for (const messageId of readActiveConversationTaskMessageIds(conversation)) {
+      await conversationTaskService.stopTask(messageId);
+    }
+    if (
+      conversation.kind === 'subagent'
+      && conversation.subagent
+      && (conversation.subagent.status === 'queued' || conversation.subagent.status === 'running')
+    ) {
+      await runtimeHostSubagentRunnerService.interruptSubagent(conversation.subagent.pluginId, conversation.id, userId);
+    }
+  }
+}
+
+function readActiveConversationTaskMessageIds(conversation: RuntimeConversationRecord): string[] {
+  return conversation.messages.flatMap((message) => (
+    (message.role === 'assistant' || message.role === 'display')
+      && typeof message.id === 'string'
+      && (message.status === 'pending' || message.status === 'streaming')
+      ? [message.id]
+      : []
+  ));
+}
+
+function requireConversationMessage(
+  conversation: RuntimeConversationRecord,
+  messageId: string,
+): RuntimeConversationRecord['messages'][number] {
+  const message = conversation.messages.find((entry) => entry.id === messageId);
+  if (!message) {
+    throw new NotFoundException(`Message not found: ${messageId}`);
+  }
+  return message;
+}
+
+function readActiveSubagentAssistantMessageId(conversation: RuntimeConversationRecord): string | null {
+  const activeAssistantMessageId = conversation.subagent?.activeAssistantMessageId;
+  if (typeof activeAssistantMessageId === 'string' && activeAssistantMessageId.trim()) {
+    return activeAssistantMessageId;
+  }
+  for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
+    const message = conversation.messages[index];
+    if (
+      message.role === 'assistant'
+      && typeof message.id === 'string'
+      && (message.status === 'pending' || message.status === 'streaming')
+    ) {
+      return message.id;
+    }
+  }
+  return null;
 }

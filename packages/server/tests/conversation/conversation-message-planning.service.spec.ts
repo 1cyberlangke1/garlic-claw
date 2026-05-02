@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
@@ -111,12 +112,12 @@ describe('ConversationMessagePlanningService', () => {
     ]);
 
     await expect(service.getContextWindowPreview({ conversationId, modelId: 'gpt-5.4', providerId: 'openai', userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
+      contextLength: 512,
       enabled: true,
       excludedMessageIds: ['history-1'],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-2', 'history-3'],
       keepRecentMessages: 1,
-      maxWindowTokens: 128,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));
@@ -180,12 +181,12 @@ describe('ConversationMessagePlanningService', () => {
     ]);
 
     await expect(service.getContextWindowPreview({ conversationId, userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
+      contextLength: 512,
       enabled: true,
       excludedMessageIds: ['history-1', 'history-2'],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['summary-1', 'history-3'],
       keepRecentMessages: 2,
-      maxWindowTokens: 256,
       slidingWindowUsagePercent: 50,
       strategy: 'summary',
     }));
@@ -205,13 +206,13 @@ describe('ConversationMessagePlanningService', () => {
     ]);
 
     await expect(service.getContextWindowPreview({ conversationId, userId: 'user-1' })).resolves.toEqual(expect.objectContaining({
+      contextLength: 512,
       enabled: false,
       estimatedTokens: 12,
       excludedMessageIds: [],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-1', 'history-2'],
       keepRecentMessages: 6,
-      maxWindowTokens: 128,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));
@@ -245,7 +246,27 @@ describe('ConversationMessagePlanningService', () => {
     }));
   });
 
-  it('prefers the last matching provider usage annotation for context window preview tokens', async () => {
+  it('prefers the last matching response usage annotation for context window preview tokens', async () => {
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '第一条消息',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-1',
+        parts: [{ text: '第一条消息', type: 'text' }],
+        role: 'user',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '第二条消息',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-2',
+        parts: [{ text: '第二条消息', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+    ]);
     runtimeHostConversationRecordService.replaceMessages(conversationId, [
       createMessage('history-1', 'user', '第一条消息'),
       createMessage('history-2', 'assistant', '第二条消息', {
@@ -255,6 +276,7 @@ describe('ConversationMessagePlanningService', () => {
             modelId: 'gpt-5.4',
             outputTokens: 12,
             providerId: 'openai',
+            responseHistorySignature,
             source: 'provider',
             totalTokens: 100,
           },
@@ -271,7 +293,51 @@ describe('ConversationMessagePlanningService', () => {
       providerId: 'openai',
       userId: 'user-1',
     })).resolves.toEqual(expect.objectContaining({
-      estimatedTokens: 88,
+      estimatedTokens: 100,
+      includedMessageIds: ['history-1', 'history-2'],
+    }));
+  });
+
+  it('falls back to current history estimation when provider usage belongs to an old history snapshot', async () => {
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧消息',
+        createdAt: '2026-04-24T00:00:00.000Z',
+        id: 'stale-history',
+        parts: [{ text: '旧消息', type: 'text' }],
+        role: 'assistant',
+        status: 'completed',
+        updatedAt: '2026-04-24T00:00:00.000Z',
+      },
+    ]);
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '现在的第一条消息'),
+      createMessage('history-2', 'assistant', '现在的第二条消息', {
+        annotations: [{
+          data: {
+            inputTokens: 88,
+            modelId: 'gpt-5.4',
+            outputTokens: 12,
+            providerId: 'openai',
+            responseHistorySignature: staleSignature,
+            source: 'provider',
+            totalTokens: 100,
+          },
+          owner: 'conversation.model-usage',
+          type: 'model-usage',
+          version: '1',
+        }],
+      }),
+    ]);
+
+    const expectedTextBytes = Buffer.byteLength('user\n现在的第一条消息\nassistant\n现在的第二条消息', 'utf8');
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: Math.ceil(expectedTextBytes / 4),
       includedMessageIds: ['history-1', 'history-2'],
     }));
   });
@@ -313,6 +379,170 @@ describe('ConversationMessagePlanningService', () => {
       ],
       system: '你是测试助手',
     }));
+  });
+
+  it('compacts history immediately after a completed model reply is sent', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(10)),
+      createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
+      createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(10)),
+      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10)),
+    ]);
+
+    await service.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10),
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10), type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    );
+
+    const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string; metadata?: { annotations?: Array<{ data?: Record<string, unknown>; owner?: string; type?: string }> }; role: string }>;
+    };
+    const summaryMessage = history.messages.find((message) => message.content === '压缩后的历史摘要');
+    expect(summaryMessage?.role).toBe('display');
+    expect(summaryMessage?.metadata?.annotations?.some((annotation) =>
+      annotation.owner === 'conversation.context-governance'
+      && annotation.type === 'context-compaction'
+      && annotation.data?.role === 'summary')).toBe(true);
+  });
+
+  it('keeps the completed reply successful when post-response compaction fails and stops the next reply', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(10)),
+      createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
+      createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(10)),
+      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10)),
+    ]);
+    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
+
+    await expect(service.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10),
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10), type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    )).resolves.toBeUndefined();
+
+    const history = runtimeHostConversationRecordService.readConversationHistory(conversationId, 'user-1') as {
+      messages: Array<{ content?: string }>;
+    };
+    expect(history.messages.find((message) => message.content === '压缩后的历史摘要')).toBeUndefined();
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: undefined,
+      fullStream: (async function* () { yield { text: 'ok', type: 'text-delta' as const }; })(),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usage: undefined,
+    });
+
+    await expect(service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-next',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      responseSource: 'short-circuit',
+      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
+    }));
+
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+  });
+
+  it('stops the current reply when summary compaction fails before model execution', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 1,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '第一条较长的历史消息，用于触发送模前压缩。'.repeat(10)),
+      createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
+      createMessage('history-3', 'user', '第三条消息，表示最近一次用户提问。'.repeat(10)),
+    ]);
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.generateText.mockRejectedValueOnce(new Error('compaction api failed'));
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: undefined,
+      fullStream: (async function* () { yield { text: 'ok', type: 'text-delta' as const }; })(),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usage: undefined,
+    });
+
+    await expect(service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-pending',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      responseSource: 'short-circuit',
+      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
+    }));
+
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });
 });
 

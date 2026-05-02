@@ -23,6 +23,7 @@ export function usePluginStorage(options: UsePluginStorageOptions) {
   const deletingStorageKey = ref<string | null>(null)
   const storageEntries = shallowRef<PluginStorageEntry[]>([])
   const storagePrefix = ref('')
+  let activeStorageRequestId = 0
 
   function applyDetailSnapshot(detail: PluginDetailSnapshot) {
     storageEntries.value = detail.storageEntries
@@ -30,27 +31,37 @@ export function usePluginStorage(options: UsePluginStorageOptions) {
 
   function clearDetailState() {
     storageEntries.value = []
+    storagePrefix.value = ''
   }
 
   async function refreshPluginStorage(prefix = storagePrefix.value) {
-    if (!options.selectedPlugin.value) {
+    const pluginName = options.selectedPlugin.value?.name ?? null
+    if (!pluginName) {
       storageEntries.value = []
       storagePrefix.value = ''
       return
     }
 
+    const requestId = ++activeStorageRequestId
     options.detailLoading.value = true
     options.error.value = null
     try {
-      storagePrefix.value = prefix.trim()
-      storageEntries.value = await loadPluginStorage(
-        options.selectedPlugin.value.name,
-        storagePrefix.value,
-      )
+      const normalizedPrefix = prefix.trim()
+      const nextEntries = await loadPluginStorage(pluginName, normalizedPrefix)
+      if (requestId !== activeStorageRequestId || options.selectedPlugin.value?.name !== pluginName) {
+        return
+      }
+      storagePrefix.value = normalizedPrefix
+      storageEntries.value = nextEntries
     } catch (caughtError) {
+      if (requestId !== activeStorageRequestId || options.selectedPlugin.value?.name !== pluginName) {
+        return
+      }
       options.error.value = toErrorMessage(caughtError, '加载插件 KV 失败')
     } finally {
-      options.detailLoading.value = false
+      if (requestId === activeStorageRequestId) {
+        options.detailLoading.value = false
+      }
     }
   }
 

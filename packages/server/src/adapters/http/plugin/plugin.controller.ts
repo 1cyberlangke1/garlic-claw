@@ -2,6 +2,7 @@ import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActi
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/http-auth';
+import { ToolManagementSettingsService } from '../../../execution/tool/tool-management-settings.service';
 import { buildPluginInfo } from '../../../plugin/persistence/plugin-read-model';
 import { PluginPersistenceService } from '../../../plugin/persistence/plugin-persistence.service';
 import { buildRemotePluginConnectionInfo, PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
@@ -30,7 +31,7 @@ interface PluginEventQueryInput { limit?: string; level?: string; type?: string;
 
 @Controller()
 export class PluginController {
-  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService) {}
+  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService, private readonly toolManagementSettingsService: ToolManagementSettingsService) {}
 
   @Get('plugins')
   listPlugins() { return this.runtimePluginGovernanceService.listPlugins().map((plugin) => buildPluginInfo(plugin, this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId))); }
@@ -64,8 +65,11 @@ export class PluginController {
 
   @Delete('plugins/:pluginId')
   deletePlugin(@Param('pluginId') pluginId: string) {
-    this.recordPluginEvent(pluginId, { level: 'warn', message: `Deleted plugin ${pluginId}`, type: 'plugin:deleted' });
     const deleted = this.pluginPersistenceService.deletePlugin(pluginId);
+    this.runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
+    this.runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+    this.runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
+    this.toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
     return deleted;
   }
 
@@ -114,8 +118,32 @@ export class PluginController {
 
   @Post('plugins/:pluginId/actions/:action')
   async runPluginAction(@Param('pluginId') pluginId: string, @Param('action') action: string) {
-    const result = await this.runtimePluginGovernanceService.runPluginAction({ action: readPluginActionName(action), pluginId });
-    this.recordPluginEvent(pluginId, { level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info', message: result.message, type: `governance:${result.action}` });
+    const actionName = readPluginActionName(action);
+    const plugin = this.pluginBootstrapService.getPlugin(pluginId);
+    const eventLog = this.pluginPersistenceService.getPluginEventLog(pluginId);
+    let detachedAfterAction = false;
+    let result;
+    if (actionName === 'reload' && plugin.manifest.runtime === 'local' && this.pluginBootstrapService.canReloadLocal(pluginId)) {
+      const reloaded = this.pluginBootstrapService.reloadLocal(pluginId);
+      if (reloaded.removed) {
+        cleanupDetachedLocalPluginState(pluginId, this.runtimeHostPluginRuntimeService, this.runtimeHostConversationRecordService, this.runtimePluginGovernanceService, this.toolManagementSettingsService);
+        detachedAfterAction = true;
+        result = { accepted: true, action: actionName, pluginId, message: '本地插件目录已删除，已清理旧记录' };
+      } else {
+        result = { accepted: true, action: actionName, pluginId, message: '已重新装载本地插件' };
+      }
+    } else {
+      result = await this.runtimePluginGovernanceService.runPluginAction({ action: actionName, pluginId });
+    }
+    if (detachedAfterAction) {
+      this.pluginPersistenceService.recordDetachedPluginEvent(pluginId, eventLog, {
+        level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info',
+        message: result.message,
+        type: `governance:${result.action}`,
+      });
+    } else {
+      this.recordPluginEvent(pluginId, { level: result.action === 'health-check' && result.message.includes('失败') ? 'warn' : 'info', message: result.message, type: `governance:${result.action}` });
+    }
     return result;
   }
 
@@ -173,4 +201,17 @@ export class PluginController {
 function readPluginActionName(action: string): PluginActionName {
   if (action === 'health-check' || action === 'reload' || action === 'reconnect' || action === 'refresh-metadata') {return action;}
   throw new BadRequestException('action 必须是 reload / reconnect / health-check / refresh-metadata');
+}
+
+function cleanupDetachedLocalPluginState(
+  pluginId: string,
+  runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService,
+  runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+  runtimePluginGovernanceService: RuntimePluginGovernanceService,
+  toolManagementSettingsService: ToolManagementSettingsService,
+): void {
+  runtimeHostPluginRuntimeService.deletePluginRuntimeState(pluginId);
+  runtimeHostConversationRecordService.deletePluginConversationSessions(pluginId);
+  runtimePluginGovernanceService.deletePluginRuntimeState(pluginId);
+  toolManagementSettingsService.deleteSourceOverrides(`plugin:${pluginId}`);
 }

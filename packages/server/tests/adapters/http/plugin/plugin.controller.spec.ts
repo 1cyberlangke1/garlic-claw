@@ -3,16 +3,20 @@ import { PluginController } from '../../../../src/adapters/http/plugin/plugin.co
 
 describe('PluginController', () => {
   const pluginBootstrapService = {
+    canReloadLocal: jest.fn(),
     getPlugin: jest.fn(),
+    reloadLocal: jest.fn(),
     upsertRemotePlugin: jest.fn(),
   };
   const pluginPersistenceService = {
     deletePlugin: jest.fn(),
     getPluginConfig: jest.fn(),
+    getPluginEventLog: jest.fn(),
     getPluginLlmPreference: jest.fn(),
     getPluginOrThrow: jest.fn(),
     getPluginScope: jest.fn(),
     listPluginEvents: jest.fn(),
+    recordDetachedPluginEvent: jest.fn(),
     recordPluginEvent: jest.fn(),
     updatePluginConfig: jest.fn(),
     updatePluginLlmPreference: jest.fn(),
@@ -20,6 +24,7 @@ describe('PluginController', () => {
     upsertPlugin: jest.fn(),
   };
   const runtimeHostConversationRecordService = {
+    deletePluginConversationSessions: jest.fn(),
     listPluginConversationSessions: jest.fn(),
   };
   const runtimeHostPluginDispatchService = {
@@ -28,6 +33,7 @@ describe('PluginController', () => {
   };
   const runtimeHostPluginRuntimeService = {
     deleteCronJob: jest.fn(),
+    deletePluginRuntimeState: jest.fn(),
     listCronJobs: jest.fn(),
     deletePluginStorage: jest.fn(),
     listPluginStorage: jest.fn(),
@@ -39,7 +45,11 @@ describe('PluginController', () => {
     listConnectedPlugins: jest.fn(),
     listPlugins: jest.fn(),
     listSupportedActions: jest.fn(),
+    deletePluginRuntimeState: jest.fn(),
     runPluginAction: jest.fn(),
+  };
+  const toolManagementSettingsService = {
+    deleteSourceOverrides: jest.fn(),
   };
 
   let controller: PluginController;
@@ -53,6 +63,7 @@ describe('PluginController', () => {
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
       runtimePluginGovernanceService as never,
+      toolManagementSettingsService as never,
     );
   });
 
@@ -404,6 +415,50 @@ describe('PluginController', () => {
     });
   });
 
+  it('cleans current plugin runtime state when local reload finds that the directory was removed', async () => {
+    pluginPersistenceService.getPluginEventLog.mockReturnValue({
+      enabled: true,
+      maxFileSizeMb: 10,
+      maxFiles: 5,
+    });
+    pluginBootstrapService.getPlugin.mockReturnValue({
+      manifest: {
+        runtime: 'local',
+      },
+      pluginId: 'local.echo',
+    });
+    pluginBootstrapService.canReloadLocal.mockReturnValue(true);
+    pluginBootstrapService.reloadLocal.mockReturnValue({
+      pluginId: 'local.echo',
+      removed: true,
+    });
+
+    await expect(
+      controller.runPluginAction('local.echo', 'reload'),
+    ).resolves.toEqual({
+      accepted: true,
+      action: 'reload',
+      pluginId: 'local.echo',
+      message: '本地插件目录已删除，已清理旧记录',
+    });
+
+    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('local.echo');
+    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('local.echo');
+    expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('local.echo');
+    expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:local.echo');
+    expect(runtimePluginGovernanceService.runPluginAction).not.toHaveBeenCalled();
+    expect(pluginPersistenceService.recordDetachedPluginEvent).toHaveBeenCalledWith('local.echo', {
+      enabled: true,
+      maxFileSizeMb: 10,
+      maxFiles: 5,
+    }, {
+      level: 'info',
+      message: '本地插件目录已删除，已清理旧记录',
+      type: 'governance:reload',
+    });
+    expect(pluginPersistenceService.recordPluginEvent).not.toHaveBeenCalled();
+  });
+
   it('delegates config and scope routes to the plugin http mutation owner', async () => {
     pluginPersistenceService.getPluginConfig.mockReturnValue({
       values: { limit: 8 },
@@ -532,7 +587,7 @@ describe('PluginController', () => {
     ).toThrow(BadRequestException);
   });
 
-  it('deletes plugins through persistence owner and records plugin deletion events', async () => {
+  it('deletes plugins through persistence owner and cleans current runtime state', async () => {
     pluginPersistenceService.deletePlugin.mockReturnValue({
       pluginId: 'remote.echo',
     });
@@ -541,10 +596,23 @@ describe('PluginController', () => {
       pluginId: 'remote.echo',
     });
     expect(pluginPersistenceService.deletePlugin).toHaveBeenCalledWith('remote.echo');
-    expect(pluginPersistenceService.recordPluginEvent).toHaveBeenCalledWith('remote.echo', {
-      level: 'warn',
-      message: 'Deleted plugin remote.echo',
-      type: 'plugin:deleted',
+    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
+    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).toHaveBeenCalledWith('remote.echo');
+    expect(runtimePluginGovernanceService.deletePluginRuntimeState).toHaveBeenCalledWith('remote.echo');
+    expect(toolManagementSettingsService.deleteSourceOverrides).toHaveBeenCalledWith('plugin:remote.echo');
+    expect(pluginPersistenceService.recordDetachedPluginEvent).not.toHaveBeenCalled();
+  });
+
+  it('does not record plugin deleted events when the delete request is rejected', () => {
+    pluginPersistenceService.deletePlugin.mockImplementation(() => {
+      throw new BadRequestException('Plugin remote.echo is still connected');
     });
+
+    expect(() => controller.deletePlugin('remote.echo')).toThrow('Plugin remote.echo is still connected');
+    expect(runtimeHostPluginRuntimeService.deletePluginRuntimeState).not.toHaveBeenCalled();
+    expect(runtimeHostConversationRecordService.deletePluginConversationSessions).not.toHaveBeenCalled();
+    expect(runtimePluginGovernanceService.deletePluginRuntimeState).not.toHaveBeenCalled();
+    expect(toolManagementSettingsService.deleteSourceOverrides).not.toHaveBeenCalled();
+    expect(pluginPersistenceService.recordPluginEvent).not.toHaveBeenCalled();
   });
 });

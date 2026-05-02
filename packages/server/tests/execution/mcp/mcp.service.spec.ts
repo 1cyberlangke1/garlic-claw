@@ -1,18 +1,22 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { McpServerConfig } from '@garlic-claw/shared';
 import { McpConfigStoreService } from '../../../src/execution/mcp/mcp-config-store.service';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
 import { McpService } from '../../../src/execution/mcp/mcp.service';
+import { ToolManagementSettingsService } from '../../../src/execution/tool/tool-management-settings.service';
 import { RuntimeEventLogService } from '../../../src/runtime/log/runtime-event-log.service';
 import { createServerTestArtifactPath } from '../../../src/runtime/server-workspace-paths';
 
 describe('McpService', () => {
   const envKey = 'GARLIC_CLAW_MCP_CONFIG_PATH';
+  const toolManagementEnvKey = 'GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH';
   const configService = { get: jest.fn() };
   let tempConfigRoot: string;
   let tempLogRoot: string;
+  let tempToolManagementPath: string;
 
   let service: McpService;
 
@@ -33,21 +37,27 @@ describe('McpService', () => {
     delete process.env[envKey];
     tempConfigRoot = path.join(os.tmpdir(), `mcp.service.spec-${Date.now()}-${Math.random()}`, 'servers');
     tempLogRoot = path.join(os.tmpdir(), `mcp.service.logs-${Date.now()}-${Math.random()}`);
+    tempToolManagementPath = path.join(os.tmpdir(), `mcp.service.tool-management-${Date.now()}-${Math.random()}`, 'tool-management.json');
     fs.rmSync(path.dirname(tempConfigRoot), { recursive: true, force: true });
+    fs.rmSync(path.dirname(tempToolManagementPath), { recursive: true, force: true });
     process.env[envKey] = tempConfigRoot;
     process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
+    process.env[toolManagementEnvKey] = tempToolManagementPath;
     service = new McpService(
       configService as never,
       new McpConfigStoreService(new ProjectWorktreeRootService()),
       new RuntimeEventLogService(),
+      new ToolManagementSettingsService(),
     );
   });
 
   afterEach(() => {
     delete process.env[envKey];
     delete process.env.GARLIC_CLAW_LOG_ROOT;
+    delete process.env[toolManagementEnvKey];
     fs.rmSync(path.dirname(tempConfigRoot), { recursive: true, force: true });
     fs.rmSync(tempLogRoot, { recursive: true, force: true });
+    fs.rmSync(path.dirname(tempToolManagementPath), { recursive: true, force: true });
   });
 
   it('connects and calls a real stdio MCP server through the launcher', async () => {
@@ -148,7 +158,22 @@ describe('McpService', () => {
     ]);
   });
 
-  it('reloads MCP sources from config with default enabled state', async () => {
+  it('closes temporary MCP clients when tool discovery fails after connect', async () => {
+    const weather = createServer('weather');
+    const connectSpy = jest.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined as never);
+    const listToolsSpy = jest.spyOn(Client.prototype, 'listTools').mockRejectedValue(new Error('list tools failed'));
+    const closeSpy = jest.spyOn(Client.prototype, 'close').mockResolvedValue(undefined as never);
+
+    await expect((service as any).connectClientSession({
+      config: weather,
+      name: 'weather',
+    })).rejects.toThrow('list tools failed');
+    expect(connectSpy).toHaveBeenCalledTimes(2);
+    expect(listToolsSpy).toHaveBeenCalledTimes(2);
+    expect(closeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads MCP sources from config with persisted enabled state', async () => {
     const weather = createServer('weather');
     const tavily = createServer('tavily');
     await service.saveServer(weather);
@@ -160,13 +185,71 @@ describe('McpService', () => {
     await service.reloadServersFromConfig();
 
     expect(disconnectAllSpy).toHaveBeenCalledTimes(1);
-    expect(connectSpy).toHaveBeenCalledTimes(2);
-    expect(connectSpy).toHaveBeenCalledWith('weather', weather);
+    expect(connectSpy).toHaveBeenCalledTimes(1);
     expect(connectSpy).toHaveBeenCalledWith('tavily', tavily);
     expect(service.getToolingSnapshot().statuses).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'weather', enabled: true }),
+      expect.objectContaining({ name: 'weather', enabled: false }),
       expect.objectContaining({ name: 'tavily', enabled: true }),
     ]));
+  });
+
+  it('restores persisted disabled state after service reload', async () => {
+    const weather = createServer('weather');
+    await service.saveServer(weather);
+    await service.setServerEnabled('weather', false);
+
+    const reloaded = new McpService(
+      configService as never,
+      new McpConfigStoreService(new ProjectWorktreeRootService()),
+      new RuntimeEventLogService(),
+      new ToolManagementSettingsService(),
+    );
+
+    const connectSpy = jest.spyOn(reloaded as any, 'connectMcpServer').mockResolvedValue(undefined);
+
+    reloaded.onModuleInit();
+    await Promise.resolve();
+
+    expect(reloaded.getToolingSnapshot()).toEqual({
+      statuses: [
+        expect.objectContaining({
+          name: 'weather',
+          enabled: false,
+          connected: false,
+          health: 'unknown',
+        }),
+      ],
+      tools: [],
+    });
+    expect(connectSpy).not.toHaveBeenCalled();
+  });
+
+  it('starts MCP warmup in background during module init', async () => {
+    const weather = createServer('weather');
+    await service.saveServer(weather);
+    let resolveReload!: () => void;
+    const reloadPromise = new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    });
+    const reloadSpy = jest.spyOn(service, 'reloadServersFromConfig').mockReturnValue(reloadPromise);
+
+    service.onModuleInit();
+
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+    expect(service.getToolingSnapshot()).toEqual({
+      statuses: [
+        expect.objectContaining({
+          name: 'weather',
+          connected: false,
+          enabled: true,
+          health: 'unknown',
+        }),
+      ],
+      tools: [],
+    });
+
+    resolveReload();
+    await reloadPromise;
   });
 
   it('disconnects runtime state and rejects tool calls when a source is disabled online', async () => {
@@ -196,8 +279,127 @@ describe('McpService', () => {
       statuses: [expect.objectContaining({ name: 'weather', enabled: false, connected: false, health: 'unknown' })],
       tools: [],
     });
+    expect(service.listToolSources()).toEqual([
+      expect.objectContaining({
+        source: expect.objectContaining({
+          id: 'weather',
+          enabled: false,
+          totalTools: 1,
+          enabledTools: 0,
+        }),
+        tools: [
+          expect.objectContaining({
+            toolId: 'mcp:weather:get_forecast',
+            enabled: false,
+          }),
+        ],
+      }),
+    ]);
     await expect(service.callTool({ serverName: 'weather', toolName: 'get_forecast', arguments: {} })).rejects.toThrow('MCP 服务器 "weather" 已禁用');
     expect(client.callTool).not.toHaveBeenCalled();
+  });
+
+  it('closes and evicts a connected MCP client after tool call failure', async () => {
+    const weather = createServer('weather');
+    const client = {
+      callTool: jest.fn().mockRejectedValue(new Error('tool crashed')),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await service.saveServer(weather);
+    (service as any).clients.set('weather', client);
+    (service as any).serverRecords.set('weather', {
+      status: {
+        name: 'weather',
+        connected: true,
+        enabled: true,
+        health: 'healthy',
+        lastError: null,
+        lastCheckedAt: '2026-04-03T10:00:00.000Z',
+      },
+      tools: [
+        { serverName: 'weather', name: 'get_forecast', description: 'Get forecast', inputSchema: null },
+      ],
+    });
+
+    await expect(service.callTool({
+      serverName: 'weather',
+      toolName: 'get_forecast',
+      arguments: {},
+    })).rejects.toThrow('tool crashed');
+
+    expect(client.callTool).toHaveBeenCalledTimes(1);
+    expect(client.close).toHaveBeenCalledTimes(1);
+    expect((service as any).clients.has('weather')).toBe(false);
+    expect(service.getToolingSnapshot()).toEqual({
+      statuses: [
+        expect.objectContaining({
+          name: 'weather',
+          connected: false,
+          health: 'error',
+          lastError: 'tool crashed',
+          lastCheckedAt: expect.any(String),
+        }),
+      ],
+      tools: [],
+    });
+    expect(service.listToolSources()).toEqual([
+      expect.objectContaining({
+        source: expect.objectContaining({
+          id: 'weather',
+          enabled: true,
+          totalTools: 1,
+          enabledTools: 0,
+          health: 'error',
+        }),
+        tools: [
+          expect.objectContaining({
+            toolId: 'mcp:weather:get_forecast',
+            enabled: false,
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it('applies tool-level enabled overrides when listing MCP tools', async () => {
+    (service as any).serverRecords.set('weather', {
+      status: {
+        name: 'weather',
+        connected: true,
+        enabled: true,
+        health: 'healthy',
+        lastError: null,
+        lastCheckedAt: '2026-04-03T10:00:00.000Z',
+      },
+      tools: [
+        { serverName: 'weather', name: 'get_forecast', description: 'Get forecast', inputSchema: null },
+        { serverName: 'weather', name: 'get_alerts', description: 'Get alerts', inputSchema: null },
+      ],
+    });
+    ((service as any).toolManagementSettingsService as ToolManagementSettingsService)
+      .writeToolEnabledOverride('mcp:weather:get_alerts', false);
+
+    const [entry] = service.listToolSources();
+
+    expect(entry).toEqual(expect.objectContaining({
+      source: expect.objectContaining({
+        id: 'weather',
+        enabled: true,
+        totalTools: 2,
+        enabledTools: 1,
+      }),
+      tools: expect.arrayContaining([
+        expect.objectContaining({
+          toolId: 'mcp:weather:get_forecast',
+          enabled: true,
+        }),
+        expect.objectContaining({
+          toolId: 'mcp:weather:get_alerts',
+          enabled: false,
+        }),
+      ]),
+    }));
   });
 
   it('disconnects all MCP clients when the module is destroyed', async () => {
@@ -206,6 +408,19 @@ describe('McpService', () => {
     await service.onModuleDestroy();
 
     expect(disconnectAllSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears persisted MCP source and tool overrides when a server is removed', async () => {
+    await service.saveServer(createServer('weather'));
+    await service.setServerEnabled('weather', false);
+    ((service as any).toolManagementSettingsService as ToolManagementSettingsService)
+      .writeToolEnabledOverride('mcp:weather:get_forecast', false);
+
+    await service.removeServer('weather');
+
+    const reloadedSettings = new ToolManagementSettingsService();
+    expect(reloadedSettings.readSourceEnabledOverride('mcp:weather')).toBeUndefined();
+    expect(reloadedSettings.readToolEnabledOverride('mcp:weather:get_forecast')).toBeUndefined();
   });
 
   it('runs a real probe when executing health-check governance action', async () => {
