@@ -267,92 +267,106 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
   white-space: nowrap;
 }
 
-.skills-page .skill-list-panel,
-.skills-page .skill-detail-panel,
-.skills-page .skills-layout,
-.skills-page .panel-header,
-.skills-page .skill-card-top,
-.skills-page .meta-row {
-  display: flex;
-  gap: 0.9rem;
-}
-
-.skills-page .skill-list-panel,
-.skills-page .skill-detail-panel {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-card);
-  padding: 1rem;
-}
-
-.skills-page .skill-list-panel,
-.skills-page .skill-detail-panel,
-.skills-page .skill-list,
-.skills-page .active-skill-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.skills-page .panel-header,
-.skills-page .skill-card-top {
-  justify-content: space-between;
-}
-
 .skills-page .skills-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 0;
   align-items: start;
+  min-height: 0;
 }
 
-.skills-page .skill-list-panel {
+.skills-page .skill-list-column {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  gap: 10px;
+  padding-right: 16px;
+  border-right: 1px solid var(--shell-border, #334155);
+  overflow: hidden;
 }
 
-.skills-page .skill-detail-column {
+.skills-page .skill-list-header {
   display: grid;
-  gap: 0.9rem;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding-top: 2px;
+}
+
+.skills-page .skill-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--shell-text, #f1f5f9);
+}
+
+.skills-page .skill-list-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 0 10px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(24, 160, 88, 0.14);
+  color: var(--shell-active, #18a058);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.skills-page .skill-list-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.skills-page .field-input {
   min-width: 0;
 }
 
+.skills-page .field-input :deep(.el-input__wrapper) {
+  background: var(--shell-bg, #0f172a);
+  box-shadow: 0 0 0 1px var(--shell-border, #334155) inset;
+}
+
+.skills-page .field-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--shell-active, #18a058) inset;
+}
+
+.skills-page .field-input :deep(.el-input__inner) {
+  color: var(--shell-text, #f1f5f9);
+}
+
+.skills-page .skill-search {
+  margin: 0;
+}
+
+.skills-page .skill-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.skills-page .skill-detail-column,
 .skills-page .skill-log-column {
   display: grid;
   gap: 0.9rem;
   min-width: 0;
+  min-height: 0;
+  padding-left: 20px;
+  align-content: start;
 }
 
 .skills-page .skill-detail-panel {
   width: 100%;
-}
-
-.skills-page .skill-log-empty {
-  min-height: 240px;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  background: var(--bg-card);
-  color: var(--text-muted);
-}
-
-.skills-page .skill-search {
-  margin: 1rem 0 0.75rem;
-}
-
-.skills-page .panel-header {
-  align-items: flex-start;
-}
-
-.skills-page .panel-header-summary {
-  flex-shrink: 0;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.skills-page .skill-list,
-.skills-page .active-skill-list {
-  gap: 0.75rem;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .skills-page .active-skill-card,
@@ -376,75 +390,9 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
   border-radius: var(--radius);
 }
 
-.skills-page .skill-card {
-  display: grid;
-  gap: 0.75rem;
-  cursor: pointer;
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--success);
-  border-radius: 12px;
-  padding: 0.95rem 1rem;
-  background: var(--surface-panel);
-  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.skills-page .skill-card.active {
-  border-color: rgba(76, 189, 255, 0.35);
-  box-shadow: 0 0 0 1px rgba(76, 189, 255, 0.18);
-}
-
-.skills-page .skill-card.policy-allow {
-  border-left-color: var(--success);
-}
-
-.skills-page .skill-card.policy-ask {
-  border-left-color: #f0b24b;
-}
-
-.skills-page .skill-card.policy-deny {
-  border-left-color: #f36c6c;
-}
-
-.skills-page .skill-card-title {
-  display: block;
-  font-size: 0.95rem;
-}
-
-.skills-page .skill-card-description {
-  margin-top: 0.3rem;
-  color: var(--text-muted);
-}
-
-.skills-page .skill-card-tags {
+.skills-page .meta-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.skills-page .skill-card-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: var(--bg-input);
-  color: var(--text-muted);
-  font-size: 0.74rem;
-}
-
-.skills-page .skill-card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-
-.skills-page .skill-card-path {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  gap: 0.9rem;
 }
 
 .skills-page .toggle-button,
@@ -502,7 +450,7 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
 
 .skills-page .detail-line,
 .skills-page .empty-state {
-  color: var(--text-muted);
+  color: var(--shell-text-tertiary, var(--text-muted));
 }
 
 .skills-page .muted-text {
@@ -563,6 +511,14 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
   padding: 0;
 }
 
+.skills-page .skill-log-empty {
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  padding: 1rem 0;
+  color: var(--shell-text-tertiary, var(--text-muted));
+}
+
 .skills-page .markdown-preview {
   margin-top: 1rem;
   color: var(--text);
@@ -605,22 +561,18 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
     grid-template-columns: 1fr;
   }
 
-  .skills-page .skill-detail-panel {
-    width: 100%;
+  .skills-page .skill-list-column {
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border, #334155);
   }
 
-  .skills-page .skill-detail-column {
-    width: 100%;
-  }
-
+  .skills-page .skill-detail-column,
   .skills-page .skill-log-column {
     width: 100%;
-  }
-
-  .skills-page .panel-header,
-  .skills-page .skill-card-footer {
-    flex-direction: column;
-    align-items: flex-start;
+    padding-left: 0;
+    padding-top: 12px;
   }
 
   .skills-page .governance-actions,
@@ -661,6 +613,11 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
 
   .skills-main {
     padding: 12px;
+  }
+
+  .skills-page .skill-list-header {
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 }
 

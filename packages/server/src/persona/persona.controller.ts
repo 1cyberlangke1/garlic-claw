@@ -7,6 +7,11 @@ import { ActivateConversationPersonaDto } from './dto/activate-conversation-pers
 import { CreatePersonaDto } from './dto/create-persona.dto';
 import { UpdatePersonaDto } from './dto/update-persona.dto';
 
+type UploadedPersonaAvatarFile = {
+  buffer: Buffer;
+  mimetype: string;
+};
+
 @Controller('personas')
 export class PersonaController {
   constructor(
@@ -45,7 +50,7 @@ export class PersonaController {
   @Post(':personaId/avatar')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
-  async uploadPersonaAvatar(@Param('personaId') personaId: string, @UploadedFile() file: Express.Multer.File) {
+  async uploadPersonaAvatar(@Param('personaId') personaId: string, @UploadedFile() file: UploadedPersonaAvatarFile | undefined) {
     if (!file) {
       throw new Error('No file uploaded');
     }
