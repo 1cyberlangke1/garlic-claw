@@ -499,6 +499,9 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
       invokeHook: jest.fn(),
     } as never,
     new ProjectSubagentTypeRegistryService(new ProjectWorktreeRootService()),
+    {
+      get: jest.fn().mockReturnValue(undefined),
+    } as never,
     runtimeHostConversationRecordService,
   );
   const runtimeHostAutomationService = new AutomationService(
