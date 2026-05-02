@@ -388,7 +388,7 @@ describe('ChatMessageList', () => {
     expect(assistant.text()).toContain('subagent-conversation-1')
   })
 
-  it('renders assistant usage details behind an info toggle and includes cached tokens only when provided', async () => {
+  it('renders assistant usage details behind an info toggle and includes total and cached tokens when provided', async () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         assistantPersona: {
@@ -492,6 +492,8 @@ describe('ChatMessageList', () => {
 
     expect(firstAssistant.text()).toContain('输入 token')
     expect(firstAssistant.text()).toContain('320')
+    expect(firstAssistant.text()).toContain('总 token')
+    expect(firstAssistant.text()).toContain('440')
     expect(firstAssistant.text()).toContain('输出 token')
     expect(firstAssistant.text()).toContain('120')
     expect(firstAssistant.text()).toContain('缓存 token')
@@ -501,6 +503,8 @@ describe('ChatMessageList', () => {
 
     expect(secondAssistant.text()).toContain('输入 token')
     expect(secondAssistant.text()).toContain('180')
+    expect(secondAssistant.text()).toContain('总 token')
+    expect(secondAssistant.text()).toContain('220')
     expect(secondAssistant.text()).toContain('输出 token')
     expect(secondAssistant.text()).toContain('40')
     expect(secondAssistant.text()).not.toContain('缓存 token')
@@ -509,6 +513,8 @@ describe('ChatMessageList', () => {
 
     expect(thirdAssistant.text()).toContain('输入 token')
     expect(thirdAssistant.text()).toContain('42')
+    expect(thirdAssistant.text()).toContain('总 token')
+    expect(thirdAssistant.text()).toContain('63')
     expect(thirdAssistant.text()).toContain('输出 token')
     expect(thirdAssistant.text()).toContain('21')
   })

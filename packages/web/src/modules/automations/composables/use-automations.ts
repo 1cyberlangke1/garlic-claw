@@ -46,6 +46,11 @@ interface AutomationLogEntryViewModel {
   trigger: TriggerConfig
 }
 
+interface ConversationOptionViewModel {
+  id: string
+  label: string
+}
+
 /**
  * 自动化页面的状态与交互逻辑。
  * 输入:
@@ -59,6 +64,9 @@ interface AutomationLogEntryViewModel {
 export function useAutomations() {
   const automations = ref<AutomationInfo[]>([])
   const conversations = shallowRef<Conversation[]>([])
+  const conversationOptions = computed<ConversationOptionViewModel[]>(
+    () => buildConversationOptions(conversations.value),
+  )
   const requestState = useAsyncState(true)
   const loading = requestState.loading
   const error = requestState.error
@@ -212,6 +220,7 @@ export function useAutomations() {
 
   return {
     automations,
+    conversationOptions,
     currentView,
     conversations,
     loading,
@@ -228,7 +237,7 @@ export function useAutomations() {
     handleDelete,
     handleViewChange,
     loadAutomationLogs,
-    describeAction: (action: ActionConfig) => describeAction(action, conversations.value),
+    describeAction: (action: ActionConfig) => describeAction(action, conversationOptions.value),
     formatTime,
     formatTriggerLabel,
     truncate,
@@ -367,18 +376,44 @@ function formatTriggerLabel(trigger: TriggerConfig): string {
  * @param conversations 当前可见会话列表
  * @returns 列表标签文案
  */
-function describeAction(action: ActionConfig, conversations: Conversation[]): string {
+function buildConversationOptions(conversations: Conversation[]): ConversationOptionViewModel[] {
+  const titleCounts = new Map<string, number>()
+  for (const conversation of conversations) {
+    const title = readConversationDisplayTitle(conversation)
+    titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1)
+  }
+  return conversations.map((conversation) => {
+    const title = readConversationDisplayTitle(conversation)
+    return {
+      id: conversation.id,
+      label: titleCounts.get(title) === 1
+        ? title
+        : `${title} · ${readConversationShortId(conversation.id)}`,
+    }
+  })
+}
+
+function describeAction(action: ActionConfig, conversationOptions: ConversationOptionViewModel[]): string {
   if (action.type === 'device_command') {
     return `${action.plugin ?? 'unknown'}→${action.capability ?? 'unknown'}`
   }
 
   const targetId = action.target?.id
-  const conversation = conversations.find((item) => item.id === targetId)
-  const targetLabel = conversation?.title ?? targetId ?? '未指定会话'
+  const conversation = conversationOptions.find((item) => item.id === targetId)
+  const targetLabel = conversation?.label ?? targetId ?? '未指定会话'
   const preview = truncate(action.message ?? '空消息', 20)
   if (action.target?.conversationMode === 'cron_child') {
     return `cron会话→${targetLabel} · 保留最近${action.target.maxHistoryConversations ?? 10}个 · ${preview}`
   }
 
   return `消息→${targetLabel} · ${preview}`
+}
+
+function readConversationDisplayTitle(conversation: Conversation): string {
+  const title = conversation.title?.trim()
+  return title || '未命名会话'
+}
+
+function readConversationShortId(id: string): string {
+  return id.length <= 8 ? id : id.slice(-8)
 }

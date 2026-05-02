@@ -337,6 +337,10 @@
                 <strong class="message-usage-value">
                   {{ readAssistantUsage(row.message)?.inputTokens }}
                 </strong>
+                <span class="message-usage-label">总 token</span>
+                <strong class="message-usage-value">
+                  {{ readAssistantUsage(row.message)?.totalTokens }}
+                </strong>
                 <template v-if="readAssistantUsage(row.message)?.cachedInputTokens !== undefined">
                   <span class="message-usage-label">缓存 token</span>
                   <strong class="message-usage-value">

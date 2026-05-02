@@ -841,7 +841,7 @@ async function collectSubagentRunResult(input: { finishReason?: Promise<unknown>
     if (part.type === 'tool-call') {
       toolCalls.push({ ...payload, input: asJsonValue(part.input) });
     } else {
-      toolResults.push({ ...payload, output: asJsonValue(part.output) });
+      toolResults.push({ ...payload, output: compactSubagentToolResultOutput(part.output) });
     }
   }
   const finishReason = await input.finishReason;
@@ -854,4 +854,18 @@ async function collectSubagentRunResult(input: { finishReason?: Promise<unknown>
     toolCalls,
     toolResults,
   };
+}
+
+function compactSubagentToolResultOutput(value: unknown): JsonValue {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return asJsonValue(value);
+  }
+  const record = value as Record<string, unknown>;
+  if ((record.kind === 'tool:text' && typeof record.value === 'string') || record.kind === 'tool:json') {
+    return asJsonValue({
+      kind: record.kind,
+      value: asJsonValue(record.value ?? null),
+    });
+  }
+  return asJsonValue(value);
 }

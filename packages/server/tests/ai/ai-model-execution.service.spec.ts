@@ -282,6 +282,41 @@ describe('AiModelExecutionService', () => {
     });
   });
 
+  it('derives total tokens from input and output when the provider omits totalTokens in generate mode', async () => {
+    const service = createService();
+    mockGenerateText.mockResolvedValueOnce({
+      finishReason: 'stop',
+      text: 'partial usage response',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+      },
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.response-body',
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'partial usage response',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+        source: 'provider',
+        totalTokens: 19,
+      },
+    });
+  });
+
   it.each([
     ['openai', 'deepseek-reasoner'],
     ['anthropic', 'claude-3-7-sonnet'],
@@ -405,6 +440,47 @@ describe('AiModelExecutionService', () => {
         outputTokens: 2,
         source: 'estimated',
         totalTokens: 5,
+      },
+    });
+  });
+
+  it('derives total tokens from input and output for stream-collect when the provider omits totalTokens', async () => {
+    const service = createService();
+    mockStreamText.mockReturnValueOnce({
+      finishReason: Promise.resolve('stop'),
+      fullStream: (async function* () {
+        yield {
+          text: 'streamed partial usage',
+          type: 'text-delta',
+        };
+      })(),
+      totalUsage: Promise.resolve({
+        inputTokens: 12,
+        outputTokens: 7,
+      }),
+    });
+
+    await expect(service.generateText({
+      messages: [
+        {
+          content: 'hello',
+          role: 'user',
+        },
+      ],
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      transportMode: 'stream-collect',
+    })).resolves.toEqual({
+      customBlockOrigin: 'ai-sdk.raw',
+      finishReason: 'stop',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      text: 'streamed partial usage',
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+        source: 'provider',
+        totalTokens: 19,
       },
     });
   });

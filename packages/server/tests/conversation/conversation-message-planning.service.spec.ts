@@ -212,7 +212,7 @@ describe('ConversationMessagePlanningService', () => {
       excludedMessageIds: [],
       frontendMessageWindowSize: 200,
       includedMessageIds: ['history-1', 'history-2'],
-      keepRecentMessages: 6,
+      keepRecentMessages: 0,
       slidingWindowUsagePercent: 50,
       strategy: 'sliding',
     }));
@@ -384,7 +384,7 @@ describe('ConversationMessagePlanningService', () => {
   it('compacts history immediately after a completed model reply is sent', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 1,
+        compressionThreshold: 30,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,
@@ -393,20 +393,20 @@ describe('ConversationMessagePlanningService', () => {
       },
     });
     runtimeHostConversationRecordService.replaceMessages(conversationId, [
-      createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(10)),
-      createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(10)),
-      createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(10)),
-      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10)),
+      createMessage('history-1', 'user', '第一条较长的历史消息，用于触发回复后压缩检查。'.repeat(4)),
+      createMessage('history-2', 'assistant', '第二条较长的历史回复，用于确保压缩候选存在。'.repeat(4)),
+      createMessage('history-3', 'user', '第三条消息，表示本轮提问。'.repeat(4)),
+      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4)),
     ]);
 
     await service.broadcastAfterSend(
       { conversationId, userId: 'user-1' },
       {
         assistantMessageId: 'assistant-final',
-        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10),
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4),
         conversationId,
         modelId: 'gpt-5.4',
-        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(10), type: 'text' }],
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(4), type: 'text' }],
         providerId: 'openai',
         toolCalls: [],
         toolResults: [],
@@ -480,6 +480,71 @@ describe('ConversationMessagePlanningService', () => {
       usage: undefined,
     });
 
+    const planAfterFailedAutoCompaction = await service.createStreamPlan({
+      abortSignal: new AbortController().signal,
+      conversationId,
+      messageId: 'assistant-next',
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      userId: 'user-1',
+    });
+
+    expect(planAfterFailedAutoCompaction).toEqual(expect.objectContaining({
+      responseSource: 'short-circuit',
+      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
+    }));
+    const autoFailureText = planAfterFailedAutoCompaction.shortCircuitParts?.find((part) => part.type === 'text')?.text ?? '';
+    expect(autoFailureText).not.toContain('/compact');
+
+    expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
+  });
+
+  it('stops the next reply with a clear overflow message when the first completed turn already exceeds context and cannot be compacted', async () => {
+    contextGovernanceSettingsService.updateConfig({
+      contextCompaction: {
+        compressionThreshold: 1,
+        enabled: true,
+        keepRecentMessages: 6,
+        reservedTokens: 1,
+        strategy: 'summary',
+        summaryPrompt: '请整理下面的对话摘要',
+      },
+    });
+    runtimeHostConversationRecordService.replaceMessages(conversationId, [
+      createMessage('history-1', 'user', '请直接写一篇超长文章。'),
+      createMessage('assistant-final', 'assistant', '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300)),
+    ]);
+    personaService.readCurrentPersona.mockReturnValue({
+      beginDialogs: [],
+      customErrorMessage: null,
+      personaId: 'builtin.default-assistant',
+      prompt: '你是测试助手',
+      toolNames: null,
+    });
+    toolRegistryService.buildToolSet.mockResolvedValue(undefined);
+    aiModelExecutionService.streamText.mockReturnValue({
+      finishReason: undefined,
+      fullStream: (async function* () { yield { text: 'ok', type: 'text-delta' as const }; })(),
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+      usage: undefined,
+    });
+
+    await expect(service.broadcastAfterSend(
+      { conversationId, userId: 'user-1' },
+      {
+        assistantMessageId: 'assistant-final',
+        content: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300),
+        conversationId,
+        modelId: 'gpt-5.4',
+        parts: [{ text: '第四条消息，表示本轮 assistant 已经完成回复。'.repeat(300), type: 'text' }],
+        providerId: 'openai',
+        toolCalls: [],
+        toolResults: [],
+      },
+      'model',
+    )).resolves.toBeUndefined();
+
     await expect(service.createStreamPlan({
       abortSignal: new AbortController().signal,
       conversationId,
@@ -489,9 +554,13 @@ describe('ConversationMessagePlanningService', () => {
       userId: 'user-1',
     })).resolves.toEqual(expect.objectContaining({
       responseSource: 'short-circuit',
-      shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
+      shortCircuitParts: [{
+        text: '当前最后一轮内容本身已占满上下文，现有历史不足以继续压缩。本轮已停止继续生成。请新开会话，或先删减本轮长回复后再继续。',
+        type: 'text',
+      }],
     }));
 
+    expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });
 
@@ -528,19 +597,23 @@ describe('ConversationMessagePlanningService', () => {
       usage: undefined,
     });
 
-    await expect(service.createStreamPlan({
+    const pendingPlanAfterFailedAutoCompaction = await service.createStreamPlan({
       abortSignal: new AbortController().signal,
       conversationId,
       messageId: 'assistant-pending',
       modelId: 'gpt-5.4',
       providerId: 'openai',
       userId: 'user-1',
-    })).resolves.toEqual(expect.objectContaining({
+    });
+
+    expect(pendingPlanAfterFailedAutoCompaction).toEqual(expect.objectContaining({
       modelId: 'gpt-5.4',
       providerId: 'openai',
       responseSource: 'short-circuit',
       shortCircuitParts: [{ text: expect.stringContaining('自动压缩失败'), type: 'text' }],
     }));
+    const pendingAutoFailureText = pendingPlanAfterFailedAutoCompaction.shortCircuitParts?.find((part) => part.type === 'text')?.text ?? '';
+    expect(pendingAutoFailureText).not.toContain('/compact');
 
     expect(aiModelExecutionService.streamText).not.toHaveBeenCalled();
   });

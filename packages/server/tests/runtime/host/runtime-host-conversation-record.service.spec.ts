@@ -589,6 +589,71 @@ describe('RuntimeHostConversationRecordService', () => {
     });
   });
 
+  it('does not count raw tool call and tool result payloads when estimating history preview tokens', () => {
+    process.env[conversationsEnvKey] = storagePath;
+    const service = new RuntimeHostConversationRecordService();
+    const conversationId = (service.createConversation({ title: 'Tool Payload Preview Chat' }) as { id: string }).id;
+    const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
+
+    service.replaceConversationHistory(conversationId, {
+      expectedRevision: initialHistory.revision,
+      messages: [
+        {
+          content: '请检查最近的工具结果。',
+          createdAt: '2026-05-02T10:00:00.000Z',
+          id: 'user-message',
+          parts: [{ text: '请检查最近的工具结果。', type: 'text' }],
+          role: 'user',
+          status: 'completed',
+          updatedAt: '2026-05-02T10:00:00.000Z',
+        },
+        {
+          content: '已经检查完成。',
+          createdAt: '2026-05-02T10:01:00.000Z',
+          id: 'assistant-message',
+          parts: [{ text: '已经检查完成。', type: 'text' }],
+          role: 'assistant',
+          status: 'completed',
+          toolCalls: [
+            {
+              input: {
+                command: 'echo verbose',
+                huge: 'x'.repeat(5000),
+              },
+              toolCallId: 'call-1',
+              toolName: 'bash',
+            },
+          ],
+          toolResults: [
+            {
+              output: {
+                data: {
+                  stderr: 'warn'.repeat(500),
+                  stdout: 'line'.repeat(2000),
+                },
+                kind: 'tool:text',
+                value: 'ok',
+              },
+              toolCallId: 'call-1',
+              toolName: 'bash',
+            },
+          ],
+          updatedAt: '2026-05-02T10:01:00.000Z',
+        },
+      ],
+    });
+
+    const expectedTextBytes = Buffer.byteLength('user\n请检查最近的工具结果。\nassistant\n已经检查完成。', 'utf8');
+    expect(service.previewConversationHistory(conversationId, {
+      modelId: 'gpt-5.4',
+      providerId: 'openai',
+    })).toEqual({
+      estimatedTokens: Math.ceil(expectedTextBytes / 4),
+      messageCount: 2,
+      textBytes: expectedTextBytes,
+    });
+  });
+
   it('deletes runtime workspace together with the conversation', async () => {
     process.env[conversationsEnvKey] = storagePath;
     process.env[runtimeWorkspaceEnvKey] = runtimeWorkspaceRoot;

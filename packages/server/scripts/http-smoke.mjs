@@ -1661,7 +1661,6 @@ async function runHttpFlow(apiBase, state, input) {
     ensure(requestIncludesToolName(firstRequest.body, readSmokeShellToolName()), 'Expected bash workdir loop request to expose native shell tool');
     const toolResultRequest = requests.find((entry) => requestContainsShellToolResult(entry.body));
     ensure(toolResultRequest, 'Expected bash workdir loop to issue a follow-up request with bash tool results');
-    ensure(requestContainsShellResult(toolResultRequest.body, 'cwd: /nested'), 'Expected bash workdir loop follow-up request to include rendered cwd');
     ensure(requestContainsShellResult(toolResultRequest.body, 'from-workdir'), 'Expected bash workdir loop follow-up request to include rendered workdir output');
     ensure(readNormalizedFileContent(path.join(readSessionWorkspaceRoot(), 'nested', 'child.txt')) === 'from-workdir\n', 'Expected bash workdir loop to persist file under nested workdir');
 

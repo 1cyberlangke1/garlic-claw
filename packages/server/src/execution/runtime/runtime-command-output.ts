@@ -40,21 +40,14 @@ export function renderRuntimeCommandTextOutput(
   const limits = normalizeRuntimeCommandOutputOptions(options);
   const stdout = renderRuntimeCommandStream(result.stdout, result.stdoutStats, limits);
   const stderr = renderRuntimeCommandStream(result.stderr, result.stderrStats, limits);
+  const sections = readRuntimeCommandSections(stdout.output, stderr.output, result.stdout, result.stderr);
+  const metadata = readRuntimeCommandMetadata(result.exitCode, result.stderr);
+  const truncationPrefix = readRuntimeCommandTruncationPrefix(result.outputPath, stdout, stderr, limits);
   return [
     `<${limits.resultTagName}>`,
-    `cwd: ${result.cwd}`,
-    `exit_code: ${result.exitCode}`,
-    `status: ${result.exitCode === 0 ? 'success' : 'failed'}`,
-    ...readRuntimeCommandDiagnostics(result),
-    summarizeRuntimeCommandStream('stdout', result.stdout, result.stdoutStats, stdout),
-    summarizeRuntimeCommandStream('stderr', result.stderr, result.stderrStats, stderr),
-    ...readRuntimeOutputPath(result.outputPath, stdout, stderr),
-    '<stdout>',
-    stdout.output,
-    '</stdout>',
-    '<stderr>',
-    stderr.output,
-    '</stderr>',
+    ...(truncationPrefix.length > 0 ? [...truncationPrefix, ''] : []),
+    ...sections,
+    ...(metadata.length > 0 ? ['', '<bash_metadata>', ...metadata, '</bash_metadata>'] : []),
     `</${limits.resultTagName}>`,
   ].join('\n');
 }
@@ -136,41 +129,77 @@ function readRuntimeTruncationDetail(
   ].filter((item): item is string => Boolean(item)).join('，');
 }
 
-function readRuntimeCommandDiagnostics(result: RuntimeCommandRenderableResult): string[] {
-  const hasStdout = result.stdout.trim().length > 0;
-  const hasStderr = result.stderr.trim().length > 0;
-  if (result.exitCode !== 0) {
-    return [hasStderr
-      ? `diagnostic: command failed with exit code ${result.exitCode}; inspect stderr first for the primary error.`
-      : `diagnostic: command failed with exit code ${result.exitCode} but produced no stderr; inspect stdout for clues.`];
+function readRuntimeCommandSections(
+  stdout: string,
+  stderr: string,
+  rawStdout: string,
+  rawStderr: string,
+): string[] {
+  const sections: string[] = [];
+  if (rawStdout.trim().length > 0) {
+    sections.push('<stdout>', stdout, '</stdout>');
   }
-  if (hasStderr) {
-    return ['diagnostic: command succeeded with stderr output; review stderr for warnings or extra diagnostics.'];
+  if (rawStderr.trim().length > 0) {
+    if (sections.length > 0) {
+      sections.push('');
+    }
+    sections.push('<stderr>', stderr, '</stderr>');
   }
-  return hasStdout ? [] : ['diagnostic: command completed without stdout or stderr output.'];
+  return sections.length > 0 ? sections : ['(no output)'];
 }
 
-function summarizeRuntimeCommandStream(
-  label: 'stdout' | 'stderr',
-  text: string,
-  stats: RuntimeCommandStreamStats | undefined,
-  rendered: RuntimeCommandRenderedStream,
-): string {
-  if (!text) {
-    return `${label}_summary: empty`;
+function readRuntimeCommandMetadata(exitCode: number, stderr: string): string[] {
+  const metadata: string[] = [];
+  if (exitCode !== 0) {
+    metadata.push(`Command exited with code ${exitCode}.`);
   }
-  const normalized = stats ?? readRuntimeCommandStreamStats(text);
-  return `${label}_summary: ${normalized.lines} lines, ${normalized.bytes} bytes${rendered.truncatedByBytes || rendered.truncatedByLines ? ' (tail view shown)' : ''}`;
+  if (stderr.trim().length > 0 && exitCode === 0) {
+    metadata.push('Command produced stderr output; review it for warnings or errors.');
+  }
+  return metadata;
 }
 
-function readRuntimeOutputPath(
+function readRuntimeCommandTruncationPrefix(
   outputPath: string | undefined,
   stdout: RuntimeCommandRenderedStream,
   stderr: RuntimeCommandRenderedStream,
+  limits: RuntimeCommandOutputLimits,
 ): string[] {
-  return outputPath && (stdout.truncatedByBytes || stdout.truncatedByLines || stderr.truncatedByBytes || stderr.truncatedByLines)
-    ? [`full_output_path: ${outputPath}`]
-    : [];
+  const truncationLine = readRuntimeCommandTruncationLine(stdout, stderr, limits);
+  if (!truncationLine) {
+    return [];
+  }
+  return [
+    truncationLine,
+    ...(outputPath ? [`Full output saved to: ${outputPath}`] : []),
+  ];
+}
+
+function readRuntimeCommandTruncationLine(
+  stdout: RuntimeCommandRenderedStream,
+  stderr: RuntimeCommandRenderedStream,
+  limits: RuntimeCommandOutputLimits,
+): string | null {
+  if (!limits.showTruncationDetails) {
+    return null;
+  }
+  const detail = [stdout, stderr]
+    .map((stream) => stream.truncatedByLines || stream.truncatedByBytes ? readRuntimeTruncationDetailFromRendered(stream, limits) : null)
+    .find((item): item is string => Boolean(item));
+  if (!detail) {
+    return null;
+  }
+  return `...output truncated (${detail})...`;
+}
+
+function readRuntimeTruncationDetailFromRendered(
+  rendered: RuntimeCommandRenderedStream,
+  limits: RuntimeCommandOutputLimits,
+): string {
+  return [
+    rendered.truncatedByLines && limits.maxLines > 0 ? `仅保留最后 ${limits.maxLines} 行` : null,
+    rendered.truncatedByBytes && limits.maxBytes > 0 ? `仅保留最后 ${limits.maxBytes} 字节内的内容` : null,
+  ].filter((item): item is string => Boolean(item)).join('，');
 }
 
 function readRuntimeCommandStreamStats(text: string): RuntimeCommandStreamStats {

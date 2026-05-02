@@ -96,7 +96,8 @@ function sanitizeContextGovernanceSection(sectionName: ContextGovernanceSectionN
   if (sectionName === 'conversationTitle') { writeOptionalText(next, values.defaultTitle, 'conversationTitle.defaultTitle'); writeOptionalInteger(next, values.maxMessages, 'conversationTitle.maxMessages', 1); }
   if (sectionName === 'contextCompaction') {
     writeOptionalTextOption(next, values.strategy, 'contextCompaction.strategy', ['sliding', 'summary']);
-    for (const [key, value] of [['compressionThreshold', values.compressionThreshold], ['keepRecentMessages', values.keepRecentMessages], ['frontendMessageWindowSize', values.frontendMessageWindowSize], ['reservedTokens', values.reservedTokens], ['slidingWindowUsagePercent', values.slidingWindowUsagePercent]] as const) {writeOptionalInteger(next, value, `contextCompaction.${key}`, 1);}
+    for (const [key, value] of [['compressionThreshold', values.compressionThreshold], ['frontendMessageWindowSize', values.frontendMessageWindowSize], ['reservedTokens', values.reservedTokens], ['slidingWindowUsagePercent', values.slidingWindowUsagePercent]] as const) {writeOptionalInteger(next, value, `contextCompaction.${key}`, 1);}
+    writeOptionalInteger(next, values.keepRecentMessages, 'contextCompaction.keepRecentMessages', 0);
     writeOptionalText(next, values.summaryPrompt, 'contextCompaction.summaryPrompt');
     writeOptionalBoolean(next, values.showCoveredMarker, 'contextCompaction.showCoveredMarker');
     writeOptionalBoolean(next, values.allowAutoContinue, 'contextCompaction.allowAutoContinue');
