@@ -13,12 +13,12 @@ import { BuiltinPluginRegistryService } from '../../plugin/builtin/builtin-plugi
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
 import { RuntimeGatewayRemoteTransportService } from '../gateway/runtime-gateway-remote-transport.service';
-import type { RuntimeHostService } from './runtime-host.service';
+import type { PluginHostService } from './plugin-host.service';
 
-type RuntimeHostCaller = (input: Parameters<RuntimeHostService['call']>[0]) => Promise<JsonValue>;
+type RuntimeHostCaller = (input: Parameters<PluginHostService['call']>[0]) => Promise<JsonValue>;
 
 @Injectable()
-export class RuntimeHostPluginDispatchService {
+export class PluginDispatchService {
   private runtimeHostCaller?: RuntimeHostCaller;
 
   constructor(
@@ -102,8 +102,8 @@ export class RuntimeHostPluginDispatchService {
 
   private createBuiltinHostFacade(pluginId: string, context: PluginCallContext) {
     const runtimeHostCaller = this.runtimeHostCaller;
-    if (!runtimeHostCaller) {throw new Error('RuntimeHostPluginDispatchService host caller not registered');}
-    const callHost = <T>(method: Parameters<RuntimeHostService['call']>[0]['method'], params: JsonObject = {}) => runtimeHostCaller({ context, method, params, pluginId }) as Promise<T>;
+    if (!runtimeHostCaller) {throw new Error('PluginDispatchService host caller not registered');}
+    const callHost = <T>(method: Parameters<PluginHostService['call']>[0]['method'], params: JsonObject = {}) => runtimeHostCaller({ context, method, params, pluginId }) as Promise<T>;
     return createPluginHostFacade({ call: (method, params) => callHost(method, params), callHost });
   }
 }

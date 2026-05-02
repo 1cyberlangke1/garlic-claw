@@ -9,7 +9,7 @@ import { AutomationExecutionService } from '../../../src/execution/automation/au
 import { AutomationService } from '../../../src/execution/automation/automation.service';
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { EditToolService } from '../../../src/execution/edit/edit-tool.service';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
+import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { GlobToolService } from '../../../src/execution/glob/glob-tool.service';
 import { GrepToolService } from '../../../src/execution/grep/grep-tool.service';
 import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
@@ -34,22 +34,22 @@ import { PersonaService } from '../../../src/persona/persona.service';
 import { PersonaStoreService } from '../../../src/persona/persona-store.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../src/runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gateway/runtime-gateway-remote-transport.service';
-import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-host-knowledge.service';
-import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
-import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
-import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
-import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
-import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
+import { ConversationMessageService } from '../../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
+import { KnowledgeReaderService } from '../../../src/runtime/host/knowledge-reader.service';
+import { PluginDispatchService } from '../../../src/runtime/host/plugin-dispatch.service';
+import { PluginRuntimeService } from '../../../src/runtime/host/plugin-runtime.service';
+import { ToolGatewayService } from '../../../src/runtime/host/tool-gateway.service';
+import { SubagentRunnerService } from '../../../src/runtime/host/subagent-runner.service';
+import { PluginHostService } from '../../../src/runtime/host/plugin-host.service';
+import { UserContextService } from '../../../src/runtime/host/user-context.service';
 
 const conversationStorePaths: string[] = [];
 const runtimeWorkspaceRoots: string[] = [];
 let fixtureConversationId = 'conversation-1';
 const fixtureConversationTitle = 'Conversation conversation-1';
 
-describe('RuntimeHostService', () => {
+describe('PluginHostService', () => {
   beforeEach(() => {
     const conversationStorePath = path.join(os.tmpdir(), `gc-server-host-conversation-${Date.now()}-${Math.random()}.json`);
     process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationStorePath;
@@ -81,7 +81,7 @@ describe('RuntimeHostService', () => {
       method: 'plugin.unknown' as never,
       params: {},
       pluginId: 'builtin.memory',
-    })).rejects.toThrow('Host API plugin.unknown is not implemented in the current server runtime');
+    })).rejects.toThrow('当前服务运行时未实现 Host API plugin.unknown');
   });
 
   it('registers the host caller so builtin tools can round-trip into host config reads', async () => {
@@ -115,25 +115,25 @@ describe('RuntimeHostService', () => {
       runtimeSessionEnvironmentService,
       new ProjectWorktreeRootService(),
     );
-    const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
+    const runtimeHostPluginDispatchService = new PluginDispatchService(
       builtinPluginRegistryService,
       pluginBootstrapService,
       new RuntimeGatewayRemoteTransportService(runtimeGatewayConnectionLifecycleService),
     );
-    const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
-    const runtimeHostService = new RuntimeHostService(
+    const runtimeHostConversationRecordService = new ConversationStoreService();
+    const runtimeHostService = new PluginHostService(
       pluginBootstrapService,
       {} as never,
       {} as never,
       runtimeHostConversationRecordService,
       {} as never,
       new AiManagementService(new AiProviderSettingsService()),
-      new RuntimeHostKnowledgeService(),
+      new KnowledgeReaderService(),
       runtimeHostPluginDispatchService,
-      new RuntimeHostPluginRuntimeService(),
+      new PluginRuntimeService(),
       {} as never,
       {} as never,
-      new RuntimeHostUserContextService(),
+      new UserContextService(),
       new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
     );
 
@@ -202,7 +202,7 @@ describe('RuntimeHostService', () => {
     });
 
     await expect(callMemory(service, 'memory.search', { query: 'coffee' }, hookContext({ conversationId: undefined })))
-      .rejects.toThrow('Plugin builtin.memory is missing permission memory:read');
+      .rejects.toThrow('插件 builtin.memory 缺少权限 memory:read');
     await expect(callMemory(service, 'config.get', {}, providerContext)).resolves.toEqual({
       defaultLimit: 5,
     });
@@ -972,8 +972,8 @@ function createFixture(input?: {
     new PluginGovernanceService(),
     pluginPersistenceService,
   );
-  const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
-  const runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
+  const runtimeHostConversationRecordService = new ConversationStoreService();
+  const runtimeHostConversationMessageService = new ConversationMessageService(
     runtimeHostConversationRecordService,
   );
   const aiManagementService = new AiManagementService(new AiProviderSettingsService());
@@ -1037,7 +1037,7 @@ function createFixture(input?: {
     }
     return 'response';
   };
-  const runtimeHostSubagentRunnerService = new RuntimeHostSubagentRunnerService(
+  const runtimeHostSubagentRunnerService = new SubagentRunnerService(
     new AiModelExecutionService(),
     runtimeHostConversationMessageService,
     {
@@ -1076,7 +1076,7 @@ function createFixture(input?: {
       } as never,
       {
         sendMessage: async () => {
-          throw new Error('RuntimeHostConversationMessageService is not available');
+          throw new Error('ConversationMessageService is not available');
         },
       } as never,
       {
@@ -1113,7 +1113,7 @@ function createFixture(input?: {
     runtimeHostLlmService,
     runtimeHostSubagentRunnerService,
     service: (() => {
-      const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-runtime-host-'));
+      const runtimeWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gc-host-'));
       process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
       runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
       const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
@@ -1166,7 +1166,7 @@ function createFixture(input?: {
         runtimeFilesystemBackendService,
         runtimeFileFreshnessService,
       );
-      const runtimeHostRuntimeToolService = new RuntimeHostRuntimeToolService(
+      const runtimeHostRuntimeToolService = new ToolGatewayService(
         bashToolService,
         editToolService,
         globToolService,
@@ -1181,19 +1181,19 @@ function createFixture(input?: {
         writeToolService,
       );
       const runtimeHostPluginDispatchService = { registerHostCaller: jest.fn() } as never;
-      const service = new RuntimeHostService(
+      const service = new PluginHostService(
         pluginBootstrapService,
         runtimeHostAutomationService,
         runtimeHostConversationMessageService,
         runtimeHostConversationRecordService,
         runtimeHostLlmService as never,
         aiManagementService,
-        new RuntimeHostKnowledgeService(),
+        new KnowledgeReaderService(),
         runtimeHostPluginDispatchService,
-        new RuntimeHostPluginRuntimeService(),
+        new PluginRuntimeService(),
         runtimeHostRuntimeToolService,
         runtimeHostSubagentRunnerService,
-        new RuntimeHostUserContextService(),
+        new UserContextService(),
         new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
       );
       service.onModuleInit();
@@ -1203,7 +1203,7 @@ function createFixture(input?: {
 }
 
 function callMemory(
-  service: RuntimeHostService,
+  service: PluginHostService,
   method: string,
   params: import('@garlic-claw/shared').JsonObject,
   context: Record<string, unknown>,
@@ -1241,7 +1241,7 @@ function pluginContext(extra: Record<string, unknown> = {}) {
 }
 
 function memoryHookCall(
-  service: RuntimeHostService,
+  service: PluginHostService,
   method: string,
   params: import('@garlic-claw/shared').JsonObject,
   context?: Record<string, unknown>,
@@ -1250,7 +1250,7 @@ function memoryHookCall(
 }
 
 function memoryPluginCall(
-  service: RuntimeHostService,
+  service: PluginHostService,
   method: string,
   params: import('@garlic-claw/shared').JsonObject,
   context?: Record<string, unknown>,

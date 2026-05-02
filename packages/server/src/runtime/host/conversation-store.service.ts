@@ -9,9 +9,9 @@ import { readConversationModelUsageAnnotation } from '../../conversation/convers
 import { RuntimeSessionEnvironmentService } from '../../execution/runtime/runtime-session-environment.service';
 import { listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
-import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
-import { RuntimeHostConversationTodoService } from './runtime-host-conversation-todo.service';
-import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './runtime-host-values';
+import { PluginDispatchService } from './plugin-dispatch.service';
+import { ConversationTodoService } from './conversation-todo.service';
+import { asJsonValue, cloneJsonValue, readJsonObject, readOptionalBoolean, readPositiveInteger, requireContextField } from './host-input.codec';
 
 export interface RuntimeConversationRecord { activePersonaId?: string; createdAt: string; id: string; kind?: ConversationKind; messages: JsonObject[]; parentId?: string; revision: string; revisionVersion: number; runtimePermissionApprovals?: string[]; subagent?: ConversationSubagentState; title: string; updatedAt: string; userId: string; }
 interface RuntimeConversationSessionRecord { captureHistory: boolean; conversationId: string; expiresAt: string; historyMessages: JsonObject[]; lastMatchedAt: string | null; metadata?: JsonObject; pluginId: string; startedAt: string; timeoutMs: number; }
@@ -20,15 +20,15 @@ type RuntimeConversationRecordView = 'detail' | 'history' | 'overview' | 'summar
 const CONVERSATION_HISTORY_STATUSES = new Set(['pending', 'streaming', 'completed', 'stopped', 'error']);
 
 @Injectable()
-export class RuntimeHostConversationRecordService {
+export class ConversationStoreService {
   private readonly conversationSessions: Map<string, RuntimeConversationSessionRecord>;
   private readonly storagePath = resolveConversationStoragePath();
   private readonly conversations: Map<string, RuntimeConversationRecord>;
 
   constructor(
-    @Optional() private readonly runtimeHostPluginDispatchService?: RuntimeHostPluginDispatchService,
+    @Optional() private readonly runtimeHostPluginDispatchService?: PluginDispatchService,
     @Optional() private readonly runtimeSessionEnvironmentService?: RuntimeSessionEnvironmentService,
-    @Optional() @Inject(forwardRef(() => RuntimeHostConversationTodoService)) private readonly runtimeHostConversationTodoService?: RuntimeHostConversationTodoService,
+    @Optional() @Inject(forwardRef(() => ConversationTodoService)) private readonly runtimeHostConversationTodoService?: ConversationTodoService,
   ) {
     const stored = this.readStoredConversations();
     this.conversationSessions = stored.sessions;

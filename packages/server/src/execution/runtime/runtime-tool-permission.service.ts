@@ -3,7 +3,7 @@ import { ForbiddenException, Injectable, NotFoundException, Optional } from '@ne
 import { uuidv7 } from 'uuidv7';
 import type { RuntimeBackendDescriptor } from './runtime-command.types';
 import { expandRuntimeOperationsToCapabilities } from './runtime-operation-policy';
-import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
+import { ConversationStoreService } from '../../runtime/host/conversation-store.service';
 
 interface RuntimePermissionReviewInput {
   abortSignal?: AbortSignal;
@@ -26,7 +26,7 @@ export class RuntimeToolPermissionService {
   private readonly pendingRequests = new Map<string, PendingRuntimePermissionRequest>();
   private readonly listeners = new Map<string, Set<(event: RuntimePermissionEvent) => void>>();
 
-  constructor(@Optional() private readonly runtimeHostConversationRecordService?: RuntimeHostConversationRecordService) {}
+  constructor(@Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService) {}
 
   async review(input: RuntimePermissionReviewInput): Promise<void> {
     const requiredCapabilities = expandRuntimeOperationsToCapabilities(input.requiredOperations);

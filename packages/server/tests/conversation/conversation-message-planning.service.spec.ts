@@ -5,7 +5,7 @@ import { createConversationHistorySignatureFromHistoryMessages } from '../../src
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service';
 
 describe('ConversationMessagePlanningService', () => {
   const aiManagementService = {
@@ -27,7 +27,7 @@ describe('ConversationMessagePlanningService', () => {
   let conversationsPath: string;
   let conversationId: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
-  let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
+  let runtimeHostConversationRecordService: ConversationStoreService;
   let service: ConversationMessagePlanningService;
 
   beforeEach(() => {
@@ -63,7 +63,7 @@ describe('ConversationMessagePlanningService', () => {
       providerId: 'openai',
       text: '压缩后的历史摘要',
     });
-    runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
+    runtimeHostConversationRecordService = new ConversationStoreService();
     contextGovernanceSettingsService = new ContextGovernanceSettingsService();
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: '窗口预览', userId: 'user-1' }) as { id: string }).id;
     service = new ConversationMessagePlanningService(
@@ -384,7 +384,7 @@ describe('ConversationMessagePlanningService', () => {
   it('compacts history immediately after a completed model reply is sent', async () => {
     contextGovernanceSettingsService.updateConfig({
       contextCompaction: {
-        compressionThreshold: 1,
+        compressionThreshold: 90,
         enabled: true,
         keepRecentMessages: 1,
         reservedTokens: 1,

@@ -13,6 +13,7 @@ describe('PluginBootstrapService remote access', () => {
       'PluginGovernanceService',
       'PluginPersistenceService',
       'BuiltinPluginRegistryService',
+      'ProjectPluginRegistryService',
     ]);
   });
 

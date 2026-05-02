@@ -10,7 +10,7 @@ import {
   readPositiveInteger,
   readRequiredString,
   requireContextField,
-} from './runtime-host-values';
+} from './host-input.codec';
 
 interface RuntimeMemoryRecord {
   category: string;
@@ -27,7 +27,7 @@ interface RuntimeHostMemoryStoreFile {
 }
 
 @Injectable()
-export class RuntimeHostUserContextService {
+export class UserContextService {
   private readonly memories: RuntimeMemoryRecord[];
   private readonly storagePath: string | null;
   private memorySequence: number;

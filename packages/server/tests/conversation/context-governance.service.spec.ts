@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service';
 
 type GenerateTextInput = {
   allowFallbackChatModels?: boolean;
@@ -20,7 +20,7 @@ describe('ContextGovernanceService', () => {
   let conversationsPath: string;
   let conversationId: string;
   let settingsService: ContextGovernanceSettingsService;
-  let conversationRecordService: RuntimeHostConversationRecordService;
+  let conversationRecordService: ConversationStoreService;
   let service: ContextGovernanceService;
 
   const aiManagementService = {
@@ -79,7 +79,7 @@ describe('ContextGovernanceService', () => {
     }));
     aiManagementService.listProviders.mockReturnValue([{ id: 'nvidia' }]);
     settingsService = new ContextGovernanceSettingsService();
-    conversationRecordService = new RuntimeHostConversationRecordService();
+    conversationRecordService = new ConversationStoreService();
     conversationId = (
       conversationRecordService.createConversation({
         title: '新的对话',

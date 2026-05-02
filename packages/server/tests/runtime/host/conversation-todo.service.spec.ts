@@ -1,18 +1,18 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../../src/runtime/host/runtime-host-conversation-todo.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../../src/runtime/host/conversation-todo.service';
 
-describe('RuntimeHostConversationTodoService', () => {
+describe('ConversationTodoService', () => {
   const conversationsEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   const todosEnvKey = 'GARLIC_CLAW_CONVERSATION_TODOS_PATH';
   let conversationStoragePath: string;
   let todoStoragePath: string;
 
   beforeEach(() => {
-    conversationStoragePath = path.join(os.tmpdir(), `runtime-host-conversation-todo.conversations-${Date.now()}-${Math.random()}.json`);
-    todoStoragePath = path.join(os.tmpdir(), `runtime-host-conversation-todo.todos-${Date.now()}-${Math.random()}.json`);
+    conversationStoragePath = path.join(os.tmpdir(), `conversation-todo.conversations-${Date.now()}-${Math.random()}.json`);
+    todoStoragePath = path.join(os.tmpdir(), `conversation-todo.todos-${Date.now()}-${Math.random()}.json`);
     process.env[conversationsEnvKey] = conversationStoragePath;
     process.env[todosEnvKey] = todoStoragePath;
   });
@@ -32,8 +32,8 @@ describe('RuntimeHostConversationTodoService', () => {
   });
 
   it('persists todos outside conversation record storage', () => {
-    const recordService = new RuntimeHostConversationRecordService();
-    const todoService = new RuntimeHostConversationTodoService(recordService);
+    const recordService = new ConversationStoreService();
+    const todoService = new ConversationTodoService(recordService);
     const conversationId = (recordService.createConversation({ title: 'Todo Chat' }) as { id: string }).id;
 
     expect(todoService.replaceSessionTodo(conversationId, [
@@ -61,15 +61,15 @@ describe('RuntimeHostConversationTodoService', () => {
       },
     });
 
-    const reloadedTodos = new RuntimeHostConversationTodoService(new RuntimeHostConversationRecordService());
+    const reloadedTodos = new ConversationTodoService(new ConversationStoreService());
     expect(reloadedTodos.readSessionTodo(conversationId)).toEqual([
       { content: '实现 todo owner', priority: 'high', status: 'in_progress' },
     ]);
   });
 
   it('deletes persisted todos when the conversation is removed through the controller owner', () => {
-    const recordService = new RuntimeHostConversationRecordService();
-    const todoService = new RuntimeHostConversationTodoService(recordService);
+    const recordService = new ConversationStoreService();
+    const todoService = new ConversationTodoService(recordService);
     const conversationId = (recordService.createConversation({ title: 'Todo Chat' }) as { id: string }).id;
 
     todoService.replaceSessionTodo(conversationId, [
@@ -82,8 +82,8 @@ describe('RuntimeHostConversationTodoService', () => {
   });
 
   it('emits independent todo update events on replace and delete', () => {
-    const recordService = new RuntimeHostConversationRecordService();
-    const todoService = new RuntimeHostConversationTodoService(recordService);
+    const recordService = new ConversationStoreService();
+    const todoService = new ConversationTodoService(recordService);
     const conversationId = (recordService.createConversation({ title: 'Todo Chat' }) as { id: string }).id;
     const events: Array<{ sessionId: string; todos: Array<{ content: string; priority: string; status: string }> }> = [];
 

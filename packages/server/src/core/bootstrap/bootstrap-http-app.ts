@@ -4,8 +4,8 @@ import { AppModule } from '../../app.module';
 import { BootstrapUserService } from '../../auth/bootstrap-user.service';
 import { ToolManagementSettingsService } from '../../execution/tool/tool-management-settings.service';
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
-import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostPluginRuntimeService } from '../../runtime/host/runtime-host-plugin-runtime.service';
+import { ConversationStoreService } from '../../runtime/host/conversation-store.service';
+import { PluginRuntimeService } from '../../runtime/host/plugin-runtime.service';
 import { RuntimePluginGovernanceService } from '../../runtime/kernel/runtime-plugin-governance.service';
 
 const DEFAULT_GLOBAL_PREFIX = 'api';
@@ -25,8 +25,8 @@ export async function bootstrapHttpApp(): Promise<void> {
     }),
   );
   const pluginBootstrapService = app.get(PluginBootstrapService);
-  const runtimeHostConversationRecordService = app.get(RuntimeHostConversationRecordService);
-  const runtimeHostPluginRuntimeService = app.get(RuntimeHostPluginRuntimeService);
+  const runtimeHostConversationRecordService = app.get(ConversationStoreService);
+  const runtimeHostPluginRuntimeService = app.get(PluginRuntimeService);
   const runtimePluginGovernanceService = app.get(RuntimePluginGovernanceService);
   const toolManagementSettingsService = app.get(ToolManagementSettingsService);
   pluginBootstrapService.bootstrapBuiltins();

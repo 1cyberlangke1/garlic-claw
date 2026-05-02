@@ -12,7 +12,7 @@ import {
   readRuntimeNativeShellTimeout,
 } from './runtime-native-shell-options';
 import { RuntimeOneShotShellService } from './runtime-one-shot-shell.service';
-import { toRuntimeHostPath } from './runtime-host-path';
+import { toRuntimeHostPath } from './host-path';
 import {
   isRuntimeHostAbsoluteShellWorkdir,
   readRuntimeShellToolName,

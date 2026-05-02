@@ -1,12 +1,12 @@
 import { Controller, Delete, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser, JwtAuthGuard } from '../../../auth/http-auth';
-import { RuntimeHostUserContextService } from '../../../runtime/host/runtime-host-user-context.service';
+import { UserContextService } from '../../../runtime/host/user-context.service';
 
 @Controller('memories')
 @UseGuards(JwtAuthGuard)
 export class MemoryController {
   constructor(
-    private readonly runtimeHostUserContextService: RuntimeHostUserContextService,
+    private readonly runtimeHostUserContextService: UserContextService,
   ) {}
 
   @Get()

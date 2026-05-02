@@ -5,9 +5,9 @@ import type { ChatMessagePart } from '@garlic-claw/shared';
 import { ConversationMessagePlanningService } from '../../src/conversation/conversation-message-planning.service';
 import { ContextGovernanceService } from '../../src/conversation/context-governance.service';
 import { ContextGovernanceSettingsService } from '../../src/conversation/context-governance-settings.service';
-import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../src/runtime/host/runtime-host-conversation-todo.service';
+import { ConversationMessageService } from '../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../src/runtime/host/conversation-todo.service';
 import { ConversationMessageLifecycleService } from '../../src/conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
@@ -43,9 +43,9 @@ describe('ConversationMessageLifecycleService', () => {
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let storagePath: string;
   let conversationMessagePlanningService: ConversationMessagePlanningService;
-  let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
-  let runtimeHostConversationMessageService: RuntimeHostConversationMessageService;
-  let runtimeHostConversationTodoService: RuntimeHostConversationTodoService;
+  let runtimeHostConversationRecordService: ConversationStoreService;
+  let runtimeHostConversationMessageService: ConversationMessageService;
+  let runtimeHostConversationTodoService: ConversationTodoService;
   let service: ConversationMessageLifecycleService;
 
   beforeEach(() => {
@@ -86,11 +86,11 @@ describe('ConversationMessageLifecycleService', () => {
     toolRegistryService.buildToolSet.mockResolvedValue(undefined);
     toolRegistryService.listAvailableTools.mockResolvedValue([]);
     runtimeHostPluginDispatchService.listPlugins.mockReturnValue([]);
-    runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
-    runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
+    runtimeHostConversationRecordService = new ConversationStoreService();
+    runtimeHostConversationMessageService = new ConversationMessageService(
       runtimeHostConversationRecordService,
     );
-    runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(
+    runtimeHostConversationTodoService = new ConversationTodoService(
       runtimeHostConversationRecordService,
     );
     conversationTaskService = new ConversationTaskService(
@@ -1039,7 +1039,7 @@ function plugin(id: string, hookNames: string[]) {
   };
 }
 
-function readConversation(runtimeHostConversationRecordService: RuntimeHostConversationRecordService) {
+function readConversation(runtimeHostConversationRecordService: ConversationStoreService) {
   return runtimeHostConversationRecordService.requireConversation(
     activeConversationId,
   );

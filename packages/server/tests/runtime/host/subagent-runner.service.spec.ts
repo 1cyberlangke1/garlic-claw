@@ -3,11 +3,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { ProjectSubagentTypeRegistryService } from '../../../src/execution/project/project-subagent-type-registry.service';
 import { ProjectWorktreeRootService } from '../../../src/execution/project/project-worktree-root.service';
-import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
+import { ConversationMessageService } from '../../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
+import { SubagentRunnerService } from '../../../src/runtime/host/subagent-runner.service';
 
-describe('RuntimeHostSubagentRunnerService', () => {
+describe('SubagentRunnerService', () => {
   let conversationsPath: string;
 
   beforeEach(() => {
@@ -344,14 +344,14 @@ describe('RuntimeHostSubagentRunnerService', () => {
 });
 
 function createFixture() {
-  const recordService = new RuntimeHostConversationRecordService();
+  const recordService = new ConversationStoreService();
   const parentConversationId = (recordService.createConversation({
     title: 'Parent Chat',
     userId: 'user-1',
   }) as { id: string }).id;
-  const runner = new RuntimeHostSubagentRunnerService(
+  const runner = new SubagentRunnerService(
     {} as never,
-    new RuntimeHostConversationMessageService(recordService),
+    new ConversationMessageService(recordService),
     {
       buildToolSet: jest.fn().mockResolvedValue(undefined),
     } as never,

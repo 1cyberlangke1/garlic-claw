@@ -2,7 +2,7 @@ import type { WsMessage } from '@garlic-claw/shared';
 import { Injectable, Logger } from '@nestjs/common';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../runtime/gateway/runtime-gateway-remote-transport.service';
-import { RuntimeHostService } from '../../../runtime/host/runtime-host.service';
+import { PluginHostService } from '../../../runtime/host/plugin-host.service';
 import {
   createWsReply,
   type PluginGatewayInboundResult,
@@ -19,7 +19,7 @@ export class PluginGatewayWsInboundService {
   constructor(
     private readonly runtimeGatewayConnectionLifecycleService: RuntimeGatewayConnectionLifecycleService,
     private readonly runtimeGatewayRemoteTransportService: RuntimeGatewayRemoteTransportService,
-    private readonly runtimeHostService: RuntimeHostService,
+    private readonly runtimeHostService: PluginHostService,
   ) {}
   async handleMessage({ connectionId, message }: {
     connectionId: string;

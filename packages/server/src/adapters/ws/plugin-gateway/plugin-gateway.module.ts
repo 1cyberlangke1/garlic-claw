@@ -6,7 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayModule } from '../../../runtime/gateway/runtime-gateway.module';
 import { RuntimeGatewayRemoteTransportService } from '../../../runtime/gateway/runtime-gateway-remote-transport.service';
-import { RuntimeHostModule } from '../../../runtime/host/runtime-host.module';
+import { HostModule } from '../../../runtime/host/host.module';
 import {
   createWsReply,
   type PluginGatewayInboundResult,
@@ -25,7 +25,7 @@ const AUTH_TIMEOUT_MS = 10_000;
     ConfigModule,
     JwtModule.register({}),
     RuntimeGatewayModule,
-    RuntimeHostModule,
+    HostModule,
   ],
   providers: [PluginGatewayWsInboundService],
 })

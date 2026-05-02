@@ -1,25 +1,25 @@
 import { createConversationHistorySignatureFromHistoryMessages } from '../../src/conversation/conversation-history-signature';
-import { RuntimeHostConversationMessageService } from '../../src/runtime/host/runtime-host-conversation-message.service';
+import { ConversationMessageService } from '../../src/runtime/host/conversation-message.service';
 import {
-  RuntimeHostConversationRecordService,
+  ConversationStoreService,
   serializeConversationMessage,
-} from '../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../src/runtime/host/runtime-host-conversation-todo.service';
+} from '../../src/runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../src/runtime/host/conversation-todo.service';
 import { ConversationTaskService, type ConversationTaskEvent } from '../../src/conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../src/execution/runtime/runtime-tool-permission.service';
 
 describe('ConversationTaskService', () => {
   let conversationId: string;
-  let runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
-  let runtimeHostConversationMessageService: RuntimeHostConversationMessageService;
-  let runtimeHostConversationTodoService: RuntimeHostConversationTodoService;
+  let runtimeHostConversationRecordService: ConversationStoreService;
+  let runtimeHostConversationMessageService: ConversationMessageService;
+  let runtimeHostConversationTodoService: ConversationTodoService;
   let runtimeToolPermissionService: RuntimeToolPermissionService;
   let service: ConversationTaskService;
 
   beforeEach(() => {
-    runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
-    runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(runtimeHostConversationRecordService);
-    runtimeHostConversationTodoService = new RuntimeHostConversationTodoService(runtimeHostConversationRecordService);
+    runtimeHostConversationRecordService = new ConversationStoreService();
+    runtimeHostConversationMessageService = new ConversationMessageService(runtimeHostConversationRecordService);
+    runtimeHostConversationTodoService = new ConversationTodoService(runtimeHostConversationRecordService);
     runtimeToolPermissionService = new RuntimeToolPermissionService();
     service = new ConversationTaskService(runtimeHostConversationMessageService, runtimeHostConversationRecordService, runtimeToolPermissionService, runtimeHostConversationTodoService);
     conversationId = (runtimeHostConversationRecordService.createConversation({ title: 'Conversation conversation-1' }) as { id: string }).id;
@@ -500,9 +500,9 @@ describe('ConversationTaskService', () => {
   });
 });
 
-function createAssistantMessage(runtimeHostConversationMessageService: RuntimeHostConversationMessageService) {
+function createAssistantMessage(runtimeHostConversationMessageService: ConversationMessageService) {
   const conversationId = (((runtimeHostConversationMessageService as unknown as {
-    runtimeHostConversationRecordService: RuntimeHostConversationRecordService;
+    runtimeHostConversationRecordService: ConversationStoreService;
   }).runtimeHostConversationRecordService.listConversations() as Array<{ id: string }>)[0]).id;
   return runtimeHostConversationMessageService.createMessage(conversationId, {
     content: '',

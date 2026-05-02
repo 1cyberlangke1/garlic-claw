@@ -3,11 +3,11 @@ import * as path from 'node:path';
 import type { ConversationTodoItem, JsonValue } from '@garlic-claw/shared';
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
-import { asJsonValue, cloneJsonValue } from './runtime-host-values';
+import { asJsonValue, cloneJsonValue } from './host-input.codec';
 import {
   resolveConversationStoragePath,
-  RuntimeHostConversationRecordService,
-} from './runtime-host-conversation-record.service';
+  ConversationStoreService,
+} from './conversation-store.service';
 
 interface RuntimeConversationTodoStoragePayload {
   todos?: Record<string, ConversationTodoItem[]>;
@@ -24,14 +24,14 @@ export interface RuntimeHostConversationTodoEvent {
 }
 
 @Injectable()
-export class RuntimeHostConversationTodoService {
+export class ConversationTodoService {
   private readonly storagePath = resolveConversationTodoStoragePath();
   private readonly conversationTodos: Map<string, ConversationTodoItem[]>;
   private readonly listeners = new Map<string, Set<(event: RuntimeHostConversationTodoEvent) => void>>();
 
   constructor(
-    @Inject(forwardRef(() => RuntimeHostConversationRecordService))
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    @Inject(forwardRef(() => ConversationStoreService))
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
   ) {
     const { migrated, todos } = this.readStoredTodos();
     this.conversationTodos = todos;
@@ -190,7 +190,7 @@ function stripLegacyConversationTodoStoragePayload(storagePath: string): void {
 }
 
 function filterStoredTodos(
-  runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+  runtimeHostConversationRecordService: ConversationStoreService,
   todos: Map<string, ConversationTodoItem[]>,
 ): { migrated: boolean; todos: Map<string, ConversationTodoItem[]> } {
   const filtered = new Map(

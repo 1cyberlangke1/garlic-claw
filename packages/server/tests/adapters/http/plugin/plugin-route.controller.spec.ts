@@ -31,6 +31,9 @@ describe('PluginController route forwarding', () => {
     listSupportedActions: jest.fn(),
     runPluginAction: jest.fn(),
   };
+  const toolManagementSettingsService = {
+    deleteSourceOverrides: jest.fn(),
+  };
 
   let controller: PluginController;
 
@@ -43,6 +46,7 @@ describe('PluginController route forwarding', () => {
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
       runtimePluginGovernanceService as never,
+      toolManagementSettingsService as never,
     );
   });
 

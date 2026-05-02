@@ -9,16 +9,16 @@ import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin
 import { ProjectPluginRegistryService } from '../../../src/plugin/project/project-plugin-registry.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../src/runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gateway/runtime-gateway-remote-transport.service';
-import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
+import { PluginDispatchService } from '../../../src/runtime/host/plugin-dispatch.service';
 
-describe('RuntimeHostPluginDispatchService', () => {
+describe('PluginDispatchService', () => {
   let projectRootPath: string;
   let originalProjectRootPath: string | undefined;
 
   beforeEach(() => {
     originalProjectRootPath = process.env.GARLIC_CLAW_PROJECT_WORKTREE_PATH;
     projectRootPath = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-plugin-dispatch-'),
+      path.join(os.tmpdir(), 'gc-plugin-dispatch-'),
     );
     fs.mkdirSync(path.join(projectRootPath, 'packages', 'server'), {
       recursive: true,
@@ -54,7 +54,7 @@ describe('RuntimeHostPluginDispatchService', () => {
     );
     const runtimeGatewayConnectionLifecycleService =
       new RuntimeGatewayConnectionLifecycleService(pluginBootstrapService);
-    const service = new RuntimeHostPluginDispatchService(
+    const service = new PluginDispatchService(
       builtinPluginRegistryService,
       pluginBootstrapService,
       new RuntimeGatewayRemoteTransportService(

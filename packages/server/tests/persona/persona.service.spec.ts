@@ -5,11 +5,11 @@ import { ProjectWorktreeRootService } from '../../src/execution/project/project-
 import { DEFAULT_PERSONA_PROMPT } from '../../src/persona/default-persona'
 import { PersonaService } from '../../src/persona/persona.service'
 import { PersonaStoreService } from '../../src/persona/persona-store.service'
-import { RuntimeHostConversationRecordService } from '../../src/runtime/host/runtime-host-conversation-record.service'
+import { ConversationStoreService } from '../../src/runtime/host/conversation-store.service'
 
 describe('PersonaService', () => {
   const originalPersonaPath = process.env.GARLIC_CLAW_PERSONAS_PATH
-  let conversationRecordService: RuntimeHostConversationRecordService
+  let conversationRecordService: ConversationStoreService
   let service: PersonaService
   let storageRoot: string
 
@@ -19,7 +19,7 @@ describe('PersonaService', () => {
       `gc-personas-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     )
     process.env.GARLIC_CLAW_PERSONAS_PATH = storageRoot
-    conversationRecordService = new RuntimeHostConversationRecordService()
+    conversationRecordService = new ConversationStoreService()
     service = new PersonaService(
       new PersonaStoreService(new ProjectWorktreeRootService()),
       conversationRecordService,

@@ -4,16 +4,16 @@ import * as path from 'node:path';
 import type { PluginCallContext } from '@garlic-claw/shared';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SINGLE_USER_ID } from '../../../src/auth/single-user-auth';
-import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
+import { ConversationMessageService } from '../../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
 
-describe('RuntimeHostConversationMessageService', () => {
+describe('ConversationMessageService', () => {
   const envKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   let storagePath: string;
 
   beforeEach(() => {
-    storagePath = path.join(os.tmpdir(), `runtime-host-conversation-message.service.spec-${Date.now()}-${Math.random()}.json`);
+    storagePath = path.join(os.tmpdir(), `conversation-message.service.spec-${Date.now()}-${Math.random()}.json`);
   });
 
   afterEach(() => {
@@ -29,8 +29,8 @@ describe('RuntimeHostConversationMessageService', () => {
 
   it('appends, updates, persists, sends and deletes conversation messages', async () => {
     process.env[envKey] = storagePath;
-    const recordService = new RuntimeHostConversationRecordService();
-    const service = new RuntimeHostConversationMessageService(recordService);
+    const recordService = new ConversationStoreService();
+    const service = new ConversationMessageService(recordService);
     const conversationId = (recordService.createConversation({ title: 'Conversation One', userId: SINGLE_USER_ID }) as { id: string }).id;
 
     const first = service.createMessage(conversationId, { content: 'hello', role: 'user', status: 'completed' });
@@ -77,7 +77,7 @@ describe('RuntimeHostConversationMessageService', () => {
     });
     expect(service.readConversationRevision(conversationId)).not.toBe(revisionBeforeUpdate);
 
-    const reloaded = new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService());
+    const reloaded = new ConversationMessageService(new ConversationStoreService());
     await expect(reloaded.updateMessage(conversationId, String((sent as { id: string }).id), { content: 'Reloaded reply' }, SINGLE_USER_ID)).resolves.toMatchObject({
       content: 'Reloaded reply',
       id: (sent as { id: string }).id,
@@ -89,7 +89,7 @@ describe('RuntimeHostConversationMessageService', () => {
 
   it('throws when writing to a missing conversation instead of auto-creating it', async () => {
     process.env[envKey] = storagePath;
-    const service = new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService());
+    const service = new ConversationMessageService(new ConversationStoreService());
 
     await expect(
       service.sendMessage(
@@ -106,14 +106,14 @@ describe('RuntimeHostConversationMessageService', () => {
 
   it('continues message ids after restart instead of reusing persisted ids', () => {
     process.env[envKey] = storagePath;
-    const recordService = new RuntimeHostConversationRecordService();
-    const service = new RuntimeHostConversationMessageService(recordService);
+    const recordService = new ConversationStoreService();
+    const service = new ConversationMessageService(recordService);
     const conversationId = (recordService.createConversation({ title: 'Conversation One' }) as { id: string }).id;
 
     const first = service.createMessage(conversationId, { content: 'hello', role: 'user', status: 'completed' });
     const second = service.createMessage(conversationId, { content: 'draft', role: 'assistant', status: 'pending' });
 
-    const reloaded = new RuntimeHostConversationMessageService(new RuntimeHostConversationRecordService());
+    const reloaded = new ConversationMessageService(new ConversationStoreService());
     const next = reloaded.createMessage(conversationId, { content: 'next', role: 'assistant', status: 'pending' }) as { id: string };
     expect(next.id).not.toBe((first as { id: string }).id);
     expect(next.id).not.toBe((second as { id: string }).id);
@@ -121,8 +121,8 @@ describe('RuntimeHostConversationMessageService', () => {
 
   it('forbids writing into another user conversation through message.send', async () => {
     process.env[envKey] = storagePath;
-    const recordService = new RuntimeHostConversationRecordService();
-    const service = new RuntimeHostConversationMessageService(recordService);
+    const recordService = new ConversationStoreService();
+    const service = new ConversationMessageService(recordService);
     const conversationId = (recordService.createConversation({ title: 'Conversation One', userId: 'user-1' }) as { id: string }).id;
 
     await expect(
@@ -181,8 +181,8 @@ describe('RuntimeHostConversationMessageService', () => {
         },
       ]),
     };
-    const recordService = new RuntimeHostConversationRecordService();
-    const service = new RuntimeHostConversationMessageService(recordService, runtimeKernelService);
+    const recordService = new ConversationStoreService();
+    const service = new ConversationMessageService(recordService, runtimeKernelService);
     const conversationId = (recordService.createConversation({ title: 'Conversation One', userId: 'user-1' }) as { id: string }).id;
 
     const sent = await service.createMessageWithHooks(

@@ -27,7 +27,7 @@ import { ConversationMessageLifecycleService } from './conversation/conversation
 import { ConversationTaskService } from './conversation/conversation-task.service';
 import { ProjectWorktreeOverlayModule } from './execution/project/project-worktree-overlay.module';
 import { PluginModule } from './plugin/plugin.module';
-import { RuntimeHostModule } from './runtime/host/runtime-host.module';
+import { HostModule } from './runtime/host/host.module';
 import { RuntimeKernelModule } from './runtime/kernel/runtime-kernel.module';
 import { ServerWorkspaceLifecycleService } from './runtime/server-workspace-lifecycle.service';
 
@@ -41,7 +41,7 @@ import { ServerWorkspaceLifecycleService } from './runtime/server-workspace-life
     PluginGatewayWsModule,
     PluginModule,
     ProjectWorktreeOverlayModule,
-    RuntimeHostModule,
+    HostModule,
     RuntimeKernelModule,
   ],
   controllers: [AiController, AuthController, AutomationController, CommandCatalogController, ConversationController, HealthController, McpController, MemoryController, PersonaController, PluginController, SkillController, SubagentController, ToolController],

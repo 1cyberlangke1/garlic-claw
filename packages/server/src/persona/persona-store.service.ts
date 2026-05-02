@@ -4,7 +4,7 @@ import type { PluginPersonaDetail, PluginPersonaDialogEntry } from '@garlic-claw
 import { Injectable } from '@nestjs/common'
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service'
 import { createServerTestArtifactPath } from '../runtime/server-workspace-paths'
-import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
+import { DEFAULT_PERSONA_ID } from '../runtime/host/host-input.codec'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 
 export interface StoredPersonaRecord extends PluginPersonaDetail {}

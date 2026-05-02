@@ -1,14 +1,14 @@
 import type { ChatMessageMetadata, ChatMessagePart, ChatMessageStatus, JsonObject, JsonValue, PluginCallContext } from '@garlic-claw/shared';
 import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
-import { RuntimeHostConversationRecordService, serializeConversationMessage } from './runtime-host-conversation-record.service';
-import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
+import { ConversationStoreService, serializeConversationMessage } from './conversation-store.service';
+import { PluginDispatchService } from './plugin-dispatch.service';
 import { applyMutatingDispatchableHooks, listDispatchableHookPluginIds } from '../kernel/runtime-plugin-hook-governance';
-import { asJsonValue, cloneJsonValue, readJsonValue, readMessageTarget, readOptionalString, requireContextField } from './runtime-host-values';
+import { asJsonValue, cloneJsonValue, readJsonValue, readMessageTarget, readOptionalString, requireContextField } from './host-input.codec';
 
 @Injectable()
-export class RuntimeHostConversationMessageService {
-  constructor(private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Optional() private readonly runtimeHostPluginDispatchService?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>) {}
+export class ConversationMessageService {
+  constructor(private readonly runtimeHostConversationRecordService: ConversationStoreService, @Optional() private readonly runtimeHostPluginDispatchService?: Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>) {}
 
   private createMessageRecord(input: MessageWriteInput, timestamp: string): JsonObject {
     const message: JsonObject = { content: input.content ?? '', createdAt: timestamp, id: uuidv7(), role: input.role, status: input.status, updatedAt: timestamp };
@@ -26,7 +26,7 @@ export class RuntimeHostConversationMessageService {
     return cloneJsonValue(this.runtimeHostConversationRecordService.replaceMessages(conversationId, [...conversation.messages, message]).messages.at(-1) as JsonObject);
   }
 
-  async createMessageWithHooks(conversationId: string, input: MessageWriteInput, userId?: string, kernelOverride?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<Record<string, unknown>> {
+  async createMessageWithHooks(conversationId: string, input: MessageWriteInput, userId?: string, kernelOverride?: Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<Record<string, unknown>> {
     const conversation = this.runtimeHostConversationRecordService.requireConversation(conversationId, userId);
     if (input.role === 'display') {
       return this.createMessage(conversation.id, input);
@@ -93,7 +93,7 @@ export class RuntimeHostConversationMessageService {
     return next;
   }
 
-  private async applyMessageCreatedHooks(conversation: { activePersonaId?: string; id: string; title: string; userId: string }, message: ConversationMessageWriteInput, kernelOverride?: Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<ConversationMessageWriteInput> {
+  private async applyMessageCreatedHooks(conversation: { activePersonaId?: string; id: string; title: string; userId: string }, message: ConversationMessageWriteInput, kernelOverride?: Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>): Promise<ConversationMessageWriteInput> {
     const kernel = kernelOverride ?? this.runtimeHostPluginDispatchService;
     if (!kernel) {return message;}
     return applyMutatingDispatchableHooks({

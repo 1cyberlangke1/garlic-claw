@@ -13,14 +13,14 @@ import { PersonaService } from '../../../src/persona/persona.service';
 import { PersonaStoreService } from '../../../src/persona/persona-store.service';
 import { RuntimeGatewayConnectionLifecycleService } from '../../../src/runtime/gateway/runtime-gateway-connection-lifecycle.service';
 import { RuntimeGatewayRemoteTransportService } from '../../../src/runtime/gateway/runtime-gateway-remote-transport.service';
-import { RuntimeHostConversationMessageService } from '../../../src/runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostKnowledgeService } from '../../../src/runtime/host/runtime-host-knowledge.service';
-import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
-import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
-import { RuntimeHostSubagentRunnerService } from '../../../src/runtime/host/runtime-host-subagent-runner.service';
-import { RuntimeHostService } from '../../../src/runtime/host/runtime-host.service';
-import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
+import { ConversationMessageService } from '../../../src/runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
+import { KnowledgeReaderService } from '../../../src/runtime/host/knowledge-reader.service';
+import { PluginDispatchService } from '../../../src/runtime/host/plugin-dispatch.service';
+import { PluginRuntimeService } from '../../../src/runtime/host/plugin-runtime.service';
+import { SubagentRunnerService } from '../../../src/runtime/host/subagent-runner.service';
+import { PluginHostService } from '../../../src/runtime/host/plugin-host.service';
+import { UserContextService } from '../../../src/runtime/host/user-context.service';
 import { RuntimePluginGovernanceService } from '../../../src/runtime/kernel/runtime-plugin-governance.service';
 
 describe('RuntimePluginGovernanceService', () => {
@@ -476,8 +476,8 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
   runtimeGatewayConnectionLifecycleService.openConnection({
     connectionId: 'conn-1',
   });
-  const runtimeHostConversationRecordService = new RuntimeHostConversationRecordService();
-  const runtimeHostConversationMessageService = new RuntimeHostConversationMessageService(
+  const runtimeHostConversationRecordService = new ConversationStoreService();
+  const runtimeHostConversationMessageService = new ConversationMessageService(
     runtimeHostConversationRecordService,
   );
   const aiManagementService = new AiManagementService(new AiProviderSettingsService());
@@ -489,7 +489,7 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
     name: 'OpenAI',
   });
   const aiModelExecutionService = new AiModelExecutionService();
-  const runtimeHostSubagentRunnerService = new RuntimeHostSubagentRunnerService(
+  const runtimeHostSubagentRunnerService = new SubagentRunnerService(
     aiModelExecutionService,
     runtimeHostConversationMessageService,
     {
@@ -510,7 +510,7 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
       } as never,
       {
         sendMessage: async () => {
-          throw new Error('RuntimeHostConversationMessageService is not available');
+          throw new Error('ConversationMessageService is not available');
         },
       } as never,
       {
@@ -518,25 +518,25 @@ function createService(options?: { projectPluginRegistryService?: unknown }) {
       } as never,
     ),
   );
-  const runtimeHostPluginDispatchService = new RuntimeHostPluginDispatchService(
+  const runtimeHostPluginDispatchService = new PluginDispatchService(
     builtinPluginRegistryService,
     pluginBootstrapService,
     runtimeGatewayRemoteTransportService,
   );
-  const runtimeHostPluginRuntimeService = new RuntimeHostPluginRuntimeService();
-  const runtimeHostService = new RuntimeHostService(
+  const runtimeHostPluginRuntimeService = new PluginRuntimeService();
+  const runtimeHostService = new PluginHostService(
     pluginBootstrapService,
     runtimeHostAutomationService,
     runtimeHostConversationMessageService,
     runtimeHostConversationRecordService,
     aiModelExecutionService as never,
     aiManagementService,
-    new RuntimeHostKnowledgeService(),
+    new KnowledgeReaderService(),
     runtimeHostPluginDispatchService,
     runtimeHostPluginRuntimeService,
     {} as never,
     runtimeHostSubagentRunnerService,
-    new RuntimeHostUserContextService(),
+    new UserContextService(),
     new PersonaService(new PersonaStoreService(new ProjectWorktreeRootService()), runtimeHostConversationRecordService),
   );
   runtimeHostService.onModuleInit();

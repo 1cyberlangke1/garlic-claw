@@ -1,8 +1,8 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { BadRequestException } from '@nestjs/common';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../../src/runtime/host/runtime-host-conversation-todo.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../../src/runtime/host/conversation-todo.service';
 import { TodoToolService } from '../../../src/execution/todo/todo-tool.service';
 
 describe('TodoToolService', () => {
@@ -20,8 +20,8 @@ describe('TodoToolService', () => {
   });
 
   it('normalizes todos and delegates persistence to conversation todo owner', () => {
-    const recordService = new RuntimeHostConversationRecordService();
-    const todoOwner = new RuntimeHostConversationTodoService(recordService);
+    const recordService = new ConversationStoreService();
+    const todoOwner = new ConversationTodoService(recordService);
     const todoToolService = new TodoToolService(todoOwner);
     const sessionId = (recordService.createConversation({ title: 'Todo Tool' }) as { id: string }).id;
 

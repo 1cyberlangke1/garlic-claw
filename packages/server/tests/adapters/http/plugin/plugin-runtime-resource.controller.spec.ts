@@ -32,6 +32,9 @@ describe('PluginController runtime resources', () => {
     listSupportedActions: jest.fn(),
     runPluginAction: jest.fn(),
   };
+  const toolManagementSettingsService = {
+    deleteSourceOverrides: jest.fn(),
+  };
 
   let controller: PluginController;
 
@@ -44,6 +47,7 @@ describe('PluginController runtime resources', () => {
       runtimeHostPluginDispatchService as never,
       runtimeHostPluginRuntimeService as never,
       runtimePluginGovernanceService as never,
+      toolManagementSettingsService as never,
     );
   });
 

@@ -14,7 +14,7 @@ import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { PluginPersistenceService } from '../../plugin/persistence/plugin-persistence.service';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../server-workspace-paths';
 import { RuntimeEventLogService } from '../log/runtime-event-log.service';
-import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
+import { PluginDispatchService } from './plugin-dispatch.service';
 import {
   SCOPED_STORE_PREFIX,
   asJsonValue,
@@ -29,7 +29,7 @@ import {
   readScope,
   readScopedKey,
   requireContextField,
-} from './runtime-host-values';
+} from './host-input.codec';
 
 interface RuntimeCronJobRecord extends PluginCronJobSummary {}
 
@@ -53,7 +53,7 @@ interface RuntimePluginRuntimeSnapshot {
 }
 
 @Injectable()
-export class RuntimeHostPluginRuntimeService implements OnApplicationBootstrap, OnModuleDestroy {
+export class PluginRuntimeService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly cronJobs = new Map<string, RuntimeCronJobRecord[]>();
   private readonly cronTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private cronSequence = 0;
@@ -65,7 +65,7 @@ export class RuntimeHostPluginRuntimeService implements OnApplicationBootstrap, 
 
   constructor(
     @Optional() private readonly pluginPersistenceService?: PluginPersistenceService,
-    @Optional() private readonly runtimeHostPluginDispatchService?: RuntimeHostPluginDispatchService,
+    @Optional() private readonly runtimeHostPluginDispatchService?: PluginDispatchService,
     @Optional() runtimeEventLogService?: RuntimeEventLogService,
   ) {
     this.runtimeEventLogService = runtimeEventLogService ?? new RuntimeEventLogService();
@@ -473,7 +473,7 @@ export class RuntimeHostPluginRuntimeService implements OnApplicationBootstrap, 
       return `Plugin ${job.pluginId} 未声明 cron:tick hook`;
     }
     if (!this.runtimeHostPluginDispatchService) {
-      return 'RuntimeHostPluginDispatchService 不可用';
+      return 'PluginDispatchService 不可用';
     }
     const payload: PluginCronTickPayload = {
       job: cloneRuntimeCronJobRecord(job),

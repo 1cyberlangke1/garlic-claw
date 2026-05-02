@@ -9,7 +9,7 @@ import { AiProviderSettingsService } from '../ai-management/ai-provider-settings
 import type { StoredAiProviderConfig } from '../ai-management/ai-management.types';
 import { stringifyInvalidToolInput } from '../execution/invalid/invalid-tool-record';
 import { resolveKnownModelToolCallName } from '../execution/tool/model-tool-call-name';
-import { readAssistantRawCustomBlocks, readAssistantResponseCustomBlocks, type AssistantCustomBlockEntry } from '../runtime/host/runtime-host-values';
+import { readAssistantRawCustomBlocks, readAssistantResponseCustomBlocks, type AssistantCustomBlockEntry } from '../runtime/host/host-input.codec';
 
 export interface AiModelExecutionRequest {
   allowFallbackChatModels?: boolean;

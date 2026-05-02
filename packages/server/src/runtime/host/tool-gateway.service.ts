@@ -38,7 +38,7 @@ const MAX_GREP_MATCHES = 100;
 const MAX_GREP_LINE_LENGTH = 2000;
 
 @Injectable()
-export class RuntimeHostRuntimeToolService {
+export class ToolGatewayService {
   constructor(
     private readonly bashToolService: BashToolService,
     private readonly editToolService: EditToolService,

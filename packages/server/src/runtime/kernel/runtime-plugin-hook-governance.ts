@@ -6,7 +6,7 @@ import type {
   PluginManifest,
   PluginScopeSettings,
 } from '@garlic-claw/shared';
-import type { RuntimeHostPluginDispatchService } from '../host/runtime-host-plugin-dispatch.service';
+import type { PluginDispatchService } from '../host/plugin-dispatch.service';
 
 type RuntimeDispatchRecord = {
   manifest: PluginManifest;
@@ -15,7 +15,7 @@ type RuntimeDispatchRecord = {
   pluginId: string;
 };
 
-type HookDispatcher = Pick<RuntimeHostPluginDispatchService, 'invokeHook' | 'listPlugins'>;
+type HookDispatcher = Pick<PluginDispatchService, 'invokeHook' | 'listPlugins'>;
 export type DispatchableHookChainResult<TPayload, TShortCircuit> =
   | { state: TPayload }
   | { shortCircuitResult: TShortCircuit };
@@ -71,7 +71,7 @@ export function listDispatchableHookRecords<T extends RuntimeDispatchRecord>(inp
 }
 
 export function listDispatchableHookPluginIds(input: {
-  kernel: Pick<RuntimeHostPluginDispatchService, 'listPlugins'>;
+  kernel: Pick<PluginDispatchService, 'listPlugins'>;
   hookName: PluginHookName;
   context: PluginCallContext;
 }): string[] {

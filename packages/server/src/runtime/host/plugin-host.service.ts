@@ -8,16 +8,16 @@ import { PersonaService } from '../../persona/persona.service';
 import { PluginBootstrapService } from '../../plugin/bootstrap/plugin-bootstrap.service';
 import { buildPluginSelfSummary, createPluginConfigSnapshot } from '../../plugin/persistence/plugin-read-model';
 import type { RegisteredPluginRecord } from '../../plugin/persistence/plugin-persistence.service';
-import { RuntimeHostConversationMessageService } from './runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from './runtime-host-conversation-record.service';
-import { PLUGIN_HOST_METHOD_PERMISSION_MAP } from './runtime-host.constants';
-import { RuntimeHostKnowledgeService } from './runtime-host-knowledge.service';
-import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
-import { RuntimeHostPluginRuntimeService } from './runtime-host-plugin-runtime.service';
-import { RuntimeHostRuntimeToolService } from './runtime-host-runtime-tool.service';
-import { RuntimeHostSubagentRunnerService } from './runtime-host-subagent-runner.service';
-import { RuntimeHostUserContextService } from './runtime-host-user-context.service';
-import { asJsonValue, readJsonObject, readOptionalString, readPluginLlmMessages, readRequiredString, requireContextField, type AssistantCustomBlockEntry } from './runtime-host-values';
+import { ConversationMessageService } from './conversation-message.service';
+import { ConversationStoreService } from './conversation-store.service';
+import { PLUGIN_HOST_METHOD_PERMISSION_MAP } from './host-method-permissions';
+import { KnowledgeReaderService } from './knowledge-reader.service';
+import { PluginDispatchService } from './plugin-dispatch.service';
+import { PluginRuntimeService } from './plugin-runtime.service';
+import { ToolGatewayService } from './tool-gateway.service';
+import { SubagentRunnerService } from './subagent-runner.service';
+import { UserContextService } from './user-context.service';
+import { asJsonValue, readJsonObject, readOptionalString, readPluginLlmMessages, readRequiredString, requireContextField, type AssistantCustomBlockEntry } from './host-input.codec';
 
 type RuntimeHostCallHandler = (input: RuntimeHostCallInput) => JsonValue | Promise<JsonValue>;
 type RuntimeHostLlmMethod = 'llm.generate' | 'llm.generate-text';
@@ -37,9 +37,9 @@ const RUNTIME_HOST_TOOL_METHODS = [
 ] as const satisfies ReadonlyArray<readonly [PluginHostMethod, RuntimeHostRuntimeToolAction]>;
 
 @Injectable()
-export class RuntimeHostService implements OnModuleInit {
+export class PluginHostService implements OnModuleInit {
   private readonly callHandlers: Record<PluginHostMethod, RuntimeHostCallHandler>;
-  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly automationService: AutomationService, private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiManagementService: AiManagementService, private readonly runtimeHostKnowledgeService: RuntimeHostKnowledgeService, private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimeHostRuntimeToolService: RuntimeHostRuntimeToolService, private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService, private readonly runtimeHostUserContextService: RuntimeHostUserContextService, private readonly personaService: PersonaService) {
+  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly automationService: AutomationService, private readonly runtimeHostConversationMessageService: ConversationMessageService, private readonly runtimeHostConversationRecordService: ConversationStoreService, private readonly aiModelExecutionService: AiModelExecutionService, private readonly aiManagementService: AiManagementService, private readonly runtimeHostKnowledgeService: KnowledgeReaderService, private readonly runtimeHostPluginDispatchService: PluginDispatchService, private readonly runtimeHostPluginRuntimeService: PluginRuntimeService, private readonly runtimeHostRuntimeToolService: ToolGatewayService, private readonly runtimeHostSubagentRunnerService: SubagentRunnerService, private readonly runtimeHostUserContextService: UserContextService, private readonly personaService: PersonaService) {
     this.callHandlers = this.buildCallHandlers();
   }
   onModuleInit(): void {

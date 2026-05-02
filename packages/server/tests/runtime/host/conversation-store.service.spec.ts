@@ -5,11 +5,11 @@ import { ConflictException, ForbiddenException, NotFoundException } from '@nestj
 import { SINGLE_USER_ID } from '../../../src/auth/single-user-auth';
 import { createConversationHistorySignatureFromHistoryMessages } from '../../../src/conversation/conversation-history-signature';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../../src/runtime/host/runtime-host-conversation-todo.service';
-import { RuntimeHostPluginDispatchService } from '../../../src/runtime/host/runtime-host-plugin-dispatch.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../../src/runtime/host/conversation-todo.service';
+import { PluginDispatchService } from '../../../src/runtime/host/plugin-dispatch.service';
 
-describe('RuntimeHostConversationRecordService', () => {
+describe('ConversationStoreService', () => {
   const conversationsEnvKey = 'GARLIC_CLAW_CONVERSATIONS_PATH';
   const conversationTodosEnvKey = 'GARLIC_CLAW_CONVERSATION_TODOS_PATH';
   const runtimeWorkspaceEnvKey = 'GARLIC_CLAW_RUNTIME_WORKSPACES_PATH';
@@ -19,9 +19,9 @@ describe('RuntimeHostConversationRecordService', () => {
   let runtimeWorkspaceRoot: string;
 
   beforeEach(() => {
-    storagePath = path.join(os.tmpdir(), `runtime-host-conversation-record.service.spec-${Date.now()}-${Math.random()}.json`);
-    todoStoragePath = path.join(os.tmpdir(), `runtime-host-conversation-todo.service.spec-${Date.now()}-${Math.random()}.json`);
-    runtimeWorkspaceRoot = path.join(os.tmpdir(), `runtime-host-conversation-record.workspace-${Date.now()}-${Math.random()}`);
+    storagePath = path.join(os.tmpdir(), `conversation-store.service.spec-${Date.now()}-${Math.random()}.json`);
+    todoStoragePath = path.join(os.tmpdir(), `conversation-todo.service.spec-${Date.now()}-${Math.random()}.json`);
+    runtimeWorkspaceRoot = path.join(os.tmpdir(), `conversation-store.workspace-${Date.now()}-${Math.random()}`);
   });
 
   afterEach(() => {
@@ -42,7 +42,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('creates, lists, persists and mutates conversation state', async () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const created = service.createConversation({ title: '新的对话' }) as { id: string };
     const conversationId = created.id;
 
@@ -111,7 +111,7 @@ describe('RuntimeHostConversationRecordService', () => {
       updatedAt: expect.any(String),
     });
 
-    const reloaded = new RuntimeHostConversationRecordService();
+    const reloaded = new ConversationStoreService();
     expect(reloaded.getConversation(conversationId)).toEqual(service.getConversation(conversationId));
     expect(reloaded.readRuntimePermissionApprovals(conversationId)).toEqual([
       'just-bash:command.execute',
@@ -122,7 +122,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('throws instead of auto-creating missing conversations on read paths', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
 
     expect(() => service.requireConversation('missing')).toThrow(NotFoundException);
     expect(() => service.getConversation('missing')).toThrow(NotFoundException);
@@ -130,7 +130,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('throws ForbiddenException when reading another user conversation', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: '新的对话', userId: 'user-1' }) as { id: string }).id;
 
     expect(() => service.requireConversation(conversationId, 'user-2')).toThrow(ForbiddenException);
@@ -150,7 +150,7 @@ describe('RuntimeHostConversationRecordService', () => {
         },
       ]),
     };
-    const service = new RuntimeHostConversationRecordService(runtimeKernelService as unknown as RuntimeHostPluginDispatchService);
+    const service = new ConversationStoreService(runtimeKernelService as unknown as PluginDispatchService);
 
     service.createConversation({ title: '新的对话', userId: 'user-1' });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -163,7 +163,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('reads, previews and replaces conversation history with annotation metadata and revision protection', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'History Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as {
       revision: string;
@@ -254,7 +254,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('excludes display messages from conversation history token preview', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Display Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as {
       revision: string;
@@ -322,7 +322,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('normalizes loose history objects with undefined optional fields during replacement', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Loose History Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
     const looseHistoryMessage = {
@@ -389,7 +389,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('prefers the latest matching response usage annotation when previewing history tokens', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Usage Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
     const previewMessages = [
@@ -460,7 +460,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('falls back to estimated history tokens when provider usage does not match the current history snapshot', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Stale Usage Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
     const staleSignature = createConversationHistorySignatureFromHistoryMessages([
@@ -530,7 +530,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('falls back to estimated history tokens when the preview model changes', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Model Switch Preview Chat' }) as { id: string }).id;
     const initialHistory = service.readConversationHistory(conversationId) as { revision: string };
     const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages([
@@ -593,7 +593,7 @@ describe('RuntimeHostConversationRecordService', () => {
     process.env[conversationsEnvKey] = storagePath;
     process.env[runtimeWorkspaceEnvKey] = runtimeWorkspaceRoot;
     const runtimeSessionEnvironmentService = new RuntimeSessionEnvironmentService();
-    const service = new RuntimeHostConversationRecordService(undefined, runtimeSessionEnvironmentService);
+    const service = new ConversationStoreService(undefined, runtimeSessionEnvironmentService);
     const conversationId = (service.createConversation({ title: 'Runtime Chat' }) as { id: string }).id;
     const sessionRoot = (await runtimeSessionEnvironmentService.getSessionEnvironment(conversationId)).sessionRoot;
     fs.mkdirSync(path.join(sessionRoot, 'notes'), { recursive: true });
@@ -607,7 +607,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('deletes child subagent conversations together with the parent conversation', async () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
     const childConversationId = (service.createConversation({
       kind: 'subagent',
@@ -637,9 +637,9 @@ describe('RuntimeHostConversationRecordService', () => {
   it('deletes todos for the whole conversation tree inside the record owner', async () => {
     process.env[conversationsEnvKey] = storagePath;
     process.env[conversationTodosEnvKey] = todoStoragePath;
-    const service = new RuntimeHostConversationRecordService();
-    const todoService = new RuntimeHostConversationTodoService(service);
-    Object.assign(service as unknown as { runtimeHostConversationTodoService?: RuntimeHostConversationTodoService }, {
+    const service = new ConversationStoreService();
+    const todoService = new ConversationTodoService(service);
+    Object.assign(service as unknown as { runtimeHostConversationTodoService?: ConversationTodoService }, {
       runtimeHostConversationTodoService: todoService,
     });
     const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
@@ -665,7 +665,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('lists only true subagent child conversations for a parent conversation', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const parentConversationId = (service.createConversation({ title: 'Parent Chat', userId: 'user-1' }) as { id: string }).id;
     const subagentChildId = (service.createConversation({
       kind: 'subagent',
@@ -705,7 +705,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('persists plugin conversation sessions across service reloads', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const conversationId = (service.createConversation({ title: 'Session Chat', userId: 'user-1' }) as { id: string }).id;
 
     expect(service.startConversationSession('builtin.memory', {
@@ -732,7 +732,7 @@ describe('RuntimeHostConversationRecordService', () => {
       timeoutMs: 60_000,
     });
 
-    const reloaded = new RuntimeHostConversationRecordService();
+    const reloaded = new ConversationStoreService();
 
     expect(reloaded.getConversationSession('builtin.memory', {
       conversationId,
@@ -755,7 +755,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
   it('deletes all conversation sessions for a plugin', () => {
     process.env[conversationsEnvKey] = storagePath;
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
     const firstConversationId = (service.createConversation({ title: 'Session Chat 1', userId: 'user-1' }) as { id: string }).id;
     const secondConversationId = (service.createConversation({ title: 'Session Chat 2', userId: 'user-1' }) as { id: string }).id;
 
@@ -783,7 +783,7 @@ describe('RuntimeHostConversationRecordService', () => {
 
     expect(service.deletePluginConversationSessions('builtin.memory')).toBe(2);
 
-    const reloaded = new RuntimeHostConversationRecordService();
+    const reloaded = new ConversationStoreService();
     expect(reloaded.listPluginConversationSessions('builtin.memory')).toEqual([]);
     expect(reloaded.listPluginConversationSessions('builtin.other')).toEqual([
       expect.objectContaining({
@@ -817,8 +817,8 @@ describe('RuntimeHostConversationRecordService', () => {
       },
     }, null, 2), 'utf-8');
 
-    const service = new RuntimeHostConversationRecordService();
-    const todoService = new RuntimeHostConversationTodoService(service);
+    const service = new ConversationStoreService();
+    const todoService = new ConversationTodoService(service);
 
     expect(todoService.readSessionTodo(legacyConversationId)).toEqual([
       { content: 'legacy todo', priority: 'high', status: 'pending' },
@@ -851,7 +851,7 @@ describe('RuntimeHostConversationRecordService', () => {
       },
     }, null, 2), 'utf-8');
 
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
 
     expect(service.listConversations(SINGLE_USER_ID)).toEqual([]);
     expect(JSON.parse(fs.readFileSync(storagePath, 'utf-8'))).toEqual({
@@ -895,7 +895,7 @@ describe('RuntimeHostConversationRecordService', () => {
       },
     }, null, 2), 'utf-8');
 
-    const service = new RuntimeHostConversationRecordService();
+    const service = new ConversationStoreService();
 
     expect(service.listConversations(SINGLE_USER_ID)).toEqual([]);
     expect(JSON.parse(fs.readFileSync(storagePath, 'utf-8'))).toEqual({

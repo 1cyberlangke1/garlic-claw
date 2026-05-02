@@ -5,10 +5,10 @@ import { ConversationMessagePlanningService } from '../../../conversation/conver
 import { ConversationMessageLifecycleService } from '../../../conversation/conversation-message-lifecycle.service';
 import { ConversationTaskService } from '../../../conversation/conversation-task.service';
 import { RuntimeToolPermissionService } from '../../../execution/runtime/runtime-tool-permission.service';
-import { RuntimeHostConversationMessageService } from '../../../runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService, serializeConversationMessage, type RuntimeConversationRecord } from '../../../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../../../runtime/host/runtime-host-conversation-todo.service';
-import { RuntimeHostSubagentRunnerService } from '../../../runtime/host/runtime-host-subagent-runner.service';
+import { ConversationMessageService } from '../../../runtime/host/conversation-message.service';
+import { ConversationStoreService, serializeConversationMessage, type RuntimeConversationRecord } from '../../../runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../../../runtime/host/conversation-todo.service';
+import { SubagentRunnerService } from '../../../runtime/host/subagent-runner.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
   ConversationTodoItemDto,
@@ -30,10 +30,10 @@ export class ConversationController {
     private readonly conversationMessageLifecycleService: ConversationMessageLifecycleService,
     private readonly conversationTaskService: ConversationTaskService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
-    private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
-    private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
-    private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService,
+    private readonly runtimeHostConversationMessageService: ConversationMessageService,
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
+    private readonly runtimeHostConversationTodoService: ConversationTodoService,
+    private readonly runtimeHostSubagentRunnerService: SubagentRunnerService,
   ) {}
 
   private requireOwnedConversation(userId: string, id: string) {
@@ -467,7 +467,7 @@ async function stopActiveConversationTreeWork(
   conversations: RuntimeConversationRecord[],
   userId: string,
   conversationTaskService: ConversationTaskService,
-  runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService,
+  runtimeHostSubagentRunnerService: SubagentRunnerService,
 ) {
   for (const conversation of conversations) {
     for (const messageId of readActiveConversationTaskMessageIds(conversation)) {

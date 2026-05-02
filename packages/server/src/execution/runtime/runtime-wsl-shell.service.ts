@@ -6,7 +6,7 @@ import type {
   RuntimeCommandBackendResult,
   RuntimeCommandRequest,
 } from './runtime-command.types';
-import { toRuntimeHostPath } from './runtime-host-path';
+import { toRuntimeHostPath } from './host-path';
 import {
   isRuntimeHostAbsoluteShellWorkdir,
   readRuntimeShellToolName,

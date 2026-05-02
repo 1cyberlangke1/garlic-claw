@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/runtime-host-filesystem-backend.service';
+import { RuntimeHostFilesystemBackendService } from '../../../src/execution/file/host-filesystem-backend.service';
 import { RuntimeSessionEnvironmentService } from '../../../src/execution/runtime/runtime-session-environment.service';
 
 describe('RuntimeHostFilesystemBackendService', () => {
@@ -105,7 +105,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('supports backend-owned glob and grep operations', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-filesystem-'),
+      path.join(os.tmpdir(), 'gc-host-filesystem-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -177,7 +177,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('reports skipped paths for partial glob and grep traversal', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-partial-'),
+      path.join(os.tmpdir(), 'gc-host-partial-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -249,7 +249,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('reuses nearby path suggestions when glob base path is missing', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-glob-suggest-'),
+      path.join(os.tmpdir(), 'gc-host-glob-suggest-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -279,7 +279,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('reuses nearby path suggestions when grep base path is missing', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-grep-suggest-'),
+      path.join(os.tmpdir(), 'gc-host-grep-suggest-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -311,7 +311,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('preserves CRLF line endings when edit rewrites a text file', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-crlf-edit-'),
+      path.join(os.tmpdir(), 'gc-host-crlf-edit-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -354,7 +354,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('reports full grep totals even when visible matches are truncated', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-grep-total-'),
+      path.join(os.tmpdir(), 'gc-host-grep-total-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -400,7 +400,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('supports backend-owned read range for file and directory targets', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-read-range-'),
+      path.join(os.tmpdir(), 'gc-host-read-range-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -453,7 +453,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('rejects read offsets that exceed file lines or directory entries', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-read-offset-range-'),
+      path.join(os.tmpdir(), 'gc-host-read-offset-range-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -487,7 +487,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('reports read asset kinds and byte-limited text windows', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-read-assets-'),
+      path.join(os.tmpdir(), 'gc-host-read-assets-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -555,7 +555,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('returns nearby path suggestions when the target path is missing', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-read-suggest-'),
+      path.join(os.tmpdir(), 'gc-host-read-suggest-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -586,7 +586,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('returns write metadata and keeps the most specific edit strategy visible', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-write-edit-'),
+      path.join(os.tmpdir(), 'gc-host-write-edit-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -648,7 +648,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('supports create-style edit when oldString is empty', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-empty-edit-'),
+      path.join(os.tmpdir(), 'gc-host-empty-edit-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -686,7 +686,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('keeps line-trimmed strategy visible in native edit results for outer-whitespace-only blocks', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-line-trimmed-'),
+      path.join(os.tmpdir(), 'gc-host-line-trimmed-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -753,7 +753,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('preserves existing CRLF line endings for create-style overwrite edit', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-empty-edit-crlf-'),
+      path.join(os.tmpdir(), 'gc-host-empty-edit-crlf-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -796,7 +796,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('applies post-write formatting and diagnostics through the overlay owner', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-post-write-'),
+      path.join(os.tmpdir(), 'gc-host-post-write-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
@@ -901,7 +901,7 @@ describe('RuntimeHostFilesystemBackendService', () => {
 
   it('surfaces ambiguous trimmed-boundary matches instead of editing the first inline hit', async () => {
     const runtimeWorkspaceRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gc-runtime-host-edit-ambiguous-'),
+      path.join(os.tmpdir(), 'gc-host-edit-ambiguous-'),
     );
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);
     process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;

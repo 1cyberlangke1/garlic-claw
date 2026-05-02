@@ -35,6 +35,7 @@ describe('McpService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env[envKey];
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     tempConfigRoot = path.join(os.tmpdir(), `mcp.service.spec-${Date.now()}-${Math.random()}`, 'servers');
     tempLogRoot = path.join(os.tmpdir(), `mcp.service.logs-${Date.now()}-${Math.random()}`);
     tempToolManagementPath = path.join(os.tmpdir(), `mcp.service.tool-management-${Date.now()}-${Math.random()}`, 'tool-management.json');
@@ -43,6 +44,7 @@ describe('McpService', () => {
     process.env[envKey] = tempConfigRoot;
     process.env.GARLIC_CLAW_LOG_ROOT = tempLogRoot;
     process.env[toolManagementEnvKey] = tempToolManagementPath;
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = tempToolManagementPath;
     service = new McpService(
       configService as never,
       new McpConfigStoreService(new ProjectWorktreeRootService()),
@@ -54,6 +56,7 @@ describe('McpService', () => {
   afterEach(() => {
     delete process.env[envKey];
     delete process.env.GARLIC_CLAW_LOG_ROOT;
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     delete process.env[toolManagementEnvKey];
     fs.rmSync(path.dirname(tempConfigRoot), { recursive: true, force: true });
     fs.rmSync(tempLogRoot, { recursive: true, force: true });

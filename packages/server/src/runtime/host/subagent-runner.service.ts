@@ -5,10 +5,10 @@ import { AiModelExecutionService } from '../../ai/ai-model-execution.service';
 import { ProjectSubagentTypeRegistryService } from '../../execution/project/project-subagent-type-registry.service';
 import { ToolRegistryService } from '../../execution/tool/tool-registry.service';
 import { applyMutatingDispatchableHooks, runDispatchableHookChain } from '../kernel/runtime-plugin-hook-governance';
-import { RuntimeHostConversationMessageService } from './runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService, type RuntimeConversationRecord } from './runtime-host-conversation-record.service';
-import { RuntimeHostPluginDispatchService } from './runtime-host-plugin-dispatch.service';
-import { asJsonValue, cloneJsonValue, readAssistantStreamPart, readJsonObject, readJsonStringRecord, readPluginLlmMessages, readPositiveInteger } from './runtime-host-values';
+import { ConversationMessageService } from './conversation-message.service';
+import { ConversationStoreService, type RuntimeConversationRecord } from './conversation-store.service';
+import { PluginDispatchService } from './plugin-dispatch.service';
+import { asJsonValue, cloneJsonValue, readAssistantStreamPart, readJsonObject, readJsonStringRecord, readPluginLlmMessages, readPositiveInteger } from './host-input.codec';
 
 type ResolvedSubagentType = ReturnType<ProjectSubagentTypeRegistryService['getType']>;
 type RuntimeSubagentExecutionState = {
@@ -17,18 +17,18 @@ type RuntimeSubagentExecutionState = {
 };
 
 @Injectable()
-export class RuntimeHostSubagentRunnerService {
+export class SubagentRunnerService {
   private readonly activeExecutions = new Map<string, RuntimeSubagentExecutionState>();
   private readonly scheduledExecutionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly waiters = new Map<string, Set<() => void>>();
 
   constructor(
     private readonly aiModelExecutionService: AiModelExecutionService,
-    private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
+    private readonly runtimeHostConversationMessageService: ConversationMessageService,
     @Inject(forwardRef(() => ToolRegistryService)) private readonly toolRegistryService: ToolRegistryService,
-    @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
+    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
     private readonly projectSubagentTypeRegistryService: ProjectSubagentTypeRegistryService,
-    @Optional() private readonly runtimeHostConversationRecordService?: RuntimeHostConversationRecordService,
+    @Optional() private readonly runtimeHostConversationRecordService?: ConversationStoreService,
   ) {}
 
   resumePendingSubagents(pluginId?: string): void {

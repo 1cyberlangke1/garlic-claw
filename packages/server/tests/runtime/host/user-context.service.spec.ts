@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { RuntimeHostUserContextService } from '../../../src/runtime/host/runtime-host-user-context.service';
+import { UserContextService } from '../../../src/runtime/host/user-context.service';
 
-describe('RuntimeHostUserContextService', () => {
+describe('UserContextService', () => {
   const originalMemoriesPath = process.env.GARLIC_CLAW_MEMORIES_PATH;
   const originalJestWorkerId = process.env.JEST_WORKER_ID;
   const originalCwd = process.cwd();
@@ -43,7 +43,7 @@ describe('RuntimeHostUserContextService', () => {
     process.env.GARLIC_CLAW_MEMORIES_PATH = storagePath;
     process.env.JEST_WORKER_ID = '1';
 
-    const service = new RuntimeHostUserContextService();
+    const service = new UserContextService();
 
     service.saveMemory(
       {
@@ -59,7 +59,7 @@ describe('RuntimeHostUserContextService', () => {
 
     expect(fs.existsSync(storagePath)).toBe(true);
 
-    const reloaded = new RuntimeHostUserContextService();
+    const reloaded = new UserContextService();
     expect(reloaded.searchMemoriesByUser('user-1', '咖啡', 10)).toEqual([
       expect.objectContaining({
         category: 'preference',
@@ -75,7 +75,7 @@ describe('RuntimeHostUserContextService', () => {
     process.env.JEST_WORKER_ID = '1';
     const defaultStoragePath = path.join(runtimeRoot, 'workspace', 'server-state', 'memories.server.json');
 
-    const service = new RuntimeHostUserContextService();
+    const service = new UserContextService();
     service.saveMemory(
       {
         source: 'plugin',
@@ -94,7 +94,7 @@ describe('RuntimeHostUserContextService', () => {
     process.env.GARLIC_CLAW_MEMORIES_PATH = storagePath;
     process.env.JEST_WORKER_ID = '1';
 
-    const service = new RuntimeHostUserContextService();
+    const service = new UserContextService();
     service.saveMemory(
       {
         source: 'plugin',

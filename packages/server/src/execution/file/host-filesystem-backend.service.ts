@@ -9,7 +9,7 @@ import { RuntimeFilesystemPostWriteService } from '../runtime/runtime-filesystem
 import { RuntimeMountedWorkspaceFileSystem } from '../runtime/runtime-mounted-workspace-file-system';
 import type { RuntimeSessionEnvironment } from '../runtime/runtime-session-environment.types';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
-import { toRuntimeHostPath } from '../runtime/runtime-host-path';
+import { toRuntimeHostPath } from '../runtime/host-path';
 import { joinRuntimeVisiblePath, normalizeRuntimeVisiblePath, resolveRuntimeVisiblePath } from '../runtime/runtime-visible-path';
 import { buildRuntimeFilesystemDiff } from './runtime-file-diff';
 import { collectRuntimeFileTreeEntries, containsRuntimeBinarySample, readRuntimeDirectoryEntryNames, readRuntimePathType } from './runtime-file-tree';

@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from '@garlic-claw/shared';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { asJsonValue, readPositiveInteger, readRequiredString } from './runtime-host-values';
+import { asJsonValue, readPositiveInteger, readRequiredString } from './host-input.codec';
 
 interface RuntimeKbEntry {
   content: string;
@@ -13,7 +13,7 @@ interface RuntimeKbEntry {
 }
 
 @Injectable()
-export class RuntimeHostKnowledgeService {
+export class KnowledgeReaderService {
   private readonly kbEntries: RuntimeKbEntry[] = [{
     content: 'Garlic Claw 使用 builtin 与 remote 统一插件运行时。',
     createdAt: '2026-03-28T02:00:00.000Z',

@@ -6,9 +6,9 @@ import { ToolManagementSettingsService } from '../../../execution/tool/tool-mana
 import { buildPluginInfo } from '../../../plugin/persistence/plugin-read-model';
 import { PluginPersistenceService } from '../../../plugin/persistence/plugin-persistence.service';
 import { buildRemotePluginConnectionInfo, PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
-import { RuntimeHostConversationRecordService } from '../../../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostPluginDispatchService } from '../../../runtime/host/runtime-host-plugin-dispatch.service';
-import { RuntimeHostPluginRuntimeService } from '../../../runtime/host/runtime-host-plugin-runtime.service';
+import { ConversationStoreService } from '../../../runtime/host/conversation-store.service';
+import { PluginDispatchService } from '../../../runtime/host/plugin-dispatch.service';
+import { PluginRuntimeService } from '../../../runtime/host/plugin-runtime.service';
 import { RuntimePluginGovernanceService } from '../../../runtime/kernel/runtime-plugin-governance.service';
 import { readPluginEventQuery, readPluginRouteInvocation, writePluginRouteResponse } from '../http-request.codec';
 
@@ -31,7 +31,7 @@ interface PluginEventQueryInput { limit?: string; level?: string; type?: string;
 
 @Controller()
 export class PluginController {
-  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService, @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService, private readonly runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService, private readonly toolManagementSettingsService: ToolManagementSettingsService) {}
+  constructor(private readonly pluginBootstrapService: PluginBootstrapService, private readonly pluginPersistenceService: PluginPersistenceService, private readonly runtimeHostConversationRecordService: ConversationStoreService, @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService, private readonly runtimeHostPluginRuntimeService: PluginRuntimeService, private readonly runtimePluginGovernanceService: RuntimePluginGovernanceService, private readonly toolManagementSettingsService: ToolManagementSettingsService) {}
 
   @Get('plugins')
   listPlugins() { return this.runtimePluginGovernanceService.listPlugins().map((plugin) => buildPluginInfo(plugin, this.runtimePluginGovernanceService.listSupportedActions(plugin.pluginId))); }
@@ -205,8 +205,8 @@ function readPluginActionName(action: string): PluginActionName {
 
 function cleanupDetachedLocalPluginState(
   pluginId: string,
-  runtimeHostPluginRuntimeService: RuntimeHostPluginRuntimeService,
-  runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+  runtimeHostPluginRuntimeService: PluginRuntimeService,
+  runtimeHostConversationRecordService: ConversationStoreService,
   runtimePluginGovernanceService: RuntimePluginGovernanceService,
   toolManagementSettingsService: ToolManagementSettingsService,
 ): void {

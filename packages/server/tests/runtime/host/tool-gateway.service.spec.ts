@@ -1,8 +1,8 @@
 import { BashToolService } from '../../../src/execution/bash/bash-tool.service';
 import { ReadToolService } from '../../../src/execution/read/read-tool.service';
-import { RuntimeHostRuntimeToolService } from '../../../src/runtime/host/runtime-host-runtime-tool.service';
+import { ToolGatewayService } from '../../../src/runtime/host/tool-gateway.service';
 
-describe('RuntimeHostRuntimeToolService', () => {
+describe('ToolGatewayService', () => {
   it('reuses one filesystem backend kind across access review and raw read execution', async () => {
     const runtimeFilesystemBackendService = {
       getDefaultBackendKind: jest.fn().mockReturnValue('mock-filesystem'),
@@ -70,7 +70,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       runtimeFilesystemBackendService as never,
       runtimeFileFreshnessService as never,
     );
-    const service = new RuntimeHostRuntimeToolService(
+    const service = new ToolGatewayService(
       {} as never,
       {} as never,
       {} as never,
@@ -221,7 +221,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
     );
-    const service = new RuntimeHostRuntimeToolService(
+    const service = new ToolGatewayService(
       bashToolService,
       {} as never,
       {} as never,
@@ -347,7 +347,7 @@ describe('RuntimeHostRuntimeToolService', () => {
       runtimeSessionEnvironmentService as never,
       runtimeToolBackendService as never,
     );
-    const service = new RuntimeHostRuntimeToolService(
+    const service = new ToolGatewayService(
       bashToolService,
       {} as never,
       {} as never,

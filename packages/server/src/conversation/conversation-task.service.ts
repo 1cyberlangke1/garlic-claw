@@ -3,10 +3,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createConversationHistorySignatureFromHistoryMessages } from './conversation-history-signature';
 import { appendConversationModelUsageMetadata, readConversationModelUsageAnnotation } from './conversation-model-usage.annotation';
 import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
-import { RuntimeHostConversationMessageService } from '../runtime/host/runtime-host-conversation-message.service';
-import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostConversationTodoService } from '../runtime/host/runtime-host-conversation-todo.service';
-import { cloneJsonValue, readAssistantRawCustomBlocks, readAssistantStreamPart } from '../runtime/host/runtime-host-values';
+import { ConversationMessageService } from '../runtime/host/conversation-message.service';
+import { ConversationStoreService } from '../runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../runtime/host/conversation-todo.service';
+import { cloneJsonValue, readAssistantRawCustomBlocks, readAssistantStreamPart } from '../runtime/host/host-input.codec';
 
 export type ConversationTaskToolCall = PluginSubagentToolCall & Record<string, JsonValue>;
 export type ConversationTaskToolResult = PluginSubagentToolResult & Record<string, JsonValue>;
@@ -66,10 +66,10 @@ export class ConversationTaskService {
   private readonly tasks = new Map<string, ConversationTaskHandle>();
 
   constructor(
-    private readonly runtimeHostConversationMessageService: RuntimeHostConversationMessageService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationMessageService: ConversationMessageService,
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
     private readonly runtimeToolPermissionService: RuntimeToolPermissionService,
-    private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService,
+    private readonly runtimeHostConversationTodoService: ConversationTodoService,
   ) {}
 
   startTask(input: StartConversationTaskInput): void {

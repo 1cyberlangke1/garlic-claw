@@ -1,10 +1,10 @@
 import type { PluginSubagentDetail, PluginSubagentOverview, PluginSubagentTypeSummary } from '@garlic-claw/shared';
 import { Controller, Get, Param, Post } from '@nestjs/common';
-import { RuntimeHostSubagentRunnerService } from '../../../runtime/host/runtime-host-subagent-runner.service';
+import { SubagentRunnerService } from '../../../runtime/host/subagent-runner.service';
 
 @Controller('subagents')
 export class SubagentController {
-  constructor(private readonly runtimeHostSubagentRunnerService: RuntimeHostSubagentRunnerService) {}
+  constructor(private readonly runtimeHostSubagentRunnerService: SubagentRunnerService) {}
 
   @Get('overview')
   listOverview(): PluginSubagentOverview {

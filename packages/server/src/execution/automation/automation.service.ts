@@ -5,8 +5,8 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDes
 import { CronExpressionParser } from 'cron-parser';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
 import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
-import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
-import { asJsonValue, cloneJsonValue, readJsonObject, readPositiveInteger, readRequiredString } from '../../runtime/host/runtime-host-values';
+import { ConversationStoreService } from '../../runtime/host/conversation-store.service';
+import { asJsonValue, cloneJsonValue, readJsonObject, readPositiveInteger, readRequiredString } from '../../runtime/host/host-input.codec';
 import { AutomationExecutionService } from './automation-execution.service';
 
 export interface PersistedAutomationRecord {
@@ -50,7 +50,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
 
   constructor(
     private readonly automationExecutionService: AutomationExecutionService,
-    private readonly runtimeHostConversationRecordService?: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationRecordService?: ConversationStoreService,
   ) {
     const restored = readAutomationState(this.storagePath);
     this.automationSequence = restored.sequence;
@@ -140,7 +140,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
       return automation;
     }
     if (!this.runtimeHostConversationRecordService) {
-      throw new Error('RuntimeHostConversationRecordService is not available');
+      throw new Error('ConversationStoreService is not available');
     }
     this.runtimeHostConversationRecordService.requireConversation(cronChildTarget.parentConversationId, automation.userId);
     const childConversation = this.runtimeHostConversationRecordService.createConversation({

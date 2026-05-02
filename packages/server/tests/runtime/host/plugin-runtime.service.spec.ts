@@ -5,22 +5,22 @@ import type { PluginCronDescriptor, PluginCronJobSummary } from '@garlic-claw/sh
 import { PluginBootstrapService } from '../../../src/plugin/bootstrap/plugin-bootstrap.service';
 import { PluginGovernanceService } from '../../../src/plugin/governance/plugin-governance.service';
 import { PluginPersistenceService } from '../../../src/plugin/persistence/plugin-persistence.service';
-import { RuntimeHostPluginRuntimeService } from '../../../src/runtime/host/runtime-host-plugin-runtime.service';
+import { PluginRuntimeService } from '../../../src/runtime/host/plugin-runtime.service';
 
 const trackedServices: Array<{
   onApplicationBootstrap?: () => void;
   onModuleDestroy?: () => void;
 }> = [];
 
-describe('RuntimeHostPluginRuntimeService', () => {
+describe('PluginRuntimeService', () => {
   const pluginStateEnvKey = 'GARLIC_CLAW_PLUGIN_STATE_PATH';
   const pluginRuntimeEnvKey = 'GARLIC_CLAW_PLUGIN_RUNTIME_STATE_PATH';
   let pluginStatePath: string;
   let pluginRuntimePath: string;
 
   beforeEach(() => {
-    pluginStatePath = path.join(os.tmpdir(), `runtime-host-plugin-state-${Date.now()}-${Math.random()}.json`);
-    pluginRuntimePath = path.join(os.tmpdir(), `runtime-host-plugin-runtime-${Date.now()}-${Math.random()}.json`);
+    pluginStatePath = path.join(os.tmpdir(), `host-plugin-state-${Date.now()}-${Math.random()}.json`);
+    pluginRuntimePath = path.join(os.tmpdir(), `plugin-runtime-${Date.now()}-${Math.random()}.json`);
     process.env[pluginStateEnvKey] = pluginStatePath;
     process.env[pluginRuntimeEnvKey] = pluginRuntimePath;
   });
@@ -228,8 +228,8 @@ function createService(
   dispatchService?: {
     invokeHook: jest.Mock;
   },
-): RuntimeHostPluginRuntimeService {
-  const service = new RuntimeHostPluginRuntimeService(pluginPersistenceService);
+): PluginRuntimeService {
+  const service = new PluginRuntimeService(pluginPersistenceService);
   if (dispatchService) {
     Object.assign(service as unknown as {
       runtimeHostPluginDispatchService?: {
@@ -239,7 +239,7 @@ function createService(
       runtimeHostPluginDispatchService: dispatchService,
     });
   }
-  const lifecycleService = service as RuntimeHostPluginRuntimeService & {
+  const lifecycleService = service as PluginRuntimeService & {
     onApplicationBootstrap?: () => void;
     onModuleDestroy?: () => void;
   };
