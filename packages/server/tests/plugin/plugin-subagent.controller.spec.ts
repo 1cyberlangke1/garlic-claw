@@ -1,4 +1,4 @@
-import { SubagentController } from '../../../../src/execution/subagent/subagent.controller';
+import { SubagentController } from '../../src/execution/subagent/subagent.controller';
 
 describe('SubagentController', () => {
   const runtimeHostSubagentRunnerService = {

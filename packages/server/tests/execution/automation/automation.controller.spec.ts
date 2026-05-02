@@ -1,5 +1,5 @@
 import { GUARDS_METADATA } from '@nestjs/common/constants';
-import { AutomationController } from '../../../../src/execution/automation/automation.controller';
+import { AutomationController } from '../../../src/execution/automation/automation.controller';
 
 describe('AutomationController', () => {
   const automationService = {
