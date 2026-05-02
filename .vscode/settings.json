@@ -1,2 +1,12 @@
 {
+    "search.useIgnoreFiles": false,
+    "files.exclude": {
+        "**/dist": true,
+        "**/node_modules": true,
+        "**/.git": true,
+        "**/build": true,
+        "**/coverage": true,
+        "**/tmp": true,
+        "**/.cache": true
+    }
 }

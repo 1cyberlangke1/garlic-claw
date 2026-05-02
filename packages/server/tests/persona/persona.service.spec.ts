@@ -81,9 +81,16 @@ describe('PersonaService', () => {
       ),
     ).toEqual(expect.objectContaining({
       id: 'builtin.default-assistant',
-      isDefault: true,
       name: 'Default Assistant',
     }))
+    expect(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(storageRoot, 'settings.json'),
+          'utf-8',
+        ),
+      ),
+    ).toEqual({ defaultPersonaId: 'builtin.default-assistant' })
     expect(
       fs.readFileSync(
         path.join(storageRoot, 'builtin.default-assistant', 'prompt.md'),
@@ -146,9 +153,16 @@ describe('PersonaService', () => {
     ).toEqual(expect.objectContaining({
       customErrorMessage: '当前人格不可用，请稍后再试。',
       id: 'persona.analyst',
-      isDefault: true,
       name: 'Reviewer',
     }))
+    expect(
+      JSON.parse(
+        fs.readFileSync(
+          path.join(storageRoot, 'settings.json'),
+          'utf-8',
+        ),
+      ),
+    ).toEqual({ defaultPersonaId: 'persona.analyst' })
     expect(
       fs.readFileSync(
         path.join(storageRoot, 'persona.analyst', 'prompt.md'),

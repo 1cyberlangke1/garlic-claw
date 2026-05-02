@@ -39,7 +39,7 @@ describe('ConversationMessageLifecycleService', () => {
 
   let conversationTaskService: ConversationTaskService;
   let conversationId: string;
-  let contextGovernanceConfigPath: string;
+  let settingsConfigPath: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
   let storagePath: string;
   let conversationMessagePlanningService: ConversationMessagePlanningService;
@@ -53,12 +53,12 @@ describe('ConversationMessageLifecycleService', () => {
       os.tmpdir(),
       `conversation-message-lifecycle.service.spec-${Date.now()}-${Math.random()}.json`,
     );
-    contextGovernanceConfigPath = path.join(
+    settingsConfigPath = path.join(
       os.tmpdir(),
-      `context-governance-lifecycle.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      `settings-lifecycle.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
     process.env[envKey] = storagePath;
-    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsConfigPath;
     jest.clearAllMocks();
     aiManagementService.getDefaultProviderSelection.mockReset();
     aiManagementService.getProvider.mockReset();
@@ -143,13 +143,13 @@ describe('ConversationMessageLifecycleService', () => {
 
   afterEach(() => {
     delete process.env[envKey];
-    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     try {
       if (fs.existsSync(storagePath)) {
         fs.unlinkSync(storagePath);
       }
-      if (fs.existsSync(contextGovernanceConfigPath)) {
-        fs.unlinkSync(contextGovernanceConfigPath);
+      if (fs.existsSync(settingsConfigPath)) {
+        fs.unlinkSync(settingsConfigPath);
       }
     } catch {
       // 忽略临时文件清理失败，避免影响测试主语义。

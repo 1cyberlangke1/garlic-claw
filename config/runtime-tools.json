@@ -1,8 +1,0 @@
-{
-  "shellBackend": "native-shell",
-  "bashOutput": {
-    "maxLines": 200,
-    "maxBytes": 16384,
-    "showTruncationDetails": true
-  }
-}

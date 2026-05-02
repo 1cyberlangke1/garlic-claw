@@ -23,7 +23,7 @@ describe('ConversationMessagePlanningService', () => {
   const runtimeHostPluginDispatchService = { invokeHook: jest.fn(), listPlugins: jest.fn().mockReturnValue([]) };
   const toolRegistryService = { buildToolSet: jest.fn(), listAvailableTools: jest.fn() };
 
-  let contextGovernanceConfigPath: string;
+  let settingsConfigPath: string;
   let conversationsPath: string;
   let conversationId: string;
   let contextGovernanceSettingsService: ContextGovernanceSettingsService;
@@ -32,15 +32,15 @@ describe('ConversationMessagePlanningService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    contextGovernanceConfigPath = path.join(
+    settingsConfigPath = path.join(
       os.tmpdir(),
-      `context-governance-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+      `settings-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
     conversationsPath = path.join(
       os.tmpdir(),
       `conversation-message-planning.spec-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
     );
-    process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH = contextGovernanceConfigPath;
+    process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH = settingsConfigPath;
     process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationsPath;
     aiManagementService.getDefaultProviderSelection.mockReturnValue({ modelId: 'gpt-5.4', providerId: 'openai', source: 'default' });
     aiManagementService.getProvider.mockReturnValue({ defaultModel: 'gpt-5.4', id: 'openai', models: ['gpt-5.4'] });
@@ -83,9 +83,9 @@ describe('ConversationMessagePlanningService', () => {
   });
 
   afterEach(() => {
-    delete process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH;
+    delete process.env.GARLIC_CLAW_SETTINGS_CONFIG_PATH;
     delete process.env.GARLIC_CLAW_CONVERSATIONS_PATH;
-    for (const filePath of [contextGovernanceConfigPath, conversationsPath]) {
+    for (const filePath of [settingsConfigPath, conversationsPath]) {
       try {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);

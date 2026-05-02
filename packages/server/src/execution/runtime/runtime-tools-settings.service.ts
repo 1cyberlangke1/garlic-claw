@@ -2,13 +2,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { JsonObject, JsonValue, PluginConfigSnapshot, PluginConfigSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
-import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
+import { SettingsService } from '../../settings/settings.service';
 import type { RuntimeCommandTextOutputOptions } from './runtime-command-output';
 
-const RUNTIME_TOOLS_CONFIG_FILE = 'runtime-tools.json';
 const RUNTIME_TOOLS_SOURCE_ID = 'runtime-tools';
 const MAX_CONFIG_INTEGER = 1_000_000;
+const RUNTIME_TOOLS_SECTION = 'runtimeTools';
 
 interface RuntimeToolsConfigRecord {
   bashOutput?: {
@@ -59,8 +58,11 @@ export const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
 
 @Injectable()
 export class RuntimeToolsSettingsService {
-  private readonly configPath = resolveRuntimeToolsConfigPath();
-  private configValues: JsonObject = loadRuntimeToolsConfig(this.configPath);
+  private configValues: JsonObject;
+
+  constructor(private readonly settingsService: SettingsService = new SettingsService()) {
+    this.configValues = sanitizeRuntimeToolsConfig(this.settingsService.readSection(RUNTIME_TOOLS_SECTION));
+  }
 
   getSourceId(): string {
     return RUNTIME_TOOLS_SOURCE_ID;
@@ -79,7 +81,7 @@ export class RuntimeToolsSettingsService {
 
   updateConfig(values: JsonObject): PluginConfigSnapshot {
     this.configValues = sanitizeRuntimeToolsConfig(values);
-    persistRuntimeToolsConfig(this.configPath, this.configValues);
+    this.settingsService.writeSection(RUNTIME_TOOLS_SECTION, this.configValues);
     return this.getConfigSnapshot();
   }
 
@@ -150,32 +152,6 @@ function sanitizeRuntimeToolsConfig(values: JsonObject): JsonObject {
     }
   }
   return next as unknown as JsonObject;
-}
-
-function resolveRuntimeToolsConfigPath(): string {
-  if (process.env.JEST_WORKER_ID) {
-    return process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH
-      ?? createServerTestArtifactPath({ extension: '.json', prefix: 'config-runtime-tools.server.test', subdirectory: 'server' });
-  }
-  return process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH
-    ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', RUNTIME_TOOLS_CONFIG_FILE);
-}
-
-function loadRuntimeToolsConfig(configPath: string): JsonObject {
-  try {
-    if (!fs.existsSync(configPath)) {
-      return {};
-    }
-    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as JsonValue;
-    return sanitizeRuntimeToolsConfig(isJsonObject(parsed) ? parsed : {});
-  } catch {
-    return {};
-  }
-}
-
-function persistRuntimeToolsConfig(configPath: string, values: JsonObject): void {
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(values, null, 2), 'utf-8');
 }
 
 function readRuntimeToolsDefaultShellBackend(platform: NodeJS.Platform = process.platform): RuntimeBackendKind {

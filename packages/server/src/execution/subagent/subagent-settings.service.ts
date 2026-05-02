@@ -6,7 +6,7 @@ import { SUBAGENT_CONFIG_SCHEMA, type PluginSubagentConfig } from '@garlic-claw/
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
 import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
 
-const SUBAGENT_CONFIG_FILE = 'subagent.json';
+const SUBAGENT_CONFIG_FILE = 'settings.json';
 export const INTERNAL_SUBAGENT_SOURCE_ID = 'subagent';
 const MAX_CONFIG_INTEGER = 1_000_000;
 
@@ -47,7 +47,7 @@ function resolveSubagentConfigPath(): string {
       ?? createServerTestArtifactPath({ extension: '.json', prefix: 'config-subagent.server.test', subdirectory: 'server' });
   }
   return process.env.GARLIC_CLAW_SUBAGENT_CONFIG_PATH
-    ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', SUBAGENT_CONFIG_FILE);
+    ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', 'subagent', SUBAGENT_CONFIG_FILE);
 }
 
 function loadSubagentConfig(configPath: string): JsonObject {

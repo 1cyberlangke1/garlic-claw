@@ -1,0 +1,37 @@
+# Git 忽略文件
+
+# 运行时真实配置默认不提交；若存在 settings.example.json，启动时会自动复制生成 settings.json
+# 仓库仅提交 *.example.json 与内置样例
+settings.json
+
+# 旧单文件运行时偏好已废弃，保留忽略规则防止历史文件重新混入版本库
+subagent.json
+tool-management.json
+context-governance.json
+runtime-tools.json
+ai-settings.json
+model-capabilities.json
+
+# personas/settings.json 已被 personas/* 覆盖，无需额外规则
+ai/providers/*.json
+ai/host-model-routing.json
+ai/vision-fallback.json
+
+mcp/servers/*.json
+!mcp/servers/tavily-mcp.json
+
+personas/*
+!personas/builtin.default-assistant/
+personas/builtin.default-assistant/*
+!personas/builtin.default-assistant/avatar.png
+!personas/builtin.default-assistant/persona.json
+!personas/builtin.default-assistant/prompt.md
+
+subagent/*
+!subagent/general/
+!subagent/explore/
+subagent/general/*
+subagent/explore/*
+!subagent/general/subagent.json
+!subagent/explore/subagent.json
+!subagent/explore/prompt.md

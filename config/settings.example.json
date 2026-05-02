@@ -1,0 +1,31 @@
+{
+  "context": {
+    "conversationTitle": {
+      "enabled": true,
+      "maxMessages": 3
+    },
+    "contextCompaction": {
+      "enabled": true,
+      "mode": "manual",
+      "strategy": "summary",
+      "keepRecentMessages": 2,
+      "summaryPrompt": "请把下面这段历史对话整理成可供后续继续回答的上下文摘要。"
+    }
+  },
+  "runtimeTools": {
+    "shellBackend": "native-shell",
+    "bashOutput": {
+      "maxLines": 200,
+      "maxBytes": 16384,
+      "showTruncationDetails": true
+    }
+  },
+  "tools": {
+    "sourceEnabled": {
+      "internal:runtime-tools": true
+    },
+    "toolEnabled": {
+      "internal:runtime-tools:powershell": true
+    }
+  }
+}
