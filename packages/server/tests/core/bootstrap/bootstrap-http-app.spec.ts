@@ -4,7 +4,7 @@ jest.mock('@nestjs/core', () => ({
   },
 }));
 
-jest.mock('../../../src/app.module', () => ({
+jest.mock('../../../src/app/app.module', () => ({
   AppModule: class AppModule {},
 }));
 

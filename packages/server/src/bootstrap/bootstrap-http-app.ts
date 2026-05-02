@@ -1,6 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module';
+import { AppModule } from '../app/app.module';
 import { BootstrapUserService } from '../auth/bootstrap-user.service';
 import { ToolManagementSettingsService } from '../execution/tool/tool-management-settings.service';
 import { PluginBootstrapService } from '../plugin/bootstrap/plugin-bootstrap.service';
