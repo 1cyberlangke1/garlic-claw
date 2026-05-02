@@ -5,9 +5,6 @@
         <h2>插件</h2>
         <p>默认聚焦用户可感知插件，系统本地插件按需展开。</p>
       </div>
-      <ElButton class="ghost-button refresh-button" title="刷新" @click="$emit('refresh')">
-        <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-      </ElButton>
     </div>
 
     <div v-if="!loading && plugins.length > 0" class="sidebar-overview">
@@ -141,8 +138,6 @@
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
-import refreshBold from '@iconify-icons/solar/refresh-bold'
 import { computed, ref, watch } from 'vue'
 import { ElButton, ElInput, ElSwitch } from 'element-plus'
 import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
@@ -165,7 +160,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (event: 'refresh'): void
   (event: 'select', pluginName: string): void
   (event: 'update:activeFilter', value: string): void
 }>()
@@ -419,7 +413,6 @@ const SHOW_SYSTEM_BUILTINS_STORAGE_KEY = 'garlic-claw:plugin-sidebar:show-system
 .sidebar-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
 }
 
@@ -560,24 +553,6 @@ const SHOW_SYSTEM_BUILTINS_STORAGE_KEY = 'garlic-claw:plugin-sidebar:show-system
 
 .ghost-button:hover:not(:disabled) {
   background: var(--surface-panel-muted-strong);
-}
-
-.refresh-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 0;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-.refresh-icon {
-  width: 18px;
-  height: 18px;
 }
 
 .sidebar-error {

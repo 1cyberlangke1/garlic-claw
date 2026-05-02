@@ -8,8 +8,8 @@ import type {
   PluginPersonaUpsertInput,
 } from '@garlic-claw/shared'
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
-import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service'
-import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
+import { ConversationStoreService } from '../runtime/host/conversation-store.service'
+import { DEFAULT_PERSONA_ID } from '../runtime/host/host-input.codec'
 import { PersonaStoreService } from './persona-store.service'
 import type { StoredPersonaRecord } from './persona-store.service'
 
@@ -24,7 +24,7 @@ type PersonaSource = 'context' | 'conversation' | 'default'
 export class PersonaService {
   constructor(
     private readonly personaStoreService: PersonaStoreService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
   ) {}
 
   listPersonas(): PluginPersonaSummary[] { return this.listStoredPersonas().map(toPersonaSummary) }

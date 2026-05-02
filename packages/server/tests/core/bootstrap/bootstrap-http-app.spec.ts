@@ -4,7 +4,7 @@ jest.mock('@nestjs/core', () => ({
   },
 }));
 
-jest.mock('../../../src/app.module', () => ({
+jest.mock('../../../src/app/app.module', () => ({
   AppModule: class AppModule {},
 }));
 
@@ -40,10 +40,10 @@ describe('bootstrapHttpApp', () => {
         if (token?.name === 'PluginBootstrapService') {
           return pluginBootstrapService;
         }
-        if (token?.name === 'RuntimeHostPluginRuntimeService') {
+        if (token?.name === 'PluginRuntimeService') {
           return runtimeHostPluginRuntimeService;
         }
-        if (token?.name === 'RuntimeHostConversationRecordService') {
+        if (token?.name === 'ConversationStoreService') {
           return runtimeHostConversationRecordService;
         }
         if (token?.name === 'RuntimePluginGovernanceService') {
@@ -64,7 +64,7 @@ describe('bootstrapHttpApp', () => {
     const { NestFactory } = await import('@nestjs/core');
     jest.mocked(NestFactory.create).mockResolvedValue(app as never);
 
-    const { bootstrapHttpApp } = await import('../../../src/core/bootstrap/bootstrap-http-app');
+    const { bootstrapHttpApp } = await import('../../../src/bootstrap/bootstrap-http-app');
 
     await bootstrapHttpApp();
 

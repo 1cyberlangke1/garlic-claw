@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ActionConfig, AutomationEventDispatchInfo, AutomationLogInfo, JsonObject, JsonValue, TriggerConfig, ToolSourceKind } from '@garlic-claw/shared';
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { CronExpressionParser } from 'cron-parser';
 import { SINGLE_USER_ID } from '../../auth/single-user-auth';
-import { createServerTestArtifactPath, resolveServerStatePath } from '../../runtime/server-workspace-paths';
-import { RuntimeHostConversationRecordService } from '../../runtime/host/runtime-host-conversation-record.service';
-import { asJsonValue, cloneJsonValue, readJsonObject, readPositiveInteger, readRequiredString } from '../../runtime/host/runtime-host-values';
+import { createServerLogger } from '../../core/logging/server-logger';
+import { createServerTestArtifactPath, resolveServerStatePath } from '../../core/runtime/server-workspace-paths';
+import { ConversationStoreService } from '../../runtime/host/conversation-store.service';
+import { asJsonValue, cloneJsonValue, readJsonObject, readPositiveInteger, readRequiredString } from '../../runtime/host/host-input.codec';
 import { AutomationExecutionService } from './automation-execution.service';
 
 export interface PersistedAutomationRecord {
@@ -45,12 +46,12 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
   private readonly automations = new Map<string, RuntimeAutomationRecord[]>();
   private readonly cronJobs = new Map<string, ReturnType<typeof setTimeout>>();
   private automationSequence = 0;
-  private readonly logger = new Logger(AutomationService.name);
+  private readonly logger = createServerLogger(AutomationService.name);
   private readonly storagePath = resolveAutomationStoragePath();
 
   constructor(
     private readonly automationExecutionService: AutomationExecutionService,
-    private readonly runtimeHostConversationRecordService?: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationRecordService?: ConversationStoreService,
   ) {
     const restored = readAutomationState(this.storagePath);
     this.automationSequence = restored.sequence;
@@ -140,7 +141,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
       return automation;
     }
     if (!this.runtimeHostConversationRecordService) {
-      throw new Error('RuntimeHostConversationRecordService is not available');
+      throw new Error('ConversationStoreService is not available');
     }
     this.runtimeHostConversationRecordService.requireConversation(cronChildTarget.parentConversationId, automation.userId);
     const childConversation = this.runtimeHostConversationRecordService.createConversation({
@@ -208,7 +209,7 @@ export class AutomationService implements OnModuleDestroy, OnModuleInit {
     }, nextDelay);
     timer.unref?.();
     this.cronJobs.set(automationId, timer);
-    this.logger.log(`已为自动化 ${automationId} 计划 cron：${trigger.cron}`);
+    this.logger.info(`已为自动化 ${automationId} 计划 cron：${trigger.cron}`);
     return true;
   }
 

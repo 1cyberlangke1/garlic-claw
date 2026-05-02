@@ -4,9 +4,9 @@ import { AiModelExecutionService } from '../ai/ai-model-execution.service';
 import { ToolRegistryService } from '../execution/tool/tool-registry.service';
 import { PersonaService } from '../persona/persona.service';
 import { applyMutatingDispatchableHooks, listDispatchableHookPluginIds, runDispatchableHookChain, type DispatchableHookChainResult } from '../runtime/kernel/runtime-plugin-hook-governance';
-import { RuntimeHostConversationRecordService } from '../runtime/host/runtime-host-conversation-record.service';
-import { RuntimeHostPluginDispatchService } from '../runtime/host/runtime-host-plugin-dispatch.service';
-import { asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/runtime-host-values';
+import { ConversationStoreService } from '../runtime/host/conversation-store.service';
+import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
+import { asJsonValue, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_MODEL_ID } from '../runtime/host/host-input.codec';
 import { AiVisionService } from '../vision/ai-vision.service';
 import { createConversationHistorySignatureFromModelMessages } from './conversation-history-signature';
 import { ContextGovernanceService, type DeferredInternalCommandAction } from './context-governance.service';
@@ -30,10 +30,10 @@ export class ConversationMessagePlanningService {
     private readonly aiModelExecutionService: AiModelExecutionService,
     private readonly aiVisionService: AiVisionService,
     private readonly contextGovernanceService: ContextGovernanceService,
-    private readonly runtimeHostConversationRecordService: RuntimeHostConversationRecordService,
+    private readonly runtimeHostConversationRecordService: ConversationStoreService,
     private readonly personaService: PersonaService,
     private readonly toolRegistryService: ToolRegistryService,
-    @Inject(RuntimeHostPluginDispatchService) private readonly runtimeHostPluginDispatchService: RuntimeHostPluginDispatchService,
+    @Inject(PluginDispatchService) private readonly runtimeHostPluginDispatchService: PluginDispatchService,
   ) {}
 
   async applyMessageReceived(input: { activePersonaId?: string; content: string; conversationId: string; modelId: string; parts: ChatMessagePart[]; providerId: string; userId?: string }): Promise<MessageReceivedPlanningResult> {

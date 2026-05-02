@@ -4,7 +4,7 @@ import type { JsonObject, JsonValue, PluginConfigSnapshot } from '@garlic-claw/s
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { SUBAGENT_CONFIG_SCHEMA, type PluginSubagentConfig } from '@garlic-claw/plugin-sdk/authoring';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
-import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
+import { createServerTestArtifactPath } from '../../core/runtime/server-workspace-paths';
 
 const SUBAGENT_CONFIG_FILE = 'settings.json';
 export const INTERNAL_SUBAGENT_SOURCE_ID = 'subagent';

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { JsonObject, JsonValue, PluginConfigSnapshot, PluginConfigSchema, RuntimeBackendKind } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { SettingsService } from '../../settings/settings.service';
+import { SettingsStore } from '../../core/config/settings.store';
 import type { RuntimeCommandTextOutputOptions } from './runtime-command-output';
 
 const RUNTIME_TOOLS_SOURCE_ID = 'runtime-tools';
@@ -60,8 +60,8 @@ export const RUNTIME_TOOLS_CONFIG_SCHEMA: PluginConfigSchema = {
 export class RuntimeToolsSettingsService {
   private configValues: JsonObject;
 
-  constructor(private readonly settingsService: SettingsService = new SettingsService()) {
-    this.configValues = sanitizeRuntimeToolsConfig(this.settingsService.readSection(RUNTIME_TOOLS_SECTION));
+  constructor(private readonly settingsStore: SettingsStore = new SettingsStore()) {
+    this.configValues = sanitizeRuntimeToolsConfig(this.settingsStore.readSection(RUNTIME_TOOLS_SECTION));
   }
 
   getSourceId(): string {
@@ -81,7 +81,7 @@ export class RuntimeToolsSettingsService {
 
   updateConfig(values: JsonObject): PluginConfigSnapshot {
     this.configValues = sanitizeRuntimeToolsConfig(values);
-    this.settingsService.writeSection(RUNTIME_TOOLS_SECTION, this.configValues);
+    this.settingsStore.writeSection(RUNTIME_TOOLS_SECTION, this.configValues);
     return this.getConfigSnapshot();
   }
 

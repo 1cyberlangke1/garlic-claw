@@ -632,8 +632,8 @@ async function runChatFlow(page, accessToken, createdConversationIds) {
 async function verifyMcpPage(page) {
   await page.goto('/mcp', { waitUntil: 'load' });
   await expectText(page, 'MCP 管理');
-  await page.locator('.segmented-switch__option[title="管理"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
-  await page.locator('.segmented-switch__option[title="日志"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('button[title="MCP 配置"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await page.locator('button[title="事件日志"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, 'MCP 配置');
   await page.locator('[data-test="mcp-new-button"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await page.locator('[data-test="mcp-new-button"]').click();
@@ -736,10 +736,10 @@ async function verifyToolsPage(page, accessToken) {
 
   await page.goto('/tools', { waitUntil: 'load' });
   await expectText(page, '工具管理');
-  await assertToolsSectionVisibility(page, '执行工具管理', visibleSectionTitles.has('执行工具管理'));
-  await assertToolsSectionVisibility(page, '子代理工具管理', visibleSectionTitles.has('子代理工具管理'));
-  await assertToolsSectionVisibility(page, 'MCP 工具管理', visibleSectionTitles.has('MCP 工具管理'));
-  await assertToolsSectionVisibility(page, '插件工具管理', visibleSectionTitles.has('插件工具管理'));
+  await assertToolsPanelVisibility(page, '执行工具', '执行工具管理', visibleSectionTitles.has('执行工具管理'));
+  await assertToolsPanelVisibility(page, '子代理工具', '子代理工具管理', visibleSectionTitles.has('子代理工具管理'));
+  await assertToolsPanelVisibility(page, 'MCP 工具', 'MCP 工具管理', visibleSectionTitles.has('MCP 工具管理'));
+  await assertToolsPanelVisibility(page, '插件工具', '插件工具管理', visibleSectionTitles.has('插件工具管理'));
 
   if (visibleSectionTitles.size === 0) {
     await expectText(page, '当前还没有可管理的实际工具');
@@ -1090,6 +1090,19 @@ async function assertToolsSectionVisibility(page, title, shouldExist) {
 
   await delay(200);
   assert.equal(await matches.count(), 0, `工具页不应展示 ${title}`);
+}
+
+async function assertToolsPanelVisibility(page, buttonTitle, sectionTitle, shouldExist) {
+  const panelButtons = page.locator(`button[title="${buttonTitle}"]`);
+  if (!shouldExist) {
+    await delay(200);
+    assert.equal(await panelButtons.count(), 0, `工具页不应展示 ${buttonTitle} 面板入口`);
+    return;
+  }
+
+  await panelButtons.first().waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await panelButtons.first().click();
+  await page.getByText(sectionTitle, { exact: true }).first().waitFor({ timeout: REQUEST_TIMEOUT_MS });
 }
 
 async function expectConversationSelected(page, conversationId) {

@@ -3,8 +3,8 @@ import * as path from 'node:path'
 import type { PluginPersonaDetail, PluginPersonaDialogEntry } from '@garlic-claw/shared'
 import { Injectable } from '@nestjs/common'
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service'
-import { createServerTestArtifactPath } from '../runtime/server-workspace-paths'
-import { DEFAULT_PERSONA_ID } from '../runtime/host/runtime-host-values'
+import { createServerTestArtifactPath } from '../core/runtime/server-workspace-paths'
+import { DEFAULT_PERSONA_ID } from '../runtime/host/host-input.codec'
 import { DEFAULT_PERSONA_PROMPT } from './default-persona'
 
 export interface StoredPersonaRecord extends PluginPersonaDetail {}

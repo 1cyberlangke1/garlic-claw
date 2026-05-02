@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
 import { readRuntimeSearchSuggestedReadPath } from '../file/runtime-search-result-report';
-import { toRuntimeHostPath } from '../runtime/runtime-host-path';
+import { toRuntimeHostPath } from '../runtime/host-path';
 import { RuntimeSessionEnvironmentService } from '../runtime/runtime-session-environment.service';
 import { ProjectWorktreeRootService } from './project-worktree-root.service';
 

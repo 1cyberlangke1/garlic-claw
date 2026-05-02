@@ -8,7 +8,7 @@ import type {
   RuntimeCommandResult,
   RuntimeCommandStreamStats,
 } from './runtime-command.types';
-import { RUNTIME_BACKENDS, type RuntimeBackendList } from './runtime-backend.constants';
+import { RUNTIME_BACKENDS_TOKEN, type RuntimeBackendList } from './runtime-backend.tokens';
 import { RuntimeCommandCaptureService } from './runtime-command-capture.service';
 
 @Injectable()
@@ -17,7 +17,7 @@ export class RuntimeCommandService {
   private readonly defaultBackendKind: RuntimeBackendKind;
 
   constructor(
-    @Inject(RUNTIME_BACKENDS)
+    @Inject(RUNTIME_BACKENDS_TOKEN)
     runtimeBackends: RuntimeBackendList,
     private readonly runtimeCommandCaptureService: RuntimeCommandCaptureService,
   ) {

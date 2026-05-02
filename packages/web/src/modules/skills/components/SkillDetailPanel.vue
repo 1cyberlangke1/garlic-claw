@@ -73,7 +73,7 @@
         </div>
       </section>
 
-      <div class="markdown-preview" v-html="renderedSkillContent" />
+      <div class="markdown-preview gc-markdown" v-html="renderedSkillContent" />
     </article>
   </aside>
 </template>
@@ -85,8 +85,8 @@ import type {
   SkillLoadPolicy,
 } from '@garlic-claw/shared';
 import { ElOption, ElSelect } from 'element-plus';
-import { marked } from 'marked';
 import { computed } from 'vue';
+import { renderMarkdown } from '@/shared/utils/markdown'
 
 const props = defineProps<{
   skill: SkillDetail | null
@@ -124,7 +124,7 @@ const renderedSkillContent = computed(() => {
     return ''
   }
 
-  return String(marked.parse(props.skill.content))
+  return renderMarkdown(props.skill.content)
 })
 
 function setSelectedSkillLoadPolicy(nextLoadPolicy: SkillLoadPolicy) {

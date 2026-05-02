@@ -8,7 +8,7 @@ import {
 } from '@garlic-claw/plugin-sdk/authoring';
 import type { AiModelRouteTarget, JsonObject, JsonValue, PluginConfigSchema, PluginConfigSnapshot } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { SettingsService } from '../settings/settings.service';
+import { SettingsStore } from '../core/config/settings.store';
 
 const MAX_CONFIG_INTEGER = 1_000_000;
 const CONTEXT_GOVERNANCE_SECTION = 'context';
@@ -30,12 +30,12 @@ const CONTEXT_GOVERNANCE_CONFIG_SCHEMA: PluginConfigSchema = { type: 'object', i
 export class ContextGovernanceSettingsService {
   private configValues: JsonObject;
 
-  constructor(private readonly settingsService: SettingsService = new SettingsService()) {
-    this.configValues = sanitizeContextGovernanceConfig(this.settingsService.readSection(CONTEXT_GOVERNANCE_SECTION));
+  constructor(private readonly settingsStore: SettingsStore = new SettingsStore()) {
+    this.configValues = sanitizeContextGovernanceConfig(this.settingsStore.readSection(CONTEXT_GOVERNANCE_SECTION));
   }
 
   getConfigSnapshot(): PluginConfigSnapshot { return { schema: CONTEXT_GOVERNANCE_CONFIG_SCHEMA, values: structuredClone(this.configValues) }; }
-  updateConfig(values: JsonObject): PluginConfigSnapshot { this.configValues = sanitizeContextGovernanceConfig(values); this.settingsService.writeSection(CONTEXT_GOVERNANCE_SECTION, this.configValues); return this.getConfigSnapshot(); }
+  updateConfig(values: JsonObject): PluginConfigSnapshot { this.configValues = sanitizeContextGovernanceConfig(values); this.settingsStore.writeSection(CONTEXT_GOVERNANCE_SECTION, this.configValues); return this.getConfigSnapshot(); }
   readStoredConfig(): JsonObject { return structuredClone(this.configValues); }
 
   readRuntimeConfig(): StoredContextGovernanceConfig {

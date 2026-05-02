@@ -1,82 +1,103 @@
 <template>
-  <div class="skills-page">
-    <ConsoleViewHeader
-      v-model="currentView"
-      :title="currentView === 'details' ? '技能目录' : '技能日志'"
-      :icon="currentView === 'details' ? magicStick3Bold : listCheckBold"
-      :view-options="viewOptions"
-      aria-label="技能目录视图切换"
-    >
-      <template #actions>
-        <ElButton
-          v-if="currentView === 'logs' && selectedSkill"
-          class="hero-button icon-only view-header-action"
-          :class="{ active: showLogSettings }"
-          title="日志设置"
-          @click="showLogSettings = !showLogSettings"
-        >
-          <Icon :icon="settingsBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton
-          class="hero-button icon-only view-header-action"
-          title="刷新目录"
-          :disabled="refreshing"
-          @click="refreshAll()"
-        >
-          <Icon :icon="refreshBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
-        </ElButton>
-      </template>
+  <ConsolePage class="skills-page" no-padding>
+    <template #header>
+      <ConsoleViewHeader
+        title="技能目录"
+        :icon="magicStick3Bold"
+      >
+        <template #actions>
+          <ElButton
+            v-if="currentView === 'logs' && selectedSkill"
+            class="hero-button icon-only view-header-action"
+            :class="{ active: showLogSettings }"
+            title="日志设置"
+            @click="showLogSettings = !showLogSettings"
+          >
+            <Icon :icon="settingsBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+          <ElButton
+            class="hero-button icon-only view-header-action"
+            title="刷新目录"
+            :disabled="refreshing"
+            @click="refreshAll()"
+          >
+            <Icon :icon="refreshBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+        </template>
 
-    </ConsoleViewHeader>
+      </ConsoleViewHeader>
+    </template>
 
-    <p v-if="error" class="page-banner error">{{ error }}</p>
+    <div class="skills-inner">
+      <aside class="skills-sidebar">
+        <nav class="detail-nav" aria-label="技能详情面板切换">
+          <div class="detail-nav-group">
+            <button
+              v-for="panel in viewOptions"
+              :key="panel.value"
+              type="button"
+              :title="panel.label"
+              :class="{ active: currentView === panel.value }"
+              @click="currentView = panel.value"
+            >
+              <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
+              <span class="nav-label">{{ panel.label }}</span>
+            </button>
+          </div>
+        </nav>
+      </aside>
 
-    <div class="skills-layout">
-      <SkillsList
-        v-model="selectedSkillIdModel"
-        v-model:search-keyword="searchKeyword"
-        :enabled-count="enabledCount"
-        :total-count="totalCount"
-        :skills="filteredSkills"
-        :loading="loading"
-      />
+      <main class="skills-main">
+        <p v-if="error" class="page-banner error">{{ error }}</p>
 
-      <div v-if="currentView === 'details'" class="skill-detail-column">
-        <SkillDetailPanel
-          :skill="selectedSkill"
-          :mutating-skill-id="mutatingSkillId"
-          @update-load-policy="handleSkillLoadPolicyUpdate"
-        />
-      </div>
+        <div class="skills-layout">
+          <SkillsList
+            v-model="selectedSkillIdModel"
+            v-model:search-keyword="searchKeyword"
+            :enabled-count="enabledCount"
+            :total-count="totalCount"
+            :skills="filteredSkills"
+            :loading="loading"
+          />
 
-      <div v-else-if="selectedSkill" class="skill-log-column">
-        <EventLogSettingsPanel
-          v-if="showLogSettings"
-          :settings="selectedSkill.governance.eventLog"
-          :saving="mutatingSkillId === selectedSkill.id"
-          title="技能日志设置"
-          description="此技能的事件日志会写入 log/skills/<skillId>/ 目录。"
-          @save="handleSkillEventLogUpdate"
-        />
-        <EventLogPanel
-          title="技能事件日志"
-          description="查看技能最近的加载和拒绝记录。"
-          :events="eventLogs"
-          :loading="eventLoading"
-          :query="eventQuery"
-          :next-cursor="eventNextCursor"
-          @refresh="refreshSkillEvents"
-          @load-more="loadMoreSkillEvents"
-        />
-      </div>
+          <div v-if="currentView === 'details'" class="skill-detail-column">
+            <SkillDetailPanel
+              :skill="selectedSkill"
+              :mutating-skill-id="mutatingSkillId"
+              @update-load-policy="handleSkillLoadPolicyUpdate"
+            />
+          </div>
 
-      <div v-else class="skill-log-column">
-        <section class="skill-log-empty">
-          请先从左侧选择一个技能，再查看事件日志。
-        </section>
-      </div>
+          <div v-else-if="selectedSkill" class="skill-log-column">
+            <EventLogSettingsPanel
+              v-if="showLogSettings"
+              :settings="selectedSkill.governance.eventLog"
+              :saving="mutatingSkillId === selectedSkill.id"
+              title="技能日志设置"
+              description="此技能的事件日志会写入 log/skills/<skillId>/ 目录。"
+              @save="handleSkillEventLogUpdate"
+            />
+            <EventLogPanel
+              title="技能事件日志"
+              description="查看技能最近的加载和拒绝记录。"
+              :events="eventLogs"
+              :loading="eventLoading"
+              :query="eventQuery"
+              :next-cursor="eventNextCursor"
+              @refresh="refreshSkillEvents"
+              @load-more="loadMoreSkillEvents"
+            />
+          </div>
+
+          <div v-else class="skill-log-column">
+            <section class="skill-log-empty">
+              请先从左侧选择一个技能，再查看事件日志。
+            </section>
+          </div>
+        </div>
+      </main>
     </div>
-  </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
@@ -93,7 +114,9 @@ import SkillDetailPanel from '@/modules/skills/components/SkillDetailPanel.vue'
 import SkillsList from '@/modules/skills/components/SkillsList.vue'
 import EventLogPanel from '@/modules/tools/components/EventLogPanel.vue'
 import EventLogSettingsPanel from '@/modules/tools/components/EventLogSettingsPanel.vue'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import { useSkillManagement } from '@/modules/skills/composables/use-skill-management'
+import type { IconifyIcon } from '@iconify/types'
 
 type SkillsPageView = 'details' | 'logs'
 const {
@@ -120,9 +143,9 @@ const {
 
 const currentView = ref<SkillsPageView>('details')
 const showLogSettings = ref(false)
-const viewOptions: ReadonlyArray<{ label: string; value: SkillsPageView }> = [
-  { label: '详情', value: 'details' },
-  { label: '日志', value: 'logs' },
+const viewOptions: ReadonlyArray<{ label: string; value: SkillsPageView; icon: IconifyIcon }> = [
+  { label: '技能详情', value: 'details', icon: magicStick3Bold },
+  { label: '事件日志', value: 'logs', icon: listCheckBold },
 ]
 
 const selectedSkillIdModel = computed({
@@ -157,8 +180,93 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
 }
 </script>
 
-<style>
-.skills-page,
+<style scoped>
+.skills-page {
+  background: var(--shell-bg);
+}
+
+.skills-inner {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.skills-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 200px;
+  border-right: 1px solid var(--shell-border);
+  color: var(--shell-text, var(--text));
+  overflow-y: auto;
+}
+
+.skills-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.detail-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
+}
+
+.detail-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-nav button {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--shell-text-secondary, var(--text-muted));
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.detail-nav button:hover {
+  background: var(--shell-bg-hover, #334155);
+  color: var(--shell-text, var(--text));
+}
+
+.detail-nav button.active {
+  color: var(--shell-active, var(--accent));
+  background: color-mix(in srgb, var(--shell-active, var(--accent)) 10%, transparent);
+}
+
+.nav-icon {
+  width: 20px;
+  min-width: 20px;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .skills-page .skill-list-panel,
 .skills-page .skill-detail-panel,
 .skills-page .skills-layout,
@@ -167,12 +275,6 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
 .skills-page .meta-row {
   display: flex;
   gap: 0.9rem;
-}
-
-.skills-page {
-  flex-direction: column;
-  min-height: 0;
-  padding: 1.5rem 2rem;
 }
 
 .skills-page .skill-list-panel,
@@ -483,6 +585,21 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
   padding-left: 1.5rem;
 }
 
+.skills-page :deep(.view-header-action.active) {
+  border-color: rgba(103, 199, 207, 0.42);
+  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.2);
+}
+
+@media (max-width: 800px) {
+  .skills-sidebar {
+    width: 180px;
+  }
+
+  .skills-main {
+    padding: 16px;
+  }
+}
+
 @media (max-width: 1100px) {
   .skills-page .skills-layout {
     grid-template-columns: 1fr;
@@ -513,8 +630,38 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
 }
 
 @media (max-width: 720px) {
-  .skills-page {
-    padding: 1rem;
+  .skills-inner {
+    flex-direction: column;
+  }
+
+  .skills-sidebar {
+    width: 100%;
+    max-height: 110px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border);
+  }
+
+  .detail-nav {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 12px 8px;
+  }
+
+  .detail-nav-group {
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .detail-nav button {
+    min-height: 40px;
+    padding: 0 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .skills-main {
+    padding: 12px;
   }
 }
+
 </style>

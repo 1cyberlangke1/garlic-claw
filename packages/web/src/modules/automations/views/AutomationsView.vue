@@ -1,30 +1,32 @@
 <template>
-  <div class="automations-view">
-    <div class="automations-header">
-      <h1 class="header-title">
-        <Icon :icon="currentView === 'automations' ? cpuBoltBold : listCheckBold" class="hero-icon" aria-hidden="true" />
-        {{ currentView === 'automations' ? '自动化' : '执行日志' }}
-      </h1>
-      <div class="header-actions">
-        <HeaderViewSwitch
-          :model-value="currentView"
-          :options="viewOptions"
-          @update:model-value="handleViewSwitch"
-        />
-        <ElButton v-if="currentView === 'automations'" type="primary" class="header-button" @click="openCreateDialog">
-          <span class="button-content">
-            <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
-            新建
-          </span>
-        </ElButton>
-        <ElButton v-else class="header-button" @click="loadAutomationLogs">
-          <span class="button-content">
-            <Icon :icon="refreshBold" class="button-icon" aria-hidden="true" />
-            刷新
-          </span>
-        </ElButton>
-      </div>
-    </div>
+  <ConsolePage class="automations-view" no-padding>
+    <template #header>
+      <ConsoleViewHeader
+        title="自动化"
+        :icon="cpuBoltBold"
+      >
+        <template #actions>
+          <ElButton
+            v-if="currentView === 'logs'"
+            class="view-header-action"
+            title="刷新日志"
+            aria-label="刷新日志"
+            @click="loadAutomationLogs"
+          >
+            <Icon :icon="refreshBold" class="view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+          <ElButton
+            v-if="currentView === 'automations'"
+            class="view-header-action"
+            title="新建自动化"
+            aria-label="新建自动化"
+            @click="openCreateDialog"
+          >
+            <Icon :icon="addCircleBold" class="view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+        </template>
+      </ConsoleViewHeader>
+    </template>
 
     <!-- 创建/编辑弹窗 -->
     <ElDialog
@@ -130,114 +132,137 @@
       </template>
     </ElDialog>
 
-    <div class="automations-content">
-      <div v-if="currentView === 'automations' && loading" class="loading">加载中...</div>
-
-      <div v-else-if="currentView === 'automations' && automations.length === 0" class="empty">
-        <p>暂无自动化规则</p>
-        <p class="hint">可以通过上方按钮创建，或在对话中让 AI 帮你创建</p>
-      </div>
-
-      <div v-else-if="currentView === 'automations'" class="automation-list">
-        <div
-          v-for="auto in automations"
-          :key="auto.id"
-          class="automation-swipe-item"
-          @touchstart.passive="(e) => onTouchStart(e, auto.id)"
-          @touchmove="(e) => onTouchMove(e, auto.id)"
-          @touchend="() => onTouchEnd(auto.id)"
-          @touchcancel="() => onTouchEnd(auto.id)"
-          @mousedown="(e) => onTouchStart(e, auto.id)"
-          @mousemove="(e) => onTouchMove(e, auto.id)"
-          @mouseup="() => onTouchEnd(auto.id)"
-          @mouseleave="() => onTouchEnd(auto.id)"
-        >
-          <div class="swipe-action left-action" :style="getLeftActionStyle(auto.id)">
-            <Icon :icon="auto.enabled ? closeCircleBold : checkCircleBold" :width="24" />
-            <span class="action-text">{{ auto.enabled ? '停用' : '启用' }}</span>
+    <div class="automations-inner">
+      <aside class="automations-sidebar">
+        <nav class="detail-nav" aria-label="自动化面板切换">
+          <div class="detail-nav-group">
+            <button
+              v-for="panel in viewOptions"
+              :key="panel.value"
+              type="button"
+              :title="panel.label"
+              :class="{ active: currentView === panel.value }"
+              @click="handleViewSwitch(panel.value)"
+            >
+              <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
+              <span class="nav-label">{{ panel.label }}</span>
+            </button>
           </div>
+        </nav>
+      </aside>
 
-          <div class="swipe-action right-action" :style="getRightActionStyle(auto.id)">
-            <Icon :icon="trashBold" :width="24" />
-            <span class="action-text">删除</span>
-          </div>
+      <main class="automations-content">
+        <p v-if="error" class="page-banner error">{{ error }}</p>
 
+        <div v-if="currentView === 'automations' && loading" class="loading">加载中...</div>
+
+        <div v-else-if="currentView === 'automations' && automations.length === 0" class="empty">
+          <p>暂无自动化规则</p>
+          <p class="hint">可以通过上方按钮创建，或在对话中让 AI 帮你创建</p>
+        </div>
+
+        <div v-else-if="currentView === 'automations'" class="automation-list">
           <div
-            class="automation-card"
-            :class="{ disabled: !auto.enabled }"
-            :style="getCardStyle(auto.id)"
-            @click="handleCardClick(auto)"
+            v-for="auto in automations"
+            :key="auto.id"
+            class="automation-swipe-item"
+            @touchstart.passive="(e) => onTouchStart(e, auto.id)"
+            @touchmove="(e) => onTouchMove(e, auto.id)"
+            @touchend="() => onTouchEnd(auto.id)"
+            @touchcancel="() => onTouchEnd(auto.id)"
+            @mousedown="(e) => onTouchStart(e, auto.id)"
+            @mousemove="(e) => onTouchMove(e, auto.id)"
+            @mouseup="() => onTouchEnd(auto.id)"
+            @mouseleave="() => onTouchEnd(auto.id)"
           >
-            <div class="card-header">
-              <h3 class="card-title">{{ auto.name }}</h3>
-              <ElButton
-                size="small"
-                plain
-                @click.stop="handleRun(auto.id)"
-                :disabled="!auto.enabled"
-              >
-                手动运行
-              </ElButton>
+            <div class="swipe-action left-action" :style="getLeftActionStyle(auto.id)">
+              <Icon :icon="auto.enabled ? closeCircleBold : checkCircleBold" :width="24" />
+              <span class="action-text">{{ auto.enabled ? '停用' : '启用' }}</span>
             </div>
 
-            <div v-if="auto.actions.length > 0" class="card-detail">
-              <span class="actions-list">
-                <span v-for="(action, i) in auto.actions" :key="i" class="action-tag">
-                  {{ describeAction(action) }}
+            <div class="swipe-action right-action" :style="getRightActionStyle(auto.id)">
+              <Icon :icon="trashBold" :width="24" />
+              <span class="action-text">删除</span>
+            </div>
+
+            <div
+              class="automation-card"
+              :class="{ disabled: !auto.enabled }"
+              :style="getCardStyle(auto.id)"
+              @click="handleCardClick(auto)"
+            >
+              <div class="card-header">
+                <h3 class="card-title">{{ auto.name }}</h3>
+                <ElButton
+                  size="small"
+                  plain
+                  @click.stop="handleRun(auto.id)"
+                  :disabled="!auto.enabled"
+                >
+                  手动运行
+                </ElButton>
+              </div>
+
+              <div v-if="auto.actions.length > 0" class="card-detail">
+                <span class="actions-list">
+                  <span v-for="(action, i) in auto.actions" :key="i" class="action-tag">
+                    {{ describeAction(action) }}
+                  </span>
                 </span>
-              </span>
-            </div>
+              </div>
 
-            <div class="card-footer">
-              <span class="trigger-interval">
-                <Icon :icon="clockCircleBold" class="interval-icon" />
-                {{ formatTriggerLabel(auto.trigger) }}
-              </span>
-              <span v-if="auto.lastRunAt" class="last-run">
-                上次运行: {{ formatTime(auto.lastRunAt) }}
-              </span>
-              <span v-else class="last-run never">尚未运行</span>
+              <div class="card-footer">
+                <span class="trigger-interval">
+                  <Icon :icon="clockCircleBold" class="interval-icon" />
+                  {{ formatTriggerLabel(auto.trigger) }}
+                </span>
+                <span v-if="auto.lastRunAt" class="last-run">
+                  上次运行: {{ formatTime(auto.lastRunAt) }}
+                </span>
+                <span v-else class="last-run never">尚未运行</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div v-else-if="logsLoading" class="loading">日志加载中...</div>
+        <div v-else-if="logsLoading" class="loading">日志加载中...</div>
 
-      <div v-else-if="logEntries.length === 0" class="empty">
-        <p>暂无执行日志</p>
-        <p class="hint">先手动运行一次自动化，或等待定时 / 事件触发。</p>
-      </div>
+        <div v-else-if="logEntries.length === 0" class="empty">
+          <p>暂无执行日志</p>
+          <p class="hint">先手动运行一次自动化，或等待定时 / 事件触发。</p>
+        </div>
 
-      <div v-else class="log-list">
-        <article
-          v-for="log in logEntries"
-          :key="log.id"
-          class="log-card"
-          :class="log.status"
-        >
-          <div class="log-card-header">
-            <div class="log-card-title-row">
-              <span class="log-badge">{{ log.status === 'success' ? '成功' : log.status }}</span>
-              <h3 class="log-card-title">{{ log.automationName }}</h3>
-              <span v-if="!log.enabled" class="log-disabled-tag">已停用</span>
+        <div v-else class="log-list">
+          <article
+            v-for="log in logEntries"
+            :key="log.id"
+            class="log-card"
+            :class="log.status"
+          >
+            <div class="log-card-header">
+              <div class="log-card-title-row">
+                <span class="log-badge">{{ log.status === 'success' ? '成功' : log.status }}</span>
+                <h3 class="log-card-title">{{ log.automationName }}</h3>
+                <span v-if="!log.enabled" class="log-disabled-tag">已停用</span>
+              </div>
+              <span class="log-card-time">{{ formatTime(log.createdAt) }}</span>
             </div>
-            <span class="log-card-time">{{ formatTime(log.createdAt) }}</span>
-          </div>
-          <div class="log-card-meta">
-            <span>{{ formatTriggerLabel(log.trigger) }}</span>
-            <span>{{ log.automationId }}</span>
-          </div>
-          <pre class="log-card-result">{{ log.result || '无返回结果' }}</pre>
-        </article>
-      </div>
+            <div class="log-card-meta">
+              <span>{{ formatTriggerLabel(log.trigger) }}</span>
+              <span>{{ log.automationId }}</span>
+            </div>
+            <pre class="log-card-result">{{ log.result || '无返回结果' }}</pre>
+          </article>
+        </div>
+      </main>
     </div>
-  </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
+import ConsolePage from '@/shared/components/ConsolePage.vue'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import { useAutomations } from '@/modules/automations/composables/use-automations'
-import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
 import type { AutomationInfo } from '@garlic-claw/shared'
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import checkCircleBold from '@iconify-icons/solar/check-circle-bold'
@@ -248,6 +273,7 @@ import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBold from '@iconify-icons/solar/trash-bin-trash-bold'
 import { Icon } from '@iconify/vue'
+import type { IconifyIcon } from '@iconify/types'
 import { ElButton, ElDialog, ElInput, ElInputNumber, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import { reactive, ref } from 'vue'
 
@@ -258,6 +284,7 @@ const {
   currentView,
   conversations,
   loading,
+  error,
   form,
   canCreate,
   logsLoading,
@@ -273,18 +300,16 @@ const {
   formatTriggerLabel,
 } = useAutomations()
 
-const viewOptions: ReadonlyArray<{ label: string; value: AutomationView }> = [
-  { label: '自动化', value: 'automations' },
-  { label: '日志', value: 'logs' },
+const viewOptions: ReadonlyArray<{ label: string; value: AutomationView; icon: IconifyIcon }> = [
+  { label: '自动化规则', value: 'automations', icon: cpuBoltBold },
+  { label: '执行日志', value: 'logs', icon: listCheckBold },
 ]
 
 const dialogVisible = ref(false)
 const editingAutomation = ref<AutomationInfo | null>(null)
 
-function handleViewSwitch(value: string) {
-  if (value === 'automations' || value === 'logs') {
-    handleViewChange(value)
-  }
+function handleViewSwitch(value: AutomationView) {
+  handleViewChange(value)
 }
 
 function openCreateDialog() {
@@ -471,64 +496,101 @@ function getRightActionStyle(id: string) {
 
 <style scoped>
 .automations-view {
+  background: var(--shell-bg);
+}
+
+.automations-inner {
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem 2rem;
   height: 100%;
-  min-height: 0;
   overflow: hidden;
 }
 
-.automations-header {
+.automations-sidebar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
   flex-shrink: 0;
-}
-
-.header-title {
-  margin: 0;
-  min-width: 0;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.hero-icon {
-  vertical-align: -0.15em;
-  margin-right: 6px;
-}
-
-.header-button {
-  display: inline-flex;
-  align-items: center;
-}
-
-.button-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.button-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
+  width: 200px;
+  border-right: 1px solid var(--shell-border);
+  color: var(--shell-text, var(--text));
+  overflow-y: auto;
 }
 
 .automations-content {
   flex: 1;
-  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px;
+  padding: 20px 24px;
+}
+
+.detail-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
+}
+
+.detail-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-nav button {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--shell-text-secondary, var(--text-muted));
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.detail-nav button:hover {
+  background: var(--shell-bg-hover, #334155);
+  color: var(--shell-text, var(--text));
+}
+
+.detail-nav button.active {
+  color: var(--shell-active, var(--accent));
+  background: color-mix(in srgb, var(--shell-active, var(--accent)) 10%, transparent);
+}
+
+.nav-icon {
+  width: 20px;
+  min-width: 20px;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-banner {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface-panel-soft);
+  backdrop-filter: blur(12px);
+}
+
+.page-banner.error {
+  color: #ffd1d1;
+  background: rgba(224, 85, 85, 0.14);
 }
 
 .loading, .empty {
@@ -800,14 +862,22 @@ function getRightActionStyle(id: string) {
   word-break: break-word;
 }
 
-@media (max-width: 840px) {
-  .automations-view {
-    padding: 1rem;
-    gap: 1rem;
+.automations-view :deep(.view-header-action.active) {
+  border-color: rgba(103, 199, 207, 0.42);
+  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.2);
+}
+
+@media (max-width: 800px) {
+  .automations-sidebar {
+    width: 180px;
   }
 
-  .automations-header,
-  .header-actions,
+  .automations-content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 840px) {
   .card-header,
   .card-footer,
   .log-card-header {
@@ -817,6 +887,41 @@ function getRightActionStyle(id: string) {
 
   .last-run {
     margin-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .automations-inner {
+    flex-direction: column;
+  }
+
+  .automations-sidebar {
+    width: 100%;
+    max-height: 110px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border);
+  }
+
+  .detail-nav {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 12px 8px;
+  }
+
+  .detail-nav-group {
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .detail-nav button {
+    min-height: 40px;
+    padding: 0 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .automations-content {
+    padding: 12px;
   }
 }
 </style>

@@ -67,7 +67,7 @@ describe('ToolsView', () => {
     })
   })
 
-  it('renders only sections that have actual tool sources and forwards focused source ids', async () => {
+  it('renders available tool panels and defaults to the focused source panel', async () => {
     const wrapper = mount(ToolsView, {
       global: {
         stubs: {
@@ -81,10 +81,36 @@ describe('ToolsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('工具管理')
-    expect(wrapper.text()).toContain('执行工具管理|internal|runtime-tools')
-    expect(wrapper.text()).toContain('子代理工具管理|internal|subagent')
+    expect(wrapper.text()).toContain('执行工具')
+    expect(wrapper.text()).toContain('子代理工具')
+    expect(wrapper.text()).toContain('插件工具')
     expect(wrapper.text()).toContain('插件工具管理|plugin|builtin.demo')
-    expect(wrapper.text()).not.toContain('MCP 工具管理|mcp|all')
+    expect(wrapper.text()).not.toContain('执行工具管理|internal|runtime-tools')
+    expect(wrapper.text()).not.toContain('子代理工具管理|internal|subagent')
+    wrapper.unmount()
+  })
+
+  it('switches between tool panels from the left navigation', async () => {
+    const wrapper = mount(ToolsView, {
+      global: {
+        stubs: {
+          ToolGovernancePanel: {
+            props: ['sourceKind', 'sourceId', 'title'],
+            template: '<div>{{ title }}|{{ sourceKind }}|{{ sourceId || "all" }}</div>',
+          },
+        },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('button[title="执行工具"]').trigger('click')
+    expect(wrapper.text()).toContain('执行工具管理|internal|runtime-tools')
+
+    await wrapper.get('button[title="子代理工具"]').trigger('click')
+    expect(wrapper.text()).toContain('子代理工具管理|internal|subagent')
+
+    await wrapper.get('button[title="插件工具"]').trigger('click')
+    expect(wrapper.text()).toContain('插件工具管理|plugin|builtin.demo')
     wrapper.unmount()
   })
 
@@ -116,6 +142,7 @@ describe('ToolsView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('当前还没有可管理的实际工具')
+    expect(wrapper.findAll('.detail-nav button')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('执行工具管理|internal|runtime-tools')
     expect(wrapper.text()).not.toContain('子代理工具管理|internal|subagent')
     expect(wrapper.text()).not.toContain('MCP 工具管理|mcp|all')
@@ -150,6 +177,7 @@ describe('ToolsView', () => {
     })
     await flushPromises()
 
+    expect(wrapper.text()).toContain('MCP 工具')
     expect(wrapper.text()).toContain('MCP 工具管理|mcp|all')
     expect(wrapper.text()).not.toContain('当前还没有可管理的实际工具')
     wrapper.unmount()

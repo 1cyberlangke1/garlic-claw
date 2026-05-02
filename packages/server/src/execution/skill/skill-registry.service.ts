@@ -4,8 +4,10 @@ import path from 'node:path';
 import type { EventLogListResult, EventLogQuery, SkillAssetKind, SkillDetail, SkillGovernanceInfo, SkillSummary, UpdateSkillGovernancePayload } from '@garlic-claw/shared';
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import YAML from 'yaml';
-import { RuntimeEventLogService, normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
-import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
+import { createSkillGovernanceUpdatedEvent } from '../../core/logging/log-event-payloads';
+import { createServerTestArtifactPath } from '../../core/runtime/server-workspace-paths';
+import { RuntimeEventLogService, normalizeEventLogSettings } from '../../core/logging/runtime-event-log.service';
+import { createServerLogger } from '../../core/logging/server-logger';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
 
 interface SkillGovernanceFile { skills: Record<string, SkillGovernanceInfo>; }
@@ -19,10 +21,12 @@ export class SkillRegistryService {
   private cachedSkills: SkillDetail[] | null = null;
   private readonly governancePath: string;
   private governance: SkillGovernanceFile;
+  private readonly logger: ReturnType<typeof createServerLogger>;
 
   constructor(@Optional() @Inject(SKILL_DISCOVERY_OPTIONS) private readonly discoveryOptions: SkillDiscoveryOptions = {}, private readonly projectWorktreeRootService: ProjectWorktreeRootService, @Optional() private readonly runtimeEventLogService?: RuntimeEventLogService) {
     this.governancePath = resolveSkillGovernancePath(this.projectWorktreeRootService);
     this.governance = readSkillGovernanceFile(this.governancePath);
+    this.logger = createServerLogger(SkillRegistryService.name, this.runtimeEventLogService);
   }
 
   async listSkills(options?: { refresh?: boolean }): Promise<SkillDetail[]> {
@@ -52,7 +56,17 @@ export class SkillRegistryService {
     fs.mkdirSync(path.dirname(this.governancePath), { recursive: true });
     fs.writeFileSync(this.governancePath, JSON.stringify(this.governance, null, 2), 'utf8');
     this.cachedSkills = null;
-    this.getRuntimeEventLogService().appendLog('skill', skillId, governance.eventLog, { level: 'info', message: `Updated skill governance for ${skill.name}`, metadata: { loadPolicy: governance.loadPolicy, maxFileSizeMb: governance.eventLog.maxFileSizeMb }, type: 'governance:updated' });
+    const event = createSkillGovernanceUpdatedEvent(skill.name, governance.loadPolicy, governance.eventLog.maxFileSizeMb);
+    this.logger.info(event.message, {
+      console: false,
+      event: {
+        entityId: skillId,
+        kind: 'skill',
+        metadata: event.metadata,
+        settings: governance.eventLog,
+        type: event.type,
+      },
+    });
     return { ...skill, governance };
   }
 

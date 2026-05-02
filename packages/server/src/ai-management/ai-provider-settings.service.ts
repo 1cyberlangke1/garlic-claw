@@ -17,7 +17,7 @@ import {
   loadAiSettings,
   resolveAiSettingsPath,
   saveAiSettings,
-} from './ai-management-settings.store';
+} from './ai-settings.store';
 import type { AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
 @Injectable()

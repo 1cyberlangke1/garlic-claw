@@ -116,13 +116,15 @@ describe('CommandsView', () => {
     })
 
     expect(wrapper.text()).toContain('命令管理')
+    expect(wrapper.text()).toContain('命令目录')
+    expect(wrapper.text()).toContain('冲突触发词')
     expect(wrapper.text()).toContain('/sys reload')
     expect(wrapper.text()).toContain('核心工具')
     expect(wrapper.text()).toContain('管理插件')
     expect(wrapper.find('.command-list-panel').exists()).toBe(true)
     expect(wrapper.find('.command-conflict-panel').exists()).toBe(false)
 
-    await wrapper.get('button[title="冲突"]').trigger('click')
+    await wrapper.get('button[title="冲突触发词"]').trigger('click')
 
     expect(wrapper.text()).toContain('冲突触发词')
     expect(wrapper.find('.command-list-panel').exists()).toBe(false)

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { RuntimeToolPermissionService } from '../../../src/execution/runtime/runtime-tool-permission.service';
-import { RuntimeHostConversationRecordService } from '../../../src/runtime/host/runtime-host-conversation-record.service';
+import { ConversationStoreService } from '../../../src/runtime/host/conversation-store.service';
 
 describe('RuntimeToolPermissionService', () => {
   const uuidV7Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -17,7 +17,7 @@ describe('RuntimeToolPermissionService', () => {
       `runtime-tool-permission.service.spec-${Date.now()}-${Math.random()}.json`,
     );
     process.env.GARLIC_CLAW_CONVERSATIONS_PATH = conversationsPath;
-    const conversationRecordService = new RuntimeHostConversationRecordService();
+    const conversationRecordService = new ConversationStoreService();
     conversationId = (conversationRecordService.createConversation({
       title: 'Runtime Permission Test',
     }) as { id: string }).id;
@@ -140,7 +140,7 @@ describe('RuntimeToolPermissionService', () => {
   });
 
   it('persists always approvals across service instances', async () => {
-    const conversationRecordService = new RuntimeHostConversationRecordService();
+    const conversationRecordService = new ConversationStoreService();
     const conversationId = (conversationRecordService.createConversation({
       title: 'Persistent Runtime Permission',
     }) as { id: string }).id;
@@ -177,7 +177,7 @@ describe('RuntimeToolPermissionService', () => {
     await expect(reviewPromise).resolves.toBeUndefined();
 
     const secondService = new RuntimeToolPermissionService(
-      new RuntimeHostConversationRecordService(),
+      new ConversationStoreService(),
     );
 
     await expect(secondService.review({

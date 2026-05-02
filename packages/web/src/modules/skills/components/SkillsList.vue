@@ -1,10 +1,7 @@
 <template>
   <section class="skill-list-panel">
     <div class="panel-header">
-      <div>
-        <h2>技能目录</h2>
-        <p>宿主当前能发现的技能目录。模型只会看到其中 `允许加载` 的项。</p>
-      </div>
+      <h2>技能目录</h2>
       <strong class="panel-header-summary">已启用 {{ enabledCount }} / {{ totalCount }}</strong>
     </div>
 

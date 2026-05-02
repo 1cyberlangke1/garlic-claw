@@ -136,9 +136,8 @@ describe('SkillsView', () => {
     expect(wrapper.text()).not.toContain('技能日志设置')
     expect(wrapper.text()).not.toContain('技能治理已更新')
 
-    await wrapper.get('button[title="日志"]').trigger('click')
+    await wrapper.get('button[title="事件日志"]').trigger('click')
 
-    expect(wrapper.text()).toContain('技能日志')
     expect(wrapper.text()).toContain('技能事件日志')
     expect(wrapper.text()).toContain('技能治理已更新')
     expect(wrapper.text()).not.toContain('技能日志设置')

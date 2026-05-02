@@ -1,0 +1,216 @@
+.gc-markdown {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.gc-markdown > :first-child {
+  margin-top: 0;
+}
+
+.gc-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.gc-markdown h1,
+.gc-markdown h2,
+.gc-markdown h3,
+.gc-markdown h4,
+.gc-markdown h5,
+.gc-markdown h6 {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 1rem 0 0.55rem;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.gc-markdown h1 {
+  font-size: 1.65rem;
+}
+
+.gc-markdown h2 {
+  font-size: 1.4rem;
+}
+
+.gc-markdown h3 {
+  font-size: 1.2rem;
+}
+
+.gc-markdown h4,
+.gc-markdown h5,
+.gc-markdown h6 {
+  font-size: 1rem;
+}
+
+.gc-markdown p,
+.gc-markdown ul,
+.gc-markdown ol,
+.gc-markdown blockquote,
+.gc-markdown table,
+.gc-markdown pre,
+.gc-markdown hr,
+.gc-markdown .footnotes,
+.gc-markdown dl {
+  margin: 0 0 0.9rem;
+}
+
+.gc-markdown ul,
+.gc-markdown ol {
+  padding-inline-start: 1.5rem;
+}
+
+.gc-markdown li + li {
+  margin-top: 0.35rem;
+}
+
+.gc-markdown li > p {
+  margin-bottom: 0;
+}
+
+.gc-markdown li::marker {
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
+}
+
+.gc-markdown .task-list-item {
+  list-style: none;
+  margin-left: -1.4rem;
+}
+
+.gc-markdown .task-list-item input[type='checkbox'] {
+  margin-right: 0.55rem;
+  accent-color: var(--accent);
+  pointer-events: none;
+}
+
+.gc-markdown blockquote {
+  padding: 0.85rem 1rem;
+  border-left: 4px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 0 14px 14px 0;
+  background: color-mix(in srgb, var(--surface-panel) 84%, var(--accent) 16%);
+  color: color-mix(in srgb, var(--text) 88%, transparent);
+}
+
+.gc-markdown hr {
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+}
+
+.gc-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+
+.gc-markdown thead tr {
+  background: color-mix(in srgb, var(--surface-code) 82%, transparent);
+}
+
+.gc-markdown th,
+.gc-markdown td {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--border) 90%, transparent);
+  text-align: left;
+  vertical-align: top;
+}
+
+.gc-markdown tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--surface-panel-hover-faint) 80%, transparent);
+}
+
+.gc-markdown code {
+  padding: 0.14rem 0.4rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-code) 86%, transparent);
+  font-family: 'Cascadia Code', 'JetBrains Mono', monospace;
+  font-size: 0.92em;
+  white-space: break-spaces;
+}
+
+.gc-markdown pre {
+  padding: 0;
+  border-radius: 16px;
+  overflow-x: auto;
+  background: rgba(6, 10, 18, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gc-markdown pre code {
+  display: block;
+  padding: 1rem 1.05rem;
+  border-radius: inherit;
+  background: transparent;
+  white-space: pre;
+}
+
+.gc-markdown .gc-md-code-block {
+  margin: 0;
+}
+
+.gc-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-underline-offset: 0.16em;
+}
+
+.gc-markdown a:hover {
+  color: var(--accent-hover);
+}
+
+.gc-markdown img {
+  max-width: 100%;
+  border-radius: 14px;
+}
+
+.gc-markdown sup {
+  line-height: 0;
+}
+
+.gc-markdown .footnote-ref,
+.gc-markdown .footnote-backref {
+  text-decoration: none;
+}
+
+.gc-markdown .footnotes {
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  color: var(--text-muted);
+  font-size: 0.92em;
+}
+
+.gc-markdown .footnotes ol {
+  margin-bottom: 0;
+}
+
+.gc-markdown .gc-md-heading-anchor {
+  color: var(--text-muted);
+  opacity: 0;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.gc-markdown .gc-md-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.gc-markdown h1:hover .gc-md-heading-anchor,
+.gc-markdown h2:hover .gc-md-heading-anchor,
+.gc-markdown h3:hover .gc-md-heading-anchor,
+.gc-markdown h4:hover .gc-md-heading-anchor,
+.gc-markdown h5:hover .gc-md-heading-anchor,
+.gc-markdown h6:hover .gc-md-heading-anchor {
+  opacity: 1;
+}

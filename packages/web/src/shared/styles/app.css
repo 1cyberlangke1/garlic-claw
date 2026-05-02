@@ -1,4 +1,5 @@
 @import './tokens.css';
+@import './markdown.css';
 
 /* === 全局重置 === */
 * {

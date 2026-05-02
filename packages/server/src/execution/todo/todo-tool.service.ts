@@ -1,7 +1,7 @@
 import type { ConversationTodoItem, PluginParamSchema } from '@garlic-claw/shared';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Tool } from 'ai';
-import { RuntimeHostConversationTodoService } from '../../runtime/host/runtime-host-conversation-todo.service';
+import { ConversationTodoService } from '../../runtime/host/conversation-todo.service';
 
 export interface TodoToolResult {
   sessionId: string;
@@ -19,7 +19,7 @@ const TODO_TOOL_PARAMETERS: Record<string, PluginParamSchema> = {
 
 @Injectable()
 export class TodoToolService {
-  constructor(private readonly runtimeHostConversationTodoService: RuntimeHostConversationTodoService) {}
+  constructor(private readonly runtimeHostConversationTodoService: ConversationTodoService) {}
 
   getToolName(): string {
     return 'todowrite';

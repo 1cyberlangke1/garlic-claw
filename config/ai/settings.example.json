@@ -24,7 +24,7 @@
     "enabled": false,
     "providerId": "openai",
     "modelId": "gpt-4o-mini",
-    "prompt": "Please describe the uploaded image clearly for a text-only model.",
+    "prompt": "对于纯文本模型，请清楚地描述上传的图像。",
     "maxDescriptionLength": 400
   }
 }
