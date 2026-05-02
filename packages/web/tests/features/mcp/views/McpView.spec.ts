@@ -19,10 +19,14 @@ describe('McpView', () => {
     expect(wrapper.text()).toContain('管理')
     expect(wrapper.text()).toContain('日志')
     expect(wrapper.text()).toContain('manage')
+    expect(wrapper.find('button[title="刷新配置"]').exists()).toBe(true)
+    expect(wrapper.find('button[title="新增 Server"]').exists()).toBe(true)
 
     await wrapper.get('button[title="日志"]').trigger('click')
 
     expect(wrapper.text()).toContain('MCP 日志')
     expect(wrapper.text()).toContain('logs')
+    expect(wrapper.find('button[title="刷新日志"]').exists()).toBe(true)
+    expect(wrapper.find('button[title="新增 Server"]').exists()).toBe(false)
   })
 })

@@ -1,40 +1,5 @@
 <template>
   <section class="panel-section mcp-config-panel">
-    <div class="mcp-config-header">
-      <div>
-        <h3>{{ view === 'manage' ? 'MCP 配置' : 'MCP 事件日志' }}</h3>
-        <p v-if="view === 'manage'">管理 <code>{{ snapshot.configPath || 'mcp/servers/' }}</code> 目录中的 server 定义，保存后会自动重载运行时。</p>
-        <p v-else>按 server 查看最近事件记录，避免和配置编辑区同时堆叠展示。</p>
-      </div>
-      <div class="mcp-config-actions">
-        <ElButton
-          class="action-icon-button"
-          :title="view === 'manage' ? '刷新配置' : '刷新日志'"
-          :disabled="loading"
-          @click="handleRefresh"
-        >
-          <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton
-          v-if="view === 'logs' && selectedServer"
-          class="action-icon-button"
-          :class="{ active: showLogSettings }"
-          title="日志设置"
-          @click="showLogSettings = !showLogSettings"
-        >
-          <Icon :icon="settingsBold" class="action-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton
-          v-if="view === 'manage'"
-          class="action-icon-button"
-          data-test="mcp-new-button"
-          title="新增 Server"
-          @click="startCreate"
-        >
-          <Icon :icon="addCircleBold" class="action-icon" aria-hidden="true" />
-        </ElButton>
-      </div>
-    </div>
     <p v-if="panelError" class="page-banner error">{{ panelError }}</p>
 
     <div :class="view === 'manage' ? 'mcp-config-layout' : 'mcp-log-layout'">
@@ -182,8 +147,6 @@
 <script setup lang="ts">
 import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import disketteBold from '@iconify-icons/solar/diskette-bold'
-import refreshBold from '@iconify-icons/solar/refresh-bold'
-import settingsBold from '@iconify-icons/solar/settings-bold'
 import trashBinMinimalisticBold from '@iconify-icons/solar/trash-bin-minimalistic-bold'
 import { Icon } from '@iconify/vue'
 import { ref, watch } from 'vue'
@@ -215,7 +178,6 @@ const {
   saving,
   savingEventLog,
   deleting,
-  snapshot,
   servers,
   selectedServerName,
   selectedServer,
@@ -401,16 +363,26 @@ function handleRefresh() {
   }
   void refresh(selectedServerName.value)
 }
+
+function toggleLogSettings() {
+  showLogSettings.value = !showLogSettings.value
+}
+
+defineExpose({
+  loading,
+  selectedServer,
+  showLogSettings,
+  startCreate,
+  handleRefresh,
+  toggleLogSettings,
+})
 </script>
 
 <style scoped>
 .mcp-config-panel {
   display: grid;
   gap: 14px;
-  padding: 18px;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--surface-panel-soft);
+  padding: 0;
 }
 
 .mcp-config-layout,
@@ -423,8 +395,6 @@ function handleRefresh() {
   gap: 14px;
 }
 
-.mcp-config-header,
-.mcp-config-actions,
 .mcp-env-header,
 .mcp-env-row,
 .mcp-editor-actions {
@@ -569,27 +539,6 @@ function handleRefresh() {
   grid-row: 1 / 3;
 }
 
-.refresh-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: auto;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 10px;
-}
-
-.refresh-button .refresh-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.refresh-label {
-  font-size: 0.9rem;
-}
-
 .action-icon-button {
   display: inline-flex;
   align-items: center;
@@ -626,8 +575,7 @@ function handleRefresh() {
   color: #ffd1d1;
 }
 
-.mcp-config-panel .action-icon,
-.mcp-config-panel .refresh-icon {
+.mcp-config-panel .action-icon {
   width: 18px;
   height: 18px;
 }

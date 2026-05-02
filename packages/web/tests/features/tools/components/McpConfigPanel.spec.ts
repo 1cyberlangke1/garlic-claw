@@ -37,9 +37,9 @@ describe('McpConfigPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('MCP 配置')
+    expect(wrapper.text()).not.toContain('MCP 配置')
     expect(wrapper.text()).not.toContain('MCP Config')
-    expect(wrapper.text()).toContain('mcp/servers')
+    expect(wrapper.text()).not.toContain('mcp/servers')
     expect(wrapper.text()).toContain('weather-server')
     expect(wrapper.find('[data-test="mcp-name-input"]').element).toHaveProperty('value', 'weather-server')
     expect(wrapper.find('[data-test="mcp-command-input"]').element).toHaveProperty('value', 'npx')
@@ -56,7 +56,6 @@ describe('McpConfigPanel', () => {
 
     const wrapper = mount(McpConfigPanel)
 
-    await wrapper.get('[data-test="mcp-new-button"]').trigger('click')
     await wrapper.get('[data-test="mcp-name-input"]').setValue('tavily')
     await wrapper.get('[data-test="mcp-command-input"]').setValue('npx')
     await wrapper.get('[data-test="mcp-args-input"]').setValue('-y\ntavily-mcp@latest')
@@ -102,7 +101,8 @@ describe('McpConfigPanel', () => {
     })
     await flushPromises()
 
-    await wrapper.get('[title="日志设置"]').trigger('click')
+    ;(wrapper.vm as unknown as { toggleLogSettings: () => void }).toggleLogSettings()
+    await flushPromises()
     await wrapper.get('input[type="number"]').setValue('2')
     await wrapper.get('.action-row .el-button--primary').trigger('click')
 
