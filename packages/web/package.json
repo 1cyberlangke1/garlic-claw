@@ -38,7 +38,7 @@
     "jsdom": "^26.1.0",
     "playwright": "^1.59.1",
     "postcss-custom-media": "^12.0.1",
-    "typescript": "~5.7.0",
+    "typescript": "^6.0.3",
     "vite": "^7.3.1",
     "vitest": "^2.1.9",
     "vue-tsc": "^2.2.0"
