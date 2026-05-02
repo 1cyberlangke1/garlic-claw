@@ -17,7 +17,7 @@
                   {{ contextUsageSummary.percent }}%
                 </span>
                 <span class="toolbar-context-usage-tokens">
-                  {{ contextUsageSummary.estimatedTokens }} / {{ contextUsageSummary.contextLength }}
+                  {{ contextUsageSummary.tokenLabel }} / {{ contextUsageSummary.contextLength }}
                 </span>
                 <span
                   class="toolbar-context-progress"
@@ -243,6 +243,7 @@ const contextUsageSummary = computed(() => {
     contextLength: preview.contextLength,
     estimatedTokens: preview.estimatedTokens,
     percent,
+    tokenLabel: `${preview.source === 'estimated' ? '*' : ''}${preview.estimatedTokens}`,
   }
 })
 

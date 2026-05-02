@@ -471,6 +471,7 @@ describe('ContextGovernanceService', () => {
     expect(preview.contextLength).toBe(10_000);
     expect(preview.estimatedTokens).toBeGreaterThan(128);
     expect(preview.estimatedTokens).toBeLessThan(5_000);
+    expect(preview.source).toBe('estimated');
     expect(aiModelExecutionService.generateText).not.toHaveBeenCalled();
     expect(beforeModel).toEqual({
       action: 'continue',
@@ -601,6 +602,65 @@ describe('ContextGovernanceService', () => {
       messages: Array<{ content?: string }>;
     };
     expect(history.messages.some((message) => message.content === '自动压缩摘要：当前历史过长，旧 usage 已失效。')).toBe(true);
+  });
+
+  it('surfaces provider token source in the context window preview when the current history matches real usage', async () => {
+    const previewMessages = [
+      {
+        content: '第一条消息',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'history-1',
+        parts: [{ text: '第一条消息', type: 'text' as const }],
+        role: 'user' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+      {
+        content: '第二条消息',
+        createdAt: '2026-04-25T00:01:00.000Z',
+        id: 'history-2',
+        parts: [{ text: '第二条消息', type: 'text' as const }],
+        role: 'assistant' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-25T00:01:00.000Z',
+      },
+    ];
+    const responseHistorySignature = createConversationHistorySignatureFromHistoryMessages(previewMessages);
+    conversationRecordService.replaceMessages(conversationId, [
+      previewMessages[0],
+      {
+        ...previewMessages[1],
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 88,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 12,
+                providerId: 'nvidia',
+                responseHistorySignature,
+                source: 'provider',
+                totalTokens: 100,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 100,
+      includedMessageIds: ['history-1', 'history-2'],
+      source: 'provider',
+    }));
   });
 
   it('uses the configured compression model while keeping context window budget bound to the active chat model', async () => {

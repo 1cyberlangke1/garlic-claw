@@ -1,4 +1,5 @@
 import type { JsonValue } from './json';
+import type { AiModelUsage } from './ai';
 import type {
   RuntimePermissionReplyResult,
   RuntimePermissionRequest,
@@ -446,6 +447,8 @@ export interface ConversationContextWindowPreview {
   excludedMessageIds: string[];
   /** 当前窗口的估算 token 数。 */
   estimatedTokens: number;
+  /** token 数来源。 */
+  source: AiModelUsage['source'];
   /** 当前模型总上下文长度。 */
   contextLength: number;
   /** 无论何种策略都保留的最近消息数；允许为 0。 */

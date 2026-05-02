@@ -156,7 +156,8 @@ export class ConversationStoreService {
 
   previewConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
     const messages = params.messages === undefined ? this.requireConversation(conversationId, userId).messages.map((message) => cloneJsonValue(message)) : readConversationHistoryMessages(params.messages), textBytes = Buffer.byteLength(messages.map(readConversationHistoryMessageText).filter(Boolean).join('\n'), 'utf8');
-    return asJsonValue({ estimatedTokens: readConversationHistoryPreviewTokens(messages, { historySignature: createConversationHistorySignatureFromHistoryMessages(messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0]), modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes }), messageCount: messages.length, textBytes });
+    const preview = readConversationHistoryPreviewTokens(messages, { historySignature: createConversationHistorySignatureFromHistoryMessages(messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0]), modelId: typeof params.modelId === 'string' ? params.modelId : null, providerId: typeof params.providerId === 'string' ? params.providerId : null, textBytes });
+    return asJsonValue({ ...preview, messageCount: messages.length, textBytes });
   }
 
   replaceConversationHistory(conversationId: string, params: JsonObject, userId?: string): JsonValue {
@@ -460,12 +461,14 @@ function readConversationHistoryMessageText(message: JsonObject): string {
   return [typeof message.role === 'string' ? message.role : '', partText || (typeof message.content === 'string' ? message.content : '')].filter(Boolean).join('\n');
 }
 
-function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): number {
+function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): { estimatedTokens: number; source: 'estimated' | 'provider' } {
   if (input.modelId && input.providerId) {for (let index = messages.length - 1; index >= 0; index -= 1) {
     const usage = readConversationModelUsageAnnotation(readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined, { modelId: input.modelId, providerId: input.providerId });
-    if (usage?.source === 'provider' && usage.responseHistorySignature === input.historySignature) {return usage.totalTokens;}
+    if (usage?.source === 'provider' && usage.responseHistorySignature === input.historySignature) {
+      return { estimatedTokens: usage.totalTokens, source: 'provider' };
+    }
   }}
-  return Math.ceil(input.textBytes / 4);
+  return { estimatedTokens: Math.ceil(input.textBytes / 4), source: 'estimated' };
 }
 
 function readConversationHistoryPreviewMetadata(message: JsonObject | undefined, index: number): ChatMessageMetadata | null { return message ? (readConversationHistoryMetadata(message.metadata, index) ?? readStoredConversationMetadata(message.metadataJson)) : null; }

@@ -196,7 +196,7 @@ export class ContextGovernanceService {
     if (!runtimeConfig.enabled) {
       const includedMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage);
       const preview = this.previewHistoryMessages(input.conversationId, includedMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
-      return createContextWindowPreview(runtimeConfig, { contextLength, enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), strategy: runtimeConfig.strategy });
+      return createContextWindowPreview(runtimeConfig, { contextLength, enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), source: preview.source, strategy: runtimeConfig.strategy });
     }
     return runtimeConfig.strategy === 'sliding' ? this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, windowBudgetTokens, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId) : this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId);
   }
@@ -366,7 +366,7 @@ export class ContextGovernanceService {
       this.previewHistoryMessages(conversationId, selectedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId)
     ));
     const includedMessageIds = selected.map((entry) => entry.id);
-    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: candidates.map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, strategy: 'sliding' });
+    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: candidates.map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, source: preview.source, strategy: 'sliding' });
   }
 
   private readSummaryContextWindowPreview(
@@ -381,8 +381,9 @@ export class ContextGovernanceService {
     const entries = readContextWindowCompactedHistory(historyMessages);
     const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null);
     const includedMessageIds = includedEntries.map((entry) => entry.id);
-    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId).estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, strategy: runtimeConfig.strategy });
-}
+    const preview = this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId);
+    return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, source: preview.source, strategy: runtimeConfig.strategy });
+  }
 
   private async executeContextCompactionCommand(input: {
     commandInput: { hasUnexpectedArgs: boolean };
@@ -453,7 +454,7 @@ export class ContextGovernanceService {
 
 function createContextWindowPreview(
   runtimeConfig: ReturnType<ContextGovernanceSettingsService['readRuntimeConfig']>['contextCompaction'],
-  input: Pick<ConversationContextWindowPreview, 'contextLength' | 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'strategy'> & { excludedMessageIds?: string[] },
+  input: Pick<ConversationContextWindowPreview, 'contextLength' | 'enabled' | 'estimatedTokens' | 'includedMessageIds' | 'source' | 'strategy'> & { excludedMessageIds?: string[] },
 ): ConversationContextWindowPreview {
   return {
     ...input,
