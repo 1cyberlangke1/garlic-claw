@@ -5,24 +5,14 @@
     <div class="mcp-workspace">
       <aside class="mcp-server-sidebar">
         <div class="sidebar-header">
-          <div class="sidebar-header-copy">
-            <h2>MCP Server</h2>
-            <p>统一维护命令、参数、环境变量与事件日志配置。</p>
-          </div>
-        </div>
-
-        <div v-if="!loading && servers.length > 0" class="sidebar-overview">
-          <div class="sidebar-stat">
-            <span>总数</span>
-            <strong>{{ filteredServers.length }}</strong>
-          </div>
-          <div class="sidebar-stat">
-            <span>带变量</span>
-            <strong>{{ withEnvCount }}</strong>
-          </div>
-          <div class="sidebar-stat spotlight">
-            <span>当前</span>
-            <strong>{{ currentSelectionLabel }}</strong>
+          <div class="sidebar-header-row">
+            <div class="sidebar-header-copy">
+              <h2>MCP Server</h2>
+            </div>
+            <div v-if="!loading && servers.length > 0" class="sidebar-header-stats">
+              <span>总数 {{ filteredServers.length }}</span>
+              <span>带变量 {{ withEnvCount }}</span>
+            </div>
           </div>
         </div>
 
@@ -281,13 +271,6 @@ const filteredServers = computed(() =>
 const withEnvCount = computed(() =>
   servers.value.filter((server) => Object.keys(server.env).length > 0).length,
 )
-const currentSelectionLabel = computed(() => {
-  if (isCreating.value) {
-    return '新建中'
-  }
-
-  return selectedServer.value?.name ?? '未选择'
-})
 const selectedServerHidden = computed(() =>
   !isCreating.value
   && !!selectedServerName.value
@@ -522,9 +505,17 @@ defineExpose({
 
 .sidebar-header,
 .sidebar-header-copy,
+.sidebar-header-row,
+.sidebar-header-stats,
 .mcp-detail-copy {
   display: grid;
   gap: 4px;
+}
+
+.sidebar-header-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
 }
 
 .sidebar-header h2,
@@ -534,7 +525,6 @@ defineExpose({
   font-family: 'Aptos Display', 'Segoe UI Variable Display', 'Trebuchet MS', 'Segoe UI', sans-serif;
 }
 
-.sidebar-header p,
 .mcp-detail-copy p,
 .sidebar-inline-hint,
 .sidebar-hint,
@@ -547,36 +537,14 @@ defineExpose({
   color: #f5d38c;
 }
 
-.sidebar-overview {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.sidebar-stat {
-  display: grid;
-  gap: 4px;
-  padding: 0.8rem 0.85rem;
-  border-radius: 14px;
-  border: 1px solid rgba(133, 163, 199, 0.14);
-  background: var(--surface-panel-hover-soft);
-}
-
-.sidebar-stat span {
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.sidebar-header-stats {
+  grid-auto-flow: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: end;
   color: var(--text-muted);
-}
-
-.sidebar-stat strong {
-  font-size: 1rem;
-  line-height: 1.1;
-  overflow-wrap: anywhere;
-}
-
-.sidebar-stat.spotlight strong {
-  color: var(--accent);
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .sidebar-tools,
@@ -838,8 +806,12 @@ defineExpose({
 }
 
 @media (max-width: 720px) {
-  .sidebar-overview {
+  .sidebar-header-row {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar-header-stats {
+    justify-content: start;
   }
 
   .mcp-server-list {

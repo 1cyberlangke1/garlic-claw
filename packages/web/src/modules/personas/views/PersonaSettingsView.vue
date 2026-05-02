@@ -135,35 +135,6 @@ function readPersonaAvatarAlt(name?: string | null) {
           已删除 <strong>{{ deleteResult.deletedPersonaId }}</strong>，共回退 {{ deleteResult.reassignedConversationCount }} 个对话到
           <strong>{{ deleteResult.fallbackPersonaId }}</strong>。
         </p>
-
-        <section class="hero-grid">
-          <article class="hero-card">
-            <div v-if="currentPersona" class="persona-identity">
-              <div class="persona-avatar persona-avatar-large" data-persona-avatar="current">
-                <img v-if="currentPersona.avatar" :src="currentPersona.avatar" :alt="readPersonaAvatarAlt(currentPersona.name)" class="persona-avatar-image" />
-                <span v-else>{{ readPersonaAvatarLabel(currentPersona.name) }}</span>
-              </div>
-              <div class="persona-identity-copy">
-                <h2>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
-                <p>
-                  当前生效人设：
-                  <strong>{{ currentPersona.name }}</strong>
-                  <span class="persona-source">来源：{{ sourceLabelMap[currentPersona.source] }}</span>
-                </p>
-              </div>
-            </div>
-            <h2 v-else>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
-            <p v-if="!currentPersona">
-              无会话级人设
-            </p>
-            <p class="hero-hint">
-              {{ hasCurrentConversation
-                ? '选中不同对话时，这里的人设状态会同步刷新。'
-                : '先在左侧选中一个对话，再把人设应用到该会话。' }}
-            </p>
-          </article>
-        </section>
-
         <section v-if="currentPanel === 'overview'" class="persona-overview-card">
           <div class="section-header">
             <div>
@@ -201,6 +172,32 @@ function readPersonaAvatarAlt(name?: string | null) {
               </div>
               <span class="section-meta">{{ personas.length }} 个</span>
             </div>
+
+            <article class="hero-card hero-card-inline">
+              <div v-if="currentPersona" class="persona-identity">
+                <div class="persona-avatar persona-avatar-large" data-persona-avatar="current">
+                  <img v-if="currentPersona.avatar" :src="currentPersona.avatar" :alt="readPersonaAvatarAlt(currentPersona.name)" class="persona-avatar-image" />
+                  <span v-else>{{ readPersonaAvatarLabel(currentPersona.name) }}</span>
+                </div>
+                <div class="persona-identity-copy">
+                  <h2>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
+                  <p>
+                    当前生效人设：
+                    <strong>{{ currentPersona.name }}</strong>
+                    <span class="persona-source">来源：{{ sourceLabelMap[currentPersona.source] }}</span>
+                  </p>
+                </div>
+              </div>
+              <h2 v-else>{{ currentConversationTitle ?? '当前未选中对话' }}</h2>
+              <p v-if="!currentPersona">
+                无会话级人设
+              </p>
+              <p class="hero-hint">
+                {{ hasCurrentConversation
+                  ? '选中不同对话时，这里的人设状态会同步刷新。'
+                  : '先在左侧选中一个对话，再把人设应用到该会话。' }}
+              </p>
+            </article>
 
             <div v-if="loading" class="section-state">加载中...</div>
             <div v-else-if="personas.length === 0" class="section-state">
@@ -476,8 +473,6 @@ function readPersonaAvatarAlt(name?: string | null) {
   white-space: nowrap;
 }
 
-.hero-grid,
-.hero-grid,
 .persona-grid,
 .section-header,
  .persona-heading,
@@ -572,10 +567,6 @@ function readPersonaAvatarAlt(name?: string | null) {
   height: 16px;
 }
 
-.hero-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .hero-card,
 .persona-overview-card,
 .persona-list-card,
@@ -591,6 +582,10 @@ function readPersonaAvatarAlt(name?: string | null) {
 
 .hero-card {
   background: var(--surface-hero-gradient);
+}
+
+.hero-card-inline {
+  padding: 16px;
 }
 
 .persona-overview-card {
@@ -822,7 +817,6 @@ function readPersonaAvatarAlt(name?: string | null) {
 }
 
 @media (max-width: 1080px) {
-  .hero-grid,
   .persona-grid,
   .detail-summary,
   .detail-grid,
