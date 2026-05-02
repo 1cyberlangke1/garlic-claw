@@ -1,4 +1,4 @@
-import { buildSubagentCloseParams, buildSubagentSendInputParams, buildSubagentSpawnParams, buildSubagentWaitParams, SUBAGENT_TOOL_DEFINITIONS } from '@garlic-claw/plugin-sdk/authoring';
+import { buildSubagentCloseParams, buildSubagentSendInputParams, buildSubagentSpawnParams, buildSubagentToolDefinitions, buildSubagentWaitParams } from '@garlic-claw/plugin-sdk/authoring';
 import type { JsonObject, PluginCallContext, PluginParamSchema, ToolInfo } from '@garlic-claw/shared';
 import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import { SubagentRunnerService } from '../../runtime/host/subagent-runner.service';
@@ -25,7 +25,9 @@ export class SubagentToolService {
   getToolInfos(): ToolInfo[] {
     const sourceId = this.getSourceId();
     const sourceLabel = this.getSourceLabel();
-    const tools: ToolInfo[] = SUBAGENT_TOOL_DEFINITIONS.map((tool) => ({
+    const tools: ToolInfo[] = buildSubagentToolDefinitions({
+      subagentTypes: this.runtimeHostSubagentRunnerService.listTypes(),
+    }).map((tool) => ({
       callName: tool.name,
       description: tool.description,
       enabled: true,

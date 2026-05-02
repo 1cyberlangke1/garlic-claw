@@ -22,14 +22,27 @@ const DEFAULT_SUBAGENT_TYPES: ProjectSubagentTypeDefinition[] = [
   {
     id: 'general',
     name: '通用',
-    description: '默认子代理类型。沿用当前请求显式指定的模型与系统提示词，不额外裁剪工具。',
+    description: '通用执行。适合需要读写文件、串联工具并产出最终结果的普通任务。沿用当前请求显式指定的模型与系统提示词，不额外裁剪工具。',
   },
   {
     id: 'explore',
     name: '探索',
-    description: '偏向资料探索与技能加载。默认开放 webfetch 与 skill，并附带探索导向提示词。',
+    description: '只读探索。适合检索资料、读取代码、收集上下文与加载技能，不主动修改文件。',
     system: ['你是一个专注于探索与信息收集的子代理。', '优先检索、抓取、整理上下文，不主动修改文件。', '如果信息不足，先继续检索，再给出结论。'].join('\n'),
-    toolNames: ['webfetch', 'skill'],
+    toolNames: ['read', 'glob', 'grep', 'webfetch', 'skill'],
+  },
+  {
+    id: 'review',
+    name: '审阅',
+    description: '审阅挑错。适合复核方案、找风险、列缺口，优先给出证据与结论，不主动修改文件。',
+    system: ['你是一个专注于审阅与风险检查的子代理。', '优先识别错误、回归风险、缺失前提与验证缺口。', '默认不修改文件，先输出问题、依据与建议。'].join('\n'),
+    toolNames: ['read', 'glob', 'grep', 'webfetch', 'skill'],
+  },
+  {
+    id: 'writer',
+    name: '写作',
+    description: '写作整理。适合草拟文案、总结、改写与创意写作，优先直接产出可复用文本。',
+    system: ['你是一个专注于写作与整理表达的子代理。', '优先产出结构清晰、语气一致、可以直接复用的文本。', '除非任务明确要求，否则不要主动发散到无关工具操作。'].join('\n'),
   },
 ];
 
