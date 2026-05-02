@@ -183,10 +183,10 @@
 ## 2026-05-01 阶段 Q：上游大幅改动对齐并消除合并冲突
 
 ### 目标
-- [ ] 把当前分支对齐到最新 `upstream/main`
-- [ ] 以“优先保留上游，实在没办法再补回本地必要行为”为准则完成语义合并
-- [ ] 清完真实冲突后，确保当前分支可安全并回 `upstream/main`
-- [ ] 跑必要验证并提交对齐结果
+- [x] 把当前分支对齐到最新 `upstream/main`
+- [x] 以“优先保留上游，实在没办法再补回本地必要行为”为准则完成语义合并
+- [x] 清完真实冲突后，确保当前分支可安全并回 `upstream/main`
+- [x] 跑必要验证并提交对齐结果
 
 ### 阶段 A：取证与策略
 - [x] 抓取最新 `upstream/main`
@@ -197,10 +197,11 @@
 
 ### 阶段 B：执行合并
 - [x] 执行 `git merge --no-commit --no-ff upstream/main`
-- [ ] 逐个解决冲突文件
-- [ ] 确认工作树无未解决冲突
+- [x] 逐个解决冲突文件
+- [x] 确认工作树无未解决冲突
 - [x] 吸收 `commands / skills / mcp / personas / automations` 一批最新 upstream 页面壳层
 - [x] 同步补齐这批页面对应的 tests / smoke 断言
+- [x] 继续吸收 `plugins / tools / subagents / settings` 一批最新 upstream 页面壳层
 
 ### 当前约束
 - [x] 保持当前 merge 现场，不做 `abort` / `reset`
@@ -210,14 +211,16 @@
   - 配置改动后的实时联动、自动刷新、并发保护、失败回滚不回退
 
 ### 阶段 C：验证
-- [ ] 跑至少 `lint`
-- [ ] 跑至少相关 `typecheck`
-- [ ] 按改动面补跑 smoke
+- [x] 跑至少 `lint`
+- [x] 跑至少相关 `typecheck`
+- [x] 按改动面补跑 smoke
 
 ### 阶段 Q 当前新增待处理
-- [ ] 基于最新 `upstream/main@180d16b` 复核当前 merge 现场是否需要补一轮语义对齐
+- [x] 基于最新 `upstream/main@180d16b` 复核当前 merge 现场并补一轮语义对齐
 - [x] 收口 `packages/web/tests/smoke/browser-smoke.mjs` 现存的 provider 创建交互失败
-- [ ] 继续评估 `plugins / tools` 壳层是否需要进一步吸收，继续缩小与最新 upstream 的差异面
+- [x] 继续评估 `plugins / tools` 壳层并吸收当前必须同步的差异
+- [x] 等独立 judge 复核后提交第二次 merge commit
+- [ ] 推送并创建指向 `upstream/main` 的 PR
 
 ## 2026-05-01 MCP / 工具管理 / 插件 / 自动化 只读 bug 扫描
 

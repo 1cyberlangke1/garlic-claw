@@ -112,7 +112,7 @@ function cronSourceLabel(source: PluginCronJobSummary['source']): string {
 
 .cron-list {
   display: grid;
-  gap: 12px;
+  gap: 0;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -120,10 +120,13 @@ function cronSourceLabel(source: PluginCronJobSummary['source']): string {
 
 .cron-item {
   display: grid;
-  gap: 8px;
-  padding: 0.9rem;
-  border-radius: 10px;
-  background: var(--bg-input);
+  gap: 5px;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid rgba(133, 163, 199, 0.1);
+}
+
+.cron-item:last-child {
+  border-bottom: none;
 }
 
 .cron-topline {

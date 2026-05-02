@@ -646,6 +646,22 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--shell-text-tertiary, #94a3b8);
 }
+
+.provider-search-input {
+  flex: 1;
+}
+
+.toolbar-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0;
+  margin-left: auto;
+  border-radius: 10px;
+}
 .capability-note {
   margin: 0 0 12px;
 }
@@ -690,19 +706,22 @@ onBeforeUnmount(() => {
 
 /* ── 通用字段输入 ── */
 .field-input {
-  padding: 5px 10px;
-  border: 1px solid var(--shell-border, #334155);
-  border-radius: 6px;
-  background: var(--shell-bg, #0f172a);
-  color: var(--shell-text, #f1f5f9);
-  font-size: 13px;
   min-width: 0;
 }
-.field-input:focus {
-  outline: none;
-  border-color: var(--shell-active, #18a058);
-  box-shadow: 0 0 0 1px rgba(24, 160, 88, 0.2);
+
+.field-input :deep(.el-input__wrapper) {
+  background: var(--shell-bg, #0f172a);
+  box-shadow: 0 0 0 1px var(--shell-border, #334155) inset;
 }
+
+.field-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--shell-active, #18a058) inset;
+}
+
+.field-input :deep(.el-input__inner) {
+  color: var(--shell-text, #f1f5f9);
+}
+
 .field-input-sm { width: 72px; padding: 3px 6px; text-align: right; }
 
 /* ── 消息文本 ── */

@@ -6,7 +6,6 @@
   >
     <div class="remote-panel-header">
       <div>
-        <span class="remote-kicker">Remote Access</span>
         <h3>远程接入</h3>
       </div>
       <span class="remote-badge" :class="riskTone" data-test="plugin-remote-risk-badge">
@@ -143,15 +142,9 @@ const riskLabel = computed(() => {
   margin: 2px 0 0;
 }
 
-.remote-kicker,
 .remote-label {
   font-size: 0.78rem;
   color: var(--text-muted);
-}
-
-.remote-kicker {
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .remote-badge {

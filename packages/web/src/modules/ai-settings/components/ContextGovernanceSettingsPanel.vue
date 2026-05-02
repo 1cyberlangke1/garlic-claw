@@ -213,13 +213,6 @@ function readJsonObject(value: unknown): JsonObject | null {
   min-width: 0;
 }
 
-.panel-kicker {
-  color: var(--accent);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .panel-header h2,
 .panel-header p {
   margin: 0;

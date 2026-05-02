@@ -222,13 +222,6 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
   margin: 0;
 }
 
-.hero-kicker {
-  color: var(--text-muted);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 @media (max-width: 720px) {
   .tools-page {
     padding: 1rem;

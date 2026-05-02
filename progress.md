@@ -56,6 +56,35 @@
 - 再按重叠文件列表逐个判断哪些新 upstream 改动需要现在手工吸收，减少下一次正式并到 `upstream/main` 的冲突面。
 - 若继续缩小与最新 upstream 的差异面，优先转到 `plugins / tools` 相关页面壳层。
 
+### 2026-05-02 阶段 Q：第二次 merge 收尾验证
+- 最新 `git status` 已确认：
+  - `All conflicts fixed but you are still merging`
+  - `git diff --name-only --diff-filter=U` 为空
+- 已继续按最新 upstream 结构吸收 `plugins / tools / subagents / settings` 一批页面差异，保持页面壳层优先跟随 upstream。
+- `packages/web/tests/smoke/browser-smoke.mjs` 已继续收口插件页结构：
+  - 先切 `远程摘要` 面板，再校验 `plugin-remote-summary-panel`
+  - 再切 `远程接入` 面板，再校验 `plugin-remote-access-panel`
+  - 不再断言已经迁出插件页的 `工具管理入口 / 打开工具管理`
+  - 不再在详情面板激活时去点击已隐藏的 `plugin-sidebar-toggle-system`
+- 本轮新鲜验证结果：
+  - `npm run lint` ✅
+  - `npm run typecheck -w packages/server` ✅
+  - `npm run typecheck -w packages/web` ✅
+  - `npm run smoke:web-ui` ✅
+  - `npm run smoke:server` ✅
+- 当前仅剩：
+  - 推送第二次 merge commit
+  - 更新或创建指向 `upstream/main` 的 PR
+
+### 2026-05-02 阶段 Q：独立 judge 结论
+- 第二轮独立 judge 已给出 `PASS`。
+- judge 复核确认：
+  - merge 现场无未解决冲突
+  - `browser-smoke.mjs` 的插件页结构适配已进入将提交的树
+  - `SchemaConfigNodeRenderer` 默认展开语义未回退
+  - `ProviderSettings` 自动保存、host routing 保存态、自动刷新 / 并发保护 / 失败回滚未回退
+- 当前可以结束 merge 现场并提交。
+
 ## 2026-05-01 阶段 F：剩余中高优先级缺陷继续扫描与修复
 
 ### 已开始

@@ -669,6 +669,7 @@ async function verifyCommandsPage(page) {
 async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
   const remotePluginHandle = await createCachedRemotePluginFixture(accessToken, remotePluginScriptPath)
   await page.goto(`/plugins?plugin=${encodeURIComponent(REMOTE_PLUGIN_ID)}`, { waitUntil: 'load' });
+  await expectText(page, '插件管理');
   await expectText(page, '已接入插件');
   let pluginItems = page.locator('.plugin-item');
   if (await pluginItems.count() === 0) {
@@ -680,26 +681,19 @@ async function verifyPluginsPage(page, accessToken, remotePluginScriptPath) {
     }
   }
   assert.ok(await pluginItems.count() > 0, '插件页未加载任何插件条目');
+  await page.getByRole('button', { exact: true, name: '远程摘要' }).click();
+  await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
   await expectText(page, '远程接入');
-  await expectText(page, '远程接入配置');
   await expectText(page, 'IoT 远程插件');
   await expectText(page, '必须 Key');
   await expectText(page, '控制型');
   await expectText(page, '已有缓存');
   await expectText(page, '高风险');
-  await page.locator('[data-test="plugin-remote-summary-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+
+  await page.getByRole('button', { exact: true, name: '远程接入' }).click();
   await page.locator('[data-test="plugin-remote-access-panel"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
+  await expectText(page, '远程接入配置');
   await page.locator('[data-test="plugin-remote-access-key"]').waitFor({ timeout: REQUEST_TIMEOUT_MS });
-
-  const systemToggle = page.locator('[data-test="plugin-sidebar-toggle-system"]');
-  const systemToggleInput = systemToggle.locator('input');
-  if (await systemToggleInput.count() > 0 && !(await systemToggleInput.isChecked())) {
-    await systemToggle.click();
-    await page.waitForLoadState('load');
-  }
-
-  await expectText(page, '工具管理入口');
-  await expectText(page, '打开工具管理');
   return remotePluginHandle
 }
 

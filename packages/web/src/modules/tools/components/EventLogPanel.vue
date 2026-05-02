@@ -204,8 +204,7 @@ function buildQuery(): EventLogQuery {
   font-size: 0.82rem;
 }
 
-.section-actions,
-.filter-grid {
+.section-actions {
   display: grid;
   gap: 10px;
 }
@@ -217,7 +216,9 @@ function buildQuery(): EventLogQuery {
 }
 
 .filter-grid {
-  grid-template-columns: 120px 120px 160px minmax(0, 1fr);
+  display: grid;
+  grid-template-columns: 80px 80px 200px 1fr;
+  gap: 10px 18px;
 }
 
 .control-field {

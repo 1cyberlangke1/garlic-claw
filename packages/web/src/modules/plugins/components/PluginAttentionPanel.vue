@@ -2,7 +2,6 @@
   <section v-if="attentionPlugins.length > 0" class="attention-panel">
     <div class="attention-header">
       <div>
-        <span class="attention-kicker">Recovery Queue</span>
         <h2>重点告警插件</h2>
         <p>借鉴 AstrBot 的失败插件恢复入口，把异常、离线或满并发插件直接抬到顶部处理。</p>
       </div>
@@ -221,15 +220,8 @@ function pendingActionLabel(action: PluginActionName): string {
   margin: 0;
 }
 
-.attention-kicker,
 .attention-card code {
   font-size: 0.76rem;
-}
-
-.attention-kicker {
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #f0c676;
 }
 
 .attention-header p,

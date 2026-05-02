@@ -278,18 +278,11 @@ function submit() {
 
 <style scoped>
 .panel-card {
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-panel);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  box-shadow: 0 12px 28px rgba(1, 6, 15, 0.2), 0 0 15px rgba(103, 199, 207, 0.08);
+  padding: 0;
   min-width: 0;
 }
 
 .panel-header,
-.toggle-row,
 .actions {
   display: flex;
   gap: 12px;
@@ -305,6 +298,16 @@ function submit() {
 .panel-header > div {
   min-width: 0;
   flex: 1 1 260px;
+}
+
+.panel-header > .toggle-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .panel-header h2,
@@ -459,10 +462,6 @@ function submit() {
 }
 
 @media (max-width: 720px) {
-  .panel-card {
-    padding: 16px;
-  }
-
   .panel-header {
     align-items: stretch;
   }

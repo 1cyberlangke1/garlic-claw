@@ -3,7 +3,6 @@
     <aside class="chat-rail">
       <header class="rail-header">
         <div class="brand-block">
-          <span class="brand-kicker">Chat Workbench</span>
           <h1>聊天工作台</h1>
         </div>
         <button type="button" class="new-chat-button" @click="newChat">
@@ -90,13 +89,6 @@ async function newChat() {
 .brand-block {
   display: grid;
   gap: 0.35rem;
-}
-
-.brand-kicker {
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .brand-block h1 {
