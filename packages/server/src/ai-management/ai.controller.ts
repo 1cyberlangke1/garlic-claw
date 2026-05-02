@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
-import { AiManagementService } from '../../../ai-management/ai-management.service';
-import { AiProviderSettingsService } from '../../../ai-management/ai-provider-settings.service';
-import { ContextGovernanceService } from '../../../conversation/context-governance.service';
-import { RuntimeToolsSettingsService } from '../../../execution/runtime/runtime-tools-settings.service';
-import { SubagentSettingsService } from '../../../execution/subagent/subagent-settings.service';
+import { AiManagementService } from './ai-management.service';
+import { AiProviderSettingsService } from './ai-provider-settings.service';
+import { ContextGovernanceService } from '../conversation/context-governance.service';
+import { RuntimeToolsSettingsService } from '../execution/runtime/runtime-tools-settings.service';
+import { SubagentSettingsService } from '../execution/subagent/subagent-settings.service';
 import type { JsonObject } from '@garlic-claw/shared';
 
 @Controller('ai')

@@ -1,4 +1,4 @@
-import { ToolController } from '../../../../src/adapters/http/tool/tool.controller';
+import { ToolController } from '../../../../src/execution/tool/tool.controller';
 
 describe('ToolController', () => {
   const toolRegistry = {

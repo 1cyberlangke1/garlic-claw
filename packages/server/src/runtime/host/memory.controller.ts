@@ -1,6 +1,6 @@
 import { Controller, Delete, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { CurrentUser, JwtAuthGuard } from '../../../auth/http-auth';
-import { UserContextService } from '../../../runtime/host/user-context.service';
+import { CurrentUser, JwtAuthGuard } from '../../auth/http-auth';
+import { UserContextService } from './user-context.service';
 
 @Controller('memories')
 @UseGuards(JwtAuthGuard)

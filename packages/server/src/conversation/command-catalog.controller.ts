@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import type { PluginCommandCatalogVersion, PluginCommandOverview } from '@garlic-claw/shared';
-import { ContextCommandCatalogService } from '../../../conversation/context-command-catalog.service';
+import { ContextCommandCatalogService } from './context-command-catalog.service';
 
 @Controller('command-catalog')
 export class CommandCatalogController {

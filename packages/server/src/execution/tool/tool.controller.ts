@@ -7,7 +7,7 @@ import type {
   ToolSourceKind,
 } from '@garlic-claw/shared';
 import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
-import { ToolRegistryService } from '../../../execution/tool/tool-registry.service';
+import { ToolRegistryService } from './tool-registry.service';
 
 interface UpdateToolEnabledDto {
   enabled: boolean;

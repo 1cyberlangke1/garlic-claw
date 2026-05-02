@@ -1,14 +1,14 @@
 import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import { CurrentUser, JwtAuthGuard } from '../../../auth/http-auth';
-import { ConversationMessagePlanningService } from '../../../conversation/conversation-message-planning.service';
-import { ConversationMessageLifecycleService } from '../../../conversation/conversation-message-lifecycle.service';
-import { ConversationTaskService } from '../../../conversation/conversation-task.service';
-import { RuntimeToolPermissionService } from '../../../execution/runtime/runtime-tool-permission.service';
-import { ConversationMessageService } from '../../../runtime/host/conversation-message.service';
-import { ConversationStoreService, serializeConversationMessage, type RuntimeConversationRecord } from '../../../runtime/host/conversation-store.service';
-import { ConversationTodoService } from '../../../runtime/host/conversation-todo.service';
-import { SubagentRunnerService } from '../../../runtime/host/subagent-runner.service';
+import { CurrentUser, JwtAuthGuard } from '../auth/http-auth';
+import { ConversationMessagePlanningService } from './conversation-message-planning.service';
+import { ConversationMessageLifecycleService } from './conversation-message-lifecycle.service';
+import { ConversationTaskService } from './conversation-task.service';
+import { RuntimeToolPermissionService } from '../execution/runtime/runtime-tool-permission.service';
+import { ConversationMessageService } from '../runtime/host/conversation-message.service';
+import { ConversationStoreService, serializeConversationMessage, type RuntimeConversationRecord } from '../runtime/host/conversation-store.service';
+import { ConversationTodoService } from '../runtime/host/conversation-todo.service';
+import { SubagentRunnerService } from '../runtime/host/subagent-runner.service';
 import type { ChatMessagePart } from '@garlic-claw/shared';
 import {
   ConversationTodoItemDto,
@@ -18,7 +18,7 @@ import {
   SendMessageDto,
   UpdateConversationTodoDto,
   UpdateMessageDto,
-} from './conversation.dto';
+} from './dto/conversation.dto';
 
 const routeUuidPipe = new ParseUUIDPipe({ version: '7' });
 

@@ -1,16 +1,16 @@
 import { type EventLogSettings, type JsonObject, type JsonValue, type PluginActionName, type PluginLlmPreference, type PluginRemoteDescriptor } from '@garlic-claw/shared';
 import { All, BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Req, Res, Inject, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { JwtAuthGuard } from '../../../auth/http-auth';
-import { ToolManagementSettingsService } from '../../../execution/tool/tool-management-settings.service';
-import { buildPluginInfo } from '../../../plugin/persistence/plugin-read-model';
-import { PluginPersistenceService } from '../../../plugin/persistence/plugin-persistence.service';
-import { buildRemotePluginConnectionInfo, PluginBootstrapService } from '../../../plugin/bootstrap/plugin-bootstrap.service';
-import { ConversationStoreService } from '../../../runtime/host/conversation-store.service';
-import { PluginDispatchService } from '../../../runtime/host/plugin-dispatch.service';
-import { PluginRuntimeService } from '../../../runtime/host/plugin-runtime.service';
-import { RuntimePluginGovernanceService } from '../../../runtime/kernel/runtime-plugin-governance.service';
-import { readPluginEventQuery, readPluginRouteInvocation, writePluginRouteResponse } from '../http-request.codec';
+import { JwtAuthGuard } from '../auth/http-auth';
+import { ToolManagementSettingsService } from '../execution/tool/tool-management-settings.service';
+import { buildPluginInfo } from './persistence/plugin-read-model';
+import { PluginPersistenceService } from './persistence/plugin-persistence.service';
+import { buildRemotePluginConnectionInfo, PluginBootstrapService } from './bootstrap/plugin-bootstrap.service';
+import { ConversationStoreService } from '../runtime/host/conversation-store.service';
+import { PluginDispatchService } from '../runtime/host/plugin-dispatch.service';
+import { PluginRuntimeService } from '../runtime/host/plugin-runtime.service';
+import { RuntimePluginGovernanceService } from '../runtime/kernel/runtime-plugin-governance.service';
+import { readPluginEventQuery, readPluginRouteInvocation, writePluginRouteResponse } from '../shared/http/http-request.codec';
 
 interface UpsertRemotePluginDto {
   access: {

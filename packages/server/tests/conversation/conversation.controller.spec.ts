@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
-import { ConversationController } from '../../src/adapters/http/conversation/conversation.controller';
+import { ConversationController } from '../../src/conversation/conversation.controller';
 
 describe('ConversationController', () => {
   const conversationId = '11111111-1111-4111-8111-111111111111';
@@ -53,7 +53,7 @@ describe('ConversationController', () => {
 
   it('keeps UUID route param validation on conversation and message routes', () => {
     const source = fs.readFileSync(
-      path.join(__dirname, '../../src/adapters/http/conversation/conversation.controller.ts'),
+      path.join(__dirname, '../../src/conversation/conversation.controller.ts'),
       'utf8',
     );
 

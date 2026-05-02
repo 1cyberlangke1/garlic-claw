@@ -1,4 +1,4 @@
-import { HealthController } from '../../../../src/adapters/http/health/health.controller';
+import { HealthController } from '../../../../src/health/health.controller';
 
 describe('HealthController', () => {
   it('returns an ok snapshot for server', () => {

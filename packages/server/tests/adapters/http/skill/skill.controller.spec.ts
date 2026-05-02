@@ -1,4 +1,4 @@
-import { SkillController } from '../../../../src/adapters/http/skill/skill.controller';
+import { SkillController } from '../../../../src/execution/skill/skill.controller';
 
 describe('SkillController', () => {
   const skillRegistryService = {

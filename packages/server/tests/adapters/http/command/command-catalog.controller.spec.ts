@@ -1,4 +1,4 @@
-import { CommandCatalogController } from '../../../../src/adapters/http/command/command-catalog.controller';
+import { CommandCatalogController } from '../../../../src/conversation/command-catalog.controller';
 
 describe('CommandCatalogController', () => {
   const contextCommandCatalogService = {

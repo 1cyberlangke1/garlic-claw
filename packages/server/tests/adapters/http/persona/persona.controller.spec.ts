@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { PersonaController } from '../../../../src/adapters/http/persona/persona.controller';
+import { PersonaController } from '../../../../src/persona/persona.controller';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 
 describe('PersonaController', () => {

@@ -1,8 +1,8 @@
 import type { EventLogListResult, McpConfigSnapshot, McpServerConfig, McpServerDeleteResult } from '@garlic-claw/shared';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
-import { McpService } from '../../../execution/mcp/mcp.service';
-import { normalizeEventLogSettings } from '../../../runtime/log/runtime-event-log.service';
-import { readPluginEventQuery } from '../http-request.codec';
+import { McpService } from './mcp.service';
+import { normalizeEventLogSettings } from '../../runtime/log/runtime-event-log.service';
+import { readPluginEventQuery } from '../../shared/http/http-request.codec';
 
 interface McpEventQueryInput {
   limit?: string;

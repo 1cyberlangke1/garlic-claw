@@ -1,4 +1,4 @@
-import { AuthController } from '../../../../src/adapters/http/auth/auth.controller';
+import { AuthController } from '../../../../src/auth/auth.controller';
 
 describe('AuthController', () => {
   const authService = {

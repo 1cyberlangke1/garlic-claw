@@ -1,4 +1,4 @@
-import { AiController } from '../../../../src/adapters/http/ai/ai.controller';
+import { AiController } from '../../../../src/ai-management/ai.controller';
 
 describe('AiController', () => {
   const aiManagementService = {
