@@ -64,7 +64,7 @@ describe('bootstrapHttpApp', () => {
     const { NestFactory } = await import('@nestjs/core');
     jest.mocked(NestFactory.create).mockResolvedValue(app as never);
 
-    const { bootstrapHttpApp } = await import('../../../src/core/bootstrap/bootstrap-http-app');
+    const { bootstrapHttpApp } = await import('../../../src/bootstrap/bootstrap-http-app');
 
     await bootstrapHttpApp();
 

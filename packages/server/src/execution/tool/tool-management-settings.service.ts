@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from '@garlic-claw/shared';
 import { Injectable } from '@nestjs/common';
-import { SettingsService } from '../../settings/settings.service';
+import { SettingsStore } from '../../core/config/settings.store';
 
 const TOOL_MANAGEMENT_SECTION = 'tools';
 
@@ -13,8 +13,8 @@ interface ToolManagementConfigRecord {
 export class ToolManagementSettingsService {
   private config: { sourceEnabled: Record<string, boolean>; toolEnabled: Record<string, boolean> };
 
-  constructor(private readonly settingsService: SettingsService = new SettingsService()) {
-    this.config = sanitizeToolManagementConfig(this.settingsService.readSection(TOOL_MANAGEMENT_SECTION));
+  constructor(private readonly settingsStore: SettingsStore = new SettingsStore()) {
+    this.config = sanitizeToolManagementConfig(this.settingsStore.readSection(TOOL_MANAGEMENT_SECTION));
   }
 
   readSourceEnabledOverride(key: string): boolean | undefined {
@@ -53,7 +53,7 @@ export class ToolManagementSettingsService {
   }
 
   private persistConfig(): void {
-    this.settingsService.writeSection(TOOL_MANAGEMENT_SECTION, {
+    this.settingsStore.writeSection(TOOL_MANAGEMENT_SECTION, {
       sourceEnabled: { ...this.config.sourceEnabled },
       toolEnabled: { ...this.config.toolEnabled },
     });
