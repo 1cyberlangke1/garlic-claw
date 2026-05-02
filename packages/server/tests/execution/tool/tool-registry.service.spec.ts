@@ -7785,7 +7785,7 @@ function createFixture(options: {
 } = {}) {
   const runtimeWorkspaceRoot = options.runtimeWorkspaceRoot ?? fs.mkdtempSync(path.join(os.tmpdir(), 'gc-tool-registry-runtime-'));
   process.env.GARLIC_CLAW_RUNTIME_WORKSPACES_PATH = runtimeWorkspaceRoot;
-  process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'runtime-tools.json');
+  process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'runtime-tools', 'settings.json');
   process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH = path.join(runtimeWorkspaceRoot, 'config', 'tools', 'settings.json');
   if (!options.runtimeWorkspaceRoot) {
     runtimeWorkspaceRoots.push(runtimeWorkspaceRoot);

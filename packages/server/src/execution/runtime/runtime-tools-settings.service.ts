@@ -6,7 +6,7 @@ import { ProjectWorktreeRootService } from '../project/project-worktree-root.ser
 import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
 import type { RuntimeCommandTextOutputOptions } from './runtime-command-output';
 
-const RUNTIME_TOOLS_CONFIG_FILE = 'runtime-tools.json';
+const RUNTIME_TOOLS_CONFIG_FILE = 'settings.json';
 const RUNTIME_TOOLS_SOURCE_ID = 'runtime-tools';
 const MAX_CONFIG_INTEGER = 1_000_000;
 
@@ -158,7 +158,7 @@ function resolveRuntimeToolsConfigPath(): string {
       ?? createServerTestArtifactPath({ extension: '.json', prefix: 'config-runtime-tools.server.test', subdirectory: 'server' });
   }
   return process.env.GARLIC_CLAW_RUNTIME_TOOLS_CONFIG_PATH
-    ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', RUNTIME_TOOLS_CONFIG_FILE);
+    ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', 'runtime-tools', RUNTIME_TOOLS_CONFIG_FILE);
 }
 
 function loadRuntimeToolsConfig(configPath: string): JsonObject {

@@ -1,0 +1,30 @@
+{
+  "defaultSelection": {
+    "providerId": "openai",
+    "modelId": "gpt-4o-mini"
+  },
+  "hostModelRouting": {
+    "fallbackChatModels": [],
+    "compressionModel": {
+      "providerId": "openai",
+      "modelId": "gpt-4o-mini"
+    },
+    "utilityModelRoles": {
+      "conversationTitle": {
+        "providerId": "openai",
+        "modelId": "gpt-4o-mini"
+      },
+      "pluginGenerateText": {
+        "providerId": "gemini",
+        "modelId": "gemini-1.5-pro"
+      }
+    }
+  },
+  "visionFallback": {
+    "enabled": false,
+    "providerId": "openai",
+    "modelId": "gpt-4o-mini",
+    "prompt": "Please describe the uploaded image clearly for a text-only model.",
+    "maxDescriptionLength": 400
+  }
+}

@@ -1,14 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { AiHostModelRoutingConfig, AiModelRouteTarget, ProviderProtocolDriver } from '@garlic-claw/shared';
+import type { AiHostModelRoutingConfig, AiModelRouteTarget, ProviderProtocolDriver, VisionFallbackConfig } from '@garlic-claw/shared';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
 import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
 import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
 const AI_PROVIDER_DIRECTORY = 'providers';
 const AI_DEFAULT_SELECTION_FILE = 'settings.json';
-const AI_HOST_MODEL_ROUTING_FILE = 'host-model-routing.json';
-const AI_VISION_FALLBACK_FILE = 'vision-fallback.json';
 const LEGACY_AI_SETTINGS_FILE_CANDIDATES = [
   path.join('packages', 'server', 'tmp', 'ai-settings.server.json'),
   path.join('config', 'ai-settings.json'),
@@ -28,13 +26,15 @@ export function loadAiSettings(settingsPath: string): AiSettingsFile {
   try {
     fs.mkdirSync(readAiProviderDirectory(settingsPath), { recursive: true });
     migrateLegacyAiSettingsFile(settingsPath, empty);
+    migrateLegacySplitFiles(settingsPath, empty);
     const providerFiles = readAiProviderStorageFiles(settingsPath);
+    const settingsJson = readSettingsJson(settingsPath);
     return {
-      defaultSelection: readDefaultSelection(settingsPath),
-      hostModelRouting: readJsonFile(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), cloneRoutingConfig(empty.hostModelRouting)),
+      defaultSelection: settingsJson.defaultSelection,
+      hostModelRouting: settingsJson.hostModelRouting ?? cloneRoutingConfig(empty.hostModelRouting),
       models: providerFiles.flatMap((provider) => provider.persistedModels?.map(cloneStoredAiModelConfig) ?? []).sort(compareStoredModels),
       providers: providerFiles.map(({ persistedModels: _persistedModels, ...provider }) => cloneStoredProviderConfig(provider)).sort((left, right) => left.id.localeCompare(right.id)),
-      visionFallback: readJsonFile(path.join(settingsPath, AI_VISION_FALLBACK_FILE), { ...empty.visionFallback }),
+      visionFallback: settingsJson.visionFallback ?? { ...empty.visionFallback },
     };
   } catch {
     return empty;
@@ -66,9 +66,11 @@ export function saveAiSettings(settingsPath: string, settings: AiSettingsFile): 
       'utf-8',
     );
   }
-  writeDefaultSelectionFile(settingsPath, settings.defaultSelection);
-  fs.writeFileSync(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), JSON.stringify(cloneRoutingConfig(settings.hostModelRouting), null, 2), 'utf-8');
-  fs.writeFileSync(path.join(settingsPath, AI_VISION_FALLBACK_FILE), JSON.stringify({ ...settings.visionFallback }, null, 2), 'utf-8');
+  writeSettingsFile(settingsPath, {
+    defaultSelection: settings.defaultSelection,
+    hostModelRouting: settings.hostModelRouting,
+    visionFallback: settings.visionFallback,
+  });
 }
 
 export function cloneRoutingConfig(config: AiHostModelRoutingConfig): AiHostModelRoutingConfig {
@@ -125,12 +127,13 @@ function readLegacyAiSettingsFile(filePath: string, empty: AiSettingsFile): AiSe
 
 function readStructuredAiSettings(settingsPath: string, empty: AiSettingsFile): AiSettingsFile {
   const providerFiles = readAiProviderStorageFiles(settingsPath);
+  const settingsJson = readSettingsJson(settingsPath);
   return {
-    defaultSelection: readDefaultSelection(settingsPath),
-    hostModelRouting: readJsonFile(path.join(settingsPath, AI_HOST_MODEL_ROUTING_FILE), cloneRoutingConfig(empty.hostModelRouting)),
+    defaultSelection: settingsJson.defaultSelection,
+    hostModelRouting: settingsJson.hostModelRouting ?? cloneRoutingConfig(empty.hostModelRouting),
     models: providerFiles.flatMap((provider) => provider.persistedModels?.map(cloneStoredAiModelConfig) ?? []).sort(compareStoredModels),
     providers: providerFiles.map(({ persistedModels: _persistedModels, ...provider }) => cloneStoredProviderConfig(provider)).sort((left, right) => left.id.localeCompare(right.id)),
-    visionFallback: readJsonFile(path.join(settingsPath, AI_VISION_FALLBACK_FILE), { ...empty.visionFallback }),
+    visionFallback: settingsJson.visionFallback ?? { ...empty.visionFallback },
   };
 }
 
@@ -257,17 +260,141 @@ function cloneStoredProviderConfig(provider: StoredAiProviderConfig): StoredAiPr
   return { ...provider, models: [...provider.models] };
 }
 
-function readDefaultSelection(settingsPath: string): AiModelRouteTarget | null {
-  return normalizeDefaultSelection(readJsonFile(path.join(settingsPath, AI_DEFAULT_SELECTION_FILE), null));
+function readSettingsJson(settingsPath: string): { defaultSelection: AiModelRouteTarget | null; hostModelRouting?: AiHostModelRoutingConfig; visionFallback?: VisionFallbackConfig } {
+  const raw = readJsonFile<unknown>(path.join(settingsPath, AI_DEFAULT_SELECTION_FILE), null);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { defaultSelection: null };
+  }
+  const record = raw as Record<string, unknown>;
+
+  // 旧格式：根级别 providerId / modelId
+  if (typeof record.providerId === 'string' && typeof record.modelId === 'string') {
+    return {
+      defaultSelection: { providerId: record.providerId, modelId: record.modelId },
+    };
+  }
+
+  const result: { defaultSelection: AiModelRouteTarget | null; hostModelRouting?: AiHostModelRoutingConfig; visionFallback?: VisionFallbackConfig } = { defaultSelection: null };
+
+  if (record.defaultSelection && typeof record.defaultSelection === 'object') {
+    result.defaultSelection = normalizeDefaultSelection(record.defaultSelection);
+  }
+  if (record.hostModelRouting && typeof record.hostModelRouting === 'object') {
+    const routing = normalizeHostModelRouting(record.hostModelRouting);
+    if (routing) {
+      result.hostModelRouting = routing;
+    }
+  }
+  if (record.visionFallback && typeof record.visionFallback === 'object') {
+    const fallback = normalizeVisionFallback(record.visionFallback);
+    if (fallback) {
+      result.visionFallback = fallback;
+    }
+  }
+
+  return result;
 }
 
-function writeDefaultSelectionFile(settingsPath: string, selection: AiModelRouteTarget | null): void {
+function writeSettingsFile(settingsPath: string, content: { defaultSelection: AiModelRouteTarget | null; hostModelRouting: AiHostModelRoutingConfig; visionFallback: VisionFallbackConfig }): void {
   const filePath = path.join(settingsPath, AI_DEFAULT_SELECTION_FILE);
-  if (!selection) {
-    fs.rmSync(filePath, { force: true });
+  const data: Record<string, unknown> = {};
+  if (content.defaultSelection) {
+    data.defaultSelection = cloneDefaultSelection(content.defaultSelection);
+  }
+  data.hostModelRouting = cloneRoutingConfig(content.hostModelRouting);
+  data.visionFallback = { ...content.visionFallback };
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function migrateLegacySplitFiles(settingsPath: string, empty: AiSettingsFile): void {
+  const settingsFilePath = path.join(settingsPath, AI_DEFAULT_SELECTION_FILE);
+  const currentRaw = readJsonFile<unknown>(settingsFilePath, null);
+
+  let defaultSelection: AiModelRouteTarget | null = null;
+  let hostModelRouting: AiHostModelRoutingConfig | undefined;
+  let visionFallback: VisionFallbackConfig | undefined;
+  let hasLegacy = false;
+
+  // 检测旧格式 settings.json
+  if (currentRaw && typeof currentRaw === 'object' && !Array.isArray(currentRaw)) {
+    const record = currentRaw as Record<string, unknown>;
+    if (typeof record.providerId === 'string' && typeof record.modelId === 'string') {
+      defaultSelection = { providerId: record.providerId, modelId: record.modelId };
+      hasLegacy = true;
+    }
+    // 新格式：提取已有值
+    if (!hasLegacy) {
+      if (record.defaultSelection && typeof record.defaultSelection === 'object') {
+        defaultSelection = normalizeDefaultSelection(record.defaultSelection);
+      }
+      if (record.hostModelRouting && typeof record.hostModelRouting === 'object') {
+        const parsed = normalizeHostModelRouting(record.hostModelRouting);
+        if (parsed) {
+          hostModelRouting = parsed;
+        }
+      }
+      if (record.visionFallback && typeof record.visionFallback === 'object') {
+        const parsed = normalizeVisionFallback(record.visionFallback);
+        if (parsed) {
+          visionFallback = parsed;
+        }
+      }
+    }
+  }
+
+  // 独立文件优先级更高（覆盖）
+  const hostRoutingPath = path.join(settingsPath, 'host-model-routing.json');
+  if (fs.existsSync(hostRoutingPath)) {
+    const routing = readJsonFile<unknown>(hostRoutingPath, null);
+    if (routing && typeof routing === 'object') {
+      hostModelRouting = readLegacyHostModelRouting(routing, empty.hostModelRouting);
+      hasLegacy = true;
+    }
+  }
+
+  const visionFallbackPath = path.join(settingsPath, 'vision-fallback.json');
+  if (fs.existsSync(visionFallbackPath)) {
+    const fallback = readJsonFile<unknown>(visionFallbackPath, null);
+    if (fallback && typeof fallback === 'object') {
+      visionFallback = readLegacyVisionFallback(fallback, empty.visionFallback);
+      hasLegacy = true;
+    }
+  }
+
+  if (!hasLegacy) {
     return;
   }
-  fs.writeFileSync(filePath, JSON.stringify(selection, null, 2), 'utf-8');
+
+  writeSettingsFile(settingsPath, {
+    defaultSelection,
+    hostModelRouting: hostModelRouting ?? cloneRoutingConfig(empty.hostModelRouting),
+    visionFallback: visionFallback ?? { ...empty.visionFallback },
+  });
+
+  if (fs.existsSync(hostRoutingPath)) {
+    fs.rmSync(hostRoutingPath, { force: true });
+  }
+  if (fs.existsSync(visionFallbackPath)) {
+    fs.rmSync(visionFallbackPath, { force: true });
+  }
+}
+
+function normalizeHostModelRouting(value: unknown): AiHostModelRoutingConfig | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  try {
+    return cloneRoutingConfig(value as AiHostModelRoutingConfig);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeVisionFallback(value: unknown): VisionFallbackConfig | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  return { ...(value as VisionFallbackConfig) };
 }
 
 function cloneStoredAiModelConfig(model: StoredAiModelConfig): StoredAiModelConfig {

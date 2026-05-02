@@ -159,7 +159,7 @@ async function main() {
     mcpConfigPath: path.join(tempDir, 'config', 'mcp', 'servers'),
     personasPath: path.join(tempDir, 'config', 'personas'),
     pluginStatePath: path.join(tempDir, 'plugins.server.json'),
-    runtimeToolsConfigPath: path.join(tempDir, 'config', 'runtime-tools.json'),
+    runtimeToolsConfigPath: path.join(tempDir, 'config', 'runtime-tools', 'settings.json'),
     runtimeWorkspacesPath: path.join(tempDir, 'runtime-workspaces'),
     skillGovernancePath: path.join(tempDir, 'config', 'skills', 'settings.json'),
     subagentPath: path.join(tempDir, 'config', 'subagent'),
@@ -3230,8 +3230,14 @@ async function prepareRealProviderSmokeSettings(aiSettingsPath, providerId) {
 
 async function writeRealSmokeJsonDefaults(aiSettingsPath) {
   await fsPromises.mkdir(aiSettingsPath, { recursive: true });
-  await fsPromises.writeFile(path.join(aiSettingsPath, 'host-model-routing.json'), JSON.stringify({ fallbackChatModels: [], utilityModelRoles: {} }, null, 2), 'utf8');
-  await fsPromises.writeFile(path.join(aiSettingsPath, 'vision-fallback.json'), JSON.stringify({ enabled: false }, null, 2), 'utf8');
+  await fsPromises.writeFile(
+    path.join(aiSettingsPath, 'settings.json'),
+    JSON.stringify({
+      hostModelRouting: { fallbackChatModels: [], utilityModelRoles: {} },
+      visionFallback: { enabled: false },
+    }, null, 2),
+    'utf8',
+  );
 }
 
 async function runTypescriptBuild() {
