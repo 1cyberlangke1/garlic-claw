@@ -38,7 +38,7 @@ const CONTEXT_COMPACTION_REASON_LABELS: Readonly<Record<string, string>> = { dis
 const CONTEXT_COMPACTION_ROLE_LABELS: Partial<Record<PluginConversationHistoryMessage['role'], string>> = { assistant: '助手', system: '系统' };
 
 type ModelMessage = { content: string | ChatMessagePart[]; role: 'assistant' | 'system' | 'user' };
-type ContextCompactionTrigger = 'manual' | 'prepare-model';
+type ContextCompactionTrigger = 'after-response' | 'manual' | 'prepare-model';
 type ContextWindowEntry = { candidate: boolean; hidden: boolean; id: string; modelMessage: PluginConversationHistoryMessage | null };
 type ContextWindowCandidateMessage = ContextWindowEntry & { modelMessage: PluginConversationHistoryMessage };
 type ContextCompactionSummaryMarker = { compactionId: string; role: 'summary' };
@@ -131,7 +131,7 @@ export class ContextGovernanceService {
         conversationId: input.conversationId,
         modelId: input.modelId,
         providerId: input.providerId,
-        trigger: 'prepare-model',
+        trigger: 'after-response',
         userId: input.userId,
       });
       if (result.compacted) {
@@ -196,7 +196,7 @@ export class ContextGovernanceService {
     const windowBudgetTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.strategy === 'sliding' ? runtimeConfig.slidingWindowUsagePercent : 100);
     if (!runtimeConfig.enabled) {
       const includedMessages = omitTrailingPendingAssistant(history.messages).filter(isConversationHistoryModelMessage);
-      const preview = this.previewHistoryMessages(input.conversationId, includedMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
+      const preview = this.previewHistoryMessages(input.conversationId, includedMessages, windowTarget.modelId, windowTarget.providerId, input.userId, 'latest-provider');
       return createContextWindowPreview(runtimeConfig, { contextLength, enabled: false, estimatedTokens: preview.estimatedTokens, includedMessageIds: includedMessages.map((message) => message.id), source: preview.source, strategy: runtimeConfig.strategy });
     }
     return runtimeConfig.strategy === 'sliding' ? this.readSlidingContextWindowPreview(input.conversationId, history.messages, runtimeConfig, windowBudgetTokens, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId) : this.readSummaryContextWindowPreview(input.conversationId, history.messages, runtimeConfig, contextLength, windowTarget.modelId, windowTarget.providerId, input.userId);
@@ -246,7 +246,14 @@ export class ContextGovernanceService {
     const windowTarget = this.readContextWindowTarget(input.providerId, input.modelId);
     const compactionModelTarget = this.readContextCompactionModelTarget(windowTarget.providerId, windowTarget.modelId, runtimeConfig);
     const thresholdTokens = readContextWindowBudget(windowTarget, runtimeConfig.reservedTokens, runtimeConfig.compressionThreshold);
-    const beforePreview = this.previewHistoryMessages(input.conversationId, beforeState.modelMessages, windowTarget.modelId, windowTarget.providerId, input.userId);
+    const beforePreview = this.previewHistoryMessages(
+      input.conversationId,
+      beforeState.modelMessages,
+      windowTarget.modelId,
+      windowTarget.providerId,
+      input.userId,
+      input.trigger === 'after-response' ? 'latest-provider' : 'exact',
+    );
     if (input.trigger === 'prepare-model' && beforePreview.estimatedTokens < thresholdTokens) {return { beforePreview, compacted: false, reason: 'threshold-not-reached', thresholdTokens };}
     let lastAfterPreview: PluginConversationHistoryPreviewResult | undefined;
     let lastReason: string = beforePreview.estimatedTokens >= thresholdTokens
@@ -293,11 +300,19 @@ export class ContextGovernanceService {
     };
   }
 
-  private previewHistoryMessages(conversationId: string, messages: PluginConversationHistoryMessage[], modelId: string, providerId: string, userId?: string): PluginConversationHistoryPreviewResult {
+  private previewHistoryMessages(
+    conversationId: string,
+    messages: PluginConversationHistoryMessage[],
+    modelId: string,
+    providerId: string,
+    userId?: string,
+    usagePreference: 'exact' | 'latest-provider' = 'exact',
+  ): PluginConversationHistoryPreviewResult {
     return this.runtimeHostConversationRecordService.previewConversationHistory(conversationId, asJsonObject({
       messages: sanitizeContextWindowPreviewMessages(messages),
       modelId,
       providerId,
+      usagePreference,
     }), userId) as unknown as PluginConversationHistoryPreviewResult;
   }
 
@@ -386,7 +401,7 @@ export class ContextGovernanceService {
     const entries = readContextWindowCompactedHistory(historyMessages);
     const includedEntries = entries.filter((entry): entry is ContextWindowCandidateMessage => !entry.hidden && entry.modelMessage !== null);
     const includedMessageIds = includedEntries.map((entry) => entry.id);
-    const preview = this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId);
+    const preview = this.previewHistoryMessages(conversationId, includedEntries.map((entry) => entry.modelMessage), modelId, providerId, userId, 'latest-provider');
     return createContextWindowPreview(runtimeConfig, { contextLength, enabled: true, estimatedTokens: preview.estimatedTokens, excludedMessageIds: entries.filter((entry) => entry.candidate).map((entry) => entry.id).filter((id) => !includedMessageIds.includes(id)), includedMessageIds, source: preview.source, strategy: runtimeConfig.strategy });
   }
 

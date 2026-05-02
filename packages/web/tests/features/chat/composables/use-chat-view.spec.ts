@@ -295,6 +295,32 @@ describe('useChatView', () => {
     )
   })
 
+  it('passes only content/parts in update-message payload body', async () => {
+    const chat = createChatStub()
+    let state!: ReturnType<typeof useChatView>
+    const Harness = defineComponent({
+      setup() {
+        state = useChatView(chat as never)
+        return () => null
+      },
+    })
+
+    mount(Harness)
+    await flushPromises()
+
+    await state.updateMessage({
+      messageId: 'assistant-1',
+      content: '修改后的内容',
+    })
+
+    expect(chat.updateMessage).toHaveBeenCalledWith(
+      'assistant-1',
+      {
+        content: '修改后的内容',
+      },
+    )
+  })
+
   it('keeps send enabled while streaming so later messages can enter the queue', async () => {
     const chat = createChatStub({
       streaming: true,

@@ -321,6 +321,110 @@ describe('ChatMessageList', () => {
     expect(includedMessage.classes()).not.toContain('excluded-from-context')
   })
 
+  it('does not render sliding-window exclusion copy for summary compaction history', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        contextWindowPreview: {
+          contextLength: 10_000,
+          enabled: true,
+          estimatedTokens: 580,
+          excludedMessageIds: ['assistant-1'],
+          frontendMessageWindowSize: 200,
+          includedMessageIds: ['summary-1', 'assistant-2'],
+          keepRecentMessages: 0,
+          source: 'provider',
+          slidingWindowUsagePercent: 50,
+          strategy: 'summary',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'assistant',
+            content: '这条旧消息已经被摘要覆盖。',
+            provider: 'openai',
+            model: 'gpt-5.4',
+            status: 'completed',
+            error: null,
+          },
+          {
+            id: 'summary-1',
+            role: 'display',
+            content: '压缩摘要',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    coveredCount: 1,
+                    role: 'summary',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const excludedMessage = wrapper.find('[data-message-id="assistant-1"]')
+    expect(excludedMessage.classes()).not.toContain('excluded-from-context')
+    expect(excludedMessage.text()).not.toContain('已脱离当前 LLM 上下文')
+  })
+
+  it('recognizes after-response compaction summaries as context compaction annotations', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        assistantPersona: {
+          avatar: '/api/personas/persona.writer/avatar',
+          name: 'Writer',
+        },
+        loading: false,
+        messages: [
+          {
+            id: 'summary-after-response',
+            role: 'display',
+            content: '压缩摘要：最近任务与约束。',
+            status: 'completed',
+            error: null,
+            metadata: {
+              annotations: [
+                {
+                  data: {
+                    afterPreview: { estimatedTokens: 420 },
+                    beforePreview: { estimatedTokens: 980 },
+                    coveredCount: 3,
+                    modelId: 'gpt-5.4',
+                    providerId: 'openai',
+                    role: 'summary',
+                    trigger: 'after-response',
+                  },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            } as never,
+          },
+        ],
+      },
+    })
+
+    const summaryMessage = wrapper.find('[data-message-id="summary-after-response"]')
+    expect(summaryMessage.text()).toContain('上下文压缩')
+    expect(summaryMessage.text()).toContain('自动触发')
+    expect(summaryMessage.text()).toContain('openai/gpt-5.4')
+    expect(summaryMessage.text()).toContain('Token 估算 980 -> 420')
+  })
+
   it('renders tool calls and tool results as collapsed timeline blocks before the assistant reply', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
@@ -389,7 +493,7 @@ describe('ChatMessageList', () => {
     expect(assistant.text()).toContain('subagent-conversation-1')
   })
 
-  it('renders assistant usage inline and still allows expanding detailed token breakdown', async () => {
+  it('hides inline usage text and only shows token details in the [i] panel', async () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         assistantPersona: {
@@ -486,18 +590,9 @@ describe('ChatMessageList', () => {
     const secondAssistant = wrapper.find('[data-message-id="assistant-usage-2"]')
     const thirdAssistant = wrapper.find('[data-message-id="assistant-usage-3"]')
 
-    expect(firstAssistant.find('.message-usage-inline').text()).toContain('输入 320')
-    expect(firstAssistant.find('.message-usage-inline').text()).toContain('输出 120')
-    expect(firstAssistant.find('.message-usage-inline').text()).toContain('缓存 64')
-    expect(firstAssistant.find('.message-usage-inline').text()).toContain('总计 440')
-    expect(secondAssistant.find('.message-usage-inline').text()).toContain('输入 180')
-    expect(secondAssistant.find('.message-usage-inline').text()).toContain('输出 40')
-    expect(secondAssistant.find('.message-usage-inline').text()).toContain('总计 220')
-    expect(secondAssistant.find('.message-usage-inline').text()).not.toContain('缓存')
-    expect(thirdAssistant.find('.message-usage-inline').text()).toContain('输入 *42')
-    expect(thirdAssistant.find('.message-usage-inline').text()).toContain('输出 *21')
-    expect(thirdAssistant.find('.message-usage-inline').text()).toContain('缓存 *7')
-    expect(thirdAssistant.find('.message-usage-inline').text()).toContain('总计 *63')
+    expect(firstAssistant.find('.message-usage-inline').exists()).toBe(false)
+    expect(secondAssistant.find('.message-usage-inline').exists()).toBe(false)
+    expect(thirdAssistant.find('.message-usage-inline').exists()).toBe(false)
     expect(firstAssistant.find('.usage-info-toggle').text()).toBe('[i]')
     expect(thirdAssistant.find('.usage-info-toggle').text()).toBe('[i]')
 

@@ -663,6 +663,54 @@ describe('ContextGovernanceService', () => {
     }));
   });
 
+  it('reuses the latest provider total tokens for context window preview display after history rewrite invalidates the old response signature', async () => {
+    const staleSignature = createConversationHistorySignatureFromHistoryMessages([
+      {
+        content: '旧历史',
+        createdAt: '2026-04-25T00:00:00.000Z',
+        id: 'stale-history-1',
+        parts: [{ text: '旧历史', type: 'text' as const }],
+        role: 'assistant' as const,
+        status: 'completed' as const,
+        updatedAt: '2026-04-25T00:00:00.000Z',
+      },
+    ]);
+    conversationRecordService.replaceMessages(conversationId, [
+      createHistoryMessage('history-1', 'user', '新的第一条消息'),
+      {
+        ...createHistoryMessage('history-2', 'assistant', '新的第二条消息'),
+        metadataJson: JSON.stringify({
+          annotations: [
+            {
+              data: {
+                inputTokens: 88,
+                modelId: 'gpt-oss-20b',
+                outputTokens: 12,
+                providerId: 'nvidia',
+                responseHistorySignature: staleSignature,
+                source: 'provider',
+                totalTokens: 100,
+              },
+              owner: 'conversation.model-usage',
+              type: 'model-usage',
+              version: '1',
+            },
+          ],
+        }),
+      },
+    ], 'user-1');
+
+    await expect(service.getContextWindowPreview({
+      conversationId,
+      modelId: 'gpt-oss-20b',
+      providerId: 'nvidia',
+      userId: 'user-1',
+    })).resolves.toEqual(expect.objectContaining({
+      estimatedTokens: 100,
+      source: 'provider',
+    }));
+  });
+
   it('uses the configured compression model while keeping context window budget bound to the active chat model', async () => {
     settingsService.updateConfig({
       contextCompaction: {

@@ -168,6 +168,7 @@ export class ConversationStoreService {
         messages as unknown as Parameters<typeof createConversationHistorySignatureFromHistoryMessages>[0],
       ),
       modelId: typeof params.modelId === 'string' ? params.modelId : null,
+      preferLatestProviderUsage: params.usagePreference === 'latest-provider',
       providerId: typeof params.providerId === 'string' ? params.providerId : null,
       textBytes,
     });
@@ -469,13 +470,23 @@ function readStoredConversationMetadata(value: unknown): ChatMessageMetadata | n
   try { return JSON.parse(value) as ChatMessageMetadata; } catch { return null; }
 }
 
-function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; providerId: string | null; textBytes: number }): { estimatedTokens: number; source: 'estimated' | 'provider' } {
+function readConversationHistoryPreviewTokens(messages: JsonObject[], input: { historySignature: string; modelId: string | null; preferLatestProviderUsage?: boolean; providerId: string | null; textBytes: number }): { estimatedTokens: number; source: 'estimated' | 'provider' } {
+  let latestProviderTotalTokens: number | null = null;
   if (input.modelId && input.providerId) {for (let index = messages.length - 1; index >= 0; index -= 1) {
     const usage = readConversationModelUsageAnnotation(readConversationHistoryPreviewMetadata(messages[index], index) ?? undefined, { modelId: input.modelId, providerId: input.providerId });
-    if (usage?.source === 'provider' && usage.responseHistorySignature === input.historySignature) {
+    if (usage?.source !== 'provider') {
+      continue;
+    }
+    if (latestProviderTotalTokens === null) {
+      latestProviderTotalTokens = usage.totalTokens;
+    }
+    if (usage.responseHistorySignature === input.historySignature) {
       return { estimatedTokens: usage.totalTokens, source: 'provider' };
     }
   }}
+  if (input.preferLatestProviderUsage && latestProviderTotalTokens !== null) {
+    return { estimatedTokens: latestProviderTotalTokens, source: 'provider' };
+  }
   return { estimatedTokens: Math.ceil(input.textBytes / 4), source: 'estimated' };
 }
 
