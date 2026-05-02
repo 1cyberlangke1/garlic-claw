@@ -1,185 +1,202 @@
 <template>
-  <ConsolePage class="plugins-page commands-page">
+  <ConsolePage class="commands-page" no-padding>
     <template #header>
       <ConsoleViewHeader
-        v-model="currentView"
-        :title="currentView === 'directory' ? '命令管理' : '冲突触发词'"
-        :icon="currentView === 'directory' ? keyboardBold : listCheckBold"
-        :view-options="viewOptions"
-        aria-label="命令管理视图切换"
+        title="命令管理"
+        :icon="keyboardBold"
       >
         <template #actions>
-            <ElButton
-              class="hero-action icon-only view-header-action"
-              title="刷新全部"
-              @click="refreshAll()"
-            >
-              <Icon :icon="refreshBold" class="hero-action-icon view-header-action-icon" aria-hidden="true" />
-            </ElButton>
+          <ElButton
+            class="hero-action icon-only view-header-action"
+            title="刷新全部"
+            @click="refreshAll()"
+          >
+            <Icon :icon="refreshBold" class="hero-action-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
         </template>
-
       </ConsoleViewHeader>
     </template>
 
-    <div>
-      <div class="overview-grid">
-        <article class="overview-card accent">
-          <span class="overview-label">命令概览</span>
-          <strong>{{ heroHeadline }}</strong>
-          <p>冲突在这里查看，到对应插件页处理。</p>
-        </article>
-        <article
-          v-for="card in overviewCards"
-          :key="card.label"
-          class="overview-card"
-          :class="card.tone"
-        >
-          <span class="overview-label">{{ card.label }}</span>
-          <strong>{{ card.value }}</strong>
-          <p>{{ card.note }}</p>
-        </article>
-      </div>
-      <p v-if="error" class="page-banner error">{{ error }}</p>
-
-    <div class="commands-content">
-      <section v-if="currentView === 'directory'" class="command-list-panel">
-        <div class="panel-header">
-          <div>
-            <h2>命令目录</h2>
-            <p>按插件查看 slash 命令、别名、保护状态和冲突提示。</p>
+    <div class="commands-inner">
+      <aside class="commands-sidebar">
+        <nav class="detail-nav" aria-label="命令管理面板切换">
+          <div class="detail-nav-group">
+            <button
+              v-for="panel in viewOptions"
+              :key="panel.value"
+              type="button"
+              :title="panel.label"
+              :class="{ active: currentView === panel.value }"
+              @click="currentView = panel.value"
+            >
+              <Icon class="nav-icon" :icon="panel.icon" aria-hidden="true" />
+              <span class="nav-label">{{ panel.label }}</span>
+            </button>
           </div>
-          <ElButton
-            class="ghost-button icon-only"
-            title="刷新"
-            @click="refreshAll()"
-          >
-            <Icon :icon="refreshBold" class="ghost-button-icon" aria-hidden="true" />
-          </ElButton>
-        </div>
-
-        <div class="panel-controls">
-          <ElInput
-            v-model="searchKeyword"
-            data-test="command-search"
-            placeholder="搜索插件、命令、别名或说明"
-          />
-          <HeaderViewSwitch
-            v-model="filter"
-            :options="filterOptions"
-            aria-label="命令目录筛选"
-            size="small"
-          />
-        </div>
-
-        <div class="sidebar-results">
-          <span class="sidebar-results-text">
-            匹配 {{ filteredCommandCount }} / {{ commandCount }} 条命令
-            <span v-if="commandCount > 0">
-              · 第 {{ page }} / {{ pageCount }} 页
-              · 显示 {{ rangeStart }}-{{ rangeEnd }} 项
-            </span>
-          </span>
-        </div>
-
-        <div v-if="loading" class="sidebar-state">加载中...</div>
-        <div v-else-if="pagedCommands.length === 0" class="sidebar-state">
-          无匹配命令
-        </div>
-        <div v-else class="command-list">
-          <article
-            v-for="command in pagedCommands"
-            :key="command.commandId"
-            class="command-card"
-          >
-            <div class="command-card-top">
-              <div>
-                <strong>{{ command.canonicalCommand }}</strong>
-                <p>{{ command.description || '无描述' }}</p>
-              </div>
-              <RouterLink
-                class="ghost-button link-button"
-                :to="{ name: 'plugins', query: { plugin: command.pluginId } }"
-              >
-                管理插件
-              </RouterLink>
-            </div>
-
-            <div class="meta-row">
-              <span class="meta-chip">{{ command.pluginDisplayName || command.pluginId }}</span>
-              <span class="meta-chip">{{ command.runtimeKind === 'local' ? '本地' : '远程' }}</span>
-              <span class="meta-chip">{{ command.connected ? '在线' : '离线' }}</span>
-              <span class="meta-chip">{{ sourceLabel(command.source) }}</span>
-              <span class="meta-chip">优先级 {{ command.priority ?? 0 }}</span>
-            </div>
-
-            <p v-if="command.aliases.length > 0" class="detail-line">
-              别名: {{ command.aliases.join(' · ') }}
-            </p>
-            <p class="detail-line">
-              触发集合: {{ command.variants.join(' · ') }}
-            </p>
-            <p v-if="command.conflictTriggers.length > 0" class="detail-line warning-text">
-              冲突触发词: {{ command.conflictTriggers.join(' · ') }}
-            </p>
-            <p v-if="command.governance?.canDisable === false" class="detail-line muted-text">
-              {{ command.governance.disableReason }}
-            </p>
-          </article>
-        </div>
-
-        <div v-if="commandCount > 0" class="sidebar-pagination">
-          <ElButton
-            class="ghost-button"
-            :disabled="!canGoPrevPage"
-            @click="goPrevPage"
-          >
-            上一页
-          </ElButton>
-          <ElButton
-            class="ghost-button"
-            :disabled="!canGoNextPage"
-            @click="goNextPage"
-          >
-            下一页
-          </ElButton>
-        </div>
-      </section>
-
-      <aside v-else class="command-conflict-panel is-full">
-        <div class="panel-header">
-          <div>
-            <h2>冲突触发词</h2>
-            <p>同一触发词命中多个插件时，在这里查看，到对应插件页处理。</p>
-          </div>
-        </div>
-
-        <div v-if="conflicts.length === 0" class="sidebar-state">
-          没有发现冲突
-        </div>
-        <div v-else class="conflict-list">
-          <article
-            v-for="conflict in conflicts"
-            :key="conflict.trigger"
-            class="conflict-card"
-          >
-            <strong>{{ conflict.trigger }}</strong>
-            <p>{{ conflict.commands.length }} 个插件命中了同一触发词。</p>
-            <div class="conflict-owners">
-              <RouterLink
-                v-for="owner in conflict.commands"
-                :key="owner.commandId"
-                class="owner-chip"
-                :to="{ name: 'plugins', query: { plugin: owner.pluginId } }"
-              >
-                {{ owner.pluginDisplayName || owner.pluginId }}
-                <span>· P{{ owner.priority ?? 0 }}</span>
-              </RouterLink>
-            </div>
-          </article>
-        </div>
+        </nav>
       </aside>
+
+      <main class="commands-main">
+        <div class="overview-grid">
+          <article class="overview-card accent">
+            <span class="overview-label">命令概览</span>
+            <strong>{{ heroHeadline }}</strong>
+            <p>冲突在这里查看，到对应插件页处理。</p>
+          </article>
+          <article
+            v-for="card in overviewCards"
+            :key="card.label"
+            class="overview-card"
+            :class="card.tone"
+          >
+            <span class="overview-label">{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <p>{{ card.note }}</p>
+          </article>
+        </div>
+
+        <p v-if="error" class="page-banner error">{{ error }}</p>
+
+        <div class="commands-content">
+          <section v-if="currentView === 'directory'" class="command-list-panel">
+            <div class="panel-header">
+              <div>
+                <h2>命令目录</h2>
+                <p>按插件查看 slash 命令、别名、保护状态和冲突提示。</p>
+              </div>
+              <ElButton
+                class="ghost-button icon-only"
+                title="刷新"
+                @click="refreshAll()"
+              >
+                <Icon :icon="refreshBold" class="ghost-button-icon" aria-hidden="true" />
+              </ElButton>
+            </div>
+
+            <div class="panel-controls">
+              <ElInput
+                v-model="searchKeyword"
+                data-test="command-search"
+                placeholder="搜索插件、命令、别名或说明"
+              />
+              <HeaderViewSwitch
+                v-model="filter"
+                :options="filterOptions"
+                aria-label="命令目录筛选"
+                size="small"
+              />
+            </div>
+
+            <div class="sidebar-results">
+              <span class="sidebar-results-text">
+                匹配 {{ filteredCommandCount }} / {{ commandCount }} 条命令
+                <span v-if="commandCount > 0">
+                  · 第 {{ page }} / {{ pageCount }} 页
+                  · 显示 {{ rangeStart }}-{{ rangeEnd }} 项
+                </span>
+              </span>
+            </div>
+
+            <div v-if="loading" class="sidebar-state">加载中...</div>
+            <div v-else-if="pagedCommands.length === 0" class="sidebar-state">
+              无匹配命令
+            </div>
+            <div v-else class="command-list">
+              <article
+                v-for="command in pagedCommands"
+                :key="command.commandId"
+                class="command-card"
+              >
+                <div class="command-card-top">
+                  <div>
+                    <strong>{{ command.canonicalCommand }}</strong>
+                    <p>{{ command.description || '无描述' }}</p>
+                  </div>
+                  <RouterLink
+                    class="ghost-button link-button"
+                    :to="{ name: 'plugins', query: { plugin: command.pluginId } }"
+                  >
+                    管理插件
+                  </RouterLink>
+                </div>
+
+                <div class="meta-row">
+                  <span class="meta-chip">{{ command.pluginDisplayName || command.pluginId }}</span>
+                  <span class="meta-chip">{{ command.runtimeKind === 'local' ? '本地' : '远程' }}</span>
+                  <span class="meta-chip">{{ command.connected ? '在线' : '离线' }}</span>
+                  <span class="meta-chip">{{ sourceLabel(command.source) }}</span>
+                  <span class="meta-chip">优先级 {{ command.priority ?? 0 }}</span>
+                </div>
+
+                <p v-if="command.aliases.length > 0" class="detail-line">
+                  别名: {{ command.aliases.join(' · ') }}
+                </p>
+                <p class="detail-line">
+                  触发集合: {{ command.variants.join(' · ') }}
+                </p>
+                <p v-if="command.conflictTriggers.length > 0" class="detail-line warning-text">
+                  冲突触发词: {{ command.conflictTriggers.join(' · ') }}
+                </p>
+                <p v-if="command.governance?.canDisable === false" class="detail-line muted-text">
+                  {{ command.governance.disableReason }}
+                </p>
+              </article>
+            </div>
+
+            <div v-if="commandCount > 0" class="sidebar-pagination">
+              <ElButton
+                class="ghost-button"
+                :disabled="!canGoPrevPage"
+                @click="goPrevPage"
+              >
+                上一页
+              </ElButton>
+              <ElButton
+                class="ghost-button"
+                :disabled="!canGoNextPage"
+                @click="goNextPage"
+              >
+                下一页
+              </ElButton>
+            </div>
+          </section>
+
+          <aside v-else class="command-conflict-panel is-full">
+            <div class="panel-header">
+              <div>
+                <h2>冲突触发词</h2>
+                <p>同一触发词命中多个插件时，在这里查看，到对应插件页处理。</p>
+              </div>
+            </div>
+
+            <div v-if="conflicts.length === 0" class="sidebar-state">
+              没有发现冲突
+            </div>
+            <div v-else class="conflict-list">
+              <article
+                v-for="conflict in conflicts"
+                :key="conflict.trigger"
+                class="conflict-card"
+              >
+                <strong>{{ conflict.trigger }}</strong>
+                <p>{{ conflict.commands.length }} 个插件命中了同一触发词。</p>
+                <div class="conflict-owners">
+                  <RouterLink
+                    v-for="owner in conflict.commands"
+                    :key="owner.commandId"
+                    class="owner-chip"
+                    :to="{ name: 'plugins', query: { plugin: owner.pluginId } }"
+                  >
+                    {{ owner.pluginDisplayName || owner.pluginId }}
+                    <span>· P{{ owner.priority ?? 0 }}</span>
+                  </RouterLink>
+                </div>
+              </article>
+            </div>
+          </aside>
+        </div>
+      </main>
     </div>
-  </div>
   </ConsolePage>
 </template>
 
@@ -194,6 +211,7 @@ import ConsolePage from '@/shared/components/ConsolePage.vue'
 import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
 import { usePluginCommandManagement } from '../composables/use-plugin-command-management'
+import type { IconifyIcon } from '@iconify/types'
 
 type CommandsPageView = 'directory' | 'conflicts'
 
@@ -220,9 +238,9 @@ const {
 } = usePluginCommandManagement()
 
 const currentView = ref<CommandsPageView>('directory')
-const viewOptions: ReadonlyArray<{ label: string; value: CommandsPageView }> = [
-  { label: '目录', value: 'directory' },
-  { label: '冲突', value: 'conflicts' },
+const viewOptions: ReadonlyArray<{ label: string; value: CommandsPageView; icon: IconifyIcon }> = [
+  { label: '命令目录', value: 'directory', icon: keyboardBold },
+  { label: '冲突触发词', value: 'conflicts', icon: listCheckBold },
 ]
 
 const heroHeadline = computed(() => {
@@ -269,6 +287,92 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 </script>
 
 <style scoped>
+.commands-page {
+  background: var(--shell-bg);
+}
+
+.commands-inner {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.commands-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 200px;
+  border-right: 1px solid var(--shell-border);
+  color: var(--shell-text, var(--text));
+  overflow-y: auto;
+}
+
+.commands-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.detail-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
+}
+
+.detail-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-nav button {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--shell-text-secondary, var(--text-muted));
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.detail-nav button:hover {
+  background: var(--shell-bg-hover, #334155);
+  color: var(--shell-text, var(--text));
+}
+
+.detail-nav button.active {
+  color: var(--shell-active, var(--accent));
+  background: color-mix(in srgb, var(--shell-active, var(--accent)) 10%, transparent);
+}
+
+.nav-icon {
+  width: 20px;
+  min-width: 20px;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .command-list-panel,
 .command-conflict-panel {
   border: 1px solid var(--border);
@@ -399,6 +503,21 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
   height: 16px;
 }
 
+.commands-page :deep(.view-header-action.active) {
+  border-color: rgba(103, 199, 207, 0.42);
+  box-shadow: 0 0 0 1px rgba(103, 199, 207, 0.2);
+}
+
+@media (max-width: 800px) {
+  .commands-sidebar {
+    width: 180px;
+  }
+
+  .commands-main {
+    padding: 16px;
+  }
+}
+
 @media (max-width: 1100px) {
   .command-conflict-panel {
     width: 100%;
@@ -406,8 +525,37 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 }
 
 @media (max-width: 720px) {
-  .commands-page {
-    padding: 1rem;
+  .commands-inner {
+    flex-direction: column;
+  }
+
+  .commands-sidebar {
+    width: 100%;
+    max-height: 110px;
+    border-right: none;
+    border-bottom: 1px solid var(--shell-border);
+  }
+
+  .detail-nav {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 12px 8px;
+  }
+
+  .detail-nav-group {
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .detail-nav button {
+    min-height: 40px;
+    padding: 0 14px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .commands-main {
+    padding: 12px;
   }
 
   .panel-header,
