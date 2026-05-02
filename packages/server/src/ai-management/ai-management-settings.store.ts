@@ -6,7 +6,7 @@ import { createServerTestArtifactPath } from '../runtime/server-workspace-paths'
 import type { AiProviderStorageFile, AiSettingsFile, StoredAiModelConfig, StoredAiProviderConfig } from './ai-management.types';
 
 const AI_PROVIDER_DIRECTORY = 'providers';
-const AI_DEFAULT_SELECTION_FILE = 'default-selection.json';
+const AI_DEFAULT_SELECTION_FILE = 'settings.json';
 const AI_HOST_MODEL_ROUTING_FILE = 'host-model-routing.json';
 const AI_VISION_FALLBACK_FILE = 'vision-fallback.json';
 const LEGACY_AI_SETTINGS_FILE_CANDIDATES = [

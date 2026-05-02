@@ -86,7 +86,7 @@ describe('PersonaService', () => {
     expect(
       JSON.parse(
         fs.readFileSync(
-          path.join(storageRoot, 'default-selection.json'),
+          path.join(storageRoot, 'settings.json'),
           'utf-8',
         ),
       ),
@@ -158,7 +158,7 @@ describe('PersonaService', () => {
     expect(
       JSON.parse(
         fs.readFileSync(
-          path.join(storageRoot, 'default-selection.json'),
+          path.join(storageRoot, 'settings.json'),
           'utf-8',
         ),
       ),

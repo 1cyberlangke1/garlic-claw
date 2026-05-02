@@ -1,8 +1,0 @@
-{
-  "sourceEnabled": {
-    "internal:runtime-tools": true
-  },
-  "toolEnabled": {
-    "internal:runtime-tools:powershell": true
-  }
-}

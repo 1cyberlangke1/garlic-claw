@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../project/project-worktree-root.service';
 import { createServerTestArtifactPath } from '../../runtime/server-workspace-paths';
 
-const TOOL_MANAGEMENT_CONFIG_FILE = 'tool-management.json';
+const TOOL_MANAGEMENT_CONFIG_FILE = 'settings.json';
 
 interface ToolManagementConfigRecord {
   sourceEnabled?: Record<string, boolean>;
@@ -42,7 +42,7 @@ function resolveToolManagementConfigPath(): string {
       ?? createServerTestArtifactPath({ extension: '.json', prefix: 'config-tool-management.server.test', subdirectory: 'server' });
   }
   return process.env.GARLIC_CLAW_TOOL_MANAGEMENT_CONFIG_PATH
-    ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', TOOL_MANAGEMENT_CONFIG_FILE);
+    ?? path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', 'tools', TOOL_MANAGEMENT_CONFIG_FILE);
 }
 
 function loadToolManagementConfig(configPath: string): { sourceEnabled: Record<string, boolean>; toolEnabled: Record<string, boolean> } {

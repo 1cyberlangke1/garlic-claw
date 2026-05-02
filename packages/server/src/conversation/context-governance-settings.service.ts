@@ -13,7 +13,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { ProjectWorktreeRootService } from '../execution/project/project-worktree-root.service';
 import { createServerTestArtifactPath } from '../runtime/server-workspace-paths';
 
-const CONTEXT_GOVERNANCE_CONFIG_FILE = 'context-governance.json';
+const CONTEXT_GOVERNANCE_CONFIG_FILE = 'settings.json';
 const MAX_CONFIG_INTEGER = 1_000_000;
 
 const CONTEXT_GOVERNANCE_SECTION_NAMES = ['conversationTitle', 'contextCompaction'] as const;
@@ -58,7 +58,7 @@ function resolveContextGovernanceConfigPath(): string {
   return process.env.GARLIC_CLAW_CONTEXT_GOVERNANCE_CONFIG_PATH
     ?? (process.env.JEST_WORKER_ID
       ? createServerTestArtifactPath({ extension: '.json', prefix: 'config-context-governance.server.test', subdirectory: 'server' })
-      : path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', CONTEXT_GOVERNANCE_CONFIG_FILE));
+      : path.join(new ProjectWorktreeRootService().resolveRoot(process.cwd()), 'config', 'context', CONTEXT_GOVERNANCE_CONFIG_FILE));
 }
 
 function loadContextGovernanceConfig(configPath: string): JsonObject {

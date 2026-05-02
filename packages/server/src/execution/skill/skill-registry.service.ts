@@ -62,7 +62,7 @@ export class SkillRegistryService {
 function resolveSkillGovernancePath(projectWorktreeRootService: ProjectWorktreeRootService): string {
   if (process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH) {return path.resolve(process.env.GARLIC_CLAW_SKILL_GOVERNANCE_PATH);}
   if (process.env.JEST_WORKER_ID) {return createServerTestArtifactPath({ extension: '.json', prefix: 'config-skills-governance.server.test', subdirectory: 'server' });}
-  return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'skills', 'governance.json');
+  return path.join(projectWorktreeRootService.resolveRoot(process.cwd()), 'config', 'skills', 'settings.json');
 }
 
 function resolveProjectSkillDefinitionsRoot(projectWorktreeRootService: ProjectWorktreeRootService): string {

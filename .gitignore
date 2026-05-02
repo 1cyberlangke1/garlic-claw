@@ -46,6 +46,7 @@ docs/superpowers/
 .DS_Store
 
 # 其他
+AGENTS.md
 other/
 .cache/
 .playwright-mcp/

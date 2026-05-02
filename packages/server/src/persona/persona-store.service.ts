@@ -13,7 +13,7 @@ type StoredPersonaConfigFile = Omit<StoredPersonaRecord, 'avatar' | 'prompt' | '
 const DEFAULT_PERSONA_TIMESTAMP = '2026-04-10T00:00:00.000Z'
 const PERSONA_CONFIG_FILE_NAME = 'persona.json'
 const PERSONA_PROMPT_FILE_NAME = 'prompt.md'
-const DEFAULT_SELECTION_FILE_NAME = 'default-selection.json'
+const DEFAULT_SELECTION_FILE_NAME = 'settings.json'
 const AVATAR_BASENAME = 'avatar'
 const AVATAR_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg', '.avif', '.ico', '.tif', '.tiff'])
 
@@ -246,7 +246,7 @@ function loadDefaultPersonaId(storageRoot: string, personas: StoredPersonaRecord
       if (defaultPersonaId && personas.some((persona) => persona.id === defaultPersonaId)) {
         return defaultPersonaId
       }
-    } catch {}
+    } catch { /* empty */ }
   }
   return DEFAULT_PERSONA_ID
 }

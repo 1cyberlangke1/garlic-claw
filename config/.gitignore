@@ -3,13 +3,24 @@
 # 本机真实配置默认不提交；仓库内置样例/默认配置显式放行
 ai-settings.json
 model-capabilities.json
-tool-governance.json
-skill-governance.json
+
+# 根目录旧运行时偏好（已废弃，保留规则防止误提交历史文件）
+subagent.json
+tool-management.json
+context-governance.json
+runtime-tools.json
+
+# 领域子目录运行时偏好
+ai/settings.json
+skills/settings.json
+tools/settings.json
+context/settings.json
+
+# personas/settings.json 已被 personas/* 覆盖，无需额外规则
 
 ai/providers/*.json
 ai/host-model-routing.json
 ai/vision-fallback.json
-ai/default-selection.json
 
 mcp/servers/*.json
 !mcp/servers/tavily-mcp.json
