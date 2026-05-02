@@ -1,12 +1,15 @@
 <template>
-  <div class="tools-page">
-    <section class="tools-hero">
-      <div class="hero-copy">
-        <h1><Icon :icon="tuning2Bold" class="hero-icon" aria-hidden="true" />工具管理</h1>
-      </div>
-    </section>
+  <ConsolePage class="tools-page">
+    <template #header>
+      <section class="tools-hero">
+        <div class="hero-copy">
+          <h1><Icon :icon="tuning2Bold" class="hero-icon" aria-hidden="true" />工具管理</h1>
+        </div>
+      </section>
+    </template>
 
-    <p v-if="error" class="page-banner error">{{ error }}</p>
+    <div>
+      <p v-if="error" class="page-banner error">{{ error }}</p>
 
     <section v-if="visibleSections.length > 0" class="tools-grid">
       <ToolGovernancePanel
@@ -59,6 +62,7 @@
       <p>只有已经接入并实际注册了工具的执行源，才会出现在这个页面。</p>
     </section>
   </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
@@ -69,6 +73,7 @@ import { Icon } from '@iconify/vue'
 import tuning2Bold from '@iconify-icons/solar/tuning-2-bold'
 import { subscribeInternalConfigChanged } from '@/modules/ai-settings/internal-config-change'
 import { subscribePluginConfigChanged } from '@/modules/plugins/plugin-config-change'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import ToolGovernancePanel from '@/modules/tools/components/ToolGovernancePanel.vue'
 import { loadToolOverview, toErrorMessage } from '@/modules/tools/composables/tool-management.data'
 
@@ -169,15 +174,9 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
 </script>
 
 <style scoped>
-.tools-page,
 .tools-grid {
   display: grid;
   gap: 18px;
-}
-
-.tools-page {
-  min-height: 100%;
-  padding: 1.5rem 2rem;
 }
 
 .page-banner,
@@ -222,9 +221,5 @@ function hasSource(kind: ToolSourceInfo['kind'], sourceId?: string | null) {
   margin: 0;
 }
 
-@media (max-width: 720px) {
-  .tools-page {
-    padding: 1rem;
-  }
-}
+
 </style>

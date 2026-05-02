@@ -6,6 +6,7 @@ import addCircleBold from '@iconify-icons/solar/add-circle-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import trashBinTrashBold from '@iconify-icons/solar/trash-bin-trash-bold'
 import userIdBold from '@iconify-icons/solar/user-id-bold'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import { usePersonaSettings } from '../composables/use-persona-settings'
 
 const {
@@ -81,21 +82,24 @@ function readPersonaAvatarAlt(name?: string | null) {
 </script>
 
 <template>
-  <div class="persona-page">
-    <header class="page-header">
-      <h1><Icon :icon="userIdBold" class="page-header-icon" aria-hidden="true" />人设管理</h1>
-      <div class="header-actions">
-        <ElButton class="ghost-button refresh-button" :disabled="loading" title="刷新" @click="refreshAll">
-          <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton type="primary" class="primary-button" @click="beginCreatePersona">
-          <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
-          新建人设
-        </ElButton>
-      </div>
-    </header>
+  <ConsolePage class="persona-page">
+    <template #header>
+      <header class="page-header">
+        <h1><Icon :icon="userIdBold" class="page-header-icon" aria-hidden="true" />人设管理</h1>
+        <div class="header-actions">
+          <ElButton class="ghost-button refresh-button" :disabled="loading" title="刷新" @click="refreshAll">
+            <Icon :icon="refreshBold" class="refresh-icon" aria-hidden="true" />
+          </ElButton>
+          <ElButton type="primary" class="primary-button" @click="beginCreatePersona">
+            <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
+            新建人设
+          </ElButton>
+        </div>
+      </header>
+    </template>
 
-    <section class="hero-grid">
+    <div>
+      <section class="hero-grid">
       <article class="hero-card">
         <div v-if="currentPersona" class="persona-identity">
           <div class="persona-avatar persona-avatar-large" data-persona-avatar="current">
@@ -321,18 +325,10 @@ function readPersonaAvatarAlt(name?: string | null) {
       </section>
     </div>
   </div>
+  </ConsolePage>
 </template>
 
 <style scoped>
-.persona-page {
-  display: grid;
-  gap: 18px;
-  padding: 1.5rem 2rem;
-  height: 100%;
-  min-width: 0;
-  overflow-y: auto;
-}
-
 .page-header,
 .header-actions,
 .hero-grid,

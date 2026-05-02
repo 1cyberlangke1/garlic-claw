@@ -1,33 +1,35 @@
 <template>
-  <div class="skills-page">
-    <ConsoleViewHeader
-      v-model="currentView"
-      :title="currentView === 'details' ? '技能目录' : '技能日志'"
-      :icon="currentView === 'details' ? magicStick3Bold : listCheckBold"
-      :view-options="viewOptions"
-      aria-label="技能目录视图切换"
-    >
-      <template #actions>
-        <ElButton
-          v-if="currentView === 'logs' && selectedSkill"
-          class="hero-button icon-only view-header-action"
-          :class="{ active: showLogSettings }"
-          title="日志设置"
-          @click="showLogSettings = !showLogSettings"
-        >
-          <Icon :icon="settingsBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
-        </ElButton>
-        <ElButton
-          class="hero-button icon-only view-header-action"
-          title="刷新目录"
-          :disabled="refreshing"
-          @click="refreshAll()"
-        >
-          <Icon :icon="refreshBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
-        </ElButton>
-      </template>
+  <ConsolePage class="skills-page">
+    <template #header>
+      <ConsoleViewHeader
+        v-model="currentView"
+        :title="currentView === 'details' ? '技能目录' : '技能日志'"
+        :icon="currentView === 'details' ? magicStick3Bold : listCheckBold"
+        :view-options="viewOptions"
+        aria-label="技能目录视图切换"
+      >
+        <template #actions>
+          <ElButton
+            v-if="currentView === 'logs' && selectedSkill"
+            class="hero-button icon-only view-header-action"
+            :class="{ active: showLogSettings }"
+            title="日志设置"
+            @click="showLogSettings = !showLogSettings"
+          >
+            <Icon :icon="settingsBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+          <ElButton
+            class="hero-button icon-only view-header-action"
+            title="刷新目录"
+            :disabled="refreshing"
+            @click="refreshAll()"
+          >
+            <Icon :icon="refreshBold" class="hero-button-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+        </template>
 
-    </ConsoleViewHeader>
+      </ConsoleViewHeader>
+    </template>
 
     <p v-if="error" class="page-banner error">{{ error }}</p>
 
@@ -76,7 +78,7 @@
         </section>
       </div>
     </div>
-  </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
@@ -93,6 +95,7 @@ import SkillDetailPanel from '@/modules/skills/components/SkillDetailPanel.vue'
 import SkillsList from '@/modules/skills/components/SkillsList.vue'
 import EventLogPanel from '@/modules/tools/components/EventLogPanel.vue'
 import EventLogSettingsPanel from '@/modules/tools/components/EventLogSettingsPanel.vue'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import { useSkillManagement } from '@/modules/skills/composables/use-skill-management'
 
 type SkillsPageView = 'details' | 'logs'
@@ -158,7 +161,6 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
 </script>
 
 <style>
-.skills-page,
 .skills-page .skill-list-panel,
 .skills-page .skill-detail-panel,
 .skills-page .skills-layout,
@@ -167,12 +169,6 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
 .skills-page .meta-row {
   display: flex;
   gap: 0.9rem;
-}
-
-.skills-page {
-  flex-direction: column;
-  min-height: 0;
-  padding: 1.5rem 2rem;
 }
 
 .skills-page .skill-list-panel,
@@ -512,9 +508,5 @@ function handleSkillEventLogUpdate(payload: { maxFileSizeMb: number }) {
   }
 }
 
-@media (max-width: 720px) {
-  .skills-page {
-    padding: 1rem;
-  }
-}
+
 </style>

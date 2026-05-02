@@ -1,11 +1,39 @@
 <template>
-  <div class="plugins-page">
-    <PluginPageHero
-      :cards="overviewCards"
-      @refresh="refreshAll"
-    />
+  <ConsolePage class="plugins-page">
+    <template #header>
+      <ConsoleViewHeader
+        title="插件管理"
+        :icon="widgetBold"
+      >
+        <template #actions>
+          <ElButton
+            class="hero-action view-header-action"
+            title="刷新全部"
+            @click="refreshAll"
+          >
+            <Icon :icon="refreshBold" class="refresh-icon view-header-action-icon" aria-hidden="true" />
+          </ElButton>
+        </template>
+      </ConsoleViewHeader>
+    </template>
 
-    <p v-if="error" class="page-banner error">{{ error }}</p>
+    <div>
+      <div class="overview-grid">
+        <article
+          v-for="card in overviewCards"
+          :key="card.label"
+          class="overview-card"
+          :class="card.tone"
+        >
+          <div class="overview-card-head">
+            <span class="overview-label">{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+          </div>
+          <p>{{ card.note }}</p>
+        </article>
+      </div>
+
+      <p v-if="error" class="page-banner error">{{ error }}</p>
 
     <PluginAttentionPanel
       :plugins="attentionPlugins"
@@ -150,6 +178,7 @@
       </section>
     </div>
   </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
@@ -160,13 +189,18 @@ import PluginCronList from '@/modules/plugins/components/PluginCronList.vue'
 import PluginDetailOverview from '@/modules/plugins/components/PluginDetailOverview.vue'
 import PluginEventLog from '@/modules/plugins/components/PluginEventLog.vue'
 import PluginLlmPreferencePanel from '@/modules/plugins/components/PluginLlmPreferencePanel.vue'
-import PluginPageHero from '@/modules/plugins/components/PluginPageHero.vue'
+import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
+import { Icon } from '@iconify/vue'
+import refreshBold from '@iconify-icons/solar/refresh-bold'
+import widgetBold from '@iconify-icons/solar/widget-5-bold'
+import { ElButton } from 'element-plus'
 import PluginRemoteAccessPanel from '@/modules/plugins/components/PluginRemoteAccessPanel.vue'
 import PluginRemoteSummaryPanel from '@/modules/plugins/components/PluginRemoteSummaryPanel.vue'
 import PluginRouteList from '@/modules/plugins/components/PluginRouteList.vue'
 import PluginScopeEditor from '@/modules/plugins/components/PluginScopeEditor.vue'
 import PluginSidebar from '@/modules/plugins/components/PluginSidebar.vue'
 import PluginStoragePanel from '@/modules/plugins/components/PluginStoragePanel.vue'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import {
   hasPluginIssue,
   pluginAttentionWeight,
@@ -578,13 +612,99 @@ async function runActionForPlugin(input: {
 
 <style scoped>
 .plugins-page {
-  display: grid;
-  gap: 18px;
-  height: 100%;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 1.4rem clamp(1rem, 2.5vw, 2rem);
   background: var(--shell-bg);
+}
+
+.hero-action {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-panel-hover-soft);
+  color: var(--text);
+}
+
+.hero-action:hover:not(:disabled) {
+  background: var(--surface-panel-muted-strong);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.overview-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.overview-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 6px;
+  min-width: 0;
+  height: 72px;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-card-gradient);
+  overflow: hidden;
+}
+
+.overview-card strong {
+  font-size: clamp(1.15rem, 1.6vw, 1.55rem);
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.overview-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.overview-card p {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  overflow: hidden;
+}
+
+.overview-card.warning {
+  border-color: rgba(240, 198, 118, 0.28);
+}
+
+.overview-card.warning strong {
+  color: #f5d38c;
+}
+
+.overview-card.spotlight strong {
+  font-size: 1.25rem;
+}
+
+@media (max-width: 1280px) {
+  .overview-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .page-banner {

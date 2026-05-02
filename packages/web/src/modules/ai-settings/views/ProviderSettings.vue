@@ -1,9 +1,11 @@
 <template>
-  <div class="ai-settings-page">
-    <header class="page-header">
-      <h1><Icon class="hero-icon" :icon="codeBold" aria-hidden="true" />AI 设置</h1>
-    </header>
-    <div class="ai-settings-shell">
+  <ConsolePage class="ai-settings-page" no-padding>
+    <template #header>
+      <header class="page-header">
+        <h1><Icon class="hero-icon" :icon="codeBold" aria-hidden="true" />AI 设置</h1>
+      </header>
+    </template>
+    <div class="ai-settings-inner">
       <aside class="ai-settings-sidebar">
         <nav class="sider-menu">
           <button
@@ -222,7 +224,8 @@
         @save="saveContextGovernanceConfig"
       />
     </main>
-  </div>
+    </div>
+  </ConsolePage>
 
   <AiProviderEditorDialog
     :catalog="catalog"
@@ -241,7 +244,6 @@
     @add="importDiscoveredModels"
     @close="showDiscoveryDialog = false"
   />
-</div>
 </template>
 
 <script setup lang="ts">
@@ -266,6 +268,7 @@ import RuntimeToolsSettingsPanel from '@/modules/ai-settings/components/RuntimeT
 import SubagentSettingsPanel from '@/modules/ai-settings/components/SubagentSettingsPanel.vue'
 import VisionFallbackPanel from '@/modules/ai-settings/components/VisionFallbackPanel.vue'
 import { getProviderDriverLabel } from '@/modules/ai-settings/components/provider-catalog'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import { useProviderSettings } from '@/modules/ai-settings/composables/use-provider-settings'
 
 const activeSection = ref('provider-models')
@@ -468,28 +471,19 @@ onBeforeUnmount(() => {
    布局
    ═══════════════════════════════════════════════════════════════════════ */
 .ai-settings-page {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 1.5rem 2rem;
-  gap: 18px;
   background: var(--shell-bg, #0f172a);
+}
+
+.ai-settings-inner {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
 }
 
 .page-header {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: start;
-}
-
-.ai-settings-shell {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  border: 1px solid var(--shell-border, #334155);
-  border-radius: 16px;
-  background: var(--shell-bg-elevated, #1e293b);
-  overflow: hidden;
 }
 
 /* ── 侧边栏 ── */

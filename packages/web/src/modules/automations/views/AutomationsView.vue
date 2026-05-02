@@ -1,30 +1,32 @@
 <template>
-  <div class="automations-view">
-    <div class="automations-header">
-      <h1 class="header-title">
-        <Icon :icon="currentView === 'automations' ? cpuBoltBold : listCheckBold" class="hero-icon" aria-hidden="true" />
-        {{ currentView === 'automations' ? '自动化' : '执行日志' }}
-      </h1>
-      <div class="header-actions">
-        <HeaderViewSwitch
-          :model-value="currentView"
-          :options="viewOptions"
-          @update:model-value="handleViewSwitch"
-        />
-        <ElButton v-if="currentView === 'automations'" type="primary" class="header-button" @click="openCreateDialog">
-          <span class="button-content">
-            <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
-            新建
-          </span>
-        </ElButton>
-        <ElButton v-else class="header-button" @click="loadAutomationLogs">
-          <span class="button-content">
-            <Icon :icon="refreshBold" class="button-icon" aria-hidden="true" />
-            刷新
-          </span>
-        </ElButton>
+  <ConsolePage class="automations-view" no-padding>
+    <template #header>
+      <div class="automations-header">
+        <h1 class="header-title">
+          <Icon :icon="currentView === 'automations' ? cpuBoltBold : listCheckBold" class="hero-icon" aria-hidden="true" />
+          {{ currentView === 'automations' ? '自动化' : '执行日志' }}
+        </h1>
+        <div class="header-actions">
+          <HeaderViewSwitch
+            :model-value="currentView"
+            :options="viewOptions"
+            @update:model-value="handleViewSwitch"
+          />
+          <ElButton v-if="currentView === 'automations'" type="primary" class="header-button" @click="openCreateDialog">
+            <span class="button-content">
+              <Icon :icon="addCircleBold" class="button-icon" aria-hidden="true" />
+              新建
+            </span>
+          </ElButton>
+          <ElButton v-else class="header-button" @click="loadAutomationLogs">
+            <span class="button-content">
+              <Icon :icon="refreshBold" class="button-icon" aria-hidden="true" />
+              刷新
+            </span>
+          </ElButton>
+        </div>
       </div>
-    </div>
+    </template>
 
     <!-- 创建/编辑弹窗 -->
     <ElDialog
@@ -232,10 +234,11 @@
         </article>
       </div>
     </div>
-  </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import { useAutomations } from '@/modules/automations/composables/use-automations'
 import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
 import type { AutomationInfo } from '@garlic-claw/shared'
@@ -470,16 +473,6 @@ function getRightActionStyle(id: string) {
 </script>
 
 <style scoped>
-.automations-view {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem 2rem;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-
 .automations-header {
   display: flex;
   align-items: center;
@@ -524,11 +517,11 @@ function getRightActionStyle(id: string) {
 }
 
 .automations-content {
-  flex: 1;
+  height: 100%;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px;
+  padding: 1.25rem 1.5rem;
 }
 
 .loading, .empty {

@@ -1,22 +1,27 @@
 <template>
-  <div class="plugins-page commands-page">
-    <ConsoleViewHeader
-      v-model="currentView"
-      :title="currentView === 'directory' ? '命令管理' : '冲突触发词'"
-      :icon="currentView === 'directory' ? keyboardBold : listCheckBold"
-      :view-options="viewOptions"
-      aria-label="命令管理视图切换"
-    >
-      <template #actions>
-          <ElButton
-            class="hero-action icon-only view-header-action"
-            title="刷新全部"
-            @click="refreshAll()"
-          >
-            <Icon :icon="refreshBold" class="hero-action-icon view-header-action-icon" aria-hidden="true" />
-          </ElButton>
-      </template>
+  <ConsolePage class="plugins-page commands-page">
+    <template #header>
+      <ConsoleViewHeader
+        v-model="currentView"
+        :title="currentView === 'directory' ? '命令管理' : '冲突触发词'"
+        :icon="currentView === 'directory' ? keyboardBold : listCheckBold"
+        :view-options="viewOptions"
+        aria-label="命令管理视图切换"
+      >
+        <template #actions>
+            <ElButton
+              class="hero-action icon-only view-header-action"
+              title="刷新全部"
+              @click="refreshAll()"
+            >
+              <Icon :icon="refreshBold" class="hero-action-icon view-header-action-icon" aria-hidden="true" />
+            </ElButton>
+        </template>
 
+      </ConsoleViewHeader>
+    </template>
+
+    <div>
       <div class="overview-grid">
         <article class="overview-card accent">
           <span class="overview-label">命令概览</span>
@@ -34,9 +39,7 @@
           <p>{{ card.note }}</p>
         </article>
       </div>
-    </ConsoleViewHeader>
-
-    <p v-if="error" class="page-banner error">{{ error }}</p>
+      <p v-if="error" class="page-banner error">{{ error }}</p>
 
     <div class="commands-content">
       <section v-if="currentView === 'directory'" class="command-list-panel">
@@ -177,6 +180,7 @@
       </aside>
     </div>
   </div>
+  </ConsolePage>
 </template>
 
 <script setup lang="ts">
@@ -186,6 +190,7 @@ import listCheckBold from '@iconify-icons/solar/list-check-bold'
 import refreshBold from '@iconify-icons/solar/refresh-bold'
 import keyboardBold from '@iconify-icons/solar/keyboard-bold'
 import { ElButton, ElInput } from 'element-plus'
+import ConsolePage from '@/shared/components/ConsolePage.vue'
 import ConsoleViewHeader from '@/shared/components/ConsoleViewHeader.vue'
 import HeaderViewSwitch from '@/shared/components/HeaderViewSwitch.vue'
 import { usePluginCommandManagement } from '../composables/use-plugin-command-management'
@@ -264,14 +269,6 @@ function sourceLabel(source: 'manifest' | 'hook-filter'): string {
 </script>
 
 <style scoped>
-.commands-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  min-height: 0;
-  padding: 1.5rem 2rem;
-}
-
 .command-list-panel,
 .command-conflict-panel {
   border: 1px solid var(--border);
