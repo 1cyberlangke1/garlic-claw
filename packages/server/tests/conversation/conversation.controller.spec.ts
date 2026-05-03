@@ -244,6 +244,195 @@ describe('ConversationController', () => {
     expect(response.write).toHaveBeenLastCalledWith('data: [DONE]\n\n');
   });
 
+  it('streams main-conversation auto-compaction continuation tasks in the same SSE response', async () => {
+    const response = createResponseStub();
+    let firstSubscriber: ((event: { type: string }) => void) | null = null;
+    let secondSubscriber: ((event: { type: string }) => void) | null = null;
+    conversationStore.requireConversation
+      .mockReturnValueOnce({
+        createdAt: '2026-04-11T00:00:00.000Z',
+        id: conversationId,
+        kind: 'main',
+        messages: [],
+        title: 'Main Chat',
+        updatedAt: '2026-04-11T00:00:00.000Z',
+      })
+      .mockReturnValueOnce({
+        createdAt: '2026-04-11T00:00:00.000Z',
+        id: conversationId,
+        kind: 'main',
+        messages: [
+          {
+            content: '先做第一轮',
+            createdAt: '2026-04-11T00:00:01.000Z',
+            id: 'user-1',
+            partsJson: '[{"type":"text","text":"先做第一轮"}]',
+            role: 'user',
+            status: 'completed',
+            updatedAt: '2026-04-11T00:00:01.000Z',
+          },
+          {
+            content: '第一轮完成',
+            createdAt: '2026-04-11T00:00:01.500Z',
+            id: 'assistant-1',
+            metadataJson: null,
+            model: 'gpt-5.4',
+            partsJson: '[{"type":"text","text":"第一轮完成"}]',
+            provider: 'openai',
+            role: 'assistant',
+            status: 'completed',
+            toolCalls: null,
+            toolResults: null,
+            updatedAt: '2026-04-11T00:00:02.000Z',
+          },
+          {
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            createdAt: '2026-04-11T00:00:02.100Z',
+            id: 'user-2',
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: { role: 'continue', synthetic: true, trigger: 'after-response' },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            partsJson: '[{"type":"text","text":"Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."}]',
+            role: 'user',
+            status: 'completed',
+            updatedAt: '2026-04-11T00:00:02.100Z',
+          },
+          {
+            content: '',
+            createdAt: '2026-04-11T00:00:02.200Z',
+            id: 'assistant-2',
+            metadataJson: null,
+            model: 'gpt-5.4',
+            partsJson: null,
+            provider: 'openai',
+            role: 'assistant',
+            status: 'pending',
+            toolCalls: null,
+            toolResults: null,
+            updatedAt: '2026-04-11T00:00:02.200Z',
+          },
+        ],
+        title: 'Main Chat',
+        updatedAt: '2026-04-11T00:00:02.200Z',
+      })
+      .mockReturnValue({
+        createdAt: '2026-04-11T00:00:00.000Z',
+        id: conversationId,
+        kind: 'main',
+        messages: [
+          {
+            content: '先做第一轮',
+            createdAt: '2026-04-11T00:00:01.000Z',
+            id: 'user-1',
+            partsJson: '[{"type":"text","text":"先做第一轮"}]',
+            role: 'user',
+            status: 'completed',
+            updatedAt: '2026-04-11T00:00:01.000Z',
+          },
+          {
+            content: '第一轮完成',
+            createdAt: '2026-04-11T00:00:01.500Z',
+            id: 'assistant-1',
+            metadataJson: null,
+            model: 'gpt-5.4',
+            partsJson: '[{"type":"text","text":"第一轮完成"}]',
+            provider: 'openai',
+            role: 'assistant',
+            status: 'completed',
+            toolCalls: null,
+            toolResults: null,
+            updatedAt: '2026-04-11T00:00:02.000Z',
+          },
+          {
+            content: 'Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.',
+            createdAt: '2026-04-11T00:00:02.100Z',
+            id: 'user-2',
+            metadataJson: JSON.stringify({
+              annotations: [
+                {
+                  data: { role: 'continue', synthetic: true, trigger: 'after-response' },
+                  owner: 'conversation.context-governance',
+                  type: 'context-compaction',
+                  version: '1',
+                },
+              ],
+            }),
+            partsJson: '[{"type":"text","text":"Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."}]',
+            role: 'user',
+            status: 'completed',
+            updatedAt: '2026-04-11T00:00:02.100Z',
+          },
+          {
+            content: '第二轮继续完成',
+            createdAt: '2026-04-11T00:00:02.200Z',
+            id: 'assistant-2',
+            metadataJson: null,
+            model: 'gpt-5.4',
+            partsJson: '[{"type":"text","text":"第二轮继续完成"}]',
+            provider: 'openai',
+            role: 'assistant',
+            status: 'completed',
+            toolCalls: null,
+            toolResults: null,
+            updatedAt: '2026-04-11T00:00:02.500Z',
+          },
+        ],
+        title: 'Main Chat',
+        updatedAt: '2026-04-11T00:00:02.500Z',
+      });
+    conversationMessageLifecycleService.startMessageGeneration.mockResolvedValue({
+      assistantMessage: { id: 'assistant-1', role: 'assistant', content: '' },
+      userMessage: { id: 'user-1', role: 'user', content: '先做第一轮' },
+    });
+    conversationTaskService.subscribe.mockImplementation((messageId: string, listener: (event: { type: string }) => void) => {
+      if (messageId === 'assistant-1') {
+        firstSubscriber = listener;
+      }
+      if (messageId === 'assistant-2') {
+        secondSubscriber = listener;
+      }
+      return jest.fn();
+    });
+    conversationTaskService.waitForTask.mockImplementation(async (messageId: string) => {
+      if (messageId === 'assistant-1') {
+        firstSubscriber?.({ messageId: 'assistant-1', status: 'streaming', type: 'status' } as never);
+        firstSubscriber?.({ messageId: 'assistant-1', text: '第一轮完成', type: 'text-delta' } as never);
+        firstSubscriber?.({ messageId: 'assistant-1', status: 'completed', type: 'finish' } as never);
+        return;
+      }
+      if (messageId === 'assistant-2') {
+        secondSubscriber?.({ messageId: 'assistant-2', status: 'streaming', type: 'status' } as never);
+        secondSubscriber?.({ messageId: 'assistant-2', text: '第二轮继续完成', type: 'text-delta' } as never);
+        secondSubscriber?.({ messageId: 'assistant-2', status: 'completed', type: 'finish' } as never);
+      }
+    });
+
+    await controller.sendMessage(
+      'user-1',
+      conversationId,
+      { content: '先做第一轮' } as never,
+      response as never,
+    );
+
+    const writes = response.write.mock.calls.map(([payload]) => payload);
+    expect(writes.some((payload) => payload.includes('"type":"message-start"') && payload.includes('"id":"assistant-1"') && payload.includes('"id":"user-1"'))).toBe(true);
+    expect(writes.some((payload) => payload.includes('"type":"message-start"') && payload.includes('"id":"assistant-2"') && payload.includes('"id":"user-2"'))).toBe(true);
+    expect(writes).toContain(sse({ messageId: 'assistant-2', text: '第二轮继续完成', type: 'text-delta' }));
+    expect(writes).toContain(sse({ messageId: 'assistant-2', status: 'completed', type: 'finish' }));
+    expect(
+      writes.findIndex((payload) => payload.includes('"messageId":"assistant-1"') && payload.includes('"type":"finish"')),
+    ).toBeLessThan(
+      writes.findIndex((payload) => payload.includes('"type":"message-start"') && payload.includes('"id":"assistant-2"')),
+    );
+  });
+
   it('unsubscribes the active task listener when SSE closes', async () => {
     const response = createResponseStub();
     let closeHandler: (() => void) | undefined;
